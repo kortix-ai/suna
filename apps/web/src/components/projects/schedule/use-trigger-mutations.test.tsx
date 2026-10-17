@@ -5,6 +5,19 @@ import { NextIntlClientProvider } from 'next-intl';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 
+const i18nProvider = (probe: React.ReactElement, messages?: Record<string, string>) =>
+  messages ? (
+    <NextIntlClientProvider
+      locale="en"
+      timeZone="UTC"
+      messages={{ hardcodedUi: { i18nComplete: messages } }}
+    >
+      {probe}
+    </NextIntlClientProvider>
+  ) : (
+    probe
+  );
+
 // Only the network and notification boundaries are replaced. React Query and
 // the hook itself execute for real (including mutationFn and lifecycle callbacks).
 const fire = mock(
@@ -71,19 +84,7 @@ function renderMutations(
     return null;
   }
   const probe = createElement(QueryClientProvider, { client }, createElement(Probe));
-  renderToString(
-    messages
-      ? createElement(
-          NextIntlClientProvider,
-          {
-            locale: 'en',
-            timeZone: 'UTC',
-            messages: { hardcodedUi: { i18nComplete: messages } },
-            children: probe,
-          },
-        )
-      : probe,
-  );
+  renderToString(i18nProvider(probe, messages));
   if (!mutations) throw new Error('Hook did not render');
   return { ...mutations, invalidate, onRemoved, deletedNoun };
 }
