@@ -45,12 +45,14 @@ export function registerProjectCredentialsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404),
+          ...errors(403, 404),
       },
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
+    // The list names every member's project keys: it needs the leaf that
+    // issues and revokes them (`project.credentials.issue`), not project.read.
+    const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const tokens = await listAccountTokens(loaded.row.accountId, projectId);
     // Session-bound tokens are not CLI tokens. The runtime mints one per session

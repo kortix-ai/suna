@@ -4,7 +4,7 @@ import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../../iam/actions';
-import { assertAuthorized } from '../../iam/authorize';
+import { assertAuthorized, listAccessible } from '../../iam/authorize';
 import { visibleDirectory } from '../../iam/directory-visibility';
 import { actorOf } from '../../middleware/actor';
 import { combinedAuth } from '../../middleware/auth';
@@ -698,6 +698,17 @@ usageApp.openapi(
       throw error;
     }
 
+    // billing.read shows the account's spend, not every project's name: a
+    // caller sees the rows of the projects they can read (owners and admins:
+    // all of them). A project-scoped token already names its one project.
+    const accessible = projectId
+      ? null
+      : await listAccessible(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_READ, 'project');
+    const visibleProjectIds =
+      !accessible || accessible.mode === 'all'
+        ? undefined
+        : accessible.mode === 'allow_only' ? accessible.allowed : new Set<string>();
+
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, window, sort) —
       // only limit/offset differ, because a CSV export wants up to
@@ -705,6 +716,7 @@ usageApp.openapi(
       const page = await listCostByProject({
         accountId,
         projectId,
+        visibleProjectIds,
         window,
         sort,
         limit: CSV_ROW_CAP,
@@ -737,7 +749,7 @@ usageApp.openapi(
       });
     }
 
-    return c.json(await listCostByProject({ accountId, projectId, window, sort, limit, offset }));
+    return c.json(await listCostByProject({ accountId, projectId, visibleProjectIds, window, sort, limit, offset }));
   },
 );
 

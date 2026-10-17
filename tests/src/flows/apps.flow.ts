@@ -1584,6 +1584,12 @@ flow(
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId/access",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
     ],
   },
   async (ctx) => {
@@ -1735,6 +1741,24 @@ flow(
         refusals.forEach((response) => response.status(403));
         (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body()
           .has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 30);
+      });
+
+      await ctx.step("a project member who can open the App (project.app.read, no deploy) reads the App but not its operations: 403 on access policy, deployments, deployment events, runtime logs, machines, volumes and snapshots", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "project" }, { params: app() })).status(200);
+        (await member.get("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200).body().has("$.app_id", appId);
+        const deployment = { ...app(), deploymentId: UNKNOWN_ID };
+        const refusals = [
+          await member.get("/v1/projects/:projectId/apps/:appId/access", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/machines", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", { params: vol() }),
+        ];
+        refusals.forEach((response) => response.status(403));
+        (await owner.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() })).status(200).body().exists("$.deployments");
+        (await owner.get("/v1/projects/:projectId/apps/:appId/access", { params: app() })).status(200).body().has("$.mode", "project");
       });
 
       await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {

@@ -144,6 +144,8 @@ export function sortProjectRows(rows: ProjectCostRow[], sort: CostSort): Project
 export async function listCostByProject(input: {
   accountId: string;
   projectId?: string;
+  /** The projects the caller may read; undefined = every project. */
+  visibleProjectIds?: ReadonlySet<string>;
   window: CostWindow;
   sort: CostSort;
   limit: number;
@@ -204,8 +206,11 @@ export async function listCostByProject(input: {
   ]);
 
   const projectNames = new Map(projectRows.map((row) => [row.projectId, row.name]));
+  const visible = input.visibleProjectIds;
   const merged = sortProjectRows(
-    mergeProjectCostRows(llmRows, computeRows, projectNames),
+    mergeProjectCostRows(llmRows, computeRows, projectNames).filter(
+      (row) => !visible || visible.has(row.project_id),
+    ),
     input.sort,
   );
 
