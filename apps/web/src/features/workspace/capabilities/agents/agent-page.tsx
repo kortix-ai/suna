@@ -78,6 +78,7 @@ import {
   agentEditorOptionQueries,
   DEFAULT_AGENT_CONFIG_SECTION,
   isAgentConfigSectionKey,
+  newAgentBlock,
   registryGrantOptions,
   useAgentDraft,
   useAgentEditorOptions,
@@ -261,7 +262,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       projectId={projectId}
       agent={agent}
       config={config}
-      initial={configQuery.data?.block ?? {}}
+      initial={configQuery.data?.block ?? newAgentBlock(configQuery.data?.schema_version ?? 2)}
       schemaVersion={configQuery.data?.schema_version ?? 2}
     />
   ) : (

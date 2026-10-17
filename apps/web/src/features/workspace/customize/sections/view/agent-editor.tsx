@@ -45,7 +45,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  */
 
 import { Badge } from '@/components/ui/badge';
-import { parseManifestText } from '@kortix/manifest-schema';
+import { parseManifestText, projectRepositoryDefault } from '@kortix/manifest-schema';
 import type { ProjectConfigSummary, SandboxTemplate } from '@kortix/sdk';
 import {
   type AgentConfigBlock,
@@ -138,6 +138,11 @@ export function behaviorBlock(block: AgentConfigBlock): AgentConfigBlock {
   const { opencode, ...rest } = block;
   const behavior = block.behavior ?? opencode;
   return behavior ? { ...rest, behavior } : rest;
+}
+
+/** The block of an agent the manifest does not declare yet: the version's repository default, shown and saved. */
+export function newAgentBlock(schemaVersion: number): AgentConfigBlock {
+  return { repository_access: projectRepositoryDefault(schemaVersion) };
 }
 
 /**

@@ -23,6 +23,7 @@ import {
   type AgentBlockV2,
   defaultAgentFile,
   resolveGrantSet,
+  projectRepositoryDefault,
   resolveProjectRepository,
   SLUG_RE,
   validateManifest,
@@ -242,7 +243,7 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   }
   const aliases = normalizeGovernanceAliases(entry.block);
   if (!aliases.ok) return aliases;
-  const repository = normalizeRepositoryAccess(aliases.block, true);
+  const repository = normalizeRepositoryAccess(aliases.block, manifest.schemaVersion, true);
   if (!repository.ok) return repository;
   return {
     ok: true,
@@ -255,23 +256,22 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
 /**
  * The wire block carries `repository_access`; kortix.yaml stores
  * `workspace: { project_repository }`. Reading maps every form to the wire key;
- * writing maps it back to the YAML form. Neither grants access nor enables
- * legacy read: an undeclared value stays undeclared (default true), and a
- * legacy `workspace: read` with no explicit choice is written back unchanged.
+ * writing maps it back to the YAML form. Both always carry the value: an
+ * omitted one is the version default (`projectRepositoryDefault`), so every
+ * editor save pins it. A legacy `workspace: read` with no explicit choice is
+ * written back unchanged.
  */
-function normalizeRepositoryAccess(block: Record<string, unknown>, reading = false): NormalizeRequiredConnectorsResult {
-  const repository = resolveProjectRepository(block);
+function normalizeRepositoryAccess(
+  block: Record<string, unknown>,
+  version: number,
+  reading = false,
+): NormalizeRequiredConnectorsResult {
+  const repository = resolveProjectRepository(block, projectRepositoryDefault(version));
   if (!repository.ok) return { ok: false, error: `${repository.path} ${repository.message}` };
   if (repository.legacyRead && !reading) return { ok: true, block: { ...block } };
-  const { repository_access: access, workspace, ...next } = block;
-  const declared =
-    access !== undefined ||
-    typeof workspace === 'string' ||
-    (workspace as { project_repository?: unknown } | undefined)?.project_repository !== undefined;
-  if (declared) {
-    if (reading) next.repository_access = repository.value;
-    else next.workspace = { project_repository: repository.value };
-  }
+  const { repository_access: _access, workspace: _workspace, ...next } = block;
+  if (reading) next.repository_access = repository.value;
+  else next.workspace = { project_repository: repository.value };
   return { ok: true, block: next };
 }
 
@@ -296,7 +296,7 @@ function applyAgentMapBlock(
   if (!aliases.ok) return aliases;
   pruneRequiredConnectors(aliases.block);
   const nextAgents: Record<string, unknown> = { ...agents.map };
-  const repository = normalizeRepositoryAccess(aliases.block);
+  const repository = normalizeRepositoryAccess(aliases.block, manifest.schemaVersion);
   if (!repository.ok) return repository;
   nextAgents[agentName] = repository.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
@@ -650,7 +650,7 @@ export function agentConfigViewV3(
     else governance[key] = value;
   }
   if (block.prompt_file !== undefined && promptText?.trim()) behavior.prompt = promptText;
-  const repository = normalizeRepositoryAccess(governance, true);
+  const repository = normalizeRepositoryAccess(governance, 3, true);
   return { governance: repository.ok ? repository.block : governance, behavior };
 }
 
