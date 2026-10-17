@@ -50,7 +50,7 @@ const UUID_IN_REF = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  */
 export async function callerManagesProject(c: Context, loaded: LoadedProject): Promise<boolean> {
   if (loaded.adminBypass) return true;
-  return viewerManagerStanding(loaded.effectiveRole, callerKortixSessionId(c), () =>
+  return viewerManagerStanding(callerKortixSessionId(c), () =>
     projectCapabilityAllowed(
       c,
       loaded.userId,
