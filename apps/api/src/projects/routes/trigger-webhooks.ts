@@ -20,7 +20,7 @@ import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
-import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
+import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookRejectedRunBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
@@ -101,7 +101,9 @@ export function registerTriggerWebhooksRoutes(): void {
     // Not awaited: the write must not make a real trigger's 401 slower than a
     // missing one's. recordTriggerRun never throws.
     const rejectRun = (reason: string, extra?: Record<string, unknown>) => {
-      void recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload: runPayload(), verified: false, status: 'rejected', error: reason, now: new Date() });
+      if (consumeProjectWebhookRejectedRunBudget(projectId, slug)) {
+        void recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload: runPayload(), verified: false, status: 'rejected', error: reason, now: new Date() });
+      }
       return reject(reason, extra);
     };
     if (!spec.secretEnv) {

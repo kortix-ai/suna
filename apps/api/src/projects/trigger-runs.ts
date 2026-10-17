@@ -5,7 +5,7 @@
  */
 import type { TriggerRun } from '@kortix/api-contract';
 import { gatewayRequestLogs, projectTriggerExecutions } from '@kortix/db';
-import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { isSecretKey } from '../connectors/args-preview';
 import { db } from '../shared/db';
 import { totalSpendSql } from '../shared/llm-spend';
@@ -156,7 +156,13 @@ export async function listVisibleTriggerRuns(input: {
   for (let page = 0; page < MAX_SCAN_PAGES; page += 1) {
     const filters: SQL[] = [eq(t.projectId, input.loaded.row.projectId)];
     if (input.slug) filters.push(eq(t.slug, input.slug));
-    if (input.status) filters.push(inArray(t.status, dbStatusesFor(input.status)));
+    if (input.status === 'failed') {
+      // A failed run is a fire that failed OR a fire whose agent turn failed:
+      // the second is the most common failure and must not hide behind `fired`.
+      filters.push(or(inArray(t.status, dbStatusesFor('failed')), eq(t.runStatus, 'failed'))!);
+    } else if (input.status) {
+      filters.push(inArray(t.status, dbStatusesFor(input.status)));
+    }
     if (cursor) filters.push(sql`(${t.createdAt}, ${t.executionId}) < (${cursor.createdAt}::timestamptz, ${cursor.executionId}::uuid)`);
     const rows: RunRow[] = await db
       .select(runColumns)

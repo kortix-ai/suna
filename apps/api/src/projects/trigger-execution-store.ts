@@ -559,12 +559,25 @@ export function triggerRunFromFire(result: {
 const RUN_RETENTION_DAYS = 30;
 const REJECTED_RUN_RETENTION_DAYS = 7;
 const RUN_RETENTION_BATCH = 500;
+/** Batches per maintenance cycle: up to 10,000 rows, so one busy project cannot outgrow retention. */
+const RUN_RETENTION_MAX_BATCHES = 20;
 
 /**
  * Ruling 5 retention: non-cron runs older than 30 days and rejected runs
- * older than 7 days. Cron slot rows stay. One bounded batch per call.
+ * older than 7 days. Cron slot rows stay. Deletes batch after batch until one
+ * comes back short, at most `RUN_RETENTION_MAX_BATCHES` per call.
  */
 export async function purgeExpiredTriggerRuns(now = new Date()): Promise<number> {
+  let total = 0;
+  for (let batch = 0; batch < RUN_RETENTION_MAX_BATCHES; batch++) {
+    const deleted = await purgeExpiredTriggerRunBatch(now);
+    total += deleted;
+    if (deleted < RUN_RETENTION_BATCH) break;
+  }
+  return total;
+}
+
+async function purgeExpiredTriggerRunBatch(now: Date): Promise<number> {
   const day = 24 * 60 * 60_000;
   const doomed = await db
     .select({ executionId: projectTriggerExecutions.executionId })

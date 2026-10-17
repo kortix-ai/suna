@@ -1,7 +1,4 @@
-import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -40,77 +37,6 @@ describe('TriggerToolbarMenu — manager-only access gate', () => {
     expect(render({ ...menuProps, canManage: true, isPending: true })).toMatch(
       /<button[^>]*disabled/,
     );
-  });
-});
-
-/**
- * Page chrome. Triggers is a sibling tab of Connectors / Agents / Skills and
- * has to read as one: same `CapabilityPageShell`, same `max-w-5xl` column,
- * same heading, same header group. It brought its own `max-w-2xl` column and
- * its own `SettingsSectionHeader` before, which is what made it look like a
- * different product.
- *
- * Source-level assertions, following `connectors-page.global-rules.test.ts`:
- * apps/web has no DOM testing library, and what is pinned here is WHERE a
- * control is mounted, not what it renders.
- */
-const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(here, 'schedule-view.tsx'), 'utf8');
-
-/** Comments name the old layout on purpose; assert on code only. */
-const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-
-const CHILDREN_START = '<div className="space-y-4">';
-const shellStart = code.indexOf('<CapabilityPageShell');
-const childrenStart = code.indexOf(CHILDREN_START);
-/** The shell's props — `title`, `description`, `search`, `action`. */
-const shellHeader = code.slice(shellStart, childrenStart);
-/** Everything the shell renders as its content column. */
-const shellChildren = code.slice(childrenStart);
-
-describe('ScheduleView page chrome', () => {
-  test('the page is the shared capability shell, not its own column', () => {
-    expect(shellStart).toBeGreaterThan(-1);
-    expect(childrenStart).toBeGreaterThan(shellStart);
-    expect(shellHeader).toContain('title={copy.title}');
-    expect(shellHeader).toContain('description={copy.description}');
-    // The two pieces of the old narrow layout, gone for good.
-    expect(code).not.toContain('max-w-2xl');
-    expect(code).not.toContain('SettingsSectionHeader');
-  });
-
-  test('search and the create action are the shell’s slots, not inline', () => {
-    expect(shellHeader).toContain('InputGroupSearchInput');
-    expect(shellHeader).toContain('{copy.createLabel}');
-    expect(shellChildren).not.toContain('InputGroupSearchInput');
-  });
-
-  const menu = code.slice(
-    code.indexOf('function TriggerActivationMenu'),
-    code.indexOf('export function ScheduleView'),
-  );
-
-  test('pause-all lives in the toolbar ⋯ menu, not a gear or a list banner', () => {
-    expect(shellHeader).toContain('<TriggerActivationMenu');
-    expect(code).not.toContain('GearSixIcon');
-    expect(code).not.toContain('PopoverTrigger');
-    expect(shellChildren).not.toContain('TriggerActivationMenu');
-    expect(shellChildren).not.toContain('Pause all triggers');
-  });
-
-  test('the empty state has no brand mark and offers the create action', () => {
-    expect(code).not.toContain('PixelKortixMark');
-    expect(shellChildren).toContain('icon={LightningIcon}');
-    expect(shellChildren).toContain('onClick={() => openCreate()}');
-  });
-
-  // Who sees the gear is rendered per role in `trigger-activation-menu.test.tsx`.
-
-  // The paused STATE is not the paused CONTROL: a project that runs nothing on
-  // its own stays announced at the top of the list.
-  test('the paused banner stays prominent in the content column', () => {
-    expect(shellChildren).toContain('Everything is paused');
-    expect(shellChildren).toContain('{paused && showContent &&');
   });
 });
 

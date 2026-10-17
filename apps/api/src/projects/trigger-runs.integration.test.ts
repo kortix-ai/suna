@@ -4,7 +4,7 @@
  * Proves, with an injected clock: a manual or webhook fire writes one run row
  * with its source and status; a rejected webhook delivery is stored unverified;
  * a payload over 64 KiB is stored as a size marker; a turn end closes the
- * open runs of its session; `max_lateness` turns a stale cron slot into
+ * oldest open run of its session (by session id); `max_lateness` turns a stale cron slot into
  * a skipped run and advances `next_fire_at`; without it the slot fires once;
  * retention deletes old non-cron and rejected runs and keeps cron rows.
  */
@@ -239,7 +239,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     expect((await run(kept!)).payload).toEqual(atLimit);
   });
 
-  test('a turn end closes every open run of its session with the outcome', async () => {
+  test('a turn end closes the oldest open run of its session with the outcome', async () => {
     const sessionId = await seedSession();
     const older = await recordTriggerRun({
       projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
@@ -262,21 +262,29 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       { ...end, status: 'error', error: { name: 'APIError', message: 'Payment Required: Insufficient credits.' }, now: endedAt },
       noPush,
     );
-    expect(await run(newer!)).toMatchObject({
+    // First in, first out: the first closed turn is the older fire's.
+    expect(await run(older!)).toMatchObject({
       runStatus: 'failed',
       runError: 'Out of credits: Payment Required: Insufficient credits.',
     });
-    expect((await run(newer!)).runEndedAt?.toISOString()).toBe(endedAt.toISOString());
-    // A reuse session queues every fire into one session: the earlier fire is
-    // consumed by the same turn, so it closes too and is never stuck running.
-    expect(await run(older!)).toMatchObject({ runStatus: 'failed' });
     expect((await run(older!)).runEndedAt?.toISOString()).toBe(endedAt.toISOString());
+    expect(await run(newer!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
 
     const secondEnd = new Date('2026-10-16T10:09:00.000Z');
     await recordTriggerRunEnd({ ...end, status: 'idle', now: secondEnd }, noPush);
-    // Closed runs keep their first outcome.
+    expect(await run(newer!)).toMatchObject({ runStatus: 'succeeded', runError: null });
+    expect((await run(newer!)).runEndedAt?.toISOString()).toBe(secondEnd.toISOString());
+    // A closed run keeps its first outcome.
     expect(await run(older!)).toMatchObject({ runStatus: 'failed' });
-    expect(await run(newer!)).toMatchObject({ runStatus: 'failed' });
+
+    // A pinned trigger's (or a reminder's) session carries no trigger
+    // metadata; its run still closes.
+    const pinned = await recordTriggerRun({
+      projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
+      status: 'succeeded', sessionId, now: new Date('2026-10-16T10:09:30.000Z'),
+    });
+    await recordTriggerRunEnd({ ...end, metadata: {}, status: 'idle', now: secondEnd }, noPush);
+    expect(await run(pinned!)).toMatchObject({ runStatus: 'succeeded' });
 
     // A subagent turn says nothing about the run.
     const third = await recordTriggerRun({
