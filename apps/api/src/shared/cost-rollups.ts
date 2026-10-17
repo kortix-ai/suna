@@ -520,12 +520,11 @@ export async function getCostSummary(input: {
   const models = llmGroupRows
     .filter((row) => row.setId === 'model')
     .map((row) => {
-      // Unreachable by construction: provider and resolved_model are the
-      // grouping columns of the 'model' set and both are NOT NULL in the
-      // table, so a 'model' row always carries both. The guard narrows
-      // without a cast and fails loudly if the set marker or the schema
-      // ever drifts.
-      if (!row.provider || !row.model) {
+      // provider and resolved_model are the grouping columns of the 'model'
+      // set and both are NOT NULL, so null here means the set marker or the
+      // schema drifted. An empty string is a real value (a prod row had
+      // provider = '' on 2026-10-17): test for null, never truthiness.
+      if (row.provider === null || row.model === null) {
         throw new Error(`model grouping-set row without provider/model: ${JSON.stringify(row)}`);
       }
       return {
