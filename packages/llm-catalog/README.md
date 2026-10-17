@@ -8,7 +8,7 @@ The picker groups every managed model under **Kortix**, and the provider is alwa
 
 | Picker name | Gateway model ID | OpenRouter model ID | Input | Displayed USD per 1M input / cached input / output tokens |
 | --- | --- | --- | --- | --- |
-| DeepSeek V4.1 Flash (default) | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash` | Text, image | $0.20 / $0.03 / $0.65 |
+| DeepSeek V4.1 Flash (default) | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash-1017` | Text, image | $0.20 / $0.03 / $0.65 |
 | GLM-5.3-Flash | `glm-5.3-flash` | `z-ai/glm-5.3-flash` | Text, image | $0.15 / $0.05 / $0.50 |
 | Kimi K3 2.8T | `kimi-k3` | `moonshotai/kimi-k3` | Text, image | $3.30 / $0.33 / $16.50 |
 
@@ -56,24 +56,30 @@ Prod GLM peaked at 262 requests/min and 37M input tokens/min on 2026-09-29.
 
 ### OpenRouter endpoint pools
 
-Every pool member has a **confirmed US datacenter**. OpenRouter lists the provider's headquarters AND datacenters as US (`/api/v1/providers`), or the endpoint tag names the US region (`/us`). US headquarters alone does not qualify. Every member was also in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`), rechecked on 2026-09-26. The `zdr: true` request flag fails closed when an endpoint loses ZDR status. The global OpenRouter API URL does not itself guarantee that OpenRouter's gateway processing stays in the US.
+Every pool member has a **confirmed US datacenter**. OpenRouter lists the provider's headquarters AND datacenters as US (`/api/v1/providers`), the endpoint tag names the US region (`/us`), or the endpoint declares `provider_region: "us"` on the model's providers page (the US flag). US headquarters alone does not qualify. Every member was also in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`), rechecked on 2026-09-26. The `zdr: true` request flag fails closed when an endpoint loses ZDR status. The global OpenRouter API URL does not itself guarantee that OpenRouter's gateway processing stays in the US.
 
 | Model | Pool (`only`) | `max_price` prompt / completion |
 | --- | --- | --- |
-| DeepSeek V4.1 Flash | `coreweave/fp8` | $0.30 / $1.20 |
+| DeepSeek V4.1 Flash | `deepinfra/fp8`, `deepinfra/fp8/priority`, `morph/fp8` | $0.30 / $1.20 |
 | GLM-5.3-Flash | `decart/fp4`, `coreweave/nvfp4` | $0.15 / $0.50 |
 | Kimi K3 2.8T | `fireworks/us` | $3.30 / $16.50 |
 
 The 2026-09-24 probe included Morph. The reduced OpenRouter pools were probed with text and image inputs on 2026-09-26.
 
+DeepSeek V4.1 Flash moved to the 1017 snapshot (`deepseek/deepseek-v4.1-flash-1017`) on 2026-10-18. CoreWeave does not serve that snapshot. Probe results for the new pool:
+
+- `deepinfra/fp8` and `deepinfra/fp8/priority` declare `provider_region: "us"`. Both are in the ZDR feed. Both returned a tool call and read a test image correctly.
+- `morph/fp8`: Morph lists US headquarters and US datacenters, and the endpoint is in the ZDR feed. It reads images but serves no tool calls: OpenRouter answers a tool request pinned to it with "No endpoints found that support tool use". OpenRouter skips it for agent turns.
+- `deepinfra/fp8/flex` is excluded. OpenRouter keeps it out of standard routing (8.9 s first token, 89.9% 1-day uptime).
+- Excluded without a declared US location: `inference-net/fp8`, `cloudflare`, `baseten`, `parasail/fp8`, `relace`. Excluded as non-US and non-ZDR: `deepseek` (CN).
+
 Known limits:
 - `sail-research/us` serves GLM text only. OpenRouter skips it for image requests.
-- `coreweave/fp8` twice answered a DeepSeek image request as if no image was sent. It is now the only permitted DeepSeek endpoint, so image behavior needs a fresh probe before release.
 - `coreweave/nvfp4` returns HTTP 429 from a shared pool most of the time; see below.
 - `decart/fp4` is fp4 quantization.
 
 Excluded on 2026-09-24:
-- **US headquarters without a confirmed US datacenter:** `wafer`, `together`, `parasail/*`, `io-net/fp8`, `novita/fp8`, `phala*`, `baseten/fp8`, `fireworks`, `deepinfra/*`, `modal*`, `inference-net/fp4`, `open-inference/fp4`, `crusoe/fp4`, `krea/fp8`, `sail-research/fp4`.
+- **US headquarters without a confirmed US datacenter:** `wafer`, `together`, `parasail/*`, `io-net/fp8`, `novita/fp8`, `phala*`, `baseten/fp8`, `fireworks`, `deepinfra/bf16`, `modal*`, `inference-net/fp4`, `open-inference/fp4`, `crusoe/fp4`, `krea/fp8`, `sail-research/fp4`.
 - **Non-US or unknown location:** `z-ai/fp8` (SG), `siliconflow/fp8` (US datacenters, SG headquarters), `inceptron/fp8` (FI), `nextbit/fp8` (ES), `moonshotai/mxfp4` (SG), `dekallm` (ID), `relace`, `near-ai/fp8`, `digitalocean`, `reka`, `makora`.
 - **Image input rejected (HTTP 400):** `venice` (GLM) and `venice/fp8` (DeepSeek).
 - **Above `max_price`:** `morph/fast` for Kimi ($6.00 / $22.50).
@@ -95,7 +101,8 @@ Measured on 2026-09-30 with synthetic prompts at the edge of each window:
 | GLM-5.3-Flash | OpenRouter `coreweave/nvfp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
 | GLM-5.3-Flash | Morph | prompt 1,036,630 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
 | DeepSeek V4.1 Flash | Morph | prompt 1,047,041 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
-| DeepSeek V4.1 Flash | OpenRouter `coreweave/fp8` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| DeepSeek V4.1 Flash 1017 | OpenRouter `deepinfra/fp8`, `deepinfra/fp8/priority` | prompt 1,032,008 + `max_tokens` 16,384 (2026-10-18) | combined | HTTP 200 with an error body: "maximum context length is 1048576 tokens" |
+| DeepSeek V4.1 Flash 1017 | OpenRouter `morph/fp8` | prompt 1,032,008 + `max_tokens` 16,384 (2026-10-18) | combined | HTTP 400 "Invalid request" |
 | Kimi K3 | OpenRouter `fireworks/us` | prompt 1,048,575 | prompt only | HTTP 400 "prompt is too long" |
 | Kimi K3 | Morph | not measured: HTTP 429 `service_overloaded` on every probe | | |
 
