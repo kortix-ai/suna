@@ -53,8 +53,6 @@ const HUB_PARAM_ALIASES = {
   member: 'accountMember',
   group: 'accountGroup',
   project: 'accountProject',
-  /** `customize` ⇒ opened from a project's Customize bar; earns a way back. */
-  from: 'accountFrom',
   /** `sso` | `scim` — the guided wizard, which takes over the Identity pane. */
   setup: 'accountSetup',
   /** The IdP the wizard opens on, e.g. `entra`, `okta`. */

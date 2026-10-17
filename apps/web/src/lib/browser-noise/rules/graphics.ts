@@ -378,12 +378,7 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and typed
-  // `<Name>Error: ` prefixes (e.g. `TypeError: `), but NOT a bare `Error: `
-  // (its `[A-Za-z]+Error:` requires a leading prefix). Sentry capture paths
-  // can deliver either shape, so additionally strip a leading bare `Error: `
-  // here — mirroring `isBareImageLoadNoiseMessage`'s explicit `Error: ` form.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (stripped !== PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE) {
     return false;
   }
@@ -454,11 +449,7 @@ export function isPaperShaderImageUniformNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  // `stripErrorWrappers` does not strip a bare `Error: ` prefix (its
-  // `[A-Za-z]+Error:` regex needs a leading word), and this class is thrown as
-  // a plain `Error`, so strip that form explicitly — same as
-  // `isPaperShaderWebGLUnsupportedNoise`.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (stripped !== PAPER_SHADER_IMAGE_UNIFORM_NOISE_MESSAGE) {
     return false;
   }
@@ -519,6 +510,117 @@ export function isCanvasImageDataOOMNoise(input: {
   return true;
 }
 
+// Spoofed WebGL `getParameter` noise — a broken anti-fingerprinting browser
+// extension (the `spoof` function is the extension's own wrapper name; nothing
+// first-party names a function `spoof` — confirmed by a repo-wide source
+// search) replaces `WebGL2RenderingContext.prototype.getParameter` with a
+// wrapper that loses the native receiver, so EVERY real call throws
+// `TypeError: Illegal invocation` from the extension's own frame
+// (`WebGL2RenderingContext.spoof [as getParameter]`, script URL hidden as
+// `<anonymous>`). The wrapper is installed before any page script, so the
+// failure is invisible to the page: every WebGL consumer on the page fails the
+// same way.
+//
+// On the marketing homepage the consumer is the shaders library
+// (`shaders` / Paper Shaders family, the homepage wallpaper and shader
+// components): its `initialize()` builds a `WebGPURenderer` whose
+// `Renderer.init()` executor falls back from `WebGPUBackend` to
+// `WebGLBackend`, whose `init()` builds `new WebGLState`, whose constructor
+// calls `this.gl.getParameter(this.gl.MAX_TEXTURE_IMAGE_UNITS)` — the throw
+// site. The library catches BOTH init stages (it warns `[Shaders] WebGPU
+// initialization failed, falling back to WebGL:` and then errors `[Shaders]
+// Both WebGPU and WebGL initialization failed:` and returns gracefully — the
+// breadcrumbs prove both catches ran, twice, one per shader component). The
+// `shaders-react` `Shader` wrapper's own failure log (`[Shader] Initialization
+// failed:`) is ABSENT from the breadcrumbs and no app action follows the
+// failure — the visitor gets the page's non-shader content; the canvas stays
+// blank. Somewhere along the library's promise plumbing one of these
+// init-failure rejections still reached the page's global
+// `onunhandledrejection` handler with the init-time throw stack (the capture
+// records no async frames beyond the throw site, so the exact leaking promise
+// cannot be pinned from the telemetry). That does not change the
+// classification: the throw originates in the visitor's extension breaking a
+// page-owned native, not in a first-party defect. Our code never wraps a
+// WebGL2 prototype method (no assignment to `WebGL2RenderingContext.prototype`
+// in the repo — confirmed by source search) and never names a function
+// `spoof`.
+//
+// Better Stack pattern
+// 1c3e5d8c40c89ea1c21fc33d524f8043e5a0d21a1ea001539cd1441f1ea37179
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `Illegal invocation`, 2 occurrences / 0 identified users, first 2026-10-15
+// 19:17:00 UTC, release `ed03160b76fccf04fb68bce4083737939faed829`, call site
+// `WebGL2RenderingContext.spoof [as getParameter]` at `<anonymous>` (line 97),
+// frames `40hy2smvy-pfn.js` (`?` async executor line 10, `bB.init` line 183,
+// `new bb` line 183), request URL `https://kortix.com/` (marketing homepage),
+// browser Chrome 146 on Windows 10, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`). Reproduced locally (KRTX-2465): the same spoof wrapper in
+// a real headless Chromium + the real `shaders` core module produces the
+// identical `Illegal invocation` from `WebGL2RenderingContext.spoof [as
+// getParameter]` → `new WebGLState` → `WebGLBackend.init` → the
+// `Renderer.init()` executor.
+//
+// The anchors are BOTH required: (a) the stripped message is exactly
+// `Illegal invocation` — V8's canonical wording for a native method called
+// with an invalid receiver (`TypeError: ` and `Unhandled promise rejection: `
+// wrappers stripped first so all capture paths match), and (b) a stack frame
+// whose function name is the extension's spoof wrapper for this exact native
+// (`WebGL2RenderingContext.spoof [as getParameter]` — V8's display string for
+// a function named `spoof` assigned to `WebGL2RenderingContext.prototype.
+// getParameter`). A bare `Illegal invocation` without the spoof frame is a
+// GENERIC V8 wording (any native called with a wrong receiver — a real
+// first-party DOM-API misuse) and keeps reporting; a spoof frame with a
+// different message is a different failure and keeps reporting. The
+// first-party negative guard preserves any event whose stack resolves to a
+// de-minified `apps/web/src/…` source (our own code is in the stack → real
+// regression, find + fix it).
+//
+// Sentry-only (`appliesTo: 'sentry'`): the runtime gate's evidence carries no
+// stack frames (`runtimeNoiseEvidence` sets `frames: []`), so it cannot prove
+// the third-party spoof origin and must not drop a generic `Illegal
+// invocation`. The Sentry `beforeSend` gate — which carries the frame stack —
+// is the gate that drops the class before it reaches Better Stack.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare `Illegal invocation` match there
+// would swallow a real first-party DOM-API misuse; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the
+// only safe gate.
+const SPOOFED_GET_PARAMETER_NOISE_MESSAGE = 'Illegal invocation';
+const SPOOFED_GET_PARAMETER_FRAME_MARKER = 'WebGL2RenderingContext.spoof [as getParameter]';
+
+/**
+ * Whether a Sentry event is the spoofed WebGL `getParameter` noise class: a
+ * `TypeError: Illegal invocation` thrown from an anti-fingerprinting
+ * extension's own `WebGL2RenderingContext.spoof [as getParameter]` wrapper
+ * frame (the wrapper loses the native receiver, so every real WebGL call
+ * fails). See `SPOOFED_GET_PARAMETER_NOISE_MESSAGE` for the full rationale
+ * and Better Stack pattern `1c3e5d8c…`.
+ *
+ * Requires the EXACT stripped message AND the spoof wrapper frame AND the
+ * NEGATIVE guard: any frame that resolves to a de-minified first-party
+ * `apps/web/src/…` source keeps reporting. A frameless capture or a stack
+ * without the spoof frame keeps reporting (the message alone is a generic V8
+ * wording, not proof of third-party origin).
+ */
+export function isSpoofedWebGLGetParameterNoise(input: {
+  message?: unknown;
+  frames?: Array<{ function?: unknown; filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (stripped !== SPOOFED_GET_PARAMETER_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (!frames.some((frame) => normalizeString(frame?.function).includes(SPOOFED_GET_PARAMETER_FRAME_MARKER))) {
+    return false;
+  }
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export const GRAPHICS_RULES: readonly NoiseRule[] = [
   {
     id: 'paper-shaders-null-context',
@@ -532,4 +634,5 @@ export const GRAPHICS_RULES: readonly NoiseRule[] = [
   },
   { id: 'paper-shaders-image-uniform', appliesTo: 'sentry', match: isPaperShaderImageUniformNoise },
   { id: 'canvas-image-data-oom', appliesTo: 'both', match: isCanvasImageDataOOMNoise },
+  { id: 'spoofed-webgl-get-parameter', appliesTo: 'sentry', match: isSpoofedWebGLGetParameterNoise },
 ];

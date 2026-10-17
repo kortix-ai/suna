@@ -275,4 +275,28 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('conflict', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('typo', loaded)).toBe(false);
   });
+
+  test('kortix_version 3 defaults workspace.project_repository to false', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 3',
+        'default_agent: engineer',
+        'agents:',
+        '  engineer:',
+        '    workspace: { project_repository: true }',
+        '  plain: {}',
+        '  empty:',
+        '    workspace: {}',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.errors).toEqual([]);
+    expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('plain', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('empty', loaded)).toBe(false);
+  });
 });

@@ -119,6 +119,50 @@ describe('shikiKey', () => {
   });
 });
 
+describe('rendering mode isolation', () => {
+  test('omitted and false modes share pending work, true stays separate', async () => {
+    const code = '// normalization\n'.repeat(3000) + '// NORMALIZED_TAIL';
+    const bounded = highlightAsync(code, 'javascript', SHIKI_THEME_DARK);
+    expect(highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: false })).toBe(
+      bounded,
+    );
+    const full = highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: true });
+    expect(full).not.toBe(bounded);
+    const [boundedHtml, fullHtml] = await Promise.all([bounded, full]);
+    expect(boundedHtml?.includes('NORMALIZED_TAIL')).toBe(false);
+    expect(fullHtml?.includes('NORMALIZED_TAIL')).toBe(true);
+  });
+
+  for (const firstUnbounded of [false, true]) {
+    test(`cached HTML respects mode, starting unbounded=${firstUnbounded}`, async () => {
+      const code = '// padding\n'.repeat(5001) + '// UNIQUE_TAIL';
+      for (const unbounded of [firstUnbounded, !firstUnbounded, firstUnbounded]) {
+        const html = await highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded });
+        expect(html).toContain('<pre');
+        expect(html?.includes('UNIQUE_TAIL')).toBe(unbounded);
+        expect(html?.includes('truncated for highlighting')).toBe(!unbounded);
+        expect(highlightSync(code, 'javascript', SHIKI_THEME_DARK, { unbounded })).toBe(html);
+      }
+      expect(shikiCache.size).toBe(2);
+    });
+
+    test(`concurrent requests respect mode, starting unbounded=${firstUnbounded}`, async () => {
+      const code = '// padding\n'.repeat(5001) + '// CONCURRENT_TAIL';
+      const modes = [firstUnbounded, !firstUnbounded];
+      const results = await Promise.all(
+        modes.map((unbounded) =>
+          highlightAsync(code, 'javascript', SHIKI_THEME_LIGHT, { unbounded }),
+        ),
+      );
+      results.forEach((html, index) => {
+        expect(html).toContain('<pre');
+        expect(html?.includes('CONCURRENT_TAIL')).toBe(modes[index]);
+        expect(html?.includes('truncated for highlighting')).toBe(!modes[index]);
+      });
+    });
+  }
+});
+
 describe('the LRU cache', () => {
   test('fills to the maximum without evicting anything', () => {
     shikiCache.clear();

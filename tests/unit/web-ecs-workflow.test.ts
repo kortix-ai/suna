@@ -364,7 +364,6 @@ describe('web ECS migration', () => {
     expect(read('tests/.gitignore')).toContain('.state/');
     for (const wf of [
       '.github/workflows/tests-release.yml',
-      '.github/workflows/tests-browser-nightly.yml',
       '.github/workflows/tests.yml',
       '.github/workflows/deploy-preview.yml',
     ]) {

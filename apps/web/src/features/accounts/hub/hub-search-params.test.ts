@@ -37,7 +37,7 @@ describe('hub panes read hub state through useHubSearchParams()', () => {
   const keys = hubParamKeys();
 
   test('the alias table parses to every hub key', () => {
-    expect(keys.sort()).toEqual(['from', 'group', 'member', 'project', 'provider', 'setup', 'tab']);
+    expect(keys.sort()).toEqual(['group', 'member', 'project', 'provider', 'setup', 'tab']);
   });
 
   test('no hub-rendered file reads a short hub key off the raw URL', () => {

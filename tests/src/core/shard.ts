@@ -1,11 +1,13 @@
 /**
- * Deterministic flow sharding for the release gate.
+ * Deterministic flow sharding for deployed API runs (`--api-shard`).
  *
- * `.github/workflows/tests-release.yml` runs the deployed API suite as N
- * parallel GitHub jobs. Each job re-discovers the SAME flow registry and asks
- * this planner which flows belong to its shard, so the partition is computed
- * from the live registry rather than from a hand-maintained list: a newly added
- * flow always lands in exactly one shard and can never fall out of the gate.
+ * `.github/workflows/tests-release.yml` ran the deployed API suite as 6
+ * parallel GitHub jobs until 2026-10-16; it now runs the `deployed` set in one
+ * job, and `--tag` narrows the registry before this planner partitions it.
+ * Each sharded job re-discovers the SAME flow registry and asks this planner
+ * which flows belong to its shard, so the partition is computed from the live
+ * registry rather than from a hand-maintained list: a newly selected flow
+ * always lands in exactly one shard.
  *
  * Two rules, in order:
  *

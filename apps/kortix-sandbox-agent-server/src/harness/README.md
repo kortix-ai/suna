@@ -859,8 +859,19 @@ hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
-line or a workspace tool's path, with the longest matching pattern winning and
-`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+line or a workspace tool's path. A pattern map is never collapsed to its `*` entry.
+
+**Precedence, both harnesses:** the most specific matching rule wins, whatever
+order the keys are written in (`@kortix/api-contract/permission-rules`). The
+longest pattern is the most specific; equal lengths compare by code unit, the
+later one winning. Keys follow the same order (`bash` outranks `*`), and a key
+whose map matches nothing falls back to a less specific key. pi resolves this
+in `pi/interactions.ts` `resolvePolicyRule`. OpenCode applies the LAST match in
+key order, so kortixd writes every block it composes least specific first
+(`buildOpencodeConfigContent` step 9), and the `open-code/permission-order.ts`
+plugin's `config` hook orders the blocks it did not compose (the project's
+`opencode.json[c]`, a config dir's `agents/*.md`). An agent block still
+outranks the global block on OpenCode. pi's
 request names the capability and the call's subject (`patterns`); an "always"
 reply allows the capability for the session, and a `deny` still outranks it.
 The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).

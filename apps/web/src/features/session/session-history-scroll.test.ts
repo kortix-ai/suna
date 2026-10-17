@@ -1,129 +1,151 @@
-import { describe, expect, test } from 'bun:test';
-import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { captureTurnScrollAnchor, holdTurnScrollAnchor } from './session-history-scroll';
 
 function rect(top: number, bottom = top + 100): DOMRect {
   return { top, bottom } as DOMRect;
 }
 
-describe('session history scroll restoration', () => {
-  test('does not move when older messages grow inside the anchored turn', () => {
-    let turnTop = 120;
-    const turn = {
-      isConnected: true,
-      getBoundingClientRect: () => rect(turnTop),
-    } as HTMLElement;
-    const container = {
-      scrollTop: 0,
-      contains: (node: Node) => node === turn,
-      getBoundingClientRect: () => rect(0, 600),
-      querySelectorAll: () => [turn],
-    } as unknown as HTMLElement;
+/** The ResizeObserver the hold creates: a test delivers each layout pass by hand. */
+let observers: FakeResizeObserver[] = [];
+class FakeResizeObserver {
+  observed: Element[] = [];
+  disconnected = false;
+  constructor(private readonly callback: () => void) {
+    observers.push(this);
+  }
+  observe(element: Element) {
+    this.observed.push(element);
+  }
+  disconnect() {
+    this.disconnected = true;
+  }
+  deliver() {
+    if (!this.disconnected) this.callback();
+  }
+}
+const realResizeObserver = globalThis.ResizeObserver;
+beforeEach(() => {
+  observers = [];
+  globalThis.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+});
+afterEach(() => {
+  globalThis.ResizeObserver = realResizeObserver;
+});
+/** One layout pass: the browser runs ResizeObserver callbacks after layout, before paint. */
+const layout = () => observers.forEach((observer) => observer.deliver());
 
-    const anchor = captureTurnScrollAnchor(container);
-    turnTop = 120;
+/**
+ * A transcript with one turn, laid out like a browser would: the turn has a
+ * fixed position in the content (`contentTop`), and its viewport top is that
+ * minus `scrollTop` (the container's own top is 0).
+ */
+function transcript(initial: { turnTop: number; scrollTop: number; connected?: boolean }) {
+  const connected = initial.connected ?? true;
+  const geometry = { contentTop: initial.turnTop + initial.scrollTop };
+  const turn = {
+    isConnected: connected,
+    getBoundingClientRect: () => rect(geometry.contentTop - container.scrollTop),
+  } as HTMLElement;
+  const container = {
+    scrollTop: initial.scrollTop,
+    contains: (node: Node) => connected && node === turn,
+    getBoundingClientRect: () => rect(0, 600),
+    querySelectorAll: () => [turn],
+  } as unknown as HTMLElement;
+  const content = {} as HTMLElement;
+  return {
+    container,
+    content,
+    turn,
+    /** Content inserted (+) or removed (−) above the turn moves it in the content. */
+    insertAbove: (px: number) => {
+      geometry.contentTop += px;
+    },
+    /** The reader scrolls by `px`. */
+    readerScrolls: (px: number) => {
+      container.scrollTop += px;
+    },
+    /** Where the reader sees the turn: its viewport top. */
+    seenAt: () => geometry.contentTop - container.scrollTop,
+  };
+}
 
-    expect(restoreTurnScrollAnchor(container, anchor)).toBe(true);
-    expect(container.scrollTop).toBe(0);
+describe('older-history anchor hold', () => {
+  test('a page that renders AFTER the pull resolved still leaves the reader in place', () => {
+    // The live-reply jump: the paced transcript delivers the older page on its
+    // trailing edge, a frame or more after `loadOlder()` resolved. Whichever
+    // layout pass the page lands in, the hold corrects it before paint.
+    const t = transcript({ turnTop: 120, scrollTop: 40 });
+    const release = holdTurnScrollAnchor(t.container, t.content, captureTurnScrollAnchor(t.container));
+    layout(); // the frame right after the pull resolved: nothing rendered yet
+    expect(t.container.scrollTop).toBe(40);
+
+    t.insertAbove(360); // the older page commits in a later frame
+    layout();
+    expect(t.container.scrollTop).toBe(400);
+    expect(t.seenAt()).toBe(120);
+    release();
   });
 
-  test('keeps the anchored turn at the same viewport offset when older turns prepend', () => {
-    let turnTop = 120;
-    const turn = {
-      isConnected: true,
-      getBoundingClientRect: () => rect(turnTop),
-    } as HTMLElement;
-    const container = {
-      scrollTop: 40,
-      contains: (node: Node) => node === turn,
-      getBoundingClientRect: () => rect(0, 600),
-      querySelectorAll: () => [turn],
-    } as unknown as HTMLElement;
+  test('the loading row rising and falling above the turn moves nothing', () => {
+    const t = transcript({ turnTop: 120, scrollTop: 40 });
+    const release = holdTurnScrollAnchor(t.container, t.content, captureTurnScrollAnchor(t.container));
 
-    const anchor = captureTurnScrollAnchor(container);
-    turnTop = 480;
+    t.insertAbove(31); // "Loading older messages" mounts above every turn
+    layout();
+    expect(t.seenAt()).toBe(120);
 
-    expect(restoreTurnScrollAnchor(container, anchor)).toBe(true);
-    expect(container.scrollTop).toBe(400);
+    t.insertAbove(500); // the page
+    layout();
+    expect(t.seenAt()).toBe(120);
+
+    t.insertAbove(-31); // the row comes down in the commit that releases the hold
+    release();
+    expect(t.container.scrollTop).toBe(540);
+    expect(t.seenAt()).toBe(120);
   });
 
-  test('prepend of N px above the anchor produces exactly +N compensation', () => {
-    let turnTop = 100;
-    const turn = {
-      isConnected: true,
-      getBoundingClientRect: () => rect(turnTop),
-    } as HTMLElement;
-    const container = {
-      scrollTop: 0,
-      contains: (node: Node) => node === turn,
-      getBoundingClientRect: () => rect(0, 600),
-      querySelectorAll: () => [turn],
-    } as unknown as HTMLElement;
+  test("the reader's own scrolling during the hold is left alone", () => {
+    const t = transcript({ turnTop: 50, scrollTop: 600 });
+    const release = holdTurnScrollAnchor(t.container, t.content, captureTurnScrollAnchor(t.container));
 
-    const anchor = captureTurnScrollAnchor(container);
-    // 250px of older turns rendered above the anchor; scrollTop has not been
-    // touched yet, so the browser's layout alone pushes the anchor's rect
-    // down by exactly the inserted height.
-    const N = 250;
-    turnTop += N;
+    t.readerScrolls(-500); // the reader keeps scrolling up while the page is in flight
+    layout(); // a streamed token below the turn grew the content: no correction
+    expect(t.container.scrollTop).toBe(100);
 
-    expect(restoreTurnScrollAnchor(container, anchor)).toBe(true);
-    expect(container.scrollTop).toBe(N);
+    t.insertAbove(250);
+    layout();
+    expect(t.container.scrollTop).toBe(350); // 100 of their own + 250 inserted, not 600 + 250
+    release();
   });
 
-  test('user scrolling further up during the pull is preserved — restore adds only the prepended delta', () => {
-    // Regression for the teleport bug: the reader scrolls up by 500px of
-    // their own accord WHILE `loadOlder()` is in flight. A viewport-absolute
-    // restore would snap them back toward the pre-pull position; the
-    // content-space restore must add only the height actually inserted
-    // above the anchor (250px here) and leave their 500px of scrolling
-    // intact.
-    let turnTop = 50;
-    const turn = {
-      isConnected: true,
-      getBoundingClientRect: () => rect(turnTop),
-    } as HTMLElement;
-    const container = {
-      scrollTop: 600,
-      contains: (node: Node) => node === turn,
-      getBoundingClientRect: () => rect(0, 600),
-      querySelectorAll: () => [turn],
-    } as unknown as HTMLElement;
+  test('release stops the hold: a later change is not corrected, and the observer is gone', () => {
+    const t = transcript({ turnTop: 120, scrollTop: 40 });
+    const release = holdTurnScrollAnchor(t.container, t.content, captureTurnScrollAnchor(t.container));
+    expect(observers[0].observed).toEqual([t.content]);
 
-    const anchor = captureTurnScrollAnchor(container); // contentTop = 50 + 600 = 650
-
-    // Between capture and restore: 250px prepended above the anchor AND the
-    // reader independently scrolled up 500px (scrollTop 600 -> 100). Final
-    // DOM state reflects both: the anchor's content-space top increased by
-    // exactly the inserted 250px (650 -> 900), regardless of the reader's
-    // scrolling, and its rect.top is whatever that implies at the reader's
-    // own final scrollTop.
-    const inserted = 250;
-    const userScrollDelta = 500;
-    container.scrollTop = 600 - userScrollDelta; // reader's own scroll: 100
-    turnTop = 650 + inserted - container.scrollTop; // = 800, consistent with contentTop 900
-
-    expect(restoreTurnScrollAnchor(container, anchor)).toBe(true);
-    // Preserves the reader's 500px scroll and adds only the 250px insertion:
-    // 100 (reader's post-scroll position) + 250 (compensation) = 350.
-    // NOT 600 + 250 = 850 (what a viewport-absolute restore would produce).
-    expect(container.scrollTop).toBe(350);
+    release();
+    release(); // idempotent
+    expect(observers[0].disconnected).toBe(true);
+    t.insertAbove(200);
+    layout();
+    expect(t.container.scrollTop).toBe(40);
   });
 
-  test('anchor element removed from the DOM — restore is a no-op returning false', () => {
-    const turn = {
-      isConnected: false,
-      getBoundingClientRect: () => rect(120),
-    } as HTMLElement;
-    const container = {
-      scrollTop: 40,
-      contains: () => false,
-      getBoundingClientRect: () => rect(0, 600),
-      querySelectorAll: () => [turn],
-    } as unknown as HTMLElement;
+  test('an anchor that left the DOM is never written', () => {
+    const t = transcript({ turnTop: 120, scrollTop: 40, connected: false });
+    const release = holdTurnScrollAnchor(t.container, t.content, { element: t.turn, contentTop: 160 });
+    t.insertAbove(300);
+    layout();
+    release();
+    expect(t.container.scrollTop).toBe(40);
+  });
 
-    const anchor = { element: turn, contentTop: 160 };
-
-    expect(restoreTurnScrollAnchor(container, anchor)).toBe(false);
-    expect(container.scrollTop).toBe(40);
+  test('no anchor (an empty transcript) observes nothing', () => {
+    const t = transcript({ turnTop: 120, scrollTop: 40 });
+    const release = holdTurnScrollAnchor(t.container, t.content, null);
+    expect(observers).toHaveLength(0);
+    release();
+    expect(t.container.scrollTop).toBe(40);
   });
 });

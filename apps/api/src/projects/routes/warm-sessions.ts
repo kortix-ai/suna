@@ -308,7 +308,7 @@ export function registerWarmSessionsRoutes(): void {
 
       const view = {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       };
       const existing = await findWarmProjectSession({
         accountId: loaded.row.accountId,
@@ -519,7 +519,7 @@ export function registerWarmSessionsRoutes(): void {
       return c.json(
         serializeSession(claimed, {
           viewerId: loaded.userId,
-          canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+          canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
         }),
         200,
       );

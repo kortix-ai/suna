@@ -48,7 +48,6 @@ import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL 
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
-import type { ProjectRole } from '../access';
 import {
   SESSION_PAGE_DEFAULT_LIMIT,
   SESSION_PAGE_MAX_LIMIT,
@@ -489,7 +488,6 @@ export async function loadProjectSessionInventory(input: {
   projectId: string;
   accountId: string;
   userId: string;
-  effectiveRole: ProjectRole;
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
@@ -581,7 +579,6 @@ export async function loadProjectSessionInventory(input: {
   // every list row report `can_manage_lifecycle: true` to a credential whose
   // DELETE would then 403 — the two answers must come from one predicate.
   const standingRead = viewerManagerStanding(
-    input.effectiveRole,
     input.boundCredentialSessionId,
     input.probeManageCapability,
   );

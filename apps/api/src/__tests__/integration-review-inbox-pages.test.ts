@@ -49,6 +49,8 @@ const human = (over: Partial<ApprovalCaller>): ApprovalCaller => ({
 const asLauncher = async () => human({});
 const asManager = async () => human({ isManager: true, callerUserId: OTHER });
 const asMember = async () => human({ callerUserId: OTHER });
+// The manager read view (`projectReadView`): no row filter.
+const FULL_VIEW = { where: () => undefined, allows: async () => true };
 
 const NATIVE_PENDING: string[] = [];
 let tiedIds: string[] = [];
@@ -198,7 +200,7 @@ async function walkAll(
   const items: Awaited<ReturnType<typeof listInboxItems>>['items'] = [];
   let after = start;
   for (let i = 0; i < 200; i += 1) {
-    const page = await listInboxItems(PROJECT, { ...query, after }, caller);
+    const page = await listInboxItems(PROJECT, { ...query, after }, caller, FULL_VIEW);
     expect(page.items.length).toBeLessThanOrEqual(query.limit ?? 50);
     items.push(...page.items);
     if (!page.nextCursor) return items;
@@ -209,7 +211,7 @@ async function walkAll(
 
 describe('reviewSummary', () => {
   test('counts what needs the caller, by session, in under 2 KB', async () => {
-    const summary = await reviewSummary(PROJECT, asLauncher);
+    const summary = await reviewSummary(PROJECT, asLauncher, FULL_VIEW);
     // 2 native + 1 open CR + 1 call the launcher may resolve.
     expect(summary).toEqual({
       needs_you_total: 4,
@@ -219,8 +221,8 @@ describe('reviewSummary', () => {
   });
 
   test('a call the caller may not resolve is Waiting and counts nowhere', async () => {
-    expect((await reviewSummary(PROJECT, asMember)).needs_you_total).toBe(3);
-    expect(await reviewSummary(PROJECT, asManager)).toEqual({
+    expect((await reviewSummary(PROJECT, asMember, FULL_VIEW)).needs_you_total).toBe(3);
+    expect(await reviewSummary(PROJECT, asManager, FULL_VIEW)).toEqual({
       needs_you_total: 5,
       needs_you_by_session: { [USER_SESSION]: 3, [BACKEND_SESSION]: 1 },
     });
@@ -228,7 +230,7 @@ describe('reviewSummary', () => {
 
   test('agrees with the needs_you segment of the list', async () => {
     for (const caller of [asLauncher, asMember, asManager]) {
-      const summary = await reviewSummary(PROJECT, caller);
+      const summary = await reviewSummary(PROJECT, caller, FULL_VIEW);
       const needsYou = await walkAll({ segment: 'needs_you', limit: REVIEW_PAGE_MAX_LIMIT }, caller);
       expect(needsYou).toHaveLength(summary.needs_you_total);
     }
@@ -237,7 +239,7 @@ describe('reviewSummary', () => {
 
 describe('listInboxItems', () => {
   test('page one of an unsegmented list holds every pending item first', async () => {
-    const page = await listInboxItems(PROJECT, { limit: 10 }, asLauncher);
+    const page = await listInboxItems(PROJECT, { limit: 10 }, asLauncher, FULL_VIEW);
     expect(page.items.slice(0, 5).map((item) => item.status)).toEqual([
       'needs_you',
       'needs_you',
@@ -303,21 +305,21 @@ describe('listInboxItems', () => {
       .select({ executionId: connectorCalls.executionId })
       .from(connectorCalls)
       .where(sql`${connectorCalls.sessionId}::text = ${BACKEND_SESSION}`);
-    expect(await getInboxItem(PROJECT, `cr:${closed.crId}`, asLauncher)).toMatchObject({
+    expect(await getInboxItem(PROJECT, `cr:${closed.crId}`, asLauncher, FULL_VIEW)).toMatchObject({
       kind: 'change',
       status: 'rejected',
     });
-    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asLauncher)).toMatchObject({
+    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asLauncher, FULL_VIEW)).toMatchObject({
       status: 'waiting',
       can_resolve: false,
     });
-    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asManager)).toMatchObject({
+    expect(await getInboxItem(PROJECT, `call:${backendCall.executionId}`, asManager, FULL_VIEW)).toMatchObject({
       status: 'needs_you',
       can_resolve: true,
     });
-    expect(await getInboxItem(PROJECT, tiedIds[0], asLauncher)).toMatchObject({ kind: 'batch' });
+    expect(await getInboxItem(PROJECT, tiedIds[0], asLauncher, FULL_VIEW)).toMatchObject({ kind: 'batch' });
     for (const id of ['cr:not-a-uuid', 'call:', 'garbage', `cr:${crypto.randomUUID()}`]) {
-      expect(await getInboxItem(PROJECT, id, asLauncher)).toBeNull();
+      expect(await getInboxItem(PROJECT, id, asLauncher, FULL_VIEW)).toBeNull();
     }
   });
 

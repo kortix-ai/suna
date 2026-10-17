@@ -42,7 +42,7 @@ function render(next: Record<string, { allowed: boolean }>): string {
 
 describe('the pause-all gear', () => {
   test('a role with project.write + project.trigger.update gets the gear', () => {
-    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain('Pause all');
+    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain('aria-label="More"');
   });
 
   test('project.trigger.update without project.write gets no gear: the route loads the project for write', () => {

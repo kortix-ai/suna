@@ -46,7 +46,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
-  const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
 
   return {
     flags: {
@@ -69,9 +68,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
-      workspace_volume: workspaceVolume.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: workspaceVolume.isLoading,
+    isLoading: sessionLogRestore.isLoading,
   };
 }

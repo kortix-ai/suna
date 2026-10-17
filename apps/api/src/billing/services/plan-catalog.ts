@@ -88,15 +88,15 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     displayName: 'No Plan',
   },
 
-  // $2 (200 credits) a month. Sandbox compute spends them; managed models stay
-  // gated — except the platform default, which every tier may run (KRTX-1067).
+  // $5 (500 credits) a month, managed models and top-ups. Paid plans add
+  // monthly credit volume and the paid rate budget, not features.
   free: {
     key: 'free',
     family: 'free',
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },

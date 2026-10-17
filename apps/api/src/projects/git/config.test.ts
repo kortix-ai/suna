@@ -177,8 +177,8 @@ opencode:
     expect(config.manifest_version).toEqual({
       version: 2,
       latest_version: 3,
-      migration_offered: true,
-      target_version: 3,
+      migration_offered: false,
+      target_version: null,
       unknown_reason: null,
       path: 'kortix.yaml',
     });

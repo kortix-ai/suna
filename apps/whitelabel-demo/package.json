@@ -9,9 +9,9 @@
     "build": "pnpm lint:sdk-boundary && next build",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "test": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/e2e\"",
     "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
-    "typecheck": "pnpm lint:sdk-boundary && tsc --noEmit"
+    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo"
   },
   "dependencies": {
     "@kortix/sdk": "workspace:*",
@@ -35,6 +35,7 @@
     "@types/node": "^20",
     "@types/react": "^19.1.17",
     "@types/react-dom": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

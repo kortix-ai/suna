@@ -5,7 +5,7 @@
  * REPLACES `iam/engine-v2.ts` (authorizeV2, resolveActorV2, loadProjectRoleRows,
  * deriveEffectiveProjectRole, customPolicyAllows, computeTokenScope,
  * agentGrantGates, listAccessibleProjectsV2, filterAccessibleProjectResources),
- * `projects/access.ts` (effectiveProjectRole, roleAllows,
+ * `projects/access.ts` (effectiveProjectRole, the retired roleAllows,
  * foldEffectiveProjectAccess) and `iam/resource-grants.ts`'s fold
  * (isProjectResourceUsableByMember, isResourceAccessible, …) — four independent
  * copies of the max-role fold and three parallel permission vocabularies.

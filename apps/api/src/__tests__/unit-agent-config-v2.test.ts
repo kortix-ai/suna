@@ -267,7 +267,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     // Sanity: the bug this guards against — a raw object with no
     // `kortix_version` key reads as unversioned to `validateRoot`.
-    expect(manifest.raw.kortix_version).toBe(3);
+    expect(manifest.raw.kortix_version).toBe(2);
 
     const applied = applyDefaultAgentV2(manifest, 'kortix');
     expect(applied.ok).toBe(true);
@@ -292,7 +292,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     // The write result still carries kortix_version — a second edit in the
     // same request (or a subsequent PUT before the first commit lands) must
     // keep validating too, not just the very first one.
-    expect(applied.raw.kortix_version).toBe(3);
+    expect(applied.raw.kortix_version).toBe(2);
     const reapplied = applyDefaultAgentV2({ ...manifest, raw: applied.raw }, 'release-bot');
     expect(reapplied.ok).toBe(true);
   });
@@ -378,12 +378,14 @@ describe('repository access', () => {
       expect(read.ok && read.block).toEqual({ repository_access: value });
     }
   });
-  test('leaves an undeclared value undeclared (default true)', () => {
+  test('writes an undeclared value explicitly as the v2 default (true) and reads it back', () => {
     const saved = applyAgentBlockV2(v2Manifest(), 'support', { connectors: 'none' });
     expect(saved.ok).toBe(true);
     if (!saved.ok) return;
-    expect((saved.raw.agents as any).support).not.toHaveProperty('workspace');
+    expect((saved.raw.agents as any).support.workspace).toEqual({ project_repository: true });
     expect(extractAgents({ ...v2Manifest(), raw: saved.raw }).specs[0]?.repositoryAccess).toBe(true);
+    const read = readAgentBlockV2(v2Manifest(V2.replace('    workspace: runtime\n', '')), 'support');
+    expect(read.ok && read.block?.repository_access).toBe(true);
   });
   test('rejects conflicting aliases and invalid boolean values', () => {
     for (const block of [

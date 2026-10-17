@@ -30,3 +30,34 @@ export function nativeOAuth2CallbackUrl(
   if (base) return `${base}${NATIVE_OAUTH2_CALLBACK_PATH}`;
   return new URL(NATIVE_OAUTH2_CALLBACK_PATH, requestUrl).href;
 }
+
+const CALLBACK_ERROR_HINTS: Record<string, string> = {
+  invalid_state: 'this sign-in link was already used or has expired. Start the sign-in again.',
+};
+
+/**
+ * What the public callback answers. A sign-in started with no return page
+ * (`kortix connectors authorize` without `--success-redirect`) used to answer
+ * "OAuth2 authorization failed" even when it connected.
+ */
+export function nativeOAuth2CallbackResponse(result: {
+  ok: boolean;
+  redirectUri: string | null;
+  errorCode?: string;
+}): { status: 200 | 400; body: string } | { status: 302; location: string } {
+  if (!result.redirectUri) {
+    if (result.ok) {
+      return { status: 200, body: 'Connected. You can close this tab and return to Kortix.' };
+    }
+    const code = result.errorCode ?? 'authorization_failed';
+    const hint = CALLBACK_ERROR_HINTS[code];
+    return {
+      status: 400,
+      body: `OAuth2 authorization failed (${code})${hint ? `: ${hint}` : '.'}`,
+    };
+  }
+  const redirect = new URL(result.redirectUri);
+  redirect.searchParams.set('oauth2', result.ok ? 'connected' : 'error');
+  if (result.errorCode) redirect.searchParams.set('oauth2_error', result.errorCode);
+  return { status: 302, location: redirect.href };
+}

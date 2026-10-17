@@ -87,7 +87,7 @@ export interface CapturePerson {
  */
 export function useCaptureDirectory(accountId: string, enabled: boolean) {
   const { user } = useAuth();
-  const members = useAccountMembers(accountId, enabled);
+  const members = useAccountMembers(enabled ? accountId : undefined);
   const byId = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.user_id, member.email])),
     [members.data],

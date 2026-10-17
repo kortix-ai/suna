@@ -198,12 +198,12 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | PR into `dev` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
 | Push to `dev` (the merge) | no `Tests` lane. `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. | no |
 | Dispatch / schedule on `dev` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: nightly (a red night comments on the commit). `drata`: daily. `CI`, `CodeQL`: weekly. | no |
-| PR into `staging` | every `Tests` lane, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
-| PR into `prod` | `tests-release.yml` against deployed staging (its `full suite + quality gates` check is the only required check in the repo), plus path-gated `Security Scan`, `Terraform CI`, `drata`. No tree check runs again: the tree is the staging tree plus `VERSION`. | yes |
+| PR into `staging` | none: Promote to Production opens and merges it | no |
+| PR into `prod` (release PR) | the release suite, once: `tests-release.yml` (contract lanes, deployed API smoke, browser journeys against staging) plus `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata`. `full suite + quality gates` requires every one green and is the only required check in the repo. | **yes, the only gate** |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Put a new check on the PR into `staging` (one run per
-release tree), a schedule, or a dispatch. Never on PRs into `dev`, and never on the push to
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Put a new check in the release suite on the PR into `prod`
+(one run per release tree), a schedule, or a dispatch. Never on PRs into `dev`, and never on the push to
 `dev` unless it is a seconds-long guard. GitHub-hosted runners are
 free on this public repo; the limit is the organization's concurrent-job cap, so a
 new `push: dev` workflow must queue (`cancel-in-progress: false` per ref), never run
