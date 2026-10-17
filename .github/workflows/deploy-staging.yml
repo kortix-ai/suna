@@ -88,8 +88,8 @@ jobs:
       # Anonymous Docker Hub reads share the runner IP's limit: 429 on 2026-10-17.
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Assert staging images exist
         env:
           SHA8: ${{ steps.ref.outputs.sha8 }}
