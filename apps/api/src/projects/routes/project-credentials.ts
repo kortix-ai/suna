@@ -231,7 +231,7 @@ export function registerProjectCredentialsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Storing a git credential is a connector-write capability — a custom role can
     // omit project.connector.write to take credential management away from a

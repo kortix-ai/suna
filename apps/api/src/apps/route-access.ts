@@ -32,14 +32,15 @@ const APP_PERMISSION_ACTION: Record<AppPermission, string> = {
 };
 
 /**
- * Membership + permission, in that order. Returns the loaded project on
+ * Membership, then the App leaf: the leaf is the only permission gate, so a
+ * custom role that holds project.app.deploy alone may deploy. Returns the loaded project on
  * success, or the Response the route must return:
  *   • 404 — the project does not exist or the caller is not a member (a
  *     non-member must not be able to distinguish the two).
  * A permission denial still throws (403) from assertProjectCapability.
  */
 export async function authorizedProject(c: Context<AppEnv>, projectId: string, permission: AppPermission = 'read') {
-  const loaded = await loadProjectForUser(c, projectId, permission === 'read' ? 'read' : 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, APP_PERMISSION_ACTION[permission]);
   return loaded;

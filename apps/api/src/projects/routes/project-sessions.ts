@@ -307,7 +307,7 @@ export function registerProjectSessionsRoutes(): void {
     return c.json(
         serializeSession(result.row, {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       }),
       201,
     );
@@ -429,7 +429,6 @@ export function registerProjectSessionsRoutes(): void {
       projectId,
       accountId: loaded.row.accountId,
       userId: loaded.userId,
-      effectiveRole: loaded.effectiveRole,
       scope,
       orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
       limit: query.limit,
