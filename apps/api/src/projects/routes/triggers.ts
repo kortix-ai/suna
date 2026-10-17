@@ -394,7 +394,7 @@ export function registerTriggersRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Specific IAM gate so the audit trail records the precise action.
       // assertProjectCapability (not bare assertAuthorized) so the acting token is
@@ -521,7 +521,7 @@ export function registerTriggersRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -595,7 +595,7 @@ export function registerTriggersRoutes(): void {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -740,7 +740,7 @@ export function registerTriggersRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,

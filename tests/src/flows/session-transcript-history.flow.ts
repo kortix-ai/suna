@@ -417,6 +417,7 @@ storeFlow(
   "SESS-31",
   {
     domain: "sessions",
+    tags: ["deployed"],
     requires: ["database"],
     routes: [
       "POST /v1/projects/:projectId/sessions/:sessionId/attachments",

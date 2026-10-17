@@ -418,8 +418,12 @@ export const HARNESS_TOOL_NAMES = [
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
  * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
  * with its own module under the same name.
+ *
+ * Connector access is the `kortix connectors` CLI, never a built-in tool. The
+ * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
+ * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 

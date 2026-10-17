@@ -4,6 +4,6 @@
   "type": "module",
   "description": "Kortix Capture: the Rust recorder, the native capture engines and the installers. Rust tests run in .github/workflows/capture-build.yml.",
   "scripts": {
-    "test": "node --test ui/memory/*.test.mjs"
+    "test": "node ../../scripts/test-guard.mjs \"node --test ui/memory/*.test.mjs\""
   }
 }

@@ -48,7 +48,7 @@ import {
 import { m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -256,14 +256,14 @@ import {
   serverHoldsOpenTurn,
   sessionComposerReadiness,
 } from './session-composer-readiness';
-import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { captureTurnScrollAnchor, holdTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import {
   nextOlderAutoloadArm,
   olderAutoloadExhausted,
   shouldLoadOlderHistory,
 } from './session-older-autoload';
-import { useHeldOlderLoading } from './session-older-loading';
+import { OLDER_LOADING_MIN_MS, useHeldOlderLoading } from './session-older-loading';
 import {
   HELD_COMMAND_ROW_PREFIX,
   canReleaseHeldCommand,
@@ -1534,8 +1534,9 @@ export function SessionChat({
   // Older history loads by scrolling, not by clicking: a sentinel above the
   // first turn pulls the previous page as it nears the top of the viewport.
   // A pull always prepends content above the reader, so every one is wrapped
-  // in the turn anchor — capture where the topmost visible turn sits, restore
-  // it after the prepended turns render, and the viewport never jumps.
+  // in the turn anchor — capture where the topmost visible turn sits and hold
+  // it there until the pull's last change has rendered (session-history-scroll.ts),
+  // and the viewport never jumps.
   const [olderPullFailed, setOlderPullFailed] = useState(false);
   // The row the reader actually sees while a page is in flight — the live flag
   // held long enough to be read (`session-older-loading.ts`).
@@ -1556,9 +1557,28 @@ export function SessionChat({
     setAutoLoadedPages(0);
     olderAutoloadArmedRef.current = true;
   }, [sessionId]);
+  // The anchor hold of the pull in flight. It ends when the loading row comes
+  // down: the row rises after the capture, the page lands under it (during a
+  // live reply on the paced transcript's trailing edge, frames after the pull
+  // resolved), and the row's fall is the last change a pull makes above the
+  // reader. The release runs in that commit's layout effect, before paint. A
+  // new pull, a session switch and unmount end the hold too.
+  const releaseOlderAnchorRef = useRef<(() => void) | null>(null);
+  const releaseOlderAnchor = useCallback(() => {
+    releaseOlderAnchorRef.current?.();
+    releaseOlderAnchorRef.current = null;
+  }, []);
+  useLayoutEffect(() => {
+    if (!showOlderLoading) releaseOlderAnchor();
+  }, [showOlderLoading, releaseOlderAnchor]);
+  useEffect(() => releaseOlderAnchor, [sessionId, releaseOlderAnchor]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
-    const anchor = node ? captureTurnScrollAnchor(node) : null;
+    const content = contentRef.current;
+    releaseOlderAnchor();
+    const release =
+      node && content ? holdTurnScrollAnchor(node, content, captureTurnScrollAnchor(node)) : null;
+    releaseOlderAnchorRef.current = release;
     try {
       await loadOlder();
       setOlderPullFailed(false);
@@ -1566,11 +1586,12 @@ export function SessionChat({
       // Surface a retry instead of letting the sentinel re-arm into a loop.
       setOlderPullFailed(true);
     }
-    if (!node) return;
-    requestAnimationFrame(() => {
-      restoreTurnScrollAnchor(node, anchor);
-    });
-  }, [loadOlder, scrollRef]);
+    // A pull that settled before its row ever rendered has no fall to end the
+    // hold: end it once the page has had ample time to land.
+    window.setTimeout(() => {
+      if (releaseOlderAnchorRef.current === release) releaseOlderAnchor();
+    }, 2 * OLDER_LOADING_MIN_MS);
+  }, [loadOlder, scrollRef, contentRef, releaseOlderAnchor]);
   const olderSentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = olderSentinelRef.current;
@@ -2091,6 +2112,12 @@ export function SessionChat({
     workingTurnIdRef.current = workingTurn.workingTurnId;
   }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  // The turn the working projection names. After a compaction inside the running turn the work
+  // renders under its continuation turn, while the projection still names the prompt or the marker.
+  const activeTurnId = useMemo(() => {
+    const c = turns.find((t) => t.live)?.continues;
+    return c && (working.turnId === c.marker || working.turnId === c.prompt) ? workingTurn.workingTurnId : working.turnId;
+  }, [turns, workingTurn.workingTurnId, working.turnId]);
   /**
    * Does the resolved working turn have a COMPLETED answer while queued prompts
    * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
@@ -2113,11 +2140,11 @@ export function SessionChat({
       hasPendingTurns: true,
       newestAssistantCompleted: newest.completed_at !== null,
       workingTurnId: wt.id,
-      activeTurnId: working.turnId,
+      activeTurnId,
       pendingDelivery: !!working.pendingDelivery,
       deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
     });
-  }, [turns, workingTurn, working.turnId, working.pendingDelivery, deliveringPromptIds]);
+  }, [turns, workingTurn, activeTurnId, working.pendingDelivery, deliveringPromptIds]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -4339,7 +4366,7 @@ export function SessionChat({
                           const confirmedActive = turnIsConfirmedActive({
                             isTurnWorking,
                             turnId: turn.id,
-                            activeTurnId: working.turnId,
+                            activeTurnId,
                             pendingDelivery: !!working.pendingDelivery,
                           });
                           const pendingPrompt =
@@ -4380,7 +4407,10 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0
                                   ? ''
-                                  : lastTurnWorking &&
+                                  : // A compaction and the work after it continue the turn above.
+                                    turn.compaction || turn.continues
+                                    ? 'mt-6'
+                                    : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
                                       pendingTurnIds.has(turns[turnIndex - 1].id)
                                     ? 'mt-3'

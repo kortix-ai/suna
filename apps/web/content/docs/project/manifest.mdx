@@ -95,7 +95,7 @@ agents:
     secrets: [HELPDESK_TOKEN]
 ```
 
-A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`, `hidden` and `options`. `prompt_file` is a repository-relative `.md` path.
+A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`, `hidden` and `options`. `prompt_file` is a repository-relative `.md` path. A v3 agent gets no project repository in `/workspace` unless it sets `workspace: { project_repository: true }`. See [Workspace](#agent-workspace).
 
 ## Top-level keys
 
@@ -111,7 +111,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
 | `commands` | map | none | v3 only. Slash command name to its template. See [commands (v3)](#commands-v3). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
@@ -179,7 +179,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `kortix_permissions` | none | Grant set of project permissions. Capped by the agent's ceiling role, never by the role of the person who starts the session. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). |
 | `tools` | all | `all`, `none`, a list of tool names, or `{ exclude: [names] }`. The map form `{ bash: false }` also works. |
 | `sandbox` | project default | A sandbox template slug, or `default`. |
-| `workspace.project_repository` | `true` | Boolean. `false`: new sessions of this agent get no project repository in `/workspace` and no repository access. See [Workspace](#agent-workspace). |
+| `workspace.project_repository` | v2 `true`, v3 `false` | Boolean. `true`: new sessions of this agent check out the project repository. `false`: no project repository in `/workspace` and no repository access. See [Workspace](#agent-workspace). |
 | `harnesses` | none | Per-agent `pi.packages`, `pi.exclude`, `opencode.plugins`, `opencode.exclude`. |
 | `network_egress` | none | Declaration only. Accepts `{ version: 1, default: deny, rules: [] }` and warns that egress is not enforced. |
 
@@ -205,13 +205,14 @@ A grant set is `all` (or `*`), `none` (or `""`), or a list of names. A list that
 
 ```yaml
 agents:
-  support:
+  engineer:
     workspace:
-      project_repository: false   # default true
+      project_repository: true   # v3 default false, v2 default true
 ```
 
-- `project_repository: true` (the default): the session checks out the project repository on its own session branch.
+- `project_repository: true`: the session checks out the project repository on its own session branch. Set it on every agent that reads or edits the repository, runs scripts from it, or opens change requests.
 - `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`). Its [project tools](/docs/project/tools#agents-without-the-project-repository) still load: the sandbox receives only the modules of the tools the agent may call.
+- Omitted: `false` in `kortix_version: 3`, `true` in versions 1 and 2. A v2 project keeps its behavior. The starter, `kortix init`, Create project, the agent editor and `kortix migrate` write the value explicitly, so a new or migrated agent states it.
 - A running session keeps the value it started with. A change applies to new sessions.
 - Any other key under `workspace` is an error. A typo does not fall back to the default: Kortix withholds the repository from that agent until the block is fixed.
 
@@ -369,7 +370,7 @@ agents:
 
 ## tools
 
-`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all seven Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
+`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all five Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
 
 ## triggers, connectors, apps
 

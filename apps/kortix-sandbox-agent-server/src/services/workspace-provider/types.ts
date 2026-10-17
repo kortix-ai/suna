@@ -50,8 +50,6 @@ export interface MaterializedProject {
 /** Health-visible, low-cardinality summary of what this boot's acquisition did. */
 export interface WorkspaceProviderSummary {
   mode: NonNullable<Config['projectSnapshotMode']>
-  /** /workspace is a volume the API mounted (KORTIX_WORKSPACE_VOLUME=1), not the box disk. */
-  volume: boolean
   provider: WorkspaceTransport | null
   expected_sha: string | null
   actual_sha: string | null

@@ -324,6 +324,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|connectors|projects|:projectId|connectors|:slug|secret-binding",
   "PUT|v1|connectors|projects|:projectId|connectors|:slug|sensitive",
   "POST|v1|connectors|projects|:projectId|connectors|auth-discovery",
+  "POST|v1|connectors|projects|:projectId|connectors|mcp-sign-in-check",
   "POST|v1|connectors|projects|:projectId|connectors|sync",
   "GET|v1|connectors|projects|:projectId|discover|connectors",
   "GET|v1|connectors|projects|:projectId|discover|connectors|detail",

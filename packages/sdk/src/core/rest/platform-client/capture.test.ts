@@ -100,6 +100,17 @@ test('policy: read and write the account policy', async () => {
   // The experimental switch that shows the privacy controls travels with the policy.
   await setCapturePolicy('a1', { ...POLICY, experimental: { privacy_controls: true } });
   expect((last().body as { policy: CapturePolicy }).policy.experimental).toEqual({ privacy_controls: true });
+  // Record only included apps and websites travels in privacy.
+  const recordOnly: CapturePolicy = {
+    ...POLICY,
+    privacy: { ...POLICY.privacy, record_only_included: true, included_bundle_ids: ['com.tinyspeck.slackmacgap'], included_domains: ['github.com'] },
+  };
+  await setCapturePolicy('a1', recordOnly);
+  expect((last().body as { policy: CapturePolicy }).policy.privacy).toMatchObject({
+    record_only_included: true,
+    included_bundle_ids: ['com.tinyspeck.slackmacgap'],
+    included_domains: ['github.com'],
+  });
 });
 
 test('timeline: a day, a window, and its items; the query names the subject and device', async () => {

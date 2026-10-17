@@ -351,7 +351,12 @@ test.describe("49 — Connector connect lands on the connector page", () => {
       }
     });
 
-    await page.getByRole("tab", { name: "Settings", exact: true }).last().click();
+    // The connector's own tablist: its Settings tab renders only once write
+    // access resolves, and the project nav has a "Settings" tab too.
+    const connectorTabs = page
+      .getByRole("tablist")
+      .filter({ has: page.getByRole("tab", { name: "Accounts", exact: true }) });
+    await connectorTabs.getByRole("tab", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Remove", exact: true }).click();
     const removed = page.waitForResponse(
       (response) =>

@@ -58,6 +58,13 @@ start, so an entry left by an older install or another app location is repaired.
   credentials) and the device uses it. Signing in again on the same computer
   replaces the token; the registration (`<library>/sync-issuer.json`) and the
   token (OS secret store) belong to this library.
+- The Kortix API address: a build bakes in its default (`KORTIX_DEFAULT_ISSUER_URL`:
+  `https://api.kortix.com` for releases, `https://dev-api.kortix.com` for dev
+  builds). "Use another Kortix address" (onboarding and Advanced sync) takes
+  another one, for example a self-hosted Kortix; signing in saves it to
+  `sync.kortix.url`. A signed-in computer shows the address under the account.
+  An app too old for the API's device grant gets `400 invalid_request` and says
+  "Kortix needs the latest Kortix Capture: install it, then sign in."
 - Sign-in runs only from an explicit "Sign in with Kortix" in the welcome screen, the
   settings window, or `kortix-capture sync setup --provider kortix`.
 - `device.json` names the hostname and the computer's name (System Settings
@@ -806,6 +813,17 @@ channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
   subdomain, case-insensitively (`chase.com` covers `secure.chase.com`;
   `notchase.com` stays visible). It is best-effort: add missing banks under
   `excluded_domains`.
+- Record only included (`record_only_included`, `included_bundle_ids`,
+  `included_domains`; the policy's `privacy.*` of the same names turn it on and
+  add to the lists, and the person cannot turn it off). A window is recorded
+  only when its app is included or its page's website is (a website pattern
+  covers its subdomains, in any browser). Exclusions win. Both engines hide
+  every other window (`plan_displays` / `planDisplays`), a display with no
+  included window writes no frame, and the front-app checks and the action
+  recorder skip with `not_included`. On macOS an app with no visible included
+  window is hidden whole, so its panels and notifications stay out. A browser
+  window behind the focused one has no URL on Windows/Linux, so only an
+  included browser app keeps it visible. Audio is not filtered by app.
 - The login window, screen saver and lock screen never record, on every
   platform: macOS skips a locked session and always excludes
   `com.apple.loginwindow` and the screen saver; Windows always excludes

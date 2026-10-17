@@ -98,10 +98,17 @@ function serializeApp(
     app_id: row.appId,
     account_id: row.accountId,
     project_id: row.projectId,
-    capabilities: appCapabilities(hostingType, fleet.volumes.count > 0 || (releaseConfig?.mounts.length ?? 0) > 0),
+    capabilities: appCapabilities(
+      hostingType,
+      fleet.volumes.count > 0 || (releaseConfig?.mounts.length ?? 0) > 0,
+      row.externalUrl ? { frameable: row.externalFrameable } : null,
+    ),
     slug: row.slug,
     name: row.name,
-    url: appPublicUrl(row),
+    /** The external site for an external App, else the App's Kortix host. */
+    url: row.externalUrl ?? appPublicUrl(row),
+    /** Set: the App is hosted elsewhere at this https URL; Kortix lists and frames it, and never deploys it. */
+    external_url: row.externalUrl,
     access_mode: row.accessMode as AppAccessMode,
     access_revision: row.accessRevision,
     desired_state: row.desiredState,
@@ -141,7 +148,7 @@ function serializeApp(
     /** Ready deployments kept besides the active one (rollback targets). */
     retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
     /** The App's machine running 24/7 for a month at list compute rates: the monthly cost of an always-on App, the most an on-demand one can cost. A static App runs none: 0. */
-    estimated_monthly_usd: hostingType === 'static'
+    estimated_monthly_usd: hostingType === 'static' || row.externalUrl
       ? 0
       : releaseConfig
         // Every machine of every group, at its group's size, 24/7.

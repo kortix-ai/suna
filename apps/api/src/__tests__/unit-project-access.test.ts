@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   effectiveProjectRole,
   isAccountManager,
-  roleAllows,
   type AccountRole,
   type ProjectAccessAction,
   type ProjectRole,
@@ -46,28 +45,9 @@ describe('project access roles', () => {
   );
 
   test.each([
-    ['member', 'read', true],
-    ['member', 'session', true], // member is the floor usable role — can run sessions
-    ['member', 'write', false],
-    ['member', 'manage', false],
-    ['manager', 'read', true],
-    ['manager', 'session', true],
-    ['manager', 'write', true],
-    ['manager', 'manage', true],
-    [null, 'read', false],
-    [null, 'session', false], // no role → no session
-  ] as Array<[ProjectRole | null, ProjectAccessAction, boolean]>)(
-    '%s can %s => %p',
-    (role, action, expected) => {
-      expect(roleAllows(role, action)).toBe(expected);
-    },
-  );
-
-  test.each([
     ['read', 'project.read'],
     ['session', 'project.session.start'],
     ['write', 'project.write'],
-    ['manage', 'project.write'],
   ] as Array<[ProjectAccessAction, string]>)(
     'iamActionForProjectAccess(%p) === %p',
     (action, expected) => {

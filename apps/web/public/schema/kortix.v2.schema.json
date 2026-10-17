@@ -144,24 +144,9 @@
         "object",
         "null"
       ],
-      "description": "Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all Kortix tools.",
+      "description": "Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.",
       "propertyNames": {
-        "anyOf": [
-          {
-            "pattern": "^[a-z][a-z0-9_]{0,63}$"
-          },
-          {
-            "enum": [
-              "web_search",
-              "image_search",
-              "scrape_webpage",
-              "memory",
-              "show",
-              "kortix-connectors_call",
-              "kortix-connectors_describe"
-            ]
-          }
-        ]
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
       },
       "properties": {
         "web_search": {
@@ -217,30 +202,6 @@
             {
               "const": "kortix:show",
               "description": "The Kortix show tool, maintained by Kortix."
-            },
-            {
-              "type": "string",
-              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
-            }
-          ]
-        },
-        "kortix-connectors_call": {
-          "anyOf": [
-            {
-              "const": "kortix:kortix-connectors_call",
-              "description": "The Kortix kortix-connectors_call tool, maintained by Kortix."
-            },
-            {
-              "type": "string",
-              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
-            }
-          ]
-        },
-        "kortix-connectors_describe": {
-          "anyOf": [
-            {
-              "const": "kortix:kortix-connectors_describe",
-              "description": "The Kortix kortix-connectors_describe tool, maintained by Kortix."
             },
             {
               "type": "string",
@@ -604,6 +565,7 @@
                 "properties": {
                   "project_repository": {
                     "type": "boolean",
+                    "default": true,
                     "description": "Check out the project repository and allow repository access. Defaults to true."
                   }
                 },

@@ -61,6 +61,7 @@ import {
   connectorCatalogSections,
   getConnectorCatalogDetail,
   connectorCatalogDirectIds,
+  connectorCatalogDirectMcpUrls,
   listConnectorCatalog,
 } from './connector-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
@@ -676,6 +677,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
   catalogDirectIds: () => connectorCatalogDirectIds(),
+  catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
   listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,

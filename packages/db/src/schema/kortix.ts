@@ -2799,6 +2799,19 @@ export const sessionContentPurges = kortixSchema.table(
 );
 
 /**
+ * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
+ * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
+ * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
+ * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ */
+export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
+  id: text('id').primaryKey(),
+  state: jsonb('state').notNull(),
+  rev: integer('rev').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * UNUSED since decision D6b (2026-10-14): an account closure, read from
  * `account_deletion_requests`, is the only subscription end, and that table keeps
  * its own date. P2.8 recorded here the first sight of a dead Stripe status; that
@@ -4621,6 +4634,13 @@ export const apps = kortixSchema.table(
     scale: jsonb('scale').default({}).notNull(),
     /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
     display: jsonb('display').default({}).notNull(),
+    /**
+     * An App hosted elsewhere: Kortix lists it and frames this https URL, and
+     * never deploys it. Null for every App Kortix runs.
+     */
+    externalUrl: text('external_url'),
+    /** The external site allows framing (its X-Frame-Options / CSP frame-ancestors, read when the URL was set). */
+    externalFrameable: boolean('external_frameable').default(false).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

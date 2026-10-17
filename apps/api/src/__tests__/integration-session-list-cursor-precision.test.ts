@@ -23,7 +23,6 @@ const page = (cursor: string | null) =>
     projectId: PROJECT,
     accountId: ACCOUNT,
     userId: VIEWER,
-    effectiveRole: 'write' as never,
     scope: 'visible',
     boundCredentialSessionId: null,
     probeManageCapability: async () => false,

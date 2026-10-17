@@ -20,9 +20,6 @@ import { isTriggerRunSession } from '../../connectors/share';
 import { actorForUser } from '../../iam/actor';
 import { authorize } from '../../iam/authorize';
 import { db } from '../../shared/db';
-import { effectiveProjectRole, roleAllows, type AccountRole } from '../access';
-import { getProjectMemberRole } from '../lib/project-access';
-import { getAccountMembership } from '../lib/user-identity';
 import { storedSandboxTurns } from '../session-turn-ledger';
 import { newestStoredTurn, sessionHoldsTurnAuthority } from './inbox-admission';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -125,16 +122,9 @@ export async function sessionLifecycleStandingFor(input: {
     .limit(1);
   if (!session) return false;
   if (session.createdBy === input.userId) return true;
-  const [membership, projectRole] = await Promise.all([
-    getAccountMembership(input.userId, input.accountId),
-    getProjectMemberRole(input.projectId, input.userId),
-  ]);
-  const role = membership ? effectiveProjectRole(membership.accountRole as AccountRole, projectRole) : projectRole;
-  if (roleAllows(role, 'manage')) return true;
+  const actor = actorForUser(input.userId, input.accountId);
+  const project = { type: 'project' as const, id: input.projectId };
+  if ((await authorize(actor, 'project.members.manage', project)).allowed) return true;
   if (!isTriggerRunSession(session)) return false;
-  const verdict = await authorize(actorForUser(input.userId, input.accountId), 'project.trigger.update', {
-    type: 'project',
-    id: input.projectId,
-  });
-  return verdict.allowed;
+  return (await authorize(actor, 'project.trigger.update', project)).allowed;
 }

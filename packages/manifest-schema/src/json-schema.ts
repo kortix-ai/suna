@@ -703,8 +703,8 @@ function projectToolsSchema(): JsonSchemaFragment {
     description:
       'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
       'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
-      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all Kortix tools.',
-    propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }] },
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
+    propertyNames: { pattern: TOOL_NAME_RE.source },
     properties: Object.fromEntries(
       KORTIX_TOOL_NAMES.map((name) => [
         name,
@@ -769,6 +769,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
             properties: {
               project_repository: {
                 type: 'boolean',
+                default: true,
                 description: 'Check out the project repository and allow repository access. Defaults to true.',
               },
             },
@@ -1107,7 +1108,18 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       secrets: v2.properties.secrets,
       apps: v2.properties.apps,
       kortix_permissions: v2.properties.kortix_permissions,
-      workspace: v2.properties.workspace.oneOf[0],
+      workspace: {
+        description: 'What new sessions of this agent get in /workspace.',
+        type: 'object',
+        properties: {
+          project_repository: {
+            type: 'boolean',
+            default: false,
+            description: 'Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true.',
+          },
+        },
+        additionalProperties: false,
+      },
       sandbox: v2.properties.sandbox,
       network_egress: v2.properties.network_egress,
     },

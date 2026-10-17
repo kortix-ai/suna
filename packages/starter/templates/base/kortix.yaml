@@ -89,8 +89,6 @@ tools:
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
-  kortix-connectors_call: kortix:kortix-connectors_call
-  kortix-connectors_describe: kortix:kortix-connectors_describe
   # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 
 # ─── Agents ──────────────────────────────────────────────────────────────
@@ -115,8 +113,10 @@ agents:
     # tools: [read, grep, web_search, lookup_order]   # only these
     # tools: { exclude: [bash] }                      # every tool but these
     # sandbox: python # Must name an available project template, or "default".
-    # What new sessions get in /workspace. Default: the project repository.
-    # workspace: { project_repository: false }   # no checkout, no repository access
+    # What new sessions get in /workspace. true: a checkout of the project
+    # repository on the session's own branch. false: no checkout and no
+    # repository access. Omitted means true in kortix_version 2, false in 3.
+    workspace: { project_repository: true }
 
   harness-reflector:
     file: agents/harness-reflector.md
@@ -130,6 +130,7 @@ agents:
     # gets NO connectors and NO project secrets — nothing to exfiltrate.
     kortix_permissions: all
     skills: all
+    workspace: { project_repository: true }   # it edits the harness and opens a CR
 
   session-reviewer:
     file: agents/session-reviewer.md
@@ -139,6 +140,7 @@ agents:
     # reflector's session with the same grant, so it mirrors it here.
     kortix_permissions: all
     skills: all
+    workspace: { project_repository: true }
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial

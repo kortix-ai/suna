@@ -59,7 +59,7 @@ if (import.meta.main) {
   if (perRun.length === 0) throw new Error('no usable run');
   const table = JSON.parse(readFileSync(TABLE, 'utf8'));
   // A spec on disk that no green run executed was excluded at collection
-  // (@quarantine, @local-only, a disabled capability): it costs nothing.
+  // (@local-only, a disabled capability): it costs nothing.
   table[target] = { ...Object.fromEntries(listSpecFiles().map((spec) => [spec, 0])), ...medianTable(perRun) };
   writeFileSync(TABLE, `${JSON.stringify(table, null, 2)}\n`);
   console.log(`${target}: ${Object.keys(table[target]).length} specs from ${perRun.length} runs`);

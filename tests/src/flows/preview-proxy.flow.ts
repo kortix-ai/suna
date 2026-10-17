@@ -23,7 +23,7 @@ import { flow } from "../core/flow";
 
 flow(
   "PRX-1",
-  { domain: "preview-proxy", tags: ["smoke"], routes: ["POST /v1/p/auth", "OPTIONS /v1/p/auth"] },
+  { domain: "preview-proxy", tags: ["deployed", "smoke"], routes: ["POST /v1/p/auth", "OPTIONS /v1/p/auth"] },
   async (ctx) => {
     await ctx.step("OPTIONS /p/auth → CORS preflight 204", async () => {
       const r = await ctx.client.as(ctx.P.ANON).request("OPTIONS", "/v1/p/auth");
@@ -92,7 +92,7 @@ flow(
 
 flow(
   "PRX-3",
-  { domain: "preview-proxy", tags: ["smoke"], routes: ["GET /v1/p/config"] },
+  { domain: "preview-proxy", tags: ["deployed", "smoke"], routes: ["GET /v1/p/config"] },
   async (ctx) => {
     await ctx.step("GET /p/config is public and returns the preview origin contract", async () => {
       const response = await ctx.client.as(ctx.P.ANON).get("/v1/p/config");

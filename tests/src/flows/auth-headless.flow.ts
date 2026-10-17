@@ -13,6 +13,7 @@ flow(
   "AUTH-3",
   {
     domain: "auth",
+    tags: ["deployed"],
     routes: ["GET /v1/auth/client-config", "POST /v1/auth/signup", "POST /v1/auth/sign-in/password", "POST /v1/auth/refresh", "GET /v1/auth/user", "POST /v1/auth/sign-out"],
   },
   async (ctx) => {
@@ -81,7 +82,7 @@ flow(
 );
 
 // ── AUTH-4: magic link + OTP verify ──────────────────────────────────────────
-flow("AUTH-4", { domain: "auth", routes: ["POST /v1/auth/sign-in/magic-link", "POST /v1/auth/verify-otp"] }, async (ctx) => {
+flow("AUTH-4", { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/sign-in/magic-link", "POST /v1/auth/verify-otp"] }, async (ctx) => {
   const email = `${ctx.fixtures.name("magic")}@example.test`.toLowerCase();
   await ctx.step("magic link → 200 sent (creates the user)", async () => {
     const r = await ctx.client.as(ctx.P.ANON).post("/v1/auth/sign-in/magic-link", { email, redirect_to: "https://app.example.test/cb" });
