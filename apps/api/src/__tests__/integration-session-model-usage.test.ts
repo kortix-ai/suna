@@ -52,12 +52,14 @@ async function request(input: {
   ok?: boolean;
   projectId?: string;
   metadata?: Record<string, unknown>;
+  errorCode?: string | null;
 }) {
   const billed = input.cost ?? 0;
   await db.insert(gatewayRequestLogs).values({
     requestId: `req-${crypto.randomUUID()}`, accountId: ACCOUNT, projectId: input.projectId ?? PROJECT,
     sessionId: sid(input.session), requestedModel: input.requested, resolvedModel: input.resolved,
-    provider: input.provider, status: input.ok === false ? 429 : 200, ok: input.ok !== false,
+    provider: input.provider, status: input.ok === false ? (input.errorCode === 'client_aborted' ? 499 : 429) : 200, ok: input.ok !== false,
+    errorCode: input.errorCode ?? null,
     finalCost: String(billed), billingMode: billed > 0 ? 'credits' : 'none',
     metadata: input.metadata ?? {}, createdAt: at(input.at),
   });
@@ -99,7 +101,7 @@ describe('sessionModelUsage', () => {
     });
 
     expect(await usageOf('direct')).toEqual({
-      latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: at(10).toISOString() },
+      latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: at(10).toISOString(), outcome: 'answered' },
       billed_cost: 0,
       turns: { msg_direct_1: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 } },
     });
@@ -124,12 +126,35 @@ describe('sessionModelUsage', () => {
     await request({ session: 'chain', at: 140, requested: 'kimi-k3', resolved: 'kimi-k3', provider: 'kortix', cost: 7, projectId: OTHER_PROJECT, metadata: { servedModel: 'kimi-k3' } });
 
     expect(await usageOf('chain')).toEqual({
-      latest: { served_model: 'deepseek-v4.1-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString() },
+      latest: { served_model: 'deepseek-v4.1-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString(), outcome: 'answered' },
       billed_cost: 0.875,
       turns: {
         // Most requests first.
         msg_chain_1: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
         msg_chain_2: { served_models: ['deepseek-v4.1-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.125 },
+      },
+    });
+  });
+
+  test('the newest request ended in a client abort: latest names it so the UI can tell a cancel from a failure', async () => {
+    // KRTX-2572: a fallback turn answered, then the user canceled the next
+    // turn. The ledger's newest row is the aborted request (ok=false,
+    // client_aborted); `latest` must surface it with its outcome instead of
+    // staying pinned to the older answered row.
+    await session('canceled');
+    await turn('canceled', 'msg_c1', 0, 30);
+    await turn('canceled', 'msg_c2', 100, 130);
+    const fallback = { servedModel: 'glm-5.3-flash', fallbackFrom: 'codex/gpt-6.1-sol' };
+    await request({ session: 'canceled', at: 20, requested: 'codex/gpt-6.1-sol', resolved: 'glm-5.3-flash', provider: 'kortix', cost: 0.25, metadata: fallback });
+    await request({ session: 'canceled', at: 120, requested: 'codex/gpt-6.1-sol', resolved: 'glm-5.3-flash', provider: 'kortix', ok: false, errorCode: 'client_aborted', metadata: { attemptFailures: [{ attempt: 1, provider: 'kortix', routeModel: 'codex/gpt-6.1-sol', resolvedModel: 'codex/gpt-6.1-sol', stage: 'dispatch', status: 429, code: 'model_busy', message: 'deepseek-v4.1-flash is at capacity right now.' }] } });
+
+    expect(await usageOf('canceled')).toEqual({
+      latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString(), outcome: 'client_aborted' },
+      billed_cost: 0.25,
+      turns: {
+        msg_c1: { served_models: ['glm-5.3-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.25 },
+        // The aborted request answered nothing: not a served model of its turn.
+        msg_c2: { served_models: [], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0 },
       },
     });
   });
@@ -148,7 +173,7 @@ describe('sessionModelUsage', () => {
     await request({ session: 'legacy', at: 14, requested: 'auto', resolved: 'deepseek-v4.1-flash', provider: 'kortix', cost: 0.25 });
 
     const usage = await usageOf('legacy');
-    expect(usage.latest).toEqual({ served_model: 'deepseek-v4.1-flash', fallback_from: null, at: at(14).toISOString() });
+    expect(usage.latest).toEqual({ served_model: 'deepseek-v4.1-flash', fallback_from: null, at: at(14).toISOString(), outcome: 'answered' });
     expect(usage.billed_cost).toBe(0.75);
     expect(usage.turns.msg_legacy_1).toEqual({
       served_models: expect.arrayContaining(['glm-5.3-flash', 'openai/gpt-5.4', 'deepseek-v4.1-flash']),
