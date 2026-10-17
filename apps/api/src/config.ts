@@ -320,7 +320,9 @@ const envSchema = z.object({
   // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
   // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
   // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
-  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only.
+  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
+  // (`kortix.session_log_backfill_state`); a dry pass runs once: delete that row to run it again.
+  // A session over SESSION_LOG_RESTORE_MAX_BYTES is not converted (`too_large`).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal

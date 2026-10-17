@@ -14,16 +14,24 @@
  *   `project_sessions.metadata.deletedAt` (the retention purge removes those:
  *   the backfill never resurrects one). Oldest `created_at` first,
  *   `BACKFILL_BATCH_SIZE` per tick, one session per transaction.
- * - Cursor. Written logs leave the queue, so a write pass resumes after a
- *   restart by itself. Within a pass, the tick also walks a keyset cursor
- *   `(created_at, session_id)` kept in memory: a dry pass writes no row, and a
- *   failed session stays behind the cursor, so a pass visits each session once.
- *   A pass ends on a short batch.
+ * - Cursor. The pass state (mode, keyset cursor `(created_at, session_id)`,
+ *   running totals) is one row of `kortix.session_log_backfill_state`, loaded
+ *   and saved by every tick, so a new leader resumes the pass where the last one
+ *   stopped. A dry pass writes no log, and a failed session stays behind the
+ *   cursor, so a pass visits each session once. A pass ends on a short batch.
+ *   A tick saves only over the `rev` it loaded: an old leader's late tick cannot
+ *   move the cursor back. A mode change starts a new pass.
  * - Passes. `write` starts a new pass after each one (the worker waits an hour);
  *   it selects only sessions without a log, so every pass retries the failures
- *   of the last one and is cheap once the queue is empty. `dry` runs one pass per
- *   process: after its summary it does nothing until the process restarts or the
- *   mode changes, because each dry pass reads and converts every old mirror.
+ *   of the last one and is cheap once the queue is empty. `dry` runs one pass:
+ *   after its summary it does nothing until the mode changes, because each dry
+ *   pass reads and converts every old mirror. Run it again:
+ *   `DELETE FROM kortix.session_log_backfill_state`.
+ * - Size cap. A session whose mirror (the stored JSON of its rows, summed in
+ *   Postgres) is over `SESSION_LOG_RESTORE_MAX_BYTES` is not converted
+ *   (`too_large`). The conversion is synchronous and blocked a prod API task's
+ *   event loop 17 s on one 200 MB session; a restore answers 413 above that
+ *   cap anyway. Every write pass counts it again; its v1 mirror stays the store.
  * - Budget. A tick stops after the session that crossed `BACKFILL_BUDGET_MS`.
  * - Checks. Every converted log is validated with `SessionLogSchema` in the converter: a log
  *   that fails is not written (`validation_failed`). A dry pass also compares, per session,
@@ -36,12 +44,13 @@
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
  */
 import { toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
-import { sql } from 'drizzle-orm';
+import { sessionLogBackfillState } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { largeTextCount } from './session-log-blobs';
-import { writeSessionLogFromMirror } from './session-log-capture';
+import { breathe, writeSessionLogFromMirror } from './session-log-capture';
 
 export const BACKFILL_BATCH_SIZE = 50;
 export const BACKFILL_BUDGET_MS = 20_000;
@@ -55,6 +64,8 @@ const zero = () => ({
   logs: 0,
   skipped: 0,
   failed: 0,
+  /** Sessions whose mirror is over `SESSION_LOG_RESTORE_MAX_BYTES`: not converted. */
+  too_large: 0,
   messages: 0,
   // Restore grades of the logs. `fromV1` gives converted or partial.
   native: 0,
@@ -94,11 +105,11 @@ export type BackfillState = {
   totals: BackfillCounts;
   passStartedAt: number | null;
   ingestOffWarned: boolean;
-  /** A dry pass ended: nothing more until the process restarts or the mode changes. */
+  /** A dry pass ended: nothing more until the mode changes. */
   dryDone: boolean;
 };
 
-export const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
+const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
   mode,
   after: null,
   totals: zero(),
@@ -107,19 +118,47 @@ export const newBackfillState = (mode: BackfillMode | null = null): BackfillStat
   dryDone: false,
 });
 
-/** The next sessions to convert: after the cursor, oldest first. */
+const STATE_ID = 'pass';
+
+/** The pass state and the `rev` it was saved at (0: no row yet). */
+async function loadState(): Promise<{ state: BackfillState; rev: number }> {
+  const [row] = await db.select({ state: sessionLogBackfillState.state, rev: sessionLogBackfillState.rev }).from(sessionLogBackfillState).where(eq(sessionLogBackfillState.id, STATE_ID));
+  if (!row) return { state: newBackfillState(), rev: 0 };
+  const stored = row.state as BackfillState;
+  // A count added since the row was saved starts at 0.
+  return { state: { ...newBackfillState(), ...stored, totals: { ...zero(), ...stored.totals } }, rev: row.rev };
+}
+
+/** Save over `rev` only. False: another tick saved since this one loaded (an old leader's late tick). */
+async function saveState(state: BackfillState, rev: number): Promise<boolean> {
+  const saved = await db
+    .insert(sessionLogBackfillState)
+    .values({ id: STATE_ID, state, rev: rev + 1 })
+    .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state, rev: rev + 1, updatedAt: sql`now()` }, setWhere: eq(sessionLogBackfillState.rev, rev) })
+    .returning({ id: sessionLogBackfillState.id });
+  return saved.length > 0;
+}
+
+/** The next sessions to convert: after the cursor, oldest first, with the stored JSON bytes of each mirror. */
 async function selectBatch(after: BackfillState['after']) {
   // `created_at::text` keeps the microseconds a JS Date would drop, so the cursor never re-selects a row.
-  return db.execute<{ session_id: string; created_at: string }>(sql`
-    SELECT s.session_id, s.created_at::text AS created_at
-      FROM kortix.session_transcript_mirrors m
-      JOIN kortix.project_sessions s ON s.session_id = m.session_id
-     WHERE s.metadata ->> 'deletedAt' IS NULL
-       AND NOT EXISTS (SELECT 1 FROM kortix.session_logs l WHERE l.session_id = m.session_id)
-       AND EXISTS (SELECT 1 FROM kortix.session_transcript_messages t WHERE t.session_id = m.session_id)
-       ${after ? sql`AND (s.created_at, s.session_id) > (${after.createdAt}::timestamptz, ${after.sessionId})` : sql``}
-     ORDER BY s.created_at, s.session_id
-     LIMIT ${BACKFILL_BATCH_SIZE}`);
+  // The size is summed after the LIMIT, for the batch only.
+  return db.execute<{ session_id: string; created_at: string; bytes: string }>(sql`
+    SELECT b.session_id, b.created_at,
+           (SELECT coalesce(sum(octet_length(t.info::text) + coalesce(octet_length(t.parts::text), 0)), 0)
+              FROM kortix.session_transcript_messages t WHERE t.session_id = b.session_id)::bigint AS bytes
+      FROM (
+        SELECT s.session_id, s.created_at AS ts, s.created_at::text AS created_at
+          FROM kortix.session_transcript_mirrors m
+          JOIN kortix.project_sessions s ON s.session_id = m.session_id
+         WHERE s.metadata ->> 'deletedAt' IS NULL
+           AND NOT EXISTS (SELECT 1 FROM kortix.session_logs l WHERE l.session_id = m.session_id)
+           AND EXISTS (SELECT 1 FROM kortix.session_transcript_messages t WHERE t.session_id = m.session_id)
+           ${after ? sql`AND (s.created_at, s.session_id) > (${after.createdAt}::timestamptz, ${after.sessionId})` : sql``}
+         ORDER BY s.created_at, s.session_id
+         LIMIT ${BACKFILL_BATCH_SIZE}
+      ) b
+     ORDER BY b.ts, b.session_id`);
 }
 
 /** Canonical JSON: keys sorted at every level, as the P1 round-trip test compares. */
@@ -127,9 +166,12 @@ const canon = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 
 /** How many stored v1 rows `toV1` of the log does not give back exactly (rows compared as a multiset; an extra row counts too). */
-export function roundTripMismatches(log: SessionLog, rows: V1Row[]): number {
+export async function roundTripMismatches(log: SessionLog, rows: V1Row[]): Promise<number> {
   const back = new Map<string, number>();
-  for (const k of toV1(JSON.parse(JSON.stringify(log))).rows.map(canon)) back.set(k, (back.get(k) ?? 0) + 1);
+  const v1 = toV1(JSON.parse(JSON.stringify(log)));
+  await breathe();
+  for (const k of v1.rows.map(canon)) back.set(k, (back.get(k) ?? 0) + 1);
+  await breathe();
   let missing = 0;
   for (const r of rows) {
     const k = canon(r);
@@ -166,7 +208,8 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   if (result.harnessFrom === 'default') counts.harness_defaulted++;
   if (result.harnessFrom === 'root') counts.harness_inferred_pi++;
   if (mode === 'dry') {
-    const mismatches = roundTripMismatches(log, result.rows);
+    await breathe();
+    const mismatches = await roundTripMismatches(log, result.rows);
     if (mismatches > 0) {
       counts.roundtrip_mismatch_sessions++;
       counts.roundtrip_mismatch_messages += mismatches;
@@ -174,6 +217,7 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
     }
   }
   for (const k of ['tool_input', 'cut_point', 'attachment'] as const) counts[k] += log.grade_counts?.[k] ?? 0;
+  await breathe();
   let bytes = 0;
   for (const { message } of batch.puts) {
     bytes += Buffer.byteLength(JSON.stringify(message));
@@ -186,17 +230,17 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
 }
 
 /**
- * One tick: up to `BACKFILL_BATCH_SIZE` sessions after the cursor in `state`.
+ * One tick: up to `BACKFILL_BATCH_SIZE` sessions after the stored cursor.
  * `more` is true while the queue may hold more (a full batch, or the budget cut it).
- * When a write pass ends, `state` starts over; when a dry pass ends, every later
+ * When a write pass ends, the state starts over; when a dry pass ends, every later
  * dry tick does nothing. `convert` is the capture write; tests wrap it.
  */
 export async function backfillSessionLogs(
   mode: BackfillMode,
-  state: BackfillState,
   options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror } = {},
 ): Promise<{ more: boolean; counts: BackfillCounts }> {
   const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror } = options;
+  const { state, rev } = await loadState();
   if (state.mode !== mode) Object.assign(state, newBackfillState(mode));
   const counts = zero();
   if (state.dryDone) return { more: false, counts };
@@ -209,6 +253,12 @@ export async function backfillSessionLogs(
   const batch = await selectBatch(state.after);
   for (const row of batch) {
     state.after = { createdAt: row.created_at, sessionId: row.session_id };
+    if (Number(row.bytes) > config.SESSION_LOG_RESTORE_MAX_BYTES) {
+      counts.sessions++;
+      counts.too_large++;
+      logger.debug('[session-log] backfill session over SESSION_LOG_RESTORE_MAX_BYTES; not converted', { sessionId: row.session_id, bytes: Number(row.bytes) });
+      continue;
+    }
     await convertOne(row.session_id, mode, convert, counts);
     if (Date.now() - started >= budgetMs) break;
   }
@@ -222,5 +272,6 @@ export async function backfillSessionLogs(
     if (state.totals.sessions > 0) logger.info('[session-log] backfill pass complete', { mode, ...state.totals });
     Object.assign(state, newBackfillState(mode), { dryDone: mode === 'dry' });
   }
+  if (!(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
   return { more, counts };
 }

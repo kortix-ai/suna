@@ -25,6 +25,34 @@ describe('leaderTimer', () => {
     expect(ticks).toBeLessThan(9);
   });
 
+  test('a restart while a run is in flight starts the next run only after it ends', async () => {
+    leader = true;
+    let active = 0;
+    let maxActive = 0;
+    let runs = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const timer = leaderTimer(async () => {
+      runs += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (runs === 1) await gate;
+      active -= 1;
+      return 1_000;
+    });
+    timer.start();
+    await Bun.sleep(5);
+    expect(runs).toBe(1);
+    timer.stop();
+    timer.start();
+    await Bun.sleep(20);
+    expect(runs).toBe(1);
+    release();
+    await Bun.sleep(5);
+    timer.stop();
+    expect([runs, maxActive]).toEqual([2, 1]);
+  });
+
   test('a tick runs nothing once the lease is gone', async () => {
     leader = false;
     let ticks = 0;

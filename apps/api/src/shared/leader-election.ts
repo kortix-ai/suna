@@ -139,6 +139,18 @@ let lastRenewStartedMono = 0;
 let watchdog: ReturnType<typeof setTimeout> | null = null;
 let handlers: LeaderElectionHandlers | null = null;
 let tableReady = false;
+// The last onAcquire/onRelease call. The watchdog demotes beside the lease tick, so a re-acquire
+// can come while onRelease still awaits. An onAcquire that ran then found the workers' guards
+// still up and started nothing, and the rest of onRelease then stopped them for the whole term
+// (2026-10-16 prod: the backfill worker stopped after a lease flap, cron kept running).
+let handlerChain: Promise<void> = Promise.resolve();
+
+/** Run `fn` after every earlier handler call settled, in call order. */
+function serially(fn: () => Promise<void>): Promise<void> {
+  const next = handlerChain.then(fn);
+  handlerChain = next.catch(() => undefined);
+  return next;
+}
 
 /**
  * True while this node holds a lease it can still trust. A singleton writer
@@ -197,6 +209,11 @@ async function promote(): Promise<void> {
   if (leader) return;
   leader = true;
   logger.info('[leader] acquired background-worker leadership', { ownerId });
+  // Not awaited: the lease tick must not wait for an onRelease still in flight before it renews.
+  void serially(acquireHandlers);
+}
+
+async function acquireHandlers(): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
@@ -223,11 +240,13 @@ async function demote(reason: string): Promise<void> {
   if (!leader) return;
   leader = false;
   logger.warn('[leader] released background-worker leadership', { ownerId, reason });
-  try {
-    await handlers?.onRelease();
-  } catch (err) {
-    logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
-  }
+  await serially(async () => {
+    try {
+      await handlers?.onRelease();
+    } catch (err) {
+      logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function tick(): Promise<void> {

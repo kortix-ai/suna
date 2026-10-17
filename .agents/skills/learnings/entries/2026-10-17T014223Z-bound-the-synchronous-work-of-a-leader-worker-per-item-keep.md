@@ -1,0 +1,13 @@
+---
+recorded: 2026-10-17T01:42:23Z
+incident_date: 2026-10-16
+---
+# Bound the synchronous work of a leader worker per item, keep its cursor in the database, and serialize leader handlers
+
+**Rule:** A leader-only worker runs on an API task that also serves requests. Cap or split any synchronous step that scales with one item's size (one session, one file), so that no step blocks the event loop for more than about 1 s. Keep a long pass's cursor and totals in the database, not in the leader's memory: autoscaling moves the leader. Never let `onAcquire` run while `onRelease` is still awaiting: a start that sees "already started" does nothing, and the rest of the stop then stops that worker for the whole term.
+
+**Trigger surface:** Writing or reviewing a worker started from `startSingletonWorkers` (`apps/api/src/bootstrap.ts`), a `leaderTimer` tick, a conversion that holds one whole item in memory, or `shared/leader-election.ts`.
+
+**Incident:** 2026-10-16, prod v0.14.0, near miss, `SESSION_LOG_BACKFILL=dry` (counts from CloudWatch only). (1) The pass cursor lived in the leader's memory; autoscaling moved the leader between 7 tasks in 3 h, and every new leader started the pass over at the oldest session, so no pass completed. (2) One session of about 8.5k messages and about 200 MB of records took 17–18 s to convert synchronously; one tick took 56 s. The leader passed its renew deadline, the watchdog released the lease, and the lease tick took it back at once. API requests on that task stalled meanwhile. (3) After that flap the backfill worker never ticked again, while cron and triggers went on: `stopSingletonWorkers` had stopped the early workers, then awaited; the re-acquire ran `startSingletonWorkers` in that gap, every later worker was still marked started, and the stop then stopped them. Correctness was clean (0 failed, 0 round-trip mismatches). Fixed in the PR that adds this entry: `kortix.session_log_backfill_state` holds the pass, a mirror over `SESSION_LOG_RESTORE_MAX_BYTES` is counted `too_large` and not converted, the conversion yields between stages, `leaderTimer` never overlaps a run, and leader handlers run in call order.
+
+**Enforcement:** `apps/api/src/__tests__/unit-leader-election-flap.test.ts` (a re-acquire while `onRelease` awaits leaves every worker running), `apps/api/src/shared/leader-timer.test.ts` (a restart never overlaps a run), `apps/api/src/__tests__/integration-session-log-backfill.test.ts` (a new leader resumes the pass; `too_large`). The 1 s per-step bound has no automatic check (none yet: an event-loop lag metric on the API task with an alarm).

@@ -62,6 +62,12 @@ export type MirrorLogWrite =
 
 const SKIPPED = { outcome: 'skipped' } as const;
 
+/**
+ * Let timers and I/O run. The conversion of a whole mirror is synchronous: one step per stage
+ * keeps the API task's event loop (requests, the leader lease renew) moving on a large session.
+ */
+export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean } = {}): Promise<MirrorLogWrite> {
   try {
     if (!options.dry && !config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
@@ -100,12 +106,14 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
     const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
     const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
     const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness });
+    await breathe();
     const valid = SessionLogSchema.safeParse(log);
     if (!valid.success) {
       const issue = valid.error.issues[0];
       logger.warn('[session-log] capture: fromV1 output fails SessionLogSchema; nothing written', { sessionId, path: issue?.path.join('.'), code: issue?.code });
       return { outcome: 'invalid' };
     }
+    await breathe();
     const { threads, ...session } = log;
     const byId = new Map(stored.map((r) => [r.id, r]));
     let rev = stored.reduce((max, r) => (r.rev < SESSION_LOG_CAPTURE_REV_LIMIT ? Math.max(max, r.rev) : max), 0);
@@ -118,6 +126,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       batch.puts.push({ rev: ++rev, message: m });
     }
     for (const r of stored) if (!live.has(r.id) && !r.deletedAt) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+    await breathe();
     if (batch.puts.length === 0 && batch.tombstones.length === 0) return SKIPPED;
     if (rev >= SESSION_LOG_CAPTURE_REV_LIMIT) {
       logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
