@@ -131,7 +131,7 @@ export interface ScheduleDetailSheetProps {
   running: boolean;
   onDelete: () => void;
   onMutated: () => void;
-  /** The tab the sheet opens on. The Failed runs list opens Runs. */
+  /** The tab the sheet opens on. Runs unless the host says otherwise (`?tab=settings`). */
   initialTab?: SheetTab;
   /** Each tab switch, for a host that keeps the tab in its URL. */
   onTabChange?: (tab: SheetTab) => void;

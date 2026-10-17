@@ -73,7 +73,7 @@ export function TriggerTestDialog({
     );
   };
 
-  // Paper V20 "split editor/preview": the payload is the inset surface on the
+  // Split editor and preview: the payload is the inset surface on the
   // left, the preview the paper surface on the right; they stack below `lg`.
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
