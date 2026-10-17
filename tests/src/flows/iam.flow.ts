@@ -1000,6 +1000,16 @@ flow(
         );
       r.status(201);
       mappingId = r.json<any>().mapping_id;
+      // A mapping names its group: a plain member lists none (MEM-8).
+      const member = await team.addMember('member');
+      const listed = async (who: typeof member) =>
+        (await ctx.client.as(who).get('/v1/accounts/:accountId/iam/sso/mappings', { params: { accountId: team.id } }))
+          .status(200)
+          .json<{ mappings: Array<{ mapping_id: string }> }>()
+          .mappings.map((m) => m.mapping_id);
+      if (!(await listed(ctx.P.OWNER)).includes(mappingId)) throw new Error('the owner does not list the new mapping');
+      const seen = await listed(member);
+      if (seen.length !== 0) throw new Error(`a plain member listed SSO mappings: ${JSON.stringify(seen)}`);
       const del = await ctx.client
         .as(ctx.P.OWNER)
         .del('/v1/accounts/:accountId/iam/sso/mappings/:mappingId', {

@@ -33,8 +33,8 @@ import { NAV_GROUPS, parseAccountSection, type AccountSection } from './sections
 // decide what a visible pane offers, never whether it is reachable.
 export const ACCOUNT_PERMISSION_PROBES = [
   // Reads → nav visibility.
-  { action: 'member.read' }, // every member → Members
-  { action: 'group.read' }, // every group → Groups
+  { action: 'member.read' }, // GET .../iam/members/:userId → "View access" on another member
+  { action: 'group.read' }, // GET .../iam/groups         → Groups (a plain member sees no group)
   { action: 'role.read' }, // GET .../iam/roles            → Roles
   { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
   { action: 'audit.read' }, // GET .../audit               → Audit log
@@ -53,8 +53,11 @@ type Allowed = CanResult['allowed'];
 
 export interface AccountHubAccess {
   /** `member.read`: the whole directory, and another member's access panel.
-   *  Without it there is no Members pane. */
+   *  Without it the Members list shows only the caller, and "View access"
+   *  opens only the caller's own panel. */
   canReadMembers: Allowed;
+  /** `group.read`: the Groups pane. A plain member sees no group at all. */
+  canReadGroups: Allowed;
   canReadRoles: Allowed;
   canReadPolicies: Allowed;
   canReadAudit: Allowed;
@@ -115,11 +118,12 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
   // "Create a group" / "New role" with an inline upsell. Permission decides
   // whether the pane exists; entitlement decides what it offers.
   const sectionVisible: Record<AccountSection, boolean> = {
-    // `member.read` / `group.read`: the full directory. A plain member gets
-    // neither pane (Marko, 2026-10-17: a member must not browse the org). The
-    // API still answers them with the narrow set of
-    // apps/api/src/iam/directory-visibility.ts for share pickers.
-    members: canReadMembers === true,
+    // No read leaf: `GET .../members` answers every account member, a plain
+    // member with only themselves (apps/api/src/iam/directory-visibility.ts).
+    // Their own row is where they leave the account.
+    members: true,
+    // `GET .../iam/groups` answers a plain member with no group at all, so the
+    // pane exists only with `group.read`.
     groups: canReadGroups === true,
     // No account-level leaf of its own: the pane lists projects through
     // `GET /projects?account_id=` (already scoped to what the caller can
@@ -155,6 +159,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
 
   return {
     canReadMembers,
+    canReadGroups,
     canReadRoles,
     canReadPolicies,
     canReadAudit,

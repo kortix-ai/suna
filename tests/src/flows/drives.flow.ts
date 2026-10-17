@@ -61,7 +61,7 @@ flow(
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'user');
-    // In the account, not in the project: the member may not see them (MEM-8).
+    // Another account member: a plain member may not see them (MEM-8).
     const outsider = await team.addMember('member');
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
@@ -179,14 +179,14 @@ flow(
         if (!JSON.stringify(r.json()).includes(outsider.userId!)) throw new Error(`owner cannot name an account member: ${r.text()}`);
       });
 
-      await ctx.step('the member names themselves, not the owner or an account member outside the project', async () => {
+      await ctx.step('a plain member names only themselves: not the owner, not an account member', async () => {
         const people = (await asMember.get('/v1/drives/:driveId/principals', { params: { driveId } }))
           .status(200)
           .json<{ people: { id: string }[] }>()
           .people.map((p) => p.id);
-        if (!people.includes(member.userId!)) throw new Error(`member principals miss self: ${JSON.stringify(people)}`);
-        if (people.includes(ctx.P.OWNER.userId!)) throw new Error('member principals listed the owner (MEM-8)');
-        if (people.includes(outsider.userId!)) throw new Error('member principals leaked an account member outside the project');
+        if (JSON.stringify(people) !== JSON.stringify([member.userId])) {
+          throw new Error(`a plain member must name only themselves, got ${JSON.stringify(people)} (outsider ${outsider.userId})`);
+        }
       });
 
       await ctx.step('restoring an unknown version → 404 (503 without drive storage)', async () => {

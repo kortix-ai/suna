@@ -45,7 +45,6 @@ import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dial
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
-import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -262,12 +261,6 @@ export function AccountHubContent() {
   // a detail view is a URL, not a route change, and the left rail never
   // disappears underneath it.
   const selectedAccessProjectId = searchParams.get('project');
-  // Set only by the Customize bar's "Members" link
-  // (`capabilities/shared/capability-tabs.tsx`). It means this hub was opened
-  // FROM a project, so the project panel offers a way back to it — landing
-  // someone on the account hub with only an "All projects" breadcrumb strands
-  // them one level above where they started.
-  const cameFromCustomize = searchParams.get('from') === 'customize';
   const selectedAccessGroupId = searchParams.get('group');
   // `sso` | `scim`: a guided wizard standing in for the Identity pane.
   const rawSetup = searchParams.get('setup');
@@ -451,14 +444,6 @@ export function AccountHubContent() {
             )
           ) : null}
 
-          {/* Page chrome, not panel chrome: `fixed`, so it costs this
-              layout no height and the panel's own "All projects" breadcrumb
-              is untouched. Only on the project panel — the section the
-              Customize bar's "Members" link actually opens. */}
-          {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
-            <BackToCustomizeOverlay />
-          ) : null}
-
           {activeSection === 'access-projects' ? (
             <AccessProjectsTab
               accountId={account.account_id}
@@ -470,11 +455,6 @@ export function AccountHubContent() {
           ) : null}
 
           {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
-          {/* Without Members, the caller's own row and its "Leave account" are
-              gone; a plain member leaves from here. */}
-          {activeSection === 'help' && canReadMembers === false ? (
-            <LeaveAccountRow account={account} />
-          ) : null}
 
           {activeSection === 'roles' && sectionVisible.roles ? (
             entitlementsLoading ? (
@@ -977,49 +957,6 @@ function DangerZoneCard() {
           {tI18nComplete.raw('text4f7d64017689')}
         </Button>
       </div>
-    </div>
-  );
-}
-
-/** "Leave account" for a caller with no Members pane, where it otherwise sits
- *  on their own row. Same request, dialog and copy as that row. */
-function LeaveAccountRow({ account }: { account: AccountDetail }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const leave = useMutation({
-    mutationFn: () => leaveAccount(account.account_id),
-    onSuccess: () => {
-      successToast(tI18nComplete('texta95f7e7aff62', { value0: account.name }));
-      queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-      openAccountPanel(hubTarget(null));
-    },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text9de0b8c8b34b')),
-  });
-  return (
-    <div className="bg-popover mt-8 rounded-md border px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-foreground min-w-0 text-sm font-medium">{account.name}</p>
-        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
-          {tI18nComplete.raw('text1d5b40338c62')}
-        </Button>
-      </div>
-      <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={tI18nComplete.raw('text1d5b40338c62')}
-        description={
-          <span>
-            {tI18nComplete.raw('text54ce8b59de87')}{' '}
-            <span className="text-foreground font-medium">{account.name}</span>{' '}
-            {tI18nComplete.raw('textd17426176cc2')}
-          </span>
-        }
-        confirmLabel={tI18nComplete.raw('textfc6e4a408d56')}
-        confirmVariant="destructive"
-        onConfirm={() => leave.mutate()}
-        isPending={leave.isPending}
-      />
     </div>
   );
 }

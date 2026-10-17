@@ -195,7 +195,7 @@ describe('background jobs run as named workers', () => {
       .filter((call) => !(call in NOT_LOOPS))
       .filter((call) => {
         const from = new RegExp(
-          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{ ${call} \\} = await import\\('([^']+)'\\)`,
+          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{[^}]*\\b${call}\\b[^}]*\\} = await import\\('([^']+)'\\)`,
         ).exec(bootstrap);
         return !(from?.[1] ?? from?.[2])?.startsWith('./workers/');
       });

@@ -297,9 +297,21 @@
     ]
   },
   {
+    "id": "commandcode",
+    "env": [
+      "CMD_API_KEY"
+    ]
+  },
+  {
     "id": "lowrouter",
     "env": [
       "LOWROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "reflection",
+    "env": [
+      "REFLECTION_API_KEY"
     ]
   },
   {
