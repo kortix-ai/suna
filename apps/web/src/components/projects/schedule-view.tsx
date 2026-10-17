@@ -418,7 +418,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     () => unseenFailures(runsOf(failedRuns), triggers),
     [failedRuns, triggers],
   );
-  const showFailed = failedCount > 0 || failedView;
+  // The tab follows every loaded failed run; only the badge follows the unseen ones.
+  const showFailed = runsOf(failedRuns).length > 0 || failedView;
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all' || showFailed);
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
@@ -444,6 +445,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
          entry, and a rail lookup that misses renders no heading at all. */
           title={copy.title}
           description={copy.description}
+          // Beside an open trigger the list is a 40% column: stack the header so
+          // search, Pause all and New trigger share one full-width row.
+          stacked={!!selected}
           search={
             // The search filters triggers, not runs: the Failed runs view has none.
             showContent && triggers.length > 0 && !failedView ? (
