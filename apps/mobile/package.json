@@ -126,7 +126,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "babel-preset-expo": "~57.0.14",
     "canvaskit-wasm": "^0.42.0",
-    "maplibre-gl": "5.24.0",
+    "maplibre-gl": "6.4.1",
     "mermaid": "11.17.2",
     "patch-package": "^8.0.0",
     "prettier": "^3.6.2",
