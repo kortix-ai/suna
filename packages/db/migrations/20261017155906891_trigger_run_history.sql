@@ -25,9 +25,9 @@ set statement_timeout = '30s';
 -- Every new column is nullable or has a constant default, so ADD COLUMN is a
 -- catalog-only change (no rewrite) and old code that never names them keeps
 -- working. The self-referencing replay_of FK is added NOT VALID: every
--- existing row has replay_of = null, and 20261016172509390 validates it.
+-- existing row has replay_of = null, and 20261017155906892 validates it.
 -- The three run-history indexes are built CONCURRENTLY in the
--- 20261016172509391..393 .concurrent.ts files.
+-- 20261017155906893..895 .concurrent.ts files.
 
 ALTER TABLE "kortix"."project_trigger_executions" ADD COLUMN "source" varchar(16) DEFAULT 'cron' NOT NULL;
 ALTER TABLE "kortix"."project_trigger_executions" ADD COLUMN "replay_of" uuid;

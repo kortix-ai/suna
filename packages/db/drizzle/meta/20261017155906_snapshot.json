@@ -1,6 +1,6 @@
 {
-  "id": "7b6e8c16-9cb7-47b6-bd71-c96cd53165c8",
-  "prevId": "462c855e-74a5-497d-8aec-77f704989450",
+  "id": "fd77b8f5-f04d-4166-983b-8780f7abcf90",
+  "prevId": "f06b6250-393e-4052-b2c0-0d9824471ed0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4415,6 +4415,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "external_url": {
+          "name": "external_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_frameable": {
+          "name": "external_frameable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "last_request_at": {
           "name": "last_request_at",
@@ -22460,6 +22473,44 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.session_log_backfill_state": {
+      "name": "session_log_backfill_state",
+      "schema": "kortix",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rev": {
+          "name": "rev",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
