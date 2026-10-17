@@ -23,7 +23,7 @@ import {
 } from '@/features/billing/session-cost-format';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import {
   ApiError,
@@ -36,11 +36,11 @@ import Link from 'next/link';
 import { type ReactNode, useState } from 'react';
 
 import { FoldTrigger } from './composer-parts';
-import { describeLastRun } from './schedule-copy';
 import {
   RUNS_POLL_MS,
   type RunState,
   canReplay,
+  relativeRunTime,
   runState,
   runsInFlight,
 } from './trigger-runs-logic';
@@ -234,7 +234,7 @@ export function RunList({
 
   return (
     <div className="space-y-4">
-      <ul className="space-y-2">
+      <ul className="divide-border divide-y">
         {runs.map((run) => (
           <RunRow
             key={run.run_id}
@@ -274,13 +274,14 @@ function RunRow({
   action?: ReactNode;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const state = runState(run);
   const error = run.error ?? run.run_error;
   const at = new Date(run.started_at);
   const payload = JSON.stringify(run.payload, null, 2);
 
   return (
-    <li className="bg-popover space-y-1.5 rounded-md border px-4 py-3">
+    <li className="space-y-1.5 py-3 first:pt-0">
       <div className="flex min-w-0 items-center gap-2">
         {/* `font-sans normal-case`: the badge base is mono uppercase, which reads as code (trigger-status-badge.tsx). */}
         <Badge variant={STATE_VARIANT[state]} size="sm" className="font-sans normal-case">
@@ -299,7 +300,7 @@ function RunRow({
         )}
         <Hint label={absoluteFormatter.format(at)} side="top">
           <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
-            {describeLastRun(run.started_at)}
+            {relativeRunTime(run.started_at, locale)}
           </span>
         </Hint>
       </div>

@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -35,11 +36,19 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheetClose,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
+import { cn } from '@/lib/utils';
 import { type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
 import {
   type Agent,
@@ -54,9 +63,10 @@ import {
   PauseIcon,
   PlayIcon,
   TrashIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
@@ -146,6 +156,50 @@ export function ScheduleDetailSheet(props: ScheduleDetailSheetProps) {
   );
 }
 
+/**
+ * The same panel as a `SplitSheetContent` column, for a host that renders the
+ * `SplitSheet` root around its list (the Triggers page). The host owns `open`.
+ */
+export function ScheduleDetailSplitContent(
+  props: Omit<ScheduleDetailSheetProps, 'open' | 'onOpenChange'>,
+) {
+  const { trigger } = props;
+  if (!trigger) return null;
+  return (
+    <SplitSheetContent>
+      <SplitFocus key={trigger.slug}>
+        <SheetPanel {...props} trigger={trigger} split open onOpenChange={() => {}} />
+      </SplitFocus>
+    </SplitSheetContent>
+  );
+}
+
+/**
+ * The column's one scroller, as `SheetContent` is for the floating sheet, so
+ * the header and the SaveBar stick the same way. The host opens it from a row
+ * callback, not a `SplitSheetTrigger`, so focus moves in here on open and goes
+ * back to the element that opened it on close, as the modal sheet does.
+ */
+function SplitFocus({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel?.focus({ preventScroll: true });
+    return () => {
+      // Layout cleanup runs before the panel detaches, so focus is still readable.
+      if (panel?.contains(document.activeElement) && opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+  return (
+    <div ref={ref} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
+      {children}
+    </div>
+  );
+}
+
 /* ─── Header, data, and the readiness gate ──────────────────────────────── */
 
 function SheetPanel({
@@ -158,7 +212,12 @@ function SheetPanel({
   onDelete,
   onMutated,
   initialTab = 'settings',
-}: ScheduleDetailSheetProps & { trigger: ProjectTrigger }) {
+  split = false,
+}: ScheduleDetailSheetProps & { trigger: ProjectTrigger; split?: boolean }) {
+  const Title = split ? SplitSheetTitle : SheetTitle;
+  const Description = split ? SplitSheetDescription : SheetDescription;
+  // The sticky header and SaveBar paint the host's own surface, so content passes behind them.
+  const surface = split ? 'bg-surface' : 'bg-sidebar';
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
   const [tab, setTab] = useState<SheetTab>(initialTab);
   const [testOpen, setTestOpen] = useState(false);
@@ -218,20 +277,21 @@ function SheetPanel({
           Run now / Pause actions would scroll away. `bg-sidebar` matches the
           sheet's own surface so content passes behind it, not through it.
           `text-left` is not redundant: SheetHeader's base centres on a phone. */}
-      <SheetHeader className="bg-sidebar sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left">
-        <div className="flex min-w-0 items-center gap-3 pr-10">
+      <SheetHeader className={cn(surface, 'sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left')}>
+        {/* `pr-10` clears the floating sheet's own close button; the split column renders its own. */}
+        <div className={cn('flex min-w-0 items-center gap-3', !split && 'pr-10')}>
           <TriggerTile
             trigger={trigger}
             logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
           />
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex min-w-0 items-center gap-2">
-              <SheetTitle className="truncate text-base font-semibold tracking-tight">
+              <Title className="truncate text-base font-semibold tracking-tight">
                 {triggerName(trigger)}
-              </SheetTitle>
+              </Title>
               <TriggerStatusBadge trigger={trigger} hint={reason} />
             </div>
-            <SheetDescription className="text-xs">
+            <Description className="text-xs">
               {[
                 // The name often is the event's own name: say it once.
                 when === triggerName(trigger) ? null : when,
@@ -240,8 +300,22 @@ function SheetPanel({
               ]
                 .filter(Boolean)
                 .join(' · ')}
-            </SheetDescription>
+            </Description>
           </div>
+          {split ? (
+            <Hint label={t.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
+              <SplitSheetClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-base"
+                  aria-label={t.raw('text7d9eb7acb13e')}
+                  className="-mr-1.5 shrink-0"
+                >
+                  <XIcon className="size-4" />
+                </Button>
+              </SplitSheetClose>
+            </Hint>
+          ) : null}
         </div>
 
         {controls.canFire || controls.canUpdate || controls.canDelete ? (
@@ -325,8 +399,9 @@ function SheetPanel({
         {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
         <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
           {loading ? (
-            <div className="flex justify-center py-6">
-              <Loading />
+            <div className="space-y-2">
+              <Skeleton className="h-16 rounded-md" />
+              <Skeleton className="h-28 rounded-md" />
             </div>
           ) : (
             <SheetForm
@@ -341,6 +416,7 @@ function SheetPanel({
               savedModel={savedModel}
               apps={apps}
               onMutated={onMutated}
+              surface={surface}
             />
           )}
         </TabsContent>
@@ -375,9 +451,11 @@ function SheetForm({
   savedModel,
   apps,
   onMutated,
+  surface,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
+  surface: string;
   canWrite: boolean;
   eventsEnabled: boolean;
   appIndex: ReturnType<typeof indexEventApps>;
@@ -605,7 +683,7 @@ function SheetForm({
       {dirty && canWrite ? (
         /* In the sheet's own scroll container, after the body: it sticks to the
            bottom edge while the form is long, and rests under the form when it is short. */
-        <SaveBar pending={save.isPending} onSave={submit} onDiscard={discard} />
+        <SaveBar surface={surface} pending={save.isPending} onSave={submit} onDiscard={discard} />
       ) : null}
     </div>
   );
@@ -613,17 +691,24 @@ function SheetForm({
 
 /** The one footer: present only while the form differs from the saved trigger. */
 function SaveBar({
+  surface,
   pending,
   onSave,
   onDiscard,
 }: {
+  surface: string;
   pending: boolean;
   onSave: () => void;
   onDiscard: () => void;
 }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <div className="bg-sidebar border-border sticky bottom-0 z-10 -mx-4 mt-auto flex items-center justify-end gap-2 border-t px-4 py-3">
+    <div
+      className={cn(
+        surface,
+        'border-border sticky bottom-0 z-10 -mx-4 mt-auto flex items-center justify-end gap-2 border-t px-4 py-3',
+      )}
+    >
       <Button variant="outline-ghost" size="sm" disabled={pending} onClick={onDiscard}>
         {t.raw('texteb1a70e39274')}
       </Button>

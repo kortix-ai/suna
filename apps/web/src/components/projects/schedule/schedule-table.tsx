@@ -31,10 +31,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Copy } from '@/features/icon/icons/copy';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
 import {
-  CopyIcon,
   DotsThreeIcon,
   LinkIcon,
   PauseIcon,
@@ -126,40 +126,44 @@ export function ScheduleTable({
       agentLabel={agentLabel}
     />
   );
+  // Columns follow the list's own width, not the viewport: beside an open
+  // trigger the list is a narrow column, and the name keeps its room.
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>{tI18nComplete.raw('textdcd1d5223f73')}</TableHead>
-          <TableHead className="hidden sm:table-cell">
-            {tI18nComplete.raw('textcf9c7aa24a26')}
-          </TableHead>
-          <TableHead className="hidden lg:table-cell">
-            {tI18nComplete.raw('text11b39c93777e')}
-          </TableHead>
-          <TableHead className="hidden md:table-cell">
-            {tI18nComplete.raw('text512a48218ba2')}
-          </TableHead>
-          <TableHead className="w-[52px]">
-            <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {groups
-          ? groups.map((group) => (
-              <Fragment key={group.key}>
-                <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableCell colSpan={5} className="py-2">
-                    {group.heading}
-                  </TableCell>
-                </TableRow>
-                {group.triggers.map(renderRow)}
-              </Fragment>
-            ))
-          : triggers.map(renderRow)}
-      </TableBody>
-    </Table>
+    <div className="@container/triggers">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>{tI18nComplete.raw('textdcd1d5223f73')}</TableHead>
+            <TableHead className="hidden @lg/triggers:table-cell">
+              {tI18nComplete.raw('textcf9c7aa24a26')}
+            </TableHead>
+            <TableHead className="hidden @3xl/triggers:table-cell">
+              {tI18nComplete.raw('text11b39c93777e')}
+            </TableHead>
+            <TableHead className="hidden @2xl/triggers:table-cell">
+              {tI18nComplete.raw('text512a48218ba2')}
+            </TableHead>
+            <TableHead className="w-[52px]">
+              <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups
+            ? groups.map((group) => (
+                <Fragment key={group.key}>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={5} className="py-2">
+                      {group.heading}
+                    </TableCell>
+                  </TableRow>
+                  {group.triggers.map(renderRow)}
+                </Fragment>
+              ))
+            : triggers.map(renderRow)}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -231,21 +235,23 @@ function ScheduleTableRow({
               </button>
               <TriggerStatusBadge trigger={trigger} hideLive hint={reason} />
             </span>
-            <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
+            <span className="text-muted-foreground block truncate text-xs @lg/triggers:hidden">
+              {when}
+            </span>
           </span>
         </div>
       </TableCell>
 
-      <TableCell className="hidden max-w-[18rem] align-middle sm:table-cell">
+      <TableCell className="hidden max-w-[18rem] align-middle @lg/triggers:table-cell">
         <p className="text-foreground truncate text-sm">{when}</p>
         {detail ? <p className="text-muted-foreground truncate text-xs">{detail}</p> : null}
       </TableCell>
 
-      <TableCell className="text-muted-foreground hidden max-w-[10rem] truncate align-middle text-sm lg:table-cell">
+      <TableCell className="text-muted-foreground hidden max-w-[10rem] truncate align-middle text-sm @3xl/triggers:table-cell">
         {agentLabel(trigger.agent)}
       </TableCell>
 
-      <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap tabular-nums md:table-cell">
+      <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap tabular-nums @2xl/triggers:table-cell">
         {lastRun}
       </TableCell>
 
@@ -344,7 +350,7 @@ function RowActions({
               )
             }
           >
-            <CopyIcon className="size-3.5 shrink-0" />
+            <Copy className="size-3.5 shrink-0" />
             {tI18nComplete.raw('text7c4e5224f9d4')}
           </DropdownMenuItem>
         ) : null}

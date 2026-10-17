@@ -24,8 +24,46 @@ export function runsInFlight(
 }
 
 /** Replay is offered on a failed or rejected fire whose payload was stored whole. */
-export function canReplay(run: Pick<ProjectTriggerRun, 'status' | 'payload'>): boolean {
-  return (run.status === 'failed' || run.status === 'rejected') && run.payload?.truncated !== true;
+export function canReplay(
+  run: Pick<ProjectTriggerRun, 'status' | 'run_status' | 'payload'>,
+): boolean {
+  const state = runState(run);
+  return (state === 'failed' || state === 'rejected') && run.payload?.truncated !== true;
+}
+
+/**
+ * The Failed runs badge: failures of a trigger on this page since its last
+ * successful fire. A failure followed by a good run no longer needs attention.
+ * The list itself still shows every failed run.
+ */
+export function unseenFailures(
+  runs: readonly Pick<ProjectTriggerRun, 'slug' | 'started_at'>[],
+  triggers: readonly { slug: string; last_fired_at?: string | null }[],
+): number {
+  const lastFired = new Map(triggers.map((t) => [t.slug, t.last_fired_at ?? null] as const));
+  return runs.filter((run) => {
+    if (!lastFired.has(run.slug)) return false;
+    const last = lastFired.get(run.slug);
+    return !last || Date.parse(run.started_at) > Date.parse(last);
+  }).length;
+}
+
+/** "5 minutes ago", "yesterday", in the viewer's locale; a date after 30 days. */
+export function relativeRunTime(iso: string, locale: string, now: number = Date.now()): string {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return '';
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const elapsed = Math.max(0, now - at);
+  const min = Math.floor(elapsed / 60_000);
+  if (min < 1) return rtf.format(0, 'second');
+  if (min < 60) return rtf.format(-min, 'minute');
+  if (min < 24 * 60) return rtf.format(-Math.floor(min / 60), 'hour');
+  if (min < 30 * 24 * 60) return rtf.format(-Math.floor(min / (24 * 60)), 'day');
+  return new Date(at).toLocaleDateString(locale, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 /** The payload editor's text, as the object `fire` takes. */

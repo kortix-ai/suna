@@ -27,10 +27,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
-import {
-  triggerRunActions,
-  triggerToastEntity,
-} from '@/components/projects/schedule/trigger-toast';
+import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CountBadge } from '@/components/ui/count-badge';
@@ -41,7 +38,8 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
+import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -96,7 +94,7 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
-import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
+import { ScheduleDetailSplitContent } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
 import { TriggerComposer } from './schedule/trigger-composer';
 import { useTriggerControls } from './schedule/trigger-controls';
@@ -108,6 +106,7 @@ import {
   parseTriggerFilter,
   triggerCounts,
 } from './schedule/trigger-filter';
+import { unseenFailures } from './schedule/trigger-runs-logic';
 import { RunList, runsOf } from './schedule/trigger-runs-panel';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
@@ -319,28 +318,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res, trigger) => {
-      const entity = triggerToastEntity(trigger);
-      if (res.status === 'fired') {
-        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          entity,
-          ...(res.session_id
-            ? {
-                actions: triggerRunActions(
-                  projectId,
-                  res.session_id,
-                  tI18nComplete.raw('textb205bb47f81a'),
-                ),
-              }
-            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
-        });
-      } else if (res.status === 'queued') {
-        successToast(tI18nComplete.raw('text661ff40a07e0'), {
-          entity,
-          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
-        });
-      } else {
-        errorToast(tI18nComplete.raw('text9c18cb990345'), { entity, description: res.error });
-      }
+      fireResultToast(res, trigger, projectId, tI18nComplete);
       invalidate();
     },
     onError: (err) =>
@@ -436,7 +414,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     { status: 'failed' },
     { enabled: showContent },
   );
-  const failedCount = runsOf(failedRuns).length;
+  const failedCount = useMemo(
+    () => unseenFailures(runsOf(failedRuns), triggers),
+    [failedRuns, triggers],
+  );
   const showFailed = failedCount > 0 || failedView;
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all' || showFailed);
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
@@ -444,272 +425,287 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
   return (
-    <CapabilityPageShell
-      /* The heading comes from `TRIGGERS_COPY` — this is one page now, not a
+    // The open trigger takes a column beside the list, wider than it (60/40):
+    // while it is open it is the main content. Below 48rem it covers the list.
+    // The route's `flex min-h-0 flex-1` column bounds the height.
+    <SplitSheet
+      open={!!selected}
+      onOpenChange={(next) => {
+        if (!next) setSelectedSlug(null);
+      }}
+      size="lg"
+      className="flex-1 [--split-sheet-max:60%] [--split-sheet-width:60%]"
+    >
+      <SplitSheetMain>
+        <CapabilityPageShell
+          /* The heading comes from `TRIGGERS_COPY` — this is one page now, not a
          pane switched by `type`. It read the Settings rail while
          Schedules/Webhooks were overlay panes; a capability page has no rail
          entry, and a rail lookup that misses renders no heading at all. */
-      title={copy.title}
-      description={copy.description}
-      search={
-        showContent && triggers.length > 0 ? (
-          <InputGroupSearch>
-            <InputGroupSearchIcon>
-              <SearchIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              ref={searchRef}
-              placeholder={copy.searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              variant="popover"
-              size="sm"
-            />
-            <InputGroupSearchClear onClick={() => setQuery('')} />
-          </InputGroupSearch>
-        ) : undefined
-      }
-      filters={
-        showFilter ? (
-          <Tabs
-            value={failedView ? 'failed' : filter}
-            onValueChange={(next) =>
-              setFilter(next === 'failed' ? 'failed' : parseTriggerFilter(next, filters))
-            }
-            className="max-w-full overflow-x-auto"
-          >
-            <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
-              {filters.map((value) => (
-                <TabsTrigger key={value} value={value} className="gap-1.5">
-                  {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                  <CountBadge count={counts[value]} />
-                </TabsTrigger>
-              ))}
-              {showFailed ? (
-                <TabsTrigger value="failed" className="gap-1.5">
-                  {tI18nComplete.raw('text24afc952b6cc')}
-                  {failedCount > 0 ? <CountBadge count={failedCount} tone="waiting" /> : null}
-                </TabsTrigger>
-              ) : null}
-            </TabsList>
-          </Tabs>
-        ) : undefined
-      }
-      action={
-        /* One right-hand cluster, secondary control first: the project-wide
+          title={copy.title}
+          description={copy.description}
+          search={
+            // The search filters triggers, not runs: the Failed runs view has none.
+            showContent && triggers.length > 0 && !failedView ? (
+              <InputGroupSearch>
+                <InputGroupSearchIcon>
+                  <SearchIcon />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  ref={searchRef}
+                  placeholder={copy.searchPlaceholder}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  variant="popover"
+                  size="sm"
+                />
+                <InputGroupSearchClear onClick={() => setQuery('')} />
+              </InputGroupSearch>
+            ) : undefined
+          }
+          filters={
+            showFilter ? (
+              <Tabs
+                value={failedView ? 'failed' : filter}
+                onValueChange={(next) =>
+                  setFilter(next === 'failed' ? 'failed' : parseTriggerFilter(next, filters))
+                }
+                className="max-w-full overflow-x-auto"
+              >
+                <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
+                  {filters.map((value) => (
+                    <TabsTrigger key={value} value={value} className="gap-1.5">
+                      {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
+                      <CountBadge count={counts[value]} />
+                    </TabsTrigger>
+                  ))}
+                  {showFailed ? (
+                    <TabsTrigger value="failed" className="gap-1.5">
+                      {tI18nComplete.raw('text24afc952b6cc')}
+                      {failedCount > 0 ? <CountBadge count={failedCount} tone="waiting" /> : null}
+                    </TabsTrigger>
+                  ) : null}
+                </TabsList>
+              </Tabs>
+            ) : undefined
+          }
+          action={
+            /* One right-hand cluster, secondary control first: the project-wide
            pause (its own manager-only probe, NOT this view's `canWrite`), then
            the primary create action, last and labelled.
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
-        showContent ? (
-          <div className="flex items-center gap-2">
-            {triggers.length > 0 || paused ? <TriggerActivationMenu projectId={projectId} /> : null}
-            {canWrite ? (
-              <NewEntityMenu
-                label={copy.createLabel}
-                pending={configure.pending}
-                onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => openCreate() }}
-              />
-            ) : null}
-          </div>
-        ) : undefined
-      }
-    >
-      <div className="space-y-4">
-        {/* The paused STATE, not the control: it stays at the top of the page
+            showContent ? (
+              <div className="flex items-center gap-2">
+                {triggers.length > 0 || paused ? (
+                  <TriggerActivationMenu projectId={projectId} />
+                ) : null}
+                {canWrite ? (
+                  <NewEntityMenu
+                    label={copy.createLabel}
+                    pending={configure.pending}
+                    onChat={() => configure.start(newConfigPrompt('trigger'))}
+                    manual={{ onSelect: () => openCreate() }}
+                  />
+                ) : null}
+              </div>
+            ) : undefined
+          }
+        >
+          <div className="space-y-4">
+            {/* The paused STATE, not the control: it stays at the top of the page
             because a project that runs nothing on its own is something a
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
-        {paused && showContent && (
-          <InfoBanner
-            tone="warning"
-            icon={WarningIcon}
-            title={tI18nComplete.raw('textb18b93a52cd2')}
-          >
-            {tI18nComplete.raw('text3bc554b5c290')}
-          </InfoBanner>
-        )}
+            {paused && showContent && (
+              <InfoBanner
+                tone="warning"
+                icon={WarningIcon}
+                title={tI18nComplete.raw('textb18b93a52cd2')}
+              >
+                {tI18nComplete.raw('text3bc554b5c290')}
+              </InfoBanner>
+            )}
 
-        {triggersQuery.isLoading ? (
-          <div className="flex justify-center py-6">
-            <Loading />
+            {triggersQuery.isLoading ? (
+              <div className="space-y-1">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+                  <Skeleton key={i} className="h-10 rounded-md" />
+                ))}
+              </div>
+            ) : isForbidden ? (
+              <InfoBanner
+                tone="warning"
+                icon={LockKeyIcon}
+                title={tI18nComplete.raw('textabb84be05cfa')}
+              >
+                {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
+                {tI18nComplete.raw('text382584f2456e')}
+              </InfoBanner>
+            ) : triggersQuery.isError ? (
+              <ErrorState
+                size="sm"
+                title={tI18nComplete('text7ce02a51e3dd', { value0: copy.noun })}
+                description={
+                  (triggersQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')
+                }
+                action={
+                  <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
+                    {tI18nComplete.raw('textd8b8392e2c54')}
+                  </Button>
+                }
+              />
+            ) : failedView ? (
+              <RunList
+                projectId={projectId}
+                query={failedRuns}
+                emptyTitle={tI18nComplete.raw('text6c5ebd6c3b4f')}
+                title={(run) => {
+                  const owner = triggers.find((t) => t.slug === run.slug);
+                  return owner ? (
+                    <button
+                      type="button"
+                      onClick={() => openTrigger(run.slug, 'runs')}
+                      className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
+                    >
+                      {triggerName(owner)}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 truncate text-sm font-medium">{run.slug}</span>
+                  );
+                }}
+              />
+            ) : filter !== 'all' && ofKind.length === 0 ? (
+              <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
+            ) : triggers.length === 0 ? (
+              <EmptyState
+                icon={LightningIcon}
+                title={copy.emptyTitle}
+                description={copy.emptyBody}
+                className="py-12"
+                action={
+                  canWrite ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => openCreate()}
+                    >
+                      <PlusIcon className="size-4 shrink-0" />
+                      {copy.createLabel}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : filtered.length === 0 ? (
+              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                {tI18nComplete.raw('text965b516df3ba')}{' '}
+                <span className="text-foreground font-medium">{query}</span>.
+              </p>
+            ) : (
+              <ScheduleTable
+                triggers={filtered}
+                groups={appGroups}
+                apps={appIndex}
+                eventNames={eventNames}
+                agentLabel={agentLabel}
+                controls={controls}
+                runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
+                togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
+                onOpen={(t) => openTrigger(t.slug)}
+                onRun={(t) => run.mutate(t)}
+                onToggle={(t) => toggle.mutate(t)}
+                onDelete={(t) => setDeleteTarget(t)}
+                onConnect={
+                  eventConnect.canConnect
+                    ? (t) =>
+                        t.event &&
+                        eventConnect.connect({
+                          app: t.event.app ?? t.event.connector,
+                          name: eventAppName(t.event, appIndex),
+                          connector: t.event.connector,
+                        })
+                    : undefined
+                }
+              />
+            )}
+
+            {showContent && eventsOn && filter === 'event' ? (
+              <EventAppsStrip
+                projectId={projectId}
+                disabled={!canWrite}
+                onPick={(app) => openCreate('event', { app: app.app })}
+              />
+            ) : null}
+
+            {parseErrors.length > 0 && (
+              <InfoBanner
+                tone="warning"
+                icon={WarningIcon}
+                title={tI18nComplete.raw('text5f6dc605ac36')}
+              >
+                <ul className="space-y-0.5 text-xs">
+                  {parseErrors.map((err) => (
+                    <li key={err.slug}>
+                      <code className="font-mono">{err.path}</code> — {err.error}
+                    </li>
+                  ))}
+                </ul>
+              </InfoBanner>
+            )}
           </div>
-        ) : isForbidden ? (
-          <InfoBanner
-            tone="warning"
-            icon={LockKeyIcon}
-            title={tI18nComplete.raw('textabb84be05cfa')}
-          >
-            {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
-            {tI18nComplete.raw('text382584f2456e')}
-          </InfoBanner>
-        ) : triggersQuery.isError ? (
-          <ErrorState
-            size="sm"
-            title={tI18nComplete('text7ce02a51e3dd', { value0: copy.noun })}
-            description={
-              (triggersQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
-                {tI18nComplete.raw('textd8b8392e2c54')}
-              </Button>
-            }
-          />
-        ) : failedView ? (
-          <RunList
+
+          <TriggerComposer
             projectId={projectId}
-            query={failedRuns}
-            emptyTitle={tI18nComplete.raw('text6c5ebd6c3b4f')}
-            title={(run) => {
-              const owner = triggers.find((t) => t.slug === run.slug);
-              return owner ? (
-                <button
-                  type="button"
-                  onClick={() => openTrigger(run.slug, 'runs')}
-                  className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
-                >
-                  {triggerName(owner)}
-                </button>
-              ) : (
-                <span className="min-w-0 truncate text-sm font-medium">{run.slug}</span>
-              );
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            initialKind={createKind}
+            initialApp={createApp}
+            onCreated={(slug) => {
+              setCreateOpen(false);
+              invalidate();
+              // Drop straight into the new entry so the address or the first run
+              // is one click away, not two.
+              openTrigger(slug);
             }}
           />
-        ) : filter !== 'all' && ofKind.length === 0 ? (
-          <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
-        ) : triggers.length === 0 ? (
-          <EmptyState
-            icon={LightningIcon}
-            title={copy.emptyTitle}
-            description={copy.emptyBody}
-            className="py-12"
-            action={
-              canWrite ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => openCreate()}
-                >
-                  <PlusIcon className="size-4 shrink-0" />
-                  {copy.createLabel}
-                </Button>
-              ) : undefined
+
+          <ConfirmDialog
+            open={!!deleteTarget}
+            onOpenChange={(next) => {
+              if (!next) setDeleteTarget(null);
+            }}
+            title={tI18nComplete('text4e9e0de01d8a', {
+              value0: deleteTarget ? kindCopy[deleteTarget.type as TriggerKind].noun : copy.noun,
+            })}
+            description={
+              deleteTarget ? (
+                <>
+                  <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
+                  {describeWhen(deleteTarget).toLowerCase()}
+                  {tI18nComplete.raw('text33575b279b5e')}
+                </>
+              ) : null
             }
+            confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
+            confirmVariant="destructive"
+            isPending={remove.isPending}
+            onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
           />
-        ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tI18nComplete.raw('text965b516df3ba')}{' '}
-            <span className="text-foreground font-medium">{query}</span>.
-          </p>
-        ) : (
-          <ScheduleTable
-            triggers={filtered}
-            groups={appGroups}
-            apps={appIndex}
-            eventNames={eventNames}
-            agentLabel={agentLabel}
-            controls={controls}
-            runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
-            togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
-            onOpen={(t) => openTrigger(t.slug)}
-            onRun={(t) => run.mutate(t)}
-            onToggle={(t) => toggle.mutate(t)}
-            onDelete={(t) => setDeleteTarget(t)}
-            onConnect={
-              eventConnect.canConnect
-                ? (t) =>
-                    t.event &&
-                    eventConnect.connect({
-                      app: t.event.app ?? t.event.connector,
-                      name: eventAppName(t.event, appIndex),
-                      connector: t.event.connector,
-                    })
-                : undefined
-            }
-          />
-        )}
-
-        {showContent && eventsOn && filter === 'event' ? (
-          <EventAppsStrip
-            projectId={projectId}
-            disabled={!canWrite}
-            onPick={(app) => openCreate('event', { app: app.app })}
-          />
-        ) : null}
-
-        {parseErrors.length > 0 && (
-          <InfoBanner
-            tone="warning"
-            icon={WarningIcon}
-            title={tI18nComplete.raw('text5f6dc605ac36')}
-          >
-            <ul className="space-y-0.5 text-xs">
-              {parseErrors.map((err) => (
-                <li key={err.slug}>
-                  <code className="font-mono">{err.path}</code> — {err.error}
-                </li>
-              ))}
-            </ul>
-          </InfoBanner>
-        )}
-      </div>
-
-      <TriggerComposer
-        projectId={projectId}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        initialKind={createKind}
-        initialApp={createApp}
-        onCreated={(slug) => {
-          setCreateOpen(false);
-          invalidate();
-          // Drop straight into the new entry so the address or the first run
-          // is one click away, not two.
-          openTrigger(slug);
-        }}
-      />
-
-      <ScheduleDetailSheet
+        </CapabilityPageShell>
+      </SplitSheetMain>
+      <ScheduleDetailSplitContent
         projectId={projectId}
         trigger={selected}
         eventsEnabled={eventsOn}
         controls={controls}
         initialTab={sheetTab}
-        open={!!selected}
-        onOpenChange={(next) => {
-          if (!next) setSelectedSlug(null);
-        }}
         onRun={() => selected && run.mutate(selected)}
         running={run.isPending && run.variables?.slug === selected?.slug}
         onDelete={() => selected && setDeleteTarget(selected)}
         onMutated={invalidate}
       />
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(next) => {
-          if (!next) setDeleteTarget(null);
-        }}
-        title={tI18nComplete('text4e9e0de01d8a', {
-          value0: deleteTarget ? kindCopy[deleteTarget.type as TriggerKind].noun : copy.noun,
-        })}
-        description={
-          deleteTarget ? (
-            <>
-              <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
-              {describeWhen(deleteTarget).toLowerCase()}
-              {tI18nComplete.raw('text33575b279b5e')}
-            </>
-          ) : null
-        }
-        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
-        confirmVariant="destructive"
-        isPending={remove.isPending}
-        onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
-      />
-    </CapabilityPageShell>
+    </SplitSheet>
   );
 }
