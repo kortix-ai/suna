@@ -1,7 +1,6 @@
 'use client';
 
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
-import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectRemindersNavItem } from '@/features/workspace/project-sidebar/footer/project-reminders-nav';
 import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
@@ -48,7 +47,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   return (
     <>
       {items.map((entry) => (
-        <NavItem key={entry.id} entry={entry} projectId={projectId} />
+        <NavItem key={entry.id} entry={entry} />
       ))}
       <MoreNavItem projectId={projectId} items={items} />
     </>
@@ -155,15 +154,13 @@ function MoreNavItem({
   );
 }
 
-function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
+function NavItem({ entry }: { entry: SidebarNavEntry }) {
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
       return <ProjectCustomizeNavItem />;
     case 'apps':
       return <ProjectAppsNavItem />;
-    case 'review':
-      return <ProjectChangeRequestsNavItem projectId={projectId} visibility={entry.visibility} />;
     case 'reminders':
       return <ProjectRemindersNavItem visibility={entry.visibility} />;
     case 'files':

@@ -177,7 +177,9 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: FeatureFlagMapSchema,
+  /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
+   *  v0.14.0, which gate `kortix apps` on it, keep working. */
+  experimental: FeatureFlagMapSchema.extend({ apps: z.literal(true).optional() }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),

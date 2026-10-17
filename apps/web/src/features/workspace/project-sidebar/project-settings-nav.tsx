@@ -17,6 +17,7 @@ import { useFeatureFlag } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
 import { CountBadge } from '@/components/ui/count-badge';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 
 /**
  * The one project-configuration entry in the sidebar:
@@ -114,6 +115,13 @@ export const TAB_PREFERENCE: readonly {
   // who can read the project may open it; what each person sees in it follows
   // folder access, decided by the drives API per folder.
   { key: 'files', action: PROJECT_ACTIONS.PROJECT_READ },
+  // The Review inbox is for the people who decide: approve a change request,
+  // answer an agent. Reading without acting is not a reason to show it.
+  {
+    key: 'review',
+    action: PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+    manage: [PROJECT_ACTIONS.PROJECT_REVIEW_ACT],
+  },
   // Settings (`/projects/<id>/customize/settings`) is configuration by
   // definition: its read leaf is already a write leaf.
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
@@ -208,7 +216,12 @@ export function ProjectCustomizeNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const tab = useCapabilityTab(projectId);
+  const access = useCapabilityAccess(projectId);
+  const tab = access.tabs[0] ?? null;
+  // Review lives under Customize, so the decisions waiting on the caller badge
+  // this row: the same `needs_you` count the session row dots read.
+  const needsYou = useReviewSessionSummary(projectId ?? '', { enabled: !!projectId }).totalNeedsYou;
+  const reviewCount = access.tabs.includes('review') ? needsYou : 0;
   // Files lives under Customize, so its open conflict copies (in folders the
   // caller can see) badge this row: the sidebar keeps no Files row of its own.
   const tDrives = useTranslations('drives');
@@ -243,13 +256,17 @@ export function ProjectCustomizeNavItem() {
             <CustomizeGlyph />
           </span>
           {t('customize')}
-          {conflicts > 0 ? (
-            <CountBadge
-              count={conflicts}
-              tone="conflict"
-              className="ml-auto"
-              aria-label={tDrives('conflictCount', { count: conflicts })}
-            />
+          {reviewCount > 0 || conflicts > 0 ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              {reviewCount > 0 ? <CountBadge count={reviewCount} tone="waiting" /> : null}
+              {conflicts > 0 ? (
+                <CountBadge
+                  count={conflicts}
+                  tone="conflict"
+                  aria-label={tDrives('conflictCount', { count: conflicts })}
+                />
+              ) : null}
+            </span>
           ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>

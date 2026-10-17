@@ -55,7 +55,9 @@ flow(
       response.body().has("$.error", "Unknown feature flag 'apps'");
       const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
       read.status(200);
-      const rows = (read.json() as { experimental_features: Array<{ key: string }> })
+      // CLIs before v0.14.0 gate every `kortix apps` command on this value.
+      read.body().has("$.experimental.apps", true);
+      const rows =(read.json() as { experimental_features: Array<{ key: string }> })
         .experimental_features;
       if (rows.some((f) => f.key === "apps")) {
         throw new Error(`the catalog still lists apps: ${JSON.stringify(rows)}`);
