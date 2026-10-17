@@ -33,7 +33,7 @@ const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, newBackfillState, roundTripMismatches, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, roundTripMismatches, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -126,10 +126,10 @@ const logCount = async () => (await db.execute<{ n: number }>(sql`select count(*
 const total = (ticks: Array<{ counts: Record<string, number> }>, key: string) => ticks.reduce((n, t) => n + t.counts[key]!, 0);
 
 /** One full pass: ticks until the queue reports no more. */
-async function pass(mode: 'dry' | 'write', state = newBackfillState(), opts: Parameters<typeof backfillSessionLogs>[2] = {}) {
+async function pass(mode: 'dry' | 'write', opts: Parameters<typeof backfillSessionLogs>[1] = {}) {
   const ticks = [];
   for (let i = 0; i < 100; i++) {
-    const tick = await backfillSessionLogs(mode, state, opts);
+    const tick = await backfillSessionLogs(mode, opts);
     ticks.push(tick);
     if (!tick.more) return ticks;
   }
@@ -140,8 +140,9 @@ beforeAll(async () => {
   project = await seedProject('session-log-backfill');
 });
 
-// Every test starts with an empty queue: the backfill selects across the whole database.
+// Every test starts with an empty queue and no pass: the backfill selects across the whole database.
 afterEach(async () => {
+  await db.execute(sql`delete from kortix.session_log_backfill_state`);
   await db.execute(sql`delete from kortix.session_transcript_mirrors m where not exists (select 1 from kortix.session_logs l where l.session_id = m.session_id)`);
 });
 
@@ -216,7 +217,7 @@ describe('selection', () => {
   test('a session the capture wrote between the selection and the conversion is skipped, not written twice', async () => {
     const session = await oldSession([plain(0), plain(1)]);
     let captured: Awaited<ReturnType<typeof snapshot>> | undefined;
-    const [tick] = await pass('write', newBackfillState(), {
+    const [tick] = await pass('write', {
       convert: async (id, opts) => {
         await writeSessionLogFromMirror(id); // the capture of a turn end, meanwhile
         captured = await snapshot(id);
@@ -240,13 +241,12 @@ describe('selection', () => {
     const ids: string[] = [];
     // Created newest first, so insertion order is not the answer.
     for (let i = BACKFILL_BATCH_SIZE; i >= 0; i--) ids.unshift(await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + i * 60_000) }));
-    const state = newBackfillState();
     const convert = (id: string, opts?: { dry?: boolean }) => (order.push(id), writeSessionLogFromMirror(id, opts));
-    const first = await backfillSessionLogs('write', state, { convert });
+    const first = await backfillSessionLogs('write', { convert });
     expect(first.counts.sessions).toBe(BACKFILL_BATCH_SIZE);
     expect(first.more).toBe(true);
     expect(order).toEqual(ids.slice(0, BACKFILL_BATCH_SIZE));
-    const second = await backfillSessionLogs('write', state, { convert });
+    const second = await backfillSessionLogs('write', { convert });
     expect(second.counts.sessions).toBe(1);
     expect(second.more).toBe(false);
     expect(order).toEqual(ids);
@@ -259,14 +259,127 @@ describe('selection', () => {
       await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) }),
       await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 3000) }),
     ];
-    const state = newBackfillState();
-    const first = await backfillSessionLogs('write', state, { budgetMs: 0 });
+    const first = await backfillSessionLogs('write', { budgetMs: 0 });
     expect(first.counts.sessions).toBe(1);
     expect(first.more).toBe(true);
     expect([await hasLog(ids[0]!), await hasLog(ids[1]!), await hasLog(ids[2]!)]).toEqual([true, false, false]);
-    const rest = await pass('write', state);
+    const rest = await pass('write');
     expect(rest.reduce((n, t) => n + t.counts.sessions, 0)).toBe(2);
     expect(await hasLog(ids[2]!)).toBe(true);
+  });
+});
+
+describe('the pass lives in the database, not in the leader', () => {
+  const passRow = async () => (await db.execute<{ state: { mode: string; after: { sessionId: string } | null; totals: { sessions: number }; dryDone: boolean }; rev: number }>(sql`select state, rev from kortix.session_log_backfill_state`))[0];
+
+  test('a new leader resumes the cursor and the totals: one dry pass, one summary over every session', async () => {
+    const ids = [1, 2, 3].map((n) => oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + n * 1000) }));
+    const [a, b, c] = (await Promise.all(ids)) as [string, string, string];
+    const order: string[] = [];
+    const convert = (id: string, opts?: { dry?: boolean }) => (order.push(id), writeSessionLogFromMirror(id, opts));
+    const info = spyOn(logger, 'info');
+    try {
+      // Leader 1 converts one session (the budget cuts the tick), then its task stops.
+      expect((await backfillSessionLogs('dry', { budgetMs: 0, convert })).more).toBe(true);
+      expect(await passRow()).toMatchObject({ rev: 1, state: { mode: 'dry', after: { sessionId: a }, totals: { sessions: 1 }, dryDone: false } });
+      // Leader 2 holds no memory of it: it reads the row and goes on after `a`.
+      await pass('dry', { convert });
+      expect(order).toEqual([a, b, c]);
+      const summary = info.mock.calls.find(([msg]) => msg === '[session-log] backfill pass complete');
+      expect(summary?.[1]).toMatchObject({ mode: 'dry', sessions: 3, logs: 3 });
+      expect((await passRow())?.state).toMatchObject({ mode: 'dry', after: null, dryDone: true });
+      // The dry pass ran once: a later leader converts nothing.
+      expect((await backfillSessionLogs('dry', { convert })).counts.sessions).toBe(0);
+      expect(order).toHaveLength(3);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  test('a tick whose row moved under it (an old leader, late) does not save its cursor', async () => {
+    const a = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 1000) });
+    await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
+    await backfillSessionLogs('dry', { budgetMs: 0 });
+    const warn = spyOn(logger, 'warn');
+    try {
+      // Meanwhile the new leader saves (rev 2): this tick loaded rev 1.
+      const late = await backfillSessionLogs('dry', {
+        budgetMs: 0,
+        convert: async (id, opts) => {
+          await db.execute(sql`update kortix.session_log_backfill_state set rev = rev + 1`);
+          return writeSessionLogFromMirror(id, opts);
+        },
+      });
+      expect(late.counts.sessions).toBe(1);
+      expect(warn.mock.calls.map(([msg]) => msg)).toContain('[session-log] backfill state changed under this tick; its cursor is not saved');
+      expect(await passRow()).toMatchObject({ rev: 2, state: { after: { sessionId: a }, totals: { sessions: 1 } } });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('dry runs once per build', () => {
+  test('a completed dry pass skips on the same build (one info line per process) and runs again on a new build', async () => {
+    const session = await oldSession([plain(0), plain(1)]);
+    const commit = config.KORTIX_COMMIT;
+    const info = spyOn(logger, 'info');
+    try {
+      config.KORTIX_COMMIT = 'build-a';
+      expect(total(await pass('dry'), 'sessions')).toBe(1);
+      expect((await backfillSessionLogs('dry')).counts.sessions).toBe(0);
+      expect((await backfillSessionLogs('dry')).counts.sessions).toBe(0);
+      const done = info.mock.calls.filter(([msg]) => String(msg).startsWith('[session-log] backfill dry pass already complete'));
+      expect(done).toHaveLength(1);
+      expect(String(done[0]![0])).toContain('DELETE FROM kortix.session_log_backfill_state');
+      config.KORTIX_COMMIT = 'build-b';
+      const again = await pass('dry');
+      expect([total(again, 'sessions'), total(again, 'logs')]).toEqual([1, 1]);
+      expect(await hasLog(session)).toBe(false);
+    } finally {
+      config.KORTIX_COMMIT = commit;
+      info.mockRestore();
+    }
+  });
+});
+
+describe('size cap: a mirror over the capture cap is counted, never converted', () => {
+  // Random hex: pglz cannot shrink it, so `pg_column_size` is close to the JSON length.
+  const incompressible = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n / 2))).toString('hex');
+
+  test('too_large in dry and in write, from the capture; the smaller session is converted; the large one keeps no log', async () => {
+    const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
+    const small = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes
+    try {
+      expect(await writeSessionLogFromMirror(large, { dry: true })).toEqual({ outcome: 'too_large' });
+      const dry = await pass('dry');
+      expect([total(dry, 'sessions'), total(dry, 'too_large'), total(dry, 'logs')]).toEqual([2, 1, 1]);
+      const write = await pass('write');
+      expect([total(write, 'sessions'), total(write, 'too_large'), total(write, 'logs')]).toEqual([2, 1, 1]);
+      expect([await hasLog(large), await hasLog(small)]).toEqual([false, true]);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
+  });
+
+  test('a session that already has a log keeps its captures past the cap: its log never goes stale', async () => {
+    const session = await oldSession([plain(0), plain(1)]);
+    expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
+    const grown = plain(2, incompressible(6_000));
+    await db.insert(sessionTranscriptMessages).values({
+      sessionId: session, messageId: String(grown.info.id), runtimeSessionId: ROOT, role: String(grown.info.role), info: grown.info, parts: grown.parts,
+      messageCreatedAt: new Date((grown.info.time as { created: number }).created),
+    });
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
+    try {
+      expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
+      expect((await snapshot(session)).messages.map((m) => m.id)).toContain('msg_000002');
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
   });
 });
 
@@ -279,8 +392,7 @@ describe('failures', () => {
     ];
     const [thrower, refused, fine] = ids as [string, string, string];
     const calls: string[] = [];
-    const state = newBackfillState();
-    const ticks = await pass('write', state, {
+    const ticks = await pass('write', {
       convert: async (id, opts) => {
         calls.push(id);
         if (id === thrower) throw new Error('synthetic conversion failure');
@@ -295,7 +407,7 @@ describe('failures', () => {
     expect(await hasLog(fine)).toBe(true);
     expect(await hasLog(thrower)).toBe(false);
     // The pass ended: the next one starts from the oldest again, and the real path converts both.
-    const [retry] = await pass('write', state);
+    const [retry] = await pass('write');
     expect(retry!.counts).toMatchObject({ sessions: 2, logs: 2, failed: 0 });
   });
 });
@@ -305,7 +417,7 @@ describe('races and switches', () => {
     const session = await oldSession([plain(0), plain(1)]);
     const scope = { sessionId: session, projectId: project.project_id, accountId: project.account_id };
     let claimed: Awaited<ReturnType<typeof snapshot>> | undefined;
-    const [tick] = await pass('write', newBackfillState(), {
+    const [tick] = await pass('write', {
       convert: async (id, opts) => {
         // Meanwhile: a capture writes the log, a fresh box claims it (generation 1), and the mirror gains a turn.
         await writeSessionLogFromMirror(id);
@@ -330,9 +442,8 @@ describe('races and switches', () => {
     const warn = spyOn(logger, 'warn');
     config.SESSION_LOG_INGEST_ENABLED = false;
     try {
-      const state = newBackfillState();
-      const first = await backfillSessionLogs('write', state, { budgetMs: 0 });
-      const rest = await pass('write', state);
+        const first = await backfillSessionLogs('write', { budgetMs: 0 });
+      const rest = await pass('write');
       const all = [first, ...rest];
       expect(all.reduce((n, t) => n + t.counts.skipped, 0)).toBe(2);
       expect(all.reduce((n, t) => n + t.counts.logs, 0)).toBe(0);
@@ -340,7 +451,7 @@ describe('races and switches', () => {
       const warnings = () => warn.mock.calls.filter(([msg]) => String(msg).includes('SESSION_LOG_INGEST_ENABLED=false'));
       expect(warnings()).toHaveLength(1);
       // The next pass warns again, once.
-      await pass('write', state);
+      await pass('write');
       expect(warnings()).toHaveLength(2);
     } finally {
       config.SESSION_LOG_INGEST_ENABLED = true;
@@ -356,8 +467,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
     const objectsBefore = bucket.objects.size;
     const info = spyOn(logger, 'info');
     try {
-      const state = newBackfillState();
-      const ticks = await pass('dry', state);
+        const ticks = await pass('dry');
       expect(await hasLog(big)).toBe(false);
       expect(await hasLog(small)).toBe(false);
       expect(bucket.objects.size).toBe(objectsBefore);
@@ -381,6 +491,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         logs: 2,
         skipped: 0,
         failed: 0,
+        too_large: 0,
         messages: messages.length,
         ...grades,
         tool_input: sum('tool_input'),
@@ -403,14 +514,14 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
       expect(JSON.stringify(lines)).not.toContain(big);
       expect(JSON.stringify(lines)).not.toContain(small);
 
-      // One dry pass per process: a later tick selects and converts nothing and logs nothing.
+      // One dry pass: a later tick selects and converts nothing and logs nothing.
       let converted = 0;
-      const again = await backfillSessionLogs('dry', state, { convert: async (id, opts) => (converted++, writeSessionLogFromMirror(id, opts)) });
+      const again = await backfillSessionLogs('dry', { convert: async (id, opts) => (converted++, writeSessionLogFromMirror(id, opts)) });
       expect(again).toEqual({ more: false, counts: expect.objectContaining({ sessions: 0, logs: 0 }) });
       expect(converted).toBe(0);
-      expect(info.mock.calls.filter(([msg]) => String(msg).includes('backfill'))).toHaveLength(2);
+      expect(info.mock.calls.filter(([msg]) => String(msg).includes('backfill') && !String(msg).includes('already complete'))).toHaveLength(2);
       // A mode change starts over: a write pass converts both.
-      const [write] = await pass('write', state);
+      const [write] = await pass('write');
       expect(write!.counts).toMatchObject({ sessions: 2, logs: 2 });
     } finally {
       info.mockRestore();
@@ -466,18 +577,18 @@ describe('validation: every converted log is checked with SessionLogSchema', () 
 });
 
 describe('display round trip: toV1(fromV1(rows)) against the stored rows', () => {
-  test('roundTripMismatches counts each stored row toV1 does not give back exactly; key order does not count', () => {
+  test('roundTripMismatches counts each stored row toV1 does not give back exactly; key order does not count', async () => {
     const rows = [plain(0), plain(1), plain(2), plain(3)].map((m) => ({ runtime_session_id: ROOT, info: m.info, parts: m.parts }) as unknown as V1Row);
     const log = fromV1({ session_id: 's', root_id: ROOT, rows });
-    expect(roundTripMismatches(log, rows)).toBe(0);
+    expect(await roundTripMismatches(log, rows)).toBe(0);
     // Reversed key order on every object: equal (jsonb stores its own key order).
     const reorder = (v: unknown): unknown => (Array.isArray(v) ? v.map(reorder) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reorder(x)])) : v);
-    expect(roundTripMismatches(log, rows.map(reorder) as V1Row[])).toBe(0);
+    expect(await roundTripMismatches(log, rows.map(reorder) as V1Row[])).toBe(0);
     // One changed text, and one stored row the log does not hold.
     const changed = structuredClone(rows);
     (changed[1]!.parts[0] as { text: string }).text = 'edited';
-    expect(roundTripMismatches(log, changed)).toBe(1);
-    expect(roundTripMismatches(log, [...rows, { ...rows[0]!, info: { ...rows[0]!.info, id: 'msg_extra' } } as V1Row])).toBe(1);
+    expect(await roundTripMismatches(log, changed)).toBe(1);
+    expect(await roundTripMismatches(log, [...rows, { ...rows[0]!, info: { ...rows[0]!.info, id: 'msg_extra' } } as V1Row])).toBe(1);
   });
 
   test('dry over a database seeded from the P1 fixtures: 0 failed, 0 validation failures, 0 round-trip mismatches', async () => {

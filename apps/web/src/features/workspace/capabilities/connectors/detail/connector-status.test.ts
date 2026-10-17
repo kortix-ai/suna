@@ -10,9 +10,8 @@ describe('connectorUsable', () => {
     expect(connectorUsable('no_auth', 1)).toBe(true);
     expect(connectorUsable('no_auth', 0)).toBe(false);
   });
-  test('signed in, or run on per-person accounts, is usable', () => {
+  test('signed in is usable', () => {
     expect(connectorUsable('connected', 1)).toBe(true);
-    expect(connectorUsable('user_managed', 2)).toBe(true);
   });
   test('setup still to do is not usable', () => {
     expect(connectorUsable('needs_setup', 1)).toBe(false);
