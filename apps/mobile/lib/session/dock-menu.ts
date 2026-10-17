@@ -24,6 +24,14 @@
  */
 
 import type { SubPageId } from './project-stack';
+import {
+  CONNECTORS_ACCESS,
+  MEMBERS_ACCESS,
+  SCHEDULES_ACCESS,
+  SECRETS_ACCESS,
+  navAccessAllowed,
+  type NavAccess,
+} from './nav-access';
 
 /** The Customize group's row icons. */
 export type DockIconKey = 'schedules' | 'secrets' | 'members' | 'connectors';
@@ -33,6 +41,8 @@ export interface ProjectCustomizePushItem {
   kind: 'item';
   label: string;
   icon: DockIconKey;
+  /** The IAM leaves that make the row worth showing (`nav-access.ts`). */
+  access: NavAccess;
   /** A `tab-store` page id that opens as a sub-page of project Settings. */
   pageId: SubPageId;
 }
@@ -46,6 +56,7 @@ export interface ProjectCustomizeHandoffItem {
   kind: 'web-handoff';
   label: string;
   icon: DockIconKey;
+  access: NavAccess;
 }
 
 export type ProjectCustomizeItem = ProjectCustomizePushItem | ProjectCustomizeHandoffItem;
@@ -55,8 +66,13 @@ export type ProjectCustomizeItem = ProjectCustomizePushItem | ProjectCustomizeHa
  * then Connectors — in that order, right above "More on kortix.com".
  */
 export const PROJECT_CUSTOMIZE_ITEMS: ProjectCustomizeItem[] = [
-  { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules' },
-  { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav' },
-  { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members' },
-  { kind: 'web-handoff', label: 'Connectors', icon: 'connectors' },
+  { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules', access: SCHEDULES_ACCESS },
+  { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav', access: SECRETS_ACCESS },
+  { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members', access: MEMBERS_ACCESS },
+  { kind: 'web-handoff', label: 'Connectors', icon: 'connectors', access: CONNECTORS_ACCESS },
 ];
+
+/** The rows the caller may open, from the `useCans` verdicts. Empty until they land. */
+export function visibleCustomizeItems(cans: Parameters<typeof navAccessAllowed>[0]): ProjectCustomizeItem[] {
+  return PROJECT_CUSTOMIZE_ITEMS.filter((item) => navAccessAllowed(cans, item.access));
+}

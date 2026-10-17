@@ -359,3 +359,37 @@ describe('capability gate on the compiled-governance push', () => {
     expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });
+
+// The push is an HTTP body and has no exec limit, but the daemon keeps the
+// value in the env OpenCode, git and every PTY inherit. Over 128 KiB, a daemon
+// that predates the gzip form would store it raw, and every exec on the box
+// would then fail with E2BIG.
+describe('an oversized compiled config on the push path', () => {
+  const OVERSIZED = JSON.stringify({ agent: { support: { prompt: 'Answer the ticket. '.repeat(7_000) } } });
+
+  test('is withheld from a daemon that does not list the gzip capability', async () => {
+    compiled = OVERSIZED;
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result).toEqual({
+      applied: false,
+      reason: 'the compiled agent config exceeds one env string and the daemon cannot hold it encoded',
+    });
+    expect(posted).toEqual([]);
+  });
+
+  test('reaches a daemon that lists it, raw over HTTP, for the daemon to store encoded', async () => {
+    compiled = OVERSIZED;
+    daemonCapabilities = ['file.import', 'file.append', 'agent-config.env-gz.v1', 'config.release.v1'];
+    daemonRunningConfig = { release_id: null, source: 'workspace' };
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(OVERSIZED);
+  });
+
+  test('a config that fits needs no capability at all', async () => {
+    compiled = JSON.stringify({ agent: { support: { prompt: 'Answer the ticket. '.repeat(6_000) } } });
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+});

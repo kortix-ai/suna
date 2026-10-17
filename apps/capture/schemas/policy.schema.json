@@ -52,6 +52,22 @@
         },
         "exclude_private_browsing": {
           "type": "boolean"
+        },
+        "record_only_included": {
+          "type": "boolean",
+          "description": "Record a window only when its app is in included_bundle_ids or its website is in included_domains. Exclusions still win."
+        },
+        "included_bundle_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "included_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

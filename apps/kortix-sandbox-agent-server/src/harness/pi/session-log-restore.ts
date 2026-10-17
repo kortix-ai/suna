@@ -329,7 +329,9 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
     if (!sessionID) continue
     info.sessionID = sessionID
     if (info.agent === '') delete info.agent
-    const parts: J[] = (row.parts as J[]).map((p) => ({ ...p, sessionID }))
+    // An image a `<file>` tag names (`source_path`, session-log.ts) shows through its tag, as it did live: no file part.
+    const tagged = new Set((blocks.get(String(info.id)) ?? []).flatMap((b) => (b.type === 'attachment' && b.source_path ? [b.id] : [])))
+    const parts: J[] = (row.parts as J[]).filter((p) => !tagged.has(String(p.id))).map((p) => ({ ...p, sessionID }))
     // A file pi never received (session-log.ts): its v1 part, so the next export finds it again.
     for (const b of blocks.get(String(info.id)) ?? []) {
       if (b.type === 'harness' && b.harness === PI && b.kind === 'undelivered_file') {

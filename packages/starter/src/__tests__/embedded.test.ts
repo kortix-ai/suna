@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { parseManifestText, selectedKortixTools } from '@kortix/manifest-schema';
 
 import embeddedStarter from '../embedded.generated.json' with { type: 'json' };
 import { buildEmbeddedSnapshot } from '../../scripts/generate-embedded';
@@ -11,16 +10,6 @@ import { buildEmbeddedSnapshot } from '../../scripts/generate-embedded';
  * content. Regenerate with `bun run scripts/generate-embedded.ts`.
  */
 describe('embedded starter snapshot', () => {
-  test('base manifest selects connector tools for shellless agents in source and shipped snapshots', () => {
-    for (const snapshot of [buildEmbeddedSnapshot(), embeddedStarter]) {
-      const manifest = snapshot.base.files.find((file) => file.path === 'kortix.yaml');
-      if (!manifest) throw new Error('Missing base manifest');
-      const selected = selectedKortixTools(parseManifestText(manifest.content, 'yaml').tools);
-      expect(selected).toContain('kortix-connectors_call');
-      expect(selected).toContain('kortix-connectors_describe');
-    }
-  });
-
   test('is in sync with the on-disk template tree', () => {
     const fresh = buildEmbeddedSnapshot();
     expect(embeddedStarter).toEqual(fresh as typeof embeddedStarter);

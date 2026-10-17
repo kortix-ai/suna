@@ -58,6 +58,8 @@ const cases = [
   ['service to hono', 'src/services/llm-proxy/llm-proxy.ts', "import { Hono } from 'hono';", false],
   ['egress-shim to the shared relay contract', 'src/services/egress-shim/relay-client.ts', "import '@kortix/api-contract/secret-relay';", true],
   ['another service to the shared relay contract', 'src/services/llm-proxy/llm-proxy.ts', "import '@kortix/api-contract/secret-relay';", false],
+  ['config-provider to the compiled agent config env codec', 'src/services/config-provider/compiled-agent-config.ts', "import '@kortix/api-contract/compiled-agent-config-env';", true],
+  ['another service to the compiled agent config env codec', 'src/services/llm-proxy/llm-proxy.ts', "import '@kortix/api-contract/compiled-agent-config-env';", false],
   ['harness shared code to the daemon wire contract', 'src/harness/shared/turn-relay.ts', "import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';", true],
   ['harness contract to the daemon wire contract', 'src/harness/contract/diagnostics.ts', "import type { HarnessHealth } from '@kortix/api-contract/runtime-relay';", true],
   ['a route to the daemon wire contract', 'src/routes/kortix/health.ts', "import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay';", true],

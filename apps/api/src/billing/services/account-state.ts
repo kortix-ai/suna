@@ -14,9 +14,8 @@ import type {
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';
-import { ACCESS_GRACE_DAYS, type ResolvedBilling, trialIsActive } from './resolve-billing';
+import { ACCESS_GRACE_DAYS, type ResolvedBilling } from './resolve-billing';
 import { type ContractRow, getContractState } from './enterprise-contracts';
-import { trialPlanFor } from './trial-admin';
 import {
   billingSnapshotFromAccount,
   billingStateAllowsRun,
@@ -53,16 +52,11 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const tier = getTier(tierName);
   const monthlyUsd = tierName === 'credits' && sub ? planMonthlyUsd(sub) : null;
 
-  // RESOLVED plan — the plan the account BEHAVES as: active admin trial >
-  // stored tier, with the enterprise and managed-models
-  // overrides applied (billing/services/resolve-billing.ts). `sub` is passed in
-  // so this costs no extra read; the request already holds the row.
-  //
-  // The two used to be conflated: a trialing account's account-state described
-  // its STORED plan while every gate enforced the TRIAL plan, so the dashboard
-  // disagreed with the server about what the account could do. `plan` and
-  // `tier` below now report the resolved view; `subscription` keeps the stored
-  // one for wire compatibility.
+  // RESOLVED billing (billing/services/resolve-billing.ts): the billing plan,
+  // the Enterprise layer (off | demo | licensed) and the entitlements with the
+  // overrides applied. `sub` is passed in so this costs no extra read; the
+  // request already holds the row. `plan` is the billing plan; `tier` is what
+  // the gates enforce (Enterprise limits when licensed).
   // Started here, awaited with the reads below: none of them needs it.
   const resolvedPending = resolveAccountBilling(accountId, { row: sub });
 
@@ -139,24 +133,21 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       shape: resolved.plan.shape,
       rank: resolved.plan.rank,
       // The monthly amount of a paid plan, in USD (1 credit = $0.01). Null for
-      // free, enterprise and a trial: they carry no self-serve amount.
+      // free: it carries no self-serve amount.
       monthly_usd: resolved.plan.key === 'credits' && tierName === 'credits' ? monthlyUsd : null,
     },
     subscription: {
       // STORED, not resolved: this block describes the Stripe subscription, so
-      // `tier_key` and its display name stay the pair Stripe sold. A trial does
-      // not create a subscription, and reporting the trial plan here would tell
-      // the billing UI to render a subscription that does not exist.
+      // `tier_key` and its display name stay the pair Stripe sold.
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
-      // STORED, like the rest of this block: what the account pays, also while
-      // a trial overlays `plan` (whose monthly_usd is null then).
+      // STORED, like the rest of this block: what the account pays.
       monthly_usd: monthlyUsd,
       status: subscriptionStatus,
       billing_period: billingPeriod,
       provider,
       subscription_id: subscriptionId,
-      current_period_end: null,
+      current_period_end: periodEndSeconds(sub, tierName),
       cancel_at_period_end: isCancelling,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
@@ -174,16 +165,16 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       // enforces. `subscription.tier_key` above still carries the stored key.
       name: resolved.features.key,
       display_name: isAdmin && tierName === 'none' ? 'Admin' : resolved.features.displayName,
-      // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns. A
-      // trial is an entitlement overlay and grants no credits, so the number
-      // here must keep describing the subscription, not the trial.
+      // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns.
       monthly_credits: monthlyUsd ?? tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
-    enterprise_entitled: resolved.features.family === 'enterprise',
-    trial: trialOf(sub),
+    enterprise_entitled: resolved.enterprise !== 'off',
+    // Trials are removed (plans-and-access.md): always null, kept for the wire shape.
+    trial: null,
+    enterprise: { state: resolved.enterprise },
     contract: contractOf(contract),
     enterprise_offer: offerOf(offer),
     grace: graceOf(resolved, lastEnded),
@@ -197,25 +188,12 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The active trial, as the account sees it. */
-function trialOf(sub: CreditAccountRow): AccountTrial | null {
-  if (!sub || !trialIsActive(sub, Date.now()) || !sub.trialEndsAt) return null;
-  const plan = trialPlanFor(sub.trialTier ?? '');
-  if (!plan) return null;
-  return {
-    plan,
-    started_at: isoValue(sub.trialStartedAt),
-    ends_at: isoValue(sub.trialEndsAt) ?? sub.trialEndsAt,
-    days_left: Math.max(0, Math.ceil((new Date(sub.trialEndsAt).getTime() - Date.now()) / DAY_MS)),
-  };
-}
 
 function contractOf(row: ContractRow | null): AccountContract | null {
   if (!row) return null;
   return {
     id: row.id,
     license_usd: Number(row.licenseUsd),
-    credits_usd: Number(row.creditsUsd),
     term_months: row.termMonths,
     collection: row.collection as AccountContract['collection'],
     starts_at: isoValue(row.startsAt),
@@ -229,13 +207,12 @@ function offerOf(row: ContractRow | null): AccountEnterpriseOffer | null {
   return {
     id: row.id,
     license_usd: Number(row.licenseUsd),
-    credits_usd: Number(row.creditsUsd),
     term_months: row.termMonths,
     collection: row.collection as AccountEnterpriseOffer['collection'],
   };
 }
 
-/** SSO/SCIM grace after an Enterprise trial (resolved) or a contract (its end date) ended. */
+/** SSO/SCIM grace after a license (its end date) ended. */
 function graceOf(resolved: ResolvedBilling, lastEnded: ContractRow | null): AccountAccessGrace | null {
   if (resolved.grace) return { reason: resolved.grace.reason, ends_at: resolved.grace.endsAt };
   if (resolved.features.family === 'enterprise' || !lastEnded?.endedAt) return null;
@@ -311,6 +288,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     // flag is false by construction (fail-closed).
     enterprise_entitled: false,
     trial: null,
+    enterprise: { state: 'off' },
     contract: null,
     enterprise_offer: null,
     grace: null,
@@ -368,10 +346,36 @@ function getSubscriptionStatus(sub: CreditAccountRow, tierName: string, isAdmin:
   return sub.stripeSubscriptionStatus ?? (tierName === 'free' ? 'active' : 'no_subscription');
 }
 
+/**
+ * When the current paid period ends (the next renewal), in Unix seconds: the
+ * anchor-aligned date after the current period start. Null without a live
+ * Stripe credits plan.
+ */
+function periodEndSeconds(sub: CreditAccountRow, tierName: string): number | null {
+  if (tierName !== 'credits' || !sub?.stripeSubscriptionId || !sub.billingCycleAnchor) return null;
+  const start = currentPeriodStart(sub.billingCycleAnchor);
+  if (!start) return null;
+  // A period is at most 31 days, so 32 days past its start lands in the next one.
+  const end = currentPeriodStart(sub.billingCycleAnchor, new Date(new Date(start).getTime() + 32 * 86_400_000));
+  return end ? Math.floor(new Date(end).getTime() / 1000) : null;
+}
+
 function extractScheduledChange(
   sub: CreditAccountRow,
   currentTierName: string,
 ): ScheduledChange | null {
+  // A lowered credits amount waiting for the renewal (setPlan's cut).
+  if (sub?.scheduledMonthlyUsd != null && currentTierName === 'credits') {
+    const from = planMonthlyUsd(sub);
+    const to = Number(sub.scheduledMonthlyUsd);
+    return {
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: from * 100, monthly_usd: from },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: to * 100, monthly_usd: to },
+      effective_date: isoValue(sub.scheduledTierChangeDate) ?? new Date((periodEndSeconds(sub, currentTierName) ?? 0) * 1000).toISOString(),
+    };
+  }
+
   if (sub?.revenuecatPendingChangeProduct && sub.revenuecatPendingChangeDate) {
     const current = getTier(currentTierName);
     return {

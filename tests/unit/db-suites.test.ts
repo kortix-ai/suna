@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  DB_SUITE_QUARANTINE,
+  PROJECT_SNAPSHOT_SUITE,
   dbSuiteVerdict,
   discoverDbSuites,
   dumpAsSql,
@@ -71,11 +71,15 @@ describe('db-suites discovery', () => {
     expect(readsLaneDatabase.filter((file) => !files.has(file))).toEqual([]);
   });
 
-  it('keeps each quarantine entry pointed at a real suite with a reason', () => {
-    for (const [file, reason] of Object.entries(DB_SUITE_QUARANTINE)) {
-      expect(files.has(file)).toBe(true);
-      expect(reason.length).toBeGreaterThan(20);
-    }
+  it('hands local S3 storage to the snapshot suite and to no other suite', () => {
+    expect(files.has(PROJECT_SNAPSHOT_SUITE)).toBe(true);
+    const storage = { apiUrl: 'http://127.0.0.1:54321/', accessKeyId: 'id', secretAccessKey: 'secret' };
+    const base = { databaseUrl: 'postgresql://postgres:pw@127.0.0.1:54322/db', adminUrl: 'postgresql://postgres:pw@127.0.0.1:54322/postgres', storage };
+    expect(suiteEnvironment({ ...base, file: PROJECT_SNAPSHOT_SUITE })).toMatchObject({
+      KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: 'http://127.0.0.1:54321/storage/v1/s3',
+      KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: 'true',
+    });
+    expect(Object.keys(suiteEnvironment({ ...base, file: 'apps/api/src/__tests__/integration-other.test.ts' })).filter((key) => key.includes('S3'))).toEqual([]);
   });
 
   it('keeps DB suites out of the unit discovery of every package', () => {

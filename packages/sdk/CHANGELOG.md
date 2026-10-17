@@ -5,6 +5,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log restore notice)
+- `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
+  restore of a session log could not bring back, from the session record
+  (`restore_grade: 'partial'`, `grade_counts`, `ext.kortix.data.restore`).
+  `missing[].kind` includes `'message'`: the log was over the API's restore cap
+  (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
+  messages; the transcript keeps them.
+
+### Changed (Enterprise is a feature layer; trials removed)
+- `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
+  Demo is self-serve (owners and admins); Licensed is a license contract.
+- `getEnterpriseDemo` / `setEnterpriseDemo` call `GET`/`PUT
+  /accounts/:id/iam/enterprise-demo` again (they rejected with
+  `ENDPOINT_RETIRED`). New hook `useSetEnterpriseDemo()`.
+- `contactEnterpriseSales(params)` (`POST /billing/enterprise/contact`),
+  `kortix.billing.contactSales`, `useContactSales()`: one-click "Talk to sales".
+- `AccountState.trial` is always null (`@deprecated`): trials are removed.
+- `AccountContract.credits_usd` / `AccountEnterpriseOffer.credits_usd` are
+  optional and `@deprecated`: a license carries no credits.
+
+### Added (BYOK fee entitlement)
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
+  (additive union member): the BYOK platform fee is an entitlement, on by
+  default for Free and Credits, off on Enterprise, and an operator override
+  switches it per account.
+
 ### Changed (Enterprise is a feature layer)
 - An Enterprise trial no longer sets `AccountState.plan` to Enterprise: `plan`
   stays the billing plan (what the account pays for), and the trial lends the

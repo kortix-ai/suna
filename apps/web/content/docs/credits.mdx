@@ -1,6 +1,6 @@
 ---
 title: Plans & credits
-description: The Free, Credits and Enterprise plans, what spends credits, how the account wallet, top-ups, rollover and plan changes work, and where to track usage.
+description: The Free and Credits plans, Enterprise, what spends credits, how the account wallet, top-ups, rollover and plan changes work, and where to track usage.
 ---
 
 Credits are the balance of an account's wallet. Every project in the account spends from that one wallet. This page is for the people who pay for an account and the members who watch its spend.
@@ -11,24 +11,24 @@ To see the balance now, run `kortix billing status`, or open the project menu �
 
 ## Plans
 
-An account is on one of three plans. See [kortix.com/pricing](https://kortix.com/pricing) for what each plan costs and grants.
+An account is on one of two plans: Free or Credits. See [kortix.com/pricing](https://kortix.com/pricing) for what each plan costs and grants. Enterprise is not a plan: it turns the Enterprise features on, on either plan. See [Enterprise features](/docs/accounts/identity#enterprise-features).
 
-| | Free | Credits | Enterprise |
-| --- | --- | --- | --- |
-| Billed | No charge | A monthly amount you choose | By contract |
-| Credit grant | Every month, for the account | Every billing cycle, 100 credits per dollar of the monthly amount, in one wallet | By contract |
-| Members | Unlimited | Unlimited, no per-member charge | Unlimited |
-| Kortix-managed models | The platform default only | All | All |
-| Buy credits and auto top-up | No | Yes | Yes |
-| Projects | 1 | 200 | No limit |
-| SSO, SCIM, groups and custom roles, audit log, branding | No | No | Yes |
+| | Free | Credits |
+| --- | --- | --- |
+| Billed | No charge | A monthly amount you choose |
+| Credit grant | Every month, for the account | Every billing cycle, 100 credits per dollar of the monthly amount, in one wallet |
+| Members | Unlimited | Unlimited, no per-member charge |
+| Kortix-managed models | The platform default only | All |
+| Buy credits and auto top-up | No | Yes |
+| Projects | 1 | 200 (no limit with an Enterprise license) |
+| SSO, SCIM, groups and custom roles, audit log, branding | With Enterprise | With Enterprise |
 
 - Every plan can use models on your own provider key or a ChatGPT subscription. See [Models](/docs/project/models).
 - A managed model outside your plan returns `plan_upgrade_required`.
-- An Enterprise feature outside your plan returns `402` with code `entitlement_required`. See [Sign-in, SSO & API keys](/docs/accounts/identity#enterprise-features).
+- An Enterprise feature without Enterprise on returns `402` with code `entitlement_required`. An owner or admin can turn the Enterprise demo on. See [Enterprise features](/docs/accounts/identity#enterprise-features).
 - Every older paid plan became a Credits plan at the same monthly price. A per-seat plan receives its full bill as credits in one shared wallet. Seats no longer exist: members are free and unlimited.
 - Creating a project over the limit returns `403` with code `project_limit_reached`. An archived project does not count.
-- To move from Free to Credits, choose a tier on **Billing → Plan** and select **Subscribe**. Tiers run from 5,000 credits a month to 1,000,000 credits a month, all at one rate: a bigger tier buys more credits, never a cheaper credit. For Enterprise, email [support@kortix.com](mailto:support@kortix.com).
+- To move from Free to Credits, choose a tier on **Billing → Plan** and select **Subscribe**. Tiers run from 5,000 credits a month to 1,000,000 credits a month, all at one rate: a bigger tier buys more credits, never a cheaper credit. For an Enterprise license, select **Talk to sales** in the app, or email [support@kortix.com](mailto:support@kortix.com).
 
 A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNAL_ENABLED=false`). It has no credits, no plan limits and no managed models. `kortix billing status` still answers there and never blocks a run. `kortix billing transactions` returns `404` with `billing_disabled: true`. See [Self-hosting](/docs/host).
 
@@ -37,7 +37,7 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 | What | How Kortix meters it |
 | --- | --- |
 | Kortix-managed model calls | Input, output and cache tokens of each request, at the provider's base price plus a 5.5% platform fee. |
-| Model calls on your own provider key | Nothing for the first $1,000 of usage a month at the provider's list price. After that, 5% of each request's list price. A ChatGPT subscription and OpenCode Go are never charged. An Enterprise contract waives the fee. |
+| Model calls on your own provider key | Nothing for the first $1,000 of usage a month at the provider's list price. After that, 5% of each request's list price. A ChatGPT subscription and OpenCode Go are never charged. Enterprise has no fee, and Kortix can waive it per account. |
 | Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes, App machines and project monitors all count. |
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
@@ -151,7 +151,7 @@ kortix billing costs --by project --since 2026-09-01T00:00:00Z
 kortix billing costs --by session --csv sessions.csv    # CSV needs --by
 ```
 
-`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status` and `kortix billing transactions` show credits. `kortix billing costs` shows money amounts. `--json` keeps the money amounts the API returns.
+`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status`, `kortix billing transactions` and `kortix billing costs` show the balance and spend in credits. Prices stay in dollars: the plan price and the auto top-up amount. `--json` returns the US dollar amounts of the API unchanged.
 
 For scripts, the same reports are on the REST API. An account-wide read needs `billing.read`. A read with `project_id` needs `project.gateway.spend.read` on that project. A project-scoped token needs `project.usage.read` and its own `project_id`.
 

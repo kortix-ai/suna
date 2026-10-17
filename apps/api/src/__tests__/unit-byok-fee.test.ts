@@ -4,7 +4,7 @@ import { BYOK_FEE_FREE_MONTHLY_USD, BYOK_FEE_PERCENT, byokFeeUsd } from '../bill
 // The BYOK platform fee, OpenRouter's model at a lower allowance
 // (.agents/skills/billing/references/plans-and-access.md, "Bring your own key").
 describe('byokFeeUsd', () => {
-  const base = { provider: 'anthropic', upstreamCostUsd: 2, monthToDateUsd: 0, enterpriseContract: false };
+  const base = { provider: 'anthropic', upstreamCostUsd: 2, monthToDateUsd: 0, feeApplies: true };
 
   test('the first $1,000 of list-price BYOK usage in a month carries no fee', () => {
     expect(BYOK_FEE_FREE_MONTHLY_USD).toBe(1000);
@@ -23,8 +23,8 @@ describe('byokFeeUsd', () => {
     }
   });
 
-  test('an Enterprise contract waives it', () => {
-    expect(byokFeeUsd({ ...base, monthToDateUsd: 5000, enterpriseContract: true })).toBe(0);
+  test('the byokFee entitlement turned off (Enterprise, or an override) waives it', () => {
+    expect(byokFeeUsd({ ...base, monthToDateUsd: 5000, feeApplies: false })).toBe(0);
   });
 
   test('a request with no list price (an unpriced model) costs nothing', () => {

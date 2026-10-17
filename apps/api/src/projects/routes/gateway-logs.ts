@@ -6,6 +6,7 @@ import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { projectReadView } from '../lib/project-read-view';
 import { splitLlmSpend } from '../../shared/llm-spend';
 import { classifyGatewayLogReference } from './gateway-log-reference';
 
@@ -120,7 +121,10 @@ export function registerGatewayLogsRoutes(): void {
       const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
       const okFilter = c.req.query('ok');
 
+      const view = await projectReadView(c, loaded);
       const conds = [eq(gatewayRequestLogs.projectId, projectId)];
+      const visible = view.where(gatewayRequestLogs.sessionId, gatewayRequestLogs.actorUserId);
+      if (visible) conds.push(visible);
       if (okFilter === 'true') conds.push(eq(gatewayRequestLogs.ok, true));
       if (okFilter === 'false') conds.push(eq(gatewayRequestLogs.ok, false));
 
@@ -185,6 +189,10 @@ export function registerGatewayLogsRoutes(): void {
         )
         .limit(1);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      const view = await projectReadView(c, loaded);
+      if (!(await view.allows({ sessionId: row.sessionId, createdBy: row.actorUserId }))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
 
       return c.json({
         ...serializeLogRow(row),

@@ -36,7 +36,7 @@ function makeApp() {
     return c.json({ error: String(err) }, 500);
   });
   const slow = async (c: any) => {
-    await new Promise((r) => setTimeout(r, 500)); // exceeds the 50ms deadline
+    await new Promise((r) => setTimeout(r, 200)); // 4x the 50ms deadline: due after it, whatever the load
     return c.json({ ok: true });
   };
   app.get('/v1/projects/x/change-requests', slow); // bounded

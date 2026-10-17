@@ -65,9 +65,13 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
     onNotify: (e) => {
       if (!uiTranslator) return;
       const title = e.sessionTitle as string | undefined;
-      if (e.kind === 'task-complete') notifyTaskComplete(e.sessionId, title, uiTranslator);
+      // Set only by the SDK's turn-end watch: the session page was not mounted.
+      const projectId = typeof e.projectId === 'string' ? e.projectId : undefined;
+      const watchedSinceMs = typeof e.watchedSinceMs === 'number' ? e.watchedSinceMs : undefined;
+      if (e.kind === 'task-complete')
+        notifyTaskComplete(e.sessionId, title, uiTranslator, { watchedSinceMs, projectId });
       else if (e.kind === 'session-error')
-        notifySessionError(e.sessionId, e.errorTitle as string, title, uiTranslator);
+        notifySessionError(e.sessionId, e.errorTitle as string, title, uiTranslator, projectId);
       else if (e.kind === 'question')
         notifyQuestion(e.sessionId, e.questionText as string, title, uiTranslator);
       else if (e.kind === 'permission')

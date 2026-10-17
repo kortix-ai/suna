@@ -164,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 24
+      "count": 22
     }
   },
   "src/admin/queries.ts": {
@@ -2314,9 +2314,6 @@
     }
   },
   "src/projects/routes/review-items.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 5
     }

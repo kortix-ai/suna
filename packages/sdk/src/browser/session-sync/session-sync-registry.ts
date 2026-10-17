@@ -11,6 +11,7 @@ import {
 } from '../../core/session-sync/session-sync-controller';
 import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
+import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -429,6 +430,28 @@ export function loadSessionTranscriptMessages(
   return loadCompleteSessionHistory((request) =>
     readSessionMessagePage(getClient(), sessionId, request),
   );
+}
+
+/**
+ * Every message of a session for an export, oldest first. While the computer
+ * runs: the runtime's whole history. When the runtime cannot answer (asleep,
+ * stopped, failed) or answers empty, the saved copy, every window of it: the
+ * conversation the page shows meanwhile. `kortixSessionScope`
+ * (`projectId/sessionId`) names that copy; without it a runtime failure throws.
+ */
+export async function loadSessionExportMessages(
+  sessionId: string,
+  kortixSessionScope?: string,
+): Promise<SessionSyncPage['messages']> {
+  const saved = parseKortixSessionScope(kortixSessionScope);
+  let live: SessionSyncPage['messages'] = [];
+  try {
+    live = await loadSessionTranscriptMessages(sessionId);
+  } catch (error) {
+    if (!saved) throw error;
+  }
+  if (live.length > 0 || !saved) return live;
+  return loadSavedSessionTranscriptMessages(saved);
 }
 
 /**

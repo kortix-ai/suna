@@ -119,7 +119,7 @@ describe('planMonthlyUsd: stored amount, legacy fallback', () => {
   test('a row not yet backfilled falls back to its legacy plan', () => {
     expect(planMonthlyUsd({ tier: 'tier_6_50' })).toBe(50);
     expect(planMonthlyUsd({ tier: 'per_seat', seatCount: 3 })).toBe(120);
-    expect(planMonthlyUsd({ tier: 'free' })).toBe(2);
+    expect(planMonthlyUsd({ tier: 'free' })).toBe(5);
   });
 
   test('mobile products map to monthly amounts', () => {

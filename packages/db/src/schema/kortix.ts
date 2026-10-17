@@ -686,7 +686,7 @@ export const configReleaseHeads = kortixSchema.table(
     /** The descriptor JSON's store key. */
     descriptorKey: text('descriptor_key').notNull(),
     /** The agent roster at `source_commit`. Session create only checks it; it re-points nothing. */
-    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean }>().notNull(),
+    roster: jsonb('roster').$type<{ enabled: string[]; defaultAgent: string | null; readable: boolean; governed: boolean; onlyDeclared?: boolean }>().notNull(),
     /** When the publish read the ref's tip. A slower publish of an older tip never overwrites a newer one. */
     resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1883,6 +1883,16 @@ export const projectTriggerExecutions = kortixSchema.table(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Run history (KRTX-1743). Every fire source writes one run row here;
+    // `source` names it (cron | webhook | manual | ...). Non-cron rows are
+    // inserted in a terminal status, so the claim worker never sees them.
+    source: varchar('source', { length: 16 }).default('cron').notNull(),
+    replayOf: uuid('replay_of'),
+    payloadVerified: boolean('payload_verified').default(true).notNull(),
+    // Outcome of the agent turn the run dispatched (running | succeeded | failed).
+    runStatus: varchar('run_status', { length: 16 }),
+    runError: text('run_error'),
+    runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
   },
   (table) => [
     foreignKey({
@@ -1890,6 +1900,11 @@ export const projectTriggerExecutions = kortixSchema.table(
       foreignColumns: [projects.projectId],
       name: 'project_trigger_exec_project_fk',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.replayOf],
+      foreignColumns: [table.executionId],
+      name: 'project_trigger_exec_replay_of_fk',
+    }).onDelete('set null'),
     foreignKey({
       columns: [table.sessionId],
       foreignColumns: [projectSessions.sessionId],
@@ -1907,6 +1922,25 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.lockedUntil,
     ),
     index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
+    index('idx_project_trigger_executions_slug_created').on(
+      table.projectId,
+      table.slug,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_status_created').on(
+      table.projectId,
+      table.status,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_session')
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
+    index('idx_project_trigger_executions_replay_of')
+      .on(table.replayOf)
+      .where(sql`${table.replayOf} is not null`),
+    index('idx_project_trigger_executions_noncron_created')
+      .on(table.createdAt)
+      .where(sql`${table.source} <> 'cron'`),
   ],
 );
 
@@ -2763,6 +2797,19 @@ export const sessionContentPurges = kortixSchema.table(
       .where(sql`${table.objectsPurgedAt} IS NULL`),
   ],
 );
+
+/**
+ * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
+ * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
+ * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
+ * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ */
+export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
+  id: text('id').primaryKey(),
+  state: jsonb('state').notNull(),
+  rev: integer('rev').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 /**
  * UNUSED since decision D6b (2026-10-14): an account closure, read from
@@ -4313,6 +4360,10 @@ export const creditAccounts = kortixSchema.table(
     // and RevenueCat webhooks. Null for free/enterprise and for rows not yet
     // backfilled (`planMonthlyUsd()` in tiers.ts falls back for those).
     planMonthlyUsd: numeric('plan_monthly_usd', { precision: 12, scale: 2 }),
+    // A lowered monthly amount waiting for the next renewal. `plan_monthly_usd`
+    // stays the amount in effect this period; the renewal applies this one and
+    // clears it. Null when no cut is scheduled.
+    scheduledMonthlyUsd: numeric('scheduled_monthly_usd', { precision: 12, scale: 2 }),
     // Retired by credits-only billing; no code reads them. Dropped by the
     // contract migration once every replica runs code that ignores them.
     billingModel: text('billing_model').default('legacy').notNull(),
@@ -4345,16 +4396,9 @@ export const creditAccounts = kortixSchema.table(
     // RETIRED: the operator-set concurrent-session cap. Sessions are uncapped
     // and no code reads or writes this column; drop it in its own migration.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
-    // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
-    // (webhooks.ts syncSubscriptionState) overwrites `tier` on every
-    // subscription event, so a trial encoded there would be clobbered. Instead
-    // the trial overlays at resolution time (billing/services/effective-tier):
-    // while `trial_status='active'` AND `trial_ends_at` is in the future, the
-    // account resolves entitlements/limits/models as `trial_tier`. Expiry is
-    // lazy (the resolver checks the timestamp) so correctness never depends on
-    // a cron; the billing cron only flips `trial_status` to 'expired' for
-    // hygiene. Reuses the vestigial baseline columns `trial_status`,
-    // `trial_started_at`, `trial_ends_at` (previously written by nothing).
+    // RETIRED (2026-10-15): admin-issued trials are removed. The
+    // enterprise_feature_layer migration ended every active trial; no code
+    // reads these columns. Drop them in their own migration.
     trialTier: varchar('trial_tier', { length: 50 }),
     // Seat allowance while the trial is active. Enforced on member add/invite
     // for non-per_seat accounts (per-seat accounts meter seats via Stripe).
@@ -4590,6 +4634,13 @@ export const apps = kortixSchema.table(
     scale: jsonb('scale').default({}).notNull(),
     /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
     display: jsonb('display').default({}).notNull(),
+    /**
+     * An App hosted elsewhere: Kortix lists it and frames this https URL, and
+     * never deploys it. Null for every App Kortix runs.
+     */
+    externalUrl: text('external_url'),
+    /** The external site allows framing (its X-Frame-Options / CSP frame-ancestors, read when the URL was set). */
+    externalFrameable: boolean('external_frameable').default(false).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

@@ -276,10 +276,16 @@ export async function ensureLocalSupabase(
     if (!options.autoStart) throw error;
   }
 
+  // `studio` (the dashboard) and `imgproxy` (storage image transforms): no
+  // test uses either, and they were the largest pulls of a CI lane's
+  // 108 s `supabase start` (browser-1, run 38777589705). scripts/dev-local.sh
+  // excludes the same two.
   const command = [
     ...localSupabaseCommand(topology),
     "start",
     "--ignore-health-check",
+    "-x",
+    "studio,imgproxy",
   ];
   const started = Bun.spawn(command, {
     cwd: topology.root,

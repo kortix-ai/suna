@@ -32,6 +32,10 @@ const TRANSIENT_DATABASE_CODES = new Set([
   '57P01',
   '57P02',
   '57P03',
+  // postgres.js connection-phase failure: the connection never established,
+  // so the statement never reached the server (plain Error, driver's own
+  // code — not a SQLSTATE). Reads may be retried.
+  'CONNECT_TIMEOUT',
   'ECONNRESET',
   'ETIMEDOUT',
   'EMAXCONNSESSION',

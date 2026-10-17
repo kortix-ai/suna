@@ -28,7 +28,7 @@ const DEFAULT_CHOICE = { light: 'pure-light', dark: 'pure-dark' };
 const LEGACY_DARK_THEME_IDS = { jellybean: 'jellybeans-default' };
 
 function normalizeTheme(theme) {
-  return THEMES.has(theme) ? theme : 'system';
+  return THEMES.has(theme) ? theme : 'light';
 }
 
 /** Unknown or missing palettes fall back to Pure light / Pure dark. */

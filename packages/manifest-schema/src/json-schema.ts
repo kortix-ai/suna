@@ -74,6 +74,11 @@ import {
   KORTIX_TOOL_PREFIX,
   TOOL_NAME_RE,
   TRIGGER_TYPES,
+  CODEMODE_VALUES,
+  HARNESS_TOOL_NAMES,
+  KORTIX_SKILL_PREFIX,
+  REGISTRY_NAME_MAX,
+  REGISTRY_NAME_RE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
@@ -423,6 +428,9 @@ function triggerSchema(): JsonSchemaFragment {
       run_at: { type: 'string', minLength: 1 },
       runAt: { type: 'string', minLength: 1 },
       timezone: { type: 'string' },
+      // `type: cron` only — the misfire bound. Its 60s floor is the imperative
+      // validator's, like the monitor duration floors below.
+      max_lateness: durationSchema,
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -494,6 +502,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The misfire bound exists only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -690,8 +703,8 @@ function projectToolsSchema(): JsonSchemaFragment {
     description:
       'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
       'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
-      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all Kortix tools.',
-    propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }] },
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
+    propertyNames: { pattern: TOOL_NAME_RE.source },
     properties: Object.fromEntries(
       KORTIX_TOOL_NAMES.map((name) => [
         name,
@@ -756,6 +769,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
             properties: {
               project_repository: {
                 type: 'boolean',
+                default: true,
                 description: 'Check out the project repository and allow repository access. Defaults to true.',
               },
             },
@@ -1033,30 +1047,161 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
 }
 
 /** v3 keeps v2 governance but puts agent behavior in YAML. */
-export function buildManifestV3Schema(): JsonSchemaFragment {
-  const v2 = buildManifestV2Schema();
-  const agent = agentBlockV2Schema();
-  const behavior = agentMdFrontmatterSchema();
-  delete agent.properties.file;
-  agent.properties = {
-    ...agent.properties,
-    ...behavior.properties,
-    prompt: { type: 'string' },
-    prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
-  };
-  delete agent.properties.disable;
-  agent.allOf.push({ not: { required: ['prompt', 'prompt_file'] } });
+/** A skill, command or extension name (`REGISTRY_NAME_RE`). */
+const REGISTRY_NAME_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: REGISTRY_NAME_RE.source, maxLength: REGISTRY_NAME_MAX };
+/** A repository path: no leading `/`, `./` or `-`, no `.` or `..` segment. */
+const REPO_PATH_PATTERN = String.raw`^(?!-)(?!\.?/)(?!(?:.*/)?\.\.?(?:/|$))[^\s:]+$`;
+
+/** `agents.<name>.<grant>` of registered names (v3). */
+function namedGrantSchema(description: string): JsonSchemaFragment {
+  return { ...grantSetSchema(), description: `${description} "all", "none" (default) or a list of names.` };
+}
+
+/** v3 pi package source: an exact npm pin or a repository path, alone or in pi's filter form. */
+function piSourceV3Schema(): JsonSchemaFragment {
+  const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: REPO_PATH_PATTERN, not: { pattern: '^npm:' } }] };
+  const globs = { type: 'array', items: { type: 'string' } };
   return {
-    ...v2,
+    oneOf: [
+      source,
+      {
+        type: 'object',
+        required: ['source'],
+        properties: { source, extensions: globs, skills: globs, prompts: globs, themes: globs },
+        additionalProperties: false,
+      },
+    ],
+  };
+}
+
+/** `agents.<name>` (v3): behavior and grants in one block. */
+function agentBlockV3Schema(): JsonSchemaFragment {
+  const v2 = agentBlockV2Schema();
+  const behavior = agentMdFrontmatterSchema().properties;
+  delete behavior.disable;
+  const permission = permissionConfigSchema();
+  permission.oneOf[1].properties = { ...permission.oneOf[1].properties, skill: false, task: false };
+  const names = { type: 'array', items: NON_EMPTY_STRING };
+  return {
+    type: 'object',
+    properties: {
+      ...behavior,
+      permission: { ...permission, description: 'Tool policy. Omitted: allow. `skill` and `task` belong to `skills` and `subagents`.' },
+      prompt: { type: 'string', minLength: 1, description: 'The system prompt.' },
+      prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'Repository path of a Markdown file that holds the system prompt.' },
+      enabled: { type: 'boolean', description: 'false: no session can start with this agent. Default true.' },
+      codemode: { type: 'string', enum: [...CODEMODE_VALUES], description: 'pi codemode tool: on (default), only, off.' },
+      tools: {
+        description: 'Tools this agent may use: harness, Kortix and registered tools. all (default), none, a list, or { exclude: [...] }.',
+        oneOf: [
+          { type: 'string', enum: ['all', 'none'] },
+          names,
+          { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
+        ],
+      },
+      skills: namedGrantSchema('Registered and Kortix skills this agent may load.'),
+      subagents: namedGrantSchema('Declared subagents this agent may start.'),
+      commands: namedGrantSchema('Registered slash commands this agent runs.'),
+      extensions: namedGrantSchema('Registered extensions a session of this agent loads.'),
+      connectors: v2.properties.connectors,
+      connectors_required: v2.properties.connectors_required,
+      secrets: v2.properties.secrets,
+      apps: v2.properties.apps,
+      kortix_permissions: v2.properties.kortix_permissions,
+      workspace: {
+        description: 'What new sessions of this agent get in /workspace.',
+        type: 'object',
+        properties: {
+          project_repository: {
+            type: 'boolean',
+            default: false,
+            description: 'Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true.',
+          },
+        },
+        additionalProperties: false,
+      },
+      sandbox: v2.properties.sandbox,
+      network_egress: v2.properties.network_egress,
+    },
+    additionalProperties: false,
+    not: { required: ['prompt', 'prompt_file'] },
+  };
+}
+
+/** `kortix_version: 3` body: the project registers, each agent enables. */
+export function buildManifestV3Schema(): JsonSchemaFragment {
+  const shared = sharedSectionProperties(2);
+  delete shared.opencode;
+  delete shared.sandboxes;
+  return {
+    $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`,
     title: 'Kortix manifest (kortix_version 3)',
-    description: 'YAML-only agent behavior with inline prompt or prompt_file; no native harness agent config required.',
+    description:
+      'kortix.yaml, schema version 3. The project registers skills, tools, commands and extensions; ' +
+      'each agent is one block of behavior (prompt, model, permission) and enables registered things by name. ' +
+      'No harness config folder is read. Unknown keys are errors.',
+    type: 'object',
+    required: ['kortix_version', 'default_agent'],
+    if: { not: { required: ['imports'] } },
+    then: { required: ['agents'] },
     properties: {
-      ...v2.properties,
       kortix_version: { const: 3 },
-      opencode: false,
-      agents: { ...v2.properties.agents, additionalProperties: agent },
+      imports: { type: 'array', items: { type: 'string', pattern: IMPORT_PATH_PATTERN } },
+      default_agent: NON_EMPTY_STRING,
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      ...shared,
+      skills: {
+        type: ['object', 'null'],
+        description: 'Skills: name → repository folder that holds SKILL.md, named after the skill. Kortix skills (kortix-*) are always registered.',
+        propertyNames: { ...REGISTRY_NAME_SCHEMA, not: { pattern: `^${KORTIX_SKILL_PREFIX}` } },
+        additionalProperties: { type: 'string', pattern: REPO_PATH_PATTERN },
+      },
+      tools: {
+        type: ['object', 'null'],
+        description: 'Tools: name → repository .ts/.js module. Kortix tools are always registered; a project tool with a Kortix tool name replaces it.',
+        propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }], not: { enum: [...HARNESS_TOOL_NAMES] } },
+        additionalProperties: { type: 'string', pattern: TOOL_FILE_PATTERN },
+      },
+      commands: {
+        type: ['object', 'null'],
+        description: 'Slash commands: name → { description, prompt | prompt_file }. $ARGUMENTS, $1, $2 … take the arguments.',
+        propertyNames: REGISTRY_NAME_SCHEMA,
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            description: { type: 'string' },
+            prompt: { type: 'string', minLength: 1 },
+            prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
+          },
+          additionalProperties: false,
+          oneOf: [{ required: ['prompt'] }, { required: ['prompt_file'] }],
+        },
+      },
+      extensions: {
+        type: ['object', 'null'],
+        description: 'Extensions: name → one implementation per harness. opencode: a repository plugin module. pi: an exact npm pin or a repository path.',
+        propertyNames: REGISTRY_NAME_SCHEMA,
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            opencode: { type: 'string', pattern: TOOL_FILE_PATTERN },
+            pi: piSourceV3Schema(),
+          },
+          additionalProperties: false,
+          minProperties: 1,
+        },
+      },
+      policy: { type: 'object' },
+      policies: { type: 'array' },
+      agents: {
+        type: 'object',
+        minProperties: 1,
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: agentBlockV3Schema(),
+      },
     },
+    additionalProperties: false,
   };
 }
 

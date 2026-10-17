@@ -1,9 +1,8 @@
 /**
- * Integration test (real local DB): trials and Enterprise contracts never end
- * silently (.agents/skills/billing/references/plans-and-access.md). On
- * 2026-10-14 an Enterprise trial lapsed with no warning and the account fell
- * to Free. Captured: the email transport. Everything else is real: the trial
- * columns, enterprise_contracts, the wallet and chat_event_dedup.
+ * Integration test (real local DB): an Enterprise license never ends silently
+ * and never touches money (.agents/skills/billing/references/plans-and-access.md).
+ * Captured: the email transport. Everything else is real: credit_accounts,
+ * enterprise_contracts, the wallet and chat_event_dedup.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accountMembers, creditAccounts, creditLedger, enterpriseContracts } from '@kortix/db';
@@ -12,6 +11,7 @@ import { runAccessSweep } from '../billing/services/access-notices';
 import { createContract, endContract, getActiveContract } from '../billing/services/enterprise-contracts';
 import { resolveBillingFromRow } from '../billing/services/resolve-billing';
 import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
+import { config } from '../config';
 import type { EmailMessage } from '../lib/email/types';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -24,47 +24,31 @@ const MEMBER = crypto.randomUUID();
 const email = (id: string, role: string) => `access-${role}-${id.slice(0, 8)}@example.test`;
 
 let ending: SeededProject;
-let lapsed: SeededProject;
-let contracted: SeededProject;
+let licensed: SeededProject;
 let sent: EmailMessage[] = [];
+// The sales copy goes to DEMO_LEAD_NOTIFY_EMAIL, which is empty outside prod.
+const savedOpsEmail = config.DEMO_LEAD_NOTIFY_EMAIL;
 
 const customerEmails = () => sent.filter((m) => !m.subject.startsWith('[Kortix billing]'));
 const opsEmails = () => sent.filter((m) => m.subject.startsWith('[Kortix billing]'));
 
 beforeAll(async () => {
+  config.DEMO_LEAD_NOTIFY_EMAIL = 'sales@example.test';
   ending = await seedProject('access-ending');
-  lapsed = await seedProject('access-lapsed');
-  contracted = await seedProject('access-contracted');
+  licensed = await seedProject('access-licensed');
   for (const [id, role] of [[OWNER, 'owner'], [ADMIN, 'admin'], [MEMBER, 'member']] as const) {
     await db.execute(sql`
       insert into auth.users (id, email, instance_id, aud, role)
       values (${id}::uuid, ${email(id, role)}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
   }
-  for (const account of [ending, lapsed, contracted]) {
+  for (const account of [ending, licensed]) {
     await insertIntoView(db, accountMembers, { userId: OWNER, accountId: account.account_id, accountRole: 'owner' });
   }
   await insertIntoView(db, accountMembers, { userId: ADMIN, accountId: ending.account_id, accountRole: 'admin' });
   await insertIntoView(db, accountMembers, { userId: MEMBER, accountId: ending.account_id, accountRole: 'member' });
-
-  const now = Date.now();
   await db.insert(creditAccounts).values([
-    {
-      accountId: ending.account_id,
-      tier: 'free',
-      trialStatus: 'active',
-      trialTier: 'enterprise',
-      trialStartedAt: new Date(now - 25 * DAY).toISOString(),
-      trialEndsAt: new Date(now + 5 * DAY - 60_000).toISOString(),
-    },
-    {
-      accountId: lapsed.account_id,
-      tier: 'free',
-      trialStatus: 'active',
-      trialTier: 'enterprise',
-      trialStartedAt: new Date(now - 30 * DAY).toISOString(),
-      trialEndsAt: new Date(now - 60 * 60_000).toISOString(),
-    },
-    { accountId: contracted.account_id, tier: 'free' },
+    { accountId: ending.account_id, tier: 'free' },
+    { accountId: licensed.account_id, tier: 'credits', balance: '40', nonExpiringCredits: '40' },
   ]);
   setOwnerAlertSenderForTest(async (message) => {
     sent.push(message);
@@ -78,78 +62,72 @@ beforeEach(() => {
 
 afterAll(async () => {
   setOwnerAlertSenderForTest(null);
+  config.DEMO_LEAD_NOTIFY_EMAIL = savedOpsEmail;
   if (!ending) return;
-  for (const account of [ending, lapsed, contracted]) {
+  for (const account of [ending, licensed]) {
     await db.delete(enterpriseContracts).where(eq(enterpriseContracts.accountId, account.account_id));
     await db.delete(creditAccounts).where(eq(creditAccounts.accountId, account.account_id));
   }
-  await removeSeeded([ending, lapsed, contracted]);
+  await removeSeeded([ending, licensed]);
   await db.execute(sql`delete from auth.users where id in (${OWNER}::uuid, ${ADMIN}::uuid, ${MEMBER}::uuid)`);
 });
 
 describe('the access sweep', () => {
-  test('a trial 5 days from its end warns the owner and the admin (not the member), and Kortix sales', async () => {
+  test('a license 5 days from a non-renewing end warns the owner and the admin (not the member), and Kortix sales', async () => {
+    await createContract({ accountId: ending.account_id, licenseUsd: 25000, collection: 'manual', termMonths: 12 });
+    await db
+      .update(enterpriseContracts)
+      .set({ endsAt: new Date(Date.now() + 5 * DAY - 60_000).toISOString() })
+      .where(eq(enterpriseContracts.accountId, ending.account_id));
     const result = await runAccessSweep();
     expect(result.warningsSent).toBe(1);
-    const warning = customerEmails().filter((m) => m.category === 'billing-trial-ending');
+    const warning = customerEmails().filter((m) => m.category === 'billing-contract-ending');
     expect(warning.map((m) => m.to[0]).sort()).toEqual([email(OWNER, 'owner'), email(ADMIN, 'admin')].sort());
-    expect(warning[0]!.subject).toContain('Enterprise trial ends in 5 days');
-    expect(warning[0]!.text).toContain('SSO and SCIM stay on for 14 more days');
-    expect(opsEmails().some((m) => m.category === 'billing-trial-ending-ops')).toBe(true);
+    expect(warning[0]!.subject).toContain('Enterprise license ends in 5 days');
+    expect(opsEmails().some((m) => m.category === 'billing-contract-ending-ops')).toBe(true);
   });
 
-  test('the trial that passed its end expires, once, with a "trial ended" notice', async () => {
-    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, lapsed.account_id));
-    expect(row!.trialStatus).toBe('expired');
-    // The first sweep (previous test) sent it; a second sweep sends nothing new.
-    const again = await runAccessSweep();
-    expect(again).toEqual({ trialsExpired: 0, contractsEnded: 0, warningsSent: 0 });
+  test('a second sweep sends nothing new', async () => {
+    expect(await runAccessSweep()).toEqual({ contractsEnded: 0, warningsSent: 0 });
     expect(sent).toEqual([]);
-  });
-
-  test('after the lapse the account is on Free with SSO and SCIM kept for the grace', async () => {
-    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, lapsed.account_id));
-    const resolved = resolveBillingFromRow(row);
-    expect(resolved.plan.family).toBe('free');
-    expect(resolved.entitlements.sso).toBe(true);
-    expect(resolved.entitlements.rbac).toBe(false);
-    expect(resolved.grace?.reason).toBe('trial_ended');
   });
 });
 
-describe('a manual Enterprise contract', () => {
-  test('activates at once: tier enterprise, and the annual pool granted, expiring at the term end', async () => {
+describe('a manual Enterprise license', () => {
+  test('activates at once: Licensed, the billing plan and the wallet untouched', async () => {
     const contract = await createContract({
-      accountId: contracted.account_id,
+      accountId: licensed.account_id,
       licenseUsd: 25000,
       creditsUsd: 15000,
       collection: 'manual',
       note: 'integration test',
     });
     expect(contract.status).toBe('active');
-    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, contracted.account_id));
-    expect(row!.tier).toBe('enterprise');
+    expect(Number(contract.creditsUsd)).toBe(0);
+    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, licensed.account_id));
+    expect([row!.tier, row!.enterpriseEntitled, Number(row!.balance)]).toEqual(['credits', true, 40]);
+    expect(resolveBillingFromRow(row).enterprise).toBe('licensed');
     const grants = await db
-      .select({ amount: creditLedger.amount, expiresAt: creditLedger.expiresAt })
+      .select({ amount: creditLedger.amount })
       .from(creditLedger)
-      .where(and(eq(creditLedger.accountId, contracted.account_id), eq(creditLedger.type, 'contract_grant')));
-    expect(grants.map((g) => Number(g.amount))).toEqual([15000]);
-    expect(new Date(grants[0]!.expiresAt!).getTime()).toBe(new Date(contract.endsAt!).getTime());
+      .where(and(eq(creditLedger.accountId, licensed.account_id), eq(creditLedger.type, 'contract_grant')));
+    expect(grants).toEqual([]);
   });
 
-  test('a second active contract is refused', async () => {
+  test('a second active license is refused', async () => {
     await expect(
-      createContract({ accountId: contracted.account_id, licenseUsd: 1, creditsUsd: 1, collection: 'manual' }),
+      createContract({ accountId: licensed.account_id, licenseUsd: 1, collection: 'manual' }),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  test('ending it returns the account to Free, keeps SSO/SCIM for 14 days, and tells the account and sales', async () => {
-    const active = await getActiveContract(contracted.account_id);
+  test('ending it turns Enterprise off, keeps SSO/SCIM for 14 days, keeps the plan, and tells the account and sales', async () => {
+    const active = await getActiveContract(licensed.account_id);
     const ended = await endContract(active!.id, 'operator');
     expect(ended.status).toBe('ended');
-    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, contracted.account_id));
-    expect(row!.tier).toBe('free');
+    const [row] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, licensed.account_id));
+    expect([row!.tier, row!.enterpriseEntitled]).toEqual(['credits', false]);
     const resolved = resolveBillingFromRow(row);
+    expect(resolved.enterprise).toBe('off');
     expect(resolved.entitlements.sso).toBe(true);
     expect(resolved.entitlements.scim).toBe(true);
     expect(resolved.entitlements.rbac).toBe(false);

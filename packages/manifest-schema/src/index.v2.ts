@@ -68,8 +68,16 @@ export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** What an agent's sessions get in `/workspace`. */
 export interface AgentWorkspaceV2 {
-  /** Check out the project repository. Defaults to true. */
+  /** Check out the project repository. Defaults to true in v1/v2, false in v3. */
   project_repository?: boolean;
+}
+
+/**
+ * `workspace.project_repository` when an agent omits it. v1 and v2 clone the
+ * project repository; v3 does not, so an agent opts in to the checkout.
+ */
+export function projectRepositoryDefault(kortixVersion: number): boolean {
+  return kortixVersion < 3;
 }
 
 export type ProjectRepositoryResult =
@@ -77,12 +85,13 @@ export type ProjectRepositoryResult =
   | { ok: false; path: string; message: string };
 
 /**
- * Resolve `agents.<name>.workspace.project_repository` (default true) from the
- * block and its two legacy forms: `repository_access: <bool>` and
- * `workspace: runtime|read|branch`. Forms that disagree are an error.
+ * Resolve `agents.<name>.workspace.project_repository` from the block and its
+ * two legacy forms: `repository_access: <bool>` and
+ * `workspace: runtime|read|branch`. Forms that disagree are an error. An
+ * omitted value is `fallback`: `projectRepositoryDefault(kortix_version)`.
  * `legacyRead` is the legacy `workspace: read` with no explicit choice.
  */
-export function resolveProjectRepository(entry: Record<string, unknown>): ProjectRepositoryResult {
+export function resolveProjectRepository(entry: Record<string, unknown>, fallback = true): ProjectRepositoryResult {
   const access = entry.repository_access;
   if (access !== undefined && typeof access !== 'boolean') {
     return { ok: false, path: 'repository_access', message: 'must be a boolean.' };
@@ -115,7 +124,7 @@ export function resolveProjectRepository(entry: Record<string, unknown>): Projec
   }
   return {
     ok: true,
-    value: access ?? fromWorkspace ?? true,
+    value: access ?? fromWorkspace ?? fallback,
     legacyRead: typeof workspace === 'string' && workspace.trim() === 'read' && access === undefined,
   };
 }
@@ -210,14 +219,6 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
-  /** v3 only: inline system prompt or a repo-relative Markdown prompt file. */
-  prompt?: string;
-  prompt_file?: string;
-  /** v3: agent-specific model and native permission rules. */
-  model?: string;
-  description?: string;
-  mode?: 'primary' | 'subagent' | 'all';
-  permission?: PermissionConfigV2;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -780,7 +781,7 @@ export function validateAgentMdFrontmatter(
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
-function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[], v3 = false): void {
+function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[]): void {
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
@@ -827,29 +828,21 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // Pre-redirect / pre-refactor shapes: behavioral fields authored on the
   // manifest agent block at all (flat, or nested under the now-removed
   // `opencode:`) — these live ONLY in the agent's `.md` frontmatter now.
-  for (const key of v3 ? ['opencode', 'disable', 'file'] : MOVED_TO_AGENT_MD_KEYS) {
+  for (const key of MOVED_TO_AGENT_MD_KEYS) {
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: v3
-          ? `"${key}" is not supported in v3; declare behavior in kortix.yaml (prompt or prompt_file).`
-          : `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
+        message: `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
         severity: 'error',
       });
     }
   }
 
-  if (!v3 && entry.prompt_file !== undefined) {
+  if (entry.prompt_file !== undefined) {
     issues.push({ path: `${where}.prompt_file`, message: 'v2 agent behavior lives in its .md file.', severity: 'error' });
   }
-  if (v3) {
-    if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
-    if (entry.prompt_file !== undefined && (!safeAgentFile(entry.prompt_file) || entry.prompt !== undefined)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path and cannot be combined with prompt.', severity: 'error' });
-    // `tools` is the governance key above, not the retired frontmatter field.
-    validateAgentMdFrontmatter({ ...entry, tools: undefined }, where, issues);
-  }
 
-  if (!v3 && entry.file !== undefined && !safeAgentFile(entry.file)) {
+  if (entry.file !== undefined && !safeAgentFile(entry.file)) {
     issues.push({
       path: `${where}.file`,
       message:
@@ -880,7 +873,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
 /** `agents.<name>.apps` — the grant-set shape rules, plus each entry must be
  *  an App slug (or the `*` wildcard). App slugs are project-defined, so there
  *  is no catalog to check membership against here. */
-function validateAppGrantList(value: unknown, where: string, issues: ManifestIssue[]): void {
+export function validateAppGrantList(value: unknown, where: string, issues: ManifestIssue[]): void {
   const before = issues.length;
   validateGrantList(value, where, 'apps', issues, false, 2);
   if (issues.length !== before || !Array.isArray(value)) return;
@@ -910,7 +903,7 @@ export interface AgentsV2Scan {
  * callers can cross-validate `default_agent` and `triggers[].agent` against
  * them. Dispatch: called from `index.ts`'s `validateManifestBodyV2`.
  */
-export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[], v3 = false): AgentsV2Scan {
+export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]): AgentsV2Scan {
   const names: string[] = [];
   const disabledNames: string[] = [];
   if (node == null || (isTable(node) && Object.keys(node).length === 0)) {
@@ -944,7 +937,7 @@ export function validateAgentsV2(node: unknown, path: string, issues: ManifestIs
         disabledNames.push(name);
       }
     }
-    validateAgentBlockV2(entry, where, issues, v3);
+    validateAgentBlockV2(entry, where, issues);
   }
   return { names, disabledNames };
 }
@@ -1053,7 +1046,11 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
   }
   for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
-    if (!TOOL_NAME_RE.test(name) && !isKortixTool(name)) {
+    if (RETIRED_KORTIX_TOOLS.includes(name) && file === `kortix:${name}`) {
+      issues.push({ path: where, message: `"${name}" was removed: agents reach connectors with the \`kortix connectors\` CLI. Delete this line.`, severity: 'warning' });
+      continue;
+    }
+    if (!TOOL_NAME_RE.test(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
@@ -1071,6 +1068,9 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
     });
   }
 }
+
+/** Kortix tools a dev starter listed briefly (#9902) and that no longer exist. */
+const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 
 function isKortixTool(name: string): boolean {
   return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);
