@@ -23,15 +23,15 @@
  *   move the cursor back. A mode change starts a new pass.
  * - Passes. `write` starts a new pass after each one (the worker waits an hour);
  *   it selects only sessions without a log, so every pass retries the failures
- *   of the last one and is cheap once the queue is empty. `dry` runs one pass:
- *   after its summary it does nothing until the mode changes, because each dry
- *   pass reads and converts every old mirror. Run it again:
- *   `DELETE FROM kortix.session_log_backfill_state`.
- * - Size cap. A session whose mirror (the stored JSON of its rows, summed in
- *   Postgres) is over `SESSION_LOG_RESTORE_MAX_BYTES` is not converted
- *   (`too_large`). The conversion is synchronous and blocked a prod API task's
- *   event loop 17 s on one 200 MB session; a restore answers 413 above that
- *   cap anyway. Every write pass counts it again; its v1 mirror stays the store.
+ *   of the last one and is cheap once the queue is empty. `dry` runs one pass per
+ *   build (`KORTIX_COMMIT`): after its summary it does nothing until the mode or
+ *   the build changes, because each dry pass reads and converts every old
+ *   mirror. A skipped dry tick says so once per process at info. Run it again on
+ *   the same build: `DELETE FROM kortix.session_log_backfill_state`.
+ * - Size cap. A mirror over the capture's cap (`mirrorStoredCap`,
+ *   `session-log-capture.ts`) is not converted: the capture answers `too_large`
+ *   after one cheap size query, and the backfill counts it. Every write pass
+ *   counts it again; its v1 mirror stays the store.
  * - Budget. A tick stops after the session that crossed `BACKFILL_BUDGET_MS`.
  * - Checks. Every converted log is validated with `SessionLogSchema` in the converter: a log
  *   that fails is not written (`validation_failed`). A dry pass also compares, per session,
@@ -64,7 +64,7 @@ const zero = () => ({
   logs: 0,
   skipped: 0,
   failed: 0,
-  /** Sessions whose mirror is over `SESSION_LOG_RESTORE_MAX_BYTES`: not converted. */
+  /** Sessions whose mirror is over the capture's size cap (`mirrorStoredCap`): not converted. */
   too_large: 0,
   messages: 0,
   // Restore grades of the logs. `fromV1` gives converted or partial.
@@ -105,8 +105,10 @@ export type BackfillState = {
   totals: BackfillCounts;
   passStartedAt: number | null;
   ingestOffWarned: boolean;
-  /** A dry pass ended: nothing more until the mode changes. */
+  /** A dry pass ended: nothing more until the mode or the build changes. */
   dryDone: boolean;
+  /** The build (`KORTIX_COMMIT`) that ended the dry pass. */
+  dryCommit?: string;
 };
 
 const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
@@ -119,6 +121,8 @@ const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
 });
 
 const STATE_ID = 'pass';
+/** The build this process last said "dry pass already complete" for: once per build. */
+let dryDoneSaidFor: string | null = null;
 
 /** The pass state and the `rev` it was saved at (0: no row yet). */
 async function loadState(): Promise<{ state: BackfillState; rev: number }> {
@@ -139,26 +143,19 @@ async function saveState(state: BackfillState, rev: number): Promise<boolean> {
   return saved.length > 0;
 }
 
-/** The next sessions to convert: after the cursor, oldest first, with the stored JSON bytes of each mirror. */
+/** The next sessions to convert: after the cursor, oldest first. */
 async function selectBatch(after: BackfillState['after']) {
   // `created_at::text` keeps the microseconds a JS Date would drop, so the cursor never re-selects a row.
-  // The size is summed after the LIMIT, for the batch only.
-  return db.execute<{ session_id: string; created_at: string; bytes: string }>(sql`
-    SELECT b.session_id, b.created_at,
-           (SELECT coalesce(sum(octet_length(t.info::text) + coalesce(octet_length(t.parts::text), 0)), 0)
-              FROM kortix.session_transcript_messages t WHERE t.session_id = b.session_id)::bigint AS bytes
-      FROM (
-        SELECT s.session_id, s.created_at AS ts, s.created_at::text AS created_at
-          FROM kortix.session_transcript_mirrors m
-          JOIN kortix.project_sessions s ON s.session_id = m.session_id
-         WHERE s.metadata ->> 'deletedAt' IS NULL
-           AND NOT EXISTS (SELECT 1 FROM kortix.session_logs l WHERE l.session_id = m.session_id)
-           AND EXISTS (SELECT 1 FROM kortix.session_transcript_messages t WHERE t.session_id = m.session_id)
-           ${after ? sql`AND (s.created_at, s.session_id) > (${after.createdAt}::timestamptz, ${after.sessionId})` : sql``}
-         ORDER BY s.created_at, s.session_id
-         LIMIT ${BACKFILL_BATCH_SIZE}
-      ) b
-     ORDER BY b.ts, b.session_id`);
+  return db.execute<{ session_id: string; created_at: string }>(sql`
+    SELECT s.session_id, s.created_at::text AS created_at
+      FROM kortix.session_transcript_mirrors m
+      JOIN kortix.project_sessions s ON s.session_id = m.session_id
+     WHERE s.metadata ->> 'deletedAt' IS NULL
+       AND NOT EXISTS (SELECT 1 FROM kortix.session_logs l WHERE l.session_id = m.session_id)
+       AND EXISTS (SELECT 1 FROM kortix.session_transcript_messages t WHERE t.session_id = m.session_id)
+       ${after ? sql`AND (s.created_at, s.session_id) > (${after.createdAt}::timestamptz, ${after.sessionId})` : sql``}
+     ORDER BY s.created_at, s.session_id
+     LIMIT ${BACKFILL_BATCH_SIZE}`);
 }
 
 /** Canonical JSON: keys sorted at every level, as the P1 round-trip test compares. */
@@ -193,6 +190,10 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   });
   counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
   if (result.outcome === 'skipped') counts.skipped++;
+  if (result.outcome === 'too_large') {
+    counts.too_large++;
+    logger.debug('[session-log] backfill session over the size cap; not converted', { sessionId });
+  }
   if (result.outcome === 'invalid') {
     counts.validation_failed++;
     logger.debug('[session-log] backfill session fails SessionLogSchema', { sessionId });
@@ -208,7 +209,6 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   if (result.harnessFrom === 'default') counts.harness_defaulted++;
   if (result.harnessFrom === 'root') counts.harness_inferred_pi++;
   if (mode === 'dry') {
-    await breathe();
     const mismatches = await roundTripMismatches(log, result.rows);
     if (mismatches > 0) {
       counts.roundtrip_mismatch_sessions++;
@@ -217,7 +217,6 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
     }
   }
   for (const k of ['tool_input', 'cut_point', 'attachment'] as const) counts[k] += log.grade_counts?.[k] ?? 0;
-  await breathe();
   let bytes = 0;
   for (const { message } of batch.puts) {
     bytes += Buffer.byteLength(JSON.stringify(message));
@@ -241,9 +240,16 @@ export async function backfillSessionLogs(
 ): Promise<{ more: boolean; counts: BackfillCounts }> {
   const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror } = options;
   const { state, rev } = await loadState();
-  if (state.mode !== mode) Object.assign(state, newBackfillState(mode));
+  // A new mode, or a dry pass that an older build ended, starts a new pass.
+  if (state.mode !== mode || (state.dryDone && state.dryCommit !== config.KORTIX_COMMIT)) Object.assign(state, newBackfillState(mode));
   const counts = zero();
-  if (state.dryDone) return { more: false, counts };
+  if (state.dryDone) {
+    if (dryDoneSaidFor !== config.KORTIX_COMMIT) {
+      dryDoneSaidFor = config.KORTIX_COMMIT;
+      logger.info('[session-log] backfill dry pass already complete for this build; to run it again, deploy a new build or DELETE FROM kortix.session_log_backfill_state', { commit: config.KORTIX_COMMIT });
+    }
+    return { more: false, counts };
+  }
   const started = Date.now();
   state.passStartedAt ??= started;
   if (mode === 'write' && !config.SESSION_LOG_INGEST_ENABLED && !state.ingestOffWarned) {
@@ -253,12 +259,6 @@ export async function backfillSessionLogs(
   const batch = await selectBatch(state.after);
   for (const row of batch) {
     state.after = { createdAt: row.created_at, sessionId: row.session_id };
-    if (Number(row.bytes) > config.SESSION_LOG_RESTORE_MAX_BYTES) {
-      counts.sessions++;
-      counts.too_large++;
-      logger.debug('[session-log] backfill session over SESSION_LOG_RESTORE_MAX_BYTES; not converted', { sessionId: row.session_id, bytes: Number(row.bytes) });
-      continue;
-    }
     await convertOne(row.session_id, mode, convert, counts);
     if (Date.now() - started >= budgetMs) break;
   }
@@ -268,10 +268,9 @@ export async function backfillSessionLogs(
     state.totals[k] = MAX_KEYS.has(k) ? Math.max(state.totals[k], counts[k]) : state.totals[k] + counts[k];
   }
   if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
-  if (!more) {
-    if (state.totals.sessions > 0) logger.info('[session-log] backfill pass complete', { mode, ...state.totals });
-    Object.assign(state, newBackfillState(mode), { dryDone: mode === 'dry' });
-  }
+  const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
+  if (!more) Object.assign(state, newBackfillState(mode), mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT } : {});
   if (!(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
+  else if (summary) logger.info('[session-log] backfill pass complete', summary);
   return { more, counts };
 }

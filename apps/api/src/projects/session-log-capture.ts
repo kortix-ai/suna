@@ -23,6 +23,13 @@
  *   stale: `current` compares the mirror's `captured_at` under the lock and the
  *   write is skipped (the newer capture writes its own).
  * - The operator switch `SESSION_LOG_INGEST_ENABLED` gates this writer too.
+ * - Size cap. The conversion is synchronous and holds the whole mirror in memory:
+ *   one 200 MB session blocked a prod API task's event loop 17 s (2026-10-16).
+ *   A session without a log whose mirror stores more than `mirrorStoredCap()`
+ *   bytes (`pg_column_size`, read without detoasting) gets no log (`too_large`);
+ *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. A session
+ *   that already has a log keeps its captures, so its log never goes stale. The
+ *   stages yield to the event loop (`breathe`).
  *
  * Never throws: the mirror is the user-facing store, and a failed v2 write is
  * only a log line. The result says what happened, for the backfill of old
@@ -39,7 +46,7 @@ import {
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -51,16 +58,26 @@ const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' }
  * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
  *   a newer mirror capture ran, or the capture revs are exhausted.
  * - `invalid`: `fromV1` of the mirror fails `SessionLogSchema`; nothing written.
+ * - `too_large`: no log yet, and the mirror is over the size cap; nothing read or written.
  * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror rows `rows`, `batch` what was (would be) written.
  *   `harnessFrom`: `projection`, `root` (no projection harness, a pi-minted root: `pi`), or `default` (`opencode`).
  * - `failed`: the apply path refused the batch (`status`), or something threw.
  */
 export type MirrorLogWrite =
-  | { outcome: 'skipped' | 'invalid' }
+  | { outcome: 'skipped' | 'invalid' | 'too_large' }
   | { outcome: 'written' | 'dry'; log: SessionLog; rows: V1Row[]; batch: SessionLogJournalRequest; harnessFrom: 'projection' | 'root' | 'default' }
   | { outcome: 'failed'; status?: number };
 
 const SKIPPED = { outcome: 'skipped' } as const;
+const TOO_LARGE = { outcome: 'too_large' } as const;
+
+/**
+ * Stored JSON is about 2x its `pg_column_size` (pglz; 1.3x to 5x measured on local sessions, median
+ * 2.0), so this cap is about `SESSION_LOG_RESTORE_MAX_BYTES` of JSON.
+ * ponytail: a fixed ratio; a session that compresses 5x passes at up to ~2.5x the restore cap.
+ * Measure the stored JSON exactly (`octet_length(info::text)`, 200 ms on 180 MB) if that matters.
+ */
+export const mirrorStoredCap = () => Math.floor(config.SESSION_LOG_RESTORE_MAX_BYTES / 2);
 
 /**
  * Let timers and I/O run. The conversion of a whole mirror is synchronous: one step per stage
@@ -77,6 +94,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
           projectId: projectSessions.projectId,
           accountId: projectSessions.accountId,
           journalSeenAt: sessionLogs.journalSeenAt,
+          hasLog: sessionLogs.sessionId,
           harness: sessionRuntimeProjections.harness,
           root: sessionTranscriptMirrors.runtimeSessionId,
           capturedAt: sessionTranscriptMirrors.capturedAt,
@@ -89,6 +107,12 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
         .limit(1);
       // A journal owns the log, or there is no mirror to convert.
       if (!s || s.journalSeenAt || !s.capturedAt) return null;
+      if (!s.hasLog) {
+        const [size] = await tx.execute<{ bytes: string }>(sql`
+          SELECT coalesce(sum(pg_column_size(info) + coalesce(pg_column_size(parts), 0)), 0)::bigint AS bytes
+            FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
+        if (Number(size?.bytes ?? 0) > mirrorStoredCap()) return TOO_LARGE;
+      }
       // ponytail: the whole mirror per capture, as the capture reads the whole box history per turn end.
       const rows = await tx
         .select({ runtime_session_id: sessionTranscriptMessages.runtimeSessionId, info: sessionTranscriptMessages.info, parts: sessionTranscriptMessages.parts })
@@ -101,6 +125,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       return { s, rows: rows as unknown as V1Row[], stored };
     }, READ_ONLY);
     if (!read) return SKIPPED;
+    if ('outcome' in read) return read;
     const { s, rows, stored } = read;
 
     const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';

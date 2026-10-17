@@ -319,21 +319,64 @@ describe('the pass lives in the database, not in the leader', () => {
   });
 });
 
-describe('size cap: a mirror over SESSION_LOG_RESTORE_MAX_BYTES is counted, never converted', () => {
-  test('too_large in dry and in write; the smaller session is converted; the large one keeps no log', async () => {
-    const large = await oldSession([plain(0), plain(1, 'y'.repeat(5_000))], { createdAt: new Date(T0 + 1000) });
+describe('dry runs once per build', () => {
+  test('a completed dry pass skips on the same build (one info line per process) and runs again on a new build', async () => {
+    const session = await oldSession([plain(0), plain(1)]);
+    const commit = config.KORTIX_COMMIT;
+    const info = spyOn(logger, 'info');
+    try {
+      config.KORTIX_COMMIT = 'build-a';
+      expect(total(await pass('dry'), 'sessions')).toBe(1);
+      expect((await backfillSessionLogs('dry')).counts.sessions).toBe(0);
+      expect((await backfillSessionLogs('dry')).counts.sessions).toBe(0);
+      const done = info.mock.calls.filter(([msg]) => String(msg).startsWith('[session-log] backfill dry pass already complete'));
+      expect(done).toHaveLength(1);
+      expect(String(done[0]![0])).toContain('DELETE FROM kortix.session_log_backfill_state');
+      config.KORTIX_COMMIT = 'build-b';
+      const again = await pass('dry');
+      expect([total(again, 'sessions'), total(again, 'logs')]).toEqual([1, 1]);
+      expect(await hasLog(session)).toBe(false);
+    } finally {
+      config.KORTIX_COMMIT = commit;
+      info.mockRestore();
+    }
+  });
+});
+
+describe('size cap: a mirror over the capture cap is counted, never converted', () => {
+  // Random hex: pglz cannot shrink it, so `pg_column_size` is close to the JSON length.
+  const incompressible = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n / 2))).toString('hex');
+
+  test('too_large in dry and in write, from the capture; the smaller session is converted; the large one keeps no log', async () => {
+    const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
     const small = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
-    const converted: string[] = [];
-    const convert = (id: string, opts?: { dry?: boolean }) => (converted.push(id), writeSessionLogFromMirror(id, opts));
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes
     try {
-      const dry = await pass('dry', { convert });
+      expect(await writeSessionLogFromMirror(large, { dry: true })).toEqual({ outcome: 'too_large' });
+      const dry = await pass('dry');
       expect([total(dry, 'sessions'), total(dry, 'too_large'), total(dry, 'logs')]).toEqual([2, 1, 1]);
-      const write = await pass('write', { convert });
+      const write = await pass('write');
       expect([total(write, 'sessions'), total(write, 'too_large'), total(write, 'logs')]).toEqual([2, 1, 1]);
-      expect(converted).toEqual([small, small]);
       expect([await hasLog(large), await hasLog(small)]).toEqual([false, true]);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
+  });
+
+  test('a session that already has a log keeps its captures past the cap: its log never goes stale', async () => {
+    const session = await oldSession([plain(0), plain(1)]);
+    expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
+    const grown = plain(2, incompressible(6_000));
+    await db.insert(sessionTranscriptMessages).values({
+      sessionId: session, messageId: String(grown.info.id), runtimeSessionId: ROOT, role: String(grown.info.role), info: grown.info, parts: grown.parts,
+      messageCreatedAt: new Date((grown.info.time as { created: number }).created),
+    });
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
+    try {
+      expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
+      expect((await snapshot(session)).messages.map((m) => m.id)).toContain('msg_000002');
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
@@ -476,7 +519,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
       const again = await backfillSessionLogs('dry', { convert: async (id, opts) => (converted++, writeSessionLogFromMirror(id, opts)) });
       expect(again).toEqual({ more: false, counts: expect.objectContaining({ sessions: 0, logs: 0 }) });
       expect(converted).toBe(0);
-      expect(info.mock.calls.filter(([msg]) => String(msg).includes('backfill'))).toHaveLength(2);
+      expect(info.mock.calls.filter(([msg]) => String(msg).includes('backfill') && !String(msg).includes('already complete'))).toHaveLength(2);
       // A mode change starts over: a write pass converts both.
       const [write] = await pass('write');
       expect(write!.counts).toMatchObject({ sessions: 2, logs: 2 });

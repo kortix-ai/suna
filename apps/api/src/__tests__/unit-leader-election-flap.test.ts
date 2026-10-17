@@ -5,7 +5,7 @@
  * stopped after that await was still "started", so its start did nothing, and then onRelease
  * stopped it. The worker stayed off for the whole term. The lease query is faked; time is fake.
  */
-import { afterAll, expect, jest, mock, test } from 'bun:test';
+import { afterAll, expect, jest, mock, spyOn, test } from 'bun:test';
 
 let lease: 'ours' | 'hang' = 'ours';
 const fakeSql = Object.assign(
@@ -20,6 +20,7 @@ const fakeSql = Object.assign(
 mock.module('postgres', () => ({ default: () => fakeSql }));
 
 const { config } = await import('../config');
+const { logger } = await import('../lib/logger');
 const { startLeaderElection, stopLeaderElection } = await import('../shared/leader-election');
 
 const flush = async () => {
@@ -72,10 +73,14 @@ test('a re-acquire while onRelease still awaits leaves every worker running', as
   expect(early.on).toBe(false);
   // The lease tick re-acquires while onRelease still awaits.
   lease = 'ours';
+  const info = spyOn(logger, 'info');
   await advance(16_000);
   releaseStop();
   await flush();
   expect([running, early.on, late.on]).toEqual([true, true, true]);
+  // The wait is logged with its length.
+  expect(info.mock.calls.some(([msg, meta]) => msg === '[leader] onAcquire waited for onRelease' && typeof (meta as { ms?: unknown })?.ms === 'number')).toBe(true);
+  info.mockRestore();
 
   await stopLeaderElection();
 });

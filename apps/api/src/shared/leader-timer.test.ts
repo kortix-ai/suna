@@ -41,15 +41,17 @@ describe('leaderTimer', () => {
       return 1_000;
     });
     timer.start();
-    await Bun.sleep(5);
+    await Bun.sleep(20);
     expect(runs).toBe(1);
     timer.stop();
     timer.start();
-    await Bun.sleep(20);
+    // The next run is due at once; it waits for the first run, however long that takes.
+    await Bun.sleep(100);
     expect(runs).toBe(1);
     release();
-    await Bun.sleep(5);
+    await Bun.sleep(50);
     timer.stop();
+    // The second run returned 1 s: no third run in the 50 ms window.
     expect([runs, maxActive]).toEqual([2, 1]);
   });
 

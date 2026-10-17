@@ -10,16 +10,19 @@
  *
  * A restart (`stop()` then `start()`, a lease flap) while a run is in flight
  * used to start the new chain's first run at once, beside the old one. The new
- * run now waits for the old one to settle, so two runs never overlap.
+ * run now waits for the old one to settle, so two runs never overlap. A wait
+ * over `SLOW_WAIT_MS` logs a warning with the timer's `name`.
  *
  * `run` returns the delay until the next tick.
  */
 import { logger } from '../lib/logger';
 import { isLeader } from './leader-election';
 
+const SLOW_WAIT_MS = 10_000;
+
 export function leaderTimer(
   run: () => Promise<number>,
-  options: { firstDelayMs?: number } = {},
+  options: { firstDelayMs?: number; name?: string } = {},
 ): { start(): void; stop(): void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let generation = 0;
@@ -32,7 +35,10 @@ export function leaderTimer(
 
   async function tick(generationAtStart: number): Promise<void> {
     timer = null;
+    const waitStarted = performance.now();
     await inFlight;
+    const waited = Math.round(performance.now() - waitStarted);
+    if (waited > SLOW_WAIT_MS) logger.warn('[leader-timer] a restarted timer waited for the run before the restart', { name: options.name, ms: waited });
     if (generationAtStart !== generation || !isLeader()) return;
     let next: number;
     try {

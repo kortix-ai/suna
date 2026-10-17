@@ -321,9 +321,12 @@ const envSchema = z.object({
   // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
   // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
   // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
-  // (`kortix.session_log_backfill_state`); a dry pass runs once: delete that row to run it again.
-  // A session over SESSION_LOG_RESTORE_MAX_BYTES is not converted (`too_large`).
+  // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
+  // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
+  KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1294,6 +1297,7 @@ export const config = {
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

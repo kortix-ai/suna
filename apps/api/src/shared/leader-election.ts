@@ -45,6 +45,8 @@ const QUERY_TIMEOUT_MS = 10_000;
 const DEMOTE_AFTER_MS = TTL_MS - 10_000;
 // Independent of the tick chain: a hung tick must not be able to hide an expired lease.
 const WATCHDOG_MS = 5_000;
+// An onAcquire that waited this long for an onRelease drain logs a warning.
+const ACQUIRE_WAIT_WARN_MS = 30_000;
 
 export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
@@ -144,10 +146,16 @@ let tableReady = false;
 // still up and started nothing, and the rest of onRelease then stopped them for the whole term
 // (2026-10-16 prod: the backfill worker stopped after a lease flap, cron kept running).
 let handlerChain: Promise<void> = Promise.resolve();
+let handlersPending = 0;
+// Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
+let term = 0;
 
 /** Run `fn` after every earlier handler call settled, in call order. */
 function serially(fn: () => Promise<void>): Promise<void> {
-  const next = handlerChain.then(fn);
+  handlersPending += 1;
+  const next = handlerChain.then(fn).finally(() => {
+    handlersPending -= 1;
+  });
   handlerChain = next.catch(() => undefined);
   return next;
 }
@@ -208,12 +216,22 @@ async function acquireOrRenew(): Promise<boolean> {
 async function promote(): Promise<void> {
   if (leader) return;
   leader = true;
+  const myTerm = ++term;
   logger.info('[leader] acquired background-worker leadership', { ownerId });
+  const queuedAt = performance.now();
+  const behindRelease = handlersPending > 0;
   // Not awaited: the lease tick must not wait for an onRelease still in flight before it renews.
-  void serially(acquireHandlers);
+  void serially(async () => {
+    if (behindRelease) {
+      const ms = Math.round(performance.now() - queuedAt);
+      if (ms > ACQUIRE_WAIT_WARN_MS) logger.warn('[leader] onAcquire waited for onRelease', { ms });
+      else logger.info('[leader] onAcquire waited for onRelease', { ms });
+    }
+    await acquireHandlers(myTerm);
+  });
 }
 
-async function acquireHandlers(): Promise<void> {
+async function acquireHandlers(myTerm: number): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
@@ -225,7 +243,7 @@ async function acquireHandlers(): Promise<void> {
     logger.error('[leader] onAcquire failed — stepping down to retry next tick', {
       error: err instanceof Error ? err.message : String(err),
     });
-    leader = false;
+    if (term === myTerm) leader = false;
     try {
       await handlers?.onRelease();
     } catch (releaseErr) {
@@ -239,6 +257,7 @@ async function acquireHandlers(): Promise<void> {
 async function demote(reason: string): Promise<void> {
   if (!leader) return;
   leader = false;
+  term += 1;
   logger.warn('[leader] released background-worker leadership', { ownerId, reason });
   await serially(async () => {
     try {
