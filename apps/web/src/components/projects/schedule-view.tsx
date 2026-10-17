@@ -29,6 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -461,8 +462,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
             showContent ? (
-              // Paper C03 toolbar: search, then ⋯, then New trigger, `gap-2`.
-              <div className="flex items-center gap-2">
+              // Search, then one group: ⋯ and New trigger, both `secondary` at `h-8`.
+              <ButtonGroup>
                 {triggers.length > 0 || paused ? (
                   <TriggerActivationMenu projectId={projectId} />
                 ) : null}
@@ -472,10 +473,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     pending={configure.pending}
                     onChat={() => configure.start(newConfigPrompt('trigger'))}
                     manual={{ onSelect: () => openCreate() }}
-                    variant="default"
+                    caret={false}
                   />
                 ) : null}
-              </div>
+              </ButtonGroup>
             ) : undefined
           }
         >

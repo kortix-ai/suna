@@ -63,6 +63,7 @@ export function NewEntityMenu({
   label = 'New',
   size = 'sm',
   variant = 'secondary',
+  caret = true,
   pending = false,
   onChat,
   manual,
@@ -72,6 +73,8 @@ export function NewEntityMenu({
   size?: 'sm' | 'default';
   /** `default` is the filled primary, for a page whose create action is its one primary (Triggers). */
   variant?: 'secondary' | 'default';
+  /** The ⌄ after the label. Off inside a toolbar group (Triggers), where the menu still opens. */
+  caret?: boolean;
   /** A configure session is being created — the trigger shows a spinner. */
   pending?: boolean;
   onChat: () => void;
@@ -107,7 +110,7 @@ export function NewEntityMenu({
         <Button variant={variant} size={size} className="gap-1.5" disabled={pending}>
           {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
           {label}
-          <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
+          {caret ? <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" /> : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-76">

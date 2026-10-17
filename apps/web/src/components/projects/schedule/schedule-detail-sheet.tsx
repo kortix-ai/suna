@@ -17,6 +17,7 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import {
@@ -76,7 +77,7 @@ import {
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
-import { describeLastRun, describeWhen, triggerName } from './schedule-copy';
+import { describeLastRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import { TriggerCallouts } from './trigger-callouts';
@@ -253,7 +254,12 @@ function SheetPanel({
 
   const canWrite = controls.canUpdate;
   const active = trigger.enabled;
-  const when = describeWhen(trigger, eventNames);
+  // Never the name twice: a trigger named after its schedule shows its prompt's first line.
+  const subtitle = triggerSubtitle(
+    triggerName(trigger),
+    describeWhen(trigger, eventNames),
+    trigger.prompt_template,
+  );
   // The form needs the event's schema to build its settings; wait for it, never flash a half-built form.
   const loading = catalogOn && (apps.isLoading || eventTypes.isLoading);
 
@@ -284,8 +290,8 @@ function SheetPanel({
             <Title className="max-w-full shrink-0 truncate text-sm font-medium">
               {triggerName(trigger)}
             </Title>
-            {when !== triggerName(trigger) ? (
-              <Description className="min-w-0 truncate text-xs">{when}</Description>
+            {subtitle ? (
+              <Description className="min-w-0 truncate text-xs">{subtitle}</Description>
             ) : null}
           </div>
           {split ? (
@@ -322,12 +328,14 @@ function SheetPanel({
           </TabsList>
 
           {controls.canFire || controls.canUpdate || controls.canDelete ? (
-            <div className="flex items-center gap-0.5 pb-2">
+            // One group, as the user asked: Pause or Resume, Test with payload
+            // (webhooks), ⋯, Run now; one variant (`secondary`) at one height (`h-7`).
+            <ButtonGroup className="mb-1.5">
               {controls.canUpdate ? (
                 <Button
                   size="xs"
-                  variant="ghost"
-                  className="text-muted-foreground text-xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
                   onClick={() => toggle.mutate(!active)}
                   disabled={toggle.isPending}
                 >
@@ -338,8 +346,8 @@ function SheetPanel({
               {controls.canFire && trigger.type === 'webhook' ? (
                 <Button
                   size="xs"
-                  variant="ghost"
-                  className="text-muted-foreground text-xs"
+                  variant="secondary"
+                  className="text-xs"
                   onClick={() => setTestOpen(true)}
                 >
                   {t.raw('textb098a09c78aa')}
@@ -349,12 +357,11 @@ function SheetPanel({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="text-muted-foreground"
+                      size="icon-sm"
+                      variant="secondary"
                       aria-label={t.raw('textf8d46c2570e7')}
                     >
-                      <DotsThreeIcon className="size-4 shrink-0" />
+                      <DotsThreeIcon className="text-muted-foreground size-4 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -378,20 +385,23 @@ function SheetPanel({
                 </DropdownMenu>
               ) : null}
               {controls.canFire ? (
-                <>
-                  <span aria-hidden className="w-1 shrink-0" />
-                  <Button size="xs" className="gap-1.5 text-xs" onClick={onRun} disabled={running}>
-                    {/* The run is the agent's work: the session busy mark, not a fetch spinner. */}
-                    {running ? (
-                      <SessionDotMatrix sessionId={trigger.slug} size={14} className="shrink-0" />
-                    ) : (
-                      <PlayIcon weight="fill" className="size-2.5 shrink-0" />
-                    )}
-                    {t.raw('text0991397702fa')}
-                  </Button>
-                </>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
+                  onClick={onRun}
+                  disabled={running}
+                >
+                  {/* The run is the agent's work: the session busy mark, not a fetch spinner. */}
+                  {running ? (
+                    <SessionDotMatrix sessionId={trigger.slug} size={14} className="shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-2.5 shrink-0" />
+                  )}
+                  {t.raw('text0991397702fa')}
+                </Button>
               ) : null}
-            </div>
+            </ButtonGroup>
           ) : null}
         </div>
       </SheetHeader>

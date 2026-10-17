@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { Fragment, type ReactNode } from 'react';
 
-import { describeWhen, triggerName } from './schedule-copy';
+import { describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { TriggerTile } from './trigger-tile';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -116,6 +116,12 @@ function TriggerRow({
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
+  const name = triggerName(trigger);
+  const subtitle = triggerSubtitle(
+    name,
+    describeWhen(trigger, eventNames),
+    trigger.prompt_template,
+  );
   return (
     <li>
       <button
@@ -129,13 +135,12 @@ function TriggerRow({
         )}
       >
         <TriggerTile trigger={trigger} surface={selected ? 'bg-muted' : 'bg-background'} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-foreground truncate text-sm font-medium">
-            {triggerName(trigger)}
-          </span>
-          <span className="text-muted-foreground truncate text-xs">
-            {describeWhen(trigger, eventNames)}
-          </span>
+        {/* No gap and tight leading: the two lines read as one block, centred on the clock. */}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-foreground truncate text-sm leading-tight font-medium">{name}</span>
+          {subtitle ? (
+            <span className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</span>
+          ) : null}
         </span>
         <span className="flex w-24 shrink-0 flex-col items-end text-xs tabular-nums">
           <span className="text-foreground whitespace-nowrap">
