@@ -11571,7 +11571,6 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
     "Can't find variables: EmptyRanges", // plural + colon
     'Can not find variable: EmptyRanges', // different modal wording
     'Could not find variable: EmptyRanges',
-    "Error: Can't find variable: EmptyRanges (extra context)",
     "Can't find variable", // bare prefix with no name — too short to be a real throw
   ]) {
     assert.equal(
@@ -11583,6 +11582,23 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
       `expected near-worded "${message}" to keep reporting`,
     );
   }
+});
+
+test('suppresses the bare-Error-wrapped undefined-variable serialization (KRTX-2409)', () => {
+  // The noise class is the frameless Safari ReferenceError wording; the
+  // leading `Error: ` is the wrapper an uncaught Error instance serializes
+  // with — a serialization shape, not a different error class — so it
+  // classifies like the unwrapped production fixture above. The
+  // attributability guards are frame-based, not prefix-based: any first-party
+  // or resolvable frame still keeps the event reporting (see the
+  // negative-guard tests).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: "Error: Can't find variable: EmptyRanges (extra context)",
+      frames: [],
+    }),
+    true,
+  );
 });
 
 test('does NOT suppress a frameless rejection with a different message', () => {
