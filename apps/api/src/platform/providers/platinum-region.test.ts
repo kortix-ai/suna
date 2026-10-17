@@ -269,3 +269,53 @@ describe('us_region: a template not yet copied to the region', () => {
     expect(err).toBe(refused);
   });
 });
+
+describe('us_region: a drive that lives in another region', () => {
+  const drives = { '/drives/project': { volume: 'kd-11111111', subdir: '/' } };
+  const elsewhere = platinumHttpError(
+    'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ' +
+    JSON.stringify({
+      error: 'volume kd-11111111 lives in region eu-west; call https://api.platinum.dev or create the sandbox in eu-west',
+      code: 'volume_in_other_region', volume: 'kd-11111111', region: 'eu-west', api_url: 'https://api.platinum.dev',
+    }),
+  );
+
+  test('409 volume_in_other_region boots the session where the drive is, and says so', async () => {
+    createSequence = [{ error: elsewhere }, { result: { id: 'sbx_eu', state: 'running', region: 'eu-west' } }];
+    const warn = spyOn(logger, 'warn');
+    const p = new PlatinumProvider();
+    const result = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east', volumes: drives });
+
+    const [first, second] = createCalls();
+    expect(first.body?.region).toBe('us-east');
+    expect(second.body?.region).toBe('eu-west');
+    expect(second.body?.volumes).toEqual(drives);
+    expect(result.metadata?.regionFallback).toMatchObject({ requested: 'us-east', region: 'eu-west', reason: 'volume_in_other_region' });
+    expect(warn.mock.calls.some(([m]) => m === '[platinum] region fallback: a volume lives in another region; the box boots there')).toBe(true);
+    warn.mockRestore();
+  });
+
+  test('a second refusal from the drive region is not chased into a third', async () => {
+    const third = platinumHttpError(
+      'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ' +
+      JSON.stringify({ error: 'volume kd-2 lives in region ap-south', code: 'volume_in_other_region', volume: 'kd-2', region: 'ap-south' }),
+    );
+    createSequence = [{ error: elsewhere }, { error: third }, { result: { id: 'sbx_never', state: 'running' } }];
+    const p = new PlatinumProvider();
+    const err = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east', volumes: drives }).catch((e) => e);
+
+    expect((err as Error).message).toContain('[drives]');
+    expect(createCalls()).toHaveLength(2);
+  });
+
+  test('a warm (speculative) box never leaves its region for a drive', async () => {
+    createSequence = [{ error: elsewhere }, { result: { id: 'sbx_never', state: 'running' } }];
+    const p = new PlatinumProvider();
+    const err = await p
+      .create({ ...baseOpts, createAttempt: 1, location: 'us-east', locationRequired: true, volumes: drives })
+      .catch((e) => e);
+
+    expect((err as Error).message).toContain('[drives]');
+    expect(createCalls()).toHaveLength(1);
+  });
+});

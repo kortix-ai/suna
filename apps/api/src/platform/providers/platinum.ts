@@ -282,6 +282,25 @@ function isVolumeRejection(error: unknown): boolean {
   return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
 }
 
+/**
+ * Platinum refuses a create in one region that mounts a volume living in
+ * another: `409 volume_in_other_region`. Volumes are regional (a drive made
+ * through the home origin lives in the home region), so the box has to run
+ * where the volume is. `region` names that region. Null for any other error.
+ */
+function volumeRegionRefusal(error: unknown): { region: string; volume: string } | null {
+  const http = platinumHttp(error);
+  if (http.status !== 409 || http.code !== 'volume_in_other_region') return null;
+  let body: { region?: unknown; volume?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON; keep the defaults if not
+  }
+  if (typeof body.region !== 'string' || !body.region) return null;
+  return { region: body.region, volume: typeof body.volume === 'string' ? body.volume : 'unknown' };
+}
+
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
 function platinumHttp(error: unknown): Partial<Pick<PlatinumHttpError, 'status' | 'code' | 'body'>> {
   return error instanceof Error ? (error as Partial<PlatinumHttpError>) : {};
@@ -571,6 +590,23 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      const volumeHome = volumeRegionRefusal(err);
+      if (volumeHome && opts.location && volumeHome.region !== opts.location && !opts.locationRequired) {
+        // `us_region` chooses compute placement only, and a session's drives
+        // cannot leave the region they were made in: boot it where they are.
+        // The recursion requires that region, so a second volume in yet
+        // another region fails below instead of bouncing between regions.
+        const fallback = { requested: opts.location, region: volumeHome.region, reason: 'volume_in_other_region', at: new Date().toISOString() };
+        // Stable message: alert on it. The fields say which region and why.
+        logger.warn('[platinum] region fallback: a volume lives in another region; the box boots there', {
+          ...fallback,
+          volume: volumeHome.volume,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const there = await this.provisionFromTemplate(template, { ...opts, location: volumeHome.region, locationRequired: true });
+        return { ...there, metadata: { ...there.metadata, regionFallback: fallback } };
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
