@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import { NextIntlClientProvider, type AbstractIntlMessages } from '@/i18n/use-translations';
 import de from '../../../../../../translations/de.json';
@@ -14,7 +14,15 @@ import zh from '../../../../../../translations/zh.json';
 import DesignSystemPage from './page';
 import type { MessageTree } from '@/i18n/client-catalog';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const GLOBAL_KEYS = ['window', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'] as const;
+const originalGlobals = GLOBAL_KEYS.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+
+afterAll(() => {
+  for (const [key, descriptor] of originalGlobals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else Reflect.deleteProperty(globalThis, key);
+  }
+});
 
 /**
  * The English apostrophe suffix (KRTX-2281), as a render contract: the usage
@@ -54,28 +62,31 @@ const CATALOGS: Record<CatalogLocale, MessageTree> = {
   zh,
 };
 
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    location: { origin: 'http://localhost', protocol: 'https:', hash: '#usage' },
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    scrollY: 0,
-    setTimeout,
-    clearTimeout,
-  },
-  configurable: true,
-});
-Object.defineProperty(globalThis, 'document', {
-  configurable: true,
-  value: { getElementById: () => null },
-});
-Object.defineProperty(globalThis, 'requestAnimationFrame', {
-  value: (callback: (time: number) => void) => setTimeout(() => callback(0), 0),
-  configurable: true,
-});
-Object.defineProperty(globalThis, 'cancelAnimationFrame', {
-  value: (id: number) => clearTimeout(id),
-  configurable: true,
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      location: { origin: 'http://localhost', protocol: 'https:', hash: '#usage' },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      scrollY: 0,
+      setTimeout,
+      clearTimeout,
+    },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { getElementById: () => null },
+  });
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    value: (callback: (time: number) => void) => setTimeout(() => callback(0), 0),
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+    value: (id: number) => clearTimeout(id),
+    configurable: true,
+  });
 });
 
 function paragraphText(node: ReactTestInstance): string {
@@ -109,7 +120,6 @@ test.each([...LOCALES])(
         (node) => node.type === 'p' && paragraphText(node) === expected,
       );
       expect(headings).toHaveLength(1);
-      expect(paragraphText(headings[0]!)).toBe(expected);
     } finally {
       for (const r of rendered) await act(async () => r.unmount());
     }
