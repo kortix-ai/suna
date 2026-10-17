@@ -20118,7 +20118,11 @@
       "textfa14066e0399": "中位时长",
       "text26735edf00f9": "没有运行",
       "textd2c58b300c07": "随时间的运行",
-      "text6de3a7d8e5db": "此时间范围内没有运行"
+      "text6de3a7d8e5db": "此时间范围内没有运行",
+      "text84b05fbb7f76": "事件触发",
+      "text27a2c8b3a0d2": "下次 {value0}",
+      "textd47d7cb0e4f8": "更多",
+      "text3ec84fbbfd0e": "{count, plural, other {# 个启用}}"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

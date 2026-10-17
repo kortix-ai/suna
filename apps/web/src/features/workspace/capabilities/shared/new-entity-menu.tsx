@@ -62,6 +62,7 @@ function RichRowBody({
 export function NewEntityMenu({
   label = 'New',
   size = 'sm',
+  variant = 'secondary',
   pending = false,
   onChat,
   manual,
@@ -69,6 +70,8 @@ export function NewEntityMenu({
 }: {
   label?: string;
   size?: 'sm' | 'default';
+  /** `default` is the filled primary, for a page whose create action is its one primary (Triggers). */
+  variant?: 'secondary' | 'default';
   /** A configure session is being created — the trigger shows a spinner. */
   pending?: boolean;
   onChat: () => void;
@@ -88,13 +91,7 @@ export function NewEntityMenu({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (!manual) {
     return (
-      <Button
-        variant="secondary"
-        size={size}
-        className="gap-1.5"
-        disabled={pending}
-        onClick={onChat}
-      >
+      <Button variant={variant} size={size} className="gap-1.5" disabled={pending} onClick={onChat}>
         {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
         {label}
       </Button>
@@ -107,7 +104,7 @@ export function NewEntityMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="secondary" size={size} className="gap-1.5" disabled={pending}>
+        <Button variant={variant} size={size} className="gap-1.5" disabled={pending}>
           {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
           {label}
           <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />

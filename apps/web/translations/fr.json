@@ -20118,7 +20118,11 @@
       "textfa14066e0399": "Durée médiane",
       "text26735edf00f9": "Aucune exécution",
       "textd2c58b300c07": "Exécutions dans le temps",
-      "text6de3a7d8e5db": "Aucune exécution sur cette période"
+      "text6de3a7d8e5db": "Aucune exécution sur cette période",
+      "text84b05fbb7f76": "Sur événement",
+      "text27a2c8b3a0d2": "prochaine {value0}",
+      "textd47d7cb0e4f8": "Plus",
+      "text3ec84fbbfd0e": "{count, plural, one {# actif} other {# actifs}}"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

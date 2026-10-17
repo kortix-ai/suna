@@ -29,8 +29,13 @@ import { useTranslations } from '@/i18n/use-translations';
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
@@ -40,12 +45,10 @@ import {
 } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import {
@@ -59,10 +62,10 @@ import {
   fireProjectTrigger,
   listProjectTriggers,
   setProjectTriggersActivation,
-  updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps } from '@kortix/sdk/react';
 import {
+  DotsThreeIcon,
   LightningIcon,
   LockKeyIcon,
   PauseIcon,
@@ -78,7 +81,6 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useSlashFocus } from '@/hooks/utils';
 import { EventAppsStrip } from './schedule/event-apps-strip';
-import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
 import {
   type TriggerKind,
   describeWhen,
@@ -90,7 +92,6 @@ import {
   triggerName,
 } from './schedule/schedule-copy';
 import { ScheduleDetailSplitContent } from './schedule/schedule-detail-sheet';
-import { ScheduleTable } from './schedule/schedule-table';
 import { TriggerComposer } from './schedule/trigger-composer';
 import { useTriggerControls } from './schedule/trigger-controls';
 import {
@@ -102,7 +103,7 @@ import {
   readTriggerSheet,
   triggerSheetHref,
 } from './schedule/trigger-filter';
-import { useEventAppConnect } from './schedule/use-event-app-connect';
+import { TriggerList } from './schedule/trigger-list';
 import { useEventTitles } from './schedule/use-event-titles';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
@@ -114,58 +115,56 @@ const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
 };
 
 /**
- * Pure — no hooks, no data fetching. Renders the pause-all button for a
- * MANAGER only; returns `null` for anyone else. Split out from
- * {@link TriggerActivationMenu} (its data-fetching container, below) purely
- * so this gate is testable under `renderToStaticMarkup` — apps/web has no DOM
- * testing library, so a pure component taking `canManage` as a prop is the
- * only way `schedule-view.test.tsx` can pin "an editor doesn't see this"
- * without a live QueryClient. See {@link TriggerActivationMenu}'s header
- * comment for why `canManage` here is deliberately NOT `ScheduleView`'s own
- * `canWrite`.
- *
- * A labelled button, not a switch behind a gear: the gear hid the one control
- * it held. The label names the action the click takes — "Pause all" while
- * triggers run, "Resume all" while they are paused — and the tooltip says
- * what pausing means.
+ * Pure: no hooks, no data fetching. The toolbar's ⋯ menu (Paper C03 `6O9-0`
+ * + `6YS-0`) for a viewer who may update triggers; `null` for anyone else.
+ * It holds the project-wide switch: Pause all (with the active count beside
+ * it) and Resume all, each disabled while it would change nothing. Split from
+ * {@link TriggerActivationMenu} so the gate renders under
+ * `renderToStaticMarkup` without a QueryClient.
  */
-export function TriggerPauseButton({
+export function TriggerToolbarMenu({
   canManage,
   paused,
   isPending,
+  activeCount,
   onToggle,
 }: {
   canManage: boolean;
   paused: boolean;
   isPending: boolean;
+  /** Enabled triggers, for the count beside Pause all. */
+  activeCount: number;
   onToggle: (next: boolean) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canManage) return null;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
           variant="secondary"
-          size="sm"
-          className="gap-1.5"
+          size="icon-base"
           disabled={isPending}
-          aria-pressed={paused}
-          onClick={() => onToggle(!paused)}
+          aria-label={tI18nComplete.raw('textd47d7cb0e4f8')}
         >
-          {paused ? (
-            <PlayIcon className="size-4 shrink-0" />
-          ) : (
-            <PauseIcon className="size-4 shrink-0" />
-          )}
-          {paused ? tI18nComplete.raw('text43e673c5503d') : tI18nComplete.raw('text0b6258b50010')}
+          <DotsThreeIcon className="text-muted-foreground size-4 shrink-0" />
         </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-64">
-        {tI18nComplete.raw('text19a4be984642')}
-      </TooltipContent>
-    </Tooltip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem disabled={paused} onSelect={() => onToggle(true)}>
+          <PauseIcon />
+          {tI18nComplete.raw('text0b6258b50010')}
+          <span className="text-muted-foreground ml-auto text-xs font-normal tabular-nums">
+            {tI18nComplete('text3ec84fbbfd0e', { count: activeCount })}
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!paused} onSelect={() => onToggle(false)}>
+          <PlayIcon />
+          {tI18nComplete.raw('text43e673c5503d')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -204,6 +203,9 @@ export function TriggerActivationMenu({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
+  const activeCount = (triggersQuery.data?.triggers ?? []).filter(
+    (t) => isTriggerKind(t.type) && isCustomerTrigger(t) && t.enabled,
+  ).length;
 
   // The leaves the activation route asserts (project.write +
   // project.trigger.update) — see this component's header comment for why this
@@ -222,10 +224,11 @@ export function TriggerActivationMenu({ projectId }: { projectId: string }) {
   });
 
   return (
-    <TriggerPauseButton
+    <TriggerToolbarMenu
       canManage={canManage}
       paused={paused}
       isPending={mutation.isPending || triggersQuery.isLoading}
+      activeCount={activeCount}
       onToggle={(v) => mutation.mutate(v)}
     />
   );
@@ -266,7 +269,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     setCreateApp(app);
     setCreateOpen(true);
   };
-  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
   const searchParams = useSearchParams();
   // `?id=<trigger id>[&tab=runs]` is the open trigger: a link, Back and Forward all open it.
@@ -290,9 +292,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   };
   // A null project id keeps the hook idle: with events off the page asks for no event data at all.
   const eventApps = useProjectTriggerEventApps(eventsOn ? projectId : null);
-  const appIndex = useMemo(() => indexEventApps(eventApps.data?.apps), [eventApps.data]);
-  const agents = useVisibleAgents({ projectId });
-  const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
   const navigateSheet = (next: Parameters<typeof triggerSheetHref>[2]) => {
     const { href, mode } = triggerSheetHref(
       pathname,
@@ -322,22 +321,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     },
     onError: (err) =>
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
-  });
-
-  const toggle = useMutation({
-    mutationFn: (trigger: ProjectTrigger) =>
-      updateProjectTrigger(projectId, trigger.slug, { enabled: !trigger.enabled }),
-    onSuccess: (_data, trigger) => {
-      successToast(
-        trigger.enabled
-          ? tI18nComplete.raw('texte159b06187d3')
-          : tI18nComplete.raw('texta97d32ddb6ba'),
-        { entity: triggerToastEntity(trigger) },
-      );
-      invalidate();
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
   });
 
   const remove = useMutation({
@@ -461,13 +444,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
                 className="max-w-full overflow-x-auto"
               >
-                <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
+                <TabsListCompact aria-label={tI18nComplete.raw('text51035b5b67dc')}>
                   {filters.map((value) => (
-                    <TabsTrigger key={value} value={value}>
+                    <TabsTriggerCompact key={value} value={value}>
                       {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                    </TabsTrigger>
+                    </TabsTriggerCompact>
                   ))}
-                </TabsList>
+                </TabsListCompact>
               </Tabs>
             ) : undefined
           }
@@ -478,9 +461,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
             showContent ? (
-              // One toolbar beside the search: the same height (`sm`), the same
-              // `secondary` variant and `size-4` glyphs, joined as one group.
-              <ButtonGroup>
+              // Paper C03 toolbar: search, then ⋯, then New trigger, `gap-2`.
+              <div className="flex items-center gap-2">
                 {triggers.length > 0 || paused ? (
                   <TriggerActivationMenu projectId={projectId} />
                 ) : null}
@@ -490,9 +472,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     pending={configure.pending}
                     onChat={() => configure.start(newConfigPrompt('trigger'))}
                     manual={{ onSelect: () => openCreate() }}
+                    variant="default"
                   />
                 ) : null}
-              </ButtonGroup>
+              </div>
             ) : undefined
           }
         >
@@ -568,30 +551,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 <span className="text-foreground font-medium">{debouncedQuery}</span>.
               </p>
             ) : (
-              <ScheduleTable
+              <TriggerList
                 triggers={filtered}
                 groups={appGroups}
-                apps={appIndex}
                 eventNames={eventNames}
-                agentLabel={agentLabel}
-                controls={controls}
+                selectedSlug={selected?.slug ?? null}
                 runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
-                togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
                 onOpen={(t) => openTrigger(t.slug)}
-                onRun={(t) => run.mutate(t)}
-                onToggle={(t) => toggle.mutate(t)}
-                onDelete={(t) => setDeleteTarget(t)}
-                onConnect={
-                  eventConnect.canConnect
-                    ? (t) =>
-                        t.event &&
-                        eventConnect.connect({
-                          app: t.event.app ?? t.event.connector,
-                          name: eventAppName(t.event, appIndex),
-                          connector: t.event.connector,
-                        })
-                    : undefined
-                }
               />
             )}
 

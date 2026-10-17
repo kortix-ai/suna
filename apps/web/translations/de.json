@@ -20118,7 +20118,11 @@
       "textfa14066e0399": "Mittlere Dauer",
       "text26735edf00f9": "Keine Läufe",
       "textd2c58b300c07": "Läufe im Zeitverlauf",
-      "text6de3a7d8e5db": "Keine Läufe in diesem Zeitraum"
+      "text6de3a7d8e5db": "Keine Läufe in diesem Zeitraum",
+      "text84b05fbb7f76": "Bei Ereignis",
+      "text27a2c8b3a0d2": "nächster {value0}",
+      "textd47d7cb0e4f8": "Mehr",
+      "text3ec84fbbfd0e": "{count, plural, other {# aktiv}}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

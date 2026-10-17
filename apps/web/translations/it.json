@@ -20118,7 +20118,11 @@
       "textfa14066e0399": "Durata mediana",
       "text26735edf00f9": "Nessuna esecuzione",
       "textd2c58b300c07": "Esecuzioni nel tempo",
-      "text6de3a7d8e5db": "Nessuna esecuzione in questo intervallo"
+      "text6de3a7d8e5db": "Nessuna esecuzione in questo intervallo",
+      "text84b05fbb7f76": "A un evento",
+      "text27a2c8b3a0d2": "prossima {value0}",
+      "textd47d7cb0e4f8": "Altro",
+      "text3ec84fbbfd0e": "{count, plural, one {# attivo} other {# attivi}}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -20129,7 +20129,11 @@
       "textfa14066e0399": "Median duration",
       "text26735edf00f9": "No runs",
       "textd2c58b300c07": "Runs over time",
-      "text6de3a7d8e5db": "No runs in this time range"
+      "text6de3a7d8e5db": "No runs in this time range",
+      "text84b05fbb7f76": "On event",
+      "text27a2c8b3a0d2": "next {value0}",
+      "textd47d7cb0e4f8": "More",
+      "text3ec84fbbfd0e": "{count, plural, other {# active}}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

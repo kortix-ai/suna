@@ -5,46 +5,41 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { TriggerPauseButton } from './schedule-view';
+import { TriggerToolbarMenu } from './schedule-view';
 import { readTriggerSheet, triggerSheetHref } from './schedule/trigger-filter';
 
 /**
- * Pins the access-control fix from Task 18's review: the pause-all control
- * (`TriggerActivationMenu`, the kill switch rehomed here from the deleted
- * `settings-view.tsx`) must stay manager-only — NOT `ScheduleView`'s own
- * `canWrite` (`project.trigger.create`), which would let editors toggle it
- * too. `TriggerPauseButton` is the pure half of that gate, testable under
- * `renderToStaticMarkup` because it takes `canManage` as a prop.
+ * The toolbar ⋯ menu holds the project-wide pause (`TriggerActivationMenu`).
+ * It stays gated on the update control, NOT `ScheduleView`'s own `canWrite`
+ * (`project.trigger.create`). `TriggerToolbarMenu` is the pure half of that
+ * gate. The menu content renders in a portal on open, so only its trigger is
+ * asserted here.
  */
-function render(props: Parameters<typeof TriggerPauseButton>[0]) {
+function render(props: Parameters<typeof TriggerToolbarMenu>[0]) {
   return renderToStaticMarkup(
     <TooltipProvider>
-      <TriggerPauseButton {...props} />
+      <TriggerToolbarMenu {...props} />
     </TooltipProvider>,
   );
 }
 
-describe('TriggerPauseButton — manager-only access gate', () => {
-  test('renders a labelled Pause all button for a manager', () => {
-    const out = render({ canManage: true, paused: false, isPending: false, onToggle: () => {} });
-    expect(out).toContain('Pause all');
-    expect(out).toContain('aria-pressed="false"');
+const menuProps = { paused: false, isPending: false, activeCount: 4, onToggle: () => {} };
+
+describe('TriggerToolbarMenu — manager-only access gate', () => {
+  test('renders the ⋯ menu button for a manager', () => {
+    const out = render({ ...menuProps, canManage: true });
+    expect(out).toContain('aria-label="More"');
+    expect(out).toContain('aria-haspopup="menu"');
   });
 
   test('does not render for an editor (or any non-manager)', () => {
-    const out = render({ canManage: false, paused: false, isPending: false, onToggle: () => {} });
-    expect(out).toBe('');
-  });
-
-  test('reads Resume all while the project is paused', () => {
-    const out = render({ canManage: true, paused: true, isPending: false, onToggle: () => {} });
-    expect(out).toContain('Resume all');
-    expect(out).toContain('aria-pressed="true"');
+    expect(render({ ...menuProps, canManage: false })).toBe('');
   });
 
   test('a pending mutation disables the button', () => {
-    const out = render({ canManage: true, paused: false, isPending: true, onToggle: () => {} });
-    expect(out).toMatch(/<button[^>]*disabled/);
+    expect(render({ ...menuProps, canManage: true, isPending: true })).toMatch(
+      /<button[^>]*disabled/,
+    );
   });
 });
 
@@ -95,7 +90,7 @@ describe('ScheduleView page chrome', () => {
     code.indexOf('export function ScheduleView'),
   );
 
-  test('pause-all is a labelled header button, not a gear or a list banner', () => {
+  test('pause-all lives in the toolbar ⋯ menu, not a gear or a list banner', () => {
     expect(shellHeader).toContain('<TriggerActivationMenu projectId={projectId} />');
     expect(code).not.toContain('GearSixIcon');
     expect(code).not.toContain('PopoverTrigger');

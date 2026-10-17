@@ -20118,7 +20118,11 @@
       "textfa14066e0399": "所要時間の中央値",
       "text26735edf00f9": "実行なし",
       "textd2c58b300c07": "時間ごとの実行",
-      "text6de3a7d8e5db": "この期間の実行はありません"
+      "text6de3a7d8e5db": "この期間の実行はありません",
+      "text84b05fbb7f76": "イベント時",
+      "text27a2c8b3a0d2": "次回 {value0}",
+      "textd47d7cb0e4f8": "その他",
+      "text3ec84fbbfd0e": "{count, plural, other {# 件有効}}"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
