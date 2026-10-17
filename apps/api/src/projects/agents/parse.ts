@@ -7,6 +7,7 @@ import {
   resolveGrantSet,
   safeAgentFile,
   SLUG_RE,
+  projectRepositoryDefault,
   resolveProjectRepository,
   type GrantSetV2,
 } from '@kortix/manifest-schema';
@@ -319,7 +320,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
-  const repository = resolveProjectRepository(normalizedRow);
+  const repository = resolveProjectRepository(normalizedRow, projectRepositoryDefault(version));
   if (!repository.ok) return err(name, `agents.${name}.${repository.path} ${repository.message}`);
   const repositoryAccess = repository.value;
   const legacyReadWorkspace = repository.legacyRead;

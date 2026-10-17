@@ -38,7 +38,7 @@ import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { invalidateTokenCache } from '@/lib/auth-token';
-import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
+import { type AALResponse, mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
@@ -106,6 +106,15 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
       // Invalidate so every caller (and the MfaGate's AAL answer, which is what
       // releases the gate) reads the aal2 token.
       invalidateTokenCache();
+      // A verified code IS the aal2 answer: Supabase upgraded this session
+      // before `challengeAndVerify` resolved. Record it before anything
+      // re-reads. The gate used to wait for a fresh AAL read (a `getUser`
+      // network call); until it landed, "Verified" showed over an emptied
+      // prompt, and a read that failed kept the old aal1 answer, so the code
+      // had to be entered twice.
+      queryClient.setQueryData<AALResponse>(MFA_AAL_QUERY_KEY, (aal) =>
+        aal ? { ...aal, current_level: 'aal2', action_required: 'none' } : aal,
+      );
       successToast(t('verified'));
       setCode('');
       // Refetch active queries so reads that failed while the session was aal1

@@ -68,14 +68,14 @@ describe('describeTopup', () => {
     expect(describeTopup(5).canBuy).toBe(true);
   });
 
-  test('above the $10,000 ceiling: not buyable, and it points at sales', () => {
-    const { canBuy, hint } = describeTopup(10001);
+  test('above the $50,000 ceiling: not buyable, and it points at sales', () => {
+    const { canBuy, hint } = describeTopup(50001);
     expect(canBuy).toBe(false);
-    expect(hint).toBe('For more than $10,000, contact sales.');
+    expect(hint).toBe('For more than $50,000, contact sales.');
   });
 
-  test('$10,000 exactly is buyable — the ceiling is inclusive', () => {
-    expect(describeTopup(10000).canBuy).toBe(true);
+  test('$50,000 exactly is buyable — the ceiling is inclusive', () => {
+    expect(describeTopup(50000).canBuy).toBe(true);
   });
 
   test('a purchase in flight blocks the button and says so', () => {

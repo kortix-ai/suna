@@ -86,7 +86,8 @@ export interface AgentConfigBlock {
   /** @deprecated Renamed to `kortix_permissions`. Servers accept it as an input
    *  alias and answer with `kortix_permissions`. Removed in the next major. */
   kortix_cli?: AgentGrantSetV2;
-  /** Whether new sessions can access the project repository. Defaults to true. */
+  /** Whether new sessions can access the project repository. The API always answers it; an
+   *  omitted value defaults to true on kortix_version 1 and 2, false on 3. */
   repository_access?: boolean;
   /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';

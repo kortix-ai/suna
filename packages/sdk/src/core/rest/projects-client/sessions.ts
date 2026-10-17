@@ -2305,6 +2305,8 @@ export interface SessionServedModel {
 
 /** The models that answered one turn, and what Kortix billed for it. */
 export interface SessionTurnModelUsage {
+  /** Successful fallback requests, oldest first. Error codes are safe public categories. */
+  fallbacks?: { requested_model: string; served_model: string; error_code: string }[];
   /** Route ids of the models that answered in this turn, most requests first. */
   served_models: string[];
   fallback_from: string | null;

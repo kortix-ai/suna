@@ -235,6 +235,23 @@ export async function authorizeRequest(
       ...(resolved.refusedPrincipal ? { principal: resolved.refusedPrincipal } : {}),
     };
   }
+  // A full-account PAT resolves with no projectId. Budgets are project-scoped
+  // (gateway_budgets.projectId NOT NULL — checkBudget would return
+  // { exceeded: false }) and metered usage is attributed to a project, so a
+  // project-less principal would bypass every budget gate and settle usage
+  // with projectId NULL (KRTX-2295). Refuse inference for it, before the
+  // billing gate so no admission hold is taken for a request we deny.
+  // /v1/llm/models still authenticates account PATs (authenticatePrincipal —
+  // listModels uses authenticate directly, never this gate).
+  if (!principal.projectId) {
+    return {
+      ok: false,
+      status: 403,
+      errorCode: 'project_required',
+      message:
+        'LLM inference requires a project context. Create a project gateway key (POST /v1/projects/{projectId}/gateway/keys) or use a project-scoped token.',
+    };
+  }
   // Old gateway processes omit deferBilling and still expect this RPC to take
   // the managed admission hold. New gateways defer it until model resolution.
   if (!options.deferBilling) {

@@ -265,10 +265,12 @@ export async function createAccountToken(
 export async function listAccountTokens(
   accountId: string,
   projectId?: string,
+  userId?: string,
 ): Promise<AccountTokenListEntry[]> {
   const filter = and(
     eq(accountTokens.accountId, accountId),
     projectId ? eq(accountTokens.projectId, projectId) : undefined,
+    userId ? eq(accountTokens.userId, userId) : undefined,
     eq(accountTokens.status, 'active'),
     isNull(accountTokens.revokedAt),
   );
