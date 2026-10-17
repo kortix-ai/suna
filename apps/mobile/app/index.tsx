@@ -42,7 +42,14 @@ import { projectKeys } from '@/lib/projects/hooks';
 import { listMyAccountInvites, type MyAccountInvite } from '@/lib/accounts/accounts-client';
 import { inviteKeys } from '@/lib/invites/hooks';
 import { inviteHref, skippedInvites, takeInviteLink } from '@/lib/invites/invite-landing';
-import { checkLastProject, freshOrCached, resolveLandingProject } from '@/lib/projects/landing';
+import { probeEffectivePermission } from '@kortix/sdk';
+import { permissionProbeKey } from '@kortix/sdk/react';
+import {
+  checkLastProject,
+  freshOrCached,
+  resolveLandingProject,
+  type CreateVerdicts,
+} from '@/lib/projects/landing';
 import {
   classifyStartFailure,
   startFailureCopy,
@@ -91,6 +98,28 @@ function fetchProjects(queryClient: QueryClient, accountId: string): Promise<Kor
     queryKey: projectKeys.projects(accountId),
     queryFn: () => listProjectsForAccount(accountId),
   });
+}
+
+/** Per account: may the caller create a project (`project.create`)? A failed probe is no. */
+async function fetchCreateVerdicts(
+  queryClient: QueryClient,
+  accounts: KortixAccount[],
+  userId: string
+): Promise<CreateVerdicts> {
+  const entries = await Promise.all(
+    accounts.map(async (account) => {
+      const allowed = await queryClient
+        .fetchQuery({
+          queryKey: permissionProbeKey(account.account_id, userId, 'project.create'),
+          queryFn: () => probeEffectivePermission(account.account_id, userId, { action: 'project.create' }),
+          staleTime: 5 * 60_000,
+        })
+        .then((verdict) => verdict.allowed === true)
+        .catch(() => false);
+      return [account.account_id, allowed] as const;
+    })
+  );
+  return Object.fromEntries(entries);
 }
 
 /** The caller's pending invites. A failed list is none: an invite never blocks the start (web `/projects/start`). */
@@ -253,7 +282,8 @@ export default function StartScreen() {
         // the account the first project would be created in.
         const accountId = onboardingAccountId(
           accounts,
-          useCurrentAccountStore.getState().selectedAccountId
+          useCurrentAccountStore.getState().selectedAccountId,
+          await fetchCreateVerdicts(queryClient, accounts, userId)
         );
         useCurrentAccountStore.getState().setSelectedAccountId(accountId);
         if (destination.kind === 'welcome') {

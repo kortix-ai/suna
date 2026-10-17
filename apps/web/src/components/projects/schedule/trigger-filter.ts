@@ -29,17 +29,6 @@ export function filterTriggers(
   return filter === 'all' ? triggers : triggers.filter((t) => t.type === filter);
 }
 
-export function triggerCounts(triggers: ProjectTrigger[]): Record<TriggerFilter, number> {
-  const counts: Record<TriggerFilter, number> = {
-    all: triggers.length,
-    cron: 0,
-    event: 0,
-    webhook: 0,
-  };
-  for (const t of triggers) if (t.type in counts) counts[t.type as TriggerKind] += 1;
-  return counts;
-}
-
 export interface TriggerAppGroup {
   /** Provider app slug, falling back to the connector slug. */
   app: string;
@@ -74,4 +63,54 @@ export function groupTriggersByApp(
 export function eventAppStrip(apps: EventApp[]): EventApp[] {
   const { yours, more } = groupEventApps(apps, '');
   return [...yours, ...more];
+}
+
+/* ─── The open trigger, in the URL ──────────────────────────────────────── */
+
+export type TriggerSheetTab = 'settings' | 'runs';
+
+/**
+ * `?id=<trigger id>[&tab=settings]` is the open trigger. The ID is the
+ * trigger's `slug`, the one identifier the API has (the sheet's Details call
+ * it "ID"). Runs is the default tab, so only Settings is written. `?t=<slug>`
+ * is the older connector-page link, still read for links already shared.
+ */
+export function readTriggerSheet(params: Pick<URLSearchParams, 'get'> | null | undefined): {
+  slug: string | null;
+  tab: TriggerSheetTab;
+} {
+  return {
+    slug: params?.get('id') || params?.get('t') || null,
+    tab: params?.get('tab') === 'settings' ? 'settings' : 'runs',
+  };
+}
+
+/**
+ * The URL for opening a trigger (or changing its tab), or for closing
+ * (`slug: null`). Every other param (the `?type` filter) is kept.
+ *
+ * `wasOpen` is whether a trigger is open on screen now: the caller knows it,
+ * the URL does not (an unknown `?id` opens nothing). Opening from closed and
+ * closing are each a `push`, so Back and Forward step through them. Switching
+ * triggers or tabs while open is a `replace`, so clicks do not fill history.
+ */
+export function triggerSheetHref(
+  pathname: string,
+  current: string,
+  next: { slug: string; tab?: TriggerSheetTab } | { slug: null },
+  wasOpen: boolean,
+): { href: string; mode: 'push' | 'replace' } {
+  const params = new URLSearchParams(current);
+  params.delete('t');
+  params.delete('tab');
+  if (next.slug === null) params.delete('id');
+  else {
+    params.set('id', next.slug);
+    if (next.tab === 'settings') params.set('tab', 'settings');
+  }
+  const qs = params.toString();
+  return {
+    href: qs ? `${pathname}?${qs}` : pathname,
+    mode: next.slug !== null && wasOpen ? 'replace' : 'push',
+  };
 }

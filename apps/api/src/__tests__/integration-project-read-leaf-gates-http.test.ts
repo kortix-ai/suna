@@ -119,6 +119,7 @@ const CASES: Case[] = [
   { name: 'project session participants', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/participants` },
   { name: 'project access list', leaf: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, path: () => `/v1/projects/${PROJECT}/access` },
   { name: 'review items inbox', leaf: PROJECT_ACTIONS.PROJECT_REVIEW_READ, path: () => `/v1/projects/${PROJECT}/review/items` },
+  { name: 'change requests list', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/change-requests` },
   { name: 'branches', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/branches` },
   { name: 'commits', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits` },
   { name: 'commit detail', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits/deadbeef` },
@@ -178,7 +179,7 @@ describe('HTTP enforcement — gateway playground spend gate', () => {
     });
     expect(res.status).toBe(403);
     const body = await res.json().catch(() => ({}));
-    expect(JSON.stringify(body)).toContain(PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    expect(JSON.stringify(body)).toContain(PROJECT_ACTIONS.PROJECT_MODEL_WRITE);
   });
 });
 

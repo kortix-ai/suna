@@ -380,6 +380,15 @@ function appendArrayBlockYaml(section: string, fields: Record<string, unknown>, 
       }
     }
   }
+  if (!doc.has(path[0])) {
+    // Append as text: re-serializing the document re-indents comments and re-flows lists.
+    const text = readManifestText(cwd);
+    const header = path.map((segment, index) => `${'  '.repeat(index)}${segment}:\n`).join('');
+    const item = renderYamlSequenceItem(fields, '  '.repeat(path.length));
+    const separator = text.length === 0 || text.endsWith('\n\n') ? '' : text.endsWith('\n') ? '\n' : '\n\n';
+    writeManifestText(`${text}${separator}${header}${item}`, cwd);
+    return;
+  }
   ensureYamlSeqPath(doc, path);
   const entry: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fields)) {

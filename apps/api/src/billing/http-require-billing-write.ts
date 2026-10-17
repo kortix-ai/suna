@@ -29,3 +29,17 @@ export async function resolveBillingWriteAccountId(
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE);
   return accountId;
 }
+
+/**
+ * The read twin: the ledger reads (transactions, their summary, credit usage)
+ * need `billing.read`. Membership alone is not enough: a custom role without
+ * `billing.read` must not read the account's money history.
+ */
+export async function resolveBillingReadAccountId(
+  c: Context,
+  source: 'query' | 'body' = 'query',
+): Promise<string> {
+  const accountId = await resolveScopedAccountId(c, source);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
+  return accountId;
+}

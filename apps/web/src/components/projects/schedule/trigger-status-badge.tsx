@@ -1,10 +1,9 @@
 'use client';
 
 /**
- * The one status badge of a trigger: Live, Needs connection, Error, Setting up
- * or Paused, in sentence case, from one mapping (`triggerBadgeState`). The
- * list, the detail sheet and the connector tab all render this and nothing
- * else for a trigger's status.
+ * The badge for a trigger state a person may need to act on: Needs
+ * connection, Error, Setting up. Live and Paused draw no badge: the trigger's
+ * icon carries them (`TriggerTile`), so the status is never shown twice.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +21,7 @@ const VARIANT = {
   paused: 'outline',
 } as const;
 
-const LABEL_KEY = {
+export const LABEL_KEY = {
   live: 'textb64ac05f17e6',
   needs_connection: 'textd919fde889e9',
   error: 'text54a0e8c17ebb',
@@ -32,18 +31,15 @@ const LABEL_KEY = {
 
 export function TriggerStatusBadge({
   trigger,
-  hideLive = false,
   hint,
 }: {
   trigger: ProjectTrigger;
-  /** A calm list shows nothing for a healthy trigger. */
-  hideLive?: boolean;
   /** Why: the error text, shown on hover. It never takes a line of its own in a list. */
   hint?: string | null;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const state = triggerBadgeState(trigger);
-  if (state === 'live' && hideLive) return null;
+  if (state === 'live' || state === 'paused') return null;
   // `font-sans normal-case`: the badge base is mono uppercase, which reads as code, not status.
   const badge = (
     <Badge variant={VARIANT[state]} size="sm" className="font-sans normal-case">

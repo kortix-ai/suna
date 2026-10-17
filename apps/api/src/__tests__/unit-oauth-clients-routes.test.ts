@@ -187,7 +187,7 @@ describe('OAuth client registry routes', () => {
     expect((await app.request(base)).status).toBe(403);
     expect((await app.request(base, jsonReq('POST', { name: 'x', redirect_uris: ['https://a.example/cb'] }))).status).toBe(403);
     expect(store).toHaveLength(0);
-    expect(asserted).toEqual(['token.read', 'token.create']);
+    expect(asserted).toEqual(['token.create', 'token.create']);
   });
 
   test('a malformed client id is a 404, not a database error', async () => {

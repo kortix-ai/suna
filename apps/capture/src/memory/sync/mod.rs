@@ -279,6 +279,17 @@ pub fn app_version() -> &'static str {
     }
 }
 
+/// The User-Agent of every HTTP request the app makes. Cloudflare, in front of
+/// Kortix, refuses a request without one (403), so no client may leave it out.
+pub fn user_agent() -> String {
+    format!(
+        "kortix-capture/{} ({}; {})",
+        app_version().trim_start_matches('v'),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
 /// What device.json and the issuer's sign-in learn about this computer.
 #[derive(Debug, Clone, Serialize)]
 pub struct Identity {
@@ -2388,10 +2399,17 @@ fn refresh_policy(ctx: &Ctx) -> Result<bool> {
                 |c: Option<&super::policy::Cached>| c.map(|c| (c.source.clone(), c.policy.clone()));
             let before = super::policy::read(ctx.paths);
             super::policy::write(ctx.paths, cached.as_ref())?;
+            super::policy::mark_checked(ctx.paths);
             Ok(key(before.as_ref()) != key(cached.as_ref()))
         }
         Err(e) if classify(&e).halts() && classify(&e) != ErrorClass::Auth => Err(e),
         Err(e) => {
+            // The store answered (S3 says 403, not 404, for a missing key the credentials
+            // cannot list): the check is done. Only an unreachable store keeps a new
+            // computer waiting for its organization's policy.
+            if matches!(classify(&e), ErrorClass::Auth | ErrorClass::Config) {
+                super::policy::mark_checked(ctx.paths);
+            }
             tracing::warn!("sync: policy not applied (the last one stays): {e:#}");
             Ok(false)
         }

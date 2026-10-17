@@ -352,7 +352,7 @@ export function registerAgentConfigRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -456,7 +456,7 @@ export function registerAgentConfigRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const agentName = c.req.param('agentName');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(

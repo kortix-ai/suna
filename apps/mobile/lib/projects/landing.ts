@@ -25,31 +25,26 @@ export type LandingResolution =
   | { kind: 'project'; projectId: string; accountId: string }
   | { kind: 'empty' };
 
-function canCreateIn(account: KortixAccount): boolean {
-  return account.account_role === 'owner' || account.account_role === 'admin';
-}
+/** Per account id: the `project.create` verdict. Absent = not answered = no. */
+export type CreateVerdicts = Readonly<Record<string, boolean | undefined>>;
 
 /**
- * The accounts a project can be created in: owner or admin, in the given
- * order. Web's `filterCreatableAccounts` (`features/workspace/new`).
+ * The accounts a project can be created in: those whose `project.create`
+ * probe said yes, in the given order. Web's `filterCreatableAccounts`
+ * (`features/workspace/new`). Never a role label.
  */
-export function creatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
-  return accounts.filter(canCreateIn);
+export function creatableAccounts(accounts: KortixAccount[], verdicts: CreateVerdicts): KortixAccount[] {
+  return accounts.filter((account) => verdicts[account.account_id] === true);
 }
 
-/**
- * Accounts in the order they are searched: the selected account, then the
- * accounts the user owns or administers, then member-only accounts.
- */
+/** Accounts in the order they are searched: the selected account, then the rest. */
 export function orderLandingAccounts(
   accounts: KortixAccount[],
   selectedAccountId: string | null
 ): KortixAccount[] {
   const selected = accounts.find((account) => account.account_id === selectedAccountId);
   const rest = accounts.filter((account) => account !== selected);
-  const owned = rest.filter(canCreateIn);
-  const memberOnly = rest.filter((account) => !canCreateIn(account));
-  return selected ? [selected, ...owned, ...memberOnly] : [...owned, ...memberOnly];
+  return selected ? [selected, ...rest] : rest;
 }
 
 /**

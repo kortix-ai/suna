@@ -306,6 +306,10 @@ impl Ctx {
             ("POST", "/api/audio/permission") => self.audio_permission(),
             ("GET", "/api/apps") => self.apps()?,
             ("GET", "/api/domains") => self.domains()?,
+            ("GET", "/api/installed-apps") => Response::json(json!({
+                "apps": super::super::exclusions::installed_apps().into_iter()
+                    .map(|(bundle, name)| json!({"bundle": bundle, "name": name})).collect::<Vec<_>>()
+            })),
             ("GET", "/api/settings") => self.settings_get(),
             ("POST", "/api/settings") => self.settings_set(body)?,
             ("GET", "/api/privacy-model") => {
@@ -1131,8 +1135,9 @@ impl Ctx {
     ) -> Result<Response> {
         {
             let mut jobs = self.jobs.lock().map_err(|_| anyhow!("job lock poisoned"))?;
+            // A second click while it runs joins the run: same answer, no error.
             if jobs.get(name).is_some_and(|j| j["running"] == true) {
-                return Ok(Response::error(409, &format!("{name} is already running")));
+                return Ok(Response::json(json!({"job": name, "running": true})));
             }
             jobs.insert(
                 name.into(),
@@ -1850,6 +1855,9 @@ mod tests {
         ("excluded_domains", r#"["example.com"]"#),
         ("enabled_exclusion_groups", r#"["banking"]"#),
         ("exclude_private_browsing", "false"),
+        ("record_only_included", "true"),
+        ("included_bundle_ids", r#"["com.tinyspeck.slackmacgap"]"#),
+        ("included_domains", r#"["github.com"]"#),
         ("record_unknown_bundle_ids", "true"),
         ("storage.management_mode", r#""retention""#),
         ("storage.limit_gb", "20.5"),
@@ -1893,12 +1901,14 @@ mod tests {
         "exclude_private_browsing",
         "excluded_bundle_ids",
         "excluded_domains",
+        "record_only_included",
+        "included_bundle_ids",
+        "included_domains",
         "storage.management_mode",
         "storage.cap_action",
         "storage.retention_days",
         "storage.retention_action",
         "launch_at_login",
-        "experimental.privacy_controls",
         "interval_ms",
         "max_width",
         "max_height",

@@ -98,7 +98,7 @@ export function registerChannelTeamsRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Same gate as the manual connect route: installing a Teams app is a
       // connector-write capability.
@@ -172,7 +172,7 @@ export function registerChannelTeamsRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Connecting a Teams bot is a connector-write capability — a custom role can
       // withhold it and a scoped agent must hold it (central fold), mirroring the
@@ -260,7 +260,7 @@ export function registerChannelTeamsRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Disconnecting the Teams bot is connector-write — twin of the Slack/email
       // disconnect gates; a custom role can withhold it, a scoped agent must hold it.

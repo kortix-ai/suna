@@ -86,8 +86,8 @@ function renderPlainText(lead: DemoRequestLead): string {
 /**
  * Send the internal "new demo request" notification. Never throws — returns a
  * result the caller can log. Recipients come from config.DEMO_LEAD_NOTIFY_EMAIL,
- * a comma-separated list (default marko@kortix.ai,hey@kortix.ai) — every
- * address gets every submission.
+ * a comma-separated list (prod default marko@kortix.ai,hey@kortix.ai; empty
+ * elsewhere) — every address gets every submission.
  */
 export async function sendDemoRequestNotification(
   lead: DemoRequestLead,
@@ -96,10 +96,11 @@ export async function sendDemoRequestNotification(
     return { ok: false, skipped: true, reason: 'email_not_configured' };
   }
 
-  const recipients = (config.DEMO_LEAD_NOTIFY_EMAIL || 'marko@kortix.ai,hey@kortix.ai')
+  const recipients = (config.DEMO_LEAD_NOTIFY_EMAIL || '')
     .split(',')
     .map((address) => address.trim())
     .filter(Boolean);
+  if (recipients.length === 0) return { ok: false, skipped: true, reason: 'email_not_configured' };
   const who = lead.company_name?.trim() || lead.name?.trim() || lead.email;
 
   const result = await sendEmail({
