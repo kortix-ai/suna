@@ -216,7 +216,7 @@ projectsApp.openapi(
     if (!PROJECT_SKILL_SLUG_PATTERN.test(slug)) {
       return c.json({ error: 'Invalid skill slug', code: 'invalid_slug' }, 400);
     }
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     await assertProjectCapability(
