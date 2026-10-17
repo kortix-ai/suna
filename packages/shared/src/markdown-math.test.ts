@@ -177,6 +177,20 @@ describe('isMermaidCode', () => {
 describe('hasReferenceDefinitionOutsideFences', () => {
   const definition = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
 
+  test('HTML cannot make a fence-looking line hide a later real definition', () => {
+    for (const marker of ['```', '$$']) {
+      expect(hasReferenceDefinitionOutsideFences(`Use [x].\n\n<!--\n${marker}\n-->\n\n[x]: /url\n\nTail`, definition)).toBe(true);
+    }
+  });
+
+  test('top-level regions may be indented up to three spaces', () => {
+    for (const indent of [' ', '  ', '   ']) {
+      for (const marker of ['```', '~~~', '$$']) {
+        expect(hasReferenceDefinitionOutsideFences(`Intro\n\n${indent}${marker}\n[x]: /url\n${indent}${marker}\n\nTail`, definition)).toBe(false);
+      }
+    }
+  });
+
   test('finds a definition in a run of fence-free lines', () => {
     expect(hasReferenceDefinitionOutsideFences('Intro\n\n[r]: https://kortix.com', definition)).toBe(true);
     expect(hasReferenceDefinitionOutsideFences('', definition)).toBe(false);

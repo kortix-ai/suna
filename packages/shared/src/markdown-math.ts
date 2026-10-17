@@ -209,24 +209,20 @@ export function prepareMarkdownForMath(text: string): string {
     .join('');
 }
 
-const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
-const MATH_OPEN = /^(\${2,})([^$]*)$/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const MATH_OPEN = /^ {0,3}(\${2,})([^$]*)$/;
 // The closer: the same marker, at least as long, indented at most three spaces.
 const REGION_CLOSE = /^ {0,3}(`{3,}|~{3,}|\${2,})[ \t]*$/;
 
 /**
- * Whether `definition` matches a run of lines outside fenced code and display
- * math: a definition inside a fence is code the message shows, not a target,
- * so splitting must not treat the message as defining one. Only regions opened
- * at column zero are tracked — such a line leaves any open container, so the
- * region is top-level and ends only at its closer or the end of the text, and
- * its lines can never hide a real definition. A fence opened inside a
- * container can end without a closer (the line that leaves the container), so
- * its lines stay tested: that can only flatten more, never split what a
- * definition holds together. `definition` is tested against whole runs of
- * fence-free lines, because a label may span lines within one run.
+ * Test whole text runs outside code/math, preserving multiline labels. HTML
+ * can suppress fence openers, so ambiguous HTML keeps the conservative guard.
+ * Indented openers are excluded only without container markers: a container
+ * fence can end implicitly when a later line leaves its container.
  */
 export function hasReferenceDefinitionOutsideFences(markdown: string, definition: RegExp): boolean {
+  if (/<[!/?A-Za-z]/.test(markdown)) return definition.test(markdown);
+  const hasContainer = /^ {0,3}(?:>|[*+-](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/m.test(markdown);
   let runStart = 0;
   let marker: string | null = null;
   let length = 0;
@@ -248,7 +244,7 @@ export function hasReferenceDefinitionOutsideFences(markdown: string, definition
       lineStart = next;
       continue;
     }
-    if (first === '`' || first === '~' || first === '$') {
+    if (first === '`' || first === '~' || first === '$' || (first === ' ' && !hasContainer)) {
       const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
       const open = FENCE_OPEN.exec(line) ?? MATH_OPEN.exec(line);
       if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
