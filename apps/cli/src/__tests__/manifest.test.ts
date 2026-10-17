@@ -361,13 +361,13 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
     writeFileSync(join(dir, 'kortix.yaml'), STARTER);
-    appendArrayBlock('connectors', { slug: 'orangepill', provider: 'mcp', url: 'https://x.example/mcp', auth: { type: 'bearer' } }, dir);
+    appendArrayBlock('connectors', { slug: 'my-mcp', provider: 'mcp', url: 'https://x.example/mcp', auth: { type: 'bearer' } }, dir);
     const text = readFileSync(manifestFile(dir), 'utf8');
     expect(text.startsWith(STARTER)).toBe(true);
     expect(text.slice(STARTER.length)).toBe(
-      '\nconnectors:\n  - slug: orangepill\n    provider: mcp\n    url: https://x.example/mcp\n    auth:\n      type: bearer\n',
+      '\nconnectors:\n  - slug: my-mcp\n    provider: mcp\n    url: https://x.example/mcp\n    auth:\n      type: bearer\n',
     );
-    expect(arrayEntryExists('connectors', 'slug', 'orangepill', dir)).toBe(true);
+    expect(arrayEntryExists('connectors', 'slug', 'my-mcp', dir)).toBe(true);
   });
 
   test('appendArrayBlock puts a new item before the comments that head the next section', async () => {
