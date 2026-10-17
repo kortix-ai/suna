@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, test } from 'bun:test';
 import { QUICK_VIEW_TTL_MS, useKortixComputerStore } from './kortix-computer-store';
+import { useSessionPanelMemoryStore } from './session-panel-memory-store';
 
 describe('ready chip state (W1)', () => {
   beforeEach(() => {
@@ -973,5 +974,57 @@ describe('setActiveSession — boot quick-view replant', () => {
     useKortixComputerStore.getState().requestQuickView('terminal');
     useKortixComputerStore.getState().consumeQuickView('oc-1');
     expect(useKortixComputerStore.getState()._bootQuickView).toBeNull();
+  });
+});
+
+describe('the side panel memory (session-panel-memory-store.ts) is cleared only by the person', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+    useSessionPanelMemoryStore.setState({ bySession: { s1: { kind: 'view', view: 'terminal' } } });
+  });
+  const remembered = () => useSessionPanelMemoryStore.getState().bySession.s1;
+
+  test('closing the panel forgets what it showed', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.setIsSidePanelOpen(false);
+    expect(remembered()).toBeUndefined();
+  });
+
+  test('⌘I hiding the right side forgets it too', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.toggleRightPanel();
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+    expect(remembered()).toBeUndefined();
+  });
+
+  test('leaving the session closes the panel but keeps the memory, so coming back reopens it', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.setActiveSession('s2');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+    s.setActiveSession('s1');
+    expect(remembered()).toEqual({ kind: 'view', view: 'terminal' });
+  });
+
+  test("the memory is the Kortix session's when the layout names one", () => {
+    useSessionPanelMemoryStore.setState({ bySession: { p1: { kind: 'view', view: 'terminal' } } });
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('ses_chat', { projectSessionId: 'p1', transient: false });
+    s.setIsSidePanelOpen(true);
+    s.setIsSidePanelOpen(false);
+    expect(useSessionPanelMemoryStore.getState().bySession.p1).toBeUndefined();
+  });
+
+  test("closing another session's panel leaves this one's memory alone", () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s2');
+    s.setIsSidePanelOpen(true);
+    s.setIsSidePanelOpen(false);
+    expect(remembered()).toEqual({ kind: 'view', view: 'terminal' });
   });
 });
