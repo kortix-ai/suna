@@ -378,6 +378,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|notifications",
   "POST|v1|notifications|device-token",
   "DELETE|v1|notifications|device-token|:token",
+  "POST|v1|notifications|device-token|release",
   "GET|v1|notifications|preferences",
   "PUT|v1|notifications|preferences",
   "POST|v1|notifications|read",
