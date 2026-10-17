@@ -438,8 +438,7 @@ export function useAdminSetTier() {
 /**
  * Every entitlement mutation below invalidates the same two keys the credit
  * mutations do: the paginated accounts list (the row carries
- * `entitlementOverrides`; `trial` is served by the per-account
- * `accounts/{id}/trial` routes) and the per-account detail subtree.
+ * `entitlementOverrides`) and the per-account detail subtree.
  */
 function invalidateAdminAccount(
   queryClient: ReturnType<typeof useQueryClient>,
