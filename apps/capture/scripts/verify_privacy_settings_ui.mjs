@@ -46,7 +46,9 @@ async function browser(...args) {
 async function evaluate(code) { return browser('eval', '-b', Buffer.from(code).toString('base64')); }
 async function wait(code) { return browser('wait', '--fn', code); }
 async function record(name, code) {
-  await evaluate(`(() => { if (!(${code})) throw Error(${JSON.stringify(name)}); return true; })()`);
+  await evaluate(`(() => { if (!(${code})) throw Error('assertion failed'); return true; })()`).catch((error) => {
+    throw new Error(`${name}: ${error.message}`);
+  });
   evidence.push(name);
   console.log('PASS', name);
 }

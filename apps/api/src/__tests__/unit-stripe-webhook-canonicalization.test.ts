@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realShared from '@kortix/shared';
 
 const state = {
   getCreditAccountResult: null as any,
@@ -34,7 +35,9 @@ mock.module('../config', () => ({
   },
 }));
 
+// Spread the real module: the code under test also imports formatters from it.
 mock.module('@kortix/shared', () => ({
+  ...realShared,
   AUTO_TOPUP_DEFAULT_AMOUNT: 20,
   AUTO_TOPUP_DEFAULT_THRESHOLD: 5,
 }));

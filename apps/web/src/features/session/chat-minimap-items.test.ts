@@ -96,6 +96,13 @@ describe('extractMinimapItem', () => {
     expect(only!.text).toBe('Pasted text');
   });
 
+  test('a paste with blank-line runs (an email copy) is still a paste, not preview text', () => {
+    const body = 'Skip to content\n\n\n\nSubject';
+    const block = `<pasted_content id="abcd1234" chars="${body.length}">\n${body}\n</pasted_content>`;
+    const item = extractMinimapItem(turnWithParts([{ type: 'text', text: `${block}\n\nsummarize` }]));
+    expect(item!.text).toBe('summarize');
+  });
+
   test('keeps a message that is only attachments, labelled by the first file', () => {
     const item = extractMinimapItem(
       turnWithParts([

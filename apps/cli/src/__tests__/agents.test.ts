@@ -78,7 +78,7 @@ describe('wireCodingAgents', () => {
 
     // AGENTS.md is a real file pointing at the canonical skill, written once.
     expect(lstatSync(join(dir, 'AGENTS.md')).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain(CANONICAL_SKILL);
+    expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain('kortix skills get kortix-cli');
 
     // No Cursor-specific rule file — Cursor reads AGENTS.md.
     expect(existsSync(join(dir, '.cursor'))).toBe(false);
@@ -124,3 +124,17 @@ describe('wireCodingAgents', () => {
     expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(true);
   });
 });
+
+describe('wireCodingAgents on a kortix_version 3 checkout', () => {
+  test('no OpenCode config dir: no .opencode or .claude/commands link, and AGENTS.md names none', () => {
+    rmSync(join(dir, 'harnesses'), { recursive: true, force: true });
+
+    const result = wireCodingAgents({ repoRoot: dir, agents: ['opencode', 'claude', 'codex'], overwrite: false });
+
+    expect(result.written.some((line) => line.startsWith('.opencode'))).toBe(false);
+    expect(result.written.some((line) => line.startsWith('.claude/commands'))).toBe(false);
+    expect(existsSync(join(dir, '.opencode'))).toBe(false);
+    expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).not.toContain('harnesses/');
+  });
+});
+

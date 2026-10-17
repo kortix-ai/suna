@@ -12,7 +12,7 @@
  *     every entry it writes is permanent. Re-sending an untouched
  *     `{value, expires_at}` would silently convert a timed grant into a forever
  *     one — an expiry that quietly stops expiring is the worst failure here.
- *  2. **The stored map is raw JSONB.** Admin routes, the trial primitive, data
+ *  2. **The stored map is raw JSONB.** Admin routes, license grace, data
  *     migrations and operator SQL all write it, so a wrong-typed value reads as
  *     "no override" (the same way `readOverride` treats it server-side) instead
  *     of rendering as a control that lies.

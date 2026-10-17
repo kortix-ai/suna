@@ -614,6 +614,7 @@ function pathPatch(path, value) {
 }
 function deepMerge(dst, src) {
   for (const [k, v] of Object.entries(src)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
     if (v && typeof v === 'object' && !Array.isArray(v) && dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k])) deepMerge(dst[k], v);
     else dst[k] = v;
   }
@@ -1643,11 +1644,11 @@ function paintOnboarding(step, job, sync, app) {
     body = `<h1>${esc(who ? `Recording and syncing to ${who}.` : 'Recording and syncing to Kortix.')}</h1>
       <button class="btn primary" id="ob-close">Close</button>`;
   } else {
-    const needsUrl = app && app.default_issuer_missing;
+    const needsUrl = app && (app.default_issuer_missing || OB.otherIssuer);
     body = `<h1>Connect to Kortix</h1>
-      ${needsUrl ? `<label class="ob-field"><span>Kortix address</span><input type="text" id="ob-issuer" class="mono" placeholder="https://kortix.example.com" value="${esc(OB.issuer)}" autocomplete="off" spellcheck="false"></label>` : ''}
+      ${needsUrl ? `<label class="ob-field"><span>Kortix API address</span><input type="text" id="ob-issuer" class="mono" placeholder="${esc(app.issuer_url || 'https://api.kortix.com')}" value="${esc(OB.issuer)}" autocomplete="off" spellcheck="false"></label>` : ''}
       <button class="btn primary" id="ob-signin">Sign in with Kortix</button>${err}
-      <div class="ob-foot"><button class="link-btn" id="ob-s3">Use your own S3 bucket</button><button class="link-btn" id="ob-skip">Skip. Keep recordings on this ${esc(PC)}</button></div>`;
+      <div class="ob-foot">${needsUrl ? '' : `<button class="link-btn" id="ob-other">Use another Kortix address</button>`}<button class="link-btn" id="ob-s3">Use your own S3 bucket</button><button class="link-btn" id="ob-skip">Skip. Keep recordings on this ${esc(PC)}</button></div>`;
   }
   setHtml(obEl, `<div class="ob-card" data-step="${step}">${icon}${body}</div>`);
 }
@@ -1655,6 +1656,7 @@ obEl.addEventListener('input', (e) => { if (e.target.id === 'ob-issuer') OB.issu
 obEl.addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
+  if (b.id === 'ob-other') { OB.otherIssuer = true; obTick(); return; }
   if (b.id === 'ob-signin') {
     OB.error = '';
     if (!(await act('/api/kortix/connect', { issuer: OB.issuer.trim() }, true))) { OB.error = actError; }
@@ -1828,13 +1830,13 @@ function paintSync() {
   switch (main.kind) {
     case 'managed': inner = `<div class="row"><div class="lab">${esc(main.title)}<small>${esc(main.sub)}</small></div></div>`; break;
     case 'kortix-wait': inner = `<div class="row"><div class="lab">Waiting for approval in your browser<small>${main.code ? `Code <span class="mono">${esc(main.code)}</span>. Check it matches, then approve.` : 'Starting sign-in...'}</small></div>${main.code ? '<button class="btn" id="kortix-approve">Open approval page</button>' : ''}</div>`; break;
-    case 'kortix-in': inner = `<div class="row"><div class="lab">${esc(main.title)}${main.sub ? `<small>${esc(main.sub)}</small>` : ''}</div></div>`; break;
+    case 'kortix-in': inner = `<div class="row"><div class="lab">${esc(main.title)}${main.sub ? `<small>${esc(main.sub)}</small>` : ''}${appData.issuer_url ? `<small class="mono">${esc(appData.issuer_url)}</small>` : ''}</div></div>`; break;
     case 'kortix-out': inner = `${view.destination === 'off' ? `<p class="hint">Sync is off. Recordings are only on this ${PC}, with no copy anywhere else.</p>` : main.sub ? `<p class="hint">${esc(main.sub)}</p>` : ''}
-      ${appData.default_issuer_missing ? field('kortix-issuer', 'Kortix address', draft.issuer, { ph: 'https://kortix.example.com' }) : ''}
-      <div class="actions"><button class="btn primary" id="kortix-connect">Sign in with Kortix</button></div>`; break;
+      ${appData.default_issuer_missing || draft.otherIssuer ? field('kortix-issuer', 'Kortix API address', draft.issuer, { ph: appData.issuer_url || 'https://api.kortix.com' }) : ''}
+      <div class="actions"><button class="btn primary" id="kortix-connect">Sign in with Kortix</button>${appData.default_issuer_missing || draft.otherIssuer ? '' : `<button class="link-btn" id="kortix-other">Use another Kortix address</button>`}</div>`; break;
     case 's3': inner = `<div class="row"><div class="lab">${esc(view.line || 'Your S3 bucket')}</div></div>`; break;
   }
-  const mainKey = [main.kind, main.title || '', main.sub || '', main.code || '', view.destination, view.line || '', appData.default_issuer_missing, draft.syncErrorAdv ? '' : draft.syncError].join('|');
+  const mainKey = [main.kind, main.title || '', main.sub || '', main.code || '', view.destination, view.line || '', appData.default_issuer_missing, appData.issuer_url || '', !!draft.otherIssuer, draft.syncErrorAdv ? '' : draft.syncError].join('|');
   setKeyed(box, mainKey, inner + errHtml(false));
   // The status line follows the destination that is on now.
   const on = view.destination !== 'off';
@@ -2104,6 +2106,7 @@ settingsEl.addEventListener('click', async (e) => {
       if (await act('/api/kortix/connect', { issuer: draft.issuer.trim() }, true)) refreshLive();
       else { draft.syncError = actError; paintSync(); }
       break;
+    case 'kortix-other': draft.otherIssuer = true; paintSync(); break;
     case 'kortix-approve': post({ cmd: 'open_url', url: syncData.jobs.connect?.progress?.approve_url }); break;
     case 'kortix-signout': draft.confirmOff = 'signout'; paintSync(); break;
     case 'sync-keep': draft.confirmOff = null; paintSync(); break;

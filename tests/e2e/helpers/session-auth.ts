@@ -120,25 +120,6 @@ export async function deleteAuthUser(
   }).catch(() => {});
 }
 
-export async function confirmAuthUser(
-  userId: string,
-  options: Omit<AuthOptions, "password">,
-): Promise<void> {
-  const files = options.envFiles ?? ["apps/web/.env", "apps/api/.env"];
-  const serviceRoleKey = trustedAuthHeader(
-    requireEnvValue("SUPABASE_SERVICE_ROLE_KEY", ...files),
-    "SUPABASE_SERVICE_ROLE_KEY",
-  );
-  await json(
-    await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
-      method: "PUT",
-      headers: supabaseAdminHeaders(serviceRoleKey, { json: true }),
-      body: JSON.stringify({ email_confirm: true }),
-    }),
-    200,
-  );
-}
-
 export async function signIn(
   email: string,
   options: AuthOptions,

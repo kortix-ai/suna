@@ -196,7 +196,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '@/ui';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { isAbortError, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -219,7 +219,6 @@ import {
   markOptimisticSendDispatched,
   markOptimisticSendInboxBacked,
   mintSessionWireMessageId,
-  parseModelKey,
   readStartStash,
   recoverFromSendFailure,
   rejectQuestion,
@@ -265,6 +264,12 @@ import {
   shouldLoadOlderHistory,
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
+import {
+  HELD_COMMAND_ROW_PREFIX,
+  canReleaseHeldCommand,
+  heldCommandRows,
+  type HeldCommand,
+} from './held-commands';
 import { useReadinessSettling } from './use-readiness-settling';
 import { useSessionHistoryViewStore } from '@/stores/session-history-view-store';
 import { downloadBlob } from '@/lib/utils/download';
@@ -790,7 +795,22 @@ export function SessionChat({
     return settlement;
   }, [sessionId, projectSessionId, sessionState, abortSession, tQueue]);
 
+  // The newest user message: its agent seeds the picker, and a new one is a
+  // queue row that just landed (see below).
+  const lastUserMessage = useMemo(
+    () => (messages ? [...messages].reverse().find((m) => m.role === 'user') : undefined),
+    [messages],
+  );
+  // The session row: its model pin, sharing and sandbox status. One cache
+  // entry for every read below, so this mounts no second poll.
+  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
+
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
+  // The composer opens on the model the session already runs (its pin, or its
+  // last prompt's model), so a session set from the CLI, the SDK or Slack does
+  // not switch model on its first web message.
   const local = useSessionModelSelection({
     agents,
     providers,
@@ -798,6 +818,8 @@ export function SessionChat({
     sessionId,
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    projectSession: projectSessionRow,
+    lastPromptModel: latestPromptModel(messages),
   });
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
@@ -816,6 +838,9 @@ export function SessionChat({
   });
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
+  // The slash menu lists only the commands the composer's agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentCommands } = useRuntimeCommands({ agent: composerAgentName ?? undefined });
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -1011,17 +1036,11 @@ export function SessionChat({
 
   const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
-  // ---- Check if any messages have tool calls ----
-  // ---- Restore model/agent from last user message ----
-  // Seeds agent/model from the last user message ONLY if there's no per-session
-  // selection yet. This handles opening a session for the first time. If the user
-  // already changed the model in this session (persisted per-session in localStorage),
-  // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useRuntimeLocal.
-  const lastUserMessage = useMemo(
-    () => (messages ? [...messages].reverse().find((m) => m.role === 'user') : undefined),
-    [messages],
-  );
+  // ---- Restore the agent from the last user message ----
+  // The model needs no seed: `lastPromptModel` above feeds the resolution
+  // directly. Seeding it into the picker slots leaked one session's model into
+  // every other session of the same agent, and was skipped whenever the
+  // account had a default model.
   // A NEW user bubble in the transcript is a queue row that just landed —
   // OpenCode persisted a forwarded prompt. Re-read the inbox NOW so the row
   // leaves the strip in the same beat its bubble appears, instead of on the
@@ -1039,16 +1058,6 @@ export function SessionChat({
     lastUserMsgIdRef.current = lastUserMessage.message_id;
     const msg = lastUserMessage;
     if (msg.agent) local.agent.set(msg.agent);
-    // Only seed model from message if the user hasn't already made a per-session
-    // selection (e.g. changed the model after the last message, then reloaded).
-    // The per-session model is checked first in the resolution chain, so we only
-    // need to seed it here when it's empty (first open of this session).
-    if (!local.model.hasSessionModel) {
-      const parsedModel = parseModelKey(
-        msg.model ? { providerID: msg.model.provider, modelID: msg.model.model } : undefined,
-      );
-      if (parsedModel) local.model.set(parsedModel, { autoSeed: true });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastUserMessage?.message_id]);
 
@@ -1331,10 +1340,7 @@ export function SessionChat({
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
   // A queued prompt runs as its author: only they edit or send it, and the
   // session's managers may remove it. Same cache entry as the header's read.
-  const viewerManagesSession =
-    useProjectSession(projectId, projectSessionId ?? undefined, {
-      enabled: !!projectId && !!projectSessionId,
-    }).data?.can_manage_lifecycle !== false;
+  const viewerManagesSession = projectSessionRow?.can_manage_lifecycle !== false;
   const queuedPromptViewer = useMemo(
     () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
     [viewer?.id, viewerManagesSession],
@@ -1365,6 +1371,9 @@ export function SessionChat({
     queueRowsRef.current = queueRows.rows;
   }, [queueRows.rows]);
   const canTakeBackQueue = queueRows.rows.some((row) => row.takeBackEligible);
+  // `/` commands typed while the session could not run them. `SessionChat` is
+  // keyed by session, so the list never crosses sessions.
+  const [heldCommands, setHeldCommands] = useState<HeldCommand[]>([]);
 
   // Removing used to be a local-store delete with an undo toast that restored
   // the entry into that store. The row is durable now, so a removal is a real
@@ -2082,6 +2091,12 @@ export function SessionChat({
     workingTurnIdRef.current = workingTurn.workingTurnId;
   }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  // The turn the working projection names. After a compaction inside the running turn the work
+  // renders under its continuation turn, while the projection still names the prompt or the marker.
+  const activeTurnId = useMemo(() => {
+    const c = turns.find((t) => t.live)?.continues;
+    return c && (working.turnId === c.marker || working.turnId === c.prompt) ? workingTurn.workingTurnId : working.turnId;
+  }, [turns, workingTurn.workingTurnId, working.turnId]);
   /**
    * Does the resolved working turn have a COMPLETED answer while queued prompts
    * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
@@ -2104,11 +2119,11 @@ export function SessionChat({
       hasPendingTurns: true,
       newestAssistantCompleted: newest.completed_at !== null,
       workingTurnId: wt.id,
-      activeTurnId: working.turnId,
+      activeTurnId,
       pendingDelivery: !!working.pendingDelivery,
       deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
     });
-  }, [turns, workingTurn, working.turnId, working.pendingDelivery, deliveringPromptIds]);
+  }, [turns, workingTurn, activeTurnId, working.pendingDelivery, deliveringPromptIds]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -3075,6 +3090,9 @@ export function SessionChat({
       console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
       return;
     }
+    // Stop means stop: a held command would otherwise start a new turn the
+    // moment this one ends.
+    setHeldCommands([]);
     console.log(`[handleStop] Stopping session ${sessionId}`);
     // Optimistically mark the session idle + patch an abort error onto the
     // last assistant message (so the turn reads as stopped instantly — no
@@ -3435,6 +3453,33 @@ export function SessionChat({
     ],
   );
 
+  const handleHoldCommand = useCallback(
+    (command: Command, args?: string, split?: { before: string; after: string }) => {
+      setHeldCommands((held) => [...held, { id: crypto.randomUUID(), command, args, split }]);
+    },
+    [],
+  );
+  // Release the oldest held command once nothing else can run first. One at a
+  // time: the dispatch takes a send receipt, so `effectiveBusy` closes the gate
+  // again before the next one is considered.
+  useEffect(() => {
+    const next = heldCommands[0];
+    if (!next) return;
+    if (
+      !canReleaseHeldCommand({
+        sessionWorking: effectiveBusy,
+        runtimeReady,
+        awaitingUserInput,
+        inboxRows: queueRows.rows,
+      })
+    ) {
+      return;
+    }
+    if (handleCommand(next.command, next.args, next.split)) {
+      setHeldCommands((held) => held.filter((entry) => entry.id !== next.id));
+    }
+  }, [heldCommands, effectiveBusy, runtimeReady, awaitingUserInput, queueRows.rows, handleCommand]);
+
   const pathname = usePathname();
   const router = useRouter();
 
@@ -3535,7 +3580,7 @@ export function SessionChat({
     questionPromptRef.current?.performAction();
   }, []);
 
-  const chatCommands = useMemo(() => commands || [], [commands]);
+  const chatCommands = useMemo(() => agentCommands || [], [agentCommands]);
 
   /**
    * Where this session's unsent draft is persisted.
@@ -3658,14 +3703,21 @@ export function SessionChat({
   const chatAboveSlot = useMemo(
     () => (
       <QueuedPromptList
-        rows={queueRows.rows}
+        rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
         heldCount={queueRows.heldCount}
         resumePending={resumePending}
         onResume={() => void handleResumeQueue()}
         onEdit={(id) => {
           queueEdit.takeBack(id);
         }}
-        onRemove={(id) => void handleRemoveQueuedMessage(id)}
+        onRemove={(id) => {
+          if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+            const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+            setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+            return;
+          }
+          void handleRemoveQueuedMessage(id);
+        }}
         onRetry={handleRetryQueuedMessage}
         onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
         editing={queueEdit.editing}
@@ -3673,6 +3725,7 @@ export function SessionChat({
       />
     ),
     [
+      heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
       queueEdit.takeBack,
@@ -3786,13 +3839,6 @@ export function SessionChat({
   // confirmed unreachable past the poll loop's failure threshold — plain
   // `runtimeReady` collapses both into the same false. See `retryable` on
   // `SessionComposerReadiness`.
-  // The control plane's own statement about the sandbox behind this session —
-  // the positive evidence the connection projection needs before anything may
-  // say "waking". Read from the shared cache entry `useProjectSession`
-  // populates, so this mounts no second poll of its own.
-  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
-    enabled: !!projectId && !!projectSessionId,
-  }).data;
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
   // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
@@ -4299,7 +4345,7 @@ export function SessionChat({
                           const confirmedActive = turnIsConfirmedActive({
                             isTurnWorking,
                             turnId: turn.id,
-                            activeTurnId: working.turnId,
+                            activeTurnId,
                             pendingDelivery: !!working.pendingDelivery,
                           });
                           const pendingPrompt =
@@ -4340,7 +4386,10 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0
                                   ? ''
-                                  : lastTurnWorking &&
+                                  : // A compaction and the work after it continue the turn above.
+                                    turn.compaction || turn.continues
+                                    ? 'mt-6'
+                                    : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
                                       pendingTurnIds.has(turns[turnIndex - 1].id)
                                     ? 'mt-3'
@@ -4564,12 +4613,12 @@ export function SessionChat({
                 )}
               >
                 <Button
-                  variant="transparent"
+                  variant="outline"
                   size="icon-md"
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                    'hit-area-2 bg-background hover:bg-muted rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
                       ? 'duration-normal scale-100 opacity-100'
@@ -4644,9 +4693,11 @@ export function SessionChat({
                 onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
+                commandsResolved={agentCommands !== undefined}
                 slashFiles={chatSlashFiles}
                 onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}
+                onHoldCommand={handleHoldCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}

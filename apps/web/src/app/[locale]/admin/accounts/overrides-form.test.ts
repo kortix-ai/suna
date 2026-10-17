@@ -20,6 +20,7 @@ const EMPTY: OverridesDraft = {
   auditAccess: 'inherit',
   branding: 'inherit',
   managedModels: 'inherit',
+  byokFee: 'inherit',
 };
 
 describe('draftFromOverrides', () => {
@@ -121,9 +122,9 @@ describe('overridesPatch — only what changed', () => {
 });
 
 describe('override keys', () => {
-  test('the draft has exactly the six live keys, none numeric', () => {
+  test('the draft has exactly the seven live keys, none numeric', () => {
     expect(Object.keys(EMPTY).sort()).toEqual(
-      ['auditAccess', 'branding', 'managedModels', 'rbac', 'scim', 'sso'].sort(),
+      ['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso'].sort(),
     );
     expect(Object.keys(draftFromOverrides({ retiredKey: { value: 2 } })).sort()).toEqual(
       Object.keys(EMPTY).sort(),

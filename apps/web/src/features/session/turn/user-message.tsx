@@ -136,8 +136,11 @@ export const BUBBLE_TEXT = cn(
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
+// `muted`, the well surface, in both modes. Light mode used to borrow
+// `sidebar`, which most palettes set equal to the canvas (`pure-light` and
+// every generated light theme), so the bubble vanished into the page.
 export const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
+  'bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
 
 /**
@@ -410,9 +413,11 @@ function parseAttachmentContent(blocks: readonly SessionLogBlock[]): ParsedAttac
     if (!blockText?.trim()) return;
 
     // Pastes come out FIRST: a paste is the user's text, so a `<file>` or
-    // `<reply_context>` inside one is paste content, not a ref.
-    const pasted = splitPastedContent(stripSystemPtyText(blockText));
-    const rawPartText = pasted.text;
+    // `<reply_context>` inside one is paste content, not a ref. They also come
+    // out before `stripSystemPtyText`, which collapses blank-line runs: a
+    // shorter body no longer matches its `chars` and the tile shows as raw XML.
+    const pasted = splitPastedContent(blockText);
+    const rawPartText = stripSystemPtyText(pasted.text);
     pastes.push(...pasted.pastes);
     rawTexts.push(rawPartText);
 
@@ -488,9 +493,13 @@ export function normalizeAttachments(
     });
   };
 
+  // An image a `<file>` tag names (`source_path`, pi) draws once, through its tag.
+  const tagPaths = new Set(uploads.map((file) => file.path));
   blocks.forEach((block, sourcePartIndex) => {
     const file: MentionFileData | undefined =
-      block.type === 'attachment'
+      block.type === 'attachment' && block.source_path && tagPaths.has(block.source_path)
+        ? undefined
+        : block.type === 'attachment'
         ? { mime: block.mime, filename: block.name, url: block.url }
         : block.type === 'harness' && block.kind === 'file'
           ? (block.data as MentionFileData)
@@ -1087,7 +1096,7 @@ export function UserMessageBubble({
           {/* Gradient fade for collapsed long messages. Keyed to `muted`
               so it dissolves into the bubble it sits on, not the old card. */}
           {canExpand && !expanded && (
-            <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+            <div className="from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
           )}
         </div>
       )}
@@ -1893,7 +1902,10 @@ export function UserMessage({
         />
       )}
 
-      {systemNotifications.length > 0 && (
+      {/* Never for a command: its text is the expanded template, and a skill
+          body split into `<overview>`, `<when-to-load>`, … sections drew one
+          card per section above the chip. */}
+      {systemNotifications.length > 0 && !effectiveCommandInfo && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
           {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
             <SystemNotificationCard key={key} notification={item} />

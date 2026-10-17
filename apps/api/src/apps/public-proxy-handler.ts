@@ -97,6 +97,8 @@ async function routeAppPublicRequest(
   const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
   const accessResponse = await authorizeServiceRequest(request, url, gateApp, state.service?.access ?? 'app');
   if (accessResponse) return accessResponse;
+  // An external App's Kortix host is a stable link to its site.
+  if (state.app.externalUrl) return Response.redirect(state.app.externalUrl, 302);
   const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
   if (sessionViewer) bindAppViewerSession(sessionViewer);
   // Answered by the gate itself, before any runtime work: reading who you are

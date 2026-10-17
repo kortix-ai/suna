@@ -249,6 +249,71 @@ describe('resolveManifestImports', () => {
   }
 });
 
+describe('kortix_version 3 imports', () => {
+  const V3_ROOT = 'kortix_version: 3\ndefault_agent: lead\nimports: [support/]\nagents:\n  lead:\n    mode: primary\n    skills: [triage]\n    commands: [weekly]\n    extensions: [audit]\n    subagents: [researcher]\n';
+  const SUPPORT = [
+    'skills:',
+    '  triage: support/skills/triage',
+    'commands:',
+    '  weekly:',
+    '    prompt_file: support/commands/weekly.md',
+    'extensions:',
+    '  audit:',
+    '    pi: support/extensions/audit.ts',
+    'agents:',
+    '  researcher:',
+    '    mode: subagent',
+    '    prompt: Research.',
+    '',
+  ].join('\n');
+
+  test('a feature folder registers skills, commands, extensions and agents', async () => {
+    const resolved = await resolveManifestImports(
+      { path: 'kortix.yaml', raw: parseManifestText(V3_ROOT, 'yaml') },
+      repo({ 'support/support.yaml': SUPPORT }),
+    );
+    expect(resolved.raw.skills).toEqual({ triage: 'support/skills/triage' });
+    expect(Object.keys(resolved.raw.commands as object)).toEqual(['weekly']);
+    expect(Object.keys(resolved.raw.extensions as object)).toEqual(['audit']);
+    expect(resolved.origins.commands.weekly).toBe('support/support.yaml');
+    expect(validateManifest(resolved.raw, 'yaml').issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('an imported v3 file with a key it cannot hold is an error, not a silent drop', async () => {
+    const promise = resolveManifestImports(
+      { path: 'kortix.yaml', raw: parseManifestText(V3_ROOT, 'yaml') },
+      repo({ 'support/support.yaml': `${SUPPORT}harnesses:\n  pi:\n    codemode: off\n` }),
+    );
+    await expect(promise).rejects.toThrow('"harnesses" cannot be in an imported file');
+  });
+
+  test('a v2 root still drops an unknown key in an imported file', async () => {
+    const resolved = await resolveManifestImports(
+      { path: 'kortix.yaml', raw: parseManifestText('kortix_version: 2\ndefault_agent: a\nimports: [x.yaml]\nagents: {a: {}}\n', 'yaml') },
+      repo({ 'x.yaml': 'harnesses: {}\ntriggers: []\n' }),
+    );
+    expect(resolved.raw.harnesses).toBeUndefined();
+  });
+
+  // skills, commands and extensions became importable for v3. A v2 manifest
+  // that compiled on 0.13.57 with a non-map root `skills` must still resolve.
+  test('a v2 root keeps skills, commands and extensions out of the import merge', async () => {
+    const resolved = await resolveManifestImports(
+      {
+        path: 'kortix.yaml',
+        raw: parseManifestText(
+          'kortix_version: 2\ndefault_agent: a\nimports: [x.yaml]\nagents: {a: {}}\nskills: [a-skill]\ncommands: [c]\n',
+          'yaml',
+        ),
+      },
+      repo({ 'x.yaml': 'triggers: []\nextensions: [e]\n' }),
+    );
+    expect(resolved.raw.skills).toEqual(['a-skill']);
+    expect(resolved.raw.commands).toEqual(['c']);
+    expect(resolved.raw.extensions).toBeUndefined();
+  });
+});
+
 describe('splitManifestByOrigin', () => {
   test('an unchanged merged document splits back to exactly the files it came from', async () => {
     const resolved = await resolve(FILES);

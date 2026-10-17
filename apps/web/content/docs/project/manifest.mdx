@@ -111,7 +111,8 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
-| `tools` | map | all seven Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `commands` | map | none | v3 only. Slash command name to its template. See [commands (v3)](#commands-v3). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
 | `connectors` | list | none | Apps, APIs and MCP servers an agent can call. |
@@ -174,6 +175,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `secrets` | none | Grant set of secret names the agent receives in its sandbox. |
 | `skills` | the `.md` decides | Grant set of skill names. Set, it overrides `permission.skill` in the agent `.md`. Omitted, the `.md` rule applies. |
 | `apps` | none | Grant set of App slugs the agent may open when the App access is `restricted` or `private`. |
+| `commands` | none | v3 only. Grant set of command names from the top-level `commands`. The agent runs only these. |
 | `kortix_permissions` | none | Grant set of project permissions. Capped by the agent's ceiling role, never by the role of the person who starts the session. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). |
 | `tools` | all | `all`, `none`, a list of tool names, or `{ exclude: [names] }`. The map form `{ bash: false }` also works. |
 | `sandbox` | project default | A sandbox template slug, or `default`. |
@@ -212,6 +214,38 @@ agents:
 - `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`). Its [project tools](/docs/project/tools#agents-without-the-project-repository) still load: the sandbox receives only the modules of the tools the agent may call.
 - A running session keeps the value it started with. A change applies to new sessions.
 - Any other key under `workspace` is an error. A typo does not fall back to the default: Kortix withholds the repository from that agent until the block is fixed.
+
+## commands (v3)
+
+In v3, a slash command is declared in `kortix.yaml`. The project registers it under `commands`, and each agent that may run it enables it by name. v3 reads no harness folder, so `harnesses/opencode/commands/` and `harnesses/pi/prompts/` are not read.
+
+```yaml
+kortix_version: 3
+default_agent: support
+commands:
+  triage:
+    description: Sort a ticket by urgency.
+    prompt: "Read ticket $1 and reply with its urgency: low, normal or high."
+  release-notes:
+    prompt_file: prompts/release-notes.md
+agents:
+  support:
+    prompt_file: prompts/support.md
+    commands: [triage, release-notes]   # or: all
+```
+
+| Key | Rule |
+| --- | --- |
+| name | Lowercase letters and digits, in words joined by `-`. At most 64 characters. |
+| `prompt` | The template, as a non-empty string. |
+| `prompt_file` | A repository path to a `.md` file. Kortix uses the whole file as the template; it does not remove a frontmatter block. |
+| `description` | Optional. Shown in the `/` menu. |
+
+- Set exactly one of `prompt` or `prompt_file`. Any other key is an error. An `agent` key points you to `agents.<name>.commands`.
+- `$ARGUMENTS` takes everything typed after the command. `$1`, `$2` and so on take the words in order, and the highest one takes the rest. A template with neither gets the arguments appended.
+- An agent runs only the commands its `commands` grant names: `all`, `none` or a list. Omitted means none. A command that no agent enables is left out.
+- Running a command on an agent that does not enable it answers `403` with `{"error": "command_not_enabled", "command": "<name>", "agent": "<agent>"}`.
+- Commands come from the manifest on the project's default branch.
 
 ## env
 
@@ -335,7 +369,7 @@ agents:
 
 ## tools
 
-`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all seven Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
+`tools` maps a tool name to `kortix:<name>` (a Kortix tool) or a repository-relative `.ts` or `.js` module. With no `tools` key, sessions get all five Kortix tools. With a `tools` key, sessions get only the tools it lists. The rules, errors and module contract are on [Tools](/docs/project/tools).
 
 ## triggers, connectors, apps
 

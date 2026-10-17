@@ -115,6 +115,7 @@ import {
 import {
   createSessionPrompt,
   deleteSessionPrompt,
+  latestPromptModel,
   listSessionPrompts,
   retrySessionPrompt,
   SESSION_LOG_MINOR,
@@ -246,6 +247,8 @@ interface SessionPageProps {
   onCreateAgent?: () => void;
   /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model the composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
 }
@@ -318,7 +321,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -886,6 +889,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const agentsLoading = !rawAgents;
   // Web defaults the picker to the agent of the latest assistant turn.
   const latestAgent = useMemo(() => latestAssistantAgent(storeThread?.messages ?? EMPTY_MESSAGES), [storeThread]);
+  // The model the session last ran on. With the session's pin it keeps a
+  // session set from the CLI, the SDK or Slack on its model (`useResolvedConfig`).
+  const lastPromptModel = useMemo(() => latestPromptModel(storeThread?.messages), [storeThread]);
   // Models: the project's list (`useComposerModels`), the same one project home
   // and web show; the sandbox's `/provider` joins it off-gateway.
   const {
@@ -941,7 +947,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     providers,
     modelDefaults,
     configModel: config?.model,
+    sessionKey: projectSessionId ?? sessionId,
+    session: projectSession,
+    lastPromptModel,
+    gatewayEnabled,
   });
+
+  // The composer lists only the commands the selected agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentRuntimeCommands = EMPTY_COMMANDS } = useRuntimeCommands({ agent: resolved.agent?.name });
+  const composerCommands = canRunCommands ? agentRuntimeCommands : EMPTY_COMMANDS;
 
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
@@ -2348,7 +2363,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             disabled={subThreadReadOnly}
             placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
-            commands={commands}
+            commands={composerCommands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />

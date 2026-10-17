@@ -2,6 +2,7 @@
 
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
+import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -40,43 +41,27 @@ function useSidebarUpgrade(accountId?: string) {
   );
 
   if (!isBillingEnabled() || !accountState) {
-    return { show: false as const, trial: null, handleClick };
+    return { show: false as const, handleClick };
   }
 
-  // A trial is always visible, with the upgrade one click away: the account
-  // must never learn it was on a trial when the trial ends.
-  const trial = accountState.trial ?? null;
-  const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-  // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
-  // trial reads as paid here, exactly as the server's gates read it.
+  // The RESOLVED plan family (free = the keys `free` and `none`), exactly as
+  // the server's gates read it. A live subscription already pays.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  const show = !!trial || (isFreeOrNoPlan && !hasActiveSubscription);
+  const show = isFreeOrNoPlan && !accountHasLiveSubscription(accountState);
 
-  return { show, trial, handleClick };
+  return { show, handleClick };
 }
 
 export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeButtonProps) {
   const t = useTranslations('sidebar');
-  const { show, trial, handleClick } = useSidebarUpgrade(accountId);
+  const { show, handleClick } = useSidebarUpgrade(accountId);
 
   if (!show) return null;
 
-  // A trial is information, not a call to action: a quiet row like the other
-  // footer rows. Only a Free account without one gets the primary Upgrade.
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        variant={trial ? 'default' : 'primary'}
-        className={cn(className)}
-        onClick={handleClick}
-      >
-        {trial
-          ? t('trialBadge', {
-              plan: trial.plan === 'enterprise' ? t('trialPlanEnterprise') : t('trialPlanCredits'),
-              days: trial.days_left,
-            })
-          : t('upgradePlan')}
+      <SidebarMenuButton type="button" variant="primary" className={cn(className)} onClick={handleClick}>
+        {t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

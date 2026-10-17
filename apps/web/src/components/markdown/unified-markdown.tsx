@@ -37,6 +37,7 @@ import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from '@/components/m
 import { SetupLinkButton, SetupLinkInlineContext } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
@@ -162,7 +163,20 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
  * `compact`: the click-to-load placeholder is an icon-only button that fills its box, for a small thumbnail
  * whose box would clip the labelled button.
  */
-export function MarkdownImage({ src, alt, flush = false, compact = false }: { src?: string; alt?: string; flush?: boolean; compact?: boolean }) {
+export function MarkdownImage({
+  src,
+  alt,
+  flush = false,
+  compact = false,
+  onError,
+}: {
+  src?: string;
+  alt?: string;
+  flush?: boolean;
+  compact?: boolean;
+  /** The image failed to load: a host can drop its frame or show a fallback. */
+  onError?: () => void;
+}) {
   const { proxy, policy } = useContext(MarkdownRenderContext);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [loadRequested, setLoadRequested] = useState(false);
@@ -207,6 +221,7 @@ export function MarkdownImage({ src, alt, flush = false, compact = false }: { sr
         src={resolvedSrc}
         alt={alt || ''}
         loading="lazy"
+        onError={onError}
         className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
       />
     </span>
@@ -363,21 +378,13 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   // GFM task-list checkbox.
-  input: ({
-    checked,
-    className: inputClassName,
-    node: _node,
-    ...props
-  }: React.InputHTMLAttributes<HTMLInputElement> & { node?: unknown }) => (
-    <input
-      {...props}
-      type="checkbox"
-      checked={checked}
-      readOnly
-      className={cn(
-        inputClassName,
-        'border-border accent-secondary relative -top-[1px] mr-2 size-4 cursor-default rounded-sm align-middle',
-      )}
+  // Read-only: the control is shown, never toggled.
+  input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement> & { node?: unknown }) => (
+    <Checkbox
+      checked={!!checked}
+      tabIndex={-1}
+      aria-readonly
+      className="pointer-events-none relative -top-px mr-2 inline-flex align-middle"
     />
   ),
 

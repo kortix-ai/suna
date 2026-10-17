@@ -34,6 +34,11 @@
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
  *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
+ * - Over the cap. A 413 `session_log_too_large` claimed but carries no message: the box writes the
+ *   log's root with the D3 note alone (above `seq_max`), keeps no other thread, and persists every
+ *   stored id (`revs`) as unwritten, so later boots do not read the store as behind. The notice
+ *   counts the left-out messages as `dropped.message`. A 413 with another body (a proxy) claimed
+ *   nothing: no restore, as a 404.
  * - D3, a partial restore (the log's grade is `partial`, or the write dropped content, or a
  *   text kept its preview). The agent: a user message with one text block
  *   (`prt_kortix_restore_g<generation>`) after every seq the API holds, under a wire id above
@@ -59,6 +64,7 @@ import {
   type SessionLog,
   type SessionLogMessage,
   type SessionLogRestore,
+  type SessionLogRestoreTooLarge,
   type SessionLogSessionPatch,
   type SessionLogThread,
 } from '@kortix/api-contract/session-log'
@@ -180,7 +186,8 @@ async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POS
     headers: { Authorization: `Bearer ${ctx.token}`, 'Accept-Encoding': 'gzip' },
     signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
   })
-  if (response.ok) return response
+  // A 413 to the restore claimed: the answer is the log without messages (`session_log_too_large`).
+  if (response.ok || (path === 'restore' && response.status === 413)) return response
   const body = (await response.text().catch(() => '')).slice(0, 200)
   if (response.status >= 500 && response.status !== 503) throw new Error(`${path} answered ${response.status}: ${body}`)
   if (response.status === 408 || response.status === 429) throw new Error(`${path} answered ${response.status}`)
@@ -208,8 +215,21 @@ function behind(manifest: { generation: number; messages: Array<{ message_id: st
 async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<SessionLogBoot | null> {
   const response = await call(ctx, 'restore', 'POST')
   if (!response) return null
-  const answer = (await response.json()) as SessionLogRestore
-  if (!Number.isSafeInteger(answer?.generation) || !Array.isArray(answer.log?.threads)) throw new Error('the restore answer is not a SessionLogRestore')
+  const status = response.status
+  const answer = (await response.json().catch((err) => (status === 413 ? null : Promise.reject(err)))) as SessionLogRestore | SessionLogRestoreTooLarge | null
+  // A 413 from anything but the API (a proxy) reached no claim.
+  if (status === 413 && (answer as SessionLogRestoreTooLarge | null)?.error !== 'session_log_too_large') {
+    logger.warn('[session-log] restore answered 413 without session_log_too_large; no restore')
+    return null
+  }
+  if (!answer || !Number.isSafeInteger(answer.generation) || !Array.isArray(answer.log?.threads)) throw new Error('the restore answer is not a SessionLogRestore')
+  const tooLarge = status === 413 ? (answer as SessionLogRestoreTooLarge) : null
+  // Over the cap: the root alone, which gets the D3 note; the box keeps no other thread.
+  if (tooLarge) {
+    const root = tooLarge.log.threads.find((t) => t.parent_thread_id === null) ?? tooLarge.log.threads[0]
+    tooLarge.log.threads = root ? [{ ...root, messages: [] }] : []
+    logger.warn('[session-log] the log is over the restore cap; the box boots with the D3 note alone', { generation: answer.generation, bytes: tooLarge.bytes, limit: tooLarge.limit, messages: tooLarge.messages })
+  }
   // Both budgets run at once: the attachment reads do not wait for the texts.
   const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(ctx))
   const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(ctx))
@@ -223,21 +243,24 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   const floor = Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq))
   const harness: HarnessCarry = { history: restoredHistory(log), from_seq: floor + 1, at: new Date().toISOString() }
   let result = await port.restore(log, seq_max, read)
+  const dropped = tooLarge ? { ...result.dropped, message: tooLarge.messages } : result.dropped
   let note: SessionLogMessage | null = null
-  const notice = partialNotice(log, result.dropped, truncated, answer.generation)
+  const notice = partialNotice(log, dropped, truncated, answer.generation, tooLarge)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
   const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
-  if (notice && (Object.keys(result.dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
+  if (notice && (Object.keys(dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
     note = noteMessage(root, floor + 1, answer.generation, notice.text)
     root.messages.push(note)
     result = await port.restore(log, seq_max, read)
   }
   const written = new Set(result.cursors.flatMap((c) => Object.keys(c.native_hashes)))
-  const unwritten = log.threads.flatMap((t) => t.messages.map((m) => m.message_id)).filter((id) => !written.has(id))
+  // Over the cap, every stored id is unwritten: the next boot does not read the store as behind.
+  const ids = tooLarge ? Object.keys(answer.revs) : log.threads.flatMap((t) => t.messages.map((m) => m.message_id))
+  const unwritten = ids.filter((id) => !written.has(id))
   // The journal sends the note as the store holds it.
   if (note) for (const c of result.cursors) delete c.native_hashes[note.message_id]
   writeState({ version: 1, generation: answer.generation, unwritten, ...(notice && { session: notice.session }), harness })
-  logger.info('[session-log] restored', { generation: answer.generation, threads: result.cursors.length, unwritten: unwritten.length, dropped: result.dropped, truncated: truncated.length })
+  logger.info('[session-log] restored', { generation: answer.generation, threads: result.cursors.length, unwritten: unwritten.length, dropped, truncated: truncated.length })
   return { generation: answer.generation, cursors: result.cursors, ...(notice && { session: notice.session }), harness }
 }
 
@@ -296,7 +319,7 @@ const NOUNS: Record<string, [string, string]> = {
 }
 
 /** The D3 notice of a partial restore, or null when the restore is complete. */
-function partialNotice(log: SessionLog, dropped: Record<string, number>, truncated: TruncatedText[], generation: number) {
+function partialNotice(log: SessionLog, dropped: Record<string, number>, truncated: TruncatedText[], generation: number, tooLarge: SessionLogRestoreTooLarge | null) {
   if (log.restore_grade !== 'partial' && Object.keys(dropped).length === 0 && truncated.length === 0) return null
   const prior = log.grade_counts ?? { tool_input: 0, cut_point: 0, attachment: 0 }
   const grade_counts: GradeCounts = {
@@ -307,9 +330,12 @@ function partialNotice(log: SessionLog, dropped: Record<string, number>, truncat
   const counts: Record<string, number> = { ...dropped, text: (dropped.text ?? 0) + truncated.length }
   for (const k of ['tool_input', 'cut_point', 'attachment'] as const) if (prior[k]) counts[k] = (counts[k] ?? 0) + prior[k]
   const items = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${(NOUNS[k] ?? [k, k])[n === 1 ? 0 : 1]}`)
+  const size = (n: number) => (n >= 1024 ** 2 ? `${+(n / 1024 ** 2).toFixed(1)} MiB` : n >= 1024 ? `${+(n / 1024).toFixed(1)} KiB` : `${n} bytes`)
   const text =
     'Kortix: this session was restored from its saved session log. ' +
-    `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. ` +
+    (tooLarge
+      ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
+      : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
     'If you need it, ask the user to send it again.'
   return {
     text,

@@ -17,7 +17,15 @@ import { SecretUndecryptableError } from './secrets/undecryptable';
 import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
+import {
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+  isDaytonaStateTransitionConflict,
+} from './shared/daytona-state-transition';
 import { isDaytonaTransientProviderError } from './shared/daytona-transient';
+import {
+  CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
+  isComposioTransientProviderError,
+} from './shared/composio-transient';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
@@ -159,6 +167,45 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
         message: 'the repository rejected the push because of its branch protection or repository rules',
         status: 409,
         code: 'repository_push_rejected',
+      },
+      409,
+    );
+  }
+  return null;
+}
+
+function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: string, path: string): Response | null {
+  // Daytona answers HTTP 409 when a sandbox state transition is already in
+  // flight ("Sandbox state change in progress") — e.g. a second stop request
+  // arrives while the first is still settling. `apps.ts hosting.stop()`'s
+  // settle window expires and re-throws a plain Error whose cause is the
+  // original DaytonaConflictError; any call site without its own try/catch
+  // (the POST /v1/projects/:id/apps/:appId/stop route) forwarded it to the
+  // generic 500 → Sentry → Better Stack pattern `6bc03d7d…`. The in-flight
+  // transition is already doing what the caller asked, so this is an
+  // EXPECTED, self-resolving state: answer a typed 409
+  // `sandbox_state_change_in_progress` WITHOUT paging Sentry. The SDK
+  // classifies that code silent to onError and the web toast shows the
+  // retryable message. Other 409s (a DaytonaConflictError for a different
+  // reason, or an unrelated upstream) still fall through to the generic
+  // capture below. See shared/daytona-state-transition.ts.
+  if (isDaytonaStateTransitionConflict(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 409 [DaytonaConflictError:state-transition] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaConflictError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
+    return c.json(
+      {
+        error: true,
+        message: 'sandbox state change in progress; try again shortly',
+        code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+        status: 409,
       },
       409,
     );
@@ -371,6 +418,53 @@ function handleDatabaseOrUnknownError(err: Error, c: Context, errName: string, m
   );
 }
 
+function handleComposioTransientProviderError(err: Error, c: Context, method: string, path: string): Response | null {
+  // A transient Composio (hosted connectors provider) API failure is EXPECTED
+  // and retryable — Composio's own API 5xx-ing (e.g. their DB-backed API-key
+  // lookup failing with error code 809, Better Stack pattern `0386d70c…` on
+  // GET /v1/connectors/projects/:projectId/connect/toolkits, a 102 s request
+  // after the SDK's own three attempts), or the connection dropping /
+  // client-timing out (`APIConnectionError` incl. its timeout subclass). The
+  // @composio/client SDK already retries such calls internally (maxRetries 2)
+  // before surfacing them, so what reaches here is a failure the provider did
+  // not recover from within its own retry budget. This single classifier
+  // covers EVERY remaining + future call site: it downgrades the failure to a
+  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
+  // / git-timeout / Daytona / request-deadline patterns), so a forgotten
+  // try/catch at any Composio call site can no longer page Better Stack for
+  // an upstream blip. Composio 4xx (auth/validation/not-found/conflict) and
+  // 429 (owned by `executeComposio`'s call-site 429 + Retry-After answer)
+  // still fall through to the generic capture below, so real faults stay
+  // loud. See shared/composio-transient.ts.
+  if (isComposioTransientProviderError(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 503 [ComposioError:transient] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'ComposioError',
+        errorName: err.constructor?.name || err.name,
+        statusCode: (err as { status?: unknown }).status ?? null,
+      },
+    );
+    c.header('Retry-After', '10');
+    return c.json(
+      {
+        error: true,
+        // A stable code lets the SDK/frontend classify this transient 503 as
+        // an EXPECTED, retryable degradation (silent to Sentry) instead of an
+        // opaque `ApiError` — the git-mirror precedent. See
+        // shared/composio-transient.ts's CONNECTORS_PROVIDER_UNAVAILABLE_CODE.
+        code: CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
+        message: 'connectors provider is temporarily unavailable',
+        status: 503,
+      },
+      503,
+    );
+  }
+  return null;
+}
+
 function handleSecretUndecryptable(err: Error, c: Context, method: string, path: string): Response | null {
   // A stored value this server cannot decrypt (API_KEY_SECRET changed, or the
   // row is damaged) is a state a person fixes by entering the value again, not
@@ -401,8 +495,12 @@ function handleUnhandledError(err: Error, c: Context): Response {
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);
   if (pushRejected) return pushRejected;
+  const stateTransition = handleDaytonaStateTransitionConflict(err, c, method, path);
+  if (stateTransition) return stateTransition;
   const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
   if (daytonaTransient) return daytonaTransient;
+  const composioTransient = handleComposioTransientProviderError(err, c, method, path);
+  if (composioTransient) return composioTransient;
   const undecryptable = handleSecretUndecryptable(err, c, method, path);
   if (undecryptable) return undecryptable;
   if (err instanceof BillingError) {

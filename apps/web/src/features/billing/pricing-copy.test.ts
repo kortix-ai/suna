@@ -86,17 +86,19 @@ describe('pricing copy', () => {
     expect(english.billing.pricing.faq.rollover.answer).toContain('roll over for one month');
   });
 
-  test('models are separate: three sources, base price plus the fee only for Kortix models', () => {
+  test('models are separate: three sources; Kortix models carry the fee, own keys 5% past $1,000 a month, ChatGPT nothing', () => {
     const models = english.billing.pricing.models;
     expect(Object.keys(models).filter((key) => typeof models[key] === 'object')).toEqual([
       'keys',
       'chatgpt',
       'kortix',
     ]);
-    expect(models.keys.tag).toBe('No credits');
+    // billing/services/byok-fee.ts: BYOK_FEE_FREE_MONTHLY_USD = 1000, BYOK_FEE_PERCENT = 5.
+    expect(models.keys.tag).toBe('Free to $1,000/mo');
+    expect(models.keys.body).toContain('The first $1,000 a month is free, then Kortix adds 5%');
     expect(models.chatgpt.tag).toBe('No credits');
     expect(models.kortix.body).toContain('{fee}% platform fee');
-    expect(models.summary).toContain('only for the agent computer');
+    expect(models.summary).toContain('5% of model usage past $1,000 a month');
     expect(english.billing.pricing.faq.models.answer).toContain('{fee}% platform fee');
   });
 

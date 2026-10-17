@@ -77,13 +77,35 @@ describe('a viewer who may not stop the running turn gets Send, never Stop', () 
     expect(markup).not.toContain('aria-label="Stop');
   });
 
-  test('busy with canStop true (or unset) still renders Stop', () => {
+  test('busy with canStop true (or unset) and nothing typed renders Stop only', () => {
+    const empty = { ...idle, hasText: false, canSubmit: false };
     for (const markup of [
-      renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} canStop />),
-      renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} />),
+      renderToStaticMarkup(<SendStopControl {...empty} isBusy onStop={() => {}} canStop />),
+      renderToStaticMarkup(<SendStopControl {...empty} isBusy onStop={() => {}} />),
     ]) {
       expect(markup).toContain('aria-label="Stop');
       expect(markup).not.toContain('aria-label="Send message"');
     }
+  });
+});
+
+// KRTX-2556: with a follow-up typed during a turn, mouse users saw only Stop.
+// One click ended the run and the follow-up stayed unsent. Enter sends it.
+describe('a follow-up typed during a turn', () => {
+  test('gets Send, with Stop still beside it', () => {
+    const markup = renderToStaticMarkup(<SendStopControl {...idle} isBusy onStop={() => {}} />);
+    expect(markup).toContain('aria-label="Send message"');
+    expect(markup).toContain('aria-label="Stop');
+    // Send is the last control, where the eye and the pointer already are.
+    expect(markup.lastIndexOf('aria-label="Send message"')).toBeGreaterThan(markup.indexOf('aria-label="Stop'));
+    expect(markup).not.toMatch(/aria-label="Send message"[^>]*\sdisabled=""/);
+  });
+
+  test('a follow-up that cannot be sent yet keeps Send disabled and Stop enabled', () => {
+    const markup = renderToStaticMarkup(
+      <SendStopControl {...idle} isBusy onStop={() => {}} submitDisabled attachmentFailed />,
+    );
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Send message"|<button[^>]*aria-label="Send message"[^>]*disabled=""/);
+    expect(markup).toMatch(/<button(?![^>]*disabled="")[^>]*aria-label="Stop/);
   });
 });

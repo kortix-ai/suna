@@ -15,6 +15,8 @@ const FREE_PRICE = 'price_1RIGvuG6l1KZGqIrw14abxeL';
 let account: Record<string, unknown> | null = null;
 let liveSubscription: Record<string, any> | null = null;
 let updateResult: Record<string, unknown> = {};
+let upcomingLines: Array<{ amount: number; proration: boolean }> = [];
+const upcomingCalls: Array<Record<string, any>> = [];
 const checkouts: Array<Record<string, any>> = [];
 const checkoutOptions: unknown[] = [];
 const updates: Array<{ id: string; params: Record<string, any> }> = [];
@@ -28,6 +30,12 @@ mock.module('../../shared/stripe', () => ({
       update: async (id: string, params: Record<string, any>) => {
         updates.push({ id, params });
         return { id, ...updateResult };
+      },
+    },
+    invoices: {
+      retrieveUpcoming: async (params: Record<string, any>) => {
+        upcomingCalls.push(params);
+        return { lines: { data: upcomingLines } };
       },
     },
     checkout: {
@@ -71,7 +79,7 @@ mock.module('../wallet', () => ({
   },
 }));
 
-const { setPlan, parseMonthlyUsd } = await import('./subscriptions');
+const { setPlan, previewPlan, parseMonthlyUsd } = await import('./subscriptions');
 
 const base = { accountId: 'acct-1', email: 'owner@example.com', successUrl: 'https://s', cancelUrl: 'https://c' };
 
@@ -80,15 +88,20 @@ function sub(items: Array<{ price: string; quantity: number }>, status = 'active
     id,
     status,
     customer: 'cus_1',
+    current_period_end: PERIOD_END,
     metadata: { account_id: 'acct-1' },
     items: { data: items.map((it, i) => ({ id: `si_${i}`, quantity: it.quantity, price: { id: it.price, unit_amount: 1, recurring: { interval: 'month' } } })) },
   };
 }
 
+const PERIOD_END = Date.UTC(2026, 10, 14) / 1000;
+const PERIOD_END_ISO = new Date(PERIOD_END * 1000).toISOString();
+
 function paidInvoice(netCents: number) {
   return {
     id: 'in_raise',
     status: 'paid',
+    amount_paid: netCents,
     lines: { data: [{ amount: netCents, proration: true, price: { id: CREDITS_PRICE } }], has_more: false },
   };
 }
@@ -102,6 +115,8 @@ beforeEach(() => {
   updates.length = 0;
   syncs.length = 0;
   grants.length = 0;
+  upcomingLines = [];
+  upcomingCalls.length = 0;
 });
 
 describe('parseMonthlyUsd', () => {
@@ -139,11 +154,11 @@ describe('setPlan', () => {
 
     const result = await setPlan({ ...base, monthlyUsd: 200 });
 
-    expect(result).toEqual({ status: 'updated', monthly_usd: 200 });
+    expect(result).toEqual({ status: 'updated', change: 'raised', monthly_usd: 200, charged_usd: 40, credits_added: 4_000 });
     expect(updates[0].params.items).toEqual([{ id: 'si_0', quantity: 20_000 }]);
     expect(updates[0].params.proration_behavior).toBe('always_invoice');
     expect(updates[0].params.payment_behavior).toBe('pending_if_incomplete');
-    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '200' });
+    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '200', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
     expect(grants).toHaveLength(1);
     expect(grants[0].amount).toBe(40);
     expect(grants[0].key).toEqual({ event: 'proration_grant:in_raise' });
@@ -161,24 +176,51 @@ describe('setPlan', () => {
     expect(grants).toHaveLength(0);
   });
 
-  test('a cut bills no proration, grants nothing, and records the new amount', async () => {
-    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live' };
+  test('a cut is scheduled for the renewal: no charge, no grant, this period keeps its amount', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500' };
     liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 50_000 }]);
 
     const result = await setPlan({ ...base, monthlyUsd: 100 });
 
-    expect(result).toEqual({ status: 'updated', monthly_usd: 100 });
+    expect(result).toEqual({ status: 'updated', change: 'scheduled', monthly_usd: 100, effective_at: PERIOD_END_ISO });
+    expect(updates[0].params.items).toEqual([{ id: 'si_0', quantity: 10_000 }]);
     expect(updates[0].params.proration_behavior).toBe('none');
     expect(updates[0].params.payment_behavior).toBeUndefined();
-    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '100' });
+    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: '100', scheduledTierChangeDate: PERIOD_END_ISO });
     expect(grants).toHaveLength(0);
+  });
+
+  test('choosing the amount in effect again cancels a scheduled cut', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500', scheduledMonthlyUsd: '100' };
+    liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
+
+    const result = await setPlan({ ...base, monthlyUsd: 500 });
+
+    expect(result).toEqual({ status: 'updated', change: 'kept', monthly_usd: 500 });
+    expect(updates[0].params.items).toEqual([{ id: 'si_0', quantity: 50_000 }]);
+    expect(updates[0].params.proration_behavior).toBe('none');
+    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '500', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
+  });
+
+  test('a raise after a scheduled cut restores the amount in effect first, then charges from it', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500', scheduledMonthlyUsd: '100' };
+    liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
+    updateResult = { latest_invoice: paidInvoice(25_000) };
+
+    await setPlan({ ...base, monthlyUsd: 1_000 });
+
+    expect(updates.map((u) => [u.params.items[0].quantity, u.params.proration_behavior])).toEqual([
+      [50_000, 'none'],
+      [100_000, 'always_invoice'],
+    ]);
+    expect(syncs).toContainEqual({ tier: 'credits', planMonthlyUsd: '1000', scheduledMonthlyUsd: null, scheduledTierChangeDate: null });
   });
 
   test('the same amount is a no-op', async () => {
     account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live' };
     liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
 
-    expect(await setPlan({ ...base, monthlyUsd: 100 })).toEqual({ status: 'unchanged', monthly_usd: 100 });
+    expect(await setPlan({ ...base, monthlyUsd: 100 })).toEqual({ status: 'unchanged', change: 'none', monthly_usd: 100 });
     expect(updates).toHaveLength(0);
   });
 
@@ -217,5 +259,46 @@ describe('setPlan', () => {
     expect(result.status).toBe('checkout_created');
     expect(updates).toHaveLength(0);
     expect(checkouts[0].subscription_data.metadata.previous_subscription_id).toBeUndefined();
+  });
+});
+
+describe('previewPlan', () => {
+  test('a free account previews Checkout: the first month is due now', async () => {
+    expect(await previewPlan({ accountId: 'acct-1', monthlyUsd: 100 })).toEqual({
+      change: 'checkout', monthly_usd: 100, current_monthly_usd: null, due_now_usd: 100, credits_now: 10_000, effective_at: null,
+    });
+  });
+
+  test('a raise previews the prorated charge and the same credits the grant adds', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '100' };
+    liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
+    upcomingLines = [{ amount: -5_000, proration: true }, { amount: 10_000, proration: true }, { amount: 20_000, proration: false }];
+
+    expect(await previewPlan({ accountId: 'acct-1', monthlyUsd: 200 })).toEqual({
+      change: 'raised', monthly_usd: 200, current_monthly_usd: 100, due_now_usd: 50, credits_now: 5_000, effective_at: null,
+    });
+    expect(upcomingCalls[0].subscription_items).toEqual([{ id: 'si_0', quantity: 20_000 }]);
+    expect(upcomingCalls[0].subscription_proration_behavior).toBe('always_invoice');
+    expect(updates).toHaveLength(0);
+  });
+
+  test('a raise over a scheduled cut is priced from the amount in effect', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500', scheduledMonthlyUsd: '100' };
+    liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
+    // Stripe prices 100 → 1000 (+900); setPlan raises 500 → 1000 (+500).
+    upcomingLines = [{ amount: 45_000, proration: true }];
+
+    const preview = await previewPlan({ accountId: 'acct-1', monthlyUsd: 1_000 });
+    expect([preview.change, preview.due_now_usd, preview.credits_now]).toEqual(['raised', 250, 25_000]);
+  });
+
+  test('a cut previews the renewal date and nothing due now', async () => {
+    account = { accountId: 'acct-1', tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500' };
+    liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 50_000 }]);
+
+    expect(await previewPlan({ accountId: 'acct-1', monthlyUsd: 100 })).toEqual({
+      change: 'scheduled', monthly_usd: 100, current_monthly_usd: 500, due_now_usd: 0, credits_now: 0, effective_at: PERIOD_END_ISO,
+    });
+    expect(upcomingCalls).toHaveLength(0);
   });
 });

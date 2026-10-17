@@ -17,9 +17,10 @@
  * - The model of an assistant message is the one the pi message names. A v1
  *   assistant row carries the model selected when it streamed.
  * - User text: `text` is the v1 text, `model_text` the text pi sent when it
- *   differs (a prompt template pi expanded). A pi image is an attachment with
- *   `ref: blob:<sha256>` and `bytes`; the bytes stay in the native store (no
- *   object store yet). A v1 file part pi never received (not an image, a
+ *   differs (a prompt template pi expanded). A pi image (a prompt's, or a tool
+ *   result's) is an attachment with `ref: blob:<sha256>`, `sha256` and `bytes`;
+ *   the journal uploads the bytes (`blob`) and replaces the ref with the stored
+ *   object's `kortix-attachment://` ref (P2.13). A v1 file part pi never received (not an image, a
  *   model without image input, or an image pi dropped) is a harness block
  *   `{ kind: 'undelivered_file', model_visible: false }`, never an
  *   attachment: the model never saw it, so a restore must not present it.
@@ -96,6 +97,7 @@ import type { BytesReader } from '../shared/session-log-restore'
 import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore'
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
+import { imageTagPaths } from './images'
 
 export interface PiChildSnapshot {
   id: string
@@ -222,18 +224,21 @@ function partPool(v1: KortixMessage | undefined) {
   }
 }
 
-function attachment(c: J): { ref: string; bytes: number; sha256: string; mime: string } {
-  const bytes = Buffer.from(String(c.data ?? ''), 'base64')
+/** An image as an attachment; `images` collects its base64 data by sha256 (`SessionLogPort.blob`). */
+function attachment(c: J, images: Map<string, string>): { ref: string; bytes: number; sha256: string; mime: string } {
+  const data = String(c.data ?? '')
+  const bytes = Buffer.from(data, 'base64')
   const digest = sha256(bytes)
+  images.set(digest, data)
   return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: String(c.mimeType ?? 'application/octet-stream') }
 }
 
-function resultContent(content: unknown): ToolResultContent[] {
+function resultContent(content: unknown, images: Map<string, string>): ToolResultContent[] {
   const items = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? (content as J[]) : []
   return items.flatMap((c): ToolResultContent[] => {
     if (c.type === 'text') return [{ type: 'text', text: String(c.text ?? '') }]
     if (c.type === 'image') {
-      const a = attachment(c)
+      const a = attachment(c, images)
       return [{ type: 'attachment', ref: a.ref, mime: a.mime, sha256: a.sha256 }]
     }
     return []
@@ -272,6 +277,7 @@ function deriveThread(input: {
   seqOf: (entry: J) => number
   /** The thread's creation (ms): the time of a message pi-ai stamps 0 (its initial system message). */
   createdAt: number
+  images: Map<string, string>
 }): Derived[] {
   const { threadId, entries } = input
   const v1 = new Map(input.transcript.map((m) => [m.info.id as string, m]))
@@ -329,6 +335,7 @@ function deriveThread(input: {
       const system = msg.role === 'system' ? [typeof msg.content === 'string' ? msg.content : '', ...Object.values(msg.sections ?? {})].filter((x) => typeof x === 'string' && x).join('\n\n') : null
       const content: J[] = system !== null ? [{ type: 'text', text: system }] : typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : (msg.content ?? [])
       const sent: J[] | undefined = replacement ? (typeof replacement.content === 'string' ? [{ type: 'text', text: replacement.content }] : replacement.content) : undefined
+      const fromTags: J[] = []
       content.forEach((c, i) => {
         if (c.type === 'text') {
           const part = pool.take('text')
@@ -337,9 +344,15 @@ function deriveThread(input: {
           m.blocks.push({ type: 'text', id: (part?.id as string | undefined) ?? `${id}-n${i}`, text: display, ...(modelText !== display ? { model_text: modelText } : {}) })
         } else if (c.type === 'image') {
           const part = pool.take('file', (p) => String(p.mime).startsWith('image/'))
-          m.blocks.push({ type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c), ...(part?.filename ? { name: part.filename } : {}) })
+          const block: J = { type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c, input.images), ...(part?.filename ? { name: part.filename } : {}) }
+          if (!part) fromTags.push(block)
+          m.blocks.push(block as SessionLogBlock)
         }
       })
+      // An image with no v1 file part came from a `<file>` tag (images.ts), in tag order. Its
+      // `source_path` lets a view show it once. A tag image pi left out breaks the count: none is set.
+      const tags = msg.role === 'user' ? imageTagPaths(content.filter((c) => c.type === 'text').map((c) => String(c.text)).join('\n')) : []
+      if (fromTags.length && fromTags.length === tags.length) fromTags.forEach((block, k) => (block.source_path = tags[k]!.path))
       // A file pi never received: a harness block, never an attachment, so a restore does not present it to the model.
       for (const part of pool.rest('file')) {
         const url = String(part.url ?? '')
@@ -388,7 +401,7 @@ function deriveThread(input: {
         m.blocks.push({ type: 'reasoning', id: blockId('reasoning', i), text: c.thinking ?? '', ...(c.redacted ? { redacted: true } : {}), ...(signed ? { ext: { pi: { version: PI_VERSION, data: { thinkingSignature: c.thinkingSignature } } } } : {}) })
       } else if (c.type === 'toolCall') {
         const part = pool.take('tool', (p) => p.tool === c.name)
-        const block = toolCall(c, part, results.get(c.id), edits, `${id}-n${i}`)
+        const block = toolCall(c, part, results.get(c.id), edits, `${id}-n${i}`, input.images)
         if (!block.result) {
           if (streaming) block.status = 'running'
           else close(block)
@@ -426,7 +439,7 @@ function firstKept(entries: J[], c: J, idOf: (e: J) => string): string | null {
   return null
 }
 
-function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<string, J[]>, fallbackId: string): ToolCallBlock {
+function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<string, J[]>, fallbackId: string, images: Map<string, string>): ToolCallBlock {
   const time = part?.state?.time as { start?: number; end?: number } | undefined
   const block: ToolCallBlock = {
     type: 'tool_call',
@@ -442,14 +455,14 @@ function toolCall(c: J, part: J | undefined, result: J | undefined, edits: Map<s
   if (c.thoughtSignature) block.ext = { pi: { version: PI_VERSION, data: { thoughtSignature: c.thoughtSignature } } }
   if (!result) return block
   const r = result.message as J
-  const content = resultContent(r.content)
+  const content = resultContent(r.content, images)
   block.status = r.isError ? 'error' : 'complete'
   block.ended_at = time?.end ? iso(time.end) : iso(r.timestamp)
   block.result = { content, is_error: r.isError === true, ...(r.isError ? { error: { message: textOf(content) } } : {}) }
   const edit = edits.get(result.id)?.at(-1)
   if (edit) {
     // What pi sends for a pruned result: its replacement, or pi-ai's "No result provided" for none.
-    block.result.model_content = edit.replacement === null ? [{ type: 'text', text: PI_NO_RESULT }] : resultContent(edit.replacement.content)
+    block.result.model_content = edit.replacement === null ? [{ type: 'text', text: PI_NO_RESULT }] : resultContent(edit.replacement.content, images)
     block.result.cleared_at = isoOf(edit.timestamp)
   }
   if (r.nestedCalls) block.result.details = codemodeDetails(r.nestedCalls)
@@ -463,10 +476,11 @@ function close(block: ToolCallBlock): void {
   block.result = { content: [{ type: 'text', text: PI_NO_RESULT }], is_error: true, synthetic: true, error: { code: 'interrupted', message: PI_NO_RESULT } }
 }
 
-/** The whole session as a log, and each message's native hash. */
-export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: Map<string, string> } {
+/** The whole session as a log, each message's native hash, and each image's base64 data by sha256. */
+export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: Map<string, string>; images: Map<string, string> } {
   const created = s.header?.timestamp ?? iso(0)
   const hashes = new Map<string, string>()
+  const images = new Map<string, string>()
   const finish = (derived: Derived[]) =>
     derived.map(({ message, native }) => {
       hashes.set(message.message_id, sha256(JSON.stringify([message.seq, native])))
@@ -476,14 +490,14 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
   const seqOf = rootSeqs(s)
   const branch = activeBranch(all, s.leafId)
   const store = codemodeStore(branch)
-  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: branch, ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created) }))
+  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: branch, ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => seqOf(e.id), createdAt: Date.parse(created), images }))
   const root: SessionLogThread = {
     ...V, thread_id: s.rootId, parent_thread_id: null, spawned_by: null, agent: s.agent, title: s.title, created_at: created, messages: rootMessages,
     ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null, ...(Object.keys(store).length ? { codemode_store: store } : {}) } } } } : {}),
   }
   const children = s.children.map((child): SessionLogThread => {
     const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:s${child.seqs[i]}`, index: i, message: m }))
-    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]!, createdAt: child.createdAt }))
+    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]!, createdAt: child.createdAt, images }))
     return { ...V, thread_id: child.id, parent_thread_id: s.rootId, spawned_by: spawnedBy(rootMessages, child.id), agent: child.agentName, title: child.title, created_at: iso(child.createdAt), messages }
   })
   const log: SessionLog = {
@@ -493,7 +507,7 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     todos: [], pending: { questions: [], permissions: [] },
     threads: [root, ...children],
   }
-  return { log, hashes }
+  return { log, hashes, images }
 }
 
 /** The seq of a root entry by id, and of the next entry (`undefined`): see the seq rule. */
@@ -545,12 +559,16 @@ export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string
 /** The session-log port over a live pi runtime. `read` returns null while the runtime is down; `target` is where `restore` writes. */
 export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, target?: PiRestoreTarget): SessionLogPort {
   let lastSession: string | null = null
+  /** The last export's images: the strings of the snapshot it read, replaced at each export. */
+  let images = new Map<string, string>()
   return {
     capabilities: PI_CAPABILITIES,
     async changes(cursors: readonly ExportCursor[]): Promise<SessionLogChanges> {
       const s = read()
       if (!s) return { messages: [], tombstones: [], threads: [] }
-      const { log, hashes } = piSessionLog(s)
+      const exported = piSessionLog(s)
+      const { log, hashes } = exported
+      images = exported.images
       const out = logChanges(log, hashes, cursors, lastSession)
       lastSession = out.sessionJson
       return out.changes
@@ -568,6 +586,10 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null, tar
     live(threadId: string, messageId: string) {
       const s = read()
       return s ? piLive(s, threadId, messageId) : null
+    },
+    blob(sha256: string) {
+      const data = images.get(sha256)
+      return data === undefined ? null : Buffer.from(data, 'base64')
     },
   }
 }

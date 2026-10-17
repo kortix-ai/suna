@@ -1,7 +1,7 @@
 import type { ElementNode } from '@openuidev/lang-core';
 import type { z } from 'zod/v4';
 
-import { GENUI_MAX_DEPTH, GENUI_MAX_NODES, GENUI_SPECS } from './catalog';
+import { GENUI_BLOCKS, GENUI_MAX_DEPTH, GENUI_MAX_NODES, GENUI_SPECS } from './catalog';
 import type { GenuiIssue, GenuiNode } from './types';
 import { safeUrl } from './urls';
 
@@ -152,7 +152,8 @@ export function sanitizeTree(
     return [{ id, type: typeName, props, partial }, ...rising];
   }
 
-  const top = visit(root, 'root', 0, ['Stack'], false);
+  // root may be any block (root = Steps(...)); a non-Stack root is wrapped in a Stack below.
+  const top = visit(root, 'root', 0, GENUI_BLOCKS, false);
   if (top.length === 0) return { root: null, issues };
   if (top.length === 1 && top[0]!.type === 'Stack') return { root: top[0]!, issues };
   return { root: { id: uniqueId('root'), type: 'Stack', props: { children: top }, partial: false }, issues };

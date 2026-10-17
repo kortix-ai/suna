@@ -26,6 +26,7 @@
  * starts, so a release that changes them restarts the runtime in place, while
  * it is idle.
  */
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import {
@@ -166,8 +167,9 @@ export function piReleaseSourcePaths(configDir: string | null): string[] {
   return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills', 'AGENTS.md']
 }
 
-/** pi's own config dir inside a release root, resolved exactly as in the working tree. */
-function piDirIn(releaseRoot: string): Promise<string | null> {
+/** pi's own config dir inside a release root, resolved exactly as in the working tree. A v3 release (`schema: 3` governance) has none. */
+async function piDirIn(releaseRoot: string, governance: string | null | undefined): Promise<string | null> {
+  if (parseCompiledAgentConfig(governance ?? undefined)?.schema === 3) return null
   return resolvePiProjectConfigDir({ projectTarget: releaseRoot } as HostConfig)
 }
 
@@ -456,7 +458,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       failed_release_id: failedReleaseId,
       source_commit: manifest.source_commit,
       dir,
-      piDir: await piDirIn(dir),
+      piDir: await piDirIn(dir, compiledAgentConfigFromEnv(env)),
     })
     logger.info('[pi-config] pi runs this release', { releaseId, desiredId, dir, sourceCommit: manifest.source_commit })
   }
@@ -624,7 +626,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     // The download took time; a prompt may have arrived. Ask again right before the swap.
     if (!runtime.idle()) return busy()
 
-    const piDir = await piDirIn(dir)
+    const piDir = await piDirIn(dir, governance.value ?? compiledAgentConfigFromEnv(env))
     const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, piDir, packageDirs)
     writeNotice(manifest, dir)
     const refused = await swap(

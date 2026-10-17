@@ -2,9 +2,10 @@ import { autoSeedableModels } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
+import { sessionModelPin } from '../rest/projects-client/sessions';
 import { healBedrockModelKey } from './bedrock-invokable';
 import { isOfferedModel, type FlatModel } from './model-flatten';
-import { type ModelKey, wireToModelKey } from './model-key';
+import { type ModelKey, modelRefToKey, wireToModelKey } from './model-key';
 
 /**
  * Which model the session composer runs — framework-free, so every host
@@ -28,6 +29,59 @@ export function resolveModelDefault(
     data?.accountDefault ??
     data?.platformDefault;
   return wire ? wireToModelKey(wire) : undefined;
+}
+
+/**
+ * The model of the newest user message that records one: what the session
+ * last ran on. Pass it to `sessionModelCandidates` as `lastPromptModel`.
+ */
+export function latestPromptModel(
+  messages:
+    | ReadonlyArray<{ role: string; model?: { provider?: string; model?: string } | null }>
+    | null
+    | undefined,
+): ModelKey | undefined {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const message = messages![i]!;
+    const { provider, model } = message.model ?? {};
+    if (message.role === 'user' && provider && model) return { providerID: provider, modelID: model };
+  }
+  return undefined;
+}
+
+/** Pin sources that record a choice: a person's (CLI, SDK, Slack, `PUT /model`),
+ *  or the platform's when it moved that choice off a retired model. */
+const CHOSEN_PIN_SOURCES = new Set(['explicit', 'repointed']);
+
+/**
+ * The models a session already runs on, as the server records them, most
+ * trusted first. The composer ranks these after a pick made in this composer
+ * for this session and before every cross-session pick and default, so a
+ * session opens on its own model and its next prompt does not switch it.
+ *
+ * 1. A chosen pin (`metadata.opencode_model` with source `explicit` or
+ *    `repointed`). The CLI, the SDK and Slack set the model this way, and
+ *    they send it with every prompt.
+ * 2. `lastPromptModel`: the model of the session's newest user message, which
+ *    is what the session last ran on.
+ * 3. Any other pin. That is the default resolved when the session was
+ *    created, which a later prompt may have replaced.
+ */
+export function sessionModelCandidates(input: {
+  /** The session row (`getProjectSession`); its metadata holds the pin. */
+  session?: { metadata?: Record<string, unknown> | null } | null;
+  /** The model of the session's newest user message. */
+  lastPromptModel?: ModelKey;
+  /** The project's gateway mode: it decides how a stored pin parses. */
+  gatewayEnabled: boolean;
+}): ModelKey[] {
+  const pin = input.session ? sessionModelPin(input.session) : null;
+  const pinKey = pin ? modelRefToKey(pin, input.gatewayEnabled) : undefined;
+  const chosen = CHOSEN_PIN_SOURCES.has(String(input.session?.metadata?.opencode_model_source));
+  const ordered = chosen
+    ? [pinKey, input.lastPromptModel]
+    : [input.lastPromptModel, pinKey];
+  return ordered.filter((model): model is ModelKey => !!model);
 }
 
 export interface ComposerModelResolution {

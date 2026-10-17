@@ -298,6 +298,21 @@ const envSchema = z.object({
   // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
   // On by default. Off answers 503 and claims nothing: the box boots without a restore.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
+  // Default of the project flag `session_log_restore` for a project with no stored value. Off by
+  // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
+  // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
+  // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
+  // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
+  // of blobs (~125 screenshots of 500 kB). Above it the claim still happens and the answer is 413 without messages:
+  // the box boots with the D3 note alone. A pi restore peaks at about 38x the log in the daemon's
+  // memory (a 38.5 MB log: +1.45 GB on a 4 GB box) and about 9x in the API (+330 MB). 24 MiB keeps the
+  // daemon peak under 1 GB and is 1.6x the p99.9 session (15 MB; p99 3.7 MB).
+  SESSION_LOG_RESTORE_MAX_BYTES: optInt(24 * 1024 * 1024),
+  // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
+  // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
+  SESSION_LOG_BLOB_READ_MS: optInt(60_000),
   // Operator switch for the retention purge of session content (P2.8, decision D6): session
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
@@ -1272,6 +1287,9 @@ export const config = {
   GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
+  SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,

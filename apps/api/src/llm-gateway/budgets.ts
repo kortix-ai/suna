@@ -3,6 +3,7 @@ import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { db } from '../shared/db';
 import { totalSpendWhereSql } from '../shared/llm-spend';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 export type Period = 'day' | 'week' | 'month';
 
@@ -186,6 +187,12 @@ export function __resetBudgetReservationsForTests(): void {
   reservationsByKey.clear();
 }
 
+/** The budget refusal or warning a caller reads, in credits (1 credit = $0.01). */
+function budgetExhaustedMessage(who: string, limitUsd: number, spentUsd: number, period: Period): string {
+  return `${who} gateway budget (${formatUsdAsCredits(limitUsd)} credits/${period}) is exhausted — ${formatUsdAsCredits(spentUsd)} credits used this ${period}.`;
+}
+
+
 /**
  * Evaluate every gateway budget scoped to the caller's project (both 'block'
  * and 'warn' actions — a previous version only ever queried action='block',
@@ -240,7 +247,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
         const who = b.scope === 'member' ? 'Your' : "This project's";
         return {
           exceeded: true,
-          message: `${who} gateway budget ($${limit}/${b.period}) is exhausted — $${spent.toFixed(2)} used this ${b.period}.`,
+          message: budgetExhaustedMessage(who, limit, spent, b.period),
           ...signals(),
         };
       }
@@ -256,7 +263,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
     if (spent >= limit) {
       const who = b.scope === 'member' ? 'Your' : "This project's";
       warnings.push(
-        `${who} gateway budget ($${limit}/${b.period}) is exhausted — $${spent.toFixed(2)} used this ${b.period}.`,
+        budgetExhaustedMessage(who, limit, spent, b.period),
       );
     }
   }
