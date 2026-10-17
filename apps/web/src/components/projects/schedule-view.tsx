@@ -27,9 +27,13 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
-import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
+import {
+  triggerRunActions,
+  triggerToastEntity,
+} from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { CountBadge } from '@/components/ui/count-badge';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
@@ -37,7 +41,7 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
+import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -59,20 +63,27 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
+import {
+  contract,
+  qk,
+  useProjectTriggerEventApps,
+  useProjectTriggerRuns,
+  useVisibleAgents,
+} from '@kortix/sdk/react';
 import {
   LightningIcon,
   LockKeyIcon,
-  MagnifyingGlassIcon as SearchIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
+  MagnifyingGlassIcon as SearchIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { useSlashFocus } from '@/hooks/utils';
 import { EventAppsStrip } from './schedule/event-apps-strip';
 import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
 import {
@@ -97,9 +108,9 @@ import {
   parseTriggerFilter,
   triggerCounts,
 } from './schedule/trigger-filter';
+import { RunList, runsOf } from './schedule/trigger-runs-panel';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
-import { useSlashFocus } from '@/hooks/utils';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -275,7 +286,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   );
   // `?type=cron|event|webhook` is the kind filter; anything else, and `event` while events are off, is all.
   const filter = parseTriggerFilter(searchParams?.get('type'), filters);
-  const setFilter = (next: TriggerFilter) => {
+  // `?type=failed` lists the project's failed runs instead of its triggers.
+  const failedView = searchParams?.get('type') === 'failed';
+  const setFilter = (next: TriggerFilter | 'failed') => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (next === 'all') params.delete('type');
     else params.set('type', next);
@@ -288,6 +301,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const agents = useVisibleAgents({ projectId });
   const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
+  // A row of the Failed runs list opens its trigger on the Runs tab.
+  const [sheetTab, setSheetTab] = useState<'settings' | 'runs'>('settings');
+  const openTrigger = (slug: string, tab: 'settings' | 'runs' = 'settings') => {
+    setSheetTab(tab);
+    setSelectedSlug(slug);
+  };
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(
@@ -305,7 +324,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         successToast(tI18nComplete.raw('textecbc89cd37a0'), {
           entity,
           ...(res.session_id
-            ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
+            ? {
+                actions: triggerRunActions(
+                  projectId,
+                  res.session_id,
+                  tI18nComplete.raw('textb205bb47f81a'),
+                ),
+              }
             : { description: tI18nComplete.raw('text747e9e0e8e92') }),
         });
       } else if (res.status === 'queued') {
@@ -406,7 +431,14 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     [filter, filtered, eventApps.data],
   );
 
-  const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
+  const failedRuns = useProjectTriggerRuns(
+    projectId,
+    { status: 'failed' },
+    { enabled: showContent },
+  );
+  const failedCount = runsOf(failedRuns).length;
+  const showFailed = failedCount > 0 || failedView;
+  const showFilter = showContent && (triggers.length > 0 || filter !== 'all' || showFailed);
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
@@ -440,17 +472,25 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       filters={
         showFilter ? (
           <Tabs
-            value={filter}
-            onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
+            value={failedView ? 'failed' : filter}
+            onValueChange={(next) =>
+              setFilter(next === 'failed' ? 'failed' : parseTriggerFilter(next, filters))
+            }
             className="max-w-full overflow-x-auto"
           >
             <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
               {filters.map((value) => (
                 <TabsTrigger key={value} value={value} className="gap-1.5">
                   {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                  <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
+                  <CountBadge count={counts[value]} />
                 </TabsTrigger>
               ))}
+              {showFailed ? (
+                <TabsTrigger value="failed" className="gap-1.5">
+                  {tI18nComplete.raw('text24afc952b6cc')}
+                  {failedCount > 0 ? <CountBadge count={failedCount} tone="waiting" /> : null}
+                </TabsTrigger>
+              ) : null}
             </TabsList>
           </Tabs>
         ) : undefined
@@ -463,9 +503,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            on an error or a 403. */
         showContent ? (
           <div className="flex items-center gap-2">
-            {triggers.length > 0 || paused ? (
-              <TriggerActivationMenu projectId={projectId} />
-            ) : null}
+            {triggers.length > 0 || paused ? <TriggerActivationMenu projectId={projectId} /> : null}
             {canWrite ? (
               <NewEntityMenu
                 label={copy.createLabel}
@@ -494,11 +532,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         )}
 
         {triggersQuery.isLoading ? (
-          <div className="space-y-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-              <Skeleton key={i} className="h-10 rounded-md" />
-            ))}
+          <div className="flex justify-center py-6">
+            <Loading />
           </div>
         ) : isForbidden ? (
           <InfoBanner
@@ -522,6 +557,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               </Button>
             }
           />
+        ) : failedView ? (
+          <RunList
+            projectId={projectId}
+            query={failedRuns}
+            emptyTitle={tI18nComplete.raw('text6c5ebd6c3b4f')}
+            title={(run) => {
+              const owner = triggers.find((t) => t.slug === run.slug);
+              return owner ? (
+                <button
+                  type="button"
+                  onClick={() => openTrigger(run.slug, 'runs')}
+                  className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
+                >
+                  {triggerName(owner)}
+                </button>
+              ) : (
+                <span className="min-w-0 truncate text-sm font-medium">{run.slug}</span>
+              );
+            }}
+          />
         ) : filter !== 'all' && ofKind.length === 0 ? (
           <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
         ) : triggers.length === 0 ? (
@@ -532,7 +587,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             className="py-12"
             action={
               canWrite ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openCreate()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => openCreate()}
+                >
                   <PlusIcon className="size-4 shrink-0" />
                   {copy.createLabel}
                 </Button>
@@ -554,7 +614,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
-            onOpen={(t) => setSelectedSlug(t.slug)}
+            onOpen={(t) => openTrigger(t.slug)}
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
@@ -608,7 +668,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           invalidate();
           // Drop straight into the new entry so the address or the first run
           // is one click away, not two.
-          setSelectedSlug(slug);
+          openTrigger(slug);
         }}
       />
 
@@ -617,6 +677,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         trigger={selected}
         eventsEnabled={eventsOn}
         controls={controls}
+        initialTab={sheetTab}
         open={!!selected}
         onOpenChange={(next) => {
           if (!next) setSelectedSlug(null);

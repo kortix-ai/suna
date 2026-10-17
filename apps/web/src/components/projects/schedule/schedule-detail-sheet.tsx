@@ -35,7 +35,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
@@ -48,7 +48,13 @@ import {
   useProjectTriggerEventTypes,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { DotsThreeIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import {
+  BracketsCurlyIcon,
+  DotsThreeIcon,
+  PauseIcon,
+  PlayIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -83,7 +89,9 @@ import type { TriggerControls } from './trigger-controls';
 import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
 import { TriggerOptions } from './trigger-options';
 import { TriggerReadOnly } from './trigger-readonly';
+import { TriggerRunsPanel } from './trigger-runs-panel';
 import { TriggerStatusBadge } from './trigger-status-badge';
+import { TriggerTestDialog } from './trigger-test-dialog';
 import { TriggerTile } from './trigger-tile';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenEvent } from './when-event';
@@ -113,7 +121,11 @@ export interface ScheduleDetailSheetProps {
   running: boolean;
   onDelete: () => void;
   onMutated: () => void;
+  /** The tab the sheet opens on. The Failed runs list opens Runs. */
+  initialTab?: SheetTab;
 }
+
+type SheetTab = 'settings' | 'runs';
 
 export function ScheduleDetailSheet(props: ScheduleDetailSheetProps) {
   const { trigger, open, onOpenChange } = props;
@@ -145,8 +157,11 @@ function SheetPanel({
   running,
   onDelete,
   onMutated,
+  initialTab = 'settings',
 }: ScheduleDetailSheetProps & { trigger: ProjectTrigger }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const [tab, setTab] = useState<SheetTab>(initialTab);
+  const [testOpen, setTestOpen] = useState(false);
   const event = trigger.type === 'event' ? trigger.event : null;
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger.slug, { enabled }),
@@ -197,7 +212,8 @@ function SheetPanel({
   const loading = catalogOn && (apps.isLoading || eventTypes.isLoading);
 
   return (
-    <>
+    // `gap-0`: the Tabs root's own gap would open a seam under the sticky header.
+    <Tabs value={tab} onValueChange={(next) => setTab(next as SheetTab)} className="gap-0">
       {/* Sticky, because the content element is what scrolls: without this the
           Run now / Pause actions would scroll away. `bg-sidebar` matches the
           sheet's own surface so content passes behind it, not through it.
@@ -259,7 +275,7 @@ function SheetPanel({
               </Button>
             ) : null}
             <div className="min-w-2 flex-1" />
-            {controls.canDelete ? (
+            {controls.canFire || controls.canDelete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
@@ -267,19 +283,36 @@ function SheetPanel({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                    <TrashIcon className="size-3.5 shrink-0" />
-                    {trigger.type === 'cron'
-                      ? t.raw('textd8d0bd5c5106')
-                      : event
-                        ? t.raw('textf2f698118cc1')
-                        : t.raw('text60f85e57e4a7')}
-                  </DropdownMenuItem>
+                  {controls.canFire ? (
+                    <DropdownMenuItem onClick={() => setTestOpen(true)}>
+                      <BracketsCurlyIcon className="size-3.5 shrink-0" />
+                      {t.raw('textb098a09c78aa')}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {controls.canDelete ? (
+                    <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                      <TrashIcon className="size-3.5 shrink-0" />
+                      {trigger.type === 'cron'
+                        ? t.raw('textd8d0bd5c5106')
+                        : event
+                          ? t.raw('textf2f698118cc1')
+                          : t.raw('text60f85e57e4a7')}
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
           </div>
         ) : null}
+
+        <TabsList type="underline" size="sm" className="justify-start">
+          <TabsTrigger value="settings" className="w-fit flex-none">
+            {t.raw('text74a883a037bc')}
+          </TabsTrigger>
+          <TabsTrigger value="runs" className="w-fit flex-none">
+            {t.raw('text848f54e89660')}
+          </TabsTrigger>
+        </TabsList>
       </SheetHeader>
 
       {/* `flex-none` and `!overflow-visible` are load-bearing. SheetBody's base
@@ -289,28 +322,42 @@ function SheetPanel({
           The content element above owns scrolling; a second scroller here
           would send the wheel to whichever surface the cursor is over. */}
       <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-2 pb-0">
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-16 rounded-md" />
-            <Skeleton className="h-28 rounded-md" />
-          </div>
-        ) : (
-          <SheetForm
-            projectId={projectId}
-            trigger={trigger}
-            canWrite={canWrite}
-            eventsEnabled={eventsEnabled}
-            appIndex={appIndex}
-            eventNames={eventNames}
-            agents={agents}
-            savedEventType={savedEventType}
-            savedModel={savedModel}
-            apps={apps}
-            onMutated={onMutated}
-          />
-        )}
+        {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
+        <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
+          {loading ? (
+            <div className="flex justify-center py-6">
+              <Loading />
+            </div>
+          ) : (
+            <SheetForm
+              projectId={projectId}
+              trigger={trigger}
+              canWrite={canWrite}
+              eventsEnabled={eventsEnabled}
+              appIndex={appIndex}
+              eventNames={eventNames}
+              agents={agents}
+              savedEventType={savedEventType}
+              savedModel={savedModel}
+              apps={apps}
+              onMutated={onMutated}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="runs" className="pb-8">
+          <TriggerRunsPanel projectId={projectId} trigger={trigger} canFire={controls.canFire} />
+        </TabsContent>
       </SheetBody>
-    </>
+
+      {controls.canFire ? (
+        <TriggerTestDialog
+          projectId={projectId}
+          trigger={trigger}
+          open={testOpen}
+          onOpenChange={setTestOpen}
+        />
+      ) : null}
+    </Tabs>
   );
 }
 
