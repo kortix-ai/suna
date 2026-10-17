@@ -8,11 +8,13 @@
  * focus and carries its error as one muted line, in full on hover.
  */
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
   formatSessionCostCredits,
   formatSessionCostDuration,
@@ -22,6 +24,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   ApiError,
   type ProjectTrigger,
@@ -29,7 +32,12 @@ import {
   type ProjectTriggerRunSource,
 } from '@kortix/sdk';
 import { useProjectTriggers, useTriggerRuns } from '@kortix/sdk/react';
-import { ArrowCounterClockwiseIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
+import {
+  ArrowCounterClockwiseIcon,
+  ArrowSquareOutIcon,
+  WarningIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -40,7 +48,6 @@ import {
   canReplay,
   inRunRange,
   isDefaultSource,
-  relativeRunTime,
   runState,
   runsInFlight,
 } from './trigger-runs-logic';
@@ -87,10 +94,36 @@ const SOURCE_LABEL_KEY = {
 
 /** Column widths, named once (the Models logs `LANE`). */
 const LANE = {
-  time: 'w-22 shrink-0 whitespace-nowrap',
+  // The outcome mark's slot: an 8 px dot, or the 14 px dot matrix while running.
+  mark: 'flex w-3.5 shrink-0 justify-center',
+  time: 'w-22 shrink-0 text-right whitespace-nowrap',
   duration: 'w-14 shrink-0 text-right whitespace-nowrap',
   cost: 'w-16 shrink-0 text-right whitespace-nowrap @max-sm/runs:hidden',
 } as const;
+
+/** "10:30:02": the clock of a run inside its day (`fmtClock` in the Models logs). */
+function fmtClock(iso: string, locale: string): string {
+  return new Date(iso).toLocaleTimeString(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+/** "Today", "Yesterday", else the date: once above the rows that share it (`DayDivider`). */
+function fmtDay(
+  iso: string,
+  locale: string,
+  t: (key: 'text2b065c7c9ce4' | 'text566181254b29') => string,
+) {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return t('text2b065c7c9ce4');
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return t('text566181254b29');
+  return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+}
 
 type RunsQuery = Pick<
   ReturnType<typeof useTriggerRuns>,
@@ -193,15 +226,22 @@ export function TriggerRunsPanel({
   } else {
     body = (
       <div className="@container/runs flex flex-col">
+        {/* C03 run table header: Run · Time · Duration · Cost. */}
         <div className="text-muted-foreground border-border flex h-8 items-center gap-3 border-b px-3 text-xs">
+          <span className={LANE.mark} />
+          <span className="min-w-0 flex-1">{t.raw('text00d60e31a4e6')}</span>
           <span className={LANE.time}>{t.raw('text33b93476cf59')}</span>
-          <span className="min-w-0 flex-1">{t.raw('text920e413c7d41')}</span>
           <span className={LANE.duration}>{t.raw('text4fc52a3c4c55')}</span>
           <span className={LANE.cost}>{t.raw('text204a5eb2cd28')}</span>
         </div>
         <ul>
-          {shown.map((run) => (
+          {shown.map((run, i) => (
             <RunRow
+              newDay={
+                i === 0 ||
+                new Date(shown[i - 1]!.started_at).toDateString() !==
+                  new Date(run.started_at).toDateString()
+              }
               key={run.run_id}
               projectId={projectId}
               trigger={trigger}
@@ -270,97 +310,189 @@ export function TriggerRunsPanel({
   );
 }
 
-function RunRow({
+export function RunRow({
   projectId,
   trigger,
   run,
+  newDay,
   replay,
+  initialOpen = false,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
   run: ProjectTriggerRun;
+  /** The first row of its day: the day divider sits above it. */
+  newDay: boolean;
   replay: { pending: boolean; disabled: boolean; onReplay: () => void } | null;
+  /** Start expanded (a deep link to one run, and the render tests). */
+  initialOpen?: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
+  const [open, setOpen] = useState(initialOpen);
   const state = runState(run);
   const error = run.error ?? run.run_error;
   const failed = state === 'failed' || state === 'rejected';
-
-  const cells = (
-    <>
-      <Hint label={absoluteFormatter.format(new Date(run.started_at))} side="top">
-        <span className={cn(LANE.time, 'text-muted-foreground tabular-nums')}>
-          {relativeRunTime(run.started_at, locale)}
-        </span>
-      </Hint>
-      <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span aria-hidden className={cn('size-2 shrink-0 rounded-full', STATE_DOT[state])} />
-        <span className="text-foreground truncate font-medium">
-          {t.raw(STATE_LABEL_KEY[state])}
-        </span>
-        {isDefaultSource(trigger.type, run.source) ? null : (
-          <span className="text-muted-foreground shrink-0 truncate">
-            {t.raw(SOURCE_LABEL_KEY[run.source])}
-          </span>
+  const source = t.raw(SOURCE_LABEL_KEY[run.source]);
+  const replayButton = (className?: string) =>
+    replay ? (
+      <Button
+        variant="outline"
+        size="xs"
+        className={cn('gap-1.5 text-xs', className)}
+        disabled={replay.disabled}
+        onClick={replay.onReplay}
+      >
+        {replay.pending ? (
+          <Loading className="size-3 shrink-0" />
+        ) : (
+          <ArrowCounterClockwiseIcon className="size-3 shrink-0" />
         )}
-        {run.payload_verified ? null : (
-          <Hint label={t.raw('text7f2b8f3a675c')} side="top">
-            <WarningIcon
-              aria-label={t.raw('text9daf8e05c684')}
-              className="text-muted-foreground size-3.5 shrink-0"
-            />
-          </Hint>
-        )}
-      </span>
-      <span className={cn(LANE.duration, 'text-foreground tabular-nums')}>
-        {run.duration_ms != null ? formatSessionCostDuration(run.duration_ms / 1000) : '—'}
-      </span>
-      {/* No cost line for a run that spent nothing: "0 credits" reads like a measurement. */}
-      <span className={cn(LANE.cost, 'text-foreground tabular-nums')}>
-        {run.cost_usd ? formatSessionCostCredits(run.cost_usd) : null}
-      </span>
-    </>
-  );
-  const rowClass =
-    'flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-xs transition-[background-color] duration-(--duration-normal)';
+        {t.raw('textc8dae6371b33')}
+      </Button>
+    ) : null;
 
   return (
-    <li className="group relative">
-      {run.session_id ? (
-        <Link
-          href={projectSessionHref(projectId, run.session_id)}
-          className={cn(rowClass, 'hover:bg-muted/60 focus-visible:bg-muted/60 outline-none')}
+    <>
+      {newDay ? (
+        <li className="text-muted-foreground px-3 pt-3.5 pb-1.5 text-xs font-medium">
+          {fmtDay(run.started_at, locale, (key) => t.raw(key))}
+        </li>
+      ) : null}
+      {/* C20 `D6V-0` + `D73-0`: the row toggles its detail inline. Only the
+          panel's Open session leaves the page. */}
+      <li className={cn('group relative rounded-md', open && 'bg-muted')}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && open) setOpen(false);
+          }}
+          className={cn(
+            'flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-xs outline-none',
+            'transition-[background-color] duration-(--duration-normal)',
+            !open && 'hover:bg-muted/60 focus-visible:bg-muted/60',
+          )}
         >
-          {cells}
-        </Link>
-      ) : (
-        <div className={rowClass}>{cells}</div>
-      )}
-      {failed && error ? (
-        <Hint label={error} side="top" className="max-w-80 text-pretty">
-          <p className="text-muted-foreground truncate pr-3 pb-2 pl-28 text-xs">{error}</p>
-        </Hint>
-      ) : null}
-      {replay ? (
-        // Over the row's right edge; shown on hover or keyboard focus only.
-        <span className="bg-background absolute top-1 right-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
-          <Button
-            variant="outline"
-            size="xs"
-            className="gap-1.5"
-            disabled={replay.disabled}
-            onClick={replay.onReplay}
-          >
-            {replay.pending ? (
-              <Loading className="size-3.5 shrink-0" />
+          <span className={LANE.mark}>
+            {state === 'running' || state === 'queued' ? (
+              <SessionDotMatrix sessionId={run.run_id} size={14} className="shrink-0" />
             ) : (
-              <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+              <span aria-hidden className={cn('size-2 rounded-full', STATE_DOT[state])} />
             )}
-            {t.raw('text98c78fbb22fe')}
-          </Button>
-        </span>
-      ) : null}
-    </li>
+          </span>
+          <span className="flex min-w-0 flex-1 items-baseline gap-2.5 overflow-hidden">
+            <span className="text-foreground max-w-full shrink-0 truncate font-medium">
+              {t.raw(STATE_LABEL_KEY[state])}
+            </span>
+            {failed && error ? (
+              <span className="text-muted-foreground min-w-0 truncate">{error}</span>
+            ) : run.replay_of ? (
+              <Badge variant="secondary" size="sm" className="font-sans normal-case">
+                {t.raw('textc8dae6371b33')}
+              </Badge>
+            ) : isDefaultSource(trigger.type, run.source) ? null : (
+              <Badge variant="secondary" size="sm" className="font-sans normal-case">
+                {source}
+              </Badge>
+            )}
+            {run.payload_verified ? null : (
+              <Hint label={t.raw('text7f2b8f3a675c')} side="top">
+                <WarningIcon
+                  aria-label={t.raw('text9daf8e05c684')}
+                  className="text-muted-foreground size-3.5 shrink-0 self-center"
+                />
+              </Hint>
+            )}
+          </span>
+          <Hint label={absoluteFormatter.format(new Date(run.started_at))} side="top">
+            <span className={cn(LANE.time, 'text-muted-foreground tabular-nums')}>
+              {fmtClock(run.started_at, locale)}
+            </span>
+          </Hint>
+          <span className={cn(LANE.duration, 'text-foreground tabular-nums')}>
+            {run.duration_ms != null ? formatSessionCostDuration(run.duration_ms / 1000) : null}
+          </span>
+          {/* No cost for a run that spent nothing: "0" reads like a measurement. */}
+          <span className={cn(LANE.cost, 'text-foreground tabular-nums')}>
+            {run.cost_usd ? formatSessionCostCredits(run.cost_usd) : null}
+          </span>
+        </button>
+
+        {replay && !open ? (
+          // Collapsed failed row: Replay on hover or keyboard focus, over the lanes.
+          <span className="absolute top-1.5 right-2 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+            {replayButton('bg-background')}
+          </span>
+        ) : null}
+
+        {open ? (
+          <div className="flex flex-col gap-5 pt-1 pr-3 pb-3.5 pl-8 @2xl/runs:flex-row">
+            <div className="flex w-full shrink-0 flex-col gap-2 @2xl/runs:w-72">
+              <div className="flex gap-3 text-xs">
+                <span className="text-muted-foreground w-22 shrink-0">
+                  {t.raw('textecbc89cd37a0')}
+                </span>
+                <span className="text-foreground tabular-nums">
+                  {fmtClock(run.started_at, locale)} · {source.toLocaleLowerCase(locale)}
+                </span>
+              </div>
+              {run.session_id ? (
+                <div className="flex gap-3 text-xs">
+                  <span className="text-muted-foreground w-22 shrink-0">
+                    {t.raw('text6959b4159575')}
+                  </span>
+                  {/* Click to copy the full ID (the value truncates). */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!run.session_id) return;
+                      if (await copyToClipboard(run.session_id)) {
+                        successToast(t.raw('text4aaee10f3594'));
+                      } else {
+                        errorToast(t.raw('text4cb23f3c3b90'));
+                      }
+                    }}
+                    className="text-foreground focus-visible:ring-ring min-w-0 cursor-pointer truncate rounded-sm text-left font-mono outline-none focus-visible:ring-2"
+                  >
+                    {run.session_id}
+                  </button>
+                </div>
+              ) : null}
+              {error ? (
+                <div className="flex gap-3 text-xs">
+                  <span className="text-muted-foreground w-22 shrink-0">
+                    {t.raw('text54a0e8c17ebb')}
+                  </span>
+                  <span className="text-foreground min-w-0 break-words">{error}</span>
+                </div>
+              ) : null}
+              {replay || run.session_id ? (
+                <div className="flex gap-1 pt-1">
+                  {replayButton()}
+                  {run.session_id ? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="text-muted-foreground gap-1.5 text-xs"
+                      asChild
+                    >
+                      <Link href={projectSessionHref(projectId, run.session_id)}>
+                        <ArrowSquareOutIcon className="size-3 shrink-0" />
+                        {t.raw('textb205bb47f81a')}
+                      </Link>
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <pre className="bg-surface text-foreground min-w-0 flex-1 overflow-auto rounded-md px-3.5 py-3 font-mono text-xs leading-normal whitespace-pre">
+              {JSON.stringify(run.payload, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+      </li>
+    </>
   );
 }

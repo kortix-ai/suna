@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "A un evento",
       "text27a2c8b3a0d2": "prossima {value0}",
       "textd47d7cb0e4f8": "Altro",
-      "text3ec84fbbfd0e": "{count, plural, one {# attivo} other {# attivi}}"
+      "text3ec84fbbfd0e": "{count, plural, one {# attivo} other {# attivi}}",
+      "textc8dae6371b33": "Ripeti",
+      "text4aaee10f3594": "ID sessione copiato"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

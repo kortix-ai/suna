@@ -20133,7 +20133,9 @@
       "text84b05fbb7f76": "On event",
       "text27a2c8b3a0d2": "next {value0}",
       "textd47d7cb0e4f8": "More",
-      "text3ec84fbbfd0e": "{count, plural, other {# active}}"
+      "text3ec84fbbfd0e": "{count, plural, other {# active}}",
+      "textc8dae6371b33": "Replay",
+      "text4aaee10f3594": "Session ID copied"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

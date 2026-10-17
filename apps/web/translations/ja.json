@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "イベント時",
       "text27a2c8b3a0d2": "次回 {value0}",
       "textd47d7cb0e4f8": "その他",
-      "text3ec84fbbfd0e": "{count, plural, other {# 件有効}}"
+      "text3ec84fbbfd0e": "{count, plural, other {# 件有効}}",
+      "textc8dae6371b33": "再実行",
+      "text4aaee10f3594": "セッション ID をコピーしました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

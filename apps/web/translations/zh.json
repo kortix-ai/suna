@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "事件触发",
       "text27a2c8b3a0d2": "下次 {value0}",
       "textd47d7cb0e4f8": "更多",
-      "text3ec84fbbfd0e": "{count, plural, other {# 个启用}}"
+      "text3ec84fbbfd0e": "{count, plural, other {# 个启用}}",
+      "textc8dae6371b33": "重放",
+      "text4aaee10f3594": "已复制会话 ID"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

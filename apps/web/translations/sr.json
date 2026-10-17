@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "На догађај",
       "text27a2c8b3a0d2": "следеће {value0}",
       "textd47d7cb0e4f8": "Још",
-      "text3ec84fbbfd0e": "{count, plural, one {# активан} few {# активна} other {# активних}}"
+      "text3ec84fbbfd0e": "{count, plural, one {# активан} few {# активна} other {# активних}}",
+      "textc8dae6371b33": "Понови",
+      "text4aaee10f3594": "ID сесије је копиран"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

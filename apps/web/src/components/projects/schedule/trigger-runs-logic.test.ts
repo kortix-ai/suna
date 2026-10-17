@@ -6,7 +6,6 @@ import {
   inRunRange,
   isDefaultSource,
   parsePayload,
-  relativeRunTime,
   runState,
   runsInFlight,
 } from './trigger-runs-logic';
@@ -77,21 +76,6 @@ describe('parsePayload', () => {
     expect(parsePayload('[]')).toEqual({ ok: false, error: 'object' });
     expect(parsePayload('null')).toEqual({ ok: false, error: 'object' });
     expect(parsePayload('3')).toEqual({ ok: false, error: 'object' });
-  });
-});
-
-describe('relativeRunTime', () => {
-  const now = Date.parse('2026-10-17T12:00:00.000Z');
-  test('reads in the given locale', () => {
-    expect(relativeRunTime('2026-10-17T11:59:30.000Z', 'en', now)).toBe('now');
-    expect(relativeRunTime('2026-10-17T11:55:00.000Z', 'en', now)).toBe('5 minutes ago');
-    expect(relativeRunTime('2026-10-17T09:00:00.000Z', 'en', now)).toBe('3 hours ago');
-    expect(relativeRunTime('2026-10-16T12:00:00.000Z', 'en', now)).toBe('yesterday');
-    expect(relativeRunTime('2026-10-17T11:55:00.000Z', 'de', now)).toBe('vor 5 Minuten');
-  });
-
-  test('an unparsable time renders nothing', () => {
-    expect(relativeRunTime('nope', 'en', now)).toBe('');
   });
 });
 

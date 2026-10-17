@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "Sur événement",
       "text27a2c8b3a0d2": "prochaine {value0}",
       "textd47d7cb0e4f8": "Plus",
-      "text3ec84fbbfd0e": "{count, plural, one {# actif} other {# actifs}}"
+      "text3ec84fbbfd0e": "{count, plural, one {# actif} other {# actifs}}",
+      "textc8dae6371b33": "Rejouer",
+      "text4aaee10f3594": "ID de session copié"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

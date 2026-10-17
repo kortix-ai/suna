@@ -31,24 +31,6 @@ export function canReplay(
   return (state === 'failed' || state === 'rejected') && run.payload?.truncated !== true;
 }
 
-/** "5 minutes ago", "yesterday", in the viewer's locale; a date after 30 days. */
-export function relativeRunTime(iso: string, locale: string, now: number = Date.now()): string {
-  const at = Date.parse(iso);
-  if (!Number.isFinite(at)) return '';
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  const elapsed = Math.max(0, now - at);
-  const min = Math.floor(elapsed / 60_000);
-  if (min < 1) return rtf.format(0, 'second');
-  if (min < 60) return rtf.format(-min, 'minute');
-  if (min < 24 * 60) return rtf.format(-Math.floor(min / 60), 'hour');
-  if (min < 30 * 24 * 60) return rtf.format(-Math.floor(min / (24 * 60)), 'day');
-  return new Date(at).toLocaleDateString(locale, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 /** The payload editor's text, as the object `fire` takes. */
 export function parsePayload(
   text: string,

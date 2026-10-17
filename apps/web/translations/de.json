@@ -20122,7 +20122,9 @@
       "text84b05fbb7f76": "Bei Ereignis",
       "text27a2c8b3a0d2": "nächster {value0}",
       "textd47d7cb0e4f8": "Mehr",
-      "text3ec84fbbfd0e": "{count, plural, other {# aktiv}}"
+      "text3ec84fbbfd0e": "{count, plural, other {# aktiv}}",
+      "textc8dae6371b33": "Wiederholen",
+      "text4aaee10f3594": "Sitzungs-ID kopiert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
