@@ -612,8 +612,13 @@ timeline and search over those recordings. Sync to Kortix is the default.
   earlier ones stay on this computer (`local_only` in the database). Signing out of Kortix
   turns sync off, keeps the recordings, and keeps recording.
 - **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Settings…", the
-  pauses (1 hour, until tomorrow, until resumed) or "Resume". There is no Quit. A managed
-  computer shows the organization and has no pauses.
+  pauses (1 hour, until tomorrow, until resumed) or "Resume", then "Restart Kortix
+  Capture" and "Quit Kortix Capture". Quit (`kortix-capture quit`) stops the background
+  service, the recorders and the icon until the app opens again or the next login
+  (`launchctl bootout` of the agent, `systemctl --user stop`, `schtasks /End`); it stays
+  installed and on at login. Restart (`kortix-capture restart`) ends the supervisor and
+  the OS starts it again (KeepAlive, `Restart=always`, the task's loop). A managed
+  computer shows the organization and has no pauses, Restart or Quit.
 - **Errors** in the window are one short sentence. The detail is in the log
   (Settings, About, Open logs).
 

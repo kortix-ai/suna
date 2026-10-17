@@ -577,20 +577,26 @@ pub enum TrayAction {
     PauseForever,
     /// "Resume" while paused (`kortix-capture resume`).
     Resume,
+    /// "Restart Kortix Capture" (`kortix-capture restart`).
+    Restart,
+    /// "Quit Kortix Capture" (`kortix-capture quit`): stops until the app opens again or the next login.
+    Quit,
 }
 
 /// A managed computer offers none of them: the organization runs the recording.
-/// A computer the person set up offers the pauses (or "Resume" while paused). There is no
-/// Quit: nothing in the menu stops the background recorder, only a pause does.
+/// A computer the person set up offers the pauses (or "Resume" while paused), then
+/// "Restart" and "Quit". A managed computer offers none: the organization runs it.
 pub fn tray_actions(managed: bool, paused: bool) -> Vec<TrayAction> {
     if managed {
         return vec![];
     }
-    if paused {
+    let mut v = if paused {
         vec![TrayAction::Resume]
     } else {
         vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever]
-    }
+    };
+    v.extend([TrayAction::Restart, TrayAction::Quit]);
+    v
 }
 
 /// The tray's status line. A managed computer uses the organization's words; a
@@ -870,15 +876,23 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_pauses_and_nothing_when_managed() {
-        assert_eq!(tray_actions(true, false), vec![]);
+    fn the_tray_offers_pauses_restart_and_quit_and_nothing_when_managed() {
+        assert_eq!(tray_actions(true, false), vec![], "the organization runs it: no Quit");
         assert_eq!(tray_actions(true, true), vec![]);
         assert_eq!(
             tray_actions(false, false),
-            vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever],
-            "pauses only, never a Quit"
+            vec![
+                TrayAction::Pause,
+                TrayAction::PauseTomorrow,
+                TrayAction::PauseForever,
+                TrayAction::Restart,
+                TrayAction::Quit
+            ]
         );
-        assert_eq!(tray_actions(false, true), vec![TrayAction::Resume]);
+        assert_eq!(
+            tray_actions(false, true),
+            vec![TrayAction::Resume, TrayAction::Restart, TrayAction::Quit]
+        );
         let t = tray_words(Some("Example Org"), true, None);
         assert_eq!(tray_status(&t, false, "recording", None), "Recording");
         assert_eq!(tray_status(&t, false, "not_recording", None), "Not recording");

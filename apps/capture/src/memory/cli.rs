@@ -111,6 +111,11 @@ pub enum Command {
     Start(ServiceHostArgs),
     /// Stop recording 24/7: turn the background service off until `start`.
     Stop,
+    /// Quit Kortix Capture: recording, actions and the menu-bar icon stop until you open
+    /// the app again or log in again.
+    Quit,
+    /// Restart Kortix Capture: the background service starts again within ~10 s.
+    Restart,
     /// Sign out of Kortix and remove the background service. Recordings stay on this computer.
     Logout,
     /// The background service: install, uninstall, status, run (what the OS starts), render.
@@ -764,6 +769,18 @@ pub fn run(cli: Cli) -> Result<()> {
             });
             Ok(())
         }
+        Command::Quit => {
+            let v = quit(&paths)?;
+            print(&v, json_out, |_| {
+                "quit; opening Kortix Capture or the next login starts it again".into()
+            });
+            Ok(())
+        }
+        Command::Restart => {
+            let v = restart(&paths)?;
+            print(&v, json_out, |_| "restarting; recording resumes within ~10 s".into());
+            Ok(())
+        }
         Command::Logout => {
             let v = logout(&paths)?;
             print(&v, json_out, |_| {
@@ -809,7 +826,7 @@ pub fn run(cli: Cli) -> Result<()> {
 /// Kortix Capture opened from Finder, the Dock, Spotlight, the Start menu or the
 /// desktop. It opens the window (the timeline). Behind the window the app is the
 /// menu-bar / tray app: the 24/7 service is installed and started at once (the app is
-/// its host) and the tray always runs (there is no Quit). Signing in to Kortix is optional, in Settings. Closing the window leaves the recording and the tray running.
+/// its host) and the tray always runs; "Quit" in the tray stops the service until the app opens again. Signing in to Kortix is optional, in Settings. Closing the window leaves the recording and the tray running.
 /// On a computer the organization manages, or with a tray already running, it only
 /// opens the window (the agent runs the recording and the tray).
 pub fn app(paths: &MemoryPaths) -> Result<()> {
@@ -1115,6 +1132,52 @@ pub fn service_stop(paths: &MemoryPaths) -> Result<Value> {
     let (sys, unit, _) = service_unit(paths, None, false)?;
     super::service::stop(&sys, &unit);
     Ok(json!({ "ok": true, "service": service_status_value(paths) }))
+}
+
+/// `quit`: stop the background service, its recorders and the menu-bar icon until the app
+/// opens again or the next login. It stays installed and on at login. A managed computer
+/// refuses: the organization runs the recording.
+pub fn quit(paths: &MemoryPaths) -> Result<Value> {
+    refuse_when_managed("quit")?;
+    if super::legacy::system_agent_installed() && super::legacy::stop_system_agent() {
+        return Ok(json!({ "ok": true, "agent": true }));
+    }
+    let (sys, unit, _) = service_unit(paths, None, false)?;
+    super::service::quit_now(&sys, &unit);
+    // Ending the Windows task ends its loop, not the supervisor it started: end that too
+    // (with its recorders). Elsewhere the OS already took it down.
+    if let Some(pid) = super::service::heartbeat(paths)["pid"].as_u64().map(|p| p as u32) {
+        if crate::os_proc::pid_alive(pid) {
+            terminate(pid);
+        }
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// `restart`: end the supervisor; the OS starts it again (launchd `KeepAlive`, systemd
+/// `Restart=always`, the Windows task's loop), and with it the recorders and the icon.
+/// With no supervisor running, start one.
+pub fn restart(paths: &MemoryPaths) -> Result<Value> {
+    refuse_when_managed("restart")?;
+    let pid = super::service::heartbeat(paths)["pid"].as_u64().map(|p| p as u32);
+    if let Some(pid) = pid.filter(|p| crate::os_proc::pid_alive(*p)) {
+        terminate(pid);
+        return Ok(json!({ "ok": true, "restarted_pid": pid }));
+    }
+    service_start(paths, &ServiceHostArgs::default())
+}
+
+fn terminate(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    {
+        let _ = crate::os_proc::no_window(&mut std::process::Command::new("taskkill.exe"))
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+    }
 }
 
 fn service_cmd(paths: &MemoryPaths, c: ServiceCommand, json_out: bool) -> Result<()> {

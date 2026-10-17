@@ -1479,6 +1479,27 @@ jobs:
           state="$("$EXE" --json status 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
           f2="$(frames)"
           echo "after the kill: state $state frames $f2" | tee -a "$EV/guest.txt"
+      - name: Restart and Quit (the menu-bar items), then open the app again
+        run: |
+          agentpid() { pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture agent' | head -1; }
+          recpid() { pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture record' | head -1; }
+          traypid() { pgrep -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture tray' | head -1; }
+          waitfor() { local t0=$SECONDS; until eval "$1" || [ $((SECONDS - t0)) -ge "$2" ]; do sleep 1; done; eval "$1"; }
+          a0="$(agentpid)"; r0="$(recpid)"
+          echo "before: agent $a0 recorder $r0 tray $(traypid)" | tee "$EV/quit-restart.txt"
+          "$EXE" --json restart | tee -a "$EV/quit-restart.txt"
+          waitfor '[ -n "$(agentpid)" ] && [ "$(agentpid)" != "$a0" ] && [ -n "$(recpid)" ] && [ "$(recpid)" != "$r0" ]' 60 \
+            || { echo "::error::restart: the agent and recorder did not come back as new processes"; exit 1; }
+          echo "after restart: agent $(agentpid) recorder $(recpid) tray $(traypid)" | tee -a "$EV/quit-restart.txt"
+          "$EXE" --json quit | tee -a "$EV/quit-restart.txt"
+          waitfor '[ -z "$(agentpid)$(recpid)$(traypid)" ]' 30 || { echo "::error::quit: something still runs"; ps aux | grep -i 'kortix capture' | grep -v grep; exit 1; }
+          sleep 25  # KeepAlive would have brought it back by now
+          [ -z "$(agentpid)$(recpid)$(traypid)" ] || { echo "::error::quit did not hold: the agent came back by itself"; exit 1; }
+          echo "after quit (+25 s): nothing runs" | tee -a "$EV/quit-restart.txt"
+          open -g -a "Kortix Capture"
+          waitfor '[ -n "$(agentpid)" ] && [ -n "$(recpid)" ]' 60 || { echo "::error::opening the app did not start recording again"; exit 1; }
+          echo "after opening the app: agent $(agentpid) recorder $(recpid)" | tee -a "$EV/quit-restart.txt"
+          pkill -f 'Kortix Capture.app/Contents/MacOS/Kortix Capture ui' || true
       - name: Keyboard and mouse are recorded and uploaded
         run: |
           # The action recorder needs Accessibility and Input Monitoring (the personal install asks for them in the
@@ -1875,6 +1896,25 @@ jobs:
           Start-Process $exe -ArgumentList "open","kortix-capture://settings?sync=s3" -WindowStyle Hidden; Start-Sleep 5
           Shot "settings-sync-s3"
           Get-Process kortix-capture -ErrorAction SilentlyContinue | Select-Object Id, MainWindowTitle | Format-Table | Out-String | Tee-Object "$env:EV\processes.txt"
+      - name: Restart and Quit (the tray items), then open the app again
+        run: |
+          $env:KORTIX_CAPTURE_DIR = Join-Path $env:RUNNER_TEMP "library"
+          $exe = (Resolve-Path "target\release\kortix-capture.exe").Path
+          function Procs($pattern) { @(Get-CimInstance Win32_Process -Filter "Name='kortix-capture.exe'" | Where-Object { $_.CommandLine -match $pattern }) }
+          function WaitFor([scriptblock]$ok, [int]$seconds) { $t = (Get-Date).AddSeconds($seconds); while ((Get-Date) -lt $t -and -not (& $ok)) { Start-Sleep 1 }; & $ok }
+          $svc0 = (Procs "service run").ProcessId; $rec0 = (Procs " record").ProcessId
+          "before: service $($svc0 -join ',') recorder $($rec0 -join ',')" | Tee-Object "$env:EV\quit-restart.txt"
+          & $exe --json restart | Tee-Object -Append "$env:EV\quit-restart.txt"
+          if (-not (WaitFor { $s = (Procs "service run").ProcessId; $r = (Procs " record").ProcessId; $s -and $r -and -not ($s | Where-Object { $svc0 -contains $_ }) } 60)) { throw "restart: the service and recorder did not come back as new processes" }
+          "after restart: service $((Procs 'service run').ProcessId -join ',') recorder $((Procs ' record').ProcessId -join ',')" | Tee-Object -Append "$env:EV\quit-restart.txt"
+          & $exe --json quit | Tee-Object -Append "$env:EV\quit-restart.txt"
+          if (-not (WaitFor { (Procs "service run|record| tray").Count -eq 0 } 30)) { Procs "." | Format-List ProcessId, CommandLine; throw "quit: something still runs" }
+          Start-Sleep 25
+          if ((Procs "service run|record| tray").Count -ne 0) { throw "quit did not hold: the service came back by itself" }
+          "after quit (+25 s): nothing runs" | Tee-Object -Append "$env:EV\quit-restart.txt"
+          Start-Process $exe -ArgumentList "app" -WindowStyle Hidden
+          if (-not (WaitFor { (Procs "service run").Count -gt 0 -and (Procs " record").Count -gt 0 } 60)) { throw "opening the app did not start recording again" }
+          "after opening the app: service $((Procs 'service run').ProcessId -join ',')" | Tee-Object -Append "$env:EV\quit-restart.txt"
       - name: Assert
         run: |
           $w = Get-Content "$env:EV\window.txt"; if ($w -notmatch "True") { throw "no window: $w" }
