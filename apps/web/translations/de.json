@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Einschlussrichtlinie",
         "inclusionPolicyHint": "Nur aufnehmen, was Sie einschließen. Alles andere wird geschwärzt.",
         "recordTitle": "Nur diese aufnehmen",
-        "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen"
+        "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen",
+        "memberInclusions": "Personen können eigene Apps und Websites einschließen",
+        "memberInclusionsHint": "Aus: Computer nehmen nur die hier aufgeführten Apps und Websites auf. Personen können weiterhin Apps und Websites zum Überspringen hinzufügen."
       }
     },
     "area": {

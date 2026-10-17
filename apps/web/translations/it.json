@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Criterio di inclusione",
         "inclusionPolicyHint": "Registra solo ciò che includi. Tutto il resto viene oscurato.",
         "recordTitle": "Registra solo questi",
-        "exceptTitle": "Non registrare mai, anche se inclusi"
+        "exceptTitle": "Non registrare mai, anche se inclusi",
+        "memberInclusions": "Le persone possono includere app e siti web propri",
+        "memberInclusionsHint": "Disattivo: i computer registrano solo le app e i siti web elencati qui. Le persone possono comunque aggiungere app e siti web da saltare."
       }
     },
     "area": {

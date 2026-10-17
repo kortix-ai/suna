@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "包含策略",
         "inclusionPolicyHint": "只录制包含的内容。其他一律涂黑。",
         "recordTitle": "只录制这些",
-        "exceptTitle": "即使已包含也从不录制"
+        "exceptTitle": "即使已包含也从不录制",
+        "memberInclusions": "成员可以添加自己要包含的应用和网站",
+        "memberInclusionsHint": "关闭：电脑只录制这里列出的应用和网站。成员仍可添加要跳过的应用和网站。"
       }
     },
     "area": {

@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,suggestionList,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,suggestionList,policySource,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, suggestionList, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, suggestionList, policySource, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -206,7 +206,7 @@ assert.ok(!/control plane|control_plane|dashboard_url|enrolled_url/.test(src), '
 console.log('settings ok');
 
 // Record only included: off by default; the person's own switch and lists; the organization's locked.
-assert.deepEqual(onlyIncluded({}, null, null), { on: false, locked: false, sub: '', rows: [] });
+assert.deepEqual(onlyIncluded({}, null, null), { on: false, locked: false, sub: '', rows: [], own: true });
 const mineOnly = onlyIncluded({ record_only_included: true, included_bundle_ids: ['com.mine.editor'], included_domains: ['github.com'] }, null, null);
 assert.equal(mineOnly.on, true);
 assert.equal(mineOnly.locked, false);
@@ -223,3 +223,12 @@ assert.deepEqual(
   [{ value: 'com.tinyspeck.slackmacgap', label: 'Slack' }, { value: 'code.exe', label: 'code.exe' }, { value: 'github.com', label: 'Website' }],
 );
 assert.deepEqual(suggestionList(undefined, undefined, undefined), []);
+
+// The organization can keep inclusions to its own list.
+const orgOwnOnly = onlyIncluded({ included_bundle_ids: ['com.mine.editor'] }, { record_only_included: true, member_inclusions: false, included_bundle_ids: ['com.tinyspeck.slackmacgap'] }, 'Example Org');
+assert.equal(orgOwnOnly.own, false);
+assert.deepEqual(orgOwnOnly.rows.map((r) => r.id), ['com.tinyspeck.slackmacgap'], "the person's own inclusions are not shown: they do not apply");
+// Where the rules come from.
+assert.equal(policySource(null, '', { locked: false, own: true }), 'Set on this computer. Nothing here is uploaded.');
+assert.equal(policySource({}, 'Example Org', { locked: true, own: true }), 'Synced from Example Org, which uses an inclusion policy. Its entries are locked. You can add your own; you cannot remove theirs.');
+assert.match(policySource({}, 'Example Org', { locked: false, own: false }), /only Example Org adds what is recorded/);

@@ -700,9 +700,13 @@ function onlyIncluded(s, pp, org) {
   };
   add(pp.included_bundle_ids, 'app', true, null);
   add(pp.included_domains, 'site', true, null);
-  add(s.included_bundle_ids, 'app', false, 'included_bundle_ids');
-  add(s.included_domains, 'site', false, 'included_domains');
-  return { on: orgSet || !!s.record_only_included, locked: orgSet, sub: orgSet ? by : '', rows };
+  // The organization can keep inclusions to its own list: the person's are then ignored.
+  const own = pp.member_inclusions !== false;
+  if (own) {
+    add(s.included_bundle_ids, 'app', false, 'included_bundle_ids');
+    add(s.included_domains, 'site', false, 'included_domains');
+  }
+  return { on: orgSet || !!s.record_only_included, locked: orgSet, sub: orgSet ? by : '', rows, own };
 }
 /* "Keep recordings on this computer" says its rule in one line: with sync on, 7 days and never
    anything not uploaded yet; with sync off, nothing is uploaded, so only space frees it. */
@@ -829,6 +833,15 @@ function suggestionList(installed, recorded, domains) {
   }
   for (const d of domains || []) if (d && d.name && !seen.has(d.name)) { seen.add(d.name); out.push({ value: d.name, label: 'Website' }); }
   return out;
+}
+/* Where the Apps and websites rules come from, in one sentence. `pp` is the organization's
+   privacy policy (null on a computer not synced to an organization). */
+function policySource(pp, org, only) {
+  if (!pp) return 'Set on this computer. Nothing here is uploaded.';
+  const who = org || 'your organization';
+  const type = only.locked ? 'an inclusion policy' : 'an exclusion policy';
+  const own = only.own ? 'You can add your own; you cannot remove theirs.' : 'You can add apps and websites to skip; only ' + who + ' adds what is recorded.';
+  return `Synced from ${who}, which uses ${type}. Its entries are locked. ${own}`;
 }
 /* ---- end settings: pure ---- */
 /* ---- opening zoom: pure ----
@@ -1991,13 +2004,13 @@ function renderSettings() {
 
       <h3 id="sec-apps">Apps and websites</h3>
       <p class="hint">Choose what Kortix Capture records. What it skips is blacked out and never saved or uploaded. Never record always wins.</p>
-      ${only.locked || never.some((r) => r.locked) ? `<p class="hint">${esc(orgKnown ? orgKnown + ' requires the locked ones.' : 'Policy requires the locked ones.')}</p>` : ''}
+      <p class="hint">${esc(policySource(syncData?.view?.destination === 'kortix' && syncData?.status?.policy?.policy ? pp : null, orgKnown, only))}</p>
       <div class="never">
         ${row(`Policy${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked
           ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}Inclusion policy</span>`
           : `<select id="rec-mode" aria-label="What to record"><option value="all"${only.on ? '' : ' selected'}>Exclusion policy: everything except Never record</option><option value="only"${only.on ? ' selected' : ''}>Inclusion policy: only what is included</option></select>`)}
         ${only.on ? `<div class="sub-h">Record only these</div>${only.rows.length ? '' : '<p class="hint">Nothing is included yet, so nothing is recorded. Add an app or a website.</p>'}${only.rows.map((r) => neverRow(appRow(r))).join('')}
-        <div class="add-row"><input type="text" id="add-in" list="app-site-suggest" placeholder="Add an app or website to record" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}
+        ${only.own ? `<div class="add-row"><input type="text" id="add-in" list="app-site-suggest" placeholder="Add an app or website to record" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}` : ''}
         <div class="sub-h">${only.on ? 'Never record, even if included' : 'Never record'}</div>
         ${never.map((r) => neverRow(r.kind === 'app' || r.kind === 'site' ? appRow(r) : r)).join('')}
         <div class="add-row"><input type="text" id="add-ex" list="app-site-suggest" placeholder="Add an app or website to skip" aria-label="Add an app or website to skip" autocomplete="off" spellcheck="false"><button class="btn" id="add-ex-btn">Add</button></div>

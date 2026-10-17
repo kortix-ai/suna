@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "包含ポリシー",
         "inclusionPolicyHint": "含めたものだけを記録します。それ以外は黒く塗りつぶされます。",
         "recordTitle": "これらだけを記録",
-        "exceptTitle": "含めていても記録しない"
+        "exceptTitle": "含めていても記録しない",
+        "memberInclusions": "利用者が自分で含めるアプリとウェブサイトを追加できる",
+        "memberInclusionsHint": "オフ：コンピュータはここにあるアプリとウェブサイトだけを記録します。スキップするアプリとウェブサイトは引き続き追加できます。"
       }
     },
     "area": {

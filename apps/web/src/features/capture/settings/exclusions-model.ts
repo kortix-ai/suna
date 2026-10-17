@@ -20,7 +20,8 @@ export type ExclusionChange =
   | { kind: 'private-browsing'; on: boolean }
   | { kind: 'include-app'; id: string; on: boolean }
   | { kind: 'include-domain'; id: string; on: boolean }
-  | { kind: 'record-only'; on: boolean };
+  | { kind: 'record-only'; on: boolean }
+  | { kind: 'member-inclusions'; on: boolean };
 type Privacy = CapturePolicy['privacy'];
 
 /** One app or website row: `id` is the bundle id or the domain. `locked`: set by the organization. */
@@ -127,6 +128,8 @@ export function applyToPrivacy(privacy: Privacy, input: ExclusionChange): Privac
       };
     case 'record-only':
       return { ...privacy, record_only_included: input.on };
+    case 'member-inclusions':
+      return { ...privacy, member_inclusions: input.on };
   }
 }
 

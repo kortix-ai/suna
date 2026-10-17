@@ -305,6 +305,19 @@ function PolicyForm({
                 }))
               }
             />
+            <div className="bg-popover mt-3 rounded-md border">
+              <SwitchRow
+                title={t('included.memberInclusions')}
+                description={t('included.memberInclusionsHint')}
+                checked={draft.privacy.member_inclusions ?? true}
+                onChange={(on) =>
+                  setDraft((current) => ({
+                    ...current,
+                    privacy: applyToPrivacy(current.privacy, { kind: 'member-inclusions', on }),
+                  }))
+                }
+              />
+            </div>
           </div>
         ) : null}
         <div className="space-y-1 pt-2">

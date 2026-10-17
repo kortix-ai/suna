@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Política de inclusão",
         "inclusionPolicyHint": "Gravar apenas o que você incluir. Todo o resto fica escurecido.",
         "recordTitle": "Gravar apenas estes",
-        "exceptTitle": "Nunca gravar, mesmo se incluídos"
+        "exceptTitle": "Nunca gravar, mesmo se incluídos",
+        "memberInclusions": "As pessoas podem incluir os próprios apps e sites",
+        "memberInclusionsHint": "Desativado: os computadores gravam apenas os apps e sites listados aqui. As pessoas ainda podem adicionar apps e sites para ignorar."
       }
     },
     "area": {

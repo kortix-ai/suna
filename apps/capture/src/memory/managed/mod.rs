@@ -500,6 +500,7 @@ pub fn tray_text(paths: &MemoryPaths, recording: bool) -> TrayText {
 pub fn tray_words(account: Option<&str>, recording: bool, reason: Option<&str>) -> TrayText {
     let status = match (reason, recording) {
         (Some("policy_paused"), _) => account.map_or("Paused by policy".into(), |a| format!("Paused by {a}")),
+        (Some("policy_pending"), _) => account.map_or("Waiting for your organization's settings".into(), |a| format!("Waiting for {a}'s settings")),
         (Some("policy_off"), _) => account.map_or("Screen recording is off by policy".into(), |a| format!("Screen recording is off for {a}")),
         (Some(_), _) => "Paused".to_string(),
         (None, true) => account.map_or("Recording".into(), |a| format!("Recording for {a}")),
@@ -769,6 +770,7 @@ mod tests {
         assert_eq!(tray_words(None, false, None).status, "Not recording");
         assert_eq!(tray_words(Some("Example Org"), true, Some("policy_paused")).status, "Paused by Example Org");
         assert_eq!(tray_words(None, true, Some("policy_paused")).status, "Paused by policy");
+        assert_eq!(tray_words(Some("Example Org"), false, Some("policy_pending")).status, "Waiting for Example Org's settings");
         for t in [tray_words(None, true, Some("policy_off")), tray_words(None, false, None)] {
             assert!(!t.status.to_lowercase().contains("your organization"), "{}", t.status);
         }

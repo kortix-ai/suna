@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Pravilo uključivanja",
         "inclusionPolicyHint": "Snimaj samo ono što uključite. Sve ostalo je zatamnjeno.",
         "recordTitle": "Snimaj samo ove",
-        "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni"
+        "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni",
+        "memberInclusions": "Ljudi mogu uključiti svoje aplikacije i veb-sajtove",
+        "memberInclusionsHint": "Isključeno: računari snimaju samo ovde navedene aplikacije i veb-sajtove. Ljudi i dalje mogu dodati aplikacije i veb-sajtove koje treba preskočiti."
       }
     },
     "area": {

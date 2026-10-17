@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Règle d’inclusion",
         "inclusionPolicyHint": "N’enregistrer que ce que vous incluez. Tout le reste est masqué en noir.",
         "recordTitle": "N’enregistrer que ceux-ci",
-        "exceptTitle": "Ne jamais enregistrer, même s’ils sont inclus"
+        "exceptTitle": "Ne jamais enregistrer, même s’ils sont inclus",
+        "memberInclusions": "Les personnes peuvent inclure leurs propres apps et sites web",
+        "memberInclusionsHint": "Désactivé : les ordinateurs n’enregistrent que les apps et sites web listés ici. Les personnes peuvent toujours ajouter des apps et sites web à ignorer."
       }
     },
     "area": {

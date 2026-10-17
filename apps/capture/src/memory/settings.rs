@@ -75,6 +75,11 @@ pub struct Settings {
     /// The operator's policy, set only by [`Settings::effective`]; never saved.
     #[serde(skip)]
     pub policy: Option<super::policy::Policy>,
+    /// Synced to Kortix and no policy received yet (a computer that just signed in):
+    /// nothing records until it arrives, so an inclusion policy holds from the first
+    /// frame. Set only by [`Settings::effective`]; never saved.
+    #[serde(skip)]
+    pub policy_pending: bool,
     /// The app the service runs in (its bundle id and executable name), set only
     /// by [`Settings::effective`]: never recorded, like every `com.kortix.*` and
     /// `ai.kortix.*` app ([`super::exclusions::is_own_app`]).
@@ -206,6 +211,7 @@ impl Default for Settings {
             experimental: ExperimentalSettings::default(),
             extra: BTreeMap::new(),
             policy: None,
+            policy_pending: false,
             own_bundle_ids: Vec::new(),
         }
     }
@@ -529,14 +535,20 @@ impl Settings {
     /// Apply the cached policy to settings read from `paths` (no-op while sync is off).
     pub fn apply_policy(&mut self, paths: &MemoryPaths) {
         if self.sync.enabled && !self.airgap {
-            if let Some(cached) = super::policy::read(paths) {
-                cached.policy.apply(self);
+            match super::policy::read(paths) {
+                Some(cached) => cached.policy.apply(self),
+                // Kortix publishes a policy before it issues credentials: until this
+                // computer has it, the organization's rules are unknown.
+                None => self.policy_pending = self.sync.provider == "kortix",
             }
         }
     }
 
     /// Why action recording must not run now, if the policy says so.
     pub fn actions_blocked(&self, now_ms: i64) -> Option<&'static str> {
+        if self.policy_pending {
+            return Some("policy_pending");
+        }
         let p = self.policy.as_ref()?;
         if !p.layers.actions {
             return Some("policy_off");
@@ -605,6 +617,9 @@ impl Settings {
 
     /// Why recording is not active right now, if it is not.
     pub fn inactive_reason(&self, now_ms: i64) -> Option<&'static str> {
+        if self.policy_pending {
+            return Some("policy_pending");
+        }
         if let Some(p) = &self.policy {
             if !p.layers.screen {
                 return Some("policy_off");
@@ -1050,5 +1065,33 @@ mod tests {
             "{} is stale: KORTIX_CAPTURE_WRITE_FIXTURES=1 cargo test --lib exclusion_groups_match_the_web_copy",
             path.display()
         );
+    }
+
+    #[test]
+    fn a_computer_synced_to_kortix_records_nothing_until_the_policy_arrives() {
+        let paths = MemoryPaths::at(std::env::temp_dir().join(format!("kc-pending-{}", uuid::Uuid::new_v4())));
+        let mut s = Settings::default();
+        s.sync.enabled = true;
+        s.sync.provider = "kortix".into();
+        s.save(&paths).unwrap();
+        let e = Settings::effective(&paths);
+        assert_eq!(e.inactive_reason(0), Some("policy_pending"));
+        assert_eq!(e.actions_blocked(0), Some("policy_pending"));
+        // The policy arrives: recording follows it.
+        let cached = crate::memory::policy::Cached {
+            source: "p/policy.json".into(),
+            fetched_at_ms: 1,
+            policy: crate::memory::policy::parse(br#"{"schema": 2}"#).unwrap(),
+        };
+        crate::memory::policy::write(&paths, Some(&cached)).unwrap();
+        let e = Settings::effective(&paths);
+        assert_eq!(e.inactive_reason(0), None);
+        // Your own S3 bucket has no organization: no wait.
+        let mut own = Settings::default();
+        own.sync.enabled = true;
+        own.sync.provider = "s3".into();
+        let p2 = MemoryPaths::at(std::env::temp_dir().join(format!("kc-pending-{}", uuid::Uuid::new_v4())));
+        own.save(&p2).unwrap();
+        assert_eq!(Settings::effective(&p2).inactive_reason(0), None);
     }
 }

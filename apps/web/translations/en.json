@@ -21605,7 +21605,9 @@
         "inclusionPolicy": "Inclusion policy",
         "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
         "recordTitle": "Record only these",
-        "exceptTitle": "Never record, even if included"
+        "exceptTitle": "Never record, even if included",
+        "memberInclusions": "People can add their own included apps and websites",
+        "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
       }
     },
     "area": {
