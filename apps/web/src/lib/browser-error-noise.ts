@@ -77,6 +77,7 @@ export {
 export {
   isIosWebViewInjectedStackOverflowNoise,
   isOldBrowserDomNullDerefNoise,
+  isFirefoxDeadObjectUnattributableNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
   isUndefinedVariableThirdPartyNoise,
