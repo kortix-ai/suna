@@ -201,6 +201,9 @@ pub fn humanize_text(raw: &str, class: Option<&str>) -> String {
         "Kortix sent a sign-in page Kortix Capture does not trust."
     } else if has(&["device authorize"]) && has(&["dns error", "failed to lookup", "connection refused", "error sending request", "timed out", "connect error"]) {
         "Could not reach Kortix to start sign-in."
+    } else if has(&["device authorize: invalid_request"]) {
+        // Kortix asks for a field this build does not send: an older app.
+        "Kortix needs the latest Kortix Capture: install it, then sign in."
     } else if has(&["device authorize"]) && has(&["http 4", "http 5"]) {
         "Kortix would not start sign-in."
     } else if has(&["<html", "<!doctype", "<body"]) {
@@ -414,6 +417,11 @@ mod tests {
             ("device authorize: the sign-in page is not on the Kortix address", None, "Kortix sent a sign-in page Kortix Capture does not trust."),
             ("device authorize: error sending request for url (http://localhost:37208): connection refused", None, "Could not reach Kortix to start sign-in."),
             ("device authorize: HTTP 500 oops", None, "Kortix would not start sign-in."),
+            (
+                "device authorize: invalid_request",
+                None,
+                "Kortix needs the latest Kortix Capture: install it, then sign in.",
+            ),
             ("Issuer: HTTP 503 capture_credentials_unavailable {\"error\":\"x\"}", Some("transient"), "Kortix cannot accept recordings yet, so they are kept here and sync retries."),
             ("bad endpoint nope", None, "The endpoint is not a valid address."),
             ("PUT k: HTTP 401", Some("auth"), "Kortix did not accept this computer."),

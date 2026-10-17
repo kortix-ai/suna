@@ -19,6 +19,17 @@ function wrappedDatabaseError(code: string, message: string): Error {
   });
 }
 
+// The postgres.js connection-phase failure: a plain Error (not a
+// PostgresError) whose `code` is the driver's own, wrapped by drizzle like any
+// other statement error. The statement never reached the server.
+function wrappedConnectTimeout(): Error {
+  return new Error('Failed query: select "metadata" from "kortix"."projects"', {
+    cause: Object.assign(new Error('write CONNECT_TIMEOUT db.<redacted>.supabase.co:5432'), {
+      code: 'CONNECT_TIMEOUT',
+    }),
+  });
+}
+
 describe('inspectDatabaseError', () => {
   test('extracts PostgreSQL fields from a wrapped Drizzle cause', () => {
     const error = wrappedDatabaseError('08006', 'connection failure');
@@ -65,6 +76,10 @@ describe('isTransientDatabaseError', () => {
     expect(isTransientDatabaseError(wrappedDatabaseError(code, message))).toBe(true);
   });
 
+  test('accepts a postgres.js connect timeout — the statement never reached the server', () => {
+    expect(isTransientDatabaseError(wrappedConnectTimeout())).toBe(true);
+  });
+
   test('rejects a schema failure', () => {
     expect(
       isTransientDatabaseError(wrappedDatabaseError('42P01', 'relation does not exist')),
@@ -96,5 +111,16 @@ describe('retryTransientDatabaseRead', () => {
       }),
     ).rejects.toThrow('Failed query');
     expect(calls).toBe(1);
+  });
+
+  test('retries a connect timeout — the read never started', async () => {
+    let calls = 0;
+    const result = await retryTransientDatabaseRead(async () => {
+      calls += 1;
+      if (calls === 1) throw wrappedConnectTimeout();
+      return ['allowed'];
+    });
+    expect(result).toEqual(['allowed']);
+    expect(calls).toBe(2);
   });
 });

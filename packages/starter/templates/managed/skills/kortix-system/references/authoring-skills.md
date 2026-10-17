@@ -46,37 +46,19 @@ very file is one of its `references/`.)
 
 ## Where skills live in Kortix
 
-Project skills conventionally use:
+Project skills use:
 
 ```
 skills/<name>/SKILL.md
 ```
 
-A skill reaches an agent in two steps (`kortix_version: 3`):
+The directory name **must equal** the `name` in the frontmatter. Every harness
+loads the skills in `skills/`. The managed `kortix-*` skills are platform-owned;
+every session receives the latest copy at boot. Projects created before 2026-09
+keep skills in `.kortix/opencode/skills/`. Both layouts work; put new skills in
+`skills/`.
 
-1. **Register it** in `kortix.yaml`: `skills: { <name>: <folder> }`. The
-   folder's last segment **must equal** `<name>`, and so must the `name` in
-   the frontmatter: `pdf: skills/pdf`, not `pdf: skills/pdf-tools`. Any
-   folder works, for example `support/skills/triage-rules`.
-2. **Grant it** to each agent that needs it: `agents.<agent>.skills:
-   [<name>]`, or `skills: all`. An agent with no `skills` key loads no
-   skill, not even a Kortix skill.
-
-```yaml
-skills:
-  release-notes: skills/release-notes
-agents:
-  assistant:
-    skills: [release-notes, kortix-system]
-```
-
-A `SKILL.md` that no `skills:` entry names is never visible. A project
-skill name must not start with `kortix-`: that prefix belongs to the
-managed Kortix skills, which every session receives at boot and which need
-no registry entry. Legacy v1/v2 projects discover skills from `skills/`
-and `.kortix/opencode/skills/` instead.
-
-Each harness shows the agent the name and description of every granted
+Each harness shows the agent the name and description of every discovered
 skill: OpenCode in the `skill` tool description, pi in the system prompt. The
 agent loads the body on demand: with the `skill` tool on OpenCode, with
 `read` on pi. Two consequences worth
@@ -172,8 +154,7 @@ metadata:
    specific. Prefer concrete commands and decision rules over prose.
 5. **Create the files.** `skills/<name>/SKILL.md`,
    frontmatter starting on line 1. Add `scripts/`, `references/`, or
-   `assets/` only if the skill genuinely needs them. Register the folder
-   under `skills:` in `kortix.yaml` and grant it to each agent that needs it.
+   `assets/` only if the skill genuinely needs them.
 6. **Validate** (below).
 7. **Land it** via a change request, and/or package it for sharing
    (below).
@@ -207,9 +188,8 @@ Two complementary checks — do both:
 2. **Runtime check.** Start a fresh session. Confirm `SKILL.md` is uppercase,
    the frontmatter has `name` and `description`, the name matches the
    directory, and the name is unique. Ask the agent to list or load the skill.
-   Also check the `skills:` registry entry and the agent's `skills` grant in
-   `kortix.yaml`; `kortix validate` reports a grant that names an
-   unregistered skill.
+   Also check the agent's `skills:` grant in `kortix.yaml` and, on OpenCode,
+   `permission.skill` rules in `opencode.jsonc`.
 
 ## Make it land and shareable
 

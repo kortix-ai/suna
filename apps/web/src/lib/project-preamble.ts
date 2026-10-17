@@ -117,3 +117,36 @@ export function appendSessionRefs(text: string, sessions: ReadonlyArray<SessionR
   if (!block) return text;
   return `${text}\n\n${block}`;
 }
+
+/** One tracked `@` mention, as the composer collects it (`TrackedMention`). */
+export interface MentionRefLike {
+  kind: string;
+  label: string;
+  /** A session mention's session id. */
+  value?: string;
+}
+
+/**
+ * Append the reference blocks for a draft's `@` mentions: sessions, then files,
+ * then agents, the order an in-session send writes them. The draft text holds
+ * only `@label`, so without these blocks the agent gets no path to open and no
+ * agent to hand off to. Used by every path that is not that send: a chat's
+ * first message (`ComposerChatInput`) and a slash command's args
+ * (`planDraftSubmission`).
+ */
+export function appendMentionRefs(
+  text: string,
+  mentions: ReadonlyArray<MentionRefLike> | undefined,
+): string {
+  const labelled = (mentions ?? []).filter((mention) => mention.label);
+  const sessions = labelled
+    .filter((mention) => mention.kind === 'session' && mention.value)
+    .map((mention) => ({ id: mention.value!, title: mention.label }));
+  const files = labelled
+    .filter((mention) => mention.kind === 'file')
+    .map((mention) => ({ path: mention.label, name: mention.label }));
+  const agents = labelled
+    .filter((mention) => mention.kind === 'agent')
+    .map((mention) => ({ name: mention.label }));
+  return appendAgentRefs(appendFileRefs(appendSessionRefs(text, sessions), files), agents);
+}

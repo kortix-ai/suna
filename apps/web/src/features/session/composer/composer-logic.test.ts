@@ -479,6 +479,27 @@ describe('planDraftSubmission', () => {
     });
   });
 
+  // KRTX-2553: a slash command dropped its mentions; the agent got `@label` only.
+  test('a command carries its @file and @agent mentions as reference blocks in the args', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'compare @src/app.ts with @reviewer notes',
+      commands,
+      mentions: [
+        { kind: 'file', label: 'src/app.ts' },
+        { kind: 'agent', label: 'reviewer' },
+      ],
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.args).toBe(
+      [
+        'compare @src/app.ts with @reviewer notes',
+        'Referenced files (the user has explicitly @-mentioned these — read them if relevant):\n<file_ref path="src/app.ts" name="src/app.ts" />',
+        'Referenced agents (the user has @-mentioned these agents — delegate or hand off as appropriate):\n<agent_ref name="reviewer" />',
+      ].join('\n\n'),
+    );
+  });
+
   test('no command chip — an ordinary message, trimmed', () => {
     expect(
       planDraftSubmission({ commandName: undefined, text: '  hello world  ', commands }),

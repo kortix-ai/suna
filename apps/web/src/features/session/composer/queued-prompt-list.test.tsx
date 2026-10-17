@@ -96,6 +96,18 @@ describe('QueuedPromptList', () => {
     expect(markup).not.toContain('aria-label="Edit"');
   });
 
+  test('a held `/` command says when it runs and offers Remove only', () => {
+    const held = row({
+      id: 'command:x',
+      text: '/review',
+      command: true,
+      interruptible: false,
+      takeBackEligible: false,
+    });
+    expect(keys(held)).toEqual(['remove']);
+    expect(render({ rows: [held] })).toContain('data-queued-command');
+  });
+
   test('menu order: Edit, Send now, Stop and send, then Remove', () => {
     expect(
       keys(row({ id: 'q' }), { onEdit: noop, onRetry: noop, onStopAndSend: noop, onRemove: noop }),

@@ -334,6 +334,14 @@ async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): P
 }
 
 /**
+ * The Dock / taskbar badge: how many sessions have a finished turn the user has
+ * not seen. A browser, and a desktop shell that predates the command, ignore it.
+ */
+export async function setDesktopBadgeCount(count: number): Promise<void> {
+  await desktopCommand('set_badge_count', { count });
+}
+
+/**
  * Like `desktopCommand`, but a failure the desktop app reports rejects with its
  * message instead of reading as "not the desktop app". `null` = not desktop.
  */

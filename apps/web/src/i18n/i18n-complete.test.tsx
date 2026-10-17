@@ -87,8 +87,8 @@ describe('complete UI localization', () => {
       expect(localizedFaq.items[index]?.question).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
       expect(localizedFaq.items[index]?.answer).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
     }
-    expect(localizedOpenSource.aboutLabel).toBe('Зашто га градимо');
-    expect(localizedOpenSource.repoLabel).toBe('Прочитајте изворни кôд');
+    expect<string>(localizedOpenSource.aboutLabel).toBe('Зашто га градимо');
+    expect<string>(localizedOpenSource.repoLabel).toBe('Прочитајте изворни кôд');
   });
 
   test('keeps every locale in exact key and placeholder parity with English', () => {

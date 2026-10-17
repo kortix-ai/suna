@@ -86,8 +86,7 @@ describe('the Apps topic on the agent rail', () => {
 /**
  * `apps/web`'s `bun test` runs without `--isolate` and has no jsdom /
  * `@testing-library/react` harness, so `AppsGrantPage` cannot be rendered
- * here. The render, the pick and the outgoing PUT are proved end to end by
- * `tests/e2e/specs/31-agent-apps-grant.spec.ts`. These scans pin the wiring a
+ * here, and no browser journey covers it. These scans pin the wiring a
  * pure test cannot see: which draft key the checkbox writes, and that the
  * page reads the App list from the SDK rather than fetching it itself.
  */

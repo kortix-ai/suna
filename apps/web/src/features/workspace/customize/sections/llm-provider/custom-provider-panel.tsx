@@ -34,7 +34,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * There is deliberately no Remove control on those rows. Deleting the secret
  * would NOT remove the provider — the provider itself lives in the repo's
- * `.opencode/opencode.jsonc`, which this app does not own — so a button
+ * provider configuration, which this app does not own — so a button
  * promising removal here would be lying about what it did.
  *
  * The form IS the tab (Paper board CP01: the form beside a live snippet).
@@ -74,7 +74,7 @@ import { CustomProviderForm, customProviderSecretName } from './custom-provider-
 const CUSTOM_SECRET_PATTERN = /^CUSTOM_(.+)_API_KEY$/;
 
 /** The file a custom provider is declared in. This app does not own it. */
-const DECLARED_IN = '.opencode/opencode.jsonc';
+const DECLARED_IN = 'provider configuration';
 
 /**
  * Provider ids that already have a key on this project, recovered from the

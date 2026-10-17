@@ -11,6 +11,7 @@ import { runAccessSweep } from '../billing/services/access-notices';
 import { createContract, endContract, getActiveContract } from '../billing/services/enterprise-contracts';
 import { resolveBillingFromRow } from '../billing/services/resolve-billing';
 import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
+import { config } from '../config';
 import type { EmailMessage } from '../lib/email/types';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -25,11 +26,14 @@ const email = (id: string, role: string) => `access-${role}-${id.slice(0, 8)}@ex
 let ending: SeededProject;
 let licensed: SeededProject;
 let sent: EmailMessage[] = [];
+// The sales copy goes to DEMO_LEAD_NOTIFY_EMAIL, which is empty outside prod.
+const savedOpsEmail = config.DEMO_LEAD_NOTIFY_EMAIL;
 
 const customerEmails = () => sent.filter((m) => !m.subject.startsWith('[Kortix billing]'));
 const opsEmails = () => sent.filter((m) => m.subject.startsWith('[Kortix billing]'));
 
 beforeAll(async () => {
+  config.DEMO_LEAD_NOTIFY_EMAIL = 'sales@example.test';
   ending = await seedProject('access-ending');
   licensed = await seedProject('access-licensed');
   for (const [id, role] of [[OWNER, 'owner'], [ADMIN, 'admin'], [MEMBER, 'member']] as const) {
@@ -58,6 +62,7 @@ beforeEach(() => {
 
 afterAll(async () => {
   setOwnerAlertSenderForTest(null);
+  config.DEMO_LEAD_NOTIFY_EMAIL = savedOpsEmail;
   if (!ending) return;
   for (const account of [ending, licensed]) {
     await db.delete(enterpriseContracts).where(eq(enterpriseContracts.accountId, account.account_id));

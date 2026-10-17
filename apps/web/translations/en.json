@@ -401,7 +401,7 @@
         },
         "computer": {
           "label": "Computer",
-          "description": "Let Kortix agents work with the files, terminal, and apps on your computer."
+          "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
         }
       }
     },
@@ -1094,9 +1094,9 @@
       "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
       "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
       "runUpgrade": "Run upgrade",
-      "manifestV3": {
-        "title": "Upgrade manifest to v3 (kortix.yaml)",
-        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
+      "manifestV2": {
+        "title": "Migrate manifest to v2 (kortix.yaml)",
+        "description": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review."
       },
       "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
@@ -1594,8 +1594,8 @@
       "localComputer": "Your computer"
     },
     "manifestUpgrade": {
-      "title": "Upgrade to v3",
-      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
+      "title": "Upgrade to v2",
+      "description": "This project still runs <toml>kortix.toml</toml>. An agent converts it to <yaml>kortix.yaml</yaml>, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
       "start": "Start upgrade"
     },
     "filter": {
@@ -1964,6 +1964,7 @@
       "restoreMissing": "Missing: {items}.",
       "restoreAgent": "The agent was told what is missing.",
       "restoreDismiss": "Dismiss restore notice",
+      "missingMessage": "{count, plural, one {# earlier message} other {# earlier messages}}",
       "missingAttachment": "{count, plural, one {# attachment} other {# attachments}}",
       "missingText": "{count, plural, one {# long text} other {# long texts}}",
       "missingToolInput": "{count, plural, one {# tool input} other {# tool inputs}}",
@@ -2112,6 +2113,7 @@
     "queuedActions": "Message actions",
     "steerNextStep": "Read at next step",
     "queuedByAnotherMember": "Sent by another member. Only they can edit or send it.",
+    "commandRunsWhenDone": "Runs when the agent finishes",
     "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
     "steerFallbackNotPrompter": "Waits for this turn. Another member started it.",
     "steerFallbackTurnEnded": "Runs as its own turn. The turn ended first.",
@@ -2282,7 +2284,8 @@
         "groups": {
           "small": "Small teams",
           "growing": "Growing teams",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Large organizations"
         }
       }
     },
@@ -2452,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Start with real sandbox credits.",
-          "f1": "200 credits / month, no card needed",
-          "f2": "1 project",
-          "f3": "Bring your own API key for any premium model",
-          "f4": "Connect your ChatGPT subscription"
+          "f1": "500 credits / month, no card needed",
+          "f2": "Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference",
+          "f3": "1 project",
+          "f4": "Bring your own API key for any premium model",
+          "f5": "Connect your ChatGPT subscription"
         },
         "credits": {
           "name": "Credits",
@@ -2465,7 +2469,7 @@
           "f2": "Unlimited members, one shared credit pool",
           "f3": "Unused credits roll over one month",
           "f4": "Top up any time. Top-ups never expire",
-          "f5": "Managed models and every feature",
+          "f5": "Up to 200 projects and higher model rate limits",
           "f6": "Support via email"
         },
         "enterprise": {
@@ -2483,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "What does Free include?",
-          "answer": "Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium models. Managed models on Kortix keys need a paid plan."
+          "answer": "Free includes 500 credits each month, managed models and every feature, for 1 project. Credits pay for the agent computer and for Kortix models. Bring your own API key or connect your ChatGPT subscription for any other model."
         },
         "credit": {
           "question": "What does a credit buy?",
@@ -2491,7 +2495,7 @@
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $50,000 a month (5,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $50,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -2738,7 +2742,7 @@
       },
       "link": {
         "title": "Check your email",
-        "description": "We sent a sign-in link to <address>{email}</address>. Open it to continue.",
+        "description": "We sent a link to <address>{email}</address>. Open it to continue.",
         "notReceived": "Didn't receive the link?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
@@ -9902,6 +9906,11 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Top up",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Manage plan",
     "composerAttachments": {
+      "notAttached": "{count, plural, one {# file was not attached} other {# files were not attached}}",
+      "refusedEmpty": "{name} is empty.",
+      "refusedTooLarge": "{name} is larger than 50 MiB.",
+      "refusedTooMany": "{name}: a message holds up to 20 files.",
+      "refusedTotalTooLarge": "{name}: a message holds up to 100 MiB of files.",
       "couldNotAttach": "Could not attach files",
       "couldNotRetry": "Could not retry attachment",
       "couldNotSend": "Couldn't send",
@@ -10884,7 +10893,6 @@
       "text1d0c9d480457": "Spent by the Kortix model gateway. It never enters the sandbox.",
       "text1d1d94fb5397": "Talk to us",
       "text1d21d2b18753": "Row added",
-      "text1d280015aac2": "Back to Customize",
       "text1d2a6194e5b0": "Updated trigger",
       "text1d421d3dc4ae": "Prompt copied — paste it into the chat to ask your agent.",
       "text1d42883b00c1": "Scopes: {value0}.",
@@ -11364,6 +11372,7 @@
       "text2b00ca23b112": "<Button variant=\"secondary\" size=\"sm\" onClick={handleClick} > Save </Button>",
       "text2b040fd0129f": "sandbox boundary",
       "text2b065c7c9ce4": "Today",
+      "texte10ae9907401": "Earlier",
       "text2b112b05602c": "GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.",
       "text2b152ca731e4": "Where the data sits is your choice",
       "text2b2b0a697042": "Approved — the agent will continue",
@@ -15087,7 +15096,7 @@
       "text967549497036": "Deselect all",
       "text9676bdc9332f": "Connect my account",
       "text96879611650f": "active",
-      "text968cf44e4d9c": "A command starts its own turn, so it would interrupt this turn.",
+      "text1d28e1a19048": "Send it again when this turn ends. Sending it now would interrupt the turn.",
       "text968d0a9d24a6": "Copy snippet",
       "text9696f2b4e020": "my-api",
       "text969a25894852": "Migrate to another provider…",
@@ -16670,7 +16679,7 @@
       "textc3bf78fdd3b9": "Could not send your application",
       "textc3c25857485f": "Does",
       "textc3c709a999c1": "Reading memory…",
-      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
+      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -17373,7 +17382,7 @@
       "textd728c56ec935": "Acts as them in Kortix",
       "textd72e311c4dda": "Minimize",
       "textd75025a6a12f": "Bring",
-      "textd780563bef66": "Wait for the agent to finish before running a command.",
+      "text634e8a443a91": "Command not sent. The agent is still working.",
       "textd787477fa89b": "Removed from group",
       "textd78d6709320c": "Written from the evidence and from the code that already exists — it reads the repo, so the draft knows which of the three proposals is nearly built already. It is a draft to argue with, not a plan to accept.",
       "textd78ffa71af82": "The agent drafts the reply and reaches send_email.",
@@ -17411,7 +17420,55 @@
       "textd83a0d814c59": "API Status shows a green \"Enabled\", the \"SCIM Username\" parameter maps to Email, and provisioning is enabled without the admin-approval hold.",
       "textd84b8be91e7b": "Kortix — Presentations",
       "textd84ee1e1e08b": "try kortix init, or / for commands",
-      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
+      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
+      "text848f54e89660": "Runs",
+      "textb098a09c78aa": "Test with payload",
+      "text99733344956d": "Payload",
+      "text4309aba52556": "Preview prompt",
+      "text98ee1ca163c3": "Run with this payload",
+      "text920ed46028e8": "Enter valid JSON.",
+      "text6ea4fcc31727": "Enter a JSON object.",
+      "text2631c2f64174": "Filter matches",
+      "text2319ec274750": "Session key",
+      "text398d270b036a": "Could not load runs.",
+      "text4c2e1df4570b": "Monitor",
+      "text31757bbfa17e": "Reminder",
+      "text12698ce1ea5c": "Skipped",
+      "text9daf8e05c684": "Unsigned",
+      "text7f2b8f3a675c": "The webhook signature was not verified.",
+      "text98c78fbb22fe": "Replay run",
+      "texta9cd409ba9ca": "Replay this unsigned run?",
+      "text776bb15115b3": "Its signature was not verified. A replay sends the same payload to the agent again.",
+      "text2f1b3ba06cfb": "Could not replay the run",
+      "textff2c3559cd6b": "Preview the prompt this payload renders, or run the trigger with it.",
+      "text15e8856d4d77": "Runs a real session. Costs apply.",
+      "text858e4ba7a29f": "Pause",
+      "texte0ab721ade45": "{count, plural, one {run} other {runs}}",
+      "textf1a06b0cb2ca": "median duration",
+      "textfa14066e0399": "Median duration",
+      "text26735edf00f9": "No runs",
+      "textd2c58b300c07": "Runs over time",
+      "text6de3a7d8e5db": "No runs in this time range",
+      "text84b05fbb7f76": "On event",
+      "text27a2c8b3a0d2": "next {value0}",
+      "textd47d7cb0e4f8": "More",
+      "textc8dae6371b33": "Replay",
+      "text4aaee10f3594": "Session ID copied",
+      "text4001631320f1": "{count, plural, other {failed}}",
+      "textd835122c9dd1": "{count, plural, one {credit} other {credits}}",
+      "text72a85758b69c": "No runs yet.",
+      "text75c4316dcad4": "No runs yet. This trigger is paused.",
+      "textdf86da65c421": "No runs yet. The first one starts {value0}.",
+      "text1cc5b0d9628f": "{count, plural, other {# selected}}",
+      "text6363885af551": "Pausing {done} of {total}…",
+      "text4cc2a4d3a49a": "Resuming {done} of {total}…",
+      "text6e24bb562ab0": "Deleting {done} of {total}…",
+      "textd845c8702b04": "{ok, plural, other {# paused}}{failed, plural, =0 {} other {, # failed}}",
+      "texte57e0a07011b": "{ok, plural, other {# resumed}}{failed, plural, =0 {} other {, # failed}}",
+      "text1412a8506003": "{ok, plural, other {# deleted}}{failed, plural, =0 {} other {, # failed}}",
+      "textd142c482800c": "Delete {count, plural, one {# trigger} other {# triggers}}?",
+      "text75af4531ed17": "They are removed from the project manifest. This cannot be undone.",
+      "textc9e9d972eda2": "Nothing in this project runs on its own right now. You can still start a trigger by hand.",
       "textd861cc0af73c": "kortix init scaffolds it, kortix ship brings it live. It is the same repo doing the same thing, so local development and the live system stopped being different categories.",
       "textd864380a766f": "The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.",
       "textd8707d411d99": "Secrets",
@@ -18871,6 +18928,13 @@
       "textf81ab834de5f": "Reason",
       "text44cdf35701cd": "Now running",
       "text591f9f0f3259": "Failed release",
+      "text7cda1d1355a0": "Config update didn't apply",
+      "textdf6f45b0b6d0": "This session keeps working on the previous release.",
+      "textb9b5df3315d1": "Latest config",
+      "text52a4b8f845a4": "Serving this session",
+      "text4a823118b9ba": "Host",
+      "textb346c1b839cb": "Older config",
+      "textfd01ebfc09ff": "Retries when the base branch changes",
       "text00ed4c71dc2b": "Last working release",
       "textbd7a1a3b4141": "The platform default config",
       "text643df05476ab": "The platform default config runs this session. The failed config is not retried until the base branch changes.",
@@ -19195,6 +19259,7 @@
       "text97dc6aeaa967": "Polled computer tunnel device authorization",
       "textf3e8ebf108f5": "Previewed change request merge",
       "text703a2cfcc370": "Previewed connector authentication",
+      "text63abe9112af0": "Checked MCP server sign-in",
       "textf4a73a5afc5b": "Previewed plan change proration",
       "text5c3f85a1e314": "Provisioned SCIM user",
       "text7603d7a6b46b": "Pushed to Git repository",
@@ -19726,6 +19791,9 @@
       "texta7a8d2a5fb25": "Ask an agent to build one.",
       "text42cf267578ad": "Listed trigger event types",
       "text631b422403db": "Listed apps that can trigger events",
+      "text104b83c048f9": "Listed trigger runs",
+      "text7823ec680410": "Replayed trigger run",
+      "text7ecaa37e9cf6": "Listed project trigger runs",
       "text5d5b7c17acf0": "Received app event",
       "textd919fde889e9": "Needs connection",
       "textd7b77185afd1": "Activating",
@@ -19960,7 +20028,7 @@
       "text146aaf3c71fa": "Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also billed through a paid plan, so the Stripe reconciliation cannot strip them.",
       "text517105fd13ce": "Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions. The free welcome grant is $2.",
       "text2f1d17f50af8": "Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan is unchanged.",
-      "text12836c0e435d": "Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text12836c0e435d": "Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this account.",
       "text49fd64c206dd": "Your plan is active. Credits are ready.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",
@@ -20065,6 +20133,8 @@
       "textc3371113b9c5": "A license turns on every Enterprise feature for its term. It carries no credits.",
       "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
       "textfe3436af86b4": "Extensions",
+      "textdffd02b805cb": "Commands are still loading",
+      "textd943cb31f962": "Nothing was sent. Your message and files stay in the composer — submit again in a moment.",
       "text8142608686a2": "Previewed a credits plan change",
       "text0f046f7588f9": "Cost (credits)",
       "text42144adfea3c": "Balance (credits)",
@@ -20075,7 +20145,19 @@
       "textb8fd28863a22": "Amount in credits (e.g. 2500)",
       "textc6813a9e41ac": "In credits: {value0} LLM · {value1} compute · {value2} other.",
       "textc86ce3b8097b": "e.g. 5000",
-      "textfaaf56a699c2": "Limit (credits)"
+      "textfaaf56a699c2": "Limit (credits)",
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "Add app",
+      "text68cf13547e38": "Add an App by URL",
+      "text46bc646c9bfe": "Show a site hosted anywhere in this project. Kortix opens it in place, beside the Apps it runs.",
+      "text08e6480e9b78": "{value0} added",
+      "text6241684827b2": "This site does not allow Kortix to show it here.",
+      "textdae75dce541f": "Pauses every schedule and webhook in this project.",
+      "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
+      "agentsListSubagentsTitle": "Subagents",
+      "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
+      "agentsListAlsoSubagent": "Also a subagent",
+      "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20593,6 +20675,18 @@
     "setUp": "Set up authenticator"
   },
   "connectorPages": {
+    "addMcpMenu": "MCP server",
+    "addMcpMenuHint": "Paste a server URL and sign in",
+    "addMcpTitle": "Add an MCP server",
+    "addMcpDescription": "Paste the server's URL and choose who can use it. Kortix signs you in and loads its tools.",
+    "addMcpUrlLabel": "Server URL",
+    "addMcpUrlHint": "The server's remote endpoint, starting with https://",
+    "addMcpUrlNamed": "Adds the connector {name}.",
+    "addMcpUrlInvalid": "Enter a URL that starts with https://",
+    "addMcpConnect": "Connect",
+    "addMcpConnected": "{name} is connected. Agents can use its tools.",
+    "addMcpSignInFailed": "Could not start the {name} sign-in: {reason}",
+    "addMcpFailed": "Could not add the MCP server",
     "install": "Install",
     "installNamed": "Install {name}",
     "added": "Added",
@@ -20664,7 +20758,9 @@
     "providerInfoActionsApp": "{name} runs every action an agent asks for.",
     "providerInfoSecretsManaged": "Agents never see a password, token or key.",
     "providerInfoSecretsDirect": "Kortix adds the key to each call. Agents never see it.",
-    "providerInfoLabel": "Who manages this connection"
+    "providerInfoLabel": "Who manages this connection",
+    "addMcpAppTitle": "Connect {name}",
+    "addMcpAppDescription": "Kortix connects to {name}'s own MCP server. Choose who can use it, then sign in to {name}."
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",
@@ -21448,7 +21544,11 @@
         "excluded": "Excluded",
         "noMatch": "Nothing matches.",
         "noExcludedApps": "No app is excluded.",
-        "noExcludedSites": "No website is excluded."
+        "noExcludedSites": "No website is excluded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "showList": "Show list",
+        "hideList": "Hide list"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
@@ -21472,7 +21572,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Try features that may still change.",
       "privacyControls": "Privacy controls",
-      "privacyControlsHint": "Show personal-data masking and the apps and websites no computer records. Turning this off hides them; what is set keeps applying.",
+      "privacyControlsHint": "Show personal-data masking. Turning this off hides it; what is set keeps applying.",
       "maskingTitle": "Masking",
       "framesTitle": "Screen frames",
       "interval": "One frame every",
@@ -21481,7 +21581,35 @@
       "resolution": "Resolution",
       "resolutionHint": "Larger screens are scaled down to this height. 4K keeps fine detail, such as CAD drawings.",
       "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
-      "computerDecides": "Each computer decides"
+      "computerDecides": "Each computer decides",
+      "included": {
+        "title": "Apps and websites",
+        "hint": "Choose what every computer in {org} records. Anything skipped is blacked out and never saved or uploaded. People can add their own in Kortix Capture; they cannot remove these or turn off Record only.",
+        "switch": "Record only included apps and websites",
+        "switchHint": "Off: everything except Never record is recorded.",
+        "kindLabel": "Apps or websites",
+        "apps": "Apps",
+        "websites": "Websites",
+        "addAppPlaceholder": "Add an app by its app ID, such as com.tinyspeck.slackmacgap or slack.exe",
+        "addSitePlaceholder": "Add a website, such as github.com",
+        "addApp": "Include {app}",
+        "addDomain": "Include {domain}",
+        "included": "Included",
+        "noApps": "No app is included. Only included websites are recorded.",
+        "noSites": "No website is included. Browsers record only if the browser app is included.",
+        "switchHintOn": "On: only the apps and websites below are recorded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "policyType": "Policy type",
+        "exclusionPolicy": "Exclusion policy",
+        "exclusionPolicyHint": "Record everything except what you exclude.",
+        "inclusionPolicy": "Inclusion policy",
+        "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
+        "recordTitle": "Record only these",
+        "exceptTitle": "Never record, even if included",
+        "memberInclusions": "People can add their own included apps and websites",
+        "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

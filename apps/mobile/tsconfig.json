@@ -2,9 +2,9 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "baseUrl": ".",
+    "types": ["bun"],
     "paths": {
-      "@/*": ["*"],
+      "@/*": ["./*"],
       "@kortix/shared": ["../../packages/shared/src/index.ts"]
     }
   },
@@ -15,7 +15,8 @@
     "expo-env.d.ts",
     "nativewind-env.d.ts",
     "svg.d.ts",
+    "css.d.ts",
     "../../packages/shared/src/**/*.ts"
   ],
-  "exclude": ["scratchpad"]
+  "exclude": ["scratchpad", "../../packages/shared/src/**/__tests__/**", "../../packages/shared/src/**/*.test.ts"]
 }

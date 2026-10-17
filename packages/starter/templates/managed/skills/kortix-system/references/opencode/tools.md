@@ -287,16 +287,15 @@ Each question includes a header, the question text, and a list of options. Users
 ## Custom tools
 
 > **In a Kortix project, write a project tool instead** (`kortix.yaml` `tools:`,
-> `../kortix/tools.md`): one module that OpenCode and pi both run. A
-> `kortix_version: 3` session does not load OpenCode's own custom-tool
-> folders. The rest of this section is OpenCode's own format, for reference.
+> `../kortix/tools.md`): one module that OpenCode and pi both run. The rest of
+> this section is OpenCode's own custom-tool format, which only an OpenCode
+> session loads.
 >
-> A Kortix session also has the Kortix tools (`web_search`, `image_search`,
-> `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`,
-> `kortix-connectors_describe`) without a `tools:` entry. A `tools:` entry
-> with a Kortix tool's name replaces that tool (`kortix tools eject <name>`
-> writes one). To hide a tool from one agent, use `agents.<name>.tools`
-> (`{ exclude: [name] }`).
+> A Kortix OpenCode session also has the Kortix tools (`web_search`,
+> `image_search`, `scrape_webpage`, `memory`, `show`) that `kortix.yaml`
+> lists as `<name>: kortix:<name>`, or all five with no `tools:` key. To
+> change one, run `kortix tools eject <name>`; to remove one, delete its line.
+> Do not copy a Kortix tool into this folder.
 
 Custom tools are functions you create that the LLM can call during conversations. They work alongside built-in tools.
 
@@ -306,7 +305,7 @@ Tools are defined as **TypeScript** or **JavaScript** files. The tool definition
 
 ### Location
 
-- Project-local: `.opencode/tools/` (a legacy `kortix_version` 1 or 2 Kortix project uses `harnesses/opencode/tools/` or `.kortix/opencode/tools/`; v3 reads neither)
+- Project-local: `.opencode/tools/` (or `harnesses/opencode/tools/` in a Kortix project; `.kortix/opencode/tools/` in projects created before 2026-09)
 - Global: `~/.config/opencode/tools/`
 
 ---

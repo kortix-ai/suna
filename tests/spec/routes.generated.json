@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 840,
+  "count": 844,
   "routes": [
     {
       "method": "GET",
@@ -1289,6 +1289,10 @@
     {
       "method": "POST",
       "path": "/v1/connectors/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check"
     },
     {
       "method": "POST",
@@ -2900,6 +2904,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/trigger-runs"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers"
     },
     {
@@ -2917,6 +2925,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay"
     },
     {
       "method": "PATCH",

@@ -146,6 +146,39 @@ describe('stoppedWakeResult — a stamped failure is a cooldown, not a dead end'
     expect(stoppedWakeResult(stoppedRow(unavailable), 'default', null, at(30_000))).toBeNull();
   });
 
+  // 2026-10-16: an open page on a lost session called /start ~2.8 times a
+  // second. Each pass claimed a recovery and preserved the loss again, which
+  // flipped the box row stopped → provisioning → stopped; the session stream
+  // turned each flip into a frame, and the SDK re-read /start on it. Inside
+  // the window the verdict comes from the row: no provider call, no write.
+  test('a lost identity checked under 5 minutes ago answers its terminal verdict from the row', () => {
+    const lost = {
+      runtimeIdentityState: 'unavailable',
+      runtimeUnavailableReason: 'runtime_removed',
+      runtimeUnavailableAt: FAILED_AT.toISOString(),
+      preservedExternalId: 'i000000synthetic0box1',
+      stopReason: 'provider_removed',
+    };
+    const result = stoppedWakeResult(stoppedRow(lost), 'default', null, at(30_000));
+    expect(result).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      opencode_session_id: null,
+      runtime_url: '/p/i000000synthetic0box1/8000',
+    });
+    expect(result?.sandbox?.metadata).toMatchObject({ runtimeIdentityState: 'unavailable' });
+  });
+
+  test('5 minutes after the last check, a lost identity falls through to check the provider once more', () => {
+    const lost = {
+      runtimeIdentityState: 'unavailable',
+      runtimeUnavailableAt: FAILED_AT.toISOString(),
+      preservedExternalId: 'i000000synthetic0box1',
+    };
+    expect(stoppedWakeResult(stoppedRow(lost), 'default', null, at(5 * 60_000))).toBeNull();
+  });
+
   test('an ordinary idle stop is not a stamped failure', () => {
     expect(
       stoppedWakeResult(

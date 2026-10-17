@@ -15,13 +15,13 @@
  * row. A row of any table still keyed to the holding session fails the restore
  * before that delete, which would cascade it away. The store's rows equal one
  * import per thread except the write times (a message's `time_updated`, a part's
- * times): `opencode-session-log-restore.test.ts` compares them row by row. It
+ * times): `opencode-session-log-restore-one-import.test.ts` compares them row by row. It
  * costs one process start instead of one per thread plus `--version` (about 2 s
  * each on a 2-vCPU Platinum box). The restore first removes
  * every session from the store, so the store holds exactly the log. A running
  * OpenCode (a warm seed) needs no stop: it reads sessions from the store per
  * request, also a session it served before the restore
- * (`opencode-session-log-restore.test.ts` proves both).
+ * (`opencode-session-log-restore-golden-cases.test.ts` proves both).
  *
  * PRECONDITION (the caller's, P6.4). The removal deletes every session in the
  * store, work the journal has not sent included. Run the restore only when the

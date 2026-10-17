@@ -378,12 +378,7 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and typed
-  // `<Name>Error: ` prefixes (e.g. `TypeError: `), but NOT a bare `Error: `
-  // (its `[A-Za-z]+Error:` requires a leading prefix). Sentry capture paths
-  // can deliver either shape, so additionally strip a leading bare `Error: `
-  // here — mirroring `isBareImageLoadNoiseMessage`'s explicit `Error: ` form.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (stripped !== PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE) {
     return false;
   }
@@ -454,11 +449,7 @@ export function isPaperShaderImageUniformNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  // `stripErrorWrappers` does not strip a bare `Error: ` prefix (its
-  // `[A-Za-z]+Error:` regex needs a leading word), and this class is thrown as
-  // a plain `Error`, so strip that form explicitly — same as
-  // `isPaperShaderWebGLUnsupportedNoise`.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (stripped !== PAPER_SHADER_IMAGE_UNIFORM_NOISE_MESSAGE) {
     return false;
   }

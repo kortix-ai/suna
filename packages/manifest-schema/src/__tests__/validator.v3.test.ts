@@ -147,3 +147,15 @@ describe('kortix_version 3: agents', () => {
     expect(errorPaths(swap('    agent: assistant\n    cron', '    agent: nobody\n    cron'))).toContain('triggers[0].agent');
   });
 });
+
+describe('agents.<name>.workspace.project_repository default', () => {
+  test('defaults to true for v1/v2 and false when the caller passes the v3 default', async () => {
+    const { resolveProjectRepository, projectRepositoryDefault } = await import('../index.ts');
+    expect(resolveProjectRepository({})).toEqual({ ok: true, value: true, legacyRead: false });
+    expect(resolveProjectRepository({}, projectRepositoryDefault(2))).toEqual({ ok: true, value: true, legacyRead: false });
+    expect(resolveProjectRepository({}, projectRepositoryDefault(3))).toEqual({ ok: true, value: false, legacyRead: false });
+    expect(resolveProjectRepository({ workspace: {} }, projectRepositoryDefault(3))).toEqual({ ok: true, value: false, legacyRead: false });
+    expect(resolveProjectRepository({ workspace: { project_repository: true } }, projectRepositoryDefault(3))).toEqual({ ok: true, value: true, legacyRead: false });
+    expect(projectRepositoryDefault(1)).toBe(true);
+  });
+});

@@ -43,10 +43,10 @@ import {
 } from '../model-availability';
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import { type ModelDefaultControls } from '../model-selector';
-import type { ServedModelNotice } from '../turn/served-model';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
@@ -66,7 +66,10 @@ import {
   dispatchLatched,
   type DispatchOutcome,
   planAttachmentReplacement,
+  refusedFilesToast,
   runComposerSend,
+  heldTraySizes,
+  splitComposerFiles,
   stageComposerFiles,
   takeNewBillingRefusals,
   type AttachmentSubmission,
@@ -75,6 +78,7 @@ import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
   planCommandAttachments,
+  planUnresolvedCommandChip,
   readCommandChipLabel,
 } from './command-attachments';
 import {
@@ -192,6 +196,14 @@ export interface SessionChatInputProps {
   noAccessibleAgents?: boolean;
   commands?: Command[];
   /**
+   * Whether the live command list has EVER resolved — the hook's `data`
+   * present, not the `[]` the composer defaults to while it loads. The one
+   * bit that separates "the chip's command is still being looked up" from
+   * "the list answered and the command is gone": only the first may refuse a
+   * send that would otherwise carry attachments out as a prompt.
+   */
+  commandsResolved?: boolean;
+  /**
    * The session's own files, as `/` palette rows — the Outputs card's
    * deliverables and the Context card's reads, built by
    * `menus/slash-files.ts`'s `sessionSlashFiles`.
@@ -218,6 +230,12 @@ export interface SessionChatInputProps {
    * mid-sentence (`explain /webapp to me`) came back reordered to the front.
    */
   onCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
+  /**
+   * Hold a command the session cannot run yet (a turn is running, or the box
+   * is waking) and run it when it can — `held-commands.ts`. A host without it
+   * refuses the command instead and keeps the draft.
+   */
+  onHoldCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
@@ -321,9 +339,6 @@ export interface SessionChatInputProps {
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
-  /** The newest answer came from a fallback model instead of the selected
-   *  one: the toolbar names it beside the model selector. */
-  servedModel?: ServedModelNotice | null;
   /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.
@@ -494,8 +509,11 @@ function ComposerImpl(props: SessionChatInputProps) {
   onAgentChange,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
+  commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
   onCommand,
+  onHoldCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
@@ -678,6 +696,46 @@ function ComposerImpl(props: SessionChatInputProps) {
   }, []);
 
   /**
+   * The tray's finished uploads. The draft keeps their handles, so a session
+   * switch or a reload brings the files back (`draft/draft-uploads.ts`).
+   */
+  const finishedUploads = useMemo(
+    () => finishedDraftUploads(attachedFiles, promptAttachmentItems),
+    [attachedFiles, promptAttachmentItems],
+  );
+  const draftUploads = useMemo(() => finishedUploads.map(({ upload }) => upload), [finishedUploads]);
+  const finishedUploadsRef = useRef(finishedUploads);
+  useEffect(() => {
+    finishedUploadsRef.current = finishedUploads;
+  }, [finishedUploads]);
+  const keepFilesForThisTab = useCallback(() => {
+    for (const { upload, file } of finishedUploadsRef.current) {
+      if (file) keepUnsentUploadFile(upload.attachment_id, file);
+    }
+  }, []);
+  // A replacement composer (the boot shell hands its draft to the live chat)
+  // restores in a passive effect, after this layout effect: keep the Files
+  // first, so its tiles come back with their pictures.
+  useLayoutEffect(() => {
+    if (draftActive === false) keepFilesForThisTab();
+  }, [draftActive, keepFilesForThisTab]);
+  // A finished upload outlives this composer while a draft keeps its handle:
+  // release it from the controller, so the controller's dispose does not delete
+  // it. Without a draft scope nothing keeps the handle, and dispose deletes it.
+  const draftScopedRef = useRef(!!draftScope);
+  useEffect(() => {
+    draftScopedRef.current = !!draftScope;
+  }, [draftScope]);
+  useEffect(
+    () => () => {
+      if (!draftScopedRef.current) return;
+      keepFilesForThisTab();
+      promptAttachmentsRef.current.forget(finishedUploadsRef.current.map(({ uploadId }) => uploadId));
+    },
+    [keepFilesForThisTab],
+  );
+
+  /**
    * Put a stored draft back into the live editor.
    *
    * `setDocumentWithoutStealingFocus`, not `setDocument`: this fires on mount,
@@ -685,19 +743,33 @@ function ComposerImpl(props: SessionChatInputProps) {
    * yank focus into the composer on every reload.
    *
    * Attachments are only seeded into an EMPTY tray. Anything already attached
-   * was added by the person in this mount and outranks a stored list. Local
-   * attachments were never storable, so nothing is restored for them.
+   * was added by the person in this mount and outranks a stored list. A
+   * finished upload comes back by its handle (`restoreDraftUploads`); an
+   * unfinished one was never stored.
    */
   const handleDraftRestore = useCallback(
     (draft: StoredDraft) => {
       setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-      if (draft.files.length > 0) {
-        setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+      const uploads = draft.uploads ?? [];
+      if ((draft.files.length > 0 || uploads.length > 0) && attachedFilesRef.current.length === 0) {
+        let restored: AttachedFile[] = [];
+        try {
+          restored = restoreDraftUploads(uploads, {
+            restore: promptAttachmentsRef.current.restore,
+            createObjectURL: (file) => URL.createObjectURL(file),
+          });
+        } catch (error) {
+          // Over a message limit: the stored files are not restored.
+          errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
+        }
+        const next = [...draft.files, ...restored];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
       }
       restoreQuoteTexts(draft.quotes ?? []);
       restorePastes(draft.pastes ?? []);
     },
-    [restoreQuoteTexts, restorePastes],
+    [restoreQuoteTexts, restorePastes, tComposerAttachments],
   );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
@@ -708,6 +780,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     attachedFiles,
     quotes: quoteTexts,
     pastes,
+    uploads: draftUploads,
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -737,8 +810,20 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // One empty or oversized file must not refuse the whole drop: the SDK
+      // checks a batch at once, so the files that fit are split off first and
+      // each refused one is named (KRTX-2557).
+      const held = heldTraySizes(attachedFilesRef.current);
+      const { accepted, refused } = splitComposerFiles(Array.from(files), {
+        count: held.length,
+        bytes: held.reduce((sum, size) => sum + size, 0),
+      });
+      if (refused.length > 0) {
+        const toast = refusedFilesToast(refused, tComposerAttachments);
+        errorToast(toast.title, { description: toast.description });
+      }
       try {
-        const newFiles = stageComposerFiles(Array.from(files), {
+        const newFiles = stageComposerFiles(accepted, {
           addMany: addPromptAttachments,
           createObjectURL: (file) => URL.createObjectURL(file),
           isImage: isImageFile,
@@ -1207,7 +1292,11 @@ function ComposerImpl(props: SessionChatInputProps) {
         const liveIds = new Set(
           promptAttachmentsRef.current.attachments.map((attachment) => attachment.id),
         );
-        const localToStage = prefillFiles.filter(
+        // A restored upload has no File to stage again: it carries over only while listed.
+        const usableFiles = prefillFiles.filter(
+          (file) => file.kind !== 'uploaded' || liveIds.has(file.uploadId),
+        );
+        const localToStage = usableFiles.filter(
           (file): file is Extract<AttachedFile, { kind: 'local' }> =>
             file.kind === 'local' && (!file.uploadId || !liveIds.has(file.uploadId)),
         );
@@ -1220,7 +1309,7 @@ function ComposerImpl(props: SessionChatInputProps) {
           },
         );
         let localIndex = 0;
-        const prepared = prefillFiles.map((file): AttachedFile => {
+        const prepared = usableFiles.map((file): AttachedFile => {
           if (file.kind === 'remote') return file;
           if (file.uploadId && liveIds.has(file.uploadId)) return file;
           return newlyStaged[localIndex++]!;
@@ -1492,6 +1581,7 @@ function ComposerImpl(props: SessionChatInputProps) {
         commandSplit: draft?.commandSplit,
         quotes: quotesNow.map((quote) => quote.text),
         pastes: pastesNow,
+        mentions: draft?.mentions,
       });
       if (plan.kind === 'command') {
         // A command cannot deliver the attached files, and the code below is
@@ -1513,25 +1603,18 @@ function ComposerImpl(props: SessionChatInputProps) {
           return;
         }
 
-        // A command is REFUSED while the session is working — or while its
-        // sandbox is still waking — not queued.
+        // A command cannot go out while the session is working or its sandbox
+        // is waking. A PROMPT never waits here: it is a server-side inbox row,
+        // and the admission gate orders it. A COMMAND has no row — `runCommand`
+        // dispatches it, never `POST .../prompts` — so one put on the wire
+        // mid-turn aborts the answer in progress, and one sent at a box that is
+        // not up is swallowed by `runCommand`'s `runtimeActionReady` guard.
         //
-        // A PROMPT is never held here: it goes to the server-side inbox, which
-        // admits it only when the session can take it, so ordering is decided by
-        // server truth rather than by this component's read of `isBusy`, and a
-        // sleeping box just means the row is delivered a little later. A COMMAND
-        // has no such row — it is dispatched by `runCommand`, never by
-        // `POST .../prompts` — so no admission gate ever sees it, putting one on
-        // the wire mid-turn aborts the answer in progress, and dispatching one at
-        // a box that is not up is swallowed by `runCommand`'s own
-        // `runtimeActionReady` guard with no request and no error.
-        //
-        // It used to wait in a browser-local queue for that reason. That queue is
-        // gone: it lived in this tab's localStorage, so a closed tab lost it, a
-        // second tab could not see it, and its release timing was a guess at a
-        // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
-        // in the editor and says when the command can run — nothing is stored,
-        // and nothing can be lost.
+        // So the host HOLDS it (`onHoldCommand`, `held-commands.ts`): a visible
+        // row in the queued list, released by server turn authority once the
+        // inbox is empty — not by the debounced `isBusy` the old localStorage
+        // queue guessed from. A host without a hold refuses it and keeps the
+        // draft in the editor.
         const blocker = commandBlocker({
           hasActiveQuestion: lockForQuestion,
           // The composer only knows "something is pending", not how many.
@@ -1540,15 +1623,22 @@ function ComposerImpl(props: SessionChatInputProps) {
           isWorking: sessionWorking ?? isBusy,
           runtimeReady,
         });
-        if (blocker) {
+        // A turn or a waking box only DELAYS a command: a host that can hold
+        // it does, and the queued list shows it with a Remove (KRTX-2464). A
+        // question, a permission or a read-only viewer refuse it outright.
+        const holdable = blocker === 'session_working' || blocker === 'runtime_waking';
+        if (blocker && holdable && onHoldCommand) {
+          onHoldCommand(plan.command, plan.args, plan.split);
+        } else if (blocker) {
           const copy = sendBlockerMessage(blocker, tI18nComplete);
           errorToast(
             copy.message,
             copy.description ? { description: copy.description } : undefined,
           );
           return;
+        } else {
+          onCommand?.(plan.command, plan.args, plan.split);
         }
-        onCommand?.(plan.command, plan.args, plan.split);
         // The command is on its way; the draft that produced it is spent.
         // Deliberately NOT on either refusal path above (`guard.kind ===
         // 'refuse'`, `blocker`) — those keep the text in the editor on
@@ -1581,6 +1671,25 @@ function ComposerImpl(props: SessionChatInputProps) {
           onQuestionAction();
           return;
         }
+        return;
+      }
+
+      // A chip the live list cannot resolve YET must not ride out as an
+      // ordinary prompt while files are staged — the whole story, including
+      // why only the never-resolved list refuses, lives on
+      // `planUnresolvedCommandChip`'s doc comment (KRTX-1903). It sits below
+      // the question-lock reroute: an answer takes only the text and hands
+      // the files back to the stash, so there is nothing there to lose.
+      const unresolvedGuard = planUnresolvedCommandChip(
+        {
+          commandName: draft?.commandName,
+          commandsResolved,
+          attachmentCount: filesNow.length,
+        },
+        tI18nComplete,
+      );
+      if (unresolvedGuard.kind === 'refuse') {
+        errorToast(unresolvedGuard.message, { description: unresolvedGuard.description });
         return;
       }
 
@@ -1682,6 +1791,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       lockForApproval,
       disabled,
       commands,
+      commandsResolved,
       lockForQuestion,
       submitDisabled,
       clearOnSend,
@@ -1690,6 +1800,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       isBusy,
       runtimeReady,
       onCommand,
+      onHoldCommand,
       clearSavedDraft,
       handleDocChange,
       setQuoteList,

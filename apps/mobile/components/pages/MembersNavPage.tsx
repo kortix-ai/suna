@@ -17,6 +17,8 @@
  * Confirms use `useConfirmDialog` (never `Alert.alert`); failures use toasts.
  */
 
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useCan } from '@kortix/sdk/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
@@ -349,7 +351,7 @@ export function MembersNavPage({
   const projectQuery = useProject(projectId);
   const accessQuery = useProjectAccess(projectId);
   const project = projectQuery.data;
-  const canManage = project?.effective_project_role === 'manager' || !!accessQuery.data?.can_manage;
+  const canManage = useCan({ projectId }, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed;
   const invitesQuery = usePendingProjectInvites(projectId, canManage);
 
   const [sheet, setSheet] = useState<SheetState>(null);

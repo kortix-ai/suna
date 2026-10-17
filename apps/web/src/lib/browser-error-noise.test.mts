@@ -11572,7 +11572,6 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
     "Can't find variables: EmptyRanges", // plural + colon
     'Can not find variable: EmptyRanges', // different modal wording
     'Could not find variable: EmptyRanges',
-    "Error: Can't find variable: EmptyRanges (extra context)",
     "Can't find variable", // bare prefix with no name — too short to be a real throw
   ]) {
     assert.equal(
@@ -11584,6 +11583,23 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
       `expected near-worded "${message}" to keep reporting`,
     );
   }
+});
+
+test('suppresses the bare-Error-wrapped undefined-variable serialization (KRTX-2409)', () => {
+  // The noise class is the frameless Safari ReferenceError wording; the
+  // leading `Error: ` is the wrapper an uncaught Error instance serializes
+  // with — a serialization shape, not a different error class — so it
+  // classifies like the unwrapped production fixture above. The
+  // attributability guards are frame-based, not prefix-based: any first-party
+  // or resolvable frame still keeps the event reporting (see the
+  // negative-guard tests).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: "Error: Can't find variable: EmptyRanges (extra context)",
+      frames: [],
+    }),
+    true,
+  );
 });
 
 test('does NOT suppress a frameless rejection with a different message', () => {
@@ -12542,6 +12558,58 @@ test('keeps reporting other JSON-RPC objects and any rejection with our frames',
   }
   for (const filename of ['app:///_next/static/immutable/chunks/0abc.js', 'apps/web/src/lib/x.ts']) {
     assert.equal(shouldIgnoreSentryBrowserNoise(walletRpcRejection({ code: -32603, message: 'Internal JSON-RPC error.' }, [{ filename }])), false, filename);
+  }
+});
+
+// Better Stack (Kortix Frontend prod), release a41f91833475, routes `/` and
+// `/auth`: an injected wallet provider (MetaMask's inpage script, whose
+// breadcrumbs show "Error restoring session … Failed to connect to MetaMask")
+// rejected a pending request with the EIP-1193 provider-disconnected error
+// `{ code: 4900, message: 'The provider is disconnected from all chains.' }`
+// as a plain object with NO `stack` — the stack-less variant of the
+// `keys: code, message, stack` wallet-disconnect class above. Sentry reports
+// it as a frameless synthetic rejection that neither the extension-stack
+// anchor nor any other rule can see. Kortix rejects with Error instances
+// only.
+function walletProviderDisconnectRejection(serialized: unknown, frames?: Array<{ filename: string }>) {
+  return {
+    extra: { __serialized__: serialized },
+    exception: { values: [{
+      type: 'UnhandledRejection',
+      value: 'Object captured as promise rejection with keys: code, message',
+      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+      ...(frames ? { stacktrace: { frames } } : {}),
+    }] },
+  };
+}
+
+test('suppresses the frameless wallet provider disconnected rejection', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection({
+    code: 4900,
+    message: 'The provider is disconnected from all chains.',
+  })), true);
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({
+    reason: { code: 4900, message: 'The provider is disconnected from all chains.' },
+  }), false);
+});
+
+test('keeps reporting other provider-disconnected payloads and any rejection with our frames', () => {
+  for (const serialized of [
+    { code: 4901, message: 'The provider is disconnected from all chains.' },
+    { code: 4900, message: 'The provider is disconnected.' },
+    {
+      code: 4900,
+      message: 'The provider is disconnected from all chains.',
+      stack: 'Error: The provider is disconnected from all chains.\n    at foo (https://example.com/x.js:1:1)',
+    },
+  ]) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection(serialized)), false, JSON.stringify(serialized));
+  }
+  for (const filename of ['app:///_next/static/immutable/chunks/0abc.js', 'apps/web/src/lib/x.ts']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection({
+      code: 4900,
+      message: 'The provider is disconnected from all chains.',
+    }, [{ filename }])), false, filename);
   }
 });
 

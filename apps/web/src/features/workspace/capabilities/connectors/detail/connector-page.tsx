@@ -88,6 +88,17 @@ export function ConnectorPage({
       void queryClient.invalidateQueries({ queryKey: key });
     }
   }, [projectId, queryClient]);
+  // After a remove, the deleted slug's own queries (its config) stay out of
+  // the refetch: they would 404 and toast "connector not found".
+  const invalidateAfterRemove = useCallback(() => {
+    const removed = qk.project.connectorConfig(projectId, connectorSlug);
+    for (const key of connectorConnectionQueryKeys(projectId)) {
+      void queryClient.invalidateQueries({
+        queryKey: key,
+        predicate: (query) => !removed.every((part, index) => query.queryKey[index] === part),
+      });
+    }
+  }, [connectorSlug, projectId, queryClient]);
   useOauth2Return(invalidate);
 
   const app = appRefFromLocation(appSegment, search);
@@ -168,6 +179,7 @@ export function ConnectorPage({
       canWrite={canWrite}
       backHref={backHref}
       onChanged={invalidate}
+      onRemoved={invalidateAfterRemove}
     />
   );
 }
@@ -178,12 +190,15 @@ function ConnectorPageBody({
   canWrite,
   backHref,
   onChanged,
+  onRemoved,
 }: {
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
   backHref: string;
   onChanged: () => void;
+  /** The connector was deleted: refresh everything but its own queries. */
+  onRemoved: () => void;
 }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -635,8 +650,8 @@ function ConnectorPageBody({
                 displayName={displayName}
                 onChanged={onChanged}
                 onRemoved={() => {
-                  onChanged();
                   router.push(connectorsHref(projectId, 'connected'));
+                  onRemoved();
                 }}
               />
             </TabsContent>

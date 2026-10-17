@@ -112,7 +112,7 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Machines'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       return c.json({ machines: await listAppMachines(gated.app) }, 200) as never;
     },
@@ -218,7 +218,7 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Volumes'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       const volumes = await listAppVolumes(gated.app.appId);
       const live = await Promise.all(volumes.map(volumeInfo));
@@ -314,7 +314,7 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Snapshots'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       return answer(c, async () => c.json({ snapshots: await listVolumeSnapshots(gated.app.appId, c.req.valid('param').volumeId) }, 200));
     },
