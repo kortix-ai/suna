@@ -55,9 +55,9 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
 }
 
 /**
- * The last nav row, always present. Its menu holds every row set to "Show in
- * More", so hiding a row never makes its page unreachable, and then the one
- * pointer path into "Customize sidebar".
+ * The last nav row. Its menu holds every row set to "Show in More", so hiding
+ * a row never makes its page unreachable, and then the one pointer path into
+ * "Customize sidebar". Absent when the project offers the caller no row.
  */
 function MoreNavItem({
   projectId,
@@ -92,6 +92,10 @@ function MoreNavItem({
     closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
   };
   useEffect(() => cancelClose, []);
+
+  // No row this project offers the caller: nothing to arrange and nothing
+  // hidden to reach, so the row would open a menu with nothing in it.
+  if (Object.keys(meta).length === 0) return null;
 
   return (
     <SidebarMenuItem>
