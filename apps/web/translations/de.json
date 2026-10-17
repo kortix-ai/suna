@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {Credit} other {Credits}}",
       "text72a85758b69c": "Noch keine Läufe.",
       "text75c4316dcad4": "Noch keine Läufe. Dieser Trigger ist pausiert.",
-      "textdf86da65c421": "Noch keine Läufe. Der erste startet {value0}."
+      "textdf86da65c421": "Noch keine Läufe. Der erste startet {value0}.",
+      "text1cc5b0d9628f": "{count, plural, other {# ausgewählt}}",
+      "text6363885af551": "Pausiere {done} von {total}…",
+      "text4cc2a4d3a49a": "Setze fort {done} von {total}…",
+      "text6e24bb562ab0": "Lösche {done} von {total}…",
+      "textd845c8702b04": "{ok, plural, other {# pausiert}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "texte57e0a07011b": "{ok, plural, other {# fortgesetzt}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "text1412a8506003": "{ok, plural, other {# gelöscht}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "textd142c482800c": "{count, plural, one {# Trigger} other {# Trigger}} löschen?",
+      "text75af4531ed17": "Sie werden aus dem Projektmanifest entfernt. Das lässt sich nicht rückgängig machen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

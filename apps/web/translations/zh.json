@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, other {积分}}",
       "text72a85758b69c": "还没有运行。",
       "text75c4316dcad4": "还没有运行。此触发器已暂停。",
-      "textdf86da65c421": "还没有运行。第一次将于 {value0} 开始。"
+      "textdf86da65c421": "还没有运行。第一次将于 {value0} 开始。",
+      "text1cc5b0d9628f": "{count, plural, other {已选 #}}",
+      "text6363885af551": "正在暂停 {done}/{total}…",
+      "text4cc2a4d3a49a": "正在恢复 {done}/{total}…",
+      "text6e24bb562ab0": "正在删除 {done}/{total}…",
+      "textd845c8702b04": "{ok, plural, other {已暂停 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "texte57e0a07011b": "{ok, plural, other {已恢复 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "text1412a8506003": "{ok, plural, other {已删除 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "textd142c482800c": "删除 {count, plural, other {# 个触发器}}？",
+      "text75af4531ed17": "它们会从项目清单中移除。此操作无法撤销。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {crédito} other {créditos}}",
       "text72a85758b69c": "Ainda não há execuções.",
       "text75c4316dcad4": "Ainda não há execuções. Este gatilho está pausado.",
-      "textdf86da65c421": "Ainda não há execuções. A primeira começa {value0}."
+      "textdf86da65c421": "Ainda não há execuções. A primeira começa {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# selecionado} other {# selecionados}}",
+      "text6363885af551": "Pausando {done} de {total}…",
+      "text4cc2a4d3a49a": "Retomando {done} de {total}…",
+      "text6e24bb562ab0": "Excluindo {done} de {total}…",
+      "textd845c8702b04": "{ok, plural, other {# pausados}}{failed, plural, =0 {} other {, # com falha}}",
+      "texte57e0a07011b": "{ok, plural, other {# retomados}}{failed, plural, =0 {} other {, # com falha}}",
+      "text1412a8506003": "{ok, plural, other {# excluídos}}{failed, plural, =0 {} other {, # com falha}}",
+      "textd142c482800c": "Excluir {count, plural, one {# gatilho} other {# gatilhos}}?",
+      "text75af4531ed17": "Eles são removidos do manifesto do projeto. Isso não pode ser desfeito."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

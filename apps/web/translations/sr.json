@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {кредит} few {кредита} other {кредита}}",
       "text72a85758b69c": "Још нема покретања.",
       "text75c4316dcad4": "Још нема покретања. Овај окидач је паузиран.",
-      "textdf86da65c421": "Још нема покретања. Прво почиње {value0}."
+      "textdf86da65c421": "Још нема покретања. Прво почиње {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# изабран} few {# изабрана} other {# изабраних}}",
+      "text6363885af551": "Паузирање {done} од {total}…",
+      "text4cc2a4d3a49a": "Наставак {done} од {total}…",
+      "text6e24bb562ab0": "Брисање {done} од {total}…",
+      "textd845c8702b04": "{ok, plural, other {# паузирано}}{failed, plural, =0 {} other {, # неуспело}}",
+      "texte57e0a07011b": "{ok, plural, other {# настављено}}{failed, plural, =0 {} other {, # неуспело}}",
+      "text1412a8506003": "{ok, plural, other {# обрисано}}{failed, plural, =0 {} other {, # неуспело}}",
+      "textd142c482800c": "Обрисати {count, plural, one {# окидач} few {# окидача} other {# окидача}}?",
+      "text75af4531ed17": "Уклањају се из манифеста пројекта. Ово се не може опозвати."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

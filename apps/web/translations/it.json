@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {credito} other {crediti}}",
       "text72a85758b69c": "Ancora nessuna esecuzione.",
       "text75c4316dcad4": "Ancora nessuna esecuzione. Questo trigger è in pausa.",
-      "textdf86da65c421": "Ancora nessuna esecuzione. La prima parte {value0}."
+      "textdf86da65c421": "Ancora nessuna esecuzione. La prima parte {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# selezionato} other {# selezionati}}",
+      "text6363885af551": "Pausa {done} di {total}…",
+      "text4cc2a4d3a49a": "Ripresa {done} di {total}…",
+      "text6e24bb562ab0": "Eliminazione {done} di {total}…",
+      "textd845c8702b04": "{ok, plural, other {# in pausa}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "texte57e0a07011b": "{ok, plural, other {# ripresi}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "text1412a8506003": "{ok, plural, other {# eliminati}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "textd142c482800c": "Eliminare {count, plural, one {# trigger} other {# trigger}}?",
+      "text75af4531ed17": "Vengono rimossi dal manifest del progetto. L’operazione non può essere annullata."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {crédit} other {crédits}}",
       "text72a85758b69c": "Aucune exécution pour l’instant.",
       "text75c4316dcad4": "Aucune exécution pour l’instant. Ce déclencheur est en pause.",
-      "textdf86da65c421": "Aucune exécution pour l’instant. La première démarre {value0}."
+      "textdf86da65c421": "Aucune exécution pour l’instant. La première démarre {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# sélectionné} other {# sélectionnés}}",
+      "text6363885af551": "Mise en pause {done} sur {total}…",
+      "text4cc2a4d3a49a": "Reprise {done} sur {total}…",
+      "text6e24bb562ab0": "Suppression {done} sur {total}…",
+      "textd845c8702b04": "{ok, plural, one {# mis en pause} other {# mis en pause}}{failed, plural, =0 {} other {, # en échec}}",
+      "texte57e0a07011b": "{ok, plural, other {# repris}}{failed, plural, =0 {} other {, # en échec}}",
+      "text1412a8506003": "{ok, plural, other {# supprimés}}{failed, plural, =0 {} other {, # en échec}}",
+      "textd142c482800c": "Supprimer {count, plural, one {# déclencheur} other {# déclencheurs}} ?",
+      "text75af4531ed17": "Ils sont retirés du manifeste du projet. Cette action est irréversible."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

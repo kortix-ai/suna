@@ -91,7 +91,7 @@ describe('ScheduleView page chrome', () => {
   );
 
   test('pause-all lives in the toolbar ⋯ menu, not a gear or a list banner', () => {
-    expect(shellHeader).toContain('<TriggerActivationMenu projectId={projectId} />');
+    expect(shellHeader).toContain('<TriggerActivationMenu');
     expect(code).not.toContain('GearSixIcon');
     expect(code).not.toContain('PopoverTrigger');
     expect(shellChildren).not.toContain('TriggerActivationMenu');

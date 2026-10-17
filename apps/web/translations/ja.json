@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, other {クレジット}}",
       "text72a85758b69c": "まだ実行はありません。",
       "text75c4316dcad4": "まだ実行はありません。このトリガーは一時停止中です。",
-      "textdf86da65c421": "まだ実行はありません。最初の実行は {value0} に始まります。"
+      "textdf86da65c421": "まだ実行はありません。最初の実行は {value0} に始まります。",
+      "text1cc5b0d9628f": "{count, plural, other {# 件選択}}",
+      "text6363885af551": "{total} 件中 {done} 件を一時停止中…",
+      "text4cc2a4d3a49a": "{total} 件中 {done} 件を再開中…",
+      "text6e24bb562ab0": "{total} 件中 {done} 件を削除中…",
+      "textd845c8702b04": "{ok, plural, other {# 件を一時停止}}{failed, plural, =0 {} other {、# 件失敗}}",
+      "texte57e0a07011b": "{ok, plural, other {# 件を再開}}{failed, plural, =0 {} other {、# 件失敗}}",
+      "text1412a8506003": "{ok, plural, other {# 件を削除}}{failed, plural, =0 {} other {、# 件失敗}}",
+      "textd142c482800c": "{count, plural, other {# 件のトリガー}}を削除しますか？",
+      "text75af4531ed17": "プロジェクトのマニフェストから削除されます。元に戻せません。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

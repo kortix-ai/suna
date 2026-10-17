@@ -20138,7 +20138,16 @@
       "textd835122c9dd1": "{count, plural, one {credit} other {credits}}",
       "text72a85758b69c": "No runs yet.",
       "text75c4316dcad4": "No runs yet. This trigger is paused.",
-      "textdf86da65c421": "No runs yet. The first one starts {value0}."
+      "textdf86da65c421": "No runs yet. The first one starts {value0}.",
+      "text1cc5b0d9628f": "{count, plural, other {# selected}}",
+      "text6363885af551": "Pausing {done} of {total}…",
+      "text4cc2a4d3a49a": "Resuming {done} of {total}…",
+      "text6e24bb562ab0": "Deleting {done} of {total}…",
+      "textd845c8702b04": "{ok, plural, other {# paused}}{failed, plural, =0 {} other {, # failed}}",
+      "texte57e0a07011b": "{ok, plural, other {# resumed}}{failed, plural, =0 {} other {, # failed}}",
+      "text1412a8506003": "{ok, plural, other {# deleted}}{failed, plural, =0 {} other {, # failed}}",
+      "textd142c482800c": "Delete {count, plural, one {# trigger} other {# triggers}}?",
+      "text75af4531ed17": "They are removed from the project manifest. This cannot be undone."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

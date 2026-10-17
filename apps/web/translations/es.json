@@ -20127,7 +20127,16 @@
       "textd835122c9dd1": "{count, plural, one {crédito} other {créditos}}",
       "text72a85758b69c": "Aún no hay ejecuciones.",
       "text75c4316dcad4": "Aún no hay ejecuciones. Este disparador está en pausa.",
-      "textdf86da65c421": "Aún no hay ejecuciones. La primera empieza el {value0}."
+      "textdf86da65c421": "Aún no hay ejecuciones. La primera empieza el {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# seleccionado} other {# seleccionados}}",
+      "text6363885af551": "Pausando {done} de {total}…",
+      "text4cc2a4d3a49a": "Reanudando {done} de {total}…",
+      "text6e24bb562ab0": "Eliminando {done} de {total}…",
+      "textd845c8702b04": "{ok, plural, one {# en pausa} other {# en pausa}}{failed, plural, =0 {} other {, # con error}}",
+      "texte57e0a07011b": "{ok, plural, other {# reanudados}}{failed, plural, =0 {} other {, # con error}}",
+      "text1412a8506003": "{ok, plural, other {# eliminados}}{failed, plural, =0 {} other {, # con error}}",
+      "textd142c482800c": "¿Eliminar {count, plural, one {# disparador} other {# disparadores}}?",
+      "text75af4531ed17": "Se eliminan del manifiesto del proyecto. No se puede deshacer."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

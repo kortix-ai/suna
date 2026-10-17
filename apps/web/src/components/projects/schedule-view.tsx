@@ -35,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -63,9 +64,11 @@ import {
   fireProjectTrigger,
   listProjectTriggers,
   setProjectTriggersActivation,
+  updateProjectTrigger,
 } from '@kortix/sdk';
 import { contract, qk, useProjectTriggerEventApps } from '@kortix/sdk/react';
 import {
+  CheckSquareIcon,
   DotsThreeIcon,
   LightningIcon,
   LockKeyIcon,
@@ -77,7 +80,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
 import { useSlashFocus } from '@/hooks/utils';
@@ -105,6 +108,14 @@ import {
   triggerSheetHref,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
+import {
+  bulkTargets,
+  runSequentially,
+  selectAllShown,
+  selectRange,
+  toggleSlug,
+} from './schedule/trigger-selection';
+import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
 import { useEventTitles } from './schedule/use-event-titles';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
@@ -129,6 +140,7 @@ export function TriggerToolbarMenu({
   isPending,
   activeCount,
   onToggle,
+  onSelectMode,
 }: {
   canManage: boolean;
   paused: boolean;
@@ -136,6 +148,8 @@ export function TriggerToolbarMenu({
   /** Enabled triggers, for the count beside Pause all. */
   activeCount: number;
   onToggle: (next: boolean) => void;
+  /** Turns on multi-select; absent when there is nothing to select. */
+  onSelectMode?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canManage) return null;
@@ -164,6 +178,15 @@ export function TriggerToolbarMenu({
           <PlayIcon />
           {tI18nComplete.raw('text43e673c5503d')}
         </DropdownMenuItem>
+        {onSelectMode ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onSelectMode}>
+              <CheckSquareIcon />
+              {tI18nComplete.raw('text2a78025de6aa')}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -194,7 +217,13 @@ export function TriggerToolbarMenu({
  *
  * Exported for `trigger-activation-menu.test.tsx`, which renders it per role.
  */
-export function TriggerActivationMenu({ projectId }: { projectId: string }) {
+export function TriggerActivationMenu({
+  projectId,
+  onSelectMode,
+}: {
+  projectId: string;
+  onSelectMode?: () => void;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const queryKey = qk.project.triggers(projectId);
@@ -231,6 +260,7 @@ export function TriggerActivationMenu({ projectId }: { projectId: string }) {
       isPending={mutation.isPending || triggersQuery.isLoading}
       activeCount={activeCount}
       onToggle={(v) => mutation.mutate(v)}
+      onSelectMode={onSelectMode}
     />
   );
 }
@@ -394,6 +424,69 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
   // An unknown slug matches nothing: the sheet stays closed, with no error.
   const selected = triggers.find((t) => t.slug === sheet.slug) ?? null;
+
+  /* ── Select mode: multi-select, then sequential bulk Pause / Resume / Delete ── */
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(() => new Set());
+  const [anchorSlug, setAnchorSlug] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    verb: BulkVerb;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const orderedSlugs = useMemo(
+    () => (appGroups ? appGroups.flatMap((g) => g.triggers) : filtered).map((t) => t.slug),
+    [appGroups, filtered],
+  );
+  const enterSelectMode = () => {
+    if (selected) closeTrigger();
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+    setSelectMode(true);
+  };
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+  };
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !bulkProgress) exitSelectMode();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+  const BULK_RESULT_KEY = {
+    pause: 'textd845c8702b04',
+    resume: 'texte57e0a07011b',
+    delete: 'text1412a8506003',
+  } as const;
+  // ponytail: one request per trigger, in order (no bulk trigger API yet;
+  // each write commits the manifest, so concurrency 1 avoids commit conflicts).
+  const runBulk = async (verb: BulkVerb) => {
+    const items =
+      verb === 'delete'
+        ? triggers.filter((t) => selectedSlugs.has(t.slug))
+        : bulkTargets(triggers, selectedSlugs, verb === 'resume');
+    if (items.length === 0) return;
+    setBulkProgress({ verb, done: 0, total: items.length });
+    const tally = await runSequentially(
+      items,
+      (t) =>
+        verb === 'delete'
+          ? deleteProjectTrigger(projectId, t.slug)
+          : updateProjectTrigger(projectId, t.slug, { enabled: verb === 'resume' }),
+      (done, total) => setBulkProgress({ verb, done, total }),
+    );
+    setBulkProgress(null);
+    const message = tI18nComplete(BULK_RESULT_KEY[verb], { ok: tally.ok, failed: tally.failed });
+    if (tally.failed > 0) errorToast(message);
+    else successToast(message);
+    if (verb === 'delete') setSelectedSlugs(new Set());
+    void invalidate();
+  };
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
@@ -476,7 +569,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               // Search, then one group: ⋯ and New trigger, both `secondary` at `h-8`.
               <ButtonGroup>
                 {triggers.length > 0 || paused ? (
-                  <TriggerActivationMenu projectId={projectId} />
+                  <TriggerActivationMenu
+                    projectId={projectId}
+                    onSelectMode={triggers.length > 0 ? enterSelectMode : undefined}
+                  />
                 ) : null}
                 {canWrite ? (
                   <NewEntityMenu
@@ -570,8 +666,48 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 selectedSlug={selected?.slug ?? null}
                 runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
                 onOpen={(t) => openTrigger(t.slug)}
+                selection={
+                  selectMode
+                    ? {
+                        selected: selectedSlugs,
+                        onToggle: (t, range) => {
+                          setSelectedSlugs((prev) =>
+                            range
+                              ? selectRange(prev, orderedSlugs, anchorSlug, t.slug)
+                              : toggleSlug(prev, t.slug),
+                          );
+                          setAnchorSlug(t.slug);
+                        },
+                      }
+                    : null
+                }
               />
             )}
+
+            {selectMode ? (
+              // Floats at the bottom centre of the list column, inside its edges.
+              <div className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
+                <div className="pointer-events-auto w-full max-w-xl">
+                  <TriggerSelectionBar
+                    selectedCount={selectedSlugs.size}
+                    shownCount={filtered.length}
+                    allSelected={
+                      filtered.length > 0 && filtered.every((t) => selectedSlugs.has(t.slug))
+                    }
+                    canPause={bulkTargets(triggers, selectedSlugs, false).length > 0}
+                    canResume={bulkTargets(triggers, selectedSlugs, true).length > 0}
+                    canDelete={controls.canDelete}
+                    progress={bulkProgress}
+                    onSelectAll={() => setSelectedSlugs(selectAllShown(filtered))}
+                    onClear={() => setSelectedSlugs(new Set())}
+                    onPause={() => void runBulk('pause')}
+                    onResume={() => void runBulk('resume')}
+                    onDelete={() => setBulkDeleteOpen(true)}
+                    onExit={exitSelectMode}
+                  />
+                </div>
+              </div>
+            ) : null}
 
             {showContent && eventsOn && filter === 'event' ? (
               <EventAppsStrip
@@ -634,6 +770,20 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             confirmVariant="destructive"
             isPending={remove.isPending}
             onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
+          />
+
+          <ConfirmDialog
+            open={bulkDeleteOpen}
+            onOpenChange={setBulkDeleteOpen}
+            title={tI18nComplete('textd142c482800c', { count: selectedSlugs.size })}
+            description={tI18nComplete.raw('text75af4531ed17')}
+            confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
+            confirmVariant="destructive"
+            isPending={bulkProgress?.verb === 'delete'}
+            onConfirm={() => {
+              setBulkDeleteOpen(false);
+              void runBulk('delete');
+            }}
           />
         </CapabilityPageShell>
       </SplitSheetMain>
