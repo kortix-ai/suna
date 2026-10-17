@@ -2399,6 +2399,7 @@ fn refresh_policy(ctx: &Ctx) -> Result<bool> {
                 |c: Option<&super::policy::Cached>| c.map(|c| (c.source.clone(), c.policy.clone()));
             let before = super::policy::read(ctx.paths);
             super::policy::write(ctx.paths, cached.as_ref())?;
+            super::policy::mark_checked(ctx.paths);
             Ok(key(before.as_ref()) != key(cached.as_ref()))
         }
         Err(e) if classify(&e).halts() && classify(&e) != ErrorClass::Auth => Err(e),

@@ -2027,6 +2027,8 @@ pub fn sync_setup_kortix(
         }
     };
     iss::forget_credentials();
+    // A new sign-in, maybe another organization: wait for its policy, not the last one's.
+    super::policy::forget(paths);
     // Signed in means syncing. A server that cannot hand out credentials yet (a 503) does not
     // undo the sign-in: sync turns on, keeps the recordings, and retries. A refusal does.
     let probe = sync::target(paths, &s).and_then(|t| t.probe(&reg.device_id));

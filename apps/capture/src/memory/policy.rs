@@ -233,6 +233,27 @@ pub fn path(paths: &MemoryPaths) -> std::path::PathBuf {
     paths.root.join("policy.json")
 }
 
+/// Written after every successful policy read, whether a policy exists or not.
+fn checked_path(paths: &MemoryPaths) -> std::path::PathBuf {
+    paths.root.join("policy-checked")
+}
+
+/// This computer has asked its destination for a policy since it signed in.
+pub fn checked(paths: &MemoryPaths) -> bool {
+    checked_path(paths).exists()
+}
+
+pub fn mark_checked(paths: &MemoryPaths) {
+    let _ = std::fs::write(checked_path(paths), b"");
+}
+
+/// A new sign-in: the previous destination's policy no longer applies, and recording
+/// waits for the new one's (see `Settings::policy_pending`).
+pub fn forget(paths: &MemoryPaths) {
+    let _ = std::fs::remove_file(path(paths));
+    let _ = std::fs::remove_file(checked_path(paths));
+}
+
 pub fn read(paths: &MemoryPaths) -> Option<Cached> {
     serde_json::from_slice(&std::fs::read(path(paths)).ok()?).ok()
 }

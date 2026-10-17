@@ -537,9 +537,12 @@ impl Settings {
         if self.sync.enabled && !self.airgap {
             match super::policy::read(paths) {
                 Some(cached) => cached.policy.apply(self),
-                // Kortix publishes a policy before it issues credentials: until this
-                // computer has it, the organization's rules are unknown.
-                None => self.policy_pending = self.sync.provider == "kortix",
+                // Until this computer has asked Kortix once since it signed in, the
+                // organization's rules are unknown. "There is none" releases it too.
+                None => {
+                    self.policy_pending =
+                        self.sync.provider == "kortix" && !super::policy::checked(paths)
+                }
             }
         }
     }
@@ -1086,6 +1089,13 @@ mod tests {
         crate::memory::policy::write(&paths, Some(&cached)).unwrap();
         let e = Settings::effective(&paths);
         assert_eq!(e.inactive_reason(0), None);
+        // Kortix answered and has no policy: that releases the wait too.
+        crate::memory::policy::write(&paths, None).unwrap();
+        crate::memory::policy::mark_checked(&paths);
+        assert_eq!(Settings::effective(&paths).inactive_reason(0), None);
+        // A new sign-in forgets both: it waits again.
+        crate::memory::policy::forget(&paths);
+        assert_eq!(Settings::effective(&paths).inactive_reason(0), Some("policy_pending"));
         // Your own S3 bucket has no organization: no wait.
         let mut own = Settings::default();
         own.sync.enabled = true;
