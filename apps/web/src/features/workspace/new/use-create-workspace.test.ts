@@ -508,6 +508,39 @@ describe('runCreate: the full create() orchestration', () => {
     };
   }
 
+  test('a second submit reports attempt-key failure and can succeed after recovery', async () => {
+    const failure = new Error('Could not prepare the workspace. Try again.');
+    const entered: string[] = [];
+    let failSetup = false;
+    let requests = 0;
+    const client = noopClient({
+      attemptKeyFor: (fingerprint, now) => {
+        if (failSetup) throw failure;
+        return attemptKeyFor(fingerprint, now);
+      },
+      runCreateAttempt: async () => {
+        requests += 1;
+        return fakeProject(`created-${requests}`);
+      },
+      enterProject: (projectId) => entered.push(projectId),
+    });
+    const state = { ...INITIAL_FORM_STATE, name: 'first', accountId: 'acct-owner' };
+    expect((await runCreate(state, [OWNER_ACCOUNT], 'user-1', client)).ok).toBe(true);
+
+    failSetup = true;
+    const second = { ...state, name: 'second' };
+    const result = await runCreate(second, [OWNER_ACCOUNT], 'user-1', client);
+    expect(result).toEqual({ ok: false, error: failure });
+    if (!result.ok) expect(messageFor(result.error)).toBe(failure.message);
+    expect(requests).toBe(1);
+    expect(entered).toEqual(['created-1']);
+
+    failSetup = false;
+    expect((await runCreate(second, [OWNER_ACCOUNT], 'user-1', client)).ok).toBe(true);
+    expect(requests).toBe(2);
+    expect(entered).toEqual(['created-1', 'created-2']);
+  });
+
   test('MANDATORY: success clears the persisted key — a later call with the SAME fingerprint mints a genuinely different key', async () => {
     const state = { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' };
     const fingerprint = fingerprintOf(state);
