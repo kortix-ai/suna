@@ -20140,7 +20140,10 @@
       "text08e6480e9b78": "{value0} hinzugefügt",
       "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
       "textdae75dce541f": "Pausiert alle Zeitpläne und Webhooks in diesem Projekt.",
-      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein."
+      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
+      "agentsListSubagentsTitle": "Subagenten",
+      "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
+      "agentsListAlsoSubagent": "Auch Subagent"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

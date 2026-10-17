@@ -20151,7 +20151,10 @@
       "text08e6480e9b78": "{value0} added",
       "text6241684827b2": "This site does not allow Kortix to show it here.",
       "textdae75dce541f": "Pauses every schedule and webhook in this project.",
-      "textced57bebd466": "Turns this project’s schedules and webhooks back on."
+      "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
+      "agentsListSubagentsTitle": "Subagents",
+      "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
+      "agentsListAlsoSubagent": "Also a subagent"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

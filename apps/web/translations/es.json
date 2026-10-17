@@ -20140,7 +20140,10 @@
       "text08e6480e9b78": "{value0} añadida",
       "text6241684827b2": "Este sitio no permite que Kortix lo muestre aquí.",
       "textdae75dce541f": "Pausa todas las programaciones y webhooks de este proyecto.",
-      "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto."
+      "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto.",
+      "agentsListSubagentsTitle": "Subagentes",
+      "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
+      "agentsListAlsoSubagent": "También subagente"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

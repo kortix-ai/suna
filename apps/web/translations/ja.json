@@ -20140,7 +20140,10 @@
       "text08e6480e9b78": "{value0} を追加しました",
       "text6241684827b2": "このサイトは Kortix での表示を許可していません。",
       "textdae75dce541f": "このプロジェクトのすべてのスケジュールと Webhook を一時停止します。",
-      "textced57bebd466": "このプロジェクトのスケジュールと Webhook を再開します。"
+      "textced57bebd466": "このプロジェクトのスケジュールと Webhook を再開します。",
+      "agentsListSubagentsTitle": "サブエージェント",
+      "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
+      "agentsListAlsoSubagent": "サブエージェントとしても使用"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

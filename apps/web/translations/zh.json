@@ -20140,7 +20140,10 @@
       "text08e6480e9b78": "已添加 {value0}",
       "text6241684827b2": "此网站不允许 Kortix 在此显示。",
       "textdae75dce541f": "暂停此项目中的所有定时任务和 Webhook。",
-      "textced57bebd466": "重新开启此项目的定时任务和 Webhook。"
+      "textced57bebd466": "重新开启此项目的定时任务和 Webhook。",
+      "agentsListSubagentsTitle": "子代理",
+      "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
+      "agentsListAlsoSubagent": "也可作为子代理"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

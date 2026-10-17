@@ -20140,7 +20140,10 @@
       "text08e6480e9b78": "{value0} je dodata",
       "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
       "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
-      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта."
+      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
+      "agentsListSubagentsTitle": "Подагенти",
+      "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
+      "agentsListAlsoSubagent": "Такође подагент"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
