@@ -178,10 +178,39 @@ export function useCapabilityAccess(projectId: string | undefined): CapabilityAc
   return capabilityAccess(caps, drives.isLoading ? undefined : drives.enabled);
 }
 
-/** First tab the caller may open, or null while the answer loads and when
- *  every tab is denied. */
-export function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
-  return useCapabilityAccess(projectId).tabs[0] ?? null;
+/**
+ * The two sidebar rows that can lead to Files, decided together.
+ *
+ * The Files row is the repo browser for a caller who can read the repo
+ * (`project.file.read`). With `drives` on, the shared folders are also a
+ * Customize tab. A caller who cannot read the repo reaches the folders from
+ * the Files row (`folders`) instead, and Customize then needs a tab other
+ * than Files: a plain member never gets a Customize row that holds only their
+ * folders.
+ *
+ * `customize` is the tab the Customize row lands on, `files` what the Files
+ * row opens; null means no row. Neither row shows before the batch and the
+ * flag settle.
+ */
+export interface ProjectNavRows {
+  customize: CapabilityTab['key'] | null;
+  files: 'repo' | 'folders' | null;
+}
+
+export function projectNavRows(
+  access: CapabilityAccess,
+  readRepo: CanResult | undefined,
+): ProjectNavRows {
+  if (!access.settled || !readRepo || readRepo.isLoading) return { customize: null, files: null };
+  const files =
+    readRepo.allowed === true ? 'repo' : access.tabs.includes('files') ? 'folders' : null;
+  const customize = access.tabs.find((tab) => files !== 'folders' || tab !== 'files') ?? null;
+  return { customize, files };
+}
+
+export function useProjectNavRows(projectId: string | undefined): ProjectNavRows {
+  const readRepo = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
+  return projectNavRows(useCapabilityAccess(projectId), readRepo);
 }
 
 /**
@@ -217,23 +246,27 @@ export function ProjectCustomizeNavItem() {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const access = useCapabilityAccess(projectId);
-  const tab = access.tabs[0] ?? null;
+  const rows = useProjectNavRows(projectId);
+  const tab = rows.customize;
   // Review lives under Customize, so the decisions waiting on the caller badge
   // this row: the same `needs_you` count the session row dots read.
   const needsYou = useReviewSessionSummary(projectId ?? '', { enabled: !!projectId }).totalNeedsYou;
   const reviewCount = access.tabs.includes('review') ? needsYou : 0;
-  // Files lives under Customize, so its open conflict copies (in folders the
-  // caller can see) badge this row: the sidebar keeps no Files row of its own.
+  // The shared folders' open conflict copies (in folders the caller can see)
+  // badge the row that leads to them: this one, unless the Files row does.
   const tDrives = useTranslations('drives');
-  const drivesGate = useFeatureFlag(projectId, 'drives');
-  const drive = useProjectDrive(projectId, drivesGate.enabled);
-  const conflicts = drivesGate.enabled ? (drive.data?.openConflicts ?? 0) : 0;
+  const foldersHere = access.tabs.includes('files') && rows.files !== 'folders';
+  const drive = useProjectDrive(projectId, foldersHere);
+  const conflicts = foldersHere ? (drive.data?.openConflicts ?? 0) : 0;
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
-  // Connectors or one agent's page, not just on the landing tab.
+  // Connectors or one agent's page, not just on the landing tab. Not on the
+  // folders when the Files row is the one that opens them.
+  const here = pathname ? activeCapabilityTab(pathname) : null;
   const isActive =
     !!pathname &&
-    (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
+    (pathname === `/projects/${projectId}/customize` ||
+      (here !== null && (here !== 'files' || rows.files !== 'folders')));
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
