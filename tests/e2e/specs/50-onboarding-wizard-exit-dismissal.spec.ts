@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
-import { queryDatabaseRows, runDatabaseSql, seedDatabaseProject } from '../helpers/database';
+import { type Env, loadEnv } from '../../src/core/env';
+import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { queryDatabaseRows, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import {
   type AuthSession,
@@ -28,6 +30,7 @@ interface Provisioned {
   session: AuthSession;
   userId: string;
   email: string;
+  env: Env;
 }
 
 async function freshUserWithProject(): Promise<Provisioned> {
@@ -43,43 +46,52 @@ async function freshUserWithProject(): Promise<Provisioned> {
     const account = accounts.find((row) => row.personal_account) ?? accounts[0];
     expect(account).toBeDefined();
     // This journey tests dismissal, not external managed Git provisioning.
-    const projectId = await seedDatabaseProject({
+    // The database fixture stamps `onboarding_completed_at` by default so
+    // other journeys do not fight the wizard; null it here so this fresh
+    // project starts pending and the wizard opens on first landing.
+    const env = loadEnv();
+    const project = await createDatabaseProject(env, {
       accountId: account.account_id,
       userId: user.id,
       name: `Wizard exit ${randomUUID().slice(0, 8)}`,
+      metadata: { onboarding_completed_at: null },
     });
-    await api(session.access_token, 'PATCH', `/projects/${projectId}/onboarding`, {
-      completed: false,
-    });
-    return { projectId, session, userId: user.id, email };
+    return { projectId: project.id, session, userId: user.id, email, env };
   } catch (error) {
     await cleanup({ userId: user.id, email });
     throw error;
   }
 }
 
-async function cleanup(user: { userId: string; email: string }) {
+async function cleanup(user: Provisioned) {
+  const { env, projectId, userId, email } = user;
+  const databaseUrl = env.databaseUrl ?? undefined;
+  await deleteDatabaseProject(env, projectId).catch(() => undefined);
   const rows = await queryDatabaseRows<{ account_id: string }>(
     'select distinct account_id::text from kortix.account_members where user_id = $1::uuid',
-    [user.userId],
+    [userId],
+    databaseUrl,
   );
   try {
     for (const row of rows) {
-      await runDatabaseSql('delete from kortix.accounts where account_id = $1::uuid', [
-        row.account_id,
-      ]);
+      await runDatabaseSql(
+        'delete from kortix.accounts where account_id = $1::uuid',
+        [row.account_id],
+        databaseUrl,
+      );
       expect(
         await queryDatabaseRows(
           'select account_id from kortix.accounts where account_id = $1::uuid',
           [row.account_id],
+          databaseUrl,
         ),
       ).toEqual([]);
     }
   } finally {
-    await deleteAuthUser(user.userId, authOptions);
+    await deleteAuthUser(userId, authOptions);
   }
   expect(
-    await queryDatabaseRows('select id from auth.users where id = $1::uuid', [user.userId]),
+    await queryDatabaseRows('select id from auth.users where id = $1::uuid', [userId], databaseUrl),
   ).toEqual([]);
 }
 
