@@ -50,7 +50,7 @@ jobs:
       github.event_name != 'pull_request'
       || github.base_ref == 'prod'
       || (github.event.action == 'labeled' && github.event.label.name == 'test')
-    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_L || vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # 40, not 20 and not 60. On free 4 vCPU runners the lanes run ~3x their
     # Blacksmith time: core 15.4 min, browser-1 17.7 min (run 37812339796),
     # so 40 is ~2x the slowest measured lane. The cap is a hang detector: on
@@ -248,7 +248,7 @@ jobs:
     # run is cancelled: a manual cancel, or a queued run that a newer
     # one replaced before it started.
     if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.CI_RUNNER_HEAVY_S || vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: write # commit comment
