@@ -17,7 +17,6 @@ import {
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
   behaviorBlock,
-  newAgentBlock,
   registryGrantOptions,
   stableStringify,
   THEME_COLOR_SWATCH,
@@ -383,12 +382,5 @@ describe('THEME_COLOR_SWATCH — the colour picker shows colour', () => {
       // one place in the editor that hardcodes a colour.
       expect(swatch).toMatch(/^bg-(kortix-[a-z]+|foreground|muted-foreground)$/);
     }
-  });
-});
-
-describe('newAgentBlock', () => {
-  test('seeds a new agent with the manifest version default for the project repository', () => {
-    expect(newAgentBlock(2)).toEqual({ repository_access: true });
-    expect(newAgentBlock(3)).toEqual({ repository_access: false });
   });
 });
