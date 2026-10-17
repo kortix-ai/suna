@@ -22,9 +22,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
+  type CatalogEntry,
   appNameKey,
   catalogEntryConnectors,
-  type CatalogEntry,
+  discoverEntryIcon,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import {
   listConnectCatalogPage,
@@ -71,6 +72,36 @@ const SURFACE_ROW = 'flex items-center gap-3 px-4 py-3';
 const ROW_GROUP = 'bg-popover divide-y overflow-hidden rounded-md border';
 
 const surfaceLabel = (kind: string) => (kind === 'openapi' ? 'OpenAPI' : kind.toUpperCase());
+
+/**
+ * The app page's icon tile (`ConnectorAppIcon`, size `lg`): the resolved
+ * favicon, or the glyph tile when the record has none — and the same glyph
+ * tile when the URL fails to load, which used to render the browser's
+ * broken-image glyph beside the title. Mirrors the catalogue card's
+ * `ConnectorIcon`. The latch is per URL (`failedUrl`), so the late-arriving
+ * managed logo — which swaps the URL — gets a fresh try without a call-site
+ * key.
+ */
+function AppIcon({ icon, name }: { icon: string | null; name: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (!icon || failedUrl === icon) {
+    return <EntityAvatar icon={GlobeIcon} size="lg" label={name} />;
+  }
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a third-party favicon; the Next loader is bypassed anyway. */}
+      <img
+        src={icon}
+        alt=""
+        width={36}
+        height={36}
+        referrerPolicy="no-referrer"
+        className="size-9 object-contain"
+        onError={() => setFailedUrl(icon)}
+      />
+    </span>
+  );
+}
 
 /** What the page needs from either catalogue. */
 interface ResolvedApp {
@@ -204,7 +235,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
         name: managed?.name ?? detail.item.name,
         description: detail.item.description ?? managed?.description ?? null,
         // The managed logo is sharp where the catalogue's favicon is not.
-        icon: managed?.imgSrc ?? detail.item.icon,
+        icon: managed?.imgSrc ?? discoverEntryIcon(detail.item),
         surfaces: [
           ...installableVariants(detail.variants).map((variant, index) => ({
           key: `${variant.kind}:${variant.id}`,
@@ -385,22 +416,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
 
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            {resolved.icon ? (
-              // The connector page's icon tile (`ConnectorAppIcon`, size `lg`).
-              <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element -- a third-party favicon; the Next loader is bypassed anyway. */}
-                <img
-                  src={resolved.icon}
-                  alt=""
-                  width={36}
-                  height={36}
-                  referrerPolicy="no-referrer"
-                  className="size-9 object-contain"
-                />
-              </span>
-            ) : (
-              <EntityAvatar icon={GlobeIcon} size="lg" label={resolved.name} />
-            )}
+            <AppIcon icon={resolved.icon} name={resolved.name} />
             <h1 className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word">
               {resolved.name}
             </h1>
