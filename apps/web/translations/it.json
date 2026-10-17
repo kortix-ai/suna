@@ -20104,18 +20104,6 @@
       "expiryNever": "Mai",
       "expiryDays": "{count, plural, one {# giorno} other {# giorni}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Link pubblico",
-      "sectionDescription": "Chiunque abbia il link può leggere questa conversazione senza accedere.",
-      "create": "Crea link pubblico",
-      "revokeDescription": "La conversazione smette di caricarsi per chiunque abbia il link. Potrai creare un nuovo link in seguito.",
-      "rowMeta": "Conversazione di sola lettura",
-      "unavailable": "Questa conversazione non è temporaneamente disponibile.",
-      "unavailableDescription": "Al momento non è possibile leggere la conversazione. Riprova tra poco.",
-      "loadFailedDescription": "Impossibile caricare la conversazione.",
-      "empty": "Ancora nessun messaggio",
-      "savedCopy": "Copia salvata il {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "Account {service}",
       "chatWorkspace": "Workspace {service}",
@@ -20155,6 +20143,12 @@
       "title": "Salvato, ma {agent} non può ancora leggerlo",
       "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
       "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Incorpora",
+      "sectionDescription": "Solo per pagine dello stesso sito. Chi visualizza la pagina deve aver già effettuato l’accesso e avere accesso a questa sessione; l’autenticazione all’interno di un iframe tra siti diversi non è supportata.",
+      "copy": "Copia il codice di incorporamento",
+      "copied": "Codice di incorporamento copiato"
     }
   },
   "projectOnboarding": {

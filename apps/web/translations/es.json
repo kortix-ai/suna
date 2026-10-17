@@ -20104,18 +20104,6 @@
       "expiryNever": "Nunca",
       "expiryDays": "{count, plural, one {# día} other {# días}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Enlace público",
-      "sectionDescription": "Cualquier persona con el enlace puede leer esta conversación sin iniciar sesión.",
-      "create": "Crear enlace público",
-      "revokeDescription": "La conversación deja de cargarse para todos los que tengan el enlace. Después puedes crear un enlace nuevo.",
-      "rowMeta": "Conversación de solo lectura",
-      "unavailable": "Esta conversación no está disponible temporalmente.",
-      "unavailableDescription": "No se puede leer la conversación en este momento. Inténtalo de nuevo en unos instantes.",
-      "loadFailedDescription": "No se pudo cargar la conversación.",
-      "empty": "Aún no hay mensajes",
-      "savedCopy": "Copia guardada del {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "Cuenta de {service}",
       "chatWorkspace": "Espacio de trabajo de {service}",
@@ -20155,6 +20143,12 @@
       "title": "Guardado, pero {agent} aún no puede leerlo",
       "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
       "allowlist": "{names} {count, plural, one {está} other {están}} fuera de los secretos de esta sesión. Inicia una nueva sesión para {count, plural, one {usarlo} other {usarlos}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Insertar",
+      "sectionDescription": "Solo para páginas del mismo sitio. Los visitantes deben haber iniciado sesión y tener acceso a esta sesión; no se admite iniciar sesión dentro de un iframe de otro sitio.",
+      "copy": "Copiar código de inserción",
+      "copied": "Código de inserción copiado"
     }
   },
   "projectOnboarding": {

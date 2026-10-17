@@ -276,8 +276,8 @@ function expiryLabel(expiresAt: string | null): string {
 /**
  * `Copy link` and everything about the link behind it, in one popover.
  *
- * A file or app mint always makes a NEW public token (only transcripts are
- * reused server-side), so the popover reads the session's live shares first:
+ * A file or app mint always makes a NEW public token, so the popover reads
+ * the session's live shares first:
  *
  *   - a live link for this exact file or port → show it, copy it, see when it
  *     expires, revoke it;

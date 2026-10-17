@@ -202,8 +202,8 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/projects\/[^/]+\/connect-requests(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/secret-requests(\/|$)/ },
   // Public shares. `expires_at` is optional, and the consuming route
-  // (`/v1/public/session-shares/:shareId`) is mounted before auth — an
-  // omitted expiry is a permanent unauthenticated link to a customer session.
+  // (`/v1/p/public-share/:token`) is mounted before auth — an omitted expiry
+  // is a permanent unauthenticated link to a customer session.
   { re: /^\/v1\/projects\/[^/]+\/sessions\/[^/]+\/public-shares(\/|$)/ },
   // Tunnels: the whole management surface. Creating a connection, rotating a
   // token, or APPROVING a device-auth code (`device-auth/:code/approve`, the

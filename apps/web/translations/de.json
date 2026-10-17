@@ -20104,18 +20104,6 @@
       "expiryNever": "Nie",
       "expiryDays": "{count, plural, one {# Tag} other {# Tagen}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Öffentlicher Link",
-      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
-      "create": "Öffentlichen Link erstellen",
-      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
-      "rowMeta": "Schreibgeschützte Unterhaltung",
-      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
-      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
-      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
-      "empty": "Noch keine Nachrichten",
-      "savedCopy": "Gespeicherte Kopie vom {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",
       "chatWorkspace": "{service}-Workspace",
@@ -20155,6 +20143,12 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Einbetten",
+      "sectionDescription": "Nur für Seiten derselben Website. Betrachter müssen bereits angemeldet sein und Zugriff auf diese Sitzung haben; die Anmeldung innerhalb eines websiteübergreifenden iframes wird nicht unterstützt.",
+      "copy": "Einbettungscode kopieren",
+      "copied": "Einbettungscode kopiert"
     }
   },
   "projectOnboarding": {

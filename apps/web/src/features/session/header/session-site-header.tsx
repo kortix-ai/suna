@@ -706,11 +706,12 @@ export function SessionSiteHeader({
             </DropdownMenu>
 
             {/* The one Share entry point (it left the session menu). Shown to
-                everyone in the session: the owner changes access and creates
-                the public link here, everyone else reads who has it. `xs` is
-                h-7, the row's 28px control size. Below `md` (the same 768px as
-                `isMobileViewport`) the label hides, the button goes square
-                like its size-7 siblings, and only then the Hint names it. */}
+                everyone in the session: the owner changes access and copies
+                the embed snippet or a public link here, everyone else reads
+                who has it. `xs` is h-7, the row's 28px control size. Below
+                `md` (the same 768px as `isMobileViewport`) the label hides,
+                the button goes square like its size-7 siblings, and only then
+                the Hint names it. */}
             {/* Who can open the session; hover lists them. Renders for two or
                 more people. */}
             {isProjectSession && projectSession && (

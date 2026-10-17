@@ -20104,18 +20104,6 @@
       "expiryNever": "Jamais",
       "expiryDays": "{count, plural, one {# jour} other {# jours}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Lien public",
-      "sectionDescription": "Toute personne disposant du lien peut lire cette conversation sans se connecter.",
-      "create": "Créer un lien public",
-      "revokeDescription": "La conversation ne se charge plus pour les personnes disposant du lien. Vous pourrez créer un nouveau lien ensuite.",
-      "rowMeta": "Conversation en lecture seule",
-      "unavailable": "Cette conversation est temporairement indisponible.",
-      "unavailableDescription": "La conversation ne peut pas être lue pour le moment. Réessayez dans un instant.",
-      "loadFailedDescription": "La conversation n'a pas pu être chargée.",
-      "empty": "Aucun message pour l'instant",
-      "savedCopy": "Copie enregistrée le {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "Compte {service}",
       "chatWorkspace": "Espace de travail {service}",
@@ -20155,6 +20143,12 @@
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Intégrer",
+      "sectionDescription": "Uniquement pour les pages du même site. Les visiteurs doivent déjà être connectés et avoir accès à cette session ; la connexion dans un iframe intersites n’est pas prise en charge.",
+      "copy": "Copier le code d'intégration",
+      "copied": "Code d'intégration copié"
     }
   },
   "projectOnboarding": {

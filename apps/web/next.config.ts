@@ -11,6 +11,7 @@ import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import {
+  embedContentSecurityPolicy,
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
 } from './src/lib/security/content-security-policy';
@@ -18,6 +19,16 @@ import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
 import { writeDevCatalogs, writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
+
+/** The header set a host-framed page carries instead of the global enforced
+ *  CSP: the same directives with `frame-ancestors` opened. One owner, so the
+ *  two session-page header rules cannot drift apart. */
+const embedFrameHeaders = () => [
+  {
+    key: 'Content-Security-Policy',
+    value: embedContentSecurityPolicy(),
+  },
+];
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -916,6 +927,33 @@ const nextConfig = (): NextConfig => ({
               ]
             : []),
         ],
+      },
+      // The session page is framed by host pages for a living (the Share
+      // dialog's Embed snippet). Its rule must come after the global
+      // `/:path*` rule: for the same header key, the LAST matching rule wins,
+      // so the enforced CSP here replaces the global one on the session page
+      // (verified by curl on the local stack). X-Frame-Options cannot be
+      // removed by a later rule, but a browser that implements CSP
+      // frame-ancestors — every evergreen browser — ignores X-Frame-Options
+      // when the policy carries frame-ancestors, so the global SAMEORIGIN is
+      // inert on this path.
+      //
+      // The session page is authenticated content: what a cross-site frame
+      // can render is bounded by the auth cookie, not by this rule. The
+      // cookie is SameSite=Lax (lib/supabase/client.ts), so a frame on a
+      // different site renders the unauthenticated shell and its /auth bounce
+      // is itself refused by the global frame-ancestors 'self' on /auth. A
+      // frame on the same site (any *.kortix.com page, localhost dev) carries
+      // the cookie and renders the real session. Both canonical URL forms
+      // (unprefixed, and the locale-prefixed one a visitor's address bar
+      // shows) are covered.
+      {
+        source: '/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
+      },
+      {
+        source: '/:locale/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
       },
       // Locale catalogs: the file name carries a content hash, so a response
       // never changes under its URL. Production builds only.

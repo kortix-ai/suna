@@ -6,7 +6,7 @@
  * writes the v1 mirror rows, and the journal ingest writes `fromV1` of those
  * same rows under producer `opencode`, as the daemon's adapter journals them.
  * Every v1 read (`transcript?shape=sync` paged to the end, the child read,
- * `shape=compact`, the open bundle, the public share) must answer the same body
+ * `shape=compact`, the open bundle) must answer the same body
  * with the project flag `session_log` off (the mirror) and on (the log). The one
  * field that differs is `captured_at`. One tool output is 150,000 three-byte
  * characters (450 kB): the mirror keeps it (under 200,000 characters), the log
@@ -44,7 +44,6 @@ let session = '';
 let nativeSession = '';
 let ownerToken = '';
 let sandboxToken = '';
-let shareToken = '';
 
 const get = (path: string, token: string | null = ownerToken) =>
   app.request(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -106,15 +105,12 @@ async function v1Bodies(sessionId = session) {
   const childRes = await get(`${base(sessionId)}/transcript?shape=sync&child=${CHILD}`);
   const compact = await get(`${base(sessionId)}/transcript?limit=60&chars=1500&detail=full`);
   const bundle = (await (await get(`${base(sessionId)}/open-bundle`)).json()) as Record<string, Record<string, unknown>>;
-  const share = await get(`/v1/public/session-shares/${shareToken}/messages`, null);
-  expect(share.status).toBe(200);
   return {
     pages,
     child: strip((await childRes.json()) as Record<string, unknown>),
     compact: strip((await compact.json()) as Record<string, unknown>),
     bundle: strip(bundle.transcript!),
     bundleLog: bundle.log,
-    share: strip((await share.json()) as Record<string, unknown>),
     captured,
   };
 }
@@ -133,22 +129,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, project.account_id));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${project.account_id}`);
-  await db.execute(sql`delete from kortix.session_public_shares where session_id in (${session}, ${nativeSession})`).catch(() => undefined);
   await removeSeeded([project]);
 });
 
 describe('the v1 reads answer the same body from the mirror (flag off) and from the log (flag on)', () => {
-  test('sync pages, the child, compact, the open bundle and the public share are equal apart from captured_at', async () => {
+  test('sync pages, the child, compact and the open bundle are equal apart from captured_at', async () => {
     const stored = await storeBothWays(session, 70);
     // 70 turns: the compaction summary folds into its marker, so the log holds one message fewer than the mirror's rows.
     expect(stored.rows).toBe(stored.messages + 1);
-    const minted = await app.request(`${base()}/public-shares`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: true }),
-    });
-    expect(minted.status).toBe(201);
-    shareToken = ((await minted.json()) as { share: { public_token: string } }).share.public_token;
 
     const off = await v1Bodies();
     await setFlag(true);
@@ -162,8 +150,6 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
     expect((on.child as { message_count: number }).message_count).toBe(2);
     expect(on.compact).toEqual(off.compact);
     expect(on.bundle).toEqual(off.bundle);
-    expect(on.share).toEqual(off.share);
-    expect((on.share as { message_count: number }).message_count).toBeGreaterThan(0);
 
     // The field that differs: the log's last write, not the capture time.
     const [log] = await db.select({ updatedAt: sql<Date>`greatest(${sessionLogs.updatedAt}, (select max(m.updated_at) from kortix.session_log_messages m where m.session_id = ${session}))` }).from(sessionLogs).where(eq(sessionLogs.sessionId, session));

@@ -20104,18 +20104,6 @@
       "expiryNever": "なし",
       "expiryDays": "{count, plural, other {# 日}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "公開リンク",
-      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
-      "create": "公開リンクを作成",
-      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
-      "rowMeta": "読み取り専用の会話",
-      "unavailable": "この会話は一時的に利用できません。",
-      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
-      "loadFailedDescription": "会話を読み込めませんでした。",
-      "empty": "まだメッセージはありません",
-      "savedCopy": "{date} に保存されたコピー"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",
       "chatWorkspace": "{service} ワークスペース",
@@ -20155,6 +20143,12 @@
       "title": "保存しましたが、{agent} はまだ読み取れません",
       "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
       "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "埋め込み",
+      "sectionDescription": "同一サイトのページでのみ利用できます。閲覧者は事前にサインインし、このセッションへのアクセス権を持っている必要があります。クロスサイトの iframe 内でのサインインには対応していません。",
+      "copy": "埋め込みコードをコピー",
+      "copied": "埋め込みコードをコピーしました"
     }
   },
   "projectOnboarding": {

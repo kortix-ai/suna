@@ -20104,18 +20104,6 @@
       "expiryNever": "永不",
       "expiryDays": "{count, plural, other {# 天}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "公开链接",
-      "sectionDescription": "任何拥有此链接的人都无需登录即可阅读此对话。",
-      "create": "创建公开链接",
-      "revokeDescription": "所有持有此链接的人将无法再加载此对话。之后你可以创建新链接。",
-      "rowMeta": "只读对话",
-      "unavailable": "此对话暂时不可用。",
-      "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
-      "loadFailedDescription": "无法加载此对话。",
-      "empty": "暂无消息",
-      "savedCopy": "保存于 {date} 的副本"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} 账户",
       "chatWorkspace": "{service} 工作区",
@@ -20155,6 +20143,12 @@
       "title": "已保存，但 {agent} 暂时无法读取",
       "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
       "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "嵌入",
+      "sectionDescription": "仅适用于同站点页面。查看者必须已登录并拥有此会话的访问权限；不支持在跨站点 iframe 内登录。",
+      "copy": "复制嵌入代码",
+      "copied": "嵌入代码已复制"
     }
   },
   "projectOnboarding": {
