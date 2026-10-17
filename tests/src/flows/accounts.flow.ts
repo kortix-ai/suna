@@ -161,7 +161,7 @@ flow(
       r.status(403);
     });
     await ctx.step(
-      "plain MEMBER sees self and the owner, not an unrelated teammate, with other members' sensitive columns redacted",
+      'plain MEMBER lists only themselves: not the owner, not a teammate',
       async () => {
         const memberA = await team.addMember('member');
         const memberB = await team.addMember('member');
@@ -169,18 +169,9 @@ flow(
           .as(memberA)
           .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
         r.status(200);
-        const list = r.json<any[]>();
-        if (!list.some((m) => m.user_id === memberA.userId))
-          throw new Error('member cannot see their own row');
-        if (!list.some((m) => m.user_id === ctx.P.OWNER.userId))
-          throw new Error('member directory omitted the account owner');
-        if (list.some((m) => m.user_id === memberB.userId))
-          throw new Error('member directory listed a teammate they share no project or group with');
-        for (const m of list) {
-          if (m.user_id === memberA.userId) continue;
-          if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
-            throw new Error('sensitive member columns leaked to plain member');
-        }
+        const ids = r.json<Array<{ user_id: string }>>().map((m) => m.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([memberA.userId]))
+          throw new Error(`a plain member must list only themselves, got ${JSON.stringify(ids)} (teammate ${memberB.userId})`);
       },
     );
   },
@@ -278,13 +269,13 @@ flow(
     );
 
     await ctx.step(
-      'a plain member lists self, the owner, the admin and the people they share a project or a group with; not the stranger',
+      'a plain member lists only themselves: not the owner, the admin, nor anyone they share a project or a group with',
       async () => {
         expectIds(
           'viewer members',
           await memberIds(asViewer),
-          [viewer, ctx.P.OWNER, admin, coProject, groupMate, viaGroup].map((p) => p.userId!),
-          [stranger.userId!],
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, groupMate, viaGroup, stranger].map((p) => p.userId!),
         );
       },
     );
@@ -295,73 +286,52 @@ flow(
       expectIds('admin members', await memberIds(ctx.client.as(admin)), everyone, []);
     });
 
-    await ctx.step(
-      'a plain member lists their own group and the group on their project; not a group they share nothing with',
-      async () => {
-        expectIds('viewer groups', await groupIds(asViewer), [mine, onShared], [elsewhere]);
-        expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
-        // The group on `shared` is also granted on `hidden`: the viewer's count
-        // covers only the project they can read.
-        const counted = (rows: Array<{ group_id: string; project_count: number }>) =>
-          rows.find((g) => g.group_id === onShared)?.project_count;
-        const [viewerCount, ownerCount] = [counted(await groupRows(asViewer)), counted(await groupRows(owner))];
-        if (viewerCount !== 1 || ownerCount !== 2) {
-          throw new Error(`onShared project_count: viewer ${viewerCount} (want 1), owner ${ownerCount} (want 2)`);
-        }
-      },
-    );
+    await ctx.step('a plain member lists no group, not even their own; the owner lists every group', async () => {
+      expectIds('viewer groups', await groupIds(asViewer), [], [mine, onShared, elsewhere]);
+      expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
+    });
 
-    await ctx.step(
-      'a group outside that set → 404 on read, members and project grants',
-      async () => {
-        const at = { params: { ...params, groupId: elsewhere } };
+    await ctx.step('every group → 404 for a plain member on read, members and project grants', async () => {
+      for (const groupId of [mine, onShared, elsewhere]) {
+        const at = { params: { ...params, groupId } };
         (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at)).status(404);
         (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at)).status(404);
         (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at)).status(404);
-      },
-    );
+      }
+      (await owner.get('/v1/accounts/:accountId/iam/groups/:groupId', { params: { ...params, groupId: onShared } }))
+        .status(200)
+        .body()
+        .has('$.group_id', onShared);
+    });
 
     await ctx.step(
-      'a visible group shows its members, and only the projects the viewer can read',
+      "a project's access list: a plain member sees only themselves; a member who manages it sees the people and groups with access to it, nobody else; the owner sees every member",
       async () => {
-        const at = { params: { ...params, groupId: onShared } };
-        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at))
-          .status(200)
-          .body()
-          .has('$.group_id', onShared);
-        const members = (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at))
-          .status(200)
-          .json<{ members: Array<{ user_id: string }> }>()
-          .members.map((m) => m.user_id);
-        expectIds('onShared members', members, [viaGroup.userId!], []);
-        const grants = (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at))
-          .status(200)
-          .json<{ grants: Array<{ project_id: string }> }>()
-          .grants.map((g) => g.project_id);
-        expectIds('viewer onShared grants', grants, [shared.id], [hidden.id]);
-        const all = (await owner.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at))
-          .status(200)
-          .json<{ grants: Array<{ project_id: string }> }>()
-          .grants.map((g) => g.project_id);
-        expectIds('owner onShared grants', all, [shared.id, hidden.id], []);
-      },
-    );
-
-    await ctx.step(
-      "the project's access list shows the viewer the same people; the owner sees every member",
-      async () => {
-        const ids = async (who: Client) =>
-          (await who.get('/v1/projects/:projectId/access', { params: { projectId: shared.id } }))
+        const manager = await team.addMember('member');
+        await team.grantProjectRole(shared.id, manager.userId!, 'manager');
+        const roster = async (who: Client) => {
+          const view = (await who.get('/v1/projects/:projectId/access', { params: { projectId: shared.id } }))
             .status(200)
-            .json<{ members: Array<{ user_id: string }> }>()
-            .members.map((m) => m.user_id);
+            .json<{ members: Array<{ user_id: string }>; group_access: Array<{ group_id: string }> }>();
+          return { people: view.members.map((m) => m.user_id), groups: view.group_access.map((g) => g.group_id) };
+        };
+        const asViewerRoster = await roster(asViewer);
         expectIds(
           'viewer project access',
-          await ids(asViewer),
-          [viewer, coProject, viaGroup].map((p) => p.userId!),
-          [stranger.userId!],
+          asViewerRoster.people,
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, viaGroup, stranger].map((p) => p.userId!),
         );
-        expectIds('owner project access', await ids(owner), [stranger.userId!], []);
+        expectIds('viewer project groups', asViewerRoster.groups, [], [onShared]);
+        const managerRoster = await roster(ctx.client.as(manager));
+        expectIds(
+          'manager project access',
+          managerRoster.people,
+          [manager, viewer, coProject, viaGroup].map((p) => p.userId!),
+          [groupMate, stranger].map((p) => p.userId!),
+        );
+        expectIds('manager project groups', managerRoster.groups, [onShared], [mine, elsewhere]);
+        expectIds('owner project access', (await roster(owner)).people, [stranger.userId!], []);
       },
     );
 

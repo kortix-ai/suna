@@ -1,4 +1,5 @@
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
 
 flow(
   'COST-1',
@@ -295,6 +296,7 @@ flow(
       'GET /v1/usage/cost-summary',
       'GET /v1/usage/cost-by-project',
       'GET /v1/usage/session-costs',
+      'GET /v1/usage/session-costs/:sessionId',
       'GET /v1/usage',
       'POST /v1/accounts/tokens',
       'POST /v1/accounts/:accountId/iam/service-accounts',
@@ -326,6 +328,35 @@ flow(
       for (const path of reads) (await c.get(path)).status(200);
       (await c.get('/v1/usage/session-costs', { query: { project_id: otherProject.id } })).status([403, 404]);
     });
+    await ctx.step(
+      "session costs name each owner: a plain member lists only their own sessions, another owner's costs → 403 and their session → 404; the owner sees both (MEM-8)",
+      async () => {
+        const project = await team.project();
+        await team.grantProjectRole(project.id, member.userId!, 'member');
+        const mine = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
+        const theirs = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
+        const asMember = ctx.client.as(member);
+        type Rows = { sessions: Array<{ session_id: string; owner_id: string | null }> };
+        for (const scope of [{ account_id: team.id }, { project_id: project.id }]) {
+          const rows = (await asMember.get('/v1/usage/session-costs', { query: { ...scope, limit: '100' } }))
+            .status(200)
+            .json<Rows>().sessions;
+          const ids = rows.map((r) => r.session_id);
+          if (!ids.includes(mine) || ids.includes(theirs) || rows.some((r) => r.owner_id !== member.userId)) {
+            throw new Error(`a plain member's session costs must hold only their own sessions: ${JSON.stringify(rows)}`);
+          }
+        }
+        (await asMember.get('/v1/usage/session-costs', { query: { account_id: team.id, owner_id: ctx.P.OWNER.userId! } })).status(403);
+        const detail = '/v1/usage/session-costs/:sessionId';
+        (await asMember.get(detail, { params: { sessionId: theirs }, query: { project_id: project.id } })).status(404);
+        (await asMember.get(detail, { params: { sessionId: mine }, query: { project_id: project.id } })).status(200);
+        const all = (await ctx.client.as(ctx.P.OWNER).get('/v1/usage/session-costs', { query: { project_id: project.id, limit: '100' } }))
+          .status(200)
+          .json<Rows>()
+          .sessions.map((r) => r.session_id);
+        if (!all.includes(mine) || !all.includes(theirs)) throw new Error(`the owner must list both sessions: ${JSON.stringify(all)}`);
+      },
+    );
     await ctx.step('OWNER JWT still reads account usage → 200', async () => {
       const owner = ctx.client.as(ctx.P.OWNER);
       (await owner.get('/v1/usage/cost-summary', { query: { account_id: team.id } })).status(200);

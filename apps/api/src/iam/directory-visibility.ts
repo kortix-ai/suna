@@ -2,21 +2,14 @@
 //
 // `member.read` shows every member and `group.read` every group; owners and
 // admins hold both. The built-in `member` role holds neither
-// (20261013172952181_member_directory_visibility), so a plain member sees only
-// the people and groups they share access with:
-//   - themselves, and the account's owners and admins;
-//   - every user and group with a role or a grant on a project they can read;
-//   - the groups they are in, and every member of a group they can see.
-// An owner restores the full directory with a custom account role holding
-// `member.read` and `group.read`.
-import { roleAssignments } from '@kortix/db';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+// (20261013172952181_member_directory_visibility), so a plain member sees
+// nobody but themselves and no group, not even their own. The one exception is
+// a project they manage: its access list shows the people and groups with
+// access to that project (`visibleProjectRoster`). An owner restores the full
+// directory with a custom account role holding `member.read` and `group.read`.
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 import type { Actor } from './actor';
 import { authorize, listAccessible } from './authorize';
-import { groupMemberRows, groupsForMemberRows } from './group-read';
-import { accountRoleMap, isAccountManagerRole } from './read-models';
 
 export interface VisibleDirectory {
   /** The member user ids the caller may see; null = every member. */
@@ -29,7 +22,7 @@ export interface VisibleDirectory {
 
 /**
  * Never throws: each route keeps its own floor. A token bound to one project
- * holds no account-scope leaf, so it gets the narrow view, scoped to its project.
+ * holds no account-scope leaf, so it gets the narrow view.
  */
 export async function visibleDirectory(actor: Actor): Promise<VisibleDirectory> {
   const [members, groups] = await Promise.all([
@@ -37,46 +30,34 @@ export async function visibleDirectory(actor: Actor): Promise<VisibleDirectory> 
     authorize(actor, ACCOUNT_ACTIONS.GROUP_READ),
   ]);
   if (members.allowed && groups.allowed) return { userIds: null, groupIds: null, projectIds: null };
-
-  const [projects, ownGroups, roles] = await Promise.all([
-    listAccessible(actor, PROJECT_ACTIONS.PROJECT_READ, 'project'),
-    groupsForMemberRows(actor.accountId, actor.userId),
-    accountRoleMap(actor.accountId),
-  ]);
-  const projectIds = projects.mode === 'allow_only' ? projects.allowed : null;
-  const holders =
-    projects.mode === 'none' ? [] : await projectPrincipals(actor.accountId, projectIds ? [...projectIds] : undefined);
-
-  const userIds = new Set([actor.userId]);
-  const groupIds = new Set(ownGroups.map((g) => g.groupId));
-  for (const [userId, role] of roles) if (isAccountManagerRole(role)) userIds.add(userId);
-  for (const h of holders) (h.principalType === 'group' ? groupIds : userIds).add(h.principalId);
-  if (groupIds.size) for (const m of await groupMemberRows([...groupIds])) userIds.add(m.userId);
-
+  const projects = await listAccessible(actor, PROJECT_ACTIONS.PROJECT_READ, 'project');
   return {
-    userIds: members.allowed ? null : userIds,
-    groupIds: groups.allowed ? null : groupIds,
-    projectIds: projects.mode === 'none' ? new Set() : projectIds,
+    userIds: members.allowed ? null : new Set([actor.userId]),
+    groupIds: groups.allowed ? null : new Set(),
+    projectIds: projects.mode === 'none' ? new Set() : projects.mode === 'allow_only' ? projects.allowed : null,
   };
 }
 
 /**
- * Every user and group holding a live assignment on one of the projects: a
- * project role, a custom role, or an object grant. Omit `projectIds` for every
- * project of the account. Kept here, not in `read-models`: many unit tests mock
- * that module with a fixed export list.
+ * A project's access list as the caller may see it. Without `member.read` a
+ * caller sees themselves; a caller who manages the project also sees everyone
+ * with access to it, so they can manage them, and still nobody without access.
+ * Without `group.read` the groups are hidden unless the caller manages the
+ * project; `group_access` lists only groups with access to it.
  */
-function projectPrincipals(accountId: string, projectIds?: string[]) {
-  if (projectIds && projectIds.length === 0) return Promise.resolve([]);
-  const clauses = [
-    eq(roleAssignments.accountId, accountId),
-    eq(roleAssignments.scopeType, 'project'),
-    inArray(roleAssignments.principalType, ['user', 'group']),
-    or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
-  ];
-  if (projectIds) clauses.push(inArray(roleAssignments.scopeId, projectIds));
-  return db
-    .selectDistinct({ principalType: roleAssignments.principalType, principalId: roleAssignments.principalId })
-    .from(roleAssignments)
-    .where(and(...clauses));
+export function visibleProjectRoster<
+  View extends {
+    can_manage: boolean;
+    members: Array<{ user_id: string; effective_project_role: string | null }>;
+    group_access: Array<{ group_id: string }>;
+  },
+>(view: View, visible: Pick<VisibleDirectory, 'userIds' | 'groupIds'>): View {
+  const { userIds, groupIds } = visible;
+  return {
+    ...view,
+    members: view.members.filter(
+      (m) => !userIds || userIds.has(m.user_id) || (view.can_manage && m.effective_project_role !== null),
+    ),
+    group_access: view.group_access.filter((g) => !groupIds || groupIds.has(g.group_id) || view.can_manage),
+  };
 }
