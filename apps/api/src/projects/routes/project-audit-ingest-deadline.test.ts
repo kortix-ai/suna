@@ -42,8 +42,6 @@ const HUMAN_ID = 'd7500000-0000-4000-a000-000000000001';
 
 /** When set, every INSERT from this 0-based index on rejects with this error. */
 let failStatementFrom: { index: number; error: unknown } | null = null;
-/** One entry per INSERT statement the handler issued, holding that statement's rows. */
-let insertStatements: Array<Array<Record<string, unknown>>> = [];
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -101,12 +99,12 @@ mock.module('../../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: Array<Record<string, unknown>>) => {
         if (table !== auditEvents) throw new Error('unexpected insert table');
-        const index = insertStatements.length;
-        insertStatements.push([...values]);
         return {
           onConflictDoNothing: () => ({
             returning: async () => {
-              if (failStatementFrom && index >= failStatementFrom.index) {
+              // This test drives one 1-row batch: its single statement is the
+              // contended one.
+              if (failStatementFrom) {
                 throw failStatementFrom.error;
               }
               return values.map((value) => ({ eventId: value.eventId }));
@@ -182,7 +180,6 @@ function plainEvent(n: number) {
 beforeEach(() => {
   failStatementFrom = null;
   capturedCtx = null;
-  insertStatements = [];
   capturedErrors.length = 0;
   deadlineGuardCount = 0;
   __resetAuditRateGuardForTest();
