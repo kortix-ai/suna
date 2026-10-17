@@ -133,6 +133,8 @@ export interface ScheduleDetailSheetProps {
   onMutated: () => void;
   /** The tab the sheet opens on. The Failed runs list opens Runs. */
   initialTab?: SheetTab;
+  /** Each tab switch, for a host that keeps the tab in its URL. */
+  onTabChange?: (tab: SheetTab) => void;
 }
 
 type SheetTab = 'settings' | 'runs';
@@ -167,8 +169,7 @@ export function ScheduleDetailSplitContent(
   if (!trigger) return null;
   return (
     <SplitSheetContent>
-      {/* Keyed by the tab too: Back to `?tab=runs` reopens on Runs. */}
-      <SplitFocus key={`${trigger.slug}:${props.initialTab ?? 'settings'}`}>
+      <SplitFocus key={trigger.slug}>
         <SheetPanel {...props} trigger={trigger} split open onOpenChange={() => {}} />
       </SplitFocus>
     </SplitSheetContent>
@@ -212,7 +213,8 @@ function SheetPanel({
   running,
   onDelete,
   onMutated,
-  initialTab = 'settings',
+  initialTab = 'runs',
+  onTabChange,
   split = false,
 }: ScheduleDetailSheetProps & { trigger: ProjectTrigger; split?: boolean }) {
   const Title = split ? SplitSheetTitle : SheetTitle;
@@ -273,7 +275,14 @@ function SheetPanel({
 
   return (
     // `gap-0`: the Tabs root's own gap would open a seam under the sticky header.
-    <Tabs value={tab} onValueChange={(next) => setTab(next as SheetTab)} className="gap-0">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => {
+        setTab(next as SheetTab);
+        onTabChange?.(next as SheetTab);
+      }}
+      className="gap-0"
+    >
       {/* Sticky, because the content element is what scrolls: without this the
           Run now / Pause actions would scroll away. `bg-sidebar` matches the
           sheet's own surface so content passes behind it, not through it.
@@ -389,11 +398,11 @@ function SheetPanel({
         {/* Full width with `px-0` triggers: the labels start on the content edge
             and the rule spans the column, as the header's bottom line. */}
         <TabsList type="underline" size="sm" className="w-full justify-start gap-5">
-          <TabsTrigger value="settings" className="flex-none px-0">
-            {t.raw('text74a883a037bc')}
-          </TabsTrigger>
           <TabsTrigger value="runs" className="flex-none px-0">
             {t.raw('text848f54e89660')}
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex-none px-0">
+            {t.raw('text74a883a037bc')}
           </TabsTrigger>
         </TabsList>
       </SheetHeader>

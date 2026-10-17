@@ -70,9 +70,10 @@ export function eventAppStrip(apps: EventApp[]): EventApp[] {
 export type TriggerSheetTab = 'settings' | 'runs';
 
 /**
- * `?id=<trigger id>[&tab=runs]` is the open trigger. The ID is the trigger's
- * `slug`, the one identifier the API has (the sheet's Details call it "ID").
- * `?t=<slug>` is the older link the connector page writes; it opens the same way.
+ * `?id=<trigger id>[&tab=settings]` is the open trigger. The ID is the
+ * trigger's `slug`, the one identifier the API has (the sheet's Details call
+ * it "ID"). Runs is the default tab, so only Settings is written. `?t=<slug>`
+ * is the older connector-page link, still read for links already shared.
  */
 export function readTriggerSheet(params: Pick<URLSearchParams, 'get'> | null | undefined): {
   slug: string | null;
@@ -80,33 +81,36 @@ export function readTriggerSheet(params: Pick<URLSearchParams, 'get'> | null | u
 } {
   return {
     slug: params?.get('id') || params?.get('t') || null,
-    tab: params?.get('tab') === 'runs' ? 'runs' : 'settings',
+    tab: params?.get('tab') === 'settings' ? 'settings' : 'runs',
   };
 }
 
 /**
- * The URL for opening one trigger, or for closing (`slug: null`). Every other
- * param (the `?type` filter) is kept. Opening from a closed sheet is a `push`,
- * so Back closes it again. Switching triggers and closing are a `replace`, so
- * clicks do not fill the history.
+ * The URL for opening a trigger (or changing its tab), or for closing
+ * (`slug: null`). Every other param (the `?type` filter) is kept.
+ *
+ * `wasOpen` is whether a trigger is open on screen now: the caller knows it,
+ * the URL does not (an unknown `?id` opens nothing). Opening from closed and
+ * closing are each a `push`, so Back and Forward step through them. Switching
+ * triggers or tabs while open is a `replace`, so clicks do not fill history.
  */
 export function triggerSheetHref(
   pathname: string,
   current: string,
   next: { slug: string; tab?: TriggerSheetTab } | { slug: null },
+  wasOpen: boolean,
 ): { href: string; mode: 'push' | 'replace' } {
   const params = new URLSearchParams(current);
-  const wasOpen = readTriggerSheet(params).slug !== null;
   params.delete('t');
   params.delete('tab');
   if (next.slug === null) params.delete('id');
   else {
     params.set('id', next.slug);
-    if ('tab' in next && next.tab === 'runs') params.set('tab', 'runs');
+    if (next.tab === 'settings') params.set('tab', 'settings');
   }
   const qs = params.toString();
   return {
     href: qs ? `${pathname}?${qs}` : pathname,
-    mode: next.slug !== null && !wasOpen ? 'push' : 'replace',
+    mode: next.slug !== null && wasOpen ? 'replace' : 'push',
   };
 }

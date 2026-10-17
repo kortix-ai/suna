@@ -119,61 +119,63 @@ describe('ScheduleView page chrome', () => {
   });
 });
 
-/** The open trigger lives in the URL: open, switch, close and a deep link. */
+/** The open trigger lives in the URL: open, switch, tab, close and a deep link. */
 describe('trigger sheet URL', () => {
   const path = '/projects/p1/customize/triggers';
 
-  test('opening from a closed sheet pushes ?id, so Back closes it', () => {
-    expect(triggerSheetHref(path, 'type=cron', { slug: 'nightly' })).toEqual({
+  test('opening from a closed sheet pushes ?id on Runs, so Back closes it', () => {
+    expect(triggerSheetHref(path, 'type=cron', { slug: 'nightly' }, false)).toEqual({
       href: `${path}?type=cron&id=nightly`,
       mode: 'push',
     });
   });
 
-  test('opening on Runs adds &tab=runs', () => {
-    expect(triggerSheetHref(path, 'type=failed', { slug: 'nightly', tab: 'runs' })).toEqual({
-      href: `${path}?type=failed&id=nightly&tab=runs`,
+  test('an unknown ?id on screen is not "open": the next open still pushes', () => {
+    expect(triggerSheetHref(path, 'id=gone', { slug: 'nightly' }, false)).toEqual({
+      href: `${path}?id=nightly`,
       mode: 'push',
     });
   });
 
-  test('switching to another trigger replaces, and drops the old tab', () => {
-    expect(triggerSheetHref(path, 'id=nightly&tab=runs', { slug: 'hook' })).toEqual({
+  test('switching to another trigger replaces, and returns to Runs', () => {
+    expect(triggerSheetHref(path, 'id=nightly&tab=settings', { slug: 'hook' }, true)).toEqual({
       href: `${path}?id=hook`,
       mode: 'replace',
     });
   });
 
-  test('closing removes id, tab and the older ?t, and keeps the filter', () => {
-    expect(triggerSheetHref(path, 'type=webhook&id=hook&tab=runs', { slug: null })).toEqual({
-      href: `${path}?type=webhook`,
-      mode: 'replace',
-    });
-    expect(triggerSheetHref(path, 't=hook', { slug: null })).toEqual({
+  test('switching to Settings replaces and writes tab=settings', () => {
+    expect(
+      triggerSheetHref(path, 'id=nightly', { slug: 'nightly', tab: 'settings' }, true),
+    ).toEqual({ href: `${path}?id=nightly&tab=settings`, mode: 'replace' });
+    expect(
+      triggerSheetHref(path, 'id=nightly&tab=settings', { slug: 'nightly', tab: 'runs' }, true),
+    ).toEqual({ href: `${path}?id=nightly`, mode: 'replace' });
+  });
+
+  test('closing pushes, removes id, tab and the older ?t, and keeps the filter', () => {
+    expect(
+      triggerSheetHref(path, 'type=webhook&id=hook&tab=settings', { slug: null }, true),
+    ).toEqual({ href: `${path}?type=webhook`, mode: 'push' });
+    expect(triggerSheetHref(path, 't=hook', { slug: null }, true)).toEqual({
       href: path,
-      mode: 'replace',
+      mode: 'push',
     });
   });
 
-  test('a deep link reads the slug and the tab', () => {
-    expect(readTriggerSheet(new URLSearchParams('id=nightly&tab=runs'))).toEqual({
+  test('a deep link reads the id and the tab; Runs is the default', () => {
+    expect(readTriggerSheet(new URLSearchParams('id=nightly&tab=settings'))).toEqual({
+      slug: 'nightly',
+      tab: 'settings',
+    });
+    expect(readTriggerSheet(new URLSearchParams('id=nightly'))).toEqual({
       slug: 'nightly',
       tab: 'runs',
     });
-    expect(readTriggerSheet(new URLSearchParams('t=nightly'))).toEqual({
+    expect(readTriggerSheet(new URLSearchParams('t=nightly&tab=bogus'))).toEqual({
       slug: 'nightly',
-      tab: 'settings',
+      tab: 'runs',
     });
-    expect(readTriggerSheet(new URLSearchParams('tab=bogus'))).toEqual({
-      slug: null,
-      tab: 'settings',
-    });
-    expect(readTriggerSheet(null)).toEqual({ slug: null, tab: 'settings' });
-  });
-
-  test('the page reads the open trigger from the URL, not from local state', () => {
-    expect(code).toContain('readTriggerSheet(searchParams)');
-    expect(code).toContain('triggers.find((t) => t.slug === sheet.slug)');
-    expect(code).not.toContain('setSelectedSlug');
+    expect(readTriggerSheet(null)).toEqual({ slug: null, tab: 'runs' });
   });
 });

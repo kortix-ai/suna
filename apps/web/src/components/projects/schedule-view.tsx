@@ -96,7 +96,6 @@ import { useTriggerControls } from './schedule/trigger-controls';
 import {
   TRIGGER_FILTERS,
   type TriggerFilter,
-  type TriggerSheetTab,
   filterTriggers,
   groupTriggersByApp,
   parseTriggerFilter,
@@ -295,12 +294,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const agents = useVisibleAgents({ projectId });
   const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
   const navigateSheet = (next: Parameters<typeof triggerSheetHref>[2]) => {
-    const { href, mode } = triggerSheetHref(pathname, searchParams?.toString() ?? '', next);
+    const { href, mode } = triggerSheetHref(
+      pathname,
+      searchParams?.toString() ?? '',
+      next,
+      selected !== null,
+    );
     if (mode === 'push') router.push(href, { scroll: false });
     else router.replace(href, { scroll: false });
   };
-  const openTrigger = (slug: string, tab: TriggerSheetTab = 'settings') =>
-    navigateSheet({ slug, tab });
+  const openTrigger = (slug: string) => navigateSheet({ slug });
   const closeTrigger = () => navigateSheet({ slug: null });
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
@@ -662,6 +665,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         eventsEnabled={eventsOn}
         controls={controls}
         initialTab={sheet.tab}
+        onTabChange={(tab) => selected && navigateSheet({ slug: selected.slug, tab })}
         onRun={() => selected && run.mutate(selected)}
         running={run.isPending && run.variables?.slug === selected?.slug}
         onDelete={() => selected && setDeleteTarget(selected)}
