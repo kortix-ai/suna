@@ -73,7 +73,9 @@ export function capabilityRefusal(
   c: Context<AppEnv>,
   capability: AppCapability,
   hostingType: AppHostingType | null = null,
+  app?: { externalUrl: string | null; externalFrameable: boolean },
 ) {
-  if (appCapabilities(hostingType).includes(capability)) return null;
+  const external = app?.externalUrl ? { frameable: app.externalFrameable } : null;
+  if (appCapabilities(hostingType, false, external).includes(capability)) return null;
   return c.json(capabilityUnsupportedBody(capability), 409);
 }

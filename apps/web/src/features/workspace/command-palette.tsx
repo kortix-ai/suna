@@ -46,7 +46,9 @@ import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -1169,6 +1171,8 @@ export function CommandPalette() {
 
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
+  // Joined so the memo below keys on the answer, not on a fresh array.
+  const customizeTabs = useCapabilityAccess(projectId ?? undefined).tabs.join(' ');
   const allPaletteItems = useMemo(() => {
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
@@ -1195,6 +1199,10 @@ export function CommandPalette() {
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
         href = href.replaceAll('{projectId}', projectId);
+        // A Customize tab is offered only when `capabilityAccess()` lists it:
+        // the same rule the sidebar row and the tab bar follow.
+        const tab = activeCapabilityTab(href.split('?')[0]);
+        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1212,6 +1220,7 @@ export function CommandPalette() {
     sidebarCtx,
     projectFlags,
     tI18nComplete,
+    customizeTabs,
   ]);
 
   const filteredNavItems = useMemo(() => {

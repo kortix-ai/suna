@@ -701,6 +701,7 @@ export function ProjectScreen() {
             onOpenProjectSession={handleOpenProjectSession}
             onCreateAgent={createAgent}
             boundAgentName={boundAgentName}
+            projectSession={showsSubsession ? null : activeProjectSession}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored), or

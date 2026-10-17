@@ -11,8 +11,7 @@
  * it's a permission then rather state that").
  *
  * One module, imported by the create modal and the detail sheet, so the two
- * never drift — the e2e spec `21-trigger-session-access.spec.ts` pins the
- * labels below verbatim.
+ * never drift.
  */
 export const TRIGGER_SESSION_ACCESS_COPY = {
   heading: 'Who can open sessions this trigger creates',

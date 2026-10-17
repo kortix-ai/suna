@@ -10,11 +10,10 @@ import { TriggersPage } from '@/features/workspace/capabilities/triggers/trigger
  * A trigger is one resource with two ways to start it, so it is one tab, one
  * route, one list.
  *
- * Access is `project.trigger.read`, which the API enforces: a caller without it
- * gets a 403 from the triggers list and `ScheduleView` renders "You don't have
- * access" in place of the list. The sidebar's Customize row gates on the same
- * leaf (`TAB_PREFERENCE` in `project-sidebar/project-settings-nav.tsx`) so it
- * never lands anyone on a tab they cannot read.
+ * The tab opens for a caller with `project.trigger.read` plus one trigger
+ * write leaf (`TAB_PREFERENCE` in `project-sidebar/project-settings-nav.tsx`):
+ * a member who can only read and fire triggers does not see trigger
+ * configuration. The API still enforces each leaf on its own route.
  */
 export default function ProjectTriggersPage() {
   const { id: projectId } = useParams<{ id: string }>();

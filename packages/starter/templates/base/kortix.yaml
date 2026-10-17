@@ -89,8 +89,6 @@ tools:
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
-  kortix-connectors_call: kortix:kortix-connectors_call
-  kortix-connectors_describe: kortix:kortix-connectors_describe
   # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 
 # ─── Agents ──────────────────────────────────────────────────────────────

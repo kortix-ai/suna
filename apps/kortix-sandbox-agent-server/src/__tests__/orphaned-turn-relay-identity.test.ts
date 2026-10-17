@@ -19,9 +19,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { finalizeOrphanedTurn, relayTurnEndToApi, __resetRelayedTurnSignatures } from '@/harness/open-code/boot'
+import { finalizeOrphanedTurn, setOrphanSettleMsForTests, relayTurnEndToApi, __resetRelayedTurnSignatures } from '@/harness/open-code/boot'
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
+
+// The settle window is 2 s in the product; these fakes change on a read count, not on time.
+setOrphanSettleMsForTests(10)
 
 const ROOT = 'ses_root'
 const WORKSPACE = '/workspace'

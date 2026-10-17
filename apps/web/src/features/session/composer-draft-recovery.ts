@@ -60,6 +60,7 @@ export function mergeFailedSubmissionDocument(
 }
 
 function attachedFileKey(file: AttachedFile): string {
+  if (file.kind === 'uploaded') return `uploaded:${file.uploadId}`;
   return file.kind === 'local' ? `local:${file.localUrl}` : `remote:${file.url}:${file.filename}`;
 }
 

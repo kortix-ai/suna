@@ -14,6 +14,7 @@ import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
+import { appendMentionRefs } from '@/lib/project-preamble';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
@@ -58,6 +59,7 @@ export function ComposerChatInput({
   cardClassName,
   parentClassName,
   boundAgentName,
+  projectSession,
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
@@ -116,6 +118,8 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model this composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
@@ -141,6 +145,7 @@ export function ComposerChatInput({
     sessionId,
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    projectSession,
   });
   const setAgent = local.agent.set;
   const setModel = local.model.set;
@@ -256,8 +261,10 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      onSend={(text, files, _mentions, attachments, placement) =>
-        onSend(text, files, { ...options(), placement }, attachments)
+      // A first message has no session send to write the `@` mention blocks
+      // (`session-chat.tsx` `handleSend`), so they go into the text here.
+      onSend={(text, files, mentions, attachments, placement) =>
+        onSend(appendMentionRefs(text, mentions), files, { ...options(), placement }, attachments)
       }
       promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}

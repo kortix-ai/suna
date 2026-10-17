@@ -153,8 +153,8 @@ describe('device caches', () => {
     registerQueryClient(client);
     adoptDeviceCaches(USER);
 
-    expect(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
-    expect(client.getQueryData(listKey)).toEqual({
+    expect<unknown>(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
+    expect<unknown>(client.getQueryData(listKey)).toEqual({
       pages: [{ items: [], next_cursor: null }],
       pageParams: [null],
     });

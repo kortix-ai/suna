@@ -803,6 +803,47 @@ describe('the boot reconcile on pi (P6.4)', () => {
     }
   }, 60_000)
 
+  test('over the restore cap (413): the box boots with the note alone at the claimed generation, numbers above the floor, and does not restore again', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const live = log.threads.flatMap((t) => t.messages).length
+    const box = freshBox(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects, maxBytes: 1024 })
+    try {
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
+      // One claim, no text or attachment read.
+      expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore'])
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toMatchObject({ restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: live }, truncated: 0 } } } } })
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      expect(rt.rootId).toBe(rootId)
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      // The journal sent the note at the claimed generation, above the stored floor (seq 14), and no stored message.
+      expect(new Set(api.journal.map((b) => b.generation))).toEqual(new Set([1]))
+      expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
+      const note = api.stored().threads[0]!.messages.at(-1)!
+      expect(note).toMatchObject({ role: 'user', origin: 'notification', seq: 15 })
+      // The next request: the note and the prompt, nothing of the earlier conversation.
+      const expected = { ...structuredClone(api.stored()), threads: [{ ...api.stored().threads[0]!, messages: [note] }] }
+      const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+      expect(JSON.stringify(body)).toMatch(new RegExp(`Its earlier conversation \\(${live} messages, [0-9.]+ KiB\\) is above the 1 KiB restore limit and was not restored\\.`))
+      expect(oracle(expected, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
+      expect(await flushSessionLogJournal()).toBe(true)
+      expect(Math.min(...api.journal.flatMap((b) => b.puts.map((p) => p.message.seq)))).toBe(15)
+
+      // A daemon restart: the stored ids the restore left out do not read as behind; no second claim.
+      await service.lifecycle.stop()
+      resetSessionLogJournalForTests()
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })
+      expect(restores(api)).toBe(1)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
   test('P2.13: the journal stores a prompt image and a tool-result image; a fresh box restores both with nothing dropped', async () => {
     const sessionId = 'sess-pi-blobs'
     const empty: SessionLog = {

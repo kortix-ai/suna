@@ -317,6 +317,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding': { action: 'connector.secret_binding.update', title: 'Updated connector secret binding' },
   'PUT /v1/connectors/projects/:projectId/connectors/:slug/sensitive': { action: 'connector.sensitive.set', title: 'Set connector sensitive flag' },
   'POST /v1/connectors/projects/:projectId/connectors/auth-discovery': { action: 'connector.auth.preview', title: 'Previewed connector authentication' },
+  'POST /v1/connectors/projects/:projectId/connectors/mcp-sign-in-check': { action: 'connector.mcp_sign_in.check', title: 'Checked MCP server sign-in' },
   'POST /v1/connectors/projects/:projectId/connectors/sync': { action: 'connector.sync', title: 'Synchronized connectors' },
   'GET /v1/connectors/projects/:projectId/discover/connectors': { action: 'connector.discover.list', title: 'Browsed connector discovery catalog' },
   'GET /v1/connectors/projects/:projectId/discover/connectors/detail': { action: 'connector.discover.detail.read', title: 'Viewed discovery catalog connector' },

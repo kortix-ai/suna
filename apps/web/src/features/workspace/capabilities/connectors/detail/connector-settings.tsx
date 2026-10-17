@@ -38,7 +38,7 @@ interface ConnectorSettingsProps {
  * form instead of its account list). Accounts now always shows
  * `ConnectionsList` for a direct provider, same as a managed one, so this is
  * the only mount left — showing it on both tabs would print the same form
- * twice (`connector-settings.write-path.test.ts` pins that). A managed
+ * twice. A managed
  * (Composio/Pipedream), channel, or computer connector has no transport
  * config to edit, so it is skipped here.
  *

@@ -4587,6 +4587,13 @@ export const apps = kortixSchema.table(
     scale: jsonb('scale').default({}).notNull(),
     /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
     display: jsonb('display').default({}).notNull(),
+    /**
+     * An App hosted elsewhere: Kortix lists it and frames this https URL, and
+     * never deploys it. Null for every App Kortix runs.
+     */
+    externalUrl: text('external_url'),
+    /** The external site allows framing (its X-Frame-Options / CSP frame-ancestors, read when the URL was set). */
+    externalFrameable: boolean('external_frameable').default(false).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

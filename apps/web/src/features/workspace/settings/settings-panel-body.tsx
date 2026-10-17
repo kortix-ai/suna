@@ -120,6 +120,18 @@ export interface SettingsTabAllowedParams {
   canProject?: (action: ProjectAction) => boolean;
 }
 
+/**
+ * Whether one capability probe admits its row.
+ *
+ * Fail-open while the probe is in flight — the rule the retired config page
+ * applied to the same rows: a row disappears only on a denial actually
+ * received. It is not tidiness. The SDK reports an unresolved probe as
+ * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
+ * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
+ * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
+ * landed on Profile every time, before the answer could arrive.
+ * Pinned by `settings-panel.test.tsx`.
+ */
 export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {
   if (!probe) return true;
   return probe.isLoading || probe.allowed;
@@ -415,7 +427,7 @@ export function SettingsPanelShell({
        and fires that pane's queries — a cost only keyboard users pay, and one
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
-       focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
+       focus; Enter/Space selects. */
     <SettingsRailCopyProvider groups={groups} chrome={chrome}>
       <Tabs
         value={tab}

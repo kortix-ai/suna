@@ -58,6 +58,13 @@ start, so an entry left by an older install or another app location is repaired.
   credentials) and the device uses it. Signing in again on the same computer
   replaces the token; the registration (`<library>/sync-issuer.json`) and the
   token (OS secret store) belong to this library.
+- The Kortix API address: a build bakes in its default (`KORTIX_DEFAULT_ISSUER_URL`:
+  `https://api.kortix.com` for releases, `https://dev-api.kortix.com` for dev
+  builds). "Use another Kortix address" (onboarding and Advanced sync) takes
+  another one, for example a self-hosted Kortix; signing in saves it to
+  `sync.kortix.url`. A signed-in computer shows the address under the account.
+  An app too old for the API's device grant gets `400 invalid_request` and says
+  "Kortix needs the latest Kortix Capture: install it, then sign in."
 - Sign-in runs only from an explicit "Sign in with Kortix" in the welcome screen, the
   settings window, or `kortix-capture sync setup --provider kortix`.
 - `device.json` names the hostname and the computer's name (System Settings

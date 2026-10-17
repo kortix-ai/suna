@@ -139,9 +139,10 @@ export function InstantSessionShell({
   // A queued prompt runs as its author: only they edit or send it, and the
   // session's managers may remove it.
   const { user: viewer } = useAuth();
-  const viewerManagesSession =
-    useProjectSession(projectId, sessionId, { enabled: !!projectId && !!sessionId }).data
-      ?.can_manage_lifecycle !== false;
+  const projectSessionRow = useProjectSession(projectId, sessionId, {
+    enabled: !!projectId && !!sessionId,
+  }).data;
+  const viewerManagesSession = projectSessionRow?.can_manage_lifecycle !== false;
   const shellQueue = useMemo(
     () =>
       projectQueueRows({
@@ -234,6 +235,9 @@ export function InstantSessionShell({
       prefill={prefill}
       onPrefillApplied={(id) => setPrefill((current) => (current?.id === id ? null : current))}
       boundAgentName={boundAgentName}
+      // The session's own model (its pin): a session set from the CLI, the SDK
+      // or Slack keeps it while its computer boots.
+      projectSession={projectSessionRow}
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real

@@ -493,9 +493,13 @@ export function normalizeAttachments(
     });
   };
 
+  // An image a `<file>` tag names (`source_path`, pi) draws once, through its tag.
+  const tagPaths = new Set(uploads.map((file) => file.path));
   blocks.forEach((block, sourcePartIndex) => {
     const file: MentionFileData | undefined =
-      block.type === 'attachment'
+      block.type === 'attachment' && block.source_path && tagPaths.has(block.source_path)
+        ? undefined
+        : block.type === 'attachment'
         ? { mime: block.mime, filename: block.name, url: block.url }
         : block.type === 'harness' && block.kind === 'file'
           ? (block.data as MentionFileData)

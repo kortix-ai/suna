@@ -41,7 +41,7 @@ function magicLinkPayload(recipient: string): string {
 
 flow(
   "AUTH-2",
-  { domain: "auth", routes: [`POST ${ROUTE}`] },
+  { domain: "auth", tags: ["deployed"], routes: [`POST ${ROUTE}`] },
   async (ctx) => {
     const secret = hookSecret();
 

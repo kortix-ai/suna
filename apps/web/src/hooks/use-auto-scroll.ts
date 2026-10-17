@@ -184,7 +184,7 @@ export function useAutoScroll({
 
   /**
    * FACT 1: size the room. The ANCHOR turn is the newest turn the agent has
-   * reached — a prompt queued mid-turn (`data-turn-pending`, dimmed) is not
+   * reached, never a compaction or a continuation — a prompt queued mid-turn (`data-turn-pending`, dimmed) is not
    * it: anchoring on the queued bubble would shift the answer that is still
    * streaming above it out of view. The room is measured from the anchor
    * turn's top to the end of the content, so queued bubbles under it simply
@@ -196,7 +196,10 @@ export function useAutoScroll({
     const content = contentRef.current;
     const spacer = spacerElRef.current;
     if (!el || !content || !spacer) return { room: 0, anchorChanged: false };
-    const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
+    // A compaction and the work after it continue the turn above (`data-turn-continues`): the
+    // anchor stays that turn's, so a running compaction is not a marker alone on a blank page.
+    const prompts = content.querySelectorAll<HTMLElement>('[data-turn-id]:not([data-turn-continues])');
+    const turns = prompts.length ? prompts : content.querySelectorAll<HTMLElement>('[data-turn-id]');
     const isPending = (i: number) => turns[i].querySelector('[data-turn-pending]') !== null;
     const previous = lastAnchorRef.current;
     const index = pickAnchorIndex(

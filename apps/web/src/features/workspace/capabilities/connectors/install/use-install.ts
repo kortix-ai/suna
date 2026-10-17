@@ -23,6 +23,7 @@ import {
   type InstallDeps,
   type InstallTarget,
 } from './install';
+import { mcpServerFor, type McpServerApp } from './mcp-first';
 import { pickSurface } from './pick-surface';
 
 const sdkInstallDeps: InstallDeps = { createConnector };
@@ -32,8 +33,15 @@ const sdkInstallDeps: InstallDeps = { createConnector };
  * connector page with "Add account" showing. Who may use an account is chosen
  * there, per account; the profile itself is always the project's. When the
  * first sync fails, the page opens on its error and Retry instead.
+ *
+ * A managed app whose own MCP server signs in with one click goes to
+ * `onMcpServer` instead: the MCP dialog connects it in one step.
  */
-export function useInstall(projectId: string) {
+export function useInstall(
+  projectId: string,
+  options: { onMcpServer?: (server: McpServerApp) => void } = {},
+) {
+  const { onMcpServer } = options;
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
@@ -81,7 +89,19 @@ export function useInstall(projectId: string) {
     (entry: CatalogEntry, connectors: readonly AdminConnector[]) => {
       const app = appRefFromEntry(entry);
       if (entry.source === 'easy-connect') {
-        install(easyConnectInstallTarget(entry.app), { connectors, app });
+        if (!onMcpServer || !entry.app.directMcpUrl) {
+          install(easyConnectInstallTarget(entry.app), { connectors, app });
+          return;
+        }
+        setPendingKey(app?.slug ?? entry.app.name);
+        void mcpServerFor(projectId, entry.app).then((server) => {
+          if (server) {
+            setPendingKey(null);
+            onMcpServer(server);
+          } else {
+            install(easyConnectInstallTarget(entry.app), { connectors, app });
+          }
+        });
         return;
       }
       if (entry.source !== 'discover' || !app) return;
@@ -109,8 +129,8 @@ export function useInstall(projectId: string) {
           errorToast(error.message || tI18nComplete.raw('texta34a2714da91'));
         });
     },
-    [install, projectId, queryClient, router, tI18nComplete],
+    [install, onMcpServer, projectId, queryClient, router, tI18nComplete],
   );
 
-  return { install, installEntry, pendingKey };
+  return { install, installEntry, pendingKey, setPendingKey };
 }

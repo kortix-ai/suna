@@ -6,17 +6,15 @@
  *
  * Runs the PRODUCTION code paths (project-snapshot.ts, project-snapshot-store.ts,
  * project-snapshot-worker.ts) against a real bucket through the AWS SDK with an
- * endpoint override (local MinIO). Nothing is mocked. Assertions read the
+ * endpoint override. The db-suites lane points it at local Supabase Storage's
+ * S3 endpoint (`PROJECT_SNAPSHOT_SUITE` in tests/src/core/db-suites.ts). Nothing is mocked. Assertions read the
  * actual objects back (HeadObject / GetObject) and the actual ledger rows.
  *
  * Required environment (the run FAILS, never skips, when it is missing):
  *   DATABASE_URL                              local Postgres
  *   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/…       a reachable S3-compatible bucket
  *
- * Run:
- *   cd apps/api && KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=kortix-project-snapshots-test \
- *     dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- \
- *     bun test --isolate src/__tests__/integration-project-snapshot.test.ts
+ * Run: `pnpm test -- --db-only integration-project-snapshot`
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { accounts, projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { seedAccount } from './helpers/integration-fixtures';
@@ -79,10 +77,13 @@ function git(cwd: string, ...args: string[]): string {
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) throw new Error('integration-project-snapshot: DATABASE_URL is required (local Postgres)');
   if (!projectSnapshotStorageConfigured()) {
-    throw new Error('integration-project-snapshot: KORTIX_PROJECT_SNAPSHOT_S3_BUCKET (+ endpoint/credentials) is required — start local MinIO and set the KORTIX_PROJECT_SNAPSHOT_S3_* variables');
+    throw new Error('integration-project-snapshot: KORTIX_PROJECT_SNAPSHOT_S3_BUCKET (+ endpoint/credentials) is required — run it through `pnpm test -- --db-only`, which supplies local Supabase Storage');
   }
   __resetProjectSnapshotS3ClientForTests();
-  await projectSnapshotS3Client().send(new HeadBucketCommand({ Bucket: projectSnapshotBucket() }));
+  const Bucket = projectSnapshotBucket();
+  await projectSnapshotS3Client()
+    .send(new HeadBucketCommand({ Bucket }))
+    .catch(() => projectSnapshotS3Client().send(new CreateBucketCommand({ Bucket })));
 
   accountId = await seedAccount('project-snapshot-test');
 

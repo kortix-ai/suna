@@ -1347,14 +1347,13 @@ git commit -m "feat(web): copy and export render generative UI as markdown"
 
 Remove the two lines from the `genui` registry entry. Run `cd apps/api && bun test src/__tests__/unit-feature-flags.test.ts` → PASS.
 
-- [ ] **Step 2: Full local test run**
+- [ ] **Step 2: Typecheck and lint the touched packages**
 
 ```bash
-pnpm test
-pnpm test:verify --rev HEAD --branch genui
+pnpm --filter ./apps/web exec tsc --noEmit
 ```
 
-Expected: green; verify exits 0.
+Expected: exit 0. The full suite runs on the staging pull request.
 
 - [ ] **Step 3: Drive the real UI with agent-browser (recorded)**
 

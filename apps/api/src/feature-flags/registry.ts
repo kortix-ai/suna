@@ -451,29 +451,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'from the session log at boot when the store is missing or behind the log ' +
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
       'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
-      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
-      'restore memory is capped (harness/README.md).',
-  },
-  {
-    key: 'workspace_volume',
-    name: 'Workspace volume',
-    description:
-      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk. The box still stops and resumes in place. Not a Settings toggle: Kortix enables it per project.",
-    stability: 'experimental',
-    // Every workspace volume is a Platinum volume.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
-    // Internal-only (2026-10-16), step 1 of stateless sandboxes. A Kortix operator
-    // sets it per project (PUT /v1/admin/api/projects/:id/features).
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Read once per session, at the first provisioning of a Platinum box ' +
-      '(platform/services/workspace-volume.ts): on, the session records `workspace_volume` and ' +
-      'every box it ever gets mounts volume kws-<session_id> at /workspace, in the region the ' +
-      'volume was created in, with KORTIX_WORKSPACE_VOLUME=1. Turning the flag off changes no ' +
-      'session that already has a volume. KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. ' +
-      'A session delete deletes the volume after the box is removed (reaping/archived-box-removal.ts).',
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
 ];
 
