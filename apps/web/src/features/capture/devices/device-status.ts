@@ -19,7 +19,7 @@ export type DeviceStatusKey =
 
 /** status.json `reason`s that stop recording without anyone pausing it (the engine's words). */
 const LOCKED = new Set(['locked']);
-const EXCLUDED = new Set(['excluded_app', 'excluded_domain', 'private_browsing', 'unknown_bundle']);
+const EXCLUDED = new Set(['excluded_app', 'excluded_domain', 'not_included', 'private_browsing', 'unknown_bundle']);
 export type DeviceLayer = CaptureLayer;
 
 export interface DeviceStatusView {

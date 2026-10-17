@@ -346,13 +346,13 @@ flow(
 // This sweep proves the missing boundaries on the mutating routes:
 //   - ANON → 401 on POST/PATCH/DELETE/fire/activation (auth boundary)
 //   - a project `member` (floor role 'user' → 'member') holds trigger.read +
-//     trigger.fire but NOT project.write (the 'manage' floor) NOR
-//     trigger.create/update/delete. So:
+//     trigger.fire but NOT trigger.create/update/delete. Every route loads
+//     with the read floor and asserts its leaf, so:
 //       GET /triggers → 200 (read passes)
-//       POST /triggers → 403 (manage floor fails)
-//       PATCH /:slug → 403 (manage floor fails)
-//       DELETE /:slug → 403 (manage floor fails)
-//       PATCH /activation → 403 (manage floor fails)
+//       POST /triggers → 403 (trigger.create leaf)
+//       PATCH /:slug → 403 (trigger.update leaf)
+//       DELETE /:slug → 403 (trigger.delete leaf)
+//       PATCH /activation → 403 (trigger.update leaf)
 //       POST /:slug/fire → 202/404 (read floor + trigger.fire leaf — but unknown
 //         slug → 404, not 403; the leaf fires AFTER the project loads)
 //   Distinct from TRG-1's NONMEMBER (membership 403/404): here the user IS a
@@ -378,7 +378,7 @@ flow(
     const asMember = ctx.client.as(member);
 
     // Seed one trigger so PATCH/DELETE/fire have a real slug to target (the
-    // 403 fires at the manage FLOOR, before the slug is even looked up, so a
+    // 403 fires at the leaf, before the slug is even looked up, so a
     // missing slug would still 403 — but using a real slug proves the denial
     // is the authz gate, not a 404 masquerading as a denial).
     await ctx.client.as(ctx.P.OWNER).post(

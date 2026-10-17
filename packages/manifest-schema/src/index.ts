@@ -240,6 +240,7 @@ export {
   type WorkspaceModeV2,
   type AgentWorkspaceV2,
   type ProjectRepositoryResult,
+  projectRepositoryDefault,
   resolveProjectRepository,
   type RuntimeV2,
   type PermissionActionV2,

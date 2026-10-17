@@ -51,6 +51,16 @@ export interface CapturePolicy {
     exclusion_groups: CaptureExclusionGroup[];
     /** Private browser tabs and windows are never recorded. */
     exclude_private_browsing: boolean;
+    /**
+     * Record only what is included: a device records a window only when its app is in
+     * `included_bundle_ids` or its website is in `included_domains`. Members can add to both
+     * lists on their computer but cannot turn this off. Exclusions still win. Absent: false.
+     */
+    record_only_included?: boolean;
+    /** Apps recorded in full while `record_only_included` is on. */
+    included_bundle_ids?: string[];
+    /** Websites recorded, in any browser, while `record_only_included` is on. */
+    included_domains?: string[];
   };
   /** `remote_days` 0 keeps indexed data until it is deleted. */
   retention: { local_hours: number; remote_days: number };

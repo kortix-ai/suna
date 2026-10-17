@@ -396,7 +396,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         },
       },
       responses: {
-        200: json(OkSchema, 'Binding updated'),
+        200: json(CrudOkSchema, 'Binding updated, with the MCP re-sync it ran'),
         ...errors(400, 403, 404, 409, 501),
       },
     }),
@@ -426,7 +426,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         parsed.data.secret_identifier,
       );
       return result.ok
-        ? c.json({ ok: true })
+        ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 404 | 409);
     },
   );

@@ -10880,7 +10880,6 @@
       "text1d0c9d480457": "Utilizzato dal gateway dei modelli Kortix. Non entra mai nella sandbox.",
       "text1d1d94fb5397": "Parla con noi",
       "text1d21d2b18753": "Riga aggiunta",
-      "text1d280015aac2": "Torna a Personalizza",
       "text1d2a6194e5b0": "Trigger aggiornato",
       "text1d421d3dc4ae": "Prompt copiato: incollalo nella chat per chiederlo al tuo agente.",
       "text1d42883b00c1": "Ambiti: {value0}.",
@@ -21519,7 +21518,23 @@
       "resolution": "Risoluzione",
       "resolutionHint": "Gli schermi più grandi vengono ridotti a questa altezza. Il 4K conserva i dettagli fini, come i disegni CAD.",
       "framesHint": "Senza valore, ogni computer usa il proprio (un'immagine ogni 2 s a 1440p). Con un valore, tutti i computer lo usano e nessuno può modificarlo. Clic, digitazione e scorrimento vengono registrati con le proprie schermate a qualsiasi intervallo.",
-      "computerDecides": "Decide ogni computer"
+      "computerDecides": "Decide ogni computer",
+      "included": {
+        "title": "Registra solo queste app e siti web",
+        "hint": "Attivo: ogni computer di {org} registra solo ciò che è elencato qui. Tutto il resto viene oscurato e mai salvato. Le persone possono aggiungere i propri in Kortix Capture; non possono disattivarlo né rimuovere questi.",
+        "switch": "Registra solo app e siti web inclusi",
+        "switchHint": "Disattivo: viene registrato tutto ciò che non è escluso.",
+        "kindLabel": "App o siti web",
+        "apps": "App",
+        "websites": "Siti web",
+        "addAppPlaceholder": "Aggiungi un’app tramite il suo ID, ad es. com.tinyspeck.slackmacgap o slack.exe",
+        "addSitePlaceholder": "Aggiungi un sito web, ad es. github.com",
+        "addApp": "Includi {app}",
+        "addDomain": "Includi {domain}",
+        "included": "Inclusi",
+        "noApps": "Nessuna app inclusa. Vengono registrati solo i siti web inclusi.",
+        "noSites": "Nessun sito web incluso. I browser vengono registrati solo se l’app del browser è inclusa."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

@@ -10880,7 +10880,6 @@
       "text1d0c9d480457": "Consommé par la passerelle de modèles Kortix. Il n’entre jamais dans le sandbox.",
       "text1d1d94fb5397": "Parlez-nous",
       "text1d21d2b18753": "Ligne ajoutée",
-      "text1d280015aac2": "Retour à la personnalisation",
       "text1d2a6194e5b0": "Déclencheur mis à jour",
       "text1d421d3dc4ae": "Prompt copié — collez-le dans le chat pour le demander à votre agent.",
       "text1d42883b00c1": "Portées : {value0}.",
@@ -21519,7 +21518,23 @@
       "resolution": "Résolution",
       "resolutionHint": "Les écrans plus grands sont réduits à cette hauteur. La 4K garde les détails fins, comme les dessins CAO.",
       "framesHint": "Sans valeur, chaque ordinateur utilise la sienne (une image toutes les 2 s en 1440p). Avec une valeur, tous les ordinateurs l'utilisent et personne ne peut la modifier. Les clics, la saisie et le défilement sont enregistrés avec leurs propres captures, quel que soit l'intervalle.",
-      "computerDecides": "Chaque ordinateur décide"
+      "computerDecides": "Chaque ordinateur décide",
+      "included": {
+        "title": "N’enregistrer que ces apps et sites web",
+        "hint": "Activé : chaque ordinateur de {org} n’enregistre que ce qui figure ici. Tout le reste est masqué en noir et jamais enregistré. Les personnes peuvent ajouter les leurs dans Kortix Capture ; elles ne peuvent ni le désactiver ni retirer ceux-ci.",
+        "switch": "N’enregistrer que les apps et sites web inclus",
+        "switchHint": "Désactivé : tout ce qui n’est pas exclu est enregistré.",
+        "kindLabel": "Apps ou sites web",
+        "apps": "Apps",
+        "websites": "Sites web",
+        "addAppPlaceholder": "Ajoutez une app par son identifiant, par ex. com.tinyspeck.slackmacgap ou slack.exe",
+        "addSitePlaceholder": "Ajoutez un site web, par ex. github.com",
+        "addApp": "Inclure {app}",
+        "addDomain": "Inclure {domain}",
+        "included": "Inclus",
+        "noApps": "Aucune app incluse. Seuls les sites web inclus sont enregistrés.",
+        "noSites": "Aucun site web inclus. Les navigateurs ne sont enregistrés que si leur app est incluse."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

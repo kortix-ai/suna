@@ -55,7 +55,7 @@ export function registerChangeRequestActionsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
       // Human-side capability gate: merging lands code on the base branch.
@@ -326,10 +326,11 @@ export function registerChangeRequestActionsRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: managing a CR's lifecycle is part of the change-request
-      // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+      // Managing a CR's lifecycle is part of the change-request capability,
+      // `project.gitops.push`, for humans and agents alike.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);
@@ -372,10 +373,11 @@ export function registerChangeRequestActionsRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: managing a CR's lifecycle is part of the change-request
-      // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+      // Managing a CR's lifecycle is part of the change-request capability,
+      // `project.gitops.push`, for humans and agents alike.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);

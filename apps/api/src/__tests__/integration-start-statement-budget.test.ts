@@ -57,8 +57,13 @@ import { createAccountToken } from '../repositories/account-tokens';
  * re-read the sandbox row inside `openSession` — the two-per-tick fan-out
  * this suite pins out.
  */
-const ONE_SHOT_STATEMENT_BUDGET = 30;
-const LONG_POLL_STATEMENT_BUDGET = 42;
+//
+// +7 since #10136: manager standing is the engine's `project.members.manage`
+// verdict, one more `authorize` per visibility check. Under `bun test` ttlMemo
+// is bypassed, so that decision re-reads the catalogs and the principal (7
+// statements); in production those reads are TTL-memoized.
+const ONE_SHOT_STATEMENT_BUDGET = 37;
+const LONG_POLL_STATEMENT_BUDGET = 49;
 
 /** The long-poll the second suite runs. Ten ticks at the default 200 ms. */
 const LONG_POLL_MS = 2000;

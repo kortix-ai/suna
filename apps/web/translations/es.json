@@ -10880,7 +10880,6 @@
       "text1d0c9d480457": "Consumido por la pasarela de modelos de Kortix. Nunca entra en el sandbox.",
       "text1d1d94fb5397": "Habla con nosotros",
       "text1d21d2b18753": "Fila añadida",
-      "text1d280015aac2": "Volver a Personalizar",
       "text1d2a6194e5b0": "Disparador actualizado",
       "text1d421d3dc4ae": "Prompt copiado: pégalo en el chat para pedírselo a tu agente.",
       "text1d42883b00c1": "Ámbitos: {value0}.",
@@ -21519,7 +21518,23 @@
       "resolution": "Resolución",
       "resolutionHint": "Las pantallas más grandes se reducen a esta altura. 4K conserva los detalles finos, como los planos CAD.",
       "framesHint": "Sin valor, cada ordenador usa el suyo (una imagen cada 2 s a 1440p). Con valor, todos los ordenadores lo usan y nadie puede cambiarlo. Los clics, la escritura y el desplazamiento se graban con sus propias capturas con cualquier intervalo.",
-      "computerDecides": "Cada ordenador decide"
+      "computerDecides": "Cada ordenador decide",
+      "included": {
+        "title": "Grabar solo estas apps y sitios web",
+        "hint": "Activado: cada equipo de {org} graba solo lo que aparece aquí. Todo lo demás se oculta en negro y nunca se guarda. Las personas pueden añadir los suyos en Kortix Capture; no pueden desactivarlo ni quitar estos.",
+        "switch": "Grabar solo apps y sitios web incluidos",
+        "switchHint": "Desactivado: se graba todo lo que no está excluido.",
+        "kindLabel": "Apps o sitios web",
+        "apps": "Apps",
+        "websites": "Sitios web",
+        "addAppPlaceholder": "Añade una app por su ID, como com.tinyspeck.slackmacgap o slack.exe",
+        "addSitePlaceholder": "Añade un sitio web, como github.com",
+        "addApp": "Incluir {app}",
+        "addDomain": "Incluir {domain}",
+        "included": "Incluidos",
+        "noApps": "Ninguna app incluida. Solo se graban los sitios web incluidos.",
+        "noSites": "Ningún sitio web incluido. Los navegadores solo se graban si la app del navegador está incluida."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

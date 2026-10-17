@@ -10880,7 +10880,6 @@
       "text1d0c9d480457": "由 Kortix 模型网关消耗。它永远不会进入沙箱。",
       "text1d1d94fb5397": "联系我们",
       "text1d21d2b18753": "已添加行",
-      "text1d280015aac2": "返回自定义",
       "text1d2a6194e5b0": "已更新触发器",
       "text1d421d3dc4ae": "提示词已复制 — 粘贴到聊天中以询问您的智能体。",
       "text1d42883b00c1": "范围：{value0}。",
@@ -21519,7 +21518,23 @@
       "resolution": "分辨率",
       "resolutionHint": "更大的屏幕会缩小到此高度。4K 可保留 CAD 图纸等细节。",
       "framesHint": "未设置时，每台电脑使用自己的设置（1440p，每 2 秒一帧）。设置后，所有电脑都使用该值，用户无法更改。无论间隔多长，点击、输入和滚动都会连同各自的截图一起记录。",
-      "computerDecides": "由每台电脑决定"
+      "computerDecides": "由每台电脑决定",
+      "included": {
+        "title": "只录制这些应用和网站",
+        "hint": "开启：{org} 中的每台电脑只录制这里列出的内容。其他内容一律涂黑，从不保存。成员可以在 Kortix Capture 中添加自己的项目，但不能关闭此项，也不能移除这些项目。",
+        "switch": "只录制已包含的应用和网站",
+        "switchHint": "关闭：录制所有未排除的内容。",
+        "kindLabel": "应用或网站",
+        "apps": "应用",
+        "websites": "网站",
+        "addAppPlaceholder": "按应用 ID 添加，例如 com.tinyspeck.slackmacgap 或 slack.exe",
+        "addSitePlaceholder": "添加网站，例如 github.com",
+        "addApp": "包含 {app}",
+        "addDomain": "包含 {domain}",
+        "included": "已包含",
+        "noApps": "未包含任何应用。只录制已包含的网站。",
+        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。"
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

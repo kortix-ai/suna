@@ -670,14 +670,24 @@ describe('approvals inbox + resolution', () => {
       args_preview_authorized: true,
     });
 
+    // A plain member cannot open the owner's private session, so the item is
+    // not listed at all (#10136). On a session shared with the project they
+    // see the item, without the parameters they cannot act on.
+    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/suna' }, {
+      sessionId: SHARED_SESSION,
+      actingUserId: launcherUserId,
+    });
     const readOnly = await readOnlyGet(path);
     expect(readOnly.status).toBe(200);
     const readOnlyBody = (await readOnly.json()) as {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
+    const ids = readOnlyBody.review_items.map((item) => item.review_item_id);
+    expect(ids).not.toContain(`call:${execId}`);
     const readOnlyItem = readOnlyBody.review_items.find(
-      (item) => item.review_item_id === `call:${execId}`,
+      (item) => item.review_item_id === `call:${sharedExecId}`,
     );
+    expect(readOnlyItem).toBeDefined();
     expect(readOnlyItem?.detail).not.toHaveProperty('args_preview');
     expect(readOnlyItem?.detail).toMatchObject({
       args_preview_complete: false,
