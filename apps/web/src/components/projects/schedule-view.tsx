@@ -29,6 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
@@ -147,7 +148,7 @@ export function TriggerPauseButton({
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           className="gap-1.5"
           disabled={isPending}
@@ -474,7 +475,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
             showContent ? (
-              <div className="flex items-center gap-2">
+              // One toolbar beside the search: the same height (`sm`), the same
+              // `secondary` variant and `size-4` glyphs, joined as one group.
+              <ButtonGroup>
                 {triggers.length > 0 || paused ? (
                   <TriggerActivationMenu projectId={projectId} />
                 ) : null}
@@ -486,7 +489,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     manual={{ onSelect: () => openCreate() }}
                   />
                 ) : null}
-              </div>
+              </ButtonGroup>
             ) : undefined
           }
         >
