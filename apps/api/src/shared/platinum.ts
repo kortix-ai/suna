@@ -120,9 +120,13 @@ function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
 // reach a region pays the forward through the global origin, it never
 // mis-routes.
 const regionOrigins = new Map<string, string>();
-/** Regions this process has seen served by the configured origin itself. */
+// replica-local: regions this replica has seen served by the configured origin
+// itself (the home region). A replica that has not seen one tries the regional
+// name, which the home region may not have, and falls back once.
 const homeRegions = new Set<string>();
-/** Region → when its control plane may be tried again after failing to connect. */
+// replica-local: region → when this replica may try that region's control plane
+// again after it failed to connect. Another replica finds out on its own and
+// falls back the same way.
 const unreachableRegions = new Map<string, number>();
 export const PLATINUM_REGION_RETRY_AFTER_MS = 60_000;
 
