@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { tierGrantsAllModels } from '../billing/services/tiers';
 let accountTier = 'credits';
 let billingCalls = 0;
+let budgetCalls = 0;
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -48,11 +49,17 @@ mock.module('../billing/services/yolo-tokens', () => ({
   attributeYoloToken: async () => null,
 }));
 
+// 'good' is a PROJECT-SCOPED token (projectId set) — the shape every admitted
+// inference principal must have. 'pat' is a full-account PAT: it authenticates
+// against the account but resolves with no projectId, which is exactly the
+// KRTX-2295 shape.
 mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async (token: string) =>
     token === 'good'
-      ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null }
-      : { isValid: false },
+      ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: 'proj-1', sessionId: null }
+      : token === 'pat'
+        ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null }
+        : { isValid: false },
 }));
 
 mock.module('./resolution/default-model', () => ({
@@ -60,7 +67,10 @@ mock.module('./resolution/default-model', () => ({
 }));
 
 mock.module('./budgets', () => ({
-  checkBudget: async () => ({ exceeded: false }),
+  checkBudget: async () => {
+    budgetCalls += 1;
+    return { exceeded: false };
+  },
   releaseBudgetReservation: () => {},
 }));
 
@@ -85,13 +95,14 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest, assertLlmBillingActive } = await import('./hooks');
+const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal } = await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
   beforeEach(() => {
     accountTier = 'credits';
     billingCalls = 0;
+    budgetCalls = 0;
     billingThrow = null;
   });
 
@@ -151,6 +162,55 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     expect(result.ok).toBe(true);
     expect(billingCalls).toBe(0);
     if (result.ok) expect(result.principal.billingHold).toBeUndefined();
+  });
+});
+
+// KRTX-2295: budgets are project-scoped (gateway_budgets.projectId NOT NULL,
+// checkBudget returns { exceeded: false } without a projectId) and metered
+// usage lands on a project — so a full-account PAT (projectId undefined) used
+// to sail through every budget gate and settle usage with projectId NULL.
+// authorizeRequest must refuse inference for a project-less principal BEFORE
+// the billing gate; /v1/llm/models keeps authenticating account PATs via
+// authenticatePrincipal.
+describe('authorizeRequest — a project-less principal cannot run inference (KRTX-2295)', () => {
+  beforeEach(() => {
+    accountTier = 'per_seat';
+    billingCalls = 0;
+    budgetCalls = 0;
+    billingThrow = null;
+  });
+
+  test('a full-account PAT is refused with 403 project_required', async () => {
+    const result = await authorizeRequest('pat');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(403);
+      expect(result.errorCode).toBe('project_required');
+      expect(result.message).toMatch(/project/i);
+    }
+  });
+
+  test('the refusal precedes the billing gate and the budget query', async () => {
+    await authorizeRequest('pat');
+
+    expect(billingCalls).toBe(0);
+    expect(budgetCalls).toBe(0);
+  });
+
+  test('the refusal also holds on the deferred-billing path', async () => {
+    const result = await authorizeRequest('pat', { deferBilling: true });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errorCode).toBe('project_required');
+  });
+
+  test('/v1/llm/models keeps authenticating a full-account PAT (authenticatePrincipal)', async () => {
+    const principal = await authenticatePrincipal('pat');
+
+    expect(principal).not.toBeNull();
+    expect(principal?.accountId).toBe('acct-1');
+    expect(principal?.projectId).toBeUndefined();
   });
 });
 
