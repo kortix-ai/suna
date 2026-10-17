@@ -128,30 +128,38 @@ export async function validateGatewayKey(
     // keeps refusing (KRTX-1714 unchanged), only the observability gains an
     // owner. A secret matching NO row at all stays unattributed — garbage
     // traffic writes nothing.
-    const [dead] = await db
-      .select({
-        keyId: gatewayApiKeys.keyId,
-        accountId: gatewayApiKeys.accountId,
-        projectId: gatewayApiKeys.projectId,
-        createdBy: gatewayApiKeys.createdBy,
-        status: gatewayApiKeys.status,
-        expiresAt: gatewayApiKeys.expiresAt,
-        projectStatus: projects.status,
-      })
-      .from(gatewayApiKeys)
-      .leftJoin(projects, eq(projects.projectId, gatewayApiKeys.projectId))
-      .where(eq(gatewayApiKeys.secretKeyHash, hash))
-      .limit(1);
-    if (!dead) return null;
-    const identity = {
-      accountId: dead.accountId,
-      projectId: dead.projectId,
-      userId: dead.createdBy ?? dead.accountId,
-      keyId: dead.keyId,
-    };
-    if (dead.status !== 'active') return { ...identity, refused: 'revoked' };
-    if (dead.expiresAt && dead.expiresAt.getTime() < Date.now()) return { ...identity, refused: 'expired' };
-    return { ...identity, refused: 'project_archived' };
+    //
+    // This read runs on every unknown token, so it is attacker-controllable:
+    // a transient failure here must keep the plain 401, never turn it into a
+    // 500. Losing the attribution is free; losing the refusal is not.
+    try {
+      const [dead] = await db
+        .select({
+          keyId: gatewayApiKeys.keyId,
+          accountId: gatewayApiKeys.accountId,
+          projectId: gatewayApiKeys.projectId,
+          createdBy: gatewayApiKeys.createdBy,
+          status: gatewayApiKeys.status,
+          expiresAt: gatewayApiKeys.expiresAt,
+          projectStatus: projects.status,
+        })
+        .from(gatewayApiKeys)
+        .leftJoin(projects, eq(projects.projectId, gatewayApiKeys.projectId))
+        .where(eq(gatewayApiKeys.secretKeyHash, hash))
+        .limit(1);
+      if (!dead) return null;
+      const identity = {
+        accountId: dead.accountId,
+        projectId: dead.projectId,
+        userId: dead.createdBy ?? dead.accountId,
+        keyId: dead.keyId,
+      };
+      if (dead.status !== 'active') return { ...identity, refused: 'revoked' };
+      if (dead.expiresAt && dead.expiresAt.getTime() < Date.now()) return { ...identity, refused: 'expired' };
+      return { ...identity, refused: 'project_archived' };
+    } catch {
+      return null;
+    }
   }
   const identity = {
     accountId: row.accountId,

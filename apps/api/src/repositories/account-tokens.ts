@@ -52,7 +52,12 @@ export interface AccountTokenValidationResult {
    *  expired, lease-refused or idle-revoked, the row's real identity rides on
    *  the refusal so the LLM gateway can log the request against its owning
    *  account (KRTX-1749). Absent when nothing matches: a garbage secret stays
-   *  unattributed, so spray traffic writes no log rows. */
+   *  unattributed, so spray traffic writes no log rows.
+   *
+   *  Account-only refusals (a personal PAT has no project) are attributed but
+   *  the product's log readers are project-scoped — today that class of row is
+   *  visible in the store, not in any UI/CLI list. An account-scoped reader is
+   *  the deliberate follow-up, not this PR. */
   refusedIdentity?: {
     accountId: string;
     userId: string;
