@@ -502,7 +502,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       size="lg"
       className="flex-1 [--split-sheet-max:60%] [--split-sheet-width:60%]"
     >
-      <SplitSheetMain>
+      {/* A flex column, so the shell's own `flex-1 overflow-y-auto` div is the
+          scroller: the select bar's `sticky bottom-4` then pins to the visible
+          bottom of the list column. */}
+      <SplitSheetMain className="flex flex-col">
         <CapabilityPageShell
           /* The heading comes from `TRIGGERS_COPY` — this is one page now, not a
          pane switched by `type`. It read the Settings rail while

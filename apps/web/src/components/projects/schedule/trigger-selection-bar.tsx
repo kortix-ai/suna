@@ -14,7 +14,9 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import Hint from '@/components/ui/hint';
 import { useTranslations } from '@/i18n/use-translations';
-import { PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { cn } from '@/lib/utils';
+import { CheckSquareIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 
 export type BulkVerb = 'pause' | 'resume' | 'delete';
 
@@ -57,67 +59,72 @@ export function TriggerSelectionBar({
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const busy = progress !== null;
+  const selectLabel = allSelected ? t.raw('text83b12c2216ef') : t.raw('text1fc9a387654d');
+  // One action: a fixed-height outline button whose label hides when the bar
+  // is narrow (`@xl/bar`), leaving the icon with its name as aria-label and Hint.
+  const action = (
+    label: string,
+    icon: ReactNode,
+    onClick: () => void,
+    disabled: boolean,
+    className?: string,
+  ) => (
+    <Hint label={label} side="top">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={label}
+        onClick={onClick}
+        disabled={disabled}
+        className={cn('h-8 shrink-0 gap-1.5', className)}
+      >
+        {icon}
+        <span className="hidden @xl/bar:inline">{label}</span>
+      </Button>
+    </Hint>
+  );
   return (
-    <div className="bg-popover text-popover-foreground border-border flex items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md">
+    <div className="bg-popover text-popover-foreground border-border @container/bar flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md">
       <span
-        className="flex min-w-0 items-center gap-2 text-sm font-medium tabular-nums"
+        className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium tabular-nums"
         aria-live="polite"
       >
-        {progress ? (
-          <>
-            <SessionDotMatrix size={14} className="shrink-0" />
-            {t(PROGRESS_KEY[progress.verb], { done: progress.done, total: progress.total })}
-          </>
-        ) : (
-          t('text1cc5b0d9628f', { count: selectedCount })
-        )}
+        {progress ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+        <span className="truncate">
+          {progress
+            ? t(PROGRESS_KEY[progress.verb], { done: progress.done, total: progress.total })
+            : t('text1cc5b0d9628f', { count: selectedCount })}
+        </span>
       </span>
-      <ButtonGroup className="ml-auto">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8"
-          onClick={allSelected ? onClear : onSelectAll}
-          disabled={busy || shownCount === 0}
-        >
-          {allSelected ? t.raw('text83b12c2216ef') : t.raw('text1fc9a387654d')}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={onPause}
-          disabled={busy || !canPause}
-        >
-          <PauseIcon className="size-3.5 shrink-0" />
-          {t.raw('text858e4ba7a29f')}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={onResume}
-          disabled={busy || !canResume}
-        >
-          <PlayIcon className="size-3.5 shrink-0" />
-          {t.raw('textd640c7421da0')}
-        </Button>
-        {canDelete ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:text-destructive h-8 gap-1.5"
-            onClick={onDelete}
-            disabled={busy || selectedCount === 0}
-          >
-            <TrashIcon className="size-3.5 shrink-0" />
-            {t.raw('texte2d0a54968ea')}
-          </Button>
-        ) : null}
+      <ButtonGroup className="shrink-0">
+        {action(
+          selectLabel,
+          <CheckSquareIcon className="size-3.5 shrink-0" />,
+          allSelected ? onClear : onSelectAll,
+          busy || shownCount === 0,
+        )}
+        {action(
+          t.raw('text858e4ba7a29f'),
+          <PauseIcon className="size-3.5 shrink-0" />,
+          onPause,
+          busy || !canPause,
+        )}
+        {action(
+          t.raw('textd640c7421da0'),
+          <PlayIcon className="size-3.5 shrink-0" />,
+          onResume,
+          busy || !canResume,
+        )}
+        {canDelete
+          ? action(
+              t.raw('texte2d0a54968ea'),
+              <TrashIcon className="size-3.5 shrink-0" />,
+              onDelete,
+              busy || selectedCount === 0,
+              'text-destructive hover:text-destructive',
+            )
+          : null}
       </ButtonGroup>
       <Hint label={t.raw('text22206bc67806')} side="top">
         <Button
@@ -127,7 +134,7 @@ export function TriggerSelectionBar({
           aria-label={t.raw('text22206bc67806')}
           onClick={onExit}
           disabled={busy}
-          className="size-8"
+          className="size-8 shrink-0"
         >
           <XIcon className="size-4 shrink-0" />
         </Button>
