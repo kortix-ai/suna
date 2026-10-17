@@ -154,6 +154,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     },
     experimental_features: [],
     default_sandbox_provider: null,
+    default_reasoning_effort: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
   };

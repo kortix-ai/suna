@@ -29,6 +29,7 @@ import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutco
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import { repairLegacyInlineAttachments } from './legacy-inline-attachment-repair';
 import { promptAgent } from './agent-availability';
+import { effortVariantForPrompt } from '../lib/effort-default';
 import type {
   ContinueSessionCommand,
   LegacyInlineAttachmentRepairMetadata,
@@ -74,6 +75,10 @@ export async function continueSession(
       agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
       projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessions.projectId)})`,
+      // The project's default reasoning effort (see `effort-default.ts`) — one
+      // correlated scalar in this same read, so injecting it costs no extra
+      // round trip on the delivery path.
+      projectDefaultEffort: sql<string | null>`(SELECT p.metadata->>'default_reasoning_effort' FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessions.projectId)})`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
@@ -136,6 +141,16 @@ export async function continueSession(
   // unhandled rejection; `sendPrompt` awaits the original and throws.
   turnIdentity.catch(() => undefined);
   const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
+  // The project's default reasoning effort, clamped to the model this prompt
+  // runs on. Injected only when the prompt carries no variant of its own (the
+  // composer's "Auto", a Slack message, a trigger fire): an explicit session
+  // pick always wins, and a value the model doesn't publish is dropped — a
+  // mis-chosen default must never break a turn. See `effort-default.ts`.
+  const projectEffortVariant = effortVariantForPrompt({
+    stored: session.projectDefaultEffort,
+    modelOverride: command.overrides?.model ?? undefined,
+    sessionModelRef: sessionMeta.opencode_model,
+  });
   const shouldRepairLegacyInlineAttachments =
     command.isPendingFirstPrompt !== true &&
     Array.isArray(pendingAttachmentNames) &&
@@ -216,7 +231,13 @@ export async function continueSession(
       idempotencyKey,
       {
         parts: command.parts,
-        overrides: { ...command.overrides, agent: promptAgent(command.overrides?.agent, session.agentName) },
+        overrides: {
+          ...command.overrides,
+          ...(projectEffortVariant && !command.overrides?.variant
+            ? { variant: projectEffortVariant }
+            : {}),
+          agent: promptAgent(command.overrides?.agent, session.agentName),
+        },
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
         noReply: command.noReply,

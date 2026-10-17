@@ -206,6 +206,10 @@ export interface KortixProject {
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
   default_sandbox_provider?: SandboxProviderName | null;
+  /** Per-project default reasoning effort (a models.dev effort label such as
+   *  `low`/`high`/`xhigh`), or null for automatic. Delivery injects it as the
+   *  prompt's `variant` whenever the prompt carries none. */
+  default_reasoning_effort?: string | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
   available_sandbox_providers?: SandboxProviderName[];
   /** Per-project emoji shown on the project card. Server-validated: exactly one
@@ -1007,6 +1011,21 @@ export async function updateProjectSandboxProvider(
       `/projects/${projectId}/sandbox-provider`,
       { provider },
     ),
+  );
+}
+
+/** Set or clear the per-project default reasoning effort (Settings → General).
+ *  Pass `null` to clear (automatic). The value must be an effort label the
+ *  model catalog publishes; the server validates it. Returns the updated
+ *  project with `default_reasoning_effort` re-validated on read. */
+export async function setDefaultReasoningEffort(
+  projectId: string,
+  effort: string | null,
+): Promise<KortixProject> {
+  return unwrap(
+    await backendApi.put<KortixProject>(`/projects/${projectId}/default-reasoning-effort`, {
+      effort,
+    }),
   );
 }
 
