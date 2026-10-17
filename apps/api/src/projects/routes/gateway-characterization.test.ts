@@ -77,6 +77,11 @@ mock.module('../lib/access', () => ({
   assertProjectCapability: async () => {},
 }));
 
+// The caller is a manager: the read view filters nothing.
+mock.module('../lib/project-read-view', () => ({
+  projectReadView: async () => ({ full: true, where: () => undefined, allows: async () => true }),
+}));
+
 const { projectsApp } = await import('../lib/app');
 (await import('./gateway')).registerGatewayRoutes();
 

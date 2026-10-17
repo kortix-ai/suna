@@ -1,5 +1,7 @@
 import { flow } from '../core/flow';
 import { createDatabaseSession } from '../fixtures/database-project';
+import { withDb } from '../fixtures/chat';
+import { waitFor } from '../core/poll';
 
 flow(
   'COST-1',
@@ -355,6 +357,45 @@ flow(
           .json<Rows>()
           .sessions.map((r) => r.session_id);
         if (!all.includes(mine) || !all.includes(theirs)) throw new Error(`the owner must list both sessions: ${JSON.stringify(all)}`);
+      },
+    );
+    await ctx.step(
+      'cost-by-project lists only the projects the caller can read: a plain member sees their project and not one they are not in; the owner sees both',
+      async () => {
+        const theirs = await team.project();
+        const notTheirs = await team.project();
+        await team.grantProjectRole(theirs.id, member.userId!, 'member');
+        // One zero-cost gateway row per project: a project with no spend row is never listed.
+        await withDb(ctx, (db) =>
+          db.query(
+            `INSERT INTO kortix.gateway_request_logs
+               (request_id, account_id, project_id, requested_model, resolved_model, provider, status, ok)
+             SELECT 'cost4-' || p, $1::uuid, p, 'ke2e', 'ke2e', 'ke2e', 200, true FROM unnest($2::uuid[]) AS p`,
+            [team.id, [theirs.id, notTheirs.id]],
+          ),
+        );
+        type Page = { projects: Array<{ project_id: string }>; total: number };
+        const ids = async (as: ReturnType<typeof ctx.client.as>) => {
+          const page = (await as.get('/v1/usage/cost-by-project', { query: { account_id: team.id, limit: '100' } }))
+            .status(200)
+            .json<Page>();
+          if (page.total !== page.projects.length) throw new Error(`total ${page.total} must count only listed rows`);
+          return page.projects.map((r) => r.project_id);
+        };
+        // IAM verdicts are cached for up to 15 s: the fresh project grant can read the old answer first.
+        const memberIds = await waitFor(() => ids(ctx.client.as(member)), {
+          until: (list) => list.includes(theirs.id),
+          timeoutMs: 20_000,
+          intervalMs: 1_000,
+          description: "the member's own project in cost-by-project",
+        });
+        if (memberIds.includes(notTheirs.id)) {
+          throw new Error(`a plain member must not see a project they cannot read: ${JSON.stringify(memberIds)}`);
+        }
+        const ownerIds = await ids(ctx.client.as(ctx.P.OWNER));
+        if (!ownerIds.includes(theirs.id) || !ownerIds.includes(notTheirs.id)) {
+          throw new Error(`the owner must see every project: ${JSON.stringify(ownerIds)}`);
+        }
       },
     );
     await ctx.step('OWNER JWT still reads account usage → 200', async () => {

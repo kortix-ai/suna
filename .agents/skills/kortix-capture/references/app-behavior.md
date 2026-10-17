@@ -813,6 +813,17 @@ channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
   subdomain, case-insensitively (`chase.com` covers `secure.chase.com`;
   `notchase.com` stays visible). It is best-effort: add missing banks under
   `excluded_domains`.
+- Record only included (`record_only_included`, `included_bundle_ids`,
+  `included_domains`; the policy's `privacy.*` of the same names turn it on and
+  add to the lists, and the person cannot turn it off). A window is recorded
+  only when its app is included or its page's website is (a website pattern
+  covers its subdomains, in any browser). Exclusions win. Both engines hide
+  every other window (`plan_displays` / `planDisplays`), a display with no
+  included window writes no frame, and the front-app checks and the action
+  recorder skip with `not_included`. On macOS an app with no visible included
+  window is hidden whole, so its panels and notifications stay out. A browser
+  window behind the focused one has no URL on Windows/Linux, so only an
+  included browser app keeps it visible. Audio is not filtered by app.
 - The login window, screen saver and lock screen never record, on every
   platform: macOS skips a locked session and always excludes
   `com.apple.loginwindow` and the screen saver; Windows always excludes

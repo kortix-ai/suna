@@ -1303,6 +1303,7 @@ const AUTO_PAUSE_REASONS: &[&str] = &[
     "self_on_screen",
     "excluded_app",
     "excluded_domain",
+    "not_included",
     "private_browsing",
     "unknown_bundle",
     "no_frontmost_app",
@@ -2916,6 +2917,7 @@ mod tests {
             "inactive",
             "excluded_app",
             "excluded_domain",
+            "not_included",
             "private_browsing",
             "error",
         ] {

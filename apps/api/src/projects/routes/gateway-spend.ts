@@ -12,6 +12,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { projectReadView } from '../lib/project-read-view';
 import { listProjectGatewaySessionSpend, listProjectGatewaySourceSpend } from '../../shared/session-costs';
 import { projectSpendByModel } from '../lib/session-model-usage';
 import {
@@ -190,11 +191,13 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+      const view = await projectReadView(c, loaded);
       return c.json(
         await listProjectGatewaySessionSpend({
           accountId: loaded.row.accountId,
           projectId,
           days,
+          sessionsVisibleTo: (column) => view.where(column),
         }),
       );
     },
@@ -288,10 +291,20 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const now = new Date();
+      // A non-manager reads the project budget and their own member budget
+      // and spend row, never another member's id, email or spend.
+      const { full } = await projectReadView(c, loaded);
       const budgets = await db
         .select()
         .from(gatewayBudgets)
-        .where(eq(gatewayBudgets.projectId, projectId));
+        .where(
+          and(
+            eq(gatewayBudgets.projectId, projectId),
+            full
+              ? undefined
+              : sql`(${gatewayBudgets.subjectUserId} is null or ${gatewayBudgets.subjectUserId} = ${loaded.userId})`,
+          ),
+        );
 
       const memberRows = await db
         .select({
@@ -307,7 +320,9 @@ export function registerGatewaySpendRoutes(): void {
         .where(
           and(
             eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.actorUserId} is not null`,
+            full
+              ? sql`${gatewayRequestLogs.actorUserId} is not null`
+              : eq(gatewayRequestLogs.actorUserId, loaded.userId),
             sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
           ),
         )

@@ -50,7 +50,7 @@ export function registerProjectInvitesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a member grants project access — members.manage, not plain write.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
@@ -249,7 +249,7 @@ export function registerProjectInvitesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -339,7 +339,7 @@ export function registerProjectInvitesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const inviteId = c.req.param('inviteId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -414,7 +414,7 @@ export function registerProjectInvitesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const inviteId = c.req.param('inviteId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

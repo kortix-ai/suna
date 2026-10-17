@@ -171,6 +171,8 @@ export interface SessionActionRowsInput {
   hasRuntime: boolean;
   /** The viewer may manage the session (`can_manage_lifecycle !== false`). */
   canManageLifecycle: boolean;
+  /** The viewer may open a change request: project.write + project.gitops.push (`changeRequestControlsFrom`). */
+  canOpenChangeRequest: boolean;
   /** The runtime serves `session.compact` (`useRuntimeSupports`); pi does not. */
   canCompact: boolean;
   changes: { pending: boolean; error: boolean; count: number };
@@ -196,7 +198,7 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
   // this row. It needs the changes read, so only for the thread on screen.
   const { pending: changesPending, error: changesError, count: changesCount } = input.changes;
   const openChangeRequest: ActionRowState =
-    live && !changesPending && !changesError && changesCount > 0 ? { visible: true, enabled: true } : HIDDEN;
+    live && input.canOpenChangeRequest && !changesPending && !changesError && changesCount > 0 ? { visible: true, enabled: true } : HIDDEN;
 
   let viewChanges: ActionRowState = HIDDEN;
   if (live) {

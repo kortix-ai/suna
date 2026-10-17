@@ -62,6 +62,11 @@ pub struct PolicyPrivacy {
     pub exclusion_groups: Vec<String>,
     /// `true` leaves private browser windows out, whatever the person chose.
     pub exclude_private_browsing: bool,
+    /// `true` records only included apps and websites; the person cannot turn it off.
+    pub record_only_included: bool,
+    /// Added to the person's own included apps and websites.
+    pub included_bundle_ids: Vec<String>,
+    pub included_domains: Vec<String>,
 }
 
 /// 0 = no limit.
@@ -166,6 +171,16 @@ impl Policy {
         if privacy.exclude_private_browsing {
             s.exclude_private_browsing = true;
         }
+        if privacy.record_only_included {
+            s.record_only_included = true;
+        }
+        union_ci(&mut s.included_bundle_ids, &privacy.included_bundle_ids);
+        let included: Vec<String> = privacy
+            .included_domains
+            .iter()
+            .filter_map(|d| super::exclusions::normalize_domain_input(d))
+            .collect();
+        union_ci(&mut s.included_domains, &included);
         let r = &self.retention;
         if r.local_hours > 0 {
             s.sync.keep_local_hours = s.sync.keep_local_hours.min(r.local_hours);
@@ -280,6 +295,26 @@ mod tests {
         assert!(s.exclude_private_browsing);
         s.policy = None;
         s.validate().unwrap();
+    }
+
+    #[test]
+    fn org_record_only_included_turns_it_on_and_joins_the_persons_lists() {
+        let p: Policy = serde_json::from_str(
+            r#"{"schema": 2, "privacy": {"record_only_included": true,
+                "included_bundle_ids": ["com.tinyspeck.slackmacgap"], "included_domains": ["https://www.GitHub.com/x"]}}"#,
+        )
+        .unwrap();
+        let mut s = Settings::default();
+        s.included_bundle_ids = vec!["com.mine.editor".into()];
+        p.apply(&mut s);
+        assert!(s.record_only_included);
+        assert_eq!(s.included_bundle_ids, vec!["com.mine.editor", "com.tinyspeck.slackmacgap"]);
+        assert_eq!(s.included_domains, vec!["github.com"]);
+        // A policy without it leaves the person's choice alone.
+        let mut mine = Settings::default();
+        mine.record_only_included = true;
+        parse(br#"{"schema": 2}"#).unwrap().apply(&mut mine);
+        assert!(mine.record_only_included);
     }
 
     #[test]
