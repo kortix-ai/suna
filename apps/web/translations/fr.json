@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "Petites équipes",
           "growing": "Équipes en croissance",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Grandes organisations"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Démarrez avec de vrais crédits sandbox.",
-          "f1": "200 crédits / mois, sans carte",
-          "f2": "1 projet",
-          "f3": "Apportez votre propre clé API pour n'importe quel modèle premium",
-          "f4": "Connectez votre abonnement ChatGPT"
+          "f1": "500 crédits / mois, sans carte",
+          "f2": "Modèles gérés : Kimi, DeepSeek, GLM. Zéro conservation des données, inférence aux États-Unis",
+          "f3": "1 projet",
+          "f4": "Apportez votre propre clé API pour n'importe quel modèle premium",
+          "f5": "Connectez votre abonnement ChatGPT"
         },
         "credits": {
           "name": "Crédits",
@@ -2467,7 +2469,7 @@
           "f2": "Membres illimités, un seul pool de crédits partagé",
           "f3": "Les crédits inutilisés sont reportés d'un mois",
           "f4": "Rechargez à tout moment. Les recharges n'expirent jamais",
-          "f5": "Modèles gérés et toutes les fonctionnalités",
+          "f5": "Jusqu’à 200 projets et des limites de débit plus élevées",
           "f6": "Support par e-mail"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "Que comprend Free ?",
-          "answer": "Free inclut 200 crédits par mois pour le calcul en sandbox et 1 projet. Apportez votre propre clé API ou connectez votre abonnement ChatGPT pour les modèles premium. Les modèles gérés avec les clés Kortix nécessitent un forfait payant."
+          "answer": "Free inclut 500 crédits par mois, les modèles gérés et toutes les fonctionnalités, pour 1 projet. Les crédits paient l’ordinateur de l’agent et les modèles Kortix. Apportez votre propre clé API ou connectez votre abonnement ChatGPT pour tout autre modèle."
         },
         "credit": {
           "question": "Que permet d'acheter un crédit ?",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
-          "answer": "Choisissez un palier de 50 $ par mois (5 000 crédits) à 10 000 $ par mois (1 000 000 de crédits). Chaque palier donne des crédits au même taux : 100 crédits par dollar. Au-delà de 10 000 $ par mois, contactez les ventes."
+          "answer": "Choisissez un palier de 50 $ par mois (5 000 crédits) à 50 000 $ par mois (5 000 000 de crédits). Chaque palier donne des crédits au même taux : 100 crédits par dollar. Au-delà de 50 000 $ par mois, contactez les ventes."
         },
         "members": {
           "question": "Dois-je payer pour les membres ?",
@@ -20015,7 +20017,7 @@
       "text146aaf3c71fa": "Maintient SSO, SCIM, RBAC et audit activés pour un compte Enterprise signé également facturé via un forfait payant, afin que le rapprochement Stripe ne les retire pas.",
       "text517105fd13ce": "Les crédits financent le calcul en sandbox : même un essai BYOK nécessite un solde de portefeuille pour exécuter des sessions. Le crédit de bienvenue gratuit est de 2 $.",
       "text2f1d17f50af8": "Enterprise débloque SAML SSO, la synchronisation d'annuaire SCIM, RBAC et l'accès à l'audit pour ce compte. Le forfait facturé ne change pas.",
-      "text12836c0e435d": "Free coûte 0 $ — un projet et 200 crédits par mois de calcul en sandbox, avec votre propre clé pour n'importe quel modèle premium. Les forfaits payants sont en crédits : choisissez un montant mensuel, les membres sont gratuits et illimités, et un seul pool couvre tout le compte. L'auto-hébergement du logiciel ne coûte rien ; vous payez à la place votre propre facture de modèles et de calcul.",
+      "text12836c0e435d": "Free coûte 0 $ — un projet, 500 crédits par mois, les modèles gérés et toutes les fonctionnalités, avec votre propre clé pour tout autre modèle. Les forfaits payants sont en crédits : choisissez un montant mensuel, les membres sont gratuits et illimités, et un seul pool couvre tout le compte. L'auto-hébergement du logiciel ne coûte rien ; vous payez à la place votre propre facture de modèles et de calcul.",
       "text5dffd4db88c5": "Votre forfait, vos crédits et la facturation de ce compte.",
       "text49fd64c206dd": "Votre forfait est actif. Les crédits sont prêts.",
       "textad828837ddd8": "membres membre accès à l’espace de travail collaborateurs personnes coéquipiers liste qui peut voir permissions accorder partager",
@@ -20140,7 +20142,11 @@
       "text08e6480e9b78": "{value0} ajoutée",
       "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici.",
       "textdae75dce541f": "Met en pause toutes les planifications et tous les webhooks de ce projet.",
-      "textced57bebd466": "Réactive les planifications et les webhooks de ce projet."
+      "textced57bebd466": "Réactive les planifications et les webhooks de ce projet.",
+      "agentsListSubagentsTitle": "Sous-agents",
+      "agentsListSubagentsHint": "D'autres agents les appellent pendant une session. Personne ne démarre de chat avec eux.",
+      "agentsListAlsoSubagent": "Aussi sous-agent",
+      "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -21538,7 +21544,11 @@
         "excluded": "Exclus",
         "noMatch": "Aucun résultat.",
         "noExcludedApps": "Aucune app n’est exclue.",
-        "noExcludedSites": "Aucun site web n’est exclu."
+        "noExcludedSites": "Aucun site web n’est exclu.",
+        "commonApps": "Apps courantes",
+        "commonSites": "Sites web courants",
+        "showList": "Afficher la liste",
+        "hideList": "Masquer la liste"
       },
       "remoteDays": "Dans Kortix",
       "remoteDaysHint": "Combien de temps Kortix garde les enregistrements. 0 les garde sans limite.",
@@ -21562,7 +21572,7 @@
       "experimentalTitle": "Expérimental",
       "experimentalHint": "Essayez des fonctions qui peuvent encore changer.",
       "privacyControls": "Contrôles de confidentialité",
-      "privacyControlsHint": "Affiche le masquage des données personnelles et les apps et sites qu’aucun ordinateur n’enregistre. Désactiver les masque ; les réglages restent appliqués.",
+      "privacyControlsHint": "Afficher le masquage des données personnelles. Le désactiver le masque ; ce qui est défini continue de s’appliquer.",
       "maskingTitle": "Masquage",
       "framesTitle": "Images d'écran",
       "interval": "Une image toutes les",
@@ -21573,10 +21583,10 @@
       "framesHint": "Sans valeur, chaque ordinateur utilise la sienne (une image toutes les 2 s en 1440p). Avec une valeur, tous les ordinateurs l'utilisent et personne ne peut la modifier. Les clics, la saisie et le défilement sont enregistrés avec leurs propres captures, quel que soit l'intervalle.",
       "computerDecides": "Chaque ordinateur décide",
       "included": {
-        "title": "N’enregistrer que ces apps et sites web",
-        "hint": "Activé : chaque ordinateur de {org} n’enregistre que ce qui figure ici. Tout le reste est masqué en noir et jamais enregistré. Les personnes peuvent ajouter les leurs dans Kortix Capture ; elles ne peuvent ni le désactiver ni retirer ceux-ci.",
+        "title": "Apps et sites web",
+        "hint": "Choisissez ce que chaque ordinateur de {org} enregistre. Ce qui est ignoré est masqué en noir et jamais enregistré ni envoyé. Les personnes peuvent ajouter les leurs dans Kortix Capture ; elles ne peuvent ni retirer ceux-ci ni désactiver « N’enregistrer que ».",
         "switch": "N’enregistrer que les apps et sites web inclus",
-        "switchHint": "Désactivé : tout ce qui n’est pas exclu est enregistré.",
+        "switchHint": "Désactivé : tout est enregistré sauf « Ne jamais enregistrer ».",
         "kindLabel": "Apps ou sites web",
         "apps": "Apps",
         "websites": "Sites web",
@@ -21586,7 +21596,19 @@
         "addDomain": "Inclure {domain}",
         "included": "Inclus",
         "noApps": "Aucune app incluse. Seuls les sites web inclus sont enregistrés.",
-        "noSites": "Aucun site web inclus. Les navigateurs ne sont enregistrés que si leur app est incluse."
+        "noSites": "Aucun site web inclus. Les navigateurs ne sont enregistrés que si leur app est incluse.",
+        "switchHintOn": "Activé : seuls les apps et sites web ci-dessous sont enregistrés.",
+        "commonApps": "Apps courantes",
+        "commonSites": "Sites web courants",
+        "policyType": "Type de règle",
+        "exclusionPolicy": "Règle d’exclusion",
+        "exclusionPolicyHint": "Tout enregistrer sauf ce que vous excluez.",
+        "inclusionPolicy": "Règle d’inclusion",
+        "inclusionPolicyHint": "N’enregistrer que ce que vous incluez. Tout le reste est masqué en noir.",
+        "recordTitle": "N’enregistrer que ceux-ci",
+        "exceptTitle": "Ne jamais enregistrer, même s’ils sont inclus",
+        "memberInclusions": "Les personnes peuvent inclure leurs propres apps et sites web",
+        "memberInclusionsHint": "Désactivé : les ordinateurs n’enregistrent que les apps et sites web listés ici. Les personnes peuvent toujours ajouter des apps et sites web à ignorer."
       }
     },
     "area": {

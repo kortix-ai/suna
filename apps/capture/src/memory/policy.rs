@@ -67,6 +67,9 @@ pub struct PolicyPrivacy {
     /// Added to the person's own included apps and websites.
     pub included_bundle_ids: Vec<String>,
     pub included_domains: Vec<String>,
+    /// `Some(false)`: the person's own included apps and websites are ignored (their
+    /// own exclusions always apply: they only record less). Absent: allowed.
+    pub member_inclusions: Option<bool>,
 }
 
 /// 0 = no limit.
@@ -174,6 +177,10 @@ impl Policy {
         if privacy.record_only_included {
             s.record_only_included = true;
         }
+        if privacy.member_inclusions == Some(false) {
+            s.included_bundle_ids.clear();
+            s.included_domains.clear();
+        }
         union_ci(&mut s.included_bundle_ids, &privacy.included_bundle_ids);
         let included: Vec<String> = privacy
             .included_domains
@@ -224,6 +231,27 @@ pub struct Cached {
 
 pub fn path(paths: &MemoryPaths) -> std::path::PathBuf {
     paths.root.join("policy.json")
+}
+
+/// Written after every successful policy read, whether a policy exists or not.
+fn checked_path(paths: &MemoryPaths) -> std::path::PathBuf {
+    paths.root.join("policy-checked")
+}
+
+/// This computer has asked its destination for a policy since it signed in.
+pub fn checked(paths: &MemoryPaths) -> bool {
+    checked_path(paths).exists()
+}
+
+pub fn mark_checked(paths: &MemoryPaths) {
+    let _ = std::fs::write(checked_path(paths), b"");
+}
+
+/// A new sign-in: the previous destination's policy no longer applies, and recording
+/// waits for the new one's (see `Settings::policy_pending`).
+pub fn forget(paths: &MemoryPaths) {
+    let _ = std::fs::remove_file(path(paths));
+    let _ = std::fs::remove_file(checked_path(paths));
 }
 
 pub fn read(paths: &MemoryPaths) -> Option<Cached> {
@@ -315,6 +343,28 @@ mod tests {
         mine.record_only_included = true;
         parse(br#"{"schema": 2}"#).unwrap().apply(&mut mine);
         assert!(mine.record_only_included);
+    }
+
+    #[test]
+    fn the_organization_can_ignore_the_persons_own_inclusions_but_never_their_exclusions() {
+        let p: Policy = serde_json::from_str(
+            r#"{"schema": 2, "privacy": {"record_only_included": true, "member_inclusions": false,
+                "included_bundle_ids": ["com.tinyspeck.slackmacgap"]}}"#,
+        )
+        .unwrap();
+        let mut s = Settings::default();
+        s.included_bundle_ids = vec!["com.spotify.client".into()];
+        s.included_domains = vec!["youtube.com".into()];
+        s.excluded_bundle_ids = vec!["com.mine.secret".into()];
+        p.apply(&mut s);
+        assert_eq!(s.included_bundle_ids, vec!["com.tinyspeck.slackmacgap"]);
+        assert!(s.included_domains.is_empty());
+        assert_eq!(s.excluded_bundle_ids, vec!["com.mine.secret"]);
+        // Absent: the person's own inclusions stay.
+        let mut mine = Settings::default();
+        mine.included_bundle_ids = vec!["com.spotify.client".into()];
+        parse(br#"{"schema": 2, "privacy": {}}"#).unwrap().apply(&mut mine);
+        assert_eq!(mine.included_bundle_ids, vec!["com.spotify.client"]);
     }
 
     #[test]

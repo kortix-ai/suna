@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "Small teams",
           "growing": "Growing teams",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Large organizations"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Start with real sandbox credits.",
-          "f1": "200 credits / month, no card needed",
-          "f2": "1 project",
-          "f3": "Bring your own API key for any premium model",
-          "f4": "Connect your ChatGPT subscription"
+          "f1": "500 credits / month, no card needed",
+          "f2": "Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference",
+          "f3": "1 project",
+          "f4": "Bring your own API key for any premium model",
+          "f5": "Connect your ChatGPT subscription"
         },
         "credits": {
           "name": "Credits",
@@ -2467,7 +2469,7 @@
           "f2": "Unlimited members, one shared credit pool",
           "f3": "Unused credits roll over one month",
           "f4": "Top up any time. Top-ups never expire",
-          "f5": "Managed models and every feature",
+          "f5": "Up to 200 projects and higher model rate limits",
           "f6": "Support via email"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "What does Free include?",
-          "answer": "Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium models. Managed models on Kortix keys need a paid plan."
+          "answer": "Free includes 500 credits each month, managed models and every feature, for 1 project. Credits pay for the agent computer and for Kortix models. Bring your own API key or connect your ChatGPT subscription for any other model."
         },
         "credit": {
           "question": "What does a credit buy?",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $50,000 a month (5,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $50,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -20026,7 +20028,7 @@
       "text146aaf3c71fa": "Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also billed through a paid plan, so the Stripe reconciliation cannot strip them.",
       "text517105fd13ce": "Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions. The free welcome grant is $2.",
       "text2f1d17f50af8": "Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan is unchanged.",
-      "text12836c0e435d": "Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text12836c0e435d": "Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this account.",
       "text49fd64c206dd": "Your plan is active. Credits are ready.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",
@@ -20151,7 +20153,11 @@
       "text08e6480e9b78": "{value0} added",
       "text6241684827b2": "This site does not allow Kortix to show it here.",
       "textdae75dce541f": "Pauses every schedule and webhook in this project.",
-      "textced57bebd466": "Turns this project’s schedules and webhooks back on."
+      "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
+      "agentsListSubagentsTitle": "Subagents",
+      "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
+      "agentsListAlsoSubagent": "Also a subagent",
+      "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -21538,7 +21544,11 @@
         "excluded": "Excluded",
         "noMatch": "Nothing matches.",
         "noExcludedApps": "No app is excluded.",
-        "noExcludedSites": "No website is excluded."
+        "noExcludedSites": "No website is excluded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "showList": "Show list",
+        "hideList": "Hide list"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
@@ -21562,7 +21572,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Try features that may still change.",
       "privacyControls": "Privacy controls",
-      "privacyControlsHint": "Show personal-data masking and the apps and websites no computer records. Turning this off hides them; what is set keeps applying.",
+      "privacyControlsHint": "Show personal-data masking. Turning this off hides it; what is set keeps applying.",
       "maskingTitle": "Masking",
       "framesTitle": "Screen frames",
       "interval": "One frame every",
@@ -21573,10 +21583,10 @@
       "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
       "computerDecides": "Each computer decides",
       "included": {
-        "title": "Record only these apps and websites",
-        "hint": "On: every computer in {org} records only what is listed here. Everything else is blacked out and never saved. People can add their own in Kortix Capture; they cannot turn this off or remove these.",
+        "title": "Apps and websites",
+        "hint": "Choose what every computer in {org} records. Anything skipped is blacked out and never saved or uploaded. People can add their own in Kortix Capture; they cannot remove these or turn off Record only.",
         "switch": "Record only included apps and websites",
-        "switchHint": "Off: everything not excluded is recorded.",
+        "switchHint": "Off: everything except Never record is recorded.",
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
@@ -21586,7 +21596,19 @@
         "addDomain": "Include {domain}",
         "included": "Included",
         "noApps": "No app is included. Only included websites are recorded.",
-        "noSites": "No website is included. Browsers record only if the browser app is included."
+        "noSites": "No website is included. Browsers record only if the browser app is included.",
+        "switchHintOn": "On: only the apps and websites below are recorded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "policyType": "Policy type",
+        "exclusionPolicy": "Exclusion policy",
+        "exclusionPolicyHint": "Record everything except what you exclude.",
+        "inclusionPolicy": "Inclusion policy",
+        "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
+        "recordTitle": "Record only these",
+        "exceptTitle": "Never record, even if included",
+        "memberInclusions": "People can add their own included apps and websites",
+        "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
       }
     },
     "area": {

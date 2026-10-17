@@ -18,7 +18,13 @@ import {
   serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
+import {
+  cookieIdentityPlan,
+  isDeadSessionAuthError,
+  resolveMiddlewareIdentity,
+  type MiddlewareUser,
+} from '@/lib/supabase/middleware-identity';
+import { readUnverifiedSession } from '@/lib/supabase/session-cookie';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -561,7 +567,6 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
-
   // Every redirect issued after the Supabase client below runs must go
   // through this (see redirect-preserving-session.ts for why): otherwise the
   // browser gets bounced while still carrying the very cookie that caused the
@@ -587,58 +592,78 @@ export async function middleware(request: NextRequest) {
     process.env.SUPABASE_ANON_KEY ||
     process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookieOptions: {
-      name: KORTIX_SUPABASE_AUTH_COOKIE,
-      path: '/',
-      sameSite: 'lax',
-      // `@supabase/ssr` never sets this itself — see the doc comment in
-      // `lib/supabase/client.ts`.
-      secure: process.env.NODE_ENV === 'production',
-    },
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        supabaseResponse = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options),
-        );
-      },
-    },
-  });
 
-  // Resolve the identity ONCE and reuse it for every auth check below.
-  //
-  // The common path verifies the access token's ES256 signature in-process
-  // (see lib/supabase/middleware-identity.ts) instead of round-tripping
-  // GoTrue, so a client-side navigation no longer pays an edge -> Supabase hop
-  // before its RSC payload can start. getUser() still runs for what cannot be
-  // settled locally, and once per session per 30 s to confirm it was not
-  // signed out (KRTX-2387).
-  //
-  // IMPORTANT: Skip the lookup entirely for auth routes — the auth page
-  // handles its own session client-side. Resolving here can trigger a
-  // server-side token refresh that consumes the refresh token (GoTrue refresh
-  // tokens are single-use). The updated cookie is set on the response, but if
-  // the browser does a client-side navigation (router.push) instead of a full
-  // page load, the Set-Cookie header may not be processed, leaving the browser
-  // with a stale (revoked) refresh token → "Refresh Token Not Found" on the
-  // next request. Local verification also shrinks that window: the fast path
-  // never refreshes.
   let user: MiddlewareUser | null = null;
   let authError: Error | null = null;
 
   const isAuthRoute = pathname === '/auth' || pathname.startsWith('/auth/');
 
   if (!isAuthRoute) {
-    const identity = await resolveMiddlewareIdentity(supabase.auth);
-    user = identity.user;
-    authError = identity.authError;
+    // What the cookie alone says, before any auth client exists. Creating the
+    // client is not read-only: auth-js refreshes a session whose access token
+    // is expired or inside its refresh margin, and a refresh here rotates the
+    // single-use refresh token (GoTrue refresh tokens are single-use). The
+    // updated cookie is set on the response, but on the surfaces the
+    // middleware serves that Set-Cookie may not reach the browser — dev's edge
+    // strips `set-cookie` from `next-action` responses (KRTX-2095) and a
+    // client-side navigation may not process it either. The browser then
+    // still holds the refresh token THIS request consumed; its next refresh
+    // is rejected as already used and GoTrue's reuse detection can revoke the
+    // whole token family — the hard sign-out of KRTX-2111, where the only way
+    // back in was another auth email.
+    //
+    // So a cookie that is expired or inside the refresh margin never reaches
+    // the auth client: the request resolves as unauthenticated and bounces,
+    // the cookie is left untouched, and the browser client — the one writer
+    // that always sees its own rotation — refreshes the session on /auth and
+    // carries the user back to `redirect`.
+    const cookieSession = readUnverifiedSession(
+      request.cookies.getAll(),
+      KORTIX_SUPABASE_AUTH_COOKIE,
+    );
+    const plan = cookieIdentityPlan(
+      typeof cookieSession?.expires_at === 'number' ? cookieSession.expires_at : null,
+      Date.now(),
+    );
+    if (plan === 'fresh') {
+      const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+        cookieOptions: {
+          name: KORTIX_SUPABASE_AUTH_COOKIE,
+          path: '/',
+          sameSite: 'lax',
+          // `@supabase/ssr` never sets this itself — see the doc comment in
+          // `lib/supabase/client.ts`.
+          secure: process.env.NODE_ENV === 'production',
+        },
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+            supabaseResponse = NextResponse.next({
+              request,
+            });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              supabaseResponse.cookies.set(name, value, options),
+            );
+          },
+        },
+      });
+
+      // Resolve the identity ONCE and reuse it for every auth check below.
+      //
+      // The common path verifies the access token's ES256 signature in-process
+      // (see lib/supabase/middleware-identity.ts) instead of round-tripping
+      // GoTrue, so a client-side navigation no longer pays an edge -> Supabase
+      // hop before its RSC payload can start. getUser() still runs for what
+      // cannot be settled locally, and once per session per 30 s to confirm it
+      // was not signed out (KRTX-2387). With the stale-cookie skip above, that
+      // getUser() never has a refresh to fire: only fresh cookies get here.
+      const identity = await resolveMiddlewareIdentity(supabase.auth);
+      user = identity.user;
+      authError = identity.authError;
+    }
   }
 
   // Who is being bounced. Captured HERE, before the self-heal below can null
@@ -657,32 +682,29 @@ export async function middleware(request: NextRequest) {
   const bounceOwnerId =
     user?.id || parseLastProjectOwner(request.cookies.get(LAST_PROJECT_COOKIE)?.value);
 
-  // Self-heal a stale/rotated session. A refresh token that's invalid or
-  // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
-  // erroring on every request and dead-ends the user on /auth. Drop the Supabase
-  // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
-  // starts clean instead of looping on the bad token. A signed-out session
-  // (`session_not_found`) can never come back either.
-  if (authError) {
-    const message = authError.message || '';
-    const code = (authError as { code?: string }).code;
-    if (
-      code === 'refresh_token_already_used' ||
-      code === 'refresh_token_not_found' ||
-      code === 'session_not_found' ||
-      /refresh token/i.test(message) ||
-      /invalid.*(jwt|token)/i.test(message)
-    ) {
-      for (const { name } of request.cookies.getAll()) {
-        if (
-          name === KORTIX_SUPABASE_AUTH_COOKIE ||
-          name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
-        ) {
-          supabaseResponse.cookies.delete(name);
-        }
+  // Self-heal a session GoTrue has VERDICTED dead. `session_not_found` is the
+  // signed-out session's 403 (KRTX-2387); the refresh-token verdicts cover
+  // older GoTrue builds that name them only in the message. Both mean the
+  // cookie can never come back: drop the Supabase auth cookies (they can be
+  // chunked: name, name.0, name.1, …) so the next load starts clean instead of
+  // looping on the bad token.
+  //
+  // Everything else keeps its cookie. An "Invalid JWT" 401 is also what GoTrue
+  // answers for an access token that merely EXPIRED while the refresh token is
+  // still alive — deleting the cookie there threw away the one credential that
+  // could have restored the session (KRTX-2111). Such a request bounces to
+  // /auth with the cookie intact, and the browser client either refreshes it
+  // or signs out cleanly when it really is dead.
+  if (authError && isDeadSessionAuthError(authError)) {
+    for (const { name } of request.cookies.getAll()) {
+      if (
+        name === KORTIX_SUPABASE_AUTH_COOKIE ||
+        name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
+      ) {
+        supabaseResponse.cookies.delete(name);
       }
-      user = null;
     }
+    user = null;
   }
 
   // The default destination is a PROJECT, not the projects list. When the

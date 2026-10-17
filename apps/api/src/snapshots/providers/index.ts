@@ -50,6 +50,12 @@ export interface BuildableTemplate {
    * Daytona runs nested Docker without it; E2B rejects it.
    */
   containerRuntime?: boolean;
+  /**
+   * Provider region to build in; omitted for the home region. Platinum boots
+   * an image only from its own region's object store, so a regional image is
+   * built there (templates.ts projectImageRegion). Other providers ignore it.
+   */
+  region?: string;
 }
 
 export type ProviderState =
@@ -138,8 +144,13 @@ export interface SandboxProviderAdapter {
    * `sourceSnapshotName` by swapping ONLY the kortix-agent binary (no rebuild).
    * Implemented by providers that control the host filesystem (Platinum). Absent
    * on providers without a rootfs handle (Daytona) — callers fall back to build.
+   * `region` is the predecessor's build region (BuildableTemplate.region).
    */
-  swapAgent?(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult | void>;
+  swapAgent?(
+    newSnapshotName: string,
+    sourceSnapshotName: string,
+    opts?: { region?: string },
+  ): Promise<BuildSnapshotResult | void>;
 
   /** True iff the platform is wired up for this provider in the current env. */
   isConfigured(): boolean;

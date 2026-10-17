@@ -173,10 +173,17 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = true;
   });
 
-  test('blocks managed premium candidates for free accounts', async () => {
+  test('allows managed candidates for free accounts', async () => {
     accountTier = 'free';
+    const candidates = await resolveCandidates(principal('free-managed'), 'glm-5.3-flash');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.billingMode).toBe('credits');
+  });
+
+  test('blocks managed premium candidates for accounts with no plan', async () => {
+    accountTier = 'none';
     await expect(
-      resolveCandidates(principal('free-managed'), 'glm-5.3-flash'),
+      resolveCandidates(principal('none-managed'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',

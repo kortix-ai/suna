@@ -17,7 +17,14 @@ import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -225,6 +232,7 @@ function PolicyForm({
   const save = useSetCapturePolicy(accountId);
   const [draft, setDraft] = useState<CapturePolicy>(record.policy);
   const privacyControls = draft.experimental?.privacy_controls ?? false;
+  const recordOnly = draft.privacy.record_only_included ?? false;
   const dirty = JSON.stringify(draft) !== JSON.stringify(record.policy);
   const patch = <K extends keyof CapturePolicy>(key: K, value: Partial<CapturePolicy[K]>) =>
     setDraft((current) => ({ ...current, [key]: { ...(current[key] as object), ...value } }));
@@ -251,22 +259,75 @@ function PolicyForm({
         ))}
       </Group>
 
-      <Group title={t('included.title')} description={t('included.hint', { org })}>
-        <SwitchRow
-          title={t('included.switch')}
-          description={t('included.switchHint')}
-          checked={draft.privacy.record_only_included ?? false}
-          onChange={(on) =>
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <Label>{t('included.title')}</Label>
+          <p className="text-muted-foreground text-xs">{t('included.hint', { org })}</p>
+        </div>
+        <RadioGroup
+          value={recordOnly ? 'include' : 'exclude'}
+          onValueChange={(mode) =>
             setDraft((current) => ({
               ...current,
-              privacy: applyToPrivacy(current.privacy, { kind: 'record-only', on }),
+              privacy: applyToPrivacy(current.privacy, {
+                kind: 'record-only',
+                on: mode === 'include',
+              }),
             }))
           }
-        />
-        {draft.privacy.record_only_included ? (
-          <div className="px-4 py-3">
-          <IncludedEditor
-            view={includedView(draft.privacy)}
+          className="grid gap-2 sm:grid-cols-2"
+          aria-label={t('included.policyType')}
+        >
+          <RadioGroupItem
+            value="exclude"
+            label={t('included.exclusionPolicy')}
+            description={t('included.exclusionPolicyHint')}
+            size="lg"
+            variant="outline"
+          />
+          <RadioGroupItem
+            value="include"
+            label={t('included.inclusionPolicy')}
+            description={t('included.inclusionPolicyHint')}
+            size="lg"
+            variant="outline"
+          />
+        </RadioGroup>
+        {recordOnly ? (
+          <div className="space-y-1 pt-2">
+            <Label>{t('included.recordTitle')}</Label>
+            <IncludedEditor
+              view={includedView(draft.privacy)}
+              onChange={(change) =>
+                setDraft((current) => ({
+                  ...current,
+                  privacy: applyToPrivacy(current.privacy, change),
+                }))
+              }
+            />
+            <div className="bg-popover mt-3 rounded-md border">
+              <SwitchRow
+                title={t('included.memberInclusions')}
+                description={t('included.memberInclusionsHint')}
+                checked={draft.privacy.member_inclusions ?? true}
+                onChange={(on) =>
+                  setDraft((current) => ({
+                    ...current,
+                    privacy: applyToPrivacy(current.privacy, { kind: 'member-inclusions', on }),
+                  }))
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="space-y-1 pt-2">
+          <Label>{recordOnly ? t('included.exceptTitle') : t('exclusionsTitle')}</Label>
+          <ExclusionsEditor
+            org={org}
+            view={fromPolicy(draft.privacy, (id) => ({
+              name: tGroup(id),
+              description: tGroup(`${id}Hint`),
+            }))}
             onChange={(change) =>
               setDraft((current) => ({
                 ...current,
@@ -274,9 +335,8 @@ function PolicyForm({
               }))
             }
           />
-          </div>
-        ) : null}
-      </Group>
+        </div>
+      </section>
 
       <Group title={t('framesTitle')} description={t('framesHint')}>
         <SelectRow
@@ -363,22 +423,6 @@ function PolicyForm({
               onChange={(redact_pii) => patch('privacy', { redact_pii })}
             />
           </Group>
-          <section className="space-y-1">
-            <Label>{t('exclusionsTitle')}</Label>
-            <ExclusionsEditor
-              org={org}
-              view={fromPolicy(draft.privacy, (id) => ({
-                name: tGroup(id),
-                description: tGroup(`${id}Hint`),
-              }))}
-              onChange={(change) =>
-                setDraft((current) => ({
-                  ...current,
-                  privacy: applyToPrivacy(current.privacy, change),
-                }))
-              }
-            />
-          </section>
         </>
       ) : null}
 

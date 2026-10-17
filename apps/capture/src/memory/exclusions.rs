@@ -336,6 +336,58 @@ pub fn report_from(
     })
 }
 
+/// Apps installed on this Mac, `(bundle id, name)`, sorted by name: the suggestions where a
+/// person includes or excludes an app it has not recorded yet. Empty on other platforms.
+pub fn installed_apps() -> Vec<(String, String)> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let roots = [
+            "/Applications".to_string(),
+            "/Applications/Utilities".to_string(),
+            "/System/Applications".to_string(),
+            "/System/Applications/Utilities".to_string(),
+            format!("{home}/Applications"),
+        ];
+        let mut out: Vec<(String, String)> = Vec::new();
+        for root in roots {
+            let Ok(dir) = std::fs::read_dir(&root) else { continue };
+            for e in dir.flatten() {
+                let path = e.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("app") {
+                    continue;
+                }
+                let plist = path.join("Contents/Info.plist");
+                let Ok(o) = std::process::Command::new("/usr/bin/plutil")
+                    .args(["-convert", "json", "-o", "-"])
+                    .arg(&plist)
+                    .output()
+                else {
+                    continue;
+                };
+                let Ok(v) = serde_json::from_slice::<Value>(&o.stdout) else { continue };
+                let Some(id) = v["CFBundleIdentifier"].as_str() else { continue };
+                let name = v["CFBundleDisplayName"]
+                    .as_str()
+                    .or(v["CFBundleName"].as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+                    });
+                if !out.iter().any(|(b, _)| b.eq_ignore_ascii_case(id)) {
+                    out.push((id.to_string(), name));
+                }
+            }
+        }
+        out.sort_by_key(|(_, n)| n.to_lowercase());
+        out
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
+}
+
 /// At most this many recent apps and websites in the report.
 const RECENT: i64 = 50;
 
@@ -870,4 +922,17 @@ mod tests {
         );
     }
 
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn installed_apps_lists_safari_by_bundle_id_and_name_quickly() {
+        let t = std::time::Instant::now();
+        let apps = installed_apps();
+        assert!(
+            apps.iter().any(|(b, n)| b == "com.apple.Safari" && n == "Safari"),
+            "{:?}",
+            &apps[..apps.len().min(5)]
+        );
+        assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
+    }
 }

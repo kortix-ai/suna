@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "Мали тимови",
           "growing": "Тимови у расту",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Велике организације"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Почните са стварним sandbox кредитима.",
-          "f1": "200 кредита / месец, без картице",
-          "f2": "1 пројекат",
-          "f3": "Користите сопствени API кључ за било који премијум модел",
-          "f4": "Повежите своју ChatGPT претплату"
+          "f1": "500 кредита / месец, без картице",
+          "f2": "Управљани модели: Kimi, DeepSeek, GLM. Нулто задржавање података, инференција у САД",
+          "f3": "1 пројекат",
+          "f4": "Користите сопствени API кључ за било који премијум модел",
+          "f5": "Повежите своју ChatGPT претплату"
         },
         "credits": {
           "name": "Кредити",
@@ -2467,7 +2469,7 @@
           "f2": "Неограничен број чланова, један заједнички фонд кредита",
           "f3": "Неискоришћени кредити преносе се месец дана",
           "f4": "Допуњавајте кад год желите. Допуне никада не истичу",
-          "f5": "Управљани модели и све функције",
+          "f5": "До 200 пројеката и виша ограничења брзине модела",
           "f6": "Подршка путем е-поште"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "Шта укључује Free?",
-          "answer": "Free укључује 200 кредита месечно за рачунарску снагу sandbox-а и 1 пројекат. Користите сопствени API кључ или повежите ChatGPT претплату за премијум моделе. Управљани модели на Kortix кључевима захтевају плаћени план."
+          "answer": "Free укључује 500 кредита месечно, управљане моделе и све функције, за 1 пројекат. Кредити плаћају рачунар агента и Kortix моделе. Користите сопствени API кључ или повежите ChatGPT претплату за било који други модел."
         },
         "credit": {
           "question": "Шта може да се купи једним кредитом?",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
-          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 10.000 $ месечно (1.000.000 кредита). Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 10.000 $ месечно обратите се продаји."
+          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 50.000 $ месечно (5.000.000 кредита). Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 50.000 $ месечно обратите се продаји."
         },
         "members": {
           "question": "Да ли плаћам чланове?",
@@ -20015,7 +20017,7 @@
       "text146aaf3c71fa": "Одржава SSO, SCIM, RBAC и ревизију омогућеним за потписани Enterprise налог који се такође наплаћује преко плаћеног плана, како их Stripe усклађивање не би уклонило.",
       "text517105fd13ce": "Кредити финансирају рачунарску снагу sandbox-а — чак и BYOK пробни период захтева стање у новчанику за покретање сесија. Бесплатни уводни износ је 2 $.",
       "text2f1d17f50af8": "Enterprise омогућава SAML SSO, SCIM синхронизацију директоријума, RBAC и приступ ревизији за овај налог. Наплаћени план се не мења.",
-      "text12836c0e435d": "Free је 0 $ — један пројекат и 200 кредита месечно за рачунарску снагу sandbox-а, са вашим кључем за било који премијум модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
+      "text12836c0e435d": "Free је 0 $ — један пројекат, 500 кредита месечно, управљани модели и све функције, са вашим кључем за било који други модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
       "text5dffd4db88c5": "План, кредити и обрачун за овај налог.",
       "text49fd64c206dd": "Ваш план је активан. Кредити су спремни.",
       "textad828837ddd8": "чланови члан радни простор приступ сарадници људи колеге списак ко може да види дозволе додели дели",
@@ -20140,7 +20142,11 @@
       "text08e6480e9b78": "{value0} je dodata",
       "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
       "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
-      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта."
+      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
+      "agentsListSubagentsTitle": "Подагенти",
+      "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
+      "agentsListAlsoSubagent": "Такође подагент",
+      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -21538,7 +21544,11 @@
         "excluded": "Izuzeto",
         "noMatch": "Nema poklapanja.",
         "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
-        "noExcludedSites": "Nijedan veb-sajt nije izuzet."
+        "noExcludedSites": "Nijedan veb-sajt nije izuzet.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "showList": "Prikaži listu",
+        "hideList": "Sakrij listu"
       },
       "remoteDays": "У Kortix-у",
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
@@ -21562,7 +21572,7 @@
       "experimentalTitle": "Експериментално",
       "experimentalHint": "Isprobaj funkcije koje se još mogu menjati.",
       "privacyControls": "Kontrole privatnosti",
-      "privacyControlsHint": "Prikazuje maskiranje ličnih podataka i aplikacije i sajtove koje nijedan računar ne snima. Isključivanje ih sakriva; podešeno i dalje važi.",
+      "privacyControlsHint": "Prikaži maskiranje ličnih podataka. Isključivanje ga sakriva; podešeno i dalje važi.",
       "maskingTitle": "Maskiranje",
       "framesTitle": "Snimci ekrana",
       "interval": "Jedan snimak svakih",
@@ -21573,10 +21583,10 @@
       "framesHint": "Bez vrednosti, svaki računar koristi svoju (jedan snimak na svake 2 s u 1440p). Sa vrednošću, svi računari je koriste i niko ne može da je promeni. Klikovi, kucanje i skrolovanje snimaju se sa sopstvenim snimcima ekrana pri bilo kom intervalu.",
       "computerDecides": "Svaki računar odlučuje",
       "included": {
-        "title": "Snimaj samo ove aplikacije i veb-sajtove",
-        "hint": "Uključeno: svaki računar u {org} snima samo ono što je ovde navedeno. Sve ostalo je zatamnjeno i nikad se ne čuva. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ovo isključiti niti ukloniti ove stavke.",
+        "title": "Aplikacije i veb-sajtovi",
+        "hint": "Izaberite šta svaki računar u {org} snima. Ono što se preskoči je zatamnjeno i nikad se ne čuva niti otprema. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ukloniti ove niti isključiti Snimaj samo.",
         "switch": "Snimaj samo uključene aplikacije i veb-sajtove",
-        "switchHint": "Isključeno: snima se sve što nije izuzeto.",
+        "switchHint": "Isključeno: snima se sve osim Nikad ne snimaj.",
         "kindLabel": "Aplikacije ili veb-sajtovi",
         "apps": "Aplikacije",
         "websites": "Veb-sajtovi",
@@ -21586,7 +21596,19 @@
         "addDomain": "Uključi {domain}",
         "included": "Uključeno",
         "noApps": "Nijedna aplikacija nije uključena. Snimaju se samo uključeni veb-sajtovi.",
-        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena."
+        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena.",
+        "switchHintOn": "Uključeno: snimaju se samo aplikacije i veb-sajtovi ispod.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "policyType": "Vrsta pravila",
+        "exclusionPolicy": "Pravilo izuzimanja",
+        "exclusionPolicyHint": "Snimaj sve osim onoga što izuzmete.",
+        "inclusionPolicy": "Pravilo uključivanja",
+        "inclusionPolicyHint": "Snimaj samo ono što uključite. Sve ostalo je zatamnjeno.",
+        "recordTitle": "Snimaj samo ove",
+        "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni",
+        "memberInclusions": "Ljudi mogu uključiti svoje aplikacije i veb-sajtove",
+        "memberInclusionsHint": "Isključeno: računari snimaju samo ovde navedene aplikacije i veb-sajtove. Ljudi i dalje mogu dodati aplikacije i veb-sajtove koje treba preskočiti."
       }
     },
     "area": {

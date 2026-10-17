@@ -62,15 +62,24 @@ describe('the organization policy', () => {
   test('record only included: the switch and both lists, added and removed', () => {
     expect(includedView(PRIVACY)).toEqual({ on: false, apps: [], domains: [] });
     const on = applyToPrivacy(PRIVACY, { kind: 'record-only', on: true });
-    const withApp = applyToPrivacy(on, { kind: 'include-app', id: 'com.tinyspeck.slackmacgap', on: true });
-    const withSite = applyToPrivacy(withApp, { kind: 'include-domain', id: 'github.com', on: true });
+    const withApp = applyToPrivacy(on, {
+      kind: 'include-app',
+      id: 'com.tinyspeck.slackmacgap',
+      on: true,
+    });
+    const withSite = applyToPrivacy(withApp, {
+      kind: 'include-domain',
+      id: 'github.com',
+      on: true,
+    });
     expect(includedView(withSite)).toEqual({
       on: true,
       apps: [{ id: 'com.tinyspeck.slackmacgap', name: 'com.tinyspeck.slackmacgap', locked: false }],
       domains: [{ id: 'github.com', name: 'github.com', locked: false }],
     });
     expect(
-      applyToPrivacy(withSite, { kind: 'include-domain', id: 'github.com', on: false }).included_domains,
+      applyToPrivacy(withSite, { kind: 'include-domain', id: 'github.com', on: false })
+        .included_domains,
     ).toEqual([]);
     expect(PRIVACY.record_only_included).toBeUndefined();
   });

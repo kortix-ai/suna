@@ -20,6 +20,7 @@ import {
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFailedToSendMessageNoise,
+  isFirefoxDeadObjectUnattributableNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
   isGitMirrorUnavailableNoiseMessage,
@@ -11571,7 +11572,6 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
     "Can't find variables: EmptyRanges", // plural + colon
     'Can not find variable: EmptyRanges', // different modal wording
     'Could not find variable: EmptyRanges',
-    "Error: Can't find variable: EmptyRanges (extra context)",
     "Can't find variable", // bare prefix with no name — too short to be a real throw
   ]) {
     assert.equal(
@@ -11583,6 +11583,23 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
       `expected near-worded "${message}" to keep reporting`,
     );
   }
+});
+
+test('suppresses the bare-Error-wrapped undefined-variable serialization (KRTX-2409)', () => {
+  // The noise class is the frameless Safari ReferenceError wording; the
+  // leading `Error: ` is the wrapper an uncaught Error instance serializes
+  // with — a serialization shape, not a different error class — so it
+  // classifies like the unwrapped production fixture above. The
+  // attributability guards are frame-based, not prefix-based: any first-party
+  // or resolvable frame still keeps the event reporting (see the
+  // negative-guard tests).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: "Error: Can't find variable: EmptyRanges (extra context)",
+      frames: [],
+    }),
+    true,
+  );
 });
 
 test('does NOT suppress a frameless rejection with a different message', () => {
@@ -12544,6 +12561,58 @@ test('keeps reporting other JSON-RPC objects and any rejection with our frames',
   }
 });
 
+// Better Stack (Kortix Frontend prod), release a41f91833475, routes `/` and
+// `/auth`: an injected wallet provider (MetaMask's inpage script, whose
+// breadcrumbs show "Error restoring session … Failed to connect to MetaMask")
+// rejected a pending request with the EIP-1193 provider-disconnected error
+// `{ code: 4900, message: 'The provider is disconnected from all chains.' }`
+// as a plain object with NO `stack` — the stack-less variant of the
+// `keys: code, message, stack` wallet-disconnect class above. Sentry reports
+// it as a frameless synthetic rejection that neither the extension-stack
+// anchor nor any other rule can see. Kortix rejects with Error instances
+// only.
+function walletProviderDisconnectRejection(serialized: unknown, frames?: Array<{ filename: string }>) {
+  return {
+    extra: { __serialized__: serialized },
+    exception: { values: [{
+      type: 'UnhandledRejection',
+      value: 'Object captured as promise rejection with keys: code, message',
+      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+      ...(frames ? { stacktrace: { frames } } : {}),
+    }] },
+  };
+}
+
+test('suppresses the frameless wallet provider disconnected rejection', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection({
+    code: 4900,
+    message: 'The provider is disconnected from all chains.',
+  })), true);
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({
+    reason: { code: 4900, message: 'The provider is disconnected from all chains.' },
+  }), false);
+});
+
+test('keeps reporting other provider-disconnected payloads and any rejection with our frames', () => {
+  for (const serialized of [
+    { code: 4901, message: 'The provider is disconnected from all chains.' },
+    { code: 4900, message: 'The provider is disconnected.' },
+    {
+      code: 4900,
+      message: 'The provider is disconnected from all chains.',
+      stack: 'Error: The provider is disconnected from all chains.\n    at foo (https://example.com/x.js:1:1)',
+    },
+  ]) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection(serialized)), false, JSON.stringify(serialized));
+  }
+  for (const filename of ['app:///_next/static/immutable/chunks/0abc.js', 'apps/web/src/lib/x.ts']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise(walletProviderDisconnectRejection({
+      code: 4900,
+      message: 'The provider is disconnected from all chains.',
+    }, [{ filename }])), false, filename);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Safari masked-extension-source noise (`webkit-masked-url://hidden/`)
 // ---------------------------------------------------------------------------
@@ -12650,5 +12719,298 @@ test('keeps reporting first-party errors that carry no masked-extension frame', 
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({ reason: new Error('No Listener: tabs:outgoing.message.ready') }),
     false,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Firefox dead-object external-scope noise (Better Stack pattern
+// f438068312448537d5218c8aefb06499627d8b2ac520367b017e7bace3f5fe56, Kortix
+// Frontend prod, application_id 2346967, KRTX-2393). `TypeError: can't access
+// dead object`, 39 occurrences / 0 identified users, ALL on 2026-10-14
+// 17:05:37–17:05:39 UTC in ONE session (Firefox 140.0, Linux x86_64, release
+// `1ecba158…`, turbopack), on
+// `/projects/<project_id>/customize/connectors/browseai/<connector>?src=apps`
+// (the connector detail page, Tools tab), mechanism
+// `auto.browser.global_handlers.onerror` (UNCAUGHT global `onerror`,
+// `handled:false` — never reached a React error boundary).
+//
+// The stack is the deciding evidence: the ONLY frame is the page DOCUMENT
+// itself (`app:///projects/<project_id>/customize/connectors/…?src=apps`) at
+// `lineno: 0, colno: 1, function: "?"` — there is NO script frame at all.
+// `can't access dead object` is SpiderMonkey's exact wording for a property
+// access on a destroyed browsing-context object (an `<iframe>` window removed
+// from the DOM, a closed popup, an event.source of a torn-down frame).
+// Chrome/V8 and WebKit never produce this wording (they return `null` or
+// silently access the dead reference), so the message is engine-safe: a
+// Chromium or Safari error can never match. Firefox reports the DOCUMENT as
+// the `window.onerror` source with `lineno: 0` when the throwing compartment
+// is destroyed or unreadable by the page — a FIRST-PARTY throw (our own code
+// holding a dead `contentWindow`) always carries at least one
+// `app:///_next/…` chunk frame, which the negative guards below preserve so
+// the call site can be found + fixed. Sentry's `BrowserApiErrors`
+// instrumentation wraps first-party timer / rAF / event-listener callbacks;
+// an error thrown inside an instrumented first-party callback reports with
+// mechanism `auto.browser.browserapierrors.*` — the production capture is
+// `auto.browser.global_handlers.onerror`, so the throwing callback was NOT
+// first-party instrumented code.
+//
+// Population shape: one isolated event, a 1.1 s quiet gap, then a ~0.7 s
+// burst at 60 fps (2–3 events per 16.7 ms frame) that self-terminates — an
+// animation-shaped tail right after the Tools-tab click navigated
+// (`?tab=tools` RSC fetches in the breadcrumbs, seconds after a Supabase
+// token refresh produced a burst of parallel 401 GETs). An injected
+// overlay/content script re-scanning the page across the soft navigation
+// fits; a deterministic first-party defect (which would recur across
+// sessions, browsers and releases with an attributable frame) does not.
+//
+// This is NOT the KRTX-984 framelessness-alone suppression the independent
+// review rejected: the class is anchored on the engine-specific message AND
+// the absence of ANY script frame, and every attributable instance (a
+// first-party `apps/web/src/…` frame, a `_next` chunk frame, an extension
+// content-script frame) keeps reporting. Only the document-only / frameless
+// shape — the throw from a scope the page cannot attribute — is dropped.
+//
+// Residual trade-off, accepted and bounded (the same trade
+// `isIosWebViewInjectedStackOverflowNoise` makes): a first-party INLINE
+// document script that touched a destroyed browsing context would share the
+// document source and be dropped. Our inline bootstraps (analytics-init
+// snippets, the Electron bootstrap) do not touch browsing contexts, and a
+// first-party bundle doing it de-minifies to `apps/web/src/…` and is
+// preserved. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string
+// match there would swallow a real first-party dead-object bug; the
+// frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production events (15 of 39 events
+// inspected; all identical).
+const FIREFOX_DEAD_OBJECT_ERROR = "can't access dead object";
+
+// The single document frame Firefox's global `onerror` produces when the
+// throwing compartment is destroyed: the page document as the filename,
+// `lineno: 0` (no line), `colno: 1`, function `"?"`. Project id redacted to a
+// synthetic uuid; the route and query shape are the production ones.
+const FIREFOX_DEAD_OBJECT_DOC_FRAME = {
+  filename:
+    'app:///projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+  function: '?',
+};
+
+test('classifies the Firefox dead-object document-only stack as noise', () => {
+  // Exact production shape: the SpiderMonkey dead-object message, ONE frame —
+  // the page document at `lineno: 0`, NO script frame.
+  assert.equal(
+    isFirefoxDeadObjectUnattributableNoise({
+      message: FIREFOX_DEAD_OBJECT_ERROR,
+      frames: [FIREFOX_DEAD_OBJECT_DOC_FRAME],
+    }),
+    true,
+  );
+});
+
+test('classifies the Firefox dead-object noise when frames are absent entirely', () => {
+  // Sentry omits the stacktrace key entirely when there is nothing to
+  // serialize; the frameless variant of the same engine class drops too.
+  assert.equal(
+    isFirefoxDeadObjectUnattributableNoise({ message: FIREFOX_DEAD_OBJECT_ERROR, frames: [] }),
+    true,
+  );
+});
+
+test('matches the Firefox wording case-insensitively and across apostrophe variants', () => {
+  // Firefox l10n capitalization has drifted across engine versions, and some
+  // locales serialize the apostrophe as U+2019. The wording is still
+  // engine-safe (V8/WebKit never produce it), so case + apostrophe tolerance
+  // does not widen the class beyond Firefox.
+  for (const message of [
+    FIREFOX_DEAD_OBJECT_ERROR,
+    "Can't access dead object",
+    'can’t access dead object',
+    'TypeError: can\'t access dead object', // the window.onerror wording, wrapper not yet stripped
+  ]) {
+    assert.equal(
+      isFirefoxDeadObjectUnattributableNoise({
+        message,
+        frames: [FIREFOX_DEAD_OBJECT_DOC_FRAME],
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Firefox dead-object Sentry event via the beforeSend gate (exact production shape)', () => {
+  // Exact shape of the production events: type `TypeError`, mechanism
+  // `auto.browser.global_handlers.onerror` (uncaught global `onerror`,
+  // `handled:false`), the single document frame at `lineno: 0 / colno: 1`,
+  // request URL the connector detail page.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+      },
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: FIREFOX_DEAD_OBJECT_ERROR,
+            stacktrace: {
+              frames: [
+                {
+                  colno: 1,
+                  lineno: 0,
+                  filename: FIREFOX_DEAD_OBJECT_DOC_FRAME.filename,
+                  function: '?',
+                  in_app: true,
+                },
+              ],
+            },
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the Firefox dead-object noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate sees the `window.onerror` args: Firefox sets `filename`
+  // to the page document and `lineno` to 0 when the throwing compartment is
+  // destroyed. The document filename is NOT a script frame, so the drop
+  // applies.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: `TypeError: ${FIREFOX_DEAD_OBJECT_ERROR}`,
+      filename:
+        'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+      error: new TypeError(FIREFOX_DEAD_OBJECT_ERROR),
+    }),
+    true,
+  );
+});
+
+test('suppresses the Firefox dead-object noise via the runtime gate when the filename is absent', () => {
+  // A frameless runtime capture (no source at all) is the same unattributable
+  // engine class.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: `TypeError: ${FIREFOX_DEAD_OBJECT_ERROR}`,
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the Firefox dead-object error when a first-party frame is present', () => {
+  // A de-minified `apps/web/src/…` frame means OUR code touched the dead
+  // object (e.g. a leaked `contentWindow`) → actionable; the negative guard
+  // MUST preserve it so the call site can be found + fixed. This is the whole
+  // reason the matcher is frame-aware (the message is Firefox-generic).
+  for (const frames of [
+    [
+      FIREFOX_DEAD_OBJECT_DOC_FRAME,
+      { filename: 'apps/web/src/features/apps/app-preview.tsx', function: 'claimFrame' },
+    ],
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+  ]) {
+    assert.equal(
+      isFirefoxDeadObjectUnattributableNoise({
+        message: FIREFOX_DEAD_OBJECT_ERROR,
+        frames,
+      }),
+      false,
+      `expected first-party dead-object throw from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: FIREFOX_DEAD_OBJECT_ERROR, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting a first-party dead-object throw from ${JSON.stringify(frames)}`,
+    );
+  }
+});
+
+test('does NOT suppress the Firefox dead-object error when a bundled-script frame is present', () => {
+  // A `_next` chunk (or `_next-live` runtime file, or any loaded `.js`
+  // asset) frame means the throw is attributable — first-party bundle code
+  // or a third-party library that shipped a real stack. Keep reporting.
+  for (const frames of [
+    [
+      FIREFOX_DEAD_OBJECT_DOC_FRAME,
+      { filename: 'app:///_next/static/chunks/main-app.js', function: 'hb' },
+    ],
+    [{ filename: 'app:///_next-live/next/dist/.../feedback.js', function: 'mount' }],
+    [{ filename: 'https://cdn.example.com/vendor-animation.js', function: 'tick' }],
+  ]) {
+    assert.equal(
+      isFirefoxDeadObjectUnattributableNoise({
+        message: FIREFOX_DEAD_OBJECT_ERROR,
+        frames,
+      }),
+      false,
+      `expected attributable dead-object throw from ${JSON.stringify(frames)} to keep reporting`,
+    );
+  }
+});
+
+test('a dead-object throw with an extension content-script frame keeps reporting from the direct matcher', () => {
+  // A `moz-extension://` frame is an attributable stack (the extension's own
+  // script). The direct matcher does NOT drop it — attribution exists. (At
+  // the full Sentry gate the generic `extension-frame` rule owns that class;
+  // this test pins the matcher, not the gate.)
+  assert.equal(
+    isFirefoxDeadObjectUnattributableNoise({
+      message: FIREFOX_DEAD_OBJECT_ERROR,
+      frames: [{ filename: 'moz-extension://00000000-0000-4000-8000-000000000001/content.js', function: 'scan' }],
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress near-worded dead-object messages (over-match guard)', () => {
+  // Only Firefox's exact wording matches. Near-worded messages (different
+  // plural, different verb, extra context) keep reporting so the matcher does
+  // not over-match a real first-party throw with a different message.
+  for (const message of [
+    "can't access dead objects", // plural
+    'cannot access dead object', // different modal
+    "can't access the dead object", // extra article
+    "can't access dead object (iframe removed)", // suffix context
+    'access dead object', // partial
+  ]) {
+    assert.equal(
+      isFirefoxDeadObjectUnattributableNoise({
+        message,
+        frames: [FIREFOX_DEAD_OBJECT_DOC_FRAME],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('does NOT suppress a frameless capture with a different message', () => {
+  // A frameless capture carrying a DIFFERENT message is a different class.
+  // A genuinely-non-noise message (no other matcher drops it) must keep
+  // reporting through the full Sentry gate too.
+  assert.equal(
+    isFirefoxDeadObjectUnattributableNoise({
+      message: 'Something else entirely',
+      frames: [FIREFOX_DEAD_OBJECT_DOC_FRAME],
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: 'Something else entirely', stacktrace: { frames: [] } }],
+      },
+    }),
+    false,
+    'expected Sentry event for a non-noise frameless message to keep reporting',
   );
 });

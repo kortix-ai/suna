@@ -13,7 +13,7 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
-    await expect(page.getByText('200 credits / month, no card needed').first()).toBeVisible();
+    await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
     // The hero and the Credits card both state the shared pool.

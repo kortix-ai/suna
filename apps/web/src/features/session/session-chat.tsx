@@ -1176,13 +1176,10 @@ export function SessionChat({
     const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
     return () => clearTimeout(timer);
   }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
-  const servedNotice = useMemo(
-    () => servedModelNotice(modelUsage, local.model.currentKey, local.model.list),
-    [modelUsage, local.model.currentKey, local.model.list],
-  );
-  // Not gated on the composer's selection: the modal reports the session.
+  // Not gated on the composer's selection: the session modal reports the
+  // session, not what the composer will send next.
   const sessionServedModel = useMemo(
-    () => servedModelNotice(modelUsage, null, local.model.list),
+    () => servedModelNotice(modelUsage, local.model.list),
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
@@ -4755,7 +4752,6 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
-                servedModel={servedNotice}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
