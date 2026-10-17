@@ -21545,7 +21545,9 @@
         "noExcludedApps": "Keine App ist ausgeschlossen.",
         "noExcludedSites": "Keine Website ist ausgeschlossen.",
         "commonApps": "Häufige Apps",
-        "commonSites": "Häufige Websites"
+        "commonSites": "Häufige Websites",
+        "showList": "Liste anzeigen",
+        "hideList": "Liste ausblenden"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "Wie lange Kortix Aufnahmen behält. 0 behält sie ohne Limit.",
@@ -21596,7 +21598,14 @@
         "noSites": "Keine Website eingeschlossen. Browser werden nur aufgenommen, wenn die Browser-App eingeschlossen ist.",
         "switchHintOn": "An: Nur die Apps und Websites unten werden aufgenommen.",
         "commonApps": "Häufige Apps",
-        "commonSites": "Häufige Websites"
+        "commonSites": "Häufige Websites",
+        "policyType": "Richtlinientyp",
+        "exclusionPolicy": "Ausschlussrichtlinie",
+        "exclusionPolicyHint": "Alles aufnehmen außer dem, was Sie ausschließen.",
+        "inclusionPolicy": "Einschlussrichtlinie",
+        "inclusionPolicyHint": "Nur aufnehmen, was Sie einschließen. Alles andere wird geschwärzt.",
+        "recordTitle": "Nur diese aufnehmen",
+        "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen"
       }
     },
     "area": {

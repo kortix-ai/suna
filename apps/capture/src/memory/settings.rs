@@ -1029,4 +1029,26 @@ mod tests {
         assert_eq!(Settings::default().sync.s3.prefix, "kortix-capture");
         assert!(!Settings::default().sync.configured());
     }
+
+    /// The web shows what each category covers from a copy of these groups. Refresh it with
+    /// `KORTIX_CAPTURE_WRITE_FIXTURES=1 cargo test --lib exclusion_groups_match_the_web_copy`.
+    #[test]
+    fn exclusion_groups_match_the_web_copy() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../web/src/features/capture/settings/exclusion-groups.json");
+        let groups: Vec<serde_json::Value> = exclusion_groups()
+            .iter()
+            .map(|g| serde_json::json!({"id": g.id, "apps": g.bundle_ids, "domains": g.domains}))
+            .collect();
+        let want = serde_json::to_string_pretty(&serde_json::json!({ "groups": groups })).unwrap() + "\n";
+        if std::env::var("KORTIX_CAPTURE_WRITE_FIXTURES").as_deref() == Ok("1") {
+            std::fs::write(&path, &want).unwrap();
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            have == want,
+            "{} is stale: KORTIX_CAPTURE_WRITE_FIXTURES=1 cargo test --lib exclusion_groups_match_the_web_copy",
+            path.display()
+        );
+    }
 }

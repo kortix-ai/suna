@@ -4,6 +4,8 @@ import {
   type CapturePolicy,
 } from '@kortix/sdk';
 
+import groupsCopy from './exclusion-groups.json';
+
 /**
  * The model behind the organization's Exclusions (account settings ▸ Kortix
  * Capture): the mandatory lists an admin edits in the policy. A person's own
@@ -32,9 +34,11 @@ export interface ExclusionGroupView {
   id: string;
   name: string;
   description: string;
-  /** How many apps / websites it covers; null: unknown (the policy names categories, not their members). */
+  /** How many apps / websites it covers; null: unknown. */
   apps: number | null;
   domains: number | null;
+  /** What it covers (the app's own lists, `exclusion-groups.json`). */
+  members: { apps: string[]; domains: string[] };
   enabled: boolean;
   locked: boolean;
 }
@@ -51,14 +55,18 @@ export function fromPolicy(
   label: (id: CaptureExclusionGroup) => { name: string; description: string },
 ): ExclusionsView {
   return {
-    groups: CAPTURE_EXCLUSION_GROUPS.map((id) => ({
-      id,
-      ...label(id),
-      apps: null,
-      domains: null,
-      enabled: privacy.exclusion_groups.includes(id),
-      locked: false,
-    })),
+    groups: CAPTURE_EXCLUSION_GROUPS.map((id) => {
+      const members = groupsCopy.groups.find((g) => g.id === id) ?? { apps: [], domains: [] };
+      return {
+        id,
+        ...label(id),
+        apps: members.apps.length,
+        domains: members.domains.length,
+        members: { apps: members.apps, domains: members.domains },
+        enabled: privacy.exclusion_groups.includes(id),
+        locked: false,
+      };
+    }),
     apps: privacy.excluded_bundle_ids.map((id) => ({ id, name: id, locked: false })),
     domains: privacy.excluded_domains.map((id) => ({ id, name: id, locked: false })),
     privateBrowsing: { excluded: privacy.exclude_private_browsing, locked: false },

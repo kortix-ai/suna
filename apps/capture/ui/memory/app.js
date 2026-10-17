@@ -1993,12 +1993,12 @@ function renderSettings() {
       <p class="hint">Choose what Kortix Capture records. What it skips is blacked out and never saved or uploaded. Never record always wins.</p>
       ${only.locked || never.some((r) => r.locked) ? `<p class="hint">${esc(orgKnown ? orgKnown + ' requires the locked ones.' : 'Policy requires the locked ones.')}</p>` : ''}
       <div class="never">
-        ${row(`What to record${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked
-          ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}Only included apps and websites</span>`
-          : `<select id="rec-mode" aria-label="What to record"><option value="all"${only.on ? '' : ' selected'}>Everything except Never record</option><option value="only"${only.on ? ' selected' : ''}>Only included apps and websites</option></select>`)}
-        ${only.on ? `<div class="sub-h">Record</div>${only.rows.length ? '' : '<p class="hint">Nothing is included yet, so nothing is recorded. Add an app or a website.</p>'}${only.rows.map((r) => neverRow(appRow(r))).join('')}
+        ${row(`Policy${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked
+          ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}Inclusion policy</span>`
+          : `<select id="rec-mode" aria-label="What to record"><option value="all"${only.on ? '' : ' selected'}>Exclusion policy: everything except Never record</option><option value="only"${only.on ? ' selected' : ''}>Inclusion policy: only what is included</option></select>`)}
+        ${only.on ? `<div class="sub-h">Record only these</div>${only.rows.length ? '' : '<p class="hint">Nothing is included yet, so nothing is recorded. Add an app or a website.</p>'}${only.rows.map((r) => neverRow(appRow(r))).join('')}
         <div class="add-row"><input type="text" id="add-in" list="app-site-suggest" placeholder="Add an app or website to record" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}
-        <div class="sub-h">Never record</div>
+        <div class="sub-h">${only.on ? 'Never record, even if included' : 'Never record'}</div>
         ${never.map((r) => neverRow(r.kind === 'app' || r.kind === 'site' ? appRow(r) : r)).join('')}
         <div class="add-row"><input type="text" id="add-ex" list="app-site-suggest" placeholder="Add an app or website to skip" aria-label="Add an app or website to skip" autocomplete="off" spellcheck="false"><button class="btn" id="add-ex-btn">Add</button></div>
       </div>

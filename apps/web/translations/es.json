@@ -21545,7 +21545,9 @@
         "noExcludedApps": "No hay ninguna app excluida.",
         "noExcludedSites": "No hay ningún sitio web excluido.",
         "commonApps": "Apps comunes",
-        "commonSites": "Sitios web comunes"
+        "commonSites": "Sitios web comunes",
+        "showList": "Mostrar lista",
+        "hideList": "Ocultar lista"
       },
       "remoteDays": "En Kortix",
       "remoteDaysHint": "Cuánto tiempo conserva Kortix las grabaciones. 0 las conserva sin límite.",
@@ -21596,7 +21598,14 @@
         "noSites": "Ningún sitio web incluido. Los navegadores solo se graban si la app del navegador está incluida.",
         "switchHintOn": "Activado: solo se graban las apps y sitios web de abajo.",
         "commonApps": "Apps comunes",
-        "commonSites": "Sitios web comunes"
+        "commonSites": "Sitios web comunes",
+        "policyType": "Tipo de política",
+        "exclusionPolicy": "Política de exclusión",
+        "exclusionPolicyHint": "Grabar todo excepto lo que excluyas.",
+        "inclusionPolicy": "Política de inclusión",
+        "inclusionPolicyHint": "Grabar solo lo que incluyas. Todo lo demás se oculta en negro.",
+        "recordTitle": "Grabar solo estos",
+        "exceptTitle": "Nunca grabar, aunque estén incluidos"
       }
     },
     "area": {

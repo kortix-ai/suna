@@ -21545,7 +21545,9 @@
         "noExcludedApps": "没有已排除的应用。",
         "noExcludedSites": "没有已排除的网站。",
         "commonApps": "常用应用",
-        "commonSites": "常用网站"
+        "commonSites": "常用网站",
+        "showList": "显示列表",
+        "hideList": "隐藏列表"
       },
       "remoteDays": "Kortix 中",
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
@@ -21596,7 +21598,14 @@
         "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。",
         "switchHintOn": "开启：只录制下方的应用和网站。",
         "commonApps": "常用应用",
-        "commonSites": "常用网站"
+        "commonSites": "常用网站",
+        "policyType": "策略类型",
+        "exclusionPolicy": "排除策略",
+        "exclusionPolicyHint": "录制除排除项以外的全部内容。",
+        "inclusionPolicy": "包含策略",
+        "inclusionPolicyHint": "只录制包含的内容。其他一律涂黑。",
+        "recordTitle": "只录制这些",
+        "exceptTitle": "即使已包含也从不录制"
       }
     },
     "area": {

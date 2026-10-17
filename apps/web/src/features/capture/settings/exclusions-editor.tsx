@@ -31,7 +31,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { catalogSuggestions, namedAppRows, siteSuggestions } from './capture-app-catalog';
+import {
+  catalogApp,
+  catalogSuggestions,
+  namedAppRows,
+  siteSuggestions,
+} from './capture-app-catalog';
 import {
   exclusionLists,
   type ExclusionChange,
@@ -121,22 +126,17 @@ export function ExclusionsEditor({
         <RowSection title={t('categories')}>
           {lists.categories.map((group) => {
             const count = apps ? group.apps : group.domains;
+            const summary =
+              count === null ? '' : apps ? t('appCount', { count }) : t('siteCount', { count });
             return (
-              <ExclusionItem
+              <CategoryItem
                 key={group.id}
-                leading={<Tile icon={GROUP_ICONS[group.id] ?? ShieldCheckIcon} />}
+                icon={GROUP_ICONS[group.id] ?? ShieldCheckIcon}
                 title={known(group.id) ? tGroup(group.id) : group.name}
-                description={
-                  group.locked
-                    ? setBy
-                    : count === null
-                      ? known(group.id)
-                        ? tGroup(`${group.id}Hint`)
-                        : group.description
-                      : apps
-                        ? t('appCount', { count })
-                        : t('siteCount', { count })
-                }
+                description={[group.locked ? setBy : '', summary].filter(Boolean).join(' · ')}
+                members={apps ? memberApps(group.members.apps) : group.members.domains}
+                showLabel={t('showList')}
+                hideLabel={t('hideList')}
                 checked={group.enabled}
                 locked={group.locked}
                 onChange={(on) => onChange({ kind: 'group', id: group.id, on })}
@@ -184,6 +184,70 @@ export function ExclusionsEditor({
         onChange={(id, on) => onChange({ kind, id, on })}
       />
     </div>
+  );
+}
+
+/** A category's apps by name (one name per app, its macOS and Windows ids together). */
+function memberApps(ids: string[]): string[] {
+  const names = ids.map((id) => catalogApp(id)?.name ?? id);
+  return [...new Set(names)];
+}
+
+/** A category row whose list opens below it: exactly what the category covers. */
+function CategoryItem({
+  icon,
+  title,
+  description,
+  members,
+  showLabel,
+  hideLabel,
+  checked,
+  locked,
+  onChange,
+}: {
+  icon: Icon;
+  title: string;
+  description: string;
+  members: string[];
+  showLabel: string;
+  hideLabel: string;
+  checked: boolean;
+  locked: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ExclusionItem
+        leading={<Tile icon={icon} />}
+        title={title}
+        description={
+          <span className="flex items-center gap-1.5">
+            {description}
+            {members.length > 0 ? (
+              <button
+                type="button"
+                className="text-foreground underline-offset-2 hover:underline"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+              >
+                {open ? hideLabel : showLabel}
+              </button>
+            ) : null}
+          </span>
+        }
+        checked={checked}
+        locked={locked}
+        onChange={onChange}
+      />
+      {open ? (
+        <li className="pb-2.5 pl-11">
+          <p className="text-muted-foreground max-h-40 overflow-y-auto text-xs leading-relaxed">
+            {members.join(', ')}
+          </p>
+        </li>
+      ) : null}
+    </>
   );
 }
 

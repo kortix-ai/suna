@@ -21545,7 +21545,9 @@
         "noExcludedApps": "No app is excluded.",
         "noExcludedSites": "No website is excluded.",
         "commonApps": "Common apps",
-        "commonSites": "Common websites"
+        "commonSites": "Common websites",
+        "showList": "Show list",
+        "hideList": "Hide list"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
@@ -21596,7 +21598,14 @@
         "noSites": "No website is included. Browsers record only if the browser app is included.",
         "switchHintOn": "On: only the apps and websites below are recorded.",
         "commonApps": "Common apps",
-        "commonSites": "Common websites"
+        "commonSites": "Common websites",
+        "policyType": "Policy type",
+        "exclusionPolicy": "Exclusion policy",
+        "exclusionPolicyHint": "Record everything except what you exclude.",
+        "inclusionPolicy": "Inclusion policy",
+        "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
+        "recordTitle": "Record only these",
+        "exceptTitle": "Never record, even if included"
       }
     },
     "area": {

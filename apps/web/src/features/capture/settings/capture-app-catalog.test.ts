@@ -5,10 +5,12 @@ import { normalizeCaptureAppId, normalizeCaptureDomain } from '@kortix/sdk';
 import {
   CAPTURE_APP_CATALOG,
   CAPTURE_SITE_CATALOG,
+  catalogApp,
   catalogSuggestions,
   namedAppRows,
   siteSuggestions,
 } from './capture-app-catalog';
+import groupsCopy from './exclusion-groups.json';
 
 describe('capture app catalog', () => {
   test('every catalog id and site passes the policy rules unchanged', () => {
@@ -40,5 +42,14 @@ describe('capture app catalog', () => {
     expect(catalogSuggestions([], 'sla').map((a) => a.name)).toEqual(['Slack']);
     expect(siteSuggestions(['github.com'], 'git')).toEqual([]);
     expect(siteSuggestions([], 'linear')).toEqual(['linear.app']);
+  });
+
+  test('every app of every category has a name', () => {
+    const unnamed = groupsCopy.groups.flatMap((g) => g.apps.filter((id) => !catalogApp(id)));
+    expect(unnamed).toEqual([]);
+  });
+
+  test('category-only apps are never offered as common apps', () => {
+    expect(catalogSuggestions([], '1pass')).toEqual([]);
   });
 });

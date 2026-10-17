@@ -6,6 +6,8 @@
 export interface CatalogApp {
   name: string;
   ids: string[];
+  /** Offered as a one-click "Common app"; false for apps listed only to name a category's members. */
+  common?: boolean;
 }
 
 export const CAPTURE_APP_CATALOG: CatalogApp[] = [
@@ -30,8 +32,77 @@ export const CAPTURE_APP_CATALOG: CatalogApp[] = [
   { name: 'Finder and File Explorer', ids: ['com.apple.finder', 'explorer.exe'] },
   { name: 'Mail', ids: ['com.apple.mail'] },
   { name: 'Spotify', ids: ['com.spotify.client', 'spotify.exe'] },
-  { name: 'WhatsApp', ids: ['net.whatsapp.WhatsApp', 'whatsapp.exe'] },
+  {
+    name: 'WhatsApp',
+    ids: ['net.whatsapp.WhatsApp', 'desktop.WhatsApp', 'whatsapp.exe', 'whatsapp'],
+  },
   { name: 'Messages', ids: ['com.apple.MobileSMS'] },
+  // The members of the categories (exclusion-groups.json), by name.
+  {
+    name: '1Password',
+    ids: [
+      'com.1password.1password',
+      'com.agilebits.onepassword7',
+      'com.agilebits.onepassword-osx',
+      '1password.exe',
+      '1password',
+    ],
+    common: false,
+  },
+  {
+    name: 'Bitwarden',
+    ids: ['com.bitwarden.desktop', 'bitwarden.exe', 'bitwarden'],
+    common: false,
+  },
+  { name: 'LastPass', ids: ['com.lastpass.LastPass', 'lastpass.exe'], common: false },
+  { name: 'Dashlane', ids: ['com.dashlane.Dashlane', 'dashlane.exe'], common: false },
+  {
+    name: 'KeePassXC',
+    ids: ['org.keepassxc.keepassxc', 'keepassxc.exe', 'keepassxc'],
+    common: false,
+  },
+  { name: 'KeePass', ids: ['keepass.exe'], common: false },
+  { name: 'Keychain Access', ids: ['com.apple.keychainaccess'], common: false },
+  { name: 'Passwords', ids: ['com.apple.Passwords'], common: false },
+  { name: 'Enpass', ids: ['in.sinew.Enpass-Desktop', 'enpass.exe', 'enpass'], common: false },
+  { name: 'NordPass', ids: ['com.nordpass.macos.NordPass', 'nordpass.exe'], common: false },
+  { name: 'Proton Pass', ids: ['com.proton.pass', 'proton pass.exe'], common: false },
+  {
+    name: 'Telegram',
+    ids: ['ru.keepcoder.Telegram', 'org.telegram.desktop', 'telegram.exe', 'telegram-desktop'],
+    common: false,
+  },
+  {
+    name: 'Signal',
+    ids: ['org.whispersystems.signal-desktop', 'signal.exe', 'signal'],
+    common: false,
+  },
+  { name: 'Messenger', ids: ['com.facebook.archon'], common: false },
+  { name: 'Discord', ids: ['com.hnc.Discord', 'discord.exe', 'discord'], common: false },
+  {
+    name: 'WeChat',
+    ids: ['com.tencent.xinwechat', 'wechat.exe', 'weixin.exe', 'wechat'],
+    common: false,
+  },
+  {
+    name: 'Notification banners',
+    ids: ['com.apple.notificationcenterui', 'shellexperiencehost.exe'],
+    common: false,
+  },
+  { name: 'Stocks', ids: ['com.apple.stocks'], common: false },
+  { name: 'Banktivity', ids: ['com.banktivity.banktivity'], common: false },
+  {
+    name: 'Ledger Live',
+    ids: ['com.ledger.live', 'ledger live.exe', 'ledger-live-desktop'],
+    common: false,
+  },
+  { name: 'Moneydance', ids: ['com.moneydance.moneydance', 'moneydance.exe'], common: false },
+  { name: 'Quicken', ids: ['com.quicken.quicken', 'quicken.exe'], common: false },
+  { name: 'YNAB', ids: ['com.youneedabudget.ynab'], common: false },
+  { name: 'Electrum', ids: ['org.electrum.electrum', 'electrum', 'electrum.exe'], common: false },
+  { name: 'Exodus', ids: ['exodus', 'exodus.exe'], common: false },
+  { name: 'MetaTrader', ids: ['metatrader.exe', 'terminal64.exe'], common: false },
+  { name: 'QuickBooks', ids: ['quickbooks.exe'], common: false },
 ];
 
 export const CAPTURE_SITE_CATALOG: string[] = [
@@ -93,6 +164,7 @@ export function catalogSuggestions(ids: string[], query: string): CatalogApp[] {
   const q = query.trim().toLowerCase();
   return CAPTURE_APP_CATALOG.filter(
     (app) =>
+      app.common !== false &&
       !app.ids.every((id) => have.has(id.toLowerCase())) &&
       (!q || app.name.toLowerCase().includes(q)),
   );
