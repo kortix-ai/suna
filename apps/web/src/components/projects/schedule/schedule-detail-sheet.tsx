@@ -17,13 +17,16 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -36,10 +39,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheetClose,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
+import { cn } from '@/lib/utils';
 import { type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
 import {
   type Agent,
@@ -48,27 +59,25 @@ import {
   useProjectTriggerEventTypes,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { DotsThreeIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import {
+  BracketsCurlyIcon,
+  DotsThreeIcon,
+  PlayIcon,
+  TrashIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
   accountToWrite,
   appConnectors,
-  describeEventSource,
-  describeEventStatus,
   indexEventApps,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
-import {
-  describeLastRun,
-  describeNextRun,
-  describeWhen,
-  triggerBadgeState,
-  triggerName,
-} from './schedule-copy';
+import { describeLastRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import { TriggerCallouts } from './trigger-callouts';
@@ -83,7 +92,8 @@ import type { TriggerControls } from './trigger-controls';
 import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
 import { TriggerOptions } from './trigger-options';
 import { TriggerReadOnly } from './trigger-readonly';
-import { TriggerStatusBadge } from './trigger-status-badge';
+import { TriggerRunsPanel } from './trigger-runs-panel';
+import { TriggerTestDialog } from './trigger-test-dialog';
 import { TriggerTile } from './trigger-tile';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenEvent } from './when-event';
@@ -113,7 +123,23 @@ export interface ScheduleDetailSheetProps {
   running: boolean;
   onDelete: () => void;
   onMutated: () => void;
+  /** The tab the sheet opens on. Runs unless the host says otherwise (`?tab=settings`). */
+  initialTab?: SheetTab;
+  /** The project-wide pause switch is on: the header clock shows paused. */
+  projectPaused?: boolean;
+  /**
+   * Turns the project-wide switch off. While it is on, the per-trigger
+   * Resume cannot start anything, so the header offers this instead.
+   */
+  onResumeAll?: () => void;
+  resumingAll?: boolean;
+  /** A run of this trigger is in progress: the clock shows it live (green). */
+  live?: boolean;
+  /** Each tab switch, for a host that keeps the tab in its URL. */
+  onTabChange?: (tab: SheetTab) => void;
 }
+
+type SheetTab = 'settings' | 'runs';
 
 export function ScheduleDetailSheet(props: ScheduleDetailSheetProps) {
   const { trigger, open, onOpenChange } = props;
@@ -134,6 +160,50 @@ export function ScheduleDetailSheet(props: ScheduleDetailSheetProps) {
   );
 }
 
+/**
+ * The same panel as a `SplitSheetContent` column, for a host that renders the
+ * `SplitSheet` root around its list (the Triggers page). The host owns `open`.
+ */
+export function ScheduleDetailSplitContent(
+  props: Omit<ScheduleDetailSheetProps, 'open' | 'onOpenChange'>,
+) {
+  const { trigger } = props;
+  if (!trigger) return null;
+  return (
+    <SplitSheetContent>
+      <SplitFocus key={trigger.slug}>
+        <SheetPanel {...props} trigger={trigger} split open onOpenChange={() => {}} />
+      </SplitFocus>
+    </SplitSheetContent>
+  );
+}
+
+/**
+ * The column's one scroller, as `SheetContent` is for the floating sheet, so
+ * the header and the SaveBar stick the same way. The host opens it from a row
+ * callback, not a `SplitSheetTrigger`, so focus moves in here on open and goes
+ * back to the element that opened it on close, as the modal sheet does.
+ */
+function SplitFocus({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel?.focus({ preventScroll: true });
+    return () => {
+      // Layout cleanup runs before the panel detaches, so focus is still readable.
+      if (panel?.contains(document.activeElement) && opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+  return (
+    <div ref={ref} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
+      {children}
+    </div>
+  );
+}
+
 /* ─── Header, data, and the readiness gate ──────────────────────────────── */
 
 function SheetPanel({
@@ -145,8 +215,21 @@ function SheetPanel({
   running,
   onDelete,
   onMutated,
-}: ScheduleDetailSheetProps & { trigger: ProjectTrigger }) {
+  initialTab = 'runs',
+  onTabChange,
+  projectPaused = false,
+  onResumeAll,
+  resumingAll = false,
+  live = false,
+  split = false,
+}: ScheduleDetailSheetProps & { trigger: ProjectTrigger; split?: boolean }) {
+  const Title = split ? SplitSheetTitle : SheetTitle;
+  const Description = split ? SplitSheetDescription : SheetDescription;
+  // The sticky header and SaveBar paint the host's own surface, so content passes behind them.
+  const surface = split ? 'bg-surface' : 'bg-sidebar';
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const [tab, setTab] = useState<SheetTab>(initialTab);
+  const [testOpen, setTestOpen] = useState(false);
   const event = trigger.type === 'event' ? trigger.event : null;
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger.slug, { enabled }),
@@ -185,101 +268,172 @@ function SheetPanel({
 
   const canWrite = controls.canUpdate;
   const active = trigger.enabled;
-  const nextRun = describeNextRun(trigger);
-  const when = describeWhen(trigger, eventNames);
-  const status = event ? describeEventStatus(event, t, appIndex) : null;
-  const state = triggerBadgeState(trigger);
-  const reason =
-    state === 'error' || state === 'needs_connection'
-      ? (status?.detail ?? trigger.last_error)
-      : null;
+  // Never the name twice: a trigger named after its schedule shows its prompt's first line.
+  const subtitle = triggerSubtitle(
+    triggerName(trigger),
+    describeWhen(trigger, eventNames),
+    trigger.prompt_template,
+  );
   // The form needs the event's schema to build its settings; wait for it, never flash a half-built form.
   const loading = catalogOn && (apps.isLoading || eventTypes.isLoading);
 
   return (
-    <>
-      {/* Sticky, because the content element is what scrolls: without this the
-          Run now / Pause actions would scroll away. `bg-sidebar` matches the
-          sheet's own surface so content passes behind it, not through it.
-          `text-left` is not redundant: SheetHeader's base centres on a phone. */}
-      <SheetHeader className="bg-sidebar sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left">
-        <div className="flex min-w-0 items-center gap-3 pr-10">
+    // `gap-0`: the Tabs root's own gap would open a seam under the sticky header.
+    <Tabs
+      value={tab}
+      onValueChange={(next) => {
+        setTab(next as SheetTab);
+        onTabChange?.(next as SheetTab);
+      }}
+      className="gap-0"
+    >
+      {/* Paper C05 (`7C7-0`). Sticky, because the content element is what
+          scrolls. The surface paints the sheet's own colour so content passes
+          behind it. `text-left`: SheetHeader's base centres on a phone. */}
+      <SheetHeader
+        className={cn(
+          surface,
+          'border-border sticky top-0 z-10 gap-2.5 space-y-0 border-b pt-4 pr-4 pb-0 pl-6 text-left',
+        )}
+      >
+        {/* Title row: the clock, the name, the trigger sentence, close. `pr-10`
+            clears the floating sheet's own close button. */}
+        <div className={cn('flex h-8 min-w-0 items-center gap-2.5', !split && 'pr-10')}>
           <TriggerTile
             trigger={trigger}
-            logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
+            projectPaused={projectPaused}
+            running={running || live}
+            surface={surface}
           />
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <SheetTitle className="truncate text-base font-semibold tracking-tight">
-                {triggerName(trigger)}
-              </SheetTitle>
-              <TriggerStatusBadge trigger={trigger} hint={reason} />
-            </div>
-            <SheetDescription className="text-xs">
-              {[
-                // The name often is the event's own name: say it once.
-                when === triggerName(trigger) ? null : when,
-                nextRun,
-                event ? describeEventSource(event, t, appIndex) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </SheetDescription>
+          <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
+            <Title className="max-w-full shrink-0 truncate text-sm font-medium">
+              {triggerName(trigger)}
+            </Title>
+            {subtitle ? (
+              <Description className="min-w-0 truncate text-xs">{subtitle}</Description>
+            ) : null}
           </div>
+          {split ? (
+            <Hint label={t.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
+              <SplitSheetClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-base"
+                  aria-label={t.raw('text7d9eb7acb13e')}
+                  className="text-muted-foreground -mr-1.5 shrink-0"
+                >
+                  <XIcon className="size-4" />
+                </Button>
+              </SplitSheetClose>
+            </Hint>
+          ) : null}
         </div>
 
-        {controls.canFire || controls.canUpdate || controls.canDelete ? (
-          <div className="flex items-center gap-1.5">
-            {controls.canFire ? (
-              <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
-                {running ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {t.raw('text0991397702fa')}
-              </Button>
-            ) : null}
-            {controls.canUpdate ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => toggle.mutate(!active)}
-                disabled={toggle.isPending}
-              >
-                {toggle.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : active ? (
-                  <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {active ? 'Pause' : 'Resume'}
-              </Button>
-            ) : null}
-            <div className="min-w-2 flex-1" />
-            {controls.canDelete ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
-                    <DotsThreeIcon className="size-4 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                    <TrashIcon className="size-3.5 shrink-0" />
-                    {trigger.type === 'cron'
-                      ? t.raw('textd8d0bd5c5106')
-                      : event
-                        ? t.raw('textf2f698118cc1')
-                        : t.raw('text60f85e57e4a7')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Tabs left; the actions share the tab line, quiet ones first and
+            Run now, the one filled button, at the far right. */}
+        <div className="flex items-end justify-between gap-2">
+          <TabsList
+            type="underline"
+            underlineSize="md"
+            size="sm"
+            className="h-8 justify-start gap-5 border-b-0"
+          >
+            <TabsTrigger value="runs" className="flex-none px-0 text-xs font-medium">
+              {t.raw('text848f54e89660')}
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex-none px-0 text-xs font-medium">
+              {t.raw('text74a883a037bc')}
+            </TabsTrigger>
+          </TabsList>
+
+          {controls.canFire || controls.canUpdate || controls.canDelete ? (
+            // One group, as the user asked: Pause or Resume, Test with payload
+            // (webhooks), ⋯, Run now; one variant (`secondary`) at one height (`h-7`).
+            <ButtonGroup className="mb-1.5">
+              {projectPaused && onResumeAll ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
+                  onClick={onResumeAll}
+                  disabled={resumingAll}
+                >
+                  {resumingAll ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {t.raw('text43e673c5503d')}
+                </Button>
+              ) : controls.canUpdate ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
+                  onClick={() => toggle.mutate(!active)}
+                  disabled={toggle.isPending}
+                >
+                  {toggle.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {active ? t.raw('text858e4ba7a29f') : t.raw('textd640c7421da0')}
+                </Button>
+              ) : null}
+              {controls.canFire && trigger.type === 'webhook' ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="text-xs"
+                  onClick={() => setTestOpen(true)}
+                >
+                  {t.raw('textb098a09c78aa')}
+                </Button>
+              ) : null}
+              {(controls.canFire && trigger.type !== 'webhook') || controls.canDelete ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant="secondary"
+                      aria-label={t.raw('textf8d46c2570e7')}
+                    >
+                      <DotsThreeIcon className="text-muted-foreground size-4 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {controls.canFire && trigger.type !== 'webhook' ? (
+                      <DropdownMenuItem onClick={() => setTestOpen(true)}>
+                        <BracketsCurlyIcon />
+                        {t.raw('textb098a09c78aa')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {controls.canDelete ? (
+                      <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                        <TrashIcon />
+                        {trigger.type === 'cron'
+                          ? t.raw('textd8d0bd5c5106')
+                          : event
+                            ? t.raw('textf2f698118cc1')
+                            : t.raw('text60f85e57e4a7')}
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {controls.canFire ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
+                  onClick={onRun}
+                  disabled={running}
+                >
+                  {/* The run is the agent's work: the session busy mark, not a fetch spinner. */}
+                  {running ? (
+                    <SessionDotMatrix sessionId={trigger.slug} size={14} className="shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-2.5 shrink-0" />
+                  )}
+                  {t.raw('text0991397702fa')}
+                </Button>
+              ) : null}
+            </ButtonGroup>
+          ) : null}
+        </div>
       </SheetHeader>
 
       {/* `flex-none` and `!overflow-visible` are load-bearing. SheetBody's base
@@ -288,29 +442,51 @@ function SheetPanel({
           stayed a shrinkable flex child that clipped panels below the fold.
           The content element above owns scrolling; a second scroller here
           would send the wheel to whichever surface the cursor is over. */}
-      <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-2 pb-0">
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-16 rounded-md" />
-            <Skeleton className="h-28 rounded-md" />
-          </div>
-        ) : (
-          <SheetForm
+      <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-5 pb-0">
+        {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
+        <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 rounded-md" />
+              <Skeleton className="h-28 rounded-md" />
+            </div>
+          ) : (
+            <SheetForm
+              projectId={projectId}
+              trigger={trigger}
+              canWrite={canWrite}
+              eventsEnabled={eventsEnabled}
+              appIndex={appIndex}
+              eventNames={eventNames}
+              agents={agents}
+              savedEventType={savedEventType}
+              savedModel={savedModel}
+              apps={apps}
+              onMutated={onMutated}
+              surface={surface}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="runs" className="pb-8">
+          <TriggerRunsPanel
             projectId={projectId}
             trigger={trigger}
-            canWrite={canWrite}
-            eventsEnabled={eventsEnabled}
-            appIndex={appIndex}
-            eventNames={eventNames}
-            agents={agents}
-            savedEventType={savedEventType}
-            savedModel={savedModel}
-            apps={apps}
-            onMutated={onMutated}
+            canFire={controls.canFire}
+            onRun={onRun}
+            running={running}
           />
-        )}
+        </TabsContent>
       </SheetBody>
-    </>
+
+      {controls.canFire ? (
+        <TriggerTestDialog
+          projectId={projectId}
+          trigger={trigger}
+          open={testOpen}
+          onOpenChange={setTestOpen}
+        />
+      ) : null}
+    </Tabs>
   );
 }
 
@@ -328,9 +504,11 @@ function SheetForm({
   savedModel,
   apps,
   onMutated,
+  surface,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
+  surface: string;
   canWrite: boolean;
   eventsEnabled: boolean;
   appIndex: ReturnType<typeof indexEventApps>;
@@ -558,7 +736,7 @@ function SheetForm({
       {dirty && canWrite ? (
         /* In the sheet's own scroll container, after the body: it sticks to the
            bottom edge while the form is long, and rests under the form when it is short. */
-        <SaveBar pending={save.isPending} onSave={submit} onDiscard={discard} />
+        <SaveBar surface={surface} pending={save.isPending} onSave={submit} onDiscard={discard} />
       ) : null}
     </div>
   );
@@ -566,17 +744,24 @@ function SheetForm({
 
 /** The one footer: present only while the form differs from the saved trigger. */
 function SaveBar({
+  surface,
   pending,
   onSave,
   onDiscard,
 }: {
+  surface: string;
   pending: boolean;
   onSave: () => void;
   onDiscard: () => void;
 }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <div className="bg-sidebar border-border sticky bottom-0 z-10 -mx-4 mt-auto flex items-center justify-end gap-2 border-t px-4 py-3">
+    <div
+      className={cn(
+        surface,
+        'border-border sticky bottom-0 z-10 -mx-4 mt-auto flex items-center justify-end gap-2 border-t px-4 py-3',
+      )}
+    >
       <Button variant="outline-ghost" size="sm" disabled={pending} onClick={onDiscard}>
         {t.raw('texteb1a70e39274')}
       </Button>

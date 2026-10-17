@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 841,
+  "count": 844,
   "routes": [
     {
       "method": "GET",
@@ -2904,6 +2904,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/trigger-runs"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers"
     },
     {
@@ -2921,6 +2925,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay"
     },
     {
       "method": "PATCH",
