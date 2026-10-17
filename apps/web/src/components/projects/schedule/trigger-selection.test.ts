@@ -6,6 +6,7 @@ import {
   selectAllShown,
   selectRange,
   toggleSlug,
+  visibleSelection,
 } from './trigger-selection';
 
 const order = ['a', 'b', 'c', 'd', 'e'];
@@ -58,11 +59,32 @@ describe('runSequentially', () => {
     );
     expect(seen).toEqual(['a', 'b', 'c']);
     expect(maxInFlight).toBe(1);
-    expect(tally).toEqual({ ok: 2, failed: 1 });
+    expect(tally).toEqual({ ok: 2, failed: 1, errors: ['409'], cancelled: false });
     expect(progress).toEqual([
       [1, 3],
       [2, 3],
       [3, 3],
+    ]);
+  });
+});
+
+describe('runSequentially cancellation and the visible selection', () => {
+  test('a cancelled run stops between items and says so', async () => {
+    let calls = 0;
+    const tally = await runSequentially(
+      ['a', 'b', 'c'],
+      async () => {
+        calls += 1;
+      },
+      undefined,
+      () => calls >= 1,
+    );
+    expect(calls).toBe(1);
+    expect(tally).toEqual({ ok: 1, failed: 0, errors: [], cancelled: true });
+  });
+  test('bulk actions act only on selected rows the filter and search still show', () => {
+    expect([...visibleSelection([{ slug: 'a' }, { slug: 'c' }], new Set(['a', 'b']))]).toEqual([
+      'a',
     ]);
   });
 });

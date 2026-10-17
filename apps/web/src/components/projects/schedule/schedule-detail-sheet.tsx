@@ -125,6 +125,16 @@ export interface ScheduleDetailSheetProps {
   onMutated: () => void;
   /** The tab the sheet opens on. Runs unless the host says otherwise (`?tab=settings`). */
   initialTab?: SheetTab;
+  /** The project-wide pause switch is on: the header clock shows paused. */
+  projectPaused?: boolean;
+  /**
+   * Turns the project-wide switch off. While it is on, the per-trigger
+   * Resume cannot start anything, so the header offers this instead.
+   */
+  onResumeAll?: () => void;
+  resumingAll?: boolean;
+  /** A run of this trigger is in progress: the clock shows it live (green). */
+  live?: boolean;
   /** Each tab switch, for a host that keeps the tab in its URL. */
   onTabChange?: (tab: SheetTab) => void;
 }
@@ -207,6 +217,10 @@ function SheetPanel({
   onMutated,
   initialTab = 'runs',
   onTabChange,
+  projectPaused = false,
+  onResumeAll,
+  resumingAll = false,
+  live = false,
   split = false,
 }: ScheduleDetailSheetProps & { trigger: ProjectTrigger; split?: boolean }) {
   const Title = split ? SplitSheetTitle : SheetTitle;
@@ -285,7 +299,12 @@ function SheetPanel({
         {/* Title row: the clock, the name, the trigger sentence, close. `pr-10`
             clears the floating sheet's own close button. */}
         <div className={cn('flex h-8 min-w-0 items-center gap-2.5', !split && 'pr-10')}>
-          <TriggerTile trigger={trigger} surface={surface} />
+          <TriggerTile
+            trigger={trigger}
+            projectPaused={projectPaused}
+            running={running || live}
+            surface={surface}
+          />
           <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
             <Title className="max-w-full shrink-0 truncate text-sm font-medium">
               {triggerName(trigger)}
@@ -331,7 +350,18 @@ function SheetPanel({
             // One group, as the user asked: Pause or Resume, Test with payload
             // (webhooks), ⋯, Run now; one variant (`secondary`) at one height (`h-7`).
             <ButtonGroup className="mb-1.5">
-              {controls.canUpdate ? (
+              {projectPaused && onResumeAll ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  className="gap-1.5 text-xs"
+                  onClick={onResumeAll}
+                  disabled={resumingAll}
+                >
+                  {resumingAll ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {t.raw('text43e673c5503d')}
+                </Button>
+              ) : controls.canUpdate ? (
                 <Button
                   size="xs"
                   variant="secondary"

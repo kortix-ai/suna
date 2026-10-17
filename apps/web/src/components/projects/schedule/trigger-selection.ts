@@ -49,23 +49,44 @@ export function bulkTargets<T extends { slug: string; enabled: boolean }>(
 export interface BulkTally {
   ok: number;
   failed: number;
+  /** Each failed item's error message, in order. */
+  errors: string[];
+  /** The run stopped early (`isCancelled`), so some items were not tried. */
+  cancelled: boolean;
 }
 
-/** Runs `fn` over `items` one at a time, reporting progress; never throws. */
+/**
+ * Runs `fn` over `items` one at a time, reporting progress; never throws.
+ * `isCancelled` is checked between items (the page unmounted).
+ */
 export async function runSequentially<T>(
   items: readonly T[],
   fn: (item: T) => Promise<unknown>,
   onProgress?: (done: number, total: number) => void,
+  isCancelled?: () => boolean,
 ): Promise<BulkTally> {
-  const tally: BulkTally = { ok: 0, failed: 0 };
+  const tally: BulkTally = { ok: 0, failed: 0, errors: [], cancelled: false };
   for (const [i, item] of items.entries()) {
+    if (isCancelled?.()) {
+      tally.cancelled = true;
+      break;
+    }
     onProgress?.(i + 1, items.length);
     try {
       await fn(item);
       tally.ok += 1;
-    } catch {
+    } catch (err) {
       tally.failed += 1;
+      tally.errors.push(err instanceof Error ? err.message : String(err));
     }
   }
   return tally;
+}
+
+/** The selection the bulk actions act on: only what the current filter and search show. */
+export function visibleSelection(
+  shown: readonly { slug: string }[],
+  selected: ReadonlySet<string>,
+): Set<string> {
+  return new Set(shown.filter((t) => selected.has(t.slug)).map((t) => t.slug));
 }

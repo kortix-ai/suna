@@ -53,12 +53,17 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
-import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import {
+  NewEntityMenu,
+  RICH_ROW_CLASS,
+  RichRowBody,
+} from '@/features/workspace/capabilities/shared/new-entity-menu';
 import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
+import { hasOpenFloatingLayer } from '@/lib/z-stack';
 import {
   type ProjectTrigger,
   deleteProjectTrigger,
@@ -67,7 +72,7 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps } from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps, useTriggerRuns } from '@kortix/sdk/react';
 import {
   CheckSquareIcon,
   DotsThreeIcon,
@@ -107,12 +112,15 @@ import {
   triggerSheetHref,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
+import { runsInFlight } from './schedule/trigger-runs-logic';
+import { runsOf } from './schedule/trigger-runs-panel';
 import {
   bulkTargets,
   runSequentially,
   selectAllShown,
   selectRange,
   toggleSlug,
+  visibleSelection,
 } from './schedule/trigger-selection';
 import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
 import { useEventTitles } from './schedule/use-event-titles';
@@ -137,15 +145,13 @@ export function TriggerToolbarMenu({
   canManage,
   paused,
   isPending,
-  activeCount,
   onToggle,
   onSelectMode,
 }: {
   canManage: boolean;
+  /** The project-wide switch (`triggers_paused`). */
   paused: boolean;
   isPending: boolean;
-  /** Enabled triggers, for the count beside Pause all. */
-  activeCount: number;
   onToggle: (next: boolean) => void;
   /** Turns on multi-select; absent when there is nothing to select. */
   onSelectMode?: () => void;
@@ -165,17 +171,29 @@ export function TriggerToolbarMenu({
           <DotsThreeIcon className="text-muted-foreground size-4 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem disabled={paused} onSelect={() => onToggle(true)}>
-          <PauseIcon />
-          {tI18nComplete.raw('text0b6258b50010')}
-          <span className="text-muted-foreground ml-auto text-xs font-normal tabular-nums">
-            {tI18nComplete('text3ec84fbbfd0e', { count: activeCount })}
-          </span>
+      {/* One project-wide switch: the rows say what it does, not a per-trigger count. */}
+      <DropdownMenuContent align="end" className="w-76">
+        <DropdownMenuItem
+          className={RICH_ROW_CLASS}
+          disabled={paused}
+          onSelect={() => onToggle(true)}
+        >
+          <RichRowBody
+            icon={PauseIcon}
+            title={tI18nComplete.raw('text0b6258b50010')}
+            description={tI18nComplete.raw('textdae75dce541f')}
+          />
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={!paused} onSelect={() => onToggle(false)}>
-          <PlayIcon />
-          {tI18nComplete.raw('text43e673c5503d')}
+        <DropdownMenuItem
+          className={RICH_ROW_CLASS}
+          disabled={!paused}
+          onSelect={() => onToggle(false)}
+        >
+          <RichRowBody
+            icon={PlayIcon}
+            title={tI18nComplete.raw('text43e673c5503d')}
+            description={tI18nComplete.raw('textced57bebd466')}
+          />
         </DropdownMenuItem>
         {onSelectMode ? (
           <>
@@ -189,6 +207,27 @@ export function TriggerToolbarMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/**
+ * The project-wide pause switch (`PATCH /projects/:id/triggers/activation`):
+ * `mutate(true)` pauses every schedule and webhook, `mutate(false)` resumes.
+ * The toolbar menu and the paused alert share it, so both toast and update
+ * the cached listing the same way.
+ */
+export function useTriggersActivation(projectId: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    onSuccess: (data, next) => {
+      queryClient.setQueryData(qk.project.triggers(projectId), data);
+      successToast(
+        next ? tI18nComplete.raw('text5f6f23bff165') : tI18nComplete.raw('text5e4efd91b927'),
+      );
+    },
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
+  });
 }
 
 /**
@@ -223,8 +262,6 @@ export function TriggerActivationMenu({
   projectId: string;
   onSelectMode?: () => void;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
   const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
     queryKey,
@@ -232,32 +269,19 @@ export function TriggerActivationMenu({
     ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
-  const activeCount = (triggersQuery.data?.triggers ?? []).filter(
-    (t) => isTriggerKind(t.type) && isCustomerTrigger(t) && t.enabled,
-  ).length;
 
   // The leaves the activation route asserts (project.write +
   // project.trigger.update) — see this component's header comment for why this
   // is the update control rather than `ScheduleView`'s create gate.
   const canManage = useTriggerControls(projectId).canUpdate;
 
-  const mutation = useMutation({
-    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
-    onSuccess: (data, next) => {
-      queryClient.setQueryData(queryKey, data);
-      successToast(
-        next ? tI18nComplete.raw('text5f6f23bff165') : tI18nComplete.raw('text5e4efd91b927'),
-      );
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
-  });
+  const mutation = useTriggersActivation(projectId);
 
   return (
     <TriggerToolbarMenu
       canManage={canManage}
       paused={paused}
       isPending={mutation.isPending || triggersQuery.isLoading}
-      activeCount={activeCount}
       onToggle={(v) => mutation.mutate(v)}
       onSelectMode={onSelectMode}
     />
@@ -353,15 +377,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
 
-  // The paused alert's own Resume all: the same switch as the toolbar menu.
-  const resumeAll = useMutation({
-    mutationFn: () => setProjectTriggersActivation(projectId, false),
-    onSuccess: (data) => {
-      queryClient.setQueryData(queryKey, data);
-      successToast(tI18nComplete.raw('text5e4efd91b927'));
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
-  });
+  // The paused alert's own Resume all: the same switch and hook as the toolbar menu.
+  const resumeAll = useTriggersActivation(projectId);
 
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
@@ -434,6 +451,20 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // An unknown slug matches nothing: the sheet stays closed, with no error.
   const selected = triggers.find((t) => t.slug === sheet.slug) ?? null;
 
+  // The open trigger's runs: the same query (same key) the Runs tab reads, so
+  // no second request. A run in progress makes its clock green and its row
+  // show the dot matrix, for as long as the run lasts, even under the
+  // project-wide pause (Run now still fires there).
+  const [runsLive, setRunsLive] = useState(false);
+  const selectedRuns = useTriggerRuns(projectId, selected?.slug ?? '', {
+    enabled: !!selected,
+    refetchInterval: runsLive ? 5000 : false,
+  });
+  const live = !!selected && runsInFlight(runsOf(selectedRuns));
+  // Adjust state while rendering (guarded): poll only while a run is in progress.
+  if (live !== runsLive) setRunsLive(live);
+  const liveSlug = live && selected ? selected.slug : null;
+
   /* ── Select mode: multi-select, then sequential bulk Pause / Resume / Delete ── */
   const [selectMode, setSelectMode] = useState(false);
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(() => new Set());
@@ -454,19 +485,43 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     setAnchorSlug(null);
     setSelectMode(true);
   };
-  const exitSelectMode = () => {
+  const exitSelectMode = useCallback(() => {
     setSelectMode(false);
     setSelectedSlugs(new Set());
     setAnchorSlug(null);
-  };
+  }, []);
   useEffect(() => {
     if (!selectMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !bulkProgress) exitSelectMode();
+      // An Esc that a dialog or menu already handled is theirs, not the selection's.
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenFloatingLayer()) return;
+      if (bulkProgress || bulkDeleteOpen) return;
+      exitSelectMode();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [selectMode, bulkProgress, bulkDeleteOpen, exitSelectMode]);
+  // A filter or search change drops the selection: bulk actions never reach hidden rows.
+  const selectionScope = `${filter}\u0000${debouncedQuery}`;
+  const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
+  if (selectionScope !== selectionScopeSeen) {
+    setSelectionScopeSeen(selectionScope);
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+  }
+  // …and intersects with what is shown at action time, as a second guard.
+  const actionable = useMemo(
+    () => visibleSelection(filtered, selectedSlugs),
+    [filtered, selectedSlugs],
+  );
+  // Stops a running bulk loop between items when the page unmounts.
+  const bulkCancelled = useRef(false);
+  useEffect(() => {
+    bulkCancelled.current = false;
+    return () => {
+      bulkCancelled.current = true;
+    };
+  }, []);
   const BULK_RESULT_KEY = {
     pause: 'textd845c8702b04',
     resume: 'texte57e0a07011b',
@@ -477,8 +532,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const runBulk = async (verb: BulkVerb) => {
     const items =
       verb === 'delete'
-        ? triggers.filter((t) => selectedSlugs.has(t.slug))
-        : bulkTargets(triggers, selectedSlugs, verb === 'resume');
+        ? triggers.filter((t) => actionable.has(t.slug))
+        : bulkTargets(triggers, actionable, verb === 'resume');
     if (items.length === 0) return;
     setBulkProgress({ verb, done: 0, total: items.length });
     const tally = await runSequentially(
@@ -488,10 +543,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           ? deleteProjectTrigger(projectId, t.slug)
           : updateProjectTrigger(projectId, t.slug, { enabled: verb === 'resume' }),
       (done, total) => setBulkProgress({ verb, done, total }),
+      () => bulkCancelled.current,
     );
+    if (tally.cancelled) return;
     setBulkProgress(null);
     const message = tI18nComplete(BULK_RESULT_KEY[verb], { ok: tally.ok, failed: tally.failed });
-    if (tally.failed > 0) errorToast(message);
+    // Each failure's own reason, first three, under the tally.
+    if (tally.failed > 0) errorToast(message, { description: tally.errors.slice(0, 3).join('\n') });
     else successToast(message);
     if (verb === 'delete') setSelectedSlugs(new Set());
     void invalidate();
@@ -614,7 +672,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                       variant="outline"
                       size="sm"
                       disabled={resumeAll.isPending}
-                      onClick={() => resumeAll.mutate()}
+                      onClick={() => resumeAll.mutate(false)}
                     >
                       {resumeAll.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
                       {tI18nComplete.raw('text43e673c5503d')}
@@ -684,8 +742,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 triggers={filtered}
                 groups={appGroups}
                 eventNames={eventNames}
+                projectPaused={paused}
                 selectedSlug={selected?.slug ?? null}
-                runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
+                runningSlug={run.isPending ? (run.variables?.slug ?? null) : liveSlug}
                 onOpen={(t) => openTrigger(t.slug)}
                 selection={
                   selectMode
@@ -710,13 +769,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <div className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
                 <div className="pointer-events-auto w-full max-w-xl">
                   <TriggerSelectionBar
-                    selectedCount={selectedSlugs.size}
+                    selectedCount={actionable.size}
                     shownCount={filtered.length}
                     allSelected={
                       filtered.length > 0 && filtered.every((t) => selectedSlugs.has(t.slug))
                     }
-                    canPause={bulkTargets(triggers, selectedSlugs, false).length > 0}
-                    canResume={bulkTargets(triggers, selectedSlugs, true).length > 0}
+                    canPause={bulkTargets(triggers, actionable, false).length > 0}
+                    canResume={bulkTargets(triggers, actionable, true).length > 0}
                     canDelete={controls.canDelete}
                     progress={bulkProgress}
                     onSelectAll={() => setSelectedSlugs(selectAllShown(filtered))}
@@ -795,7 +854,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           <ConfirmDialog
             open={bulkDeleteOpen}
             onOpenChange={setBulkDeleteOpen}
-            title={tI18nComplete('textd142c482800c', { count: selectedSlugs.size })}
+            title={tI18nComplete('textd142c482800c', { count: actionable.size })}
             description={tI18nComplete.raw('text75af4531ed17')}
             confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
             confirmVariant="destructive"
@@ -813,6 +872,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         eventsEnabled={eventsOn}
         controls={controls}
         initialTab={sheet.tab}
+        projectPaused={paused}
+        live={!!selected && selected.slug === liveSlug}
+        onResumeAll={() => resumeAll.mutate(false)}
+        resumingAll={resumeAll.isPending}
         onTabChange={(tab) => selected && navigateSheet({ slug: selected.slug, tab })}
         onRun={() => selected && run.mutate(selected)}
         running={run.isPending && run.variables?.slug === selected?.slug}

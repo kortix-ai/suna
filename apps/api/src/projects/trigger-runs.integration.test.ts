@@ -4,7 +4,7 @@
  * Proves, with an injected clock: a manual or webhook fire writes one run row
  * with its source and status; a rejected webhook delivery is stored unverified;
  * a payload over 64 KiB is stored as a size marker; a turn end closes the
- * newest open run of its session; `max_lateness` turns a stale cron slot into
+ * open runs of its session; `max_lateness` turns a stale cron slot into
  * a skipped run and advances `next_fire_at`; without it the slot fires once;
  * retention deletes old non-cron and rejected runs and keeps cron rows.
  */
@@ -239,7 +239,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     expect((await run(kept!)).payload).toEqual(atLimit);
   });
 
-  test('a turn end closes the newest open run of its session with the outcome', async () => {
+  test('a turn end closes every open run of its session with the outcome', async () => {
     const sessionId = await seedSession();
     const older = await recordTriggerRun({
       projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
@@ -267,13 +267,15 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       runError: 'Out of credits: Payment Required: Insufficient credits.',
     });
     expect((await run(newer!)).runEndedAt?.toISOString()).toBe(endedAt.toISOString());
-    expect(await run(older!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
+    // A reuse session queues every fire into one session: the earlier fire is
+    // consumed by the same turn, so it closes too and is never stuck running.
+    expect(await run(older!)).toMatchObject({ runStatus: 'failed' });
+    expect((await run(older!)).runEndedAt?.toISOString()).toBe(endedAt.toISOString());
 
     const secondEnd = new Date('2026-10-16T10:09:00.000Z');
     await recordTriggerRunEnd({ ...end, status: 'idle', now: secondEnd }, noPush);
-    expect(await run(older!)).toMatchObject({ runStatus: 'succeeded', runError: null });
-    expect((await run(older!)).runEndedAt?.toISOString()).toBe(secondEnd.toISOString());
-    // The closed run keeps its first outcome.
+    // Closed runs keep their first outcome.
+    expect(await run(older!)).toMatchObject({ runStatus: 'failed' });
     expect(await run(newer!)).toMatchObject({ runStatus: 'failed' });
 
     // A subagent turn says nothing about the run.

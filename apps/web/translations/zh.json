@@ -17439,7 +17439,6 @@
       "text84b05fbb7f76": "事件触发",
       "text27a2c8b3a0d2": "下次 {value0}",
       "textd47d7cb0e4f8": "更多",
-      "text3ec84fbbfd0e": "{count, plural, other {# 个启用}}",
       "textc8dae6371b33": "重放",
       "text4aaee10f3594": "已复制会话 ID",
       "text4001631320f1": "{count, plural, other {次失败}}",
@@ -20139,7 +20138,9 @@
       "text68cf13547e38": "通过 URL 添加应用",
       "text46bc646c9bfe": "在此项目中显示托管在任何地方的网站。Kortix 会在原处打开它，与其运行的应用并列。",
       "text08e6480e9b78": "已添加 {value0}",
-      "text6241684827b2": "此网站不允许 Kortix 在此显示。"
+      "text6241684827b2": "此网站不允许 Kortix 在此显示。",
+      "textdae75dce541f": "暂停此项目中的所有定时任务和 Webhook。",
+      "textced57bebd466": "重新开启此项目的定时任务和 Webhook。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

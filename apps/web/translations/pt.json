@@ -17439,7 +17439,6 @@
       "text84b05fbb7f76": "Em um evento",
       "text27a2c8b3a0d2": "próxima {value0}",
       "textd47d7cb0e4f8": "Mais",
-      "text3ec84fbbfd0e": "{count, plural, one {# ativo} other {# ativos}}",
       "textc8dae6371b33": "Repetir",
       "text4aaee10f3594": "ID da sessão copiado",
       "text4001631320f1": "{count, plural, one {com falha} other {com falha}}",
@@ -20139,7 +20138,9 @@
       "text68cf13547e38": "Adicionar um app por URL",
       "text46bc646c9bfe": "Mostre neste projeto um site hospedado em qualquer lugar. O Kortix o abre aqui mesmo, ao lado dos apps que executa.",
       "text08e6480e9b78": "{value0} adicionado",
-      "text6241684827b2": "Este site não permite que o Kortix o mostre aqui."
+      "text6241684827b2": "Este site não permite que o Kortix o mostre aqui.",
+      "textdae75dce541f": "Pausa todos os agendamentos e webhooks deste projeto.",
+      "textced57bebd466": "Reativa os agendamentos e webhooks deste projeto."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

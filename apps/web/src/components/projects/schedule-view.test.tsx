@@ -23,7 +23,7 @@ function render(props: Parameters<typeof TriggerToolbarMenu>[0]) {
   );
 }
 
-const menuProps = { paused: false, isPending: false, activeCount: 4, onToggle: () => {} };
+const menuProps = { paused: false, isPending: false, onToggle: () => {} };
 
 describe('TriggerToolbarMenu — manager-only access gate', () => {
   test('renders the ⋯ menu button for a manager', () => {

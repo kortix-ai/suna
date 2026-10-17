@@ -20,9 +20,9 @@ import type { ComponentType } from 'react';
  * the title is ink at 550, the description one step down and muted, `mt-0.5`
  * under it.
  */
-const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
+export const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
 
-function RichRowBody({
+export function RichRowBody({
   icon: Glyph,
   title,
   description,

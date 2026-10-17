@@ -17439,7 +17439,6 @@
       "text84b05fbb7f76": "На догађај",
       "text27a2c8b3a0d2": "следеће {value0}",
       "textd47d7cb0e4f8": "Још",
-      "text3ec84fbbfd0e": "{count, plural, one {# активан} few {# активна} other {# активних}}",
       "textc8dae6371b33": "Понови",
       "text4aaee10f3594": "ID сесије је копиран",
       "text4001631320f1": "{count, plural, one {неуспело} few {неуспела} other {неуспелих}}",
@@ -20139,7 +20138,9 @@
       "text68cf13547e38": "Dodaj aplikaciju preko URL-a",
       "text46bc646c9bfe": "Prikaži u ovom projektu sajt hostovan bilo gde. Kortix ga otvara ovde, pored aplikacija koje pokreće.",
       "text08e6480e9b78": "{value0} je dodata",
-      "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde."
+      "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
+      "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
+      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

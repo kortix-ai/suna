@@ -17439,7 +17439,6 @@
       "text84b05fbb7f76": "Bei Ereignis",
       "text27a2c8b3a0d2": "nächster {value0}",
       "textd47d7cb0e4f8": "Mehr",
-      "text3ec84fbbfd0e": "{count, plural, other {# aktiv}}",
       "textc8dae6371b33": "Wiederholen",
       "text4aaee10f3594": "Sitzungs-ID kopiert",
       "text4001631320f1": "{count, plural, other {fehlgeschlagen}}",
@@ -20139,7 +20138,9 @@
       "text68cf13547e38": "App per URL hinzufügen",
       "text46bc646c9bfe": "Zeige eine beliebig gehostete Website in diesem Projekt. Kortix öffnet sie direkt hier, neben den Apps, die es betreibt.",
       "text08e6480e9b78": "{value0} hinzugefügt",
-      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen."
+      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
+      "textdae75dce541f": "Pausiert alle Zeitpläne und Webhooks in diesem Projekt.",
+      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

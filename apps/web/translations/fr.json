@@ -17439,7 +17439,6 @@
       "text84b05fbb7f76": "Sur événement",
       "text27a2c8b3a0d2": "prochaine {value0}",
       "textd47d7cb0e4f8": "Plus",
-      "text3ec84fbbfd0e": "{count, plural, one {# actif} other {# actifs}}",
       "textc8dae6371b33": "Rejouer",
       "text4aaee10f3594": "ID de session copié",
       "text4001631320f1": "{count, plural, one {échouée} other {échouées}}",
@@ -20139,7 +20138,9 @@
       "text68cf13547e38": "Ajouter une app par URL",
       "text46bc646c9bfe": "Affichez dans ce projet un site hébergé n’importe où. Kortix l’ouvre sur place, à côté des apps qu’il exécute.",
       "text08e6480e9b78": "{value0} ajoutée",
-      "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici."
+      "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici.",
+      "textdae75dce541f": "Met en pause toutes les planifications et tous les webhooks de ce projet.",
+      "textced57bebd466": "Réactive les planifications et les webhooks de ce projet."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

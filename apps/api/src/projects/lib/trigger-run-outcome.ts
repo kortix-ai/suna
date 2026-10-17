@@ -1,5 +1,5 @@
 import { projectSessions, projectTriggerExecutions, projectTriggerRuntime } from '@kortix/db';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
@@ -62,8 +62,10 @@ export function triggerRunFailureText(error: { name?: string; message?: string }
 }
 
 /**
- * KRTX-1743 ruling 3: the run this turn finished is the newest open run of
- * the trigger in this session. It gets the turn's outcome.
+ * KRTX-1743 ruling 3: a closed turn ends every open run of the trigger in this
+ * session. A reuse-mode trigger queues one prompt per fire into one session,
+ * and the turn that closes has consumed what was queued before it; closing
+ * only the newest left every earlier fire `running` forever.
  */
 async function closeTriggerRun(
   end: TriggerRunEnd,
@@ -71,20 +73,6 @@ async function closeTriggerRun(
   now: Date,
   outcome: { runStatus: 'succeeded' | 'failed'; runError: string | null },
 ): Promise<void> {
-  const newestOpen = db
-    .select({ executionId: projectTriggerExecutions.executionId })
-    .from(projectTriggerExecutions)
-    .where(
-      and(
-        eq(projectTriggerExecutions.projectId, end.projectId),
-        eq(projectTriggerExecutions.slug, slug),
-        eq(projectTriggerExecutions.sessionId, end.sessionId),
-        eq(projectTriggerExecutions.runStatus, 'running'),
-        isNull(projectTriggerExecutions.runEndedAt),
-      ),
-    )
-    .orderBy(desc(projectTriggerExecutions.createdAt))
-    .limit(1);
   await db
     .update(projectTriggerExecutions)
     .set({
@@ -92,7 +80,16 @@ async function closeTriggerRun(
       runEndedAt: now,
       updatedAt: now,
     })
-    .where(inArray(projectTriggerExecutions.executionId, newestOpen));
+    .where(
+      and(
+        eq(projectTriggerExecutions.projectId, end.projectId),
+        eq(projectTriggerExecutions.slug, slug),
+        eq(projectTriggerExecutions.sessionId, end.sessionId),
+        eq(projectTriggerExecutions.runStatus, 'running'),
+        isNull(projectTriggerExecutions.runEndedAt),
+        lte(projectTriggerExecutions.createdAt, now),
+      ),
+    );
 }
 
 export async function recordTriggerRunEnd(

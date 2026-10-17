@@ -69,6 +69,7 @@ export function TriggerList({
   runningSlug = null,
   onOpen,
   selection = null,
+  projectPaused = false,
 }: {
   triggers: ProjectTrigger[];
   /** The trigger whose Run now is in flight: its row shows the session busy mark. */
@@ -78,6 +79,8 @@ export function TriggerList({
   eventNames?: ReadonlyMap<string, string>;
   selectedSlug: string | null;
   onOpen: (trigger: ProjectTrigger) => void;
+  /** The project-wide pause switch is on: every clock shows paused. */
+  projectPaused?: boolean;
   /** Select mode: a row toggles its checkbox instead of opening (shift: a range). */
   selection?: {
     selected: ReadonlySet<string>;
@@ -93,6 +96,7 @@ export function TriggerList({
       running={trigger.slug === runningSlug}
       onOpen={() => onOpen(trigger)}
       checked={selection ? selection.selected.has(trigger.slug) : null}
+      projectPaused={projectPaused}
       onToggle={(range) => selection?.onToggle(trigger, range)}
     />
   );
@@ -126,6 +130,7 @@ function TriggerRow({
   onOpen,
   checked,
   onToggle,
+  projectPaused,
 }: {
   trigger: ProjectTrigger;
   eventNames?: ReadonlyMap<string, string>;
@@ -135,6 +140,7 @@ function TriggerRow({
   /** Select mode: whether this row is checked; null outside select mode. */
   checked: boolean | null;
   onToggle: (range: boolean) => void;
+  projectPaused: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
@@ -148,7 +154,12 @@ function TriggerRow({
   const rowClass = cn(
     'flex h-14 w-full items-center gap-3 rounded-md px-3 text-left outline-none',
     'transition-[background-color] duration-(--duration-fast)',
-    selected || checked ? 'bg-muted' : 'hover:bg-muted/60 focus-visible:bg-muted/60',
+    // One variable paints the row and the clock's dot disc, so the cutout
+    // always matches: rest = card, hover = muted at 60% over card, open = muted.
+    'bg-(--row-surface) [--row-surface:var(--card)]',
+    selected || checked
+      ? '[--row-surface:var(--muted)]'
+      : 'hover:[--row-surface:color-mix(in_oklab,var(--muted)_60%,var(--card))] focus-visible:[--row-surface:color-mix(in_oklab,var(--muted)_60%,var(--card))]',
   );
   const cells = (
     <>
@@ -157,7 +168,12 @@ function TriggerRow({
         {selecting ? (
           <Checkbox checked={checked} tabIndex={-1} aria-hidden className="pointer-events-none" />
         ) : (
-          <TriggerTile trigger={trigger} surface={selected ? 'bg-muted' : 'bg-card'} />
+          <TriggerTile
+            trigger={trigger}
+            projectPaused={projectPaused}
+            running={running}
+            surface="row"
+          />
         )}
       </span>
       {/* No gap and tight leading: the two lines read as one block, centred on the clock. */}
@@ -171,10 +187,11 @@ function TriggerRow({
         <span
           className={cn(
             'whitespace-nowrap',
-            trigger.enabled ? 'text-foreground' : 'text-muted-foreground',
+            trigger.enabled && !projectPaused ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
-          {nextRunLabel(trigger, t, locale)}
+          {/* The project switch stops every schedule: never show a next run it will not make. */}
+          {nextRunLabel(projectPaused ? { ...trigger, enabled: false } : trigger, t, locale)}
         </span>
         {running ? (
           <span className="flex h-4 items-center">
