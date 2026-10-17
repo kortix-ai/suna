@@ -17,7 +17,13 @@ import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -259,7 +265,9 @@ function PolicyForm({
         <div className="bg-popover divide-border divide-y rounded-md border">
           <SwitchRow
             title={t('included.switch')}
-            description={t('included.switchHint')}
+            description={t(
+              draft.privacy.record_only_included ? 'included.switchHintOn' : 'included.switchHint',
+            )}
             checked={draft.privacy.record_only_included ?? false}
             onChange={(on) =>
               setDraft((current) => ({

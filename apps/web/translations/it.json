@@ -21543,7 +21543,9 @@
         "excluded": "Esclusi",
         "noMatch": "Nessun risultato.",
         "noExcludedApps": "Nessuna app è esclusa.",
-        "noExcludedSites": "Nessun sito web è escluso."
+        "noExcludedSites": "Nessun sito web è escluso.",
+        "commonApps": "App comuni",
+        "commonSites": "Siti web comuni"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "Per quanto tempo Kortix conserva le registrazioni. 0 le conserva senza limite.",
@@ -21581,7 +21583,7 @@
         "title": "App e siti web",
         "hint": "Scegli cosa registra ogni computer di {org}. Ciò che viene saltato è oscurato e mai salvato né caricato. Le persone possono aggiungere i propri in Kortix Capture; non possono rimuovere questi né disattivare Registra solo.",
         "switch": "Registra solo app e siti web inclusi",
-        "switchHint": "Disattivo: viene registrato tutto ciò che non è escluso.",
+        "switchHint": "Disattivo: viene registrato tutto tranne Non registrare mai.",
         "kindLabel": "App o siti web",
         "apps": "App",
         "websites": "Siti web",
@@ -21591,7 +21593,10 @@
         "addDomain": "Includi {domain}",
         "included": "Inclusi",
         "noApps": "Nessuna app inclusa. Vengono registrati solo i siti web inclusi.",
-        "noSites": "Nessun sito web incluso. I browser vengono registrati solo se l’app del browser è inclusa."
+        "noSites": "Nessun sito web incluso. I browser vengono registrati solo se l’app del browser è inclusa.",
+        "switchHintOn": "Attivo: vengono registrati solo le app e i siti web qui sotto.",
+        "commonApps": "App comuni",
+        "commonSites": "Siti web comuni"
       }
     },
     "area": {

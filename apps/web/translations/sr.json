@@ -21543,7 +21543,9 @@
         "excluded": "Izuzeto",
         "noMatch": "Nema poklapanja.",
         "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
-        "noExcludedSites": "Nijedan veb-sajt nije izuzet."
+        "noExcludedSites": "Nijedan veb-sajt nije izuzet.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi"
       },
       "remoteDays": "У Kortix-у",
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
@@ -21581,7 +21583,7 @@
         "title": "Aplikacije i veb-sajtovi",
         "hint": "Izaberite šta svaki računar u {org} snima. Ono što se preskoči je zatamnjeno i nikad se ne čuva niti otprema. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ukloniti ove niti isključiti Snimaj samo.",
         "switch": "Snimaj samo uključene aplikacije i veb-sajtove",
-        "switchHint": "Isključeno: snima se sve što nije izuzeto.",
+        "switchHint": "Isključeno: snima se sve osim Nikad ne snimaj.",
         "kindLabel": "Aplikacije ili veb-sajtovi",
         "apps": "Aplikacije",
         "websites": "Veb-sajtovi",
@@ -21591,7 +21593,10 @@
         "addDomain": "Uključi {domain}",
         "included": "Uključeno",
         "noApps": "Nijedna aplikacija nije uključena. Snimaju se samo uključeni veb-sajtovi.",
-        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena."
+        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena.",
+        "switchHintOn": "Uključeno: snimaju se samo aplikacije i veb-sajtovi ispod.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi"
       }
     },
     "area": {

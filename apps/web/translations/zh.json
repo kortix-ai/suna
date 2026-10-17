@@ -21543,7 +21543,9 @@
         "excluded": "已排除",
         "noMatch": "没有匹配项。",
         "noExcludedApps": "没有已排除的应用。",
-        "noExcludedSites": "没有已排除的网站。"
+        "noExcludedSites": "没有已排除的网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站"
       },
       "remoteDays": "Kortix 中",
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
@@ -21581,7 +21583,7 @@
         "title": "应用和网站",
         "hint": "选择 {org} 中每台电脑录制什么。被跳过的内容一律涂黑，从不保存或上传。成员可以在 Kortix Capture 中添加自己的项目，但不能移除这些项目，也不能关闭“只录制”。",
         "switch": "只录制已包含的应用和网站",
-        "switchHint": "关闭：录制所有未排除的内容。",
+        "switchHint": "关闭：除“从不录制”外全部录制。",
         "kindLabel": "应用或网站",
         "apps": "应用",
         "websites": "网站",
@@ -21591,7 +21593,10 @@
         "addDomain": "包含 {domain}",
         "included": "已包含",
         "noApps": "未包含任何应用。只录制已包含的网站。",
-        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。"
+        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。",
+        "switchHintOn": "开启：只录制下方的应用和网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站"
       }
     },
     "area": {
