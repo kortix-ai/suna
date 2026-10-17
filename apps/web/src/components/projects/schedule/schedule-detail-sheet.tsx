@@ -167,7 +167,8 @@ export function ScheduleDetailSplitContent(
   if (!trigger) return null;
   return (
     <SplitSheetContent>
-      <SplitFocus key={trigger.slug}>
+      {/* Keyed by the tab too: Back to `?tab=runs` reopens on Runs. */}
+      <SplitFocus key={`${trigger.slug}:${props.initialTab ?? 'settings'}`}>
         <SheetPanel {...props} trigger={trigger} split open onOpenChange={() => {}} />
       </SplitFocus>
     </SplitSheetContent>

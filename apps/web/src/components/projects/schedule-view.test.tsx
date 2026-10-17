@@ -1,11 +1,12 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TriggerPauseButton } from './schedule-view';
+import { readTriggerSheet, triggerSheetHref } from './schedule/trigger-filter';
 
 /**
  * Pins the access-control fix from Task 18's review: the pause-all control
@@ -115,5 +116,64 @@ describe('ScheduleView page chrome', () => {
   test('the paused banner stays prominent in the content column', () => {
     expect(shellChildren).toContain('Everything is paused');
     expect(shellChildren).toContain('{paused && showContent &&');
+  });
+});
+
+/** The open trigger lives in the URL: open, switch, close and a deep link. */
+describe('trigger sheet URL', () => {
+  const path = '/projects/p1/customize/triggers';
+
+  test('opening from a closed sheet pushes ?id, so Back closes it', () => {
+    expect(triggerSheetHref(path, 'type=cron', { slug: 'nightly' })).toEqual({
+      href: `${path}?type=cron&id=nightly`,
+      mode: 'push',
+    });
+  });
+
+  test('opening on Runs adds &tab=runs', () => {
+    expect(triggerSheetHref(path, 'type=failed', { slug: 'nightly', tab: 'runs' })).toEqual({
+      href: `${path}?type=failed&id=nightly&tab=runs`,
+      mode: 'push',
+    });
+  });
+
+  test('switching to another trigger replaces, and drops the old tab', () => {
+    expect(triggerSheetHref(path, 'id=nightly&tab=runs', { slug: 'hook' })).toEqual({
+      href: `${path}?id=hook`,
+      mode: 'replace',
+    });
+  });
+
+  test('closing removes id, tab and the older ?t, and keeps the filter', () => {
+    expect(triggerSheetHref(path, 'type=webhook&id=hook&tab=runs', { slug: null })).toEqual({
+      href: `${path}?type=webhook`,
+      mode: 'replace',
+    });
+    expect(triggerSheetHref(path, 't=hook', { slug: null })).toEqual({
+      href: path,
+      mode: 'replace',
+    });
+  });
+
+  test('a deep link reads the slug and the tab', () => {
+    expect(readTriggerSheet(new URLSearchParams('id=nightly&tab=runs'))).toEqual({
+      slug: 'nightly',
+      tab: 'runs',
+    });
+    expect(readTriggerSheet(new URLSearchParams('t=nightly'))).toEqual({
+      slug: 'nightly',
+      tab: 'settings',
+    });
+    expect(readTriggerSheet(new URLSearchParams('tab=bogus'))).toEqual({
+      slug: null,
+      tab: 'settings',
+    });
+    expect(readTriggerSheet(null)).toEqual({ slug: null, tab: 'settings' });
+  });
+
+  test('the page reads the open trigger from the URL, not from local state', () => {
+    expect(code).toContain('readTriggerSheet(searchParams)');
+    expect(code).toContain('triggers.find((t) => t.slug === sheet.slug)');
+    expect(code).not.toContain('setSelectedSlug');
   });
 });

@@ -81,6 +81,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { useDebounce } from '@/hooks/use-debounce';
 import { useSlashFocus } from '@/hooks/utils';
 import { EventAppsStrip } from './schedule/event-apps-strip';
 import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
@@ -101,10 +102,13 @@ import { useTriggerControls } from './schedule/trigger-controls';
 import {
   TRIGGER_FILTERS,
   type TriggerFilter,
+  type TriggerSheetTab,
   filterTriggers,
   groupTriggersByApp,
   parseTriggerFilter,
+  readTriggerSheet,
   triggerCounts,
+  triggerSheetHref,
 } from './schedule/trigger-filter';
 import { unseenFailures } from './schedule/trigger-runs-logic';
 import { RunList, runsOf } from './schedule/trigger-runs-panel';
@@ -260,6 +264,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   });
 
   const [query, setQuery] = useState('');
+  // The input shows every keystroke; the list filters 200 ms after the last one.
+  const { debouncedValue: debouncedQuery } = useDebounce(query, 200);
   const [createOpen, setCreateOpen] = useState(false);
   // The empty state's "App event" button opens the form past the type step.
   const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
@@ -272,9 +278,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   };
   const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
-  // `?t=<slug>` opens that trigger's sheet: the connector page links here.
   const searchParams = useSearchParams();
-  const linkedSlug = searchParams?.get('t') ?? null;
+  // `?id=<trigger id>[&tab=runs]` is the open trigger: a link, Back and Forward all open it.
+  const sheet = readTriggerSheet(searchParams);
   // App events are a beta feature behind the project flag `event_triggers`. Fail
   // closed: until the flag resolves on, nothing that lists, browses or requests events renders.
   const featureFlags = useProjectFeatureFlags(projectId);
@@ -299,13 +305,14 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const appIndex = useMemo(() => indexEventApps(eventApps.data?.apps), [eventApps.data]);
   const agents = useVisibleAgents({ projectId });
   const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
-  // A row of the Failed runs list opens its trigger on the Runs tab.
-  const [sheetTab, setSheetTab] = useState<'settings' | 'runs'>('settings');
-  const openTrigger = (slug: string, tab: 'settings' | 'runs' = 'settings') => {
-    setSheetTab(tab);
-    setSelectedSlug(slug);
+  const navigateSheet = (next: Parameters<typeof triggerSheetHref>[2]) => {
+    const { href, mode } = triggerSheetHref(pathname, searchParams?.toString() ?? '', next);
+    if (mode === 'push') router.push(href, { scroll: false });
+    else router.replace(href, { scroll: false });
   };
+  const openTrigger = (slug: string, tab: TriggerSheetTab = 'settings') =>
+    navigateSheet({ slug, tab });
+  const closeTrigger = () => navigateSheet({ slug: null });
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(
@@ -352,7 +359,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         { entity: triggerToastEntity(trigger) },
       );
       setDeleteTarget(null);
-      setSelectedSlug(null);
+      closeTrigger();
       invalidate();
     },
     onError: (err) =>
@@ -386,8 +393,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
   const filtered = useMemo(
-    () => ofKind.filter((t) => matchesQuery(t, query, tI18nComplete)),
-    [ofKind, query, tI18nComplete],
+    () => ofKind.filter((t) => matchesQuery(t, debouncedQuery, tI18nComplete)),
+    [ofKind, debouncedQuery, tI18nComplete],
   );
   const appGroups = useMemo(
     () =>
@@ -421,7 +428,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // The tab follows every loaded failed run; only the badge follows the unseen ones.
   const showFailed = runsOf(failedRuns).length > 0 || failedView;
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all' || showFailed);
-  const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
+  // An unknown slug matches nothing: the sheet stays closed, with no error.
+  const selected = triggers.find((t) => t.slug === sheet.slug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
@@ -432,7 +440,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     <SplitSheet
       open={!!selected}
       onOpenChange={(next) => {
-        if (!next) setSelectedSlug(null);
+        if (!next) closeTrigger();
       }}
       size="lg"
       className="flex-1 [--split-sheet-max:60%] [--split-sheet-width:60%]"
@@ -605,7 +613,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             ) : filtered.length === 0 ? (
               <p className="text-muted-foreground px-3 py-6 text-center text-xs">
                 {tI18nComplete.raw('text965b516df3ba')}{' '}
-                <span className="text-foreground font-medium">{query}</span>.
+                <span className="text-foreground font-medium">{debouncedQuery}</span>.
               </p>
             ) : (
               <ScheduleTable
@@ -704,7 +712,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         trigger={selected}
         eventsEnabled={eventsOn}
         controls={controls}
-        initialTab={sheetTab}
+        initialTab={sheet.tab}
         onRun={() => selected && run.mutate(selected)}
         running={run.isPending && run.variables?.slug === selected?.slug}
         onDelete={() => selected && setDeleteTarget(selected)}
