@@ -902,7 +902,19 @@
         "access": "O acesso de toda a equipe — ninguém poderá acessar este projeto novamente"
       },
       "reassurance": "Os repositórios Git que você mesmo conectou não são excluídos. Todo código já enviado permanece no lugar.",
-      "keepWorkspace": "Manter projeto"
+      "keepWorkspace": "Manter projeto",
+      "transferWorkspace": "Transferir projeto",
+      "transferDescription": "Mover este projeto — sessões, ficheiros, configurações e acesso de membros — para outra organização.",
+      "transferTitle": "Transferir projeto",
+      "transferDialog": "Sessões, ficheiros e configurações acompanham o projeto. Os papéis de sistema são mantidos; grupos, convites pendentes e papéis personalizados devem ser atribuídos novamente na organização de destino. O uso registado fica na fatura original.",
+      "transferTargetLabel": "Organização de destino",
+      "transferTargetPlaceholder": "Escolher uma organização",
+      "transferLoadingTargets": "A carregar organizações…",
+      "transferNoTargets": "Não é membro de nenhuma outra organização.",
+      "transferMove": "Mover projeto",
+      "transferMoveTo": "Mover para {name}",
+      "transferSuccess": "Projeto transferido",
+      "transferFailed": "Falha na transferência"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegação sidebar",
       "text2313fe21ea84": "Editar {name}",
+      "text2b2c3ec032a6": "Projeto transferido para outra conta",
       "text44f9fff8bdae": "Alterou o plano de créditos",
       "text3fa17bba73e1": "Sua conta ainda não tem um plano. Escolha um valor mensal de créditos para executar sessões. Todos os membros compartilham um único pool.",
       "text6821e42be2c1": "Sua carteira está vazia, então as sessões não podem ser executadas. Recarregue para manter a computação e os modelos de IA mais recentes funcionando — seu plano não é afetado.",

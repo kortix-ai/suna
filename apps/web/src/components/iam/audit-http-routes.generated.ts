@@ -727,6 +727,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|snapshots",
   "POST|v1|projects|:projectId|snapshots|fix-with-agent",
   "POST|v1|projects|:projectId|snapshots|rebuild",
+  "POST|v1|projects|:projectId|transfer",
   "GET|v1|projects|:projectId|trigger-runs",
   "GET|v1|projects|:projectId|triggers",
   "POST|v1|projects|:projectId|triggers",

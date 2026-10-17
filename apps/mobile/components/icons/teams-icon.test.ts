@@ -13,8 +13,18 @@ const userMessage = read('../session/turn/user-message.tsx');
 
 /** Every drawing attribute of the mark, in order, with ids normalised. */
 function drawing(source: string): string[] {
-  const attrs = [...source.matchAll(/\b(d|fill|fillOpacity|stopColor|stopOpacity|offset|gradientTransform|x1|x2|y1|y2|cx|cy|r|width|height|x|y|rx)="([^"]*)"/g)];
-  return attrs.map(([, name, value]) => `${name}=${value.replace('#teams-', '#')}`);
+  // The web mark (#9982) derives its gradient ids from `useId()`, so its fill
+  // references are template expressions (`fill={`url(#${uid}a)`}`) while the
+  // mobile mark keeps literal quoted values (`fill="url(#teams-a)"`). Match both
+  // spellings and normalise the uid interpolation away, so the comparison stays
+  // element-for-element across the two renderers.
+  const attrs = [...source.matchAll(/\b(d|fill|fillOpacity|stopColor|stopOpacity|offset|gradientTransform|x1|x2|y1|y2|cx|cy|r|width|height|x|y|rx)=(?:"([^"]*)"|\{`([^`]*)`\})/g)];
+  return attrs.map(([, name, quoted, templated]) => {
+    const value = (quoted ?? templated ?? '')
+      .replace(/\$\{uid\}/g, '')
+      .replace('#teams-', '#');
+    return `${name}=${value}`;
+  });
 }
 
 describe('the mobile Microsoft Teams mark', () => {

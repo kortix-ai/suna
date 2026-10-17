@@ -902,7 +902,19 @@
         "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo progetto"
       },
       "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
-      "keepWorkspace": "Mantieni progetto"
+      "keepWorkspace": "Mantieni progetto",
+      "transferWorkspace": "Trasferisci progetto",
+      "transferDescription": "Sposta questo progetto — sessioni, file, impostazioni e accesso dei membri — in un’altra organizzazione.",
+      "transferTitle": "Trasferisci progetto",
+      "transferDialog": "Sessioni, file e impostazioni seguono il progetto. I ruoli di sistema restano; gruppi, inviti in attesa e ruoli personalizzati devono essere assegnati di nuovo nella nuova organizzazione. L’utilizzo registrato resta sulla fattura originale.",
+      "transferTargetLabel": "Organizzazione di destinazione",
+      "transferTargetPlaceholder": "Scegli un’organizzazione",
+      "transferLoadingTargets": "Caricamento delle organizzazioni…",
+      "transferNoTargets": "Non sei membro di altre organizzazioni.",
+      "transferMove": "Sposta progetto",
+      "transferMoveTo": "Sposta in {name}",
+      "transferSuccess": "Progetto trasferito",
+      "transferFailed": "Trasferimento non riuscito"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "Personalizza barra laterale",
       "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar",
       "text2313fe21ea84": "Modifica {name}",
+      "text2b2c3ec032a6": "Progetto trasferito a un altro account",
       "text44f9fff8bdae": "Piano crediti modificato",
       "text3fa17bba73e1": "Il tuo account non ha ancora un piano. Scegli un importo mensile di crediti per eseguire le sessioni. Tutti i membri condividono un unico pool.",
       "text6821e42be2c1": "Il tuo saldo è vuoto, quindi le sessioni non possono essere eseguite. Ricarica per mantenere attivi il calcolo e gli ultimi modelli di IA: il tuo piano non cambia.",

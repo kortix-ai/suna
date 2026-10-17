@@ -1112,6 +1112,26 @@ export async function archiveProject(projectId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
 }
 
+/**
+ * Move the project — and everything it owns (sessions, drives, git
+ * connection, project-bound tokens, member grants) — to another account.
+ *
+ * The caller needs the destructive tier on the project (`project.delete`)
+ * AND the right to create projects in the TARGET account; the API refuses a
+ * caller who is not a member of the target (or whose target role cannot
+ * create projects) with 403 before anything moves, and 403 with the target
+ * account's project-cap body when the move would exceed its plan. The usage
+ * ledger stays with the source account: spend stays where it was consumed.
+ */
+export async function transferProject(projectId: string, accountId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
+      `/projects/${projectId}/transfer`,
+      { account_id: accountId },
+    ),
+  );
+}
+
 // ── Server-side explicit-token variants ──────────────────────────────────────
 // Next.js server actions / route handlers (post-signup first-project
 // bootstrap) run per-request with an already-resolved Supabase access token —

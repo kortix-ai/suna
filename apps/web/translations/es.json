@@ -902,7 +902,19 @@
         "access": "El acceso de todo el equipo — nadie podrá volver a acceder a este proyecto"
       },
       "reassurance": "Los repositorios Git que hayas conectado tú no se eliminan. El código que ya se haya enviado permanece intacto.",
-      "keepWorkspace": "Conservar proyecto"
+      "keepWorkspace": "Conservar proyecto",
+      "transferWorkspace": "Transferir proyecto",
+      "transferDescription": "Mover este proyecto — sus sesiones, archivos, ajustes y acceso de miembros — a otra organización.",
+      "transferTitle": "Transferir proyecto",
+      "transferDialog": "Las sesiones, archivos y ajustes siguen al proyecto. Los roles del sistema se conservan; los grupos, invitaciones pendientes y roles personalizados deben concederse de nuevo en la organización destino. El uso registrado queda en la factura original.",
+      "transferTargetLabel": "Organización de destino",
+      "transferTargetPlaceholder": "Elegir una organización",
+      "transferLoadingTargets": "Cargando organizaciones…",
+      "transferNoTargets": "No eres miembro de ninguna otra organización.",
+      "transferMove": "Mover proyecto",
+      "transferMoveTo": "Mover a {name}",
+      "transferSuccess": "Proyecto transferido",
+      "transferFailed": "Error al transferir"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
       "text2313fe21ea84": "Editar {name}",
+      "text2b2c3ec032a6": "Proyecto transferido a otra cuenta",
       "text44f9fff8bdae": "Cambió el plan de créditos",
       "text3fa17bba73e1": "Tu cuenta aún no tiene un plan. Elige un importe mensual de créditos para ejecutar sesiones. Todos los miembros comparten un único fondo.",
       "text6821e42be2c1": "Tu monedero está vacío, así que las sesiones no pueden ejecutarse. Recarga para mantener el cómputo y los últimos modelos de IA en marcha; tu plan no se ve afectado.",

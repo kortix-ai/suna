@@ -423,6 +423,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/projects/:projectId': { action: 'project.delete', title: 'Deleted project' },
   'GET /v1/projects/:projectId': { action: 'project.read', title: 'Viewed project' },
   'PATCH /v1/projects/:projectId': { action: 'project.update', title: 'Updated project' },
+  'POST /v1/projects/:projectId/transfer': { action: 'project.transfer', title: 'Transferred project to another account' },
   'GET /v1/projects/:projectId/.well-known/openid-configuration': { action: 'project.token_issuer.read', title: 'Read project token issuer metadata' },
   'GET /v1/projects/:projectId/access': { action: 'project.member.list', title: 'Viewed project member access' },
   'GET /v1/projects/:projectId/access-requests': { action: 'project.access_request.list', title: 'Listed project access requests' },

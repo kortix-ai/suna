@@ -724,7 +724,19 @@
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
       "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
-      "keepWorkspace": "Keep project"
+      "keepWorkspace": "Keep project",
+      "transferWorkspace": "Transfer project",
+      "transferDescription": "Move this project — its sessions, files, settings and member access — to another organization.",
+      "transferTitle": "Transfer project",
+      "transferDialog": "Sessions, files and settings follow the project. System member roles follow; groups, pending invitations and custom roles must be granted again in the target organization. Recorded usage stays on this organization’s bill.",
+      "transferTargetLabel": "Target organization",
+      "transferTargetPlaceholder": "Choose an organization",
+      "transferLoadingTargets": "Loading organizations…",
+      "transferNoTargets": "You are not a member of any other organization.",
+      "transferMove": "Move project",
+      "transferMoveTo": "Move to {name}",
+      "transferSuccess": "Project transferred",
+      "transferFailed": "Transfer failed"
     },
     "sandbox": {
       "states": {
@@ -20020,6 +20032,7 @@
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "text2313fe21ea84": "Edit {name}",
+      "text2b2c3ec032a6": "Transferred project to another account",
       "text44f9fff8bdae": "Changed the credits plan",
       "text3fa17bba73e1": "Your account has no plan yet. Pick a monthly amount of credits to run sessions. Every member shares one pool.",
       "text6821e42be2c1": "Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan is unaffected.",

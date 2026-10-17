@@ -902,7 +902,19 @@
         "access": "L'accès de toute l'équipe — personne ne pourra plus accéder à cet projet"
       },
       "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés. Le code déjà envoyé reste en place.",
-      "keepWorkspace": "Conserver le projet"
+      "keepWorkspace": "Conserver le projet",
+      "transferWorkspace": "Transférer le projet",
+      "transferDescription": "Déplacer ce projet — ses sessions, fichiers, réglages et accès membres — vers une autre organisation.",
+      "transferTitle": "Transférer le projet",
+      "transferDialog": "Les sessions, fichiers et réglages suivent le projet. Les rôles système sont conservés ; les groupes, invitations en attente et rôles personnalisés doivent être accordés à nouveau dans l’organisation cible. La consommation enregistrée reste sur la facture initiale.",
+      "transferTargetLabel": "Organisation cible",
+      "transferTargetPlaceholder": "Choisir une organisation",
+      "transferLoadingTargets": "Chargement des organisations…",
+      "transferNoTargets": "Vous n’êtes membre d’aucune autre organisation.",
+      "transferMove": "Déplacer le projet",
+      "transferMoveTo": "Déplacer vers {name}",
+      "transferSuccess": "Projet transféré",
+      "transferFailed": "Échec du transfert"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
       "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
       "text2313fe21ea84": "Modifier {name}",
+      "text2b2c3ec032a6": "Projet transféré vers un autre compte",
       "text44f9fff8bdae": "Plan de crédits modifié",
       "text3fa17bba73e1": "Votre compte n'a pas encore de forfait. Choisissez un montant mensuel de crédits pour lancer des sessions. Tous les membres partagent un seul pool.",
       "text6821e42be2c1": "Votre portefeuille est vide, les sessions ne peuvent donc pas s'exécuter. Rechargez pour maintenir le calcul et les derniers modèles d'IA — votre forfait n'est pas affecté.",

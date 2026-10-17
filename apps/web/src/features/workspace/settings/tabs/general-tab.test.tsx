@@ -109,6 +109,25 @@ describe('GeneralTabView', () => {
     expect(out).not.toContain('Delete workspace');
   });
 
+  test('the transfer slot renders inside the danger zone, after the Delete row', () => {
+    const out = renderToStaticMarkup(
+      <GeneralTabView transferSlot={<div>transfer-marker</div>} />,
+    );
+    expect(out).toContain('transfer-marker');
+    // Transfer shares the Delete section's gate — the API's source gate for a
+    // transfer is the same destructive tier — so the slot must live inside
+    // the danger-zone group, not beside it.
+    expect(out.indexOf('transfer-marker')).toBeGreaterThan(out.indexOf('Delete workspace'));
+    expect(out.indexOf('transfer-marker')).toBeGreaterThan(
+      out.indexOf('data-slot="settings-row-group"'),
+    );
+  });
+
+  test('the transfer slot is absent when canDelete is false', () => {
+    const out = renderToStaticMarkup(<GeneralTabView canDelete={false} transferSlot={<div>transfer-marker</div>} />);
+    expect(out).not.toContain('transfer-marker');
+  });
+
   test('does not render the experimental feature list — that lives in ExperimentalTab', () => {
     const out = renderToStaticMarkup(<GeneralTabView />);
     expect(out).not.toContain('Early-access capabilities');

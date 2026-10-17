@@ -902,7 +902,19 @@
         "access": "整个团队的访问权限 — 任何人都无法再次访问此项目"
       },
       "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
-      "keepWorkspace": "保留项目"
+      "keepWorkspace": "保留项目",
+      "transferWorkspace": "转移项目",
+      "transferDescription": "将此项目——包括会话、文件、设置和成员访问权限——移动到另一个组织。",
+      "transferTitle": "转移项目",
+      "transferDialog": "会话、文件、设置和系统角色随项目转移。群组、待处理邀请和自定义角色须在目标组织中重新授予。已记录的用量仍计入原组织账单。",
+      "transferTargetLabel": "目标组织",
+      "transferTargetPlaceholder": "选择一个组织",
+      "transferLoadingTargets": "正在加载组织…",
+      "transferNoTargets": "您不是任何其他组织的成员。",
+      "transferMove": "移动项目",
+      "transferMoveTo": "移动到 {name}",
+      "transferSuccess": "项目已转移",
+      "transferFailed": "转移失败"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "自定义侧边栏",
       "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
       "text2313fe21ea84": "编辑 {name}",
+      "text2b2c3ec032a6": "项目已转移到其他账户",
       "text44f9fff8bdae": "更改了积分套餐",
       "text3fa17bba73e1": "你的账户还没有套餐。请选择每月积分金额以运行会话。所有成员共用一个积分池。",
       "text6821e42be2c1": "你的钱包已空，会话无法运行。请充值以继续使用算力和最新的 AI 模型——你的套餐不受影响。",

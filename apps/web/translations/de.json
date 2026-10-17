@@ -902,7 +902,19 @@
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Projekt behalten"
+      "keepWorkspace": "Projekt behalten",
+      "transferWorkspace": "Projekt übertragen",
+      "transferDescription": "Dieses Projekt — Sitzungen, Dateien, Einstellungen und Mitgliederzugriff — in eine andere Organisation verschieben.",
+      "transferTitle": "Projekt übertragen",
+      "transferDialog": "Sitzungen, Dateien und Einstellungen folgen dem Projekt. Systemrollen folgen; Gruppen, ausstehende Einladungen und benutzerdefinierte Rollen müssen in der Zielorganisation neu vergeben werden. Erfasste Nutzung bleibt auf der bisherigen Rechnung.",
+      "transferTargetLabel": "Zielorganisation",
+      "transferTargetPlaceholder": "Organisation auswählen",
+      "transferLoadingTargets": "Organisationen werden geladen…",
+      "transferNoTargets": "Sie sind kein Mitglied einer anderen Organisation.",
+      "transferMove": "Projekt verschieben",
+      "transferMoveTo": "Nach {name} verschieben",
+      "transferSuccess": "Projekt übertragen",
+      "transferFailed": "Übertragung fehlgeschlagen"
     },
     "sandbox": {
       "states": {
@@ -20009,6 +20021,7 @@
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
       "text2313fe21ea84": "{name} bearbeiten",
+      "text2b2c3ec032a6": "Projekt in ein anderes Konto übertragen",
       "text44f9fff8bdae": "Credits-Plan geändert",
       "text3fa17bba73e1": "Dein Konto hat noch keinen Plan. Wähle einen monatlichen Credit-Betrag, um Sitzungen auszuführen. Alle Mitglieder teilen sich einen Pool.",
       "text6821e42be2c1": "Dein Guthaben ist leer, daher können Sitzungen nicht laufen. Lade auf, damit Rechenleistung und die neuesten KI-Modelle weiterlaufen – dein Plan bleibt unberührt.",
