@@ -38,6 +38,7 @@ export const ACCOUNT_PERMISSION_PROBES = [
   { action: 'role.read' }, // GET .../iam/roles            → Roles
   { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
   { action: 'audit.read' }, // GET .../audit               → Audit log
+  { action: 'billing.read' }, // GET .../usage/*           → Transactions
   // Writes → controls inside a visible pane.
   { action: 'account.write' },
   { action: 'account.delete' },
@@ -47,6 +48,8 @@ export const ACCOUNT_PERMISSION_PROBES = [
   { action: 'group.create' },
   { action: 'group.members.manage' },
   { action: 'role.create' },
+  { action: 'billing.write' }, // subscribe, top up, portal → Billing
+  { action: 'token.create' }, // service accounts, OAuth apps → Tokens
 ];
 
 type Allowed = CanResult['allowed'];
@@ -61,6 +64,8 @@ export interface AccountHubAccess {
   canReadRoles: Allowed;
   canReadPolicies: Allowed;
   canReadAudit: Allowed;
+  /** `billing.read`: the Transactions pane (session costs, credit ledger). */
+  canReadBilling: Allowed;
   canWriteAccount: Allowed;
   canDeleteAccount: Allowed;
   canInviteMember: Allowed;
@@ -69,6 +74,10 @@ export interface AccountHubAccess {
   canCreateGroup: Allowed;
   canManageGroupMembers: Allowed;
   canManageRoles: Allowed;
+  /** `billing.write`: the Billing pane, where every control changes the plan or the wallet. */
+  canWriteBilling: Allowed;
+  /** `token.create`: the Tokens pane — the account's machine credentials. */
+  canCreateToken: Allowed;
   /** Which sections this caller may open. ONE rule — see the body. */
   sectionVisible: Record<AccountSection, boolean>;
   /** The first section in nav order this caller can see; `help` at worst. */
@@ -81,9 +90,9 @@ export interface AccountHubAccess {
  * falsy, and every flag reads `false` until the verdict lands.
  */
 export function useAccountHubAccess(accountId: string | undefined): AccountHubAccess {
-  // One batched probe instead of 13 separate /effective?action=… GETs. Each
+  // One batched probe instead of 16 separate /effective?action=… GETs. Each
   // singular probe was its own DB round-trip, so a single load of this page
-  // fanned out 13 concurrent queries — a meaningful contributor to DB
+  // fanned out 16 concurrent queries — a meaningful contributor to DB
   // connection-pool pressure. The :batch endpoint answers all of them in one
   // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
   const [
@@ -92,6 +101,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canReadRoles },
     { allowed: canReadPolicies },
     { allowed: canReadAudit },
+    { allowed: canReadBilling },
     { allowed: canWriteAccount },
     { allowed: canDeleteAccount },
     { allowed: canInviteMember },
@@ -100,6 +110,8 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canCreateGroup },
     { allowed: canManageGroupMembers },
     { allowed: canManageRoles },
+    { allowed: canWriteBilling },
+    { allowed: canCreateToken },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
@@ -137,10 +149,17 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     // member saw a Roles item that could only ever fail to load.
     roles: canReadRoles === true,
     identity: canWriteAccount === true,
-    billing: canWriteAccount === true && billingActive,
-    transactions: canWriteAccount === true,
+    // Every Billing control (subscribe, top up, the Stripe portal) asserts
+    // `billing.write` (billing/http-require-billing-write.ts).
+    billing: canWriteBilling === true && billingActive,
+    // Read-only: session costs and the credit ledger, `billing.read`
+    // (router/routes/usage.ts `resolveAccountWideUsageAccountId`).
+    transactions: canReadBilling === true,
     git: canWriteAccount === true,
-    tokens: canWriteAccount === true,
+    // The account's service accounts and OAuth apps. Their lists assert
+    // `token.read`, which every member holds, but every control in the pane
+    // needs `token.create`; a person's own tokens live in /settings/tokens.
+    tokens: canCreateToken === true,
     // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
@@ -163,6 +182,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canReadRoles,
     canReadPolicies,
     canReadAudit,
+    canReadBilling,
     canWriteAccount,
     canDeleteAccount,
     canInviteMember,
@@ -171,6 +191,8 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canCreateGroup,
     canManageGroupMembers,
     canManageRoles,
+    canWriteBilling,
+    canCreateToken,
     sectionVisible,
     firstVisibleSection,
   };
