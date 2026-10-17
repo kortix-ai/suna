@@ -16,6 +16,7 @@
  * deadline 503 was served — deterministic, no clock race.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { Context } from 'hono';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
 
 const ORIGINAL_ENV = {
@@ -60,8 +61,7 @@ function rowsFor(table: unknown): unknown[] {
 }
 
 /** The captured request context; the deadline path finalizes it mid-handler. */
-type FinalizedContext = { finalized: boolean };
-let capturedCtx: FinalizedContext | null = null;
+let capturedCtx: Context | null = null;
 
 /**
  * Resolves only once the captured context is finalized — the deadline guard
@@ -133,7 +133,7 @@ const { __resetAuditRateGuardForTest } = await import('../../shared/opencode-aud
 // it is still awaiting the write.
 projectsApp.use('*', (c, next) => requestDeadline(c, next));
 projectsApp.use('*', (c, next) => {
-  capturedCtx = c as unknown as FinalizedContext;
+  capturedCtx = c;
   return next();
 });
 projectsApp.use('*', async (c, next) => {
