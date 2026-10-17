@@ -82,20 +82,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
 
   return (
     <HubLink
-      /* `from=customize` is what earns the project panel a "Back to Customize"
-         breadcrumb instead of the hub's own "All projects". This link is the
-         ONLY way that marker gets set, so the panel can rely on there being a
-         Customize entry in history to go back to.
-
-         The hub opens as a modal over this very page now, which is most of
-         what that marker was compensating for. The history entry it relies on
-         is still exactly one — the one the modal pushes — so
-         `BackToCustomizeOverlay`'s `router.back()` lands on the Customize tab
-         the person left, same as before. */
       to={hubTarget(accountId, {
         tab: 'access-projects',
         project: projectId,
-        from: 'customize',
       })}
       className={MEMBERS_LINK_CLASS}
     >

@@ -45,7 +45,6 @@ import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dial
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
-import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -262,12 +261,6 @@ export function AccountHubContent() {
   // a detail view is a URL, not a route change, and the left rail never
   // disappears underneath it.
   const selectedAccessProjectId = searchParams.get('project');
-  // Set only by the Customize bar's "Members" link
-  // (`capabilities/shared/capability-tabs.tsx`). It means this hub was opened
-  // FROM a project, so the project panel offers a way back to it — landing
-  // someone on the account hub with only an "All projects" breadcrumb strands
-  // them one level above where they started.
-  const cameFromCustomize = searchParams.get('from') === 'customize';
   const selectedAccessGroupId = searchParams.get('group');
   // `sso` | `scim`: a guided wizard standing in for the Identity pane.
   const rawSetup = searchParams.get('setup');
@@ -449,14 +442,6 @@ export function AccountHubContent() {
                 onSelectGroup={(id) => navigate('groups', { group: id })}
               />
             )
-          ) : null}
-
-          {/* Page chrome, not panel chrome: `fixed`, so it costs this
-              layout no height and the panel's own "All projects" breadcrumb
-              is untouched. Only on the project panel — the section the
-              Customize bar's "Members" link actually opens. */}
-          {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
-            <BackToCustomizeOverlay />
           ) : null}
 
           {activeSection === 'access-projects' ? (
