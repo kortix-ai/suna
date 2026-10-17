@@ -60,7 +60,9 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { Download } from '@/features/icon/icons/download';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
@@ -90,7 +92,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { Download } from '@/features/icon/icons/download';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -349,30 +350,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
         open={createAccountOpen}
         onOpenChange={setCreateAccountOpen}
         onCreated={(account: KortixAccount) => {
-          // The reader's OWN key, not a hand-built one: writer and reader on
-          // different keys is silent — the create appears to succeed and the
-          // list never changes. Same seed as the hub's account-list pane.
-          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
-            const current = accounts ?? [];
-            return current.some((item) => item.account_id === account.account_id)
-              ? current.map((item) => (item.account_id === account.account_id ? account : item))
-              : [account, ...current];
+          accountCreated(account, queryClient, accountsQueryKey, setSelectedAccountId, (path) => {
+            router.push(path);
           });
-          // `scope()`, not `list(userId)`: the "account list changed" prefix,
-          // which reaches the only slot that can be live without the callback
-          // having to re-derive whose slot it is.
-          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-          setSelectedAccountId(account.account_id);
-          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-          // `/new` scoped to the account just created — NOT the landing door.
-          // The door opens the remembered project in ANY account
-          // (`decideDoor`), so a brand-new empty account falls through to
-          // some other account's project, and
-          // `projects/start/page.tsx` then heals the persisted selection to
-          // THAT account — undoing the switch above and making the whole
-          // create look like it did nothing. A new account's honest next step
-          // is its first workspace.
-          router.push(newWorkspacePathForAccount(account.account_id));
         }}
       />
     </>

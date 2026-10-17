@@ -3,6 +3,7 @@ import { CpuIcon, PackageIcon } from '@phosphor-icons/react';
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { FactCell } from './fact-cell';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
@@ -14,7 +15,6 @@ import {
 } from '../../customize/sections/view/sandbox-provider-coverage';
 import {
   SandboxTabView,
-  TemplateFact,
   TemplateRuntimeFooter,
   TemplateStateLine,
   describeBase,
@@ -75,8 +75,9 @@ function renderProviderPresentation({
       coverage,
       selectedProvider,
       formatObservedAt: () => 'now',
+      runtimeLabel: runtimeLabel ?? 'Session runtime',
+      checkedLabel: (value: string) => `Checked ${value}`,
       badgeCopy,
-      runtimeLabel,
     }),
   );
 }
@@ -526,7 +527,7 @@ describe('template card readability', () => {
     const out = renderToStaticMarkup(
       <dl>
         {facts.map(([label, value]) => (
-          <TemplateFact key={label} icon={CpuIcon} label={label} value={value} />
+          <FactCell key={label} icon={CpuIcon} label={label} value={value} />
         ))}
       </dl>,
     );
@@ -537,8 +538,8 @@ describe('template card readability', () => {
   test('every spec value carries its own label, and long values truncate in-cell', () => {
     const out = renderToStaticMarkup(
       <dl>
-        <TemplateFact icon={CpuIcon} label="Processor" value="2 vCPU" />
-        <TemplateFact icon={PackageIcon} label="Base image" value="a/very/long/image:tag" mono />
+        <FactCell icon={CpuIcon} label="Processor" value="2 vCPU" />
+        <FactCell icon={PackageIcon} label="Base image" value="a/very/long/image:tag" mono />
       </dl>,
     );
     // Label + value are separate elements; the bare "4 GiB means memory, the

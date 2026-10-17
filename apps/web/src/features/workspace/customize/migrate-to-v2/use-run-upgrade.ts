@@ -11,50 +11,25 @@
  * default agent (the one with git/CR powers).
  */
 
-import { useCallback, useState } from 'react';
-
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import type { PendingSessionPrompt } from '@kortix/sdk';
-import { type StartStash } from '@kortix/sdk/react';
+import { useConfigureThread } from '../use-configure-thread';
 
-/** Pure — the exact stash payload an upgrade session is seeded with. */
-export function buildUpgradeStash(prompt: string): StartStash {
-  return { prompt, agent: null, model: null, variant: null };
-}
-
-/** The create-time hand-off: the API converts this into a durable inbox row
- *  inside the session-create transaction. */
+/** Durable session-create payload; no model or agent override. */
 export function pendingUpgradePrompt(prompt: string): PendingSessionPrompt {
   return { text: prompt, agent: null, model: null, variant: null };
 }
 
 export interface RunUpgrade {
-  /** Mint + navigate to a session seeded with `prompt`. Ignored while a
-   *  session is already being created. */
   start: (prompt: string) => void;
   pending: boolean;
 }
 
 export function useRunUpgrade(projectId: string): RunUpgrade {
-  const closeCustomize = useSettingsPanelStore((s) => s.close);
-  const [pending, setPending] = useState(false);
-  const newSession = useNewProjectSession(projectId);
-
-  const start = useCallback(
-    (prompt: string) => {
-      if (pending || !prompt.trim()) return;
-      setPending(true);
-      newSession({
-        // Durable from the create — see use-configure-thread.ts for the trace.
-        create: { pending_prompt: pendingUpgradePrompt(prompt) },
-        onNavigate: () => {
-          closeCustomize();
-        },
-      });
+  const configure = useConfigureThread(projectId);
+  return {
+    pending: configure.pending,
+    start: (prompt) => {
+      if (prompt.trim()) configure.start(pendingUpgradePrompt(prompt));
     },
-    [pending, newSession, closeCustomize],
-  );
-
-  return { start, pending };
+  };
 }
