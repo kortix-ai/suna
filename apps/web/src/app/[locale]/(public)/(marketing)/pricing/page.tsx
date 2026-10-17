@@ -24,14 +24,7 @@ import { usePricingPlans } from '@/features/billing/use-pricing-plans';
 import { FaqSection, type FaqItem } from '@/features/marketing/faq';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import {
-  ArrowRightIcon,
-  BrainIcon,
-  CheckCircleIcon,
-  CpuIcon,
-  GlobeHemisphereWestIcon,
-  ShieldCheckIcon,
-} from '@phosphor-icons/react';
+import { ArrowRightIcon, CheckCircleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 const START_URL = '/auth';
@@ -75,18 +68,6 @@ function formatRateUsd(amount: number, locale: string): string {
     maximumFractionDigits: 4,
   }).format(amount);
 }
-
-/**
- * What every plan gets with managed models. Each claim traces to the gateway
- * routes in packages/llm-catalog (`OPENROUTER_POOL_PRIVACY`, the US endpoint
- * pins) and to kortix-brand `claims.md`; change them together.
- */
-const HIGHLIGHTS = [
-  { id: 'managed', icon: CpuIcon },
-  { id: 'zdr', icon: ShieldCheckIcon },
-  { id: 'us', icon: GlobeHemisphereWestIcon },
-  { id: 'open', icon: BrainIcon },
-] as const;
 
 /** "Models are separate": the three ways a model call is paid, in display order. */
 const MODEL_SOURCES = ['keys', 'chatgpt', 'kortix'] as const;
@@ -172,21 +153,6 @@ export default function PricingPage() {
             <PlanCard key={plan.id} plan={plan} />
           ))}
         </div>
-
-        {/* ── Managed models, on every plan ────────────────────── */}
-        <ul className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {HIGHLIGHTS.map(({ id, icon: Icon }) => (
-            <li key={id} className="bg-card flex flex-col gap-2 rounded-lg border p-6">
-              <Icon className="text-foreground size-5" />
-              <div className="text-foreground text-sm font-medium">
-                {t(`highlights.${id}.title`)}
-              </div>
-              <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
-                {t(`highlights.${id}.body`)}
-              </p>
-            </li>
-          ))}
-        </ul>
       </div>
 
       {/* ── Agent hours: what one credit buys ────────────────── */}

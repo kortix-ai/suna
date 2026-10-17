@@ -2456,7 +2456,7 @@
           "name": "Free",
           "note": "Comece com créditos reais de sandbox.",
           "f1": "500 créditos / mês, sem cartão",
-          "f2": "Modelos gerenciados e todos os recursos",
+          "f2": "Modelos gerenciados: Kimi, DeepSeek, GLM. Retenção zero de dados, inferência nos EUA",
           "f3": "1 projeto",
           "f4": "Use sua própria chave de API para qualquer modelo premium",
           "f5": "Conecte sua assinatura do ChatGPT"
@@ -2587,24 +2587,6 @@
           "body": "Sem chaves para gerenciar. Cada chamada custa o preço base do provedor mais {fee}% de taxa de plataforma, pagos com créditos. O app mostra os preços base."
         },
         "summary": "Com suas próprias chaves, os créditos pagam o computador do agente e 5% do uso de modelos acima de US$ 1.000 por mês."
-      },
-      "highlights": {
-        "managed": {
-          "title": "Modelos gerenciados",
-          "body": "Kimi, DeepSeek e GLM rodam com seus créditos. Sem chave de API."
-        },
-        "zdr": {
-          "title": "Retenção zero de dados",
-          "body": "Os modelos gerenciados rodam apenas em provedores que não guardam prompts nem respostas e não treinam com eles."
-        },
-        "us": {
-          "title": "Inferência nos EUA",
-          "body": "Os modelos gerenciados rodam em provedores de inferência sediados nos EUA."
-        },
-        "open": {
-          "title": "Modelos chineses de pesos abertos",
-          "body": "As famílias de pesos abertos da Moonshot (Kimi), DeepSeek e Zhipu (GLM)."
-        }
       }
     },
     "access": {

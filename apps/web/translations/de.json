@@ -2456,7 +2456,7 @@
           "name": "Free",
           "note": "Starte mit echten Sandbox-Credits.",
           "f1": "500 Credits / Monat, keine Karte nötig",
-          "f2": "Verwaltete Modelle und alle Funktionen",
+          "f2": "Verwaltete Modelle: Kimi, DeepSeek, GLM. Keine Datenspeicherung, Inferenz in den USA",
           "f3": "1 Projekt",
           "f4": "Eigener API-Schlüssel für jedes Premium-Modell",
           "f5": "Verbinde dein ChatGPT-Abo"
@@ -2587,24 +2587,6 @@
           "body": "Kein Schlüssel nötig. Jeder Aufruf kostet den Basispreis des Anbieters plus {fee} % Plattformgebühr, bezahlt mit Credits. Die App zeigt die Basispreise."
         },
         "summary": "Mit deinen eigenen Schlüsseln bezahlen Credits den Agent-Computer und 5 % der Modellnutzung über 1.000 $ pro Monat."
-      },
-      "highlights": {
-        "managed": {
-          "title": "Verwaltete Modelle",
-          "body": "Kimi, DeepSeek und GLM laufen mit deinen Credits. Kein API-Schlüssel nötig."
-        },
-        "zdr": {
-          "title": "Keine Datenspeicherung",
-          "body": "Verwaltete Modelle laufen nur bei Anbietern, die weder Prompts noch Antworten speichern und nicht damit trainieren."
-        },
-        "us": {
-          "title": "Inferenz in den USA",
-          "body": "Verwaltete Modelle laufen bei Inferenz-Anbietern mit Sitz in den USA."
-        },
-        "open": {
-          "title": "Chinesische Open-Weight-Modelle",
-          "body": "Die Open-Weight-Familien von Moonshot (Kimi), DeepSeek und Zhipu (GLM)."
-        }
       }
     },
     "access": {
