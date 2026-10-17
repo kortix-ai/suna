@@ -64,7 +64,7 @@ for (const [name, experimental] of [
     queryClient.setQueryData(qk.project.apps(projectId), []);
     const host = win.document.createElement('div');
     win.document.body.append(host);
-    const root = createRoot(host);
+    const root = createRoot(host as unknown as Element);
     mounted = root;
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: queryClient },
@@ -254,7 +254,6 @@ test('an App with no deployment never claims to be Running', () => {
 test('a suspended App preview issues the request that wakes its active deployment', () => {
   const view = appsSource();
 
-  expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain('if (!url)');
   expect(view).toContain('frame.src = url');
   expect(view).toContain("frame.dataset.testid = 'app-live-preview'");
@@ -265,7 +264,6 @@ test('a suspended App preview issues the request that wakes its active deploymen
 test('an active App never looks undeployed while its signed preview URL loads', () => {
   const view = appsSource();
 
-  expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain(
     "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
   );

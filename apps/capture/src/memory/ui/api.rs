@@ -946,6 +946,8 @@ impl Ctx {
             "member_email": k["member_email"],
             // A build without a baked-in Kortix address asks for it where the person connects.
             "default_issuer_missing": k["issuer_url"].is_null(),
+            // The Kortix API this computer signs in to: the saved address, else the build's.
+            "issuer_url": k["issuer_url"],
             "state": cli::recording_state(&self.paths),
             "service": cli::service_status_value(&self.paths),
             // A personal install with nothing connected: the window starts on onboarding.
@@ -1848,6 +1850,9 @@ mod tests {
         ("excluded_domains", r#"["example.com"]"#),
         ("enabled_exclusion_groups", r#"["banking"]"#),
         ("exclude_private_browsing", "false"),
+        ("record_only_included", "true"),
+        ("included_bundle_ids", r#"["com.tinyspeck.slackmacgap"]"#),
+        ("included_domains", r#"["github.com"]"#),
         ("record_unknown_bundle_ids", "true"),
         ("storage.management_mode", r#""retention""#),
         ("storage.limit_gb", "20.5"),
@@ -1891,6 +1896,9 @@ mod tests {
         "exclude_private_browsing",
         "excluded_bundle_ids",
         "excluded_domains",
+        "record_only_included",
+        "included_bundle_ids",
+        "included_domains",
         "storage.management_mode",
         "storage.cap_action",
         "storage.retention_days",

@@ -236,6 +236,7 @@ mock.module('../projects/lib/access', () => ({
     adminBypass: false,
   }),
   assertProjectCapability: async () => undefined,
+  projectCapabilityAllowed: async () => false,
 }));
 
 const realSync = await import('../projects/lib/sandbox-env-sync');

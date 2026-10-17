@@ -346,13 +346,13 @@ flow(
 // This sweep proves the missing boundaries on the mutating routes:
 //   - ANON → 401 on POST/PATCH/DELETE/fire/activation (auth boundary)
 //   - a project `member` (floor role 'user' → 'member') holds trigger.read +
-//     trigger.fire but NOT project.write (the 'manage' floor) NOR
-//     trigger.create/update/delete. So:
+//     trigger.fire but NOT trigger.create/update/delete. Every route loads
+//     with the read floor and asserts its leaf, so:
 //       GET /triggers → 200 (read passes)
-//       POST /triggers → 403 (manage floor fails)
-//       PATCH /:slug → 403 (manage floor fails)
-//       DELETE /:slug → 403 (manage floor fails)
-//       PATCH /activation → 403 (manage floor fails)
+//       POST /triggers → 403 (trigger.create leaf)
+//       PATCH /:slug → 403 (trigger.update leaf)
+//       DELETE /:slug → 403 (trigger.delete leaf)
+//       PATCH /activation → 403 (trigger.update leaf)
 //       POST /:slug/fire → 202/404 (read floor + trigger.fire leaf — but unknown
 //         slug → 404, not 403; the leaf fires AFTER the project loads)
 //   Distinct from TRG-1's NONMEMBER (membership 403/404): here the user IS a
@@ -378,7 +378,7 @@ flow(
     const asMember = ctx.client.as(member);
 
     // Seed one trigger so PATCH/DELETE/fire have a real slug to target (the
-    // 403 fires at the manage FLOOR, before the slug is even looked up, so a
+    // 403 fires at the leaf, before the slug is even looked up, so a
     // missing slug would still 403 — but using a real slug proves the denial
     // is the authz gate, not a 404 masquerading as a denial).
     await ctx.client.as(ctx.P.OWNER).post(
@@ -2089,5 +2089,432 @@ flow(
       (await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Gated cron 2' }, { params: { ...params, slug: 'gated-cron' } })).status(200);
       (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'gated-mail' } })).status(200);
     });
+  },
+);
+
+// ── Trigger run history (KRTX-1743): TRG-30 … TRG-33 ──────────────────────
+// Every fire is a run. The local stack runs no sandbox and no usable model, so
+// a real fire fails after authorization (402) and still writes a `failed` run.
+
+type RunRow = {
+  run_id: string;
+  slug: string;
+  source: string;
+  status: string;
+  run_status: string | null;
+  error: string | null;
+  session_id: string | null;
+  replay_of: string | null;
+  payload_verified: boolean;
+  payload: Record<string, any>;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  cost_usd: number | null;
+};
+type RunList = { runs: RunRow[]; next_cursor: string | null };
+
+flow(
+  'TRG-30',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'GET /v1/projects/:projectId/trigger-runs',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // the fire must fail: the local stack has no usable model
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    let runId = '';
+
+    await ctx.step('a manual fire that fails → 402 with the run_id of the run it wrote', async () => {
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' }, { params })).status(201);
+      const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
+      fired.status(402);
+      runId = fired.json<{ run_id?: string | null }>().run_id ?? '';
+      if (!runId) throw new Error(`the failed fire named no run: ${fired.text()}`);
+    });
+
+    await ctx.step("the trigger's runs list it first: source manual, status failed, the fire's error, no session, no cost", async () => {
+      const list = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(200).json<RunList>();
+      const run = list.runs[0];
+      if (list.runs.length !== 1 || list.next_cursor !== null) throw new Error(`expected one run, no next page: ${JSON.stringify(list)}`);
+      if (run?.run_id !== runId || run.source !== 'manual' || run.status !== 'failed' || !run.error) {
+        throw new Error(`run is wrong: ${JSON.stringify(run)}`);
+      }
+      if (run.session_id !== null || run.cost_usd !== null || run.payload_verified !== true || run.payload.source !== 'manual') {
+        throw new Error(`run fields are wrong: ${JSON.stringify(run)}`);
+      }
+    });
+
+    await ctx.step('the project runs list it under ?status=failed with its slug, not under ?status=fired', async () => {
+      const failed = (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'failed' } })).status(200).json<RunList>();
+      if (!failed.runs.some((r) => r.run_id === runId && r.slug === 'digest')) throw new Error(`?status=failed lacks the run: ${JSON.stringify(failed)}`);
+      const fired = (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'fired' } })).status(200).json<RunList>();
+      if (fired.runs.some((r) => r.run_id === runId)) throw new Error('?status=fired lists a failed run');
+    });
+
+    await ctx.step('a bad status, limit or cursor → 400; no token → 401', async () => {
+      (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'succeeded' } })).status(400);
+      (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { limit: '101' } })).status(400);
+      (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' }, query: { cursor: 'nope' } })).status(400);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/trigger-runs', { params })).status(401);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(401);
+    });
+  },
+);
+
+flow(
+  'TRG-31',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // the read-back counts rows in the local database
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const fire = (body: unknown) => owner.post('/v1/projects/:projectId/triggers/:slug/fire', body, { params: { ...params, slug: 'tickets' } });
+    const writes = () =>
+      withDb(ctx, async (db) => {
+        const count = async (table: string) =>
+          Number((await db.query(`SELECT count(*)::int AS n FROM kortix.${table} WHERE project_id = $1`, [p.id])).rows[0]?.n ?? -1);
+        return {
+          runs: await count('project_trigger_executions'),
+          sessions: await count('project_sessions'),
+          commands: await count('session_lifecycle_commands'),
+        };
+      });
+    let before = { runs: 0, sessions: 0, commands: 0 };
+
+    await ctx.step('a keyed, filtered trigger is created', async () => {
+      (
+        await owner.post(
+          '/v1/projects/:projectId/triggers',
+          {
+            name: 'Tickets',
+            type: 'cron',
+            cron: '0 0 9 * * *',
+            timezone: 'UTC',
+            prompt_template: 'Ticket {{ body.ticket }} from {{ source }}',
+            session_key: '{{ body.ticket }}',
+            filter: { 'body.kind': 'bug' },
+          },
+          { params },
+        )
+      ).status(201);
+      before = await writes();
+    });
+
+    await ctx.step('dry_run with a payload → 200: the rendered prompt, filter verdict true, the session key, the merged payload', async () => {
+      const r = await fire({ dry_run: true, payload: { body: { ticket: 'T-1', kind: 'bug' }, source: 'spoofed', actor: 'spoofed' } });
+      r.status(200).body().has('$.dry_run', true).has('$.rendered_prompt', 'Ticket T-1 from manual').has('$.filter_matches', true).has('$.session_key', 'T-1');
+      const payload = r.json<{ payload: Record<string, any> }>().payload;
+      if (payload.body?.ticket !== 'T-1' || payload.trigger?.slug !== 'tickets' || payload.source !== 'manual' || payload.actor === 'spoofed') {
+        throw new Error(`merged payload is wrong: ${JSON.stringify(payload)}`);
+      }
+    });
+
+    await ctx.step('dry_run with a payload the filter rejects → filter_matches false', async () => {
+      (await fire({ dry_run: true, payload: { body: { ticket: 'T-2', kind: 'feature' } } })).status(200).body().has('$.filter_matches', false);
+    });
+
+    await ctx.step('a payload that is not an object, or a dry_run that is not a boolean → 400', async () => {
+      (await fire({ dry_run: true, payload: 'x' })).status(400);
+      (await fire({ dry_run: 'yes' })).status(400);
+    });
+
+    await ctx.step('CLI: `kortix triggers fire tickets --payload … --dry-run --json` prints the dry run; `kortix triggers runs tickets --json` lists no run', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg31') });
+      const sb = new CliSandbox('trg31');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const dry = await sb.run(['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-3","kind":"bug"}}', '--dry-run', '--json', '--project', p.id]);
+        throwIfCliInfraFailure(dry, 'triggers fire --dry-run');
+        if (dry.exitCode !== 0) throw new Error(`triggers fire --dry-run exited ${dry.exitCode}: ${dry.all}`);
+        const out = JSON.parse(dry.stdout) as { dry_run: boolean; rendered_prompt: string; filter_matches: boolean; session_key: string | null };
+        if (out.dry_run !== true || out.rendered_prompt !== 'Ticket T-3 from manual' || out.filter_matches !== true || out.session_key !== 'T-3') {
+          throw new Error(`CLI dry run is wrong: ${dry.stdout}`);
+        }
+        const listed = await sb.run(['triggers', 'runs', 'tickets', '--json', '--project', p.id]);
+        throwIfCliInfraFailure(listed, 'triggers runs');
+        if (listed.exitCode !== 0) throw new Error(`triggers runs exited ${listed.exitCode}: ${listed.all}`);
+        const list = JSON.parse(listed.stdout) as RunList;
+        if (list.runs.length !== 0 || list.next_cursor !== null) throw new Error(`CLI runs list is wrong: ${listed.stdout}`);
+      } finally {
+        sb.dispose();
+      }
+    });
+
+    await ctx.step('read-back: no run row, no session, no command; the runs list is empty and last_fired_at is unset', async () => {
+      const after = await writes();
+      if (JSON.stringify(after) !== JSON.stringify(before)) throw new Error(`dry run wrote rows: ${JSON.stringify({ before, after })}`);
+      const list = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'tickets' } })).status(200).json<RunList>();
+      if (list.runs.length !== 0) throw new Error(`dry run listed a run: ${JSON.stringify(list)}`);
+      const row = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: Array<{ slug: string; last_fired_at: string | null; last_status: string | null }> }>()
+        .triggers.find((t) => t.slug === 'tickets');
+      if (row?.last_fired_at || row?.last_status) throw new Error(`dry run changed the trigger state: ${JSON.stringify(row)}`);
+    });
+  },
+);
+
+flow(
+  'TRG-32',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/projects/:projectId/triggers/:slug/runs/:run_id/replay',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // the replay must fail: the local stack has no usable model
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const secret = `ke2e-hook-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ action: 'opened', api_key: 'synthetic-not-a-key' });
+    const signature = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+    const addSecret = async () =>
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+    const runs = async (slug = 'hook') =>
+      (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug } })).status(200).json<RunList>().runs;
+    const replay = (runId: string, body: unknown, slug = 'hook') =>
+      owner.post('/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay', body, { params: { ...params, slug, run_id: runId } });
+    let rejected: RunRow | undefined;
+    let replayedId = '';
+
+    await ctx.step('a webhook trigger whose secret is then deleted: a signed delivery → 401', async () => {
+      await addSecret();
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Other', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
+      (
+        await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+          params: { ...params, slug: 'hook' },
+          raw: true,
+          headers: { 'content-type': 'application/json', 'x-kortix-signature': signature },
+        })
+      ).status(401);
+    });
+
+    await ctx.step('the delivery is a rejected run: unverified, with the reason and the payload, its api_key redacted', async () => {
+      const listed = await waitFor(runs, { until: (r) => r.some((run) => run.status === 'rejected'), timeoutMs: 10_000, intervalMs: 250, description: 'rejected run' });
+      rejected = listed.find((run) => run.status === 'rejected');
+      if (!rejected || rejected.source !== 'webhook' || rejected.payload_verified !== false || !rejected.error) {
+        throw new Error(`rejected run is wrong: ${JSON.stringify(rejected)}`);
+      }
+      if (rejected.payload.body?.action !== 'opened' || rejected.payload.body?.api_key !== '[redacted]') {
+        throw new Error(`rejected payload is wrong: ${JSON.stringify(rejected.payload)}`);
+      }
+    });
+
+    await ctx.step('replay without confirm_unverified → 409 payload_unverified; another trigger or an unknown run → 404', async () => {
+      (await replay(rejected!.run_id, {})).status(409).body().has('$.code', 'payload_unverified');
+      (await replay(rejected!.run_id, { confirm_unverified: true }, 'other')).status(404);
+      (await replay(crypto.randomUUID(), { confirm_unverified: true })).status(404);
+    });
+
+    await ctx.step('CLI: `kortix triggers replay hook <run_id>` on the unverified run exits 1 and names --confirm-unverified', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg32') });
+      const sb = new CliSandbox('trg32');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const r = await sb.run(['triggers', 'replay', 'hook', rejected!.run_id, '--project', p.id]);
+        throwIfCliInfraFailure(r, 'triggers replay');
+        if (r.exitCode !== 1 || !r.stderr.includes('--confirm-unverified')) {
+          throw new Error(`CLI replay of an unverified run: exit ${r.exitCode}: ${r.all}`);
+        }
+      } finally {
+        sb.dispose();
+      }
+    });
+
+    await ctx.step('the secret is restored; replay with confirm_unverified → the fire path answers (402) with a new run', async () => {
+      await addSecret();
+      const r = await replay(rejected!.run_id, { confirm_unverified: true });
+      r.status(402);
+      const runId = r.json<{ run_id?: string | null }>().run_id;
+      const replayed = (await runs()).find((run) => run.run_id === runId);
+      if (!replayed || replayed.replay_of !== rejected!.run_id || replayed.source !== 'webhook' || replayed.status !== 'failed') {
+        throw new Error(`replayed run is wrong: ${JSON.stringify(replayed)}`);
+      }
+      if (replayed.payload.body?.action !== 'opened') throw new Error(`replay did not carry the stored payload: ${JSON.stringify(replayed.payload)}`);
+      replayedId = replayed.run_id;
+    });
+
+    await ctx.step('the replay of an unverified payload stays unverified: payload_verified false, and replaying it without confirm → 409', async () => {
+      const replayed = (await runs()).find((run) => run.run_id === replayedId);
+      if (replayed?.payload_verified !== false) throw new Error(`replayed run reads verified: ${JSON.stringify(replayed)}`);
+      (await replay(replayedId, {})).status(409).body().has('$.code', 'payload_unverified');
+    });
+
+    await ctx.step('a run still in progress (a requeued create) → replay 409 run_in_progress', async () => {
+      const inProgressId = await withDb(ctx, async (db) =>
+        (
+          await db.query(
+            `INSERT INTO kortix.project_trigger_executions
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source)
+             VALUES ($1, 'hook', 'webhook:' || gen_random_uuid(), now(), 'requeued', '{}'::jsonb, '{"body":{}}'::jsonb, 'webhook')
+             RETURNING execution_id`,
+            [p.id],
+          )
+        ).rows[0]?.execution_id as string,
+      );
+      (await replay(inProgressId, {})).status(409).body().has('$.code', 'run_in_progress');
+    });
+
+    await ctx.step('a run whose payload was truncated → replay 422 payload_truncated', async () => {
+      await withDb(ctx, (db) =>
+        db.query(`UPDATE kortix.project_trigger_executions SET payload = '{"truncated":true,"bytes":70000}'::jsonb WHERE execution_id = $1`, [rejected!.run_id]),
+      );
+      (await replay(rejected!.run_id, { confirm_unverified: true })).status(422).body().has('$.code', 'payload_truncated');
+    });
+  },
+);
+
+flow(
+  'TRG-33',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'GET /v1/projects/:projectId/trigger-runs',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // runs, a session and LLM spend are seeded in the local database
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: { source: 'trigger:scheduler', trigger_kind: 'git', trigger_slug: 'nightly' },
+    });
+    const list = async (as: typeof owner, query: Record<string, string> = {}) =>
+      (await as.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query })).status(200).json<RunList>();
+
+    // Teardown keeps the team account (an earlier run left its rows), so the seeded
+    // gateway logs are deleted here, pass or fail.
+    try {
+      await ctx.step('seed: three manual runs and one cron slot with no session, one run of a private trigger session, and the session\'s LLM spend', async () => {
+        (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+        await withDb(ctx, async (db) => {
+          for (const minutes of [3, 2, 1]) {
+            await db.query(
+              `INSERT INTO kortix.project_trigger_executions
+                 (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, created_at, completed_at)
+               VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - make_interval(mins => $2), 'failed', '{}'::jsonb,
+                       '{"source":"manual"}'::jsonb, 'manual', now() - make_interval(mins => $2), now() - make_interval(mins => $2))`,
+              [project.id, minutes],
+            );
+          }
+          await db.query(
+            `INSERT INTO kortix.project_trigger_executions
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, session_id,
+                run_status, run_ended_at, created_at, completed_at)
+             VALUES ($1, 'nightly', 'manual:' || gen_random_uuid(), now() - interval '10 min', 'succeeded', '{}'::jsonb,
+                     '{"body":{"ticket":"T-9","api_key":"synthetic-not-a-key"}}'::jsonb, 'manual', $2,
+                     'succeeded', now() - interval '5 min', now() - interval '10 min', now() - interval '10 min')`,
+            [project.id, sessionId],
+          );
+          // A cron slot row, as the scheduler's claim writes it: the default `source` (cron).
+          await db.query(
+            `INSERT INTO kortix.project_trigger_executions
+               (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, claimed_at, created_at, completed_at)
+             VALUES ($1, 'nightly', 'ke2e-slot-revision', now() - interval '4 min', 'succeeded', '{}'::jsonb,
+                     '{"cron":{"schedule":"0 0 3 * * *"}}'::jsonb, now() - interval '4 min', now() - interval '4 min', now() - interval '4 min')`,
+            [project.id],
+          );
+          for (const [minutes, cost] of [[8, '0.25'], [1, '1.0']] as const) {
+            await db.query(
+              `INSERT INTO kortix.gateway_request_logs
+                 (request_id, account_id, project_id, session_id, requested_model, resolved_model, provider, status, ok,
+                  final_cost_precise, billing_mode, created_at)
+               VALUES (gen_random_uuid()::text, $1, $2, $3, 'ke2e/model', 'ke2e/model', 'ke2e', 200, true, $4::numeric, 'credits',
+                       now() - make_interval(mins => $5))`,
+              [team.id, project.id, sessionId, cost, minutes],
+            );
+          }
+        });
+      });
+
+      await ctx.step('the owner sees all five, newest first; the cron slot lists with source cron; the session run shows its window cost, duration and a redacted payload', async () => {
+        const runs = (await list(owner)).runs;
+        if (runs.length !== 5 || runs[4]?.session_id !== sessionId) throw new Error(`owner list is wrong: ${JSON.stringify(runs)}`);
+        const cron = runs[3]!;
+        if (cron.source !== 'cron' || cron.status !== 'fired' || cron.session_id !== null || cron.payload.cron?.schedule !== '0 0 3 * * *') {
+          throw new Error(`cron run is wrong: ${JSON.stringify(cron)}`);
+        }
+        const run = runs[4]!;
+        // Only the 0.25 inside [started_at, ended_at] counts; the 1.0 after ended_at does not.
+        if (run.status !== 'fired' || run.run_status !== 'succeeded' || run.cost_usd !== 0.25 || run.duration_ms !== 300_000) {
+          throw new Error(`session run is wrong: ${JSON.stringify(run)}`);
+        }
+        if (run.payload.body?.api_key !== '[redacted]' || run.payload.body?.ticket !== 'T-9') throw new Error(`payload not redacted: ${JSON.stringify(run.payload)}`);
+      });
+
+      await ctx.step('limit=2 pages the owner\'s five runs: two, two, then one with next_cursor null', async () => {
+        const first = await list(owner, { limit: '2' });
+        if (first.runs.length !== 2 || !first.next_cursor) throw new Error(`first page is wrong: ${JSON.stringify(first)}`);
+        const second = await list(owner, { limit: '2', cursor: first.next_cursor });
+        if (second.runs.length !== 2 || !second.next_cursor) throw new Error(`second page is wrong: ${JSON.stringify(second)}`);
+        const third = await list(owner, { limit: '2', cursor: second.next_cursor });
+        if (third.runs.length !== 1 || third.next_cursor !== null) throw new Error(`third page is wrong: ${JSON.stringify(third)}`);
+        const ids = new Set([...first.runs, ...second.runs, ...third.runs].map((r) => r.run_id));
+        if (ids.size !== 5) throw new Error('pages overlap');
+      });
+
+      await ctx.step('a tampered cursor (well-formed base64 JSON: impossible timestamp, impossible calendar day, or a non-UUID id) → 400, not 500', async () => {
+        const forge = (createdAt: string, executionId: string = crypto.randomUUID()) =>
+          Buffer.from(JSON.stringify([createdAt, executionId])).toString('base64url');
+        const forged = [
+          forge('2026-13-45 99:99:99+00'),
+          forge('2026-10-16T18:03:54Z'),
+          forge("now()'; --"),
+          forge('2026-02-30 00:00:00+00'), // an impossible calendar day that Date.parse accepts
+          forge('2026-10-16 18:03:54+00', '-'.repeat(36)), // 36 dashes, not a UUID
+        ];
+        for (const cursor of forged) {
+          (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor } })).status(400);
+        }
+      });
+
+      await ctx.step('a member who may not open the private session sees only the four runs without a session, in both lists', async () => {
+        const asMember = ctx.client.as(member);
+        const runs = (await list(asMember)).runs;
+        if (runs.length !== 4 || runs.some((r) => r.session_id !== null)) throw new Error(`member trigger list is wrong: ${JSON.stringify(runs)}`);
+        const project_runs = (await asMember.get('/v1/projects/:projectId/trigger-runs', { params })).status(200).json<RunList>().runs;
+        if (project_runs.length !== 4 || project_runs.some((r) => r.session_id === sessionId)) {
+          throw new Error(`member project list is wrong: ${JSON.stringify(project_runs)}`);
+        }
+      });
+    } finally {
+      await withDb(ctx, (db) => db.query('DELETE FROM kortix.gateway_request_logs WHERE session_id = $1', [sessionId]));
+    }
   },
 );

@@ -20,6 +20,8 @@ import {
   getBillingTierConfigurations,
   getDefaultAccountState,
   setBillingPlan,
+  previewBillingPlan,
+  type PlanChangePreview,
   acceptEnterpriseOffer,
   contactEnterpriseSales,
   purchaseCredits,
@@ -185,6 +187,37 @@ test('setBillingPlan returns the updated, unchanged and payment_pending variants
     nextResponse = { status: 200, body };
     expect(await setBillingPlan(input)).toEqual(body as never);
   }
+});
+
+test('setBillingPlan returns what changed: raised (charged, credits added), scheduled (from when), kept', async () => {
+  const input = { monthlyUsd: 500, successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c' };
+  for (const body of [
+    { status: 'updated', change: 'raised', monthly_usd: 500, charged_usd: 133.33, credits_added: 13_333 },
+    { status: 'updated', change: 'scheduled', monthly_usd: 100, effective_at: '2026-11-14T00:00:00.000Z' },
+    { status: 'updated', change: 'kept', monthly_usd: 500 },
+    { status: 'unchanged', change: 'none', monthly_usd: 500 },
+  ]) {
+    nextResponse = { status: 200, body };
+    const result = await setBillingPlan(input);
+    expect(result).toEqual(body as never);
+  }
+});
+
+test('previewBillingPlan posts monthly_usd to /billing/plan/preview and returns the preview', async () => {
+  const preview = {
+    change: 'raised',
+    monthly_usd: 500,
+    current_monthly_usd: 300,
+    due_now_usd: 66.67,
+    credits_now: 6_667,
+    effective_at: null,
+  };
+  nextResponse = { status: 200, body: preview };
+  const result: PlanChangePreview = await previewBillingPlan({ monthlyUsd: 500, accountId: 'acc-1' });
+  expect(last().url).toContain('/billing/plan/preview');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ monthly_usd: 500, account_id: 'acc-1' });
+  expect(result).toEqual(preview as never);
 });
 
 test('setBillingPlan surfaces the 400 for an out-of-range amount', async () => {

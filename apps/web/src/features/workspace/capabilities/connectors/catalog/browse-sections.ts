@@ -42,6 +42,7 @@ export function connectToolkitApp(toolkit: ConnectToolkit): EasyConnectApp {
     featuredWeight: 0,
     provider: 'composio',
     directId: toolkit.directId ?? null,
+    directMcpUrl: toolkit.directMcpUrl ?? null,
   };
 }
 

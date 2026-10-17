@@ -16,7 +16,7 @@ import { MESSAGE_READ_CODE } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
-import { PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
+import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): HarnessForwardResult => ({
   status,
@@ -204,6 +204,7 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
             const body = await readJsonBody(input.body)
             prompt = sub === 'command' ? rt.commandPrompt(body) : parsePromptBody(body)
           } catch (err) {
+            if (err instanceof CommandNotEnabled) return json(403, { error: 'command_not_enabled', command: err.command, agent: err.agent })
             return json(400, { error: err instanceof Error ? err.message : String(err) })
           }
           let admitted: ReturnType<PiRuntime['admit']>

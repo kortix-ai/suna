@@ -141,8 +141,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Context: 'texta6e600a10fed',
   continuing: 'text6e9f041725ac',
   'Control plane': 'textf15d0e7f86b0',
-  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
-    'textc3d1545dd522',
   "Conway's Game of Life, seeded from the Kortix logo.": 'text6f3297022a6b',
   Copied: 'text8d525e5f158b',
   Costs: 'textb88fc5fc4765',
@@ -217,6 +215,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
+  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
+    'textc3d1545dd522',
+  Extensions: 'textfe3436af86b4',
+  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
   Failed: 'text031a8f0f659d',
   Favicon: 'text4295528943df',
   'Fetching deals updated ≤ 7d': 'text5bae674104b6',
@@ -305,7 +307,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textfde028796e58',
   Memory: 'textc3963aedaac6',
   'Memory Search': 'text9993673dd585',
-  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
   Minimal: 'text057b5de48d7b',
   Mobile: 'textcbaad3cf4a65',
   'Mobile app': 'text429bbfa117e2',

@@ -222,7 +222,7 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
     expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
   });
 

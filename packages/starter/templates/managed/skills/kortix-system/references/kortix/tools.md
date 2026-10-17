@@ -6,7 +6,7 @@ three kinds of tool, on every harness (OpenCode and pi):
 | Kind | Names | Who implements it |
 | --- | --- | --- |
 | Harness tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `task`, `question`, … | The harness itself. |
-| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe` | Kortix. `kortix.yaml` lists each as `<name>: kortix:<name>`. No `tools:` key = all seven. |
+| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Kortix. `kortix.yaml` lists each as `<name>: kortix:<name>`. No `tools:` key = all five. |
 | Project tools | Any name you declare | Your project: one module, declared in `kortix.yaml` `tools:`. |
 
 A Kortix tool and a project tool are **harness-neutral**: one module runs on
@@ -38,7 +38,7 @@ Add `<name>: kortix:<name>` under `tools:` to get one back.
 The selection rule:
 
 - No `tools:` key in `kortix.yaml` or in any imported file: every session
-  gets all seven Kortix tools.
+  gets all five Kortix tools.
 - A `tools:` key, even an empty one (`tools: {}`, or `tools:` with every line
   deleted): sessions get only the Kortix tools it lists, as `kortix:<name>`
   or as a module path that replaces the tool. A key in an imported file counts.
@@ -62,9 +62,9 @@ after its change request merges.
      show: kortix:show
      lookup_order: tools/lookup_order.ts
    ```
-   If `kortix.yaml` has no `tools:` key, add one that lists the seven
+   If `kortix.yaml` has no `tools:` key, add one that lists the five
    `kortix:<name>` lines and the new tool. A `tools:` key with only the new
-   tool removes the seven Kortix tools; `kortix validate` warns about it.
+   tool removes the five Kortix tools; `kortix validate` warns about it.
 3. If the tool reads a secret, store it (`kortix secrets set NAME=-`, the value
    on stdin) and grant it to the agents that call the tool
    (`agents.<name>.secrets`).

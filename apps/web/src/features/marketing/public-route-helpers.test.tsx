@@ -4,8 +4,9 @@ import messages from '../../../translations/en.json';
 
 // Pages are inspected before unrelated visual children render. Supply the real
 // English translator without invoking a provider hook outside React.
+type Namespace = Parameters<typeof createTranslator<typeof messages, never>>[0]['namespace'];
 mock.module('@/i18n/use-translations', () => ({
-  useTranslations: (namespace?: string) => createTranslator({ locale: 'en', messages, namespace }),
+  useTranslations: (namespace?: Namespace) => createTranslator({ locale: 'en', messages, namespace }),
 }));
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';

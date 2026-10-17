@@ -30,6 +30,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useIsMobile } from '@/hooks/utils/use-mobile';
 import { track } from '@/lib/track';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
@@ -40,9 +41,16 @@ import {
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
-import { SANDBOX_PORTS } from '@kortix/sdk';
-import { useSessionLogThread } from '@kortix/sdk/react';
+import {
+  panelToRestore,
+  rememberedPanelOf,
+  useSessionPanelMemoryStore,
+} from '@/stores/session-panel-memory-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { getProjectSession, SANDBOX_PORTS } from '@kortix/sdk';
+import { qk, useSessionLogThread } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   type ReactNode,
@@ -53,6 +61,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { samePartsList } from '../turn/same-parts';
 import { AppPreview } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
@@ -76,11 +85,13 @@ import { latestRunMessages } from './shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
 import { deriveRunOutcome } from './shared/run-outcome';
 import { useDeliverableReadiness } from './shared/use-deliverable-readiness';
-import { samePartsList } from '../turn/same-parts';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
  *  behavior, only reported alongside `deliverable_opened`. */
-export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
+export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick' | 'restore';
+
+/** How long a remembered file preview waits for the transcript to derive its output. */
+const FILE_RESTORE_WAIT_MS = 10_000;
 
 export interface SessionPanelValue {
   sessionId: string;
@@ -178,7 +189,6 @@ export function SessionPanelProvider({
   // text-only turn must never inherit a verdict from an old errored run
   // further back in the session).
   const latestSteps = useMemo(() => groupSteps(latestCalls), [latestCalls]);
-
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -500,6 +510,7 @@ export function SessionPanelProvider({
             <AppPreview
               url={output.url ?? ''}
               name={displayName}
+              projectId={projectId}
               shareContext={
                 projectId && projectSessionId
                   ? { projectId, sessionId: projectSessionId }
@@ -789,6 +800,105 @@ export function SessionPanelProvider({
     openAudit,
     openBrowser,
     openFiles,
+  ]);
+
+  // The panel comes back with the session: what it showed is remembered while
+  // it is open, and reopened on the way back while the session still runs.
+  // Keyed by the Kortix session, so the boot shell and the chat share it. See
+  // `session-panel-memory-store.ts`.
+  const memoryKey = projectSessionId ?? sessionId;
+  // The visible, non-transient panel: the same session the header's own Terminal
+  // and Browser buttons open into (`getActivePanelSessionId`). The boot shell is
+  // never it, so it neither restores nor records.
+  const isActivePanel = useSessionBrowserStore((s) => s.activeSessionId === sessionId);
+  const sidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
+  const advancedPanel = useUserPreferencesStore((s) => s.preferences.panelMode === 'advanced');
+  const isMobile = useIsMobile();
+  const queryClient = useQueryClient();
+  // Nothing is recorded before the arrival is decided: until then the panel is
+  // closed by the arrival itself, not by the person.
+  const [restoreSettled, setRestoreSettled] = useState(false);
+  const [pendingFileRestore, setPendingFileRestore] = useState<string | null>(null);
+  const restoreStartedRef = useRef(false);
+  useEffect(() => {
+    if (restoreStartedRef.current || !isActivePanel) return;
+    restoreStartedRef.current = true;
+    const remembered = useSessionPanelMemoryStore.getState().bySession[memoryKey];
+    if (!remembered || isMobile || !projectId || !projectSessionId) {
+      setRestoreSettled(true);
+      return;
+    }
+    let alive = true;
+    // A FRESH row, never the cached one: it can be 30 s old, and reopening a
+    // Terminal on a session stopped since then wakes its computer (measured).
+    void queryClient
+      .fetchQuery({
+        queryKey: qk.project.session(projectId, projectSessionId),
+        queryFn: () => getProjectSession(projectId, projectSessionId, { showErrors: false }),
+        staleTime: 0,
+      })
+      .then((row) => {
+        if (!alive) return;
+        const panel = panelToRestore({
+          remembered,
+          status: row.status,
+          panelOpen: useKortixComputerStore.getState().isSidePanelOpen,
+          isMobile,
+        });
+        if (panel?.kind === 'open') useKortixComputerStore.getState().openSidePanel();
+        else if (panel?.kind === 'view') {
+          useKortixComputerStore.getState().requestQuickView(panel.view, sessionId, panel.target);
+        } else if (panel?.kind === 'file') setPendingFileRestore(panel.path);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setRestoreSettled(true);
+      });
+    return () => {
+      // Cancelled (unmount, or the panel stopped being the visible one): no
+      // restore, and recording opens up again.
+      alive = false;
+      setRestoreSettled(true);
+    };
+  }, [isActivePanel, memoryKey, isMobile, projectId, projectSessionId, queryClient, sessionId]);
+  // A file preview reopens once the transcript has derived its output, and only
+  // if the person has not opened something else meanwhile.
+  useEffect(() => {
+    if (!pendingFileRestore) return;
+    const timer = setTimeout(() => setPendingFileRestore(null), FILE_RESTORE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [pendingFileRestore]);
+  useEffect(() => {
+    if (!pendingFileRestore) return;
+    const output = files.find((o) => o.path === pendingFileRestore);
+    if (!output) return;
+    setPendingFileRestore(null);
+    if (!useKortixComputerStore.getState().isSidePanelOpen)
+      handleOpenOutput(output, files, 'restore');
+  }, [pendingFileRestore, files, handleOpenOutput]);
+  useEffect(() => {
+    if (!restoreSettled || !isActivePanel || !sidePanelOpen) return;
+    // A request this panel has not opened yet: its content is on the way.
+    if (pendingQuickView?.sessionId === sessionId || pendingFileRestore) return;
+    useSessionPanelMemoryStore
+      .getState()
+      .remember(
+        memoryKey,
+        advancedPanel
+          ? { kind: 'open' }
+          : rememberedPanelOf({ terminalOpen, detailKey: detail?.key ?? null }),
+      );
+  }, [
+    restoreSettled,
+    isActivePanel,
+    sidePanelOpen,
+    pendingQuickView,
+    pendingFileRestore,
+    sessionId,
+    advancedPanel,
+    terminalOpen,
+    detail,
+    memoryKey,
   ]);
 
   const value = useMemo<SessionPanelValue>(

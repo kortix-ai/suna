@@ -231,7 +231,7 @@ must name a declared, enabled agent.
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
-| `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
+| `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
 | `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
 
 ```yaml
@@ -656,11 +656,11 @@ has the module contract and one checklist per task.
 
 | Value | Meaning |
 | --- | --- |
-| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`, `kortix-connectors_call`, `kortix-connectors_describe`), maintained by Kortix. The key must be `<name>`. |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
 | A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
 
 - No `tools:` key in the root file or any imported file: every session gets
-  all seven Kortix tools.
+  all five Kortix tools.
 - A `tools:` key, even an empty one: sessions get only the Kortix tools it
   lists. Delete a `kortix:<name>` line to remove that tool from every agent.
 - `kortix tools ls` lists what a session gets; `kortix tools eject <name>`

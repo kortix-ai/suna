@@ -75,6 +75,7 @@ test('a Composio toolkit becomes the same card the paged catalogue renders', () 
     featuredWeight: 0,
     provider: 'composio',
     directId: null,
+    directMcpUrl: null,
   });
   expect(
     connectToolkitApp({ ...toolkit('hubspot'), description: undefined, categories: undefined }),

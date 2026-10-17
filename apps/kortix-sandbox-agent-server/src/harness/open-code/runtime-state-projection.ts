@@ -56,6 +56,7 @@ import {
   projectSessions,
   projectStatuses,
 } from './opencode-projection'
+import { v3Commands } from './manifest-v3'
 
 /** Upper bound on how old a served projection can be before a forced rebuild. */
 export const RUNTIME_STATE_FLOOR_MS = 15 * 60_000
@@ -387,7 +388,7 @@ export class RuntimeStateStore {
         head_seq: this.deps.db.probe().supported ? this.deps.db.headSeqs() : null,
       },
       agents: section(catalog, agentsRes, base?.agents, projectAgents, []),
-      commands: section(catalog, commandsRes, base?.commands, projectCommands, []),
+      commands: section(catalog, commandsRes, base?.commands, (raw) => projectCommands(raw, v3Commands()), []),
       config: section(catalog, configRes, base?.config, projectConfig, {
         model: null,
         small_model: null,

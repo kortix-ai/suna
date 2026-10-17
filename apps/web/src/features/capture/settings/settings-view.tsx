@@ -27,8 +27,8 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '@/lib/relative-time';
 import { useCaptureArea } from '../area/use-capture-area';
-import { ExclusionsEditor } from './exclusions-editor';
-import { applyToPrivacy, fromPolicy } from './exclusions-model';
+import { ExclusionsEditor, IncludedEditor } from './exclusions-editor';
+import { applyToPrivacy, fromPolicy, includedView } from './exclusions-model';
 
 function SwitchRow({
   title,
@@ -249,6 +249,33 @@ function PolicyForm({
             onChange={(on) => patch('layers', { [layer]: on })}
           />
         ))}
+      </Group>
+
+      <Group title={t('included.title')} description={t('included.hint', { org })}>
+        <SwitchRow
+          title={t('included.switch')}
+          description={t('included.switchHint')}
+          checked={draft.privacy.record_only_included ?? false}
+          onChange={(on) =>
+            setDraft((current) => ({
+              ...current,
+              privacy: applyToPrivacy(current.privacy, { kind: 'record-only', on }),
+            }))
+          }
+        />
+        {draft.privacy.record_only_included ? (
+          <div className="px-4 py-3">
+          <IncludedEditor
+            view={includedView(draft.privacy)}
+            onChange={(change) =>
+              setDraft((current) => ({
+                ...current,
+                privacy: applyToPrivacy(current.privacy, change),
+              }))
+            }
+          />
+          </div>
+        ) : null}
       </Group>
 
       <Group title={t('framesTitle')} description={t('framesHint')}>

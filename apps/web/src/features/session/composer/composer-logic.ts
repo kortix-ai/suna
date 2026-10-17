@@ -9,6 +9,7 @@
  */
 
 import type { Command } from '@kortix/sdk/react';
+import { appendMentionRefs, type MentionRefLike } from '@/lib/project-preamble';
 import {
   PASTED_INLINE_MAX_BYTES,
   type PastedContent,
@@ -466,6 +467,8 @@ export interface PlanDraftSubmissionInput {
   quotes?: readonly string[];
   /** The composer's pasted-text tiles, in order. They follow the quotes, ahead of the typed text. */
   pastes?: PastedContent[];
+  /** `getContent().mentions`. A command's args carry their reference blocks. */
+  mentions?: ReadonlyArray<MentionRefLike>;
 }
 
 export type DraftSubmissionPlan =
@@ -503,6 +506,7 @@ export function planDraftSubmission({
   commandSplit,
   quotes = [],
   pastes = [],
+  mentions,
 }: PlanDraftSubmissionInput): DraftSubmissionPlan {
   const trimmed = text.trim();
   // Every typed `<pasted_content` is escaped here, tiles or not, so a tag the
@@ -516,7 +520,9 @@ export function planDraftSubmission({
     // them, and in `split.before`, so the sent bubble draws them
     // (turn/user-message.tsx parses quotes out of the split halves of a
     // command message).
-    const args = lead(trimmed);
+    // A command has no mentions channel of its own (`onCommand(command,
+    // args)`), so its `@file` / `@agent` references ride in the args.
+    const args = appendMentionRefs(lead(trimmed), mentions);
     const split =
       commandSplit && (quotes.length > 0 || pastes.length > 0)
         ? { before: lead(commandSplit.before), after: commandSplit.after }

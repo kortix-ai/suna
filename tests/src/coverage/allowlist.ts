@@ -131,7 +131,7 @@ export const uncoveredAllow: AllowEntry[] = [
     method: "POST",
     path: "/v1/projects/provision-stream",
     reason:
-      "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage, and its own source-level guards live in apps/api/src/projects/provision-stream.test.ts",
+      "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage",
   },
   {
     method: "POST",

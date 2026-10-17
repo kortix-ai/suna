@@ -262,6 +262,35 @@ describe('a lost runtime is reported once', () => {
   });
 });
 
+// 2026-10-16: an open page on a lost session logged `runtime.lost` (and filed a
+// Sentry event) on every /start. /start reaches the preserve through a
+// recovery claim, which overwrites `runtimeIdentityState` with
+// `recovery_claimed`, so the state check alone never saw the earlier loss.
+describe('a lost runtime re-preserved after a recovery claim', () => {
+  test('is not reported again for the same identity', async () => {
+    const reclaimed = {
+      ...ROW,
+      metadata: {
+        runtimeIdentityState: 'recovery_claimed',
+        runtimeRecoveryLeaseId: 'lease-2',
+        preservedExternalId: 'ext-1',
+        runtimeUnavailableAt: '2026-10-16T14:37:37.000Z',
+      },
+    };
+    await preserveEstablishedRuntime(reclaimed, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(0);
+  });
+
+  test('a first claim on a box that was never lost is still reported', async () => {
+    const firstClaim = {
+      ...ROW,
+      metadata: { runtimeIdentityState: 'recovery_claimed', preservedExternalId: 'ext-1' },
+    };
+    await preserveEstablishedRuntime(firstClaim, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+  });
+});
+
 describe('a Kortix-initiated removal is not a lost runtime', () => {
   const removal = (extra: Record<string, unknown>) =>
     preserveEstablishedRuntime({ ...ROW, ...extra }, 'provider_webhook_removed', 'provider_removed');

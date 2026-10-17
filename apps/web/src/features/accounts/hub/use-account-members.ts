@@ -17,7 +17,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 export function useAccountMembers(accountId: string | undefined) {
   const { user } = useAuth();
   // `GET .../members` answers every account member: the whole directory with
-  // `member.read`, else the people the caller shares access with. No probe to
+  // `member.read`, else only the caller. No probe to
   // wait for.
   return useQuery({
     queryKey: ['account-members', accountId],

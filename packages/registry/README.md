@@ -33,7 +33,7 @@ A registry is a `registry.json` at a repo root:
       "title": "PDF",
       "description": "Create, edit, OCR, fill, convert PDFs.",
       "files": [
-        { "path": ".kortix/opencode/skills/pdf/SKILL.md", "type": "registry:file", "target": "@skills/pdf/SKILL.md" }
+        { "path": "skills/pdf/SKILL.md", "type": "registry:file", "target": "@skills/pdf/SKILL.md" }
       ]
     }
   ]
@@ -63,19 +63,26 @@ drives categorization, icons, and validation.
 
 ### Target aliases
 
-A file's `target` says where it lands. Aliases expand against the consuming
-project's canonical OpenCode layout. Kortix-managed system skills and optional
-marketplace skills land in the OpenCode config directory:
+A file's `target` says where it lands in the consuming project
+(`src/paths.ts`, `expandTarget`):
 
 | alias | expands to |
 | --- | --- |
 | `~/x` | `x` (repo root — shadcn-compatible) |
+| `@skills/x` | `skills/x` |
+| `@agents/x` | `agents/x` |
+| `@memory/x` | `memory/x` |
 | `@opencode/x` | `<configDir>/x` |
-| `@skills/x` | `<configDir>/skills/x` |
-| `@agents/x` | `<configDir>/agents/x` |
 | `@commands/x` | `<configDir>/commands/x` |
 | `@tools/x` | `<configDir>/tools/x` |
-| `@memory/x` | `.kortix/memory/x` |
+
+`<configDir>` is the legacy OpenCode config directory (`harnesses/opencode` or
+`.kortix/opencode`). A `kortix_version: 3` session reads no config directory,
+and it sees a file only after `kortix.yaml` names it: a skill under `skills:`,
+a command under `commands:`, a tool under `tools:`, an agent under `agents:`,
+each enabled on an agent. A marketplace install runs as an agent session that
+writes the files, wires them into `kortix.yaml`, and opens a change request
+(`apps/api/src/projects/routes/marketplace-install-session.ts`). Manifest reference: <https://kortix.com/docs/project/manifest>.
 
 ## The CLI
 
@@ -87,9 +94,9 @@ kortix marketplace install pdf --project <project-id>
 kortix marketplace status --project <project-id>
 ```
 
-Installing writes the files into `.kortix/` and records them (with content
-hashes) in `registry-lock.json`. Then `git commit && kortix ship` makes them
-live — or use `--project <id>` to commit straight into a linked cloud project.
+`kortix marketplace install` starts an agent session in the project. The agent
+reads the item, writes its files, registers them in `kortix.yaml`, and opens a
+change request. Merging the change request makes them live.
 
 `kortix add` has been removed from the user-facing CLI. `kortix registry`
 remains a developer authoring command for local registry work, but normal users

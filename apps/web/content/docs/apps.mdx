@@ -31,6 +31,36 @@ Every App lists what it supports in `capabilities`, for example `machines` or
 `volumes`. A call that needs a missing capability answers
 `409 app_capability_unsupported`.
 
+## Show an App hosted elsewhere
+
+An external App is a site that runs somewhere else: a dashboard, a vendor tool,
+another team's service. Kortix lists it in the Apps page beside the Apps it runs
+and opens it in place, in a frame. Kortix never deploys, wakes or bills it, and
+it takes no App slot.
+
+Add one from the Apps page with **Add app**, or from the CLI:
+
+```bash
+kortix apps create grafana --name "Grafana" --url https://grafana.example.com
+```
+
+- The URL must be `https`. A URL with a user name or password is refused.
+- The App's `url` and `external_url` are the site. `capabilities` is
+  `["preview"]`.
+- The site decides whether it may be framed. Kortix reads its
+  `X-Frame-Options` and CSP `frame-ancestors` headers when you add it. A site
+  that refuses a frame gets `capabilities: []` and the warning
+  `app_external_not_frameable`. Kortix then shows it with an **Open in a new
+  tab** control instead of a frame.
+- A site that keeps its sign-in in a cookie can ask you to sign in again
+  inside the frame, because browsers limit cookies in frames from another
+  site. Open it in a new tab when that happens.
+- The access policy decides who in the project sees the App. The site's own
+  sign-in decides who can use it.
+- Move it to another URL with `kortix apps set grafana --url <https-url>`.
+  Deploy, rollback, start, stop and sign-in tokens answer
+  `409 app_capability_unsupported`.
+
 ## Self-hosting prerequisites
 
 Apps is generally available: every project can create and deploy Apps, and
@@ -986,10 +1016,10 @@ Every route also needs the project's Apps switch on. See
 | Command | What it does |
 |---|---|
 | `kortix apps list` (`ls`) | The Apps you may open: slug, state, URL |
-| `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
+| `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses`. `--url <https-url>` creates an external App |
 | `kortix apps launch --template convex` | Write a template's blocks to `kortix.yaml` in the current directory and deploy them. `--name <slug>`, `--provider <name>`, `--no-deploy` |
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider daytona\|platinum\|e2b`, `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
-| `kortix apps set <app>` (`update`) | Change `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
+| `kortix apps set <app>` (`update`) | Change `--name`, `--url` (an external App), `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
 | `kortix apps link <app> --uses <slugs>` | Add used Apps. `unlink` removes them. |
 | `kortix apps show <app>` (`get`) | Capabilities, links, run mode and releases |
 | `kortix apps releases <app>` | Releases, marking the live one |

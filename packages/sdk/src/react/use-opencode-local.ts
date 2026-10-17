@@ -13,7 +13,7 @@
 
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
-import { resolveComposerModel } from '../core/models/composer-model';
+import { resolveComposerModel, sessionModelCandidates } from '../core/models/composer-model';
 import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
@@ -60,6 +60,15 @@ export interface UseRuntimeLocalOptions {
    * falling through to `globalDefault` / `agent.model` / the generic fallback.
    */
   resolveServerDefault?: (agentName: string | undefined) => ModelKey | undefined;
+  /**
+   * The project session row (`getProjectSession`). Its model pin is the model
+   * the session was set to, from any surface. With `lastPromptModel` it ranks
+   * after a pick made in this composer for this session and before every
+   * cross-session pick and default (`sessionModelCandidates`). Never persisted.
+   */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
+  /** The model of the session's newest user message, from its transcript. */
+  lastPromptModel?: ModelKey;
 }
 
 export interface RuntimeLocalAgent {
@@ -263,6 +272,8 @@ export function useRuntimeLocal({
   boundAgentName,
   defaultAgentName,
   resolveServerDefault,
+  projectSession,
+  lastPromptModel,
 }: UseRuntimeLocalOptions): RuntimeLocal {
   // ---- Flatten models from providers (shared with the chat input). The
   // filter follows the provider MODE: gateway mode keeps the kortix-only
@@ -385,8 +396,28 @@ export function useRuntimeLocal({
     [providerMode, currentAgent?.name],
   );
 
+  // What the server says this session runs on. A new object each render from
+  // the caller must not recompute the resolution, so key it by value.
+  const sessionModels = useMemo(
+    () =>
+      sessionModelCandidates({
+        session: projectSession,
+        lastPromptModel,
+        gatewayEnabled: providerMode === 'gateway',
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      projectSession?.metadata?.opencode_model,
+      projectSession?.metadata?.opencode_model_source,
+      lastPromptModel?.providerID,
+      lastPromptModel?.modelID,
+      providerMode,
+    ],
+  );
+
   // ---- Model resolution — the framework-free chain (`resolveComposerModel`):
-  // explicit (session / per-agent slots) > server default > globalDefault >
+  // explicit (session slots > the session's own model > per-agent slots) >
+  // server default > globalDefault >
   // agent.model > fallback (config > recent > provider default), every
   // candidate validated against the offered list, bare Bedrock ids healed.
   // Model selection must NOT depend on a loaded agent: the session/global/
@@ -402,6 +433,9 @@ export function useRuntimeLocal({
           scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
           // Back-compat: the old unscoped slot, only if valid in the current mode.
           sessionId ? modelStore.getSessionModel(sessionId) : undefined,
+          // The model the session already runs on, from the server. Above the
+          // per-agent slots: those are this browser's picks for OTHER sessions.
+          ...sessionModels,
           // Per-agent model (persisted across sessions for this agent, or in the
           // agent-less slot when the caller has access to no agent at all).
           modelStore.getSelectedModel(agentModelSlotKey),
@@ -423,6 +457,7 @@ export function useRuntimeLocal({
       agentModelSlotKey,
       currentAgent,
       resolveServerDefault,
+      sessionModels,
       config?.model,
       providers,
       modelStore,

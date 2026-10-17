@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveComposerAgent, type ProjectConfigSummary } from '@kortix/sdk';
+import {
+  latestPromptModel,
+  resolveComposerAgent,
+  resolveComposerModel,
+  sessionModelCandidates,
+  type ProjectConfigSummary,
+} from '@kortix/sdk';
 
 import {
   PICKER_SEARCH_THRESHOLD,
@@ -167,6 +173,35 @@ describe('agents — the SDK resolver over the thread roster', () => {
     // A built-in the sandbox ran is not in the roster: the bound agent stands.
     expect(thread(null, 'build', 'kortix')).toBe('kortix');
     expect(latestAssistantAgent([])).toBeNull();
+  });
+
+  test('thread model: a pick here, else the session model (its pin, its last prompt), else the agent pick', () => {
+    const messages = [
+      { role: 'user', model: { provider: 'kortix', model: 'model-c' } },
+      { role: 'assistant' },
+      { role: 'user' },
+    ];
+    const k = (modelID: string) => ({ providerID: 'kortix', modelID });
+    const models = ['model-a', 'model-b', 'model-c', 'model-d'].map((id) => ({
+      providerID: 'kortix',
+      providerName: 'Kortix',
+      modelID: id,
+      modelName: id,
+    }));
+    const pinned = { metadata: { opencode_model: 'kortix/model-b', opencode_model_source: 'explicit' } };
+    const thread = (picked: ReturnType<typeof k> | undefined) =>
+      resolveComposerModel({
+        models,
+        picks: [
+          picked,
+          ...sessionModelCandidates({ session: pinned, lastPromptModel: latestPromptModel(messages), gatewayEnabled: true }),
+          k('model-d'),
+        ],
+        serverDefault: k('model-a'),
+      }).model;
+    // A session set from the CLI keeps its model over this phone's agent pick.
+    expect(thread(undefined)).toEqual(k('model-b'));
+    expect(thread(k('model-c'))).toEqual(k('model-c'));
   });
 
   test('home: the pick, else the project default; the last-used agent counts only without a default', () => {

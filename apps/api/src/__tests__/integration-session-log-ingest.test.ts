@@ -317,35 +317,35 @@ describe('journal', () => {
     expect(thread_row?.record).toEqual({ ...thread('bin2'), ext: { note: { version: '1', data: 't\uFFFD' } } });
   });
 
-  test('a compaction marks its /summarize turn durable: by message id (OpenCode), else the earliest unmarked id-less turn of its thread open when it completed (pi)', async () => {
-    // No assistant message answers a compaction: both harnesses fold the summary into it.
-    // OpenCode's daemon binds the compaction id to the turn (`turn_begin`); pi's turn keeps no
-    // message id. One thread per scenario, in the OTHER session.
+  test('a compaction marks only the turn that carries its id: the /summarize turn on both harnesses, never an id-less turn', async () => {
+    // No assistant message answers a compaction: both harnesses fold the summary into it. Both
+    // daemons relay `turn_begin` with the compaction id, and apps/api binds it to the /summarize
+    // turn. A turn whose bind failed stays unmarked: a guess marked the wrong turn. One thread per
+    // scenario, in the OTHER session.
     const at = (min: number) => new Date(Date.parse(T) + min * 60_000);
     const turn = (name: string, thread: string, start: number, messageId: string | null, end: number | null = null, sessionId = OTHER) => ({
       turnToken: `${name}-${sessionId}`, sessionId, sandboxId: sessionId, projectId: PROJECT, accountId: ACCOUNT, runtimeSessionId: thread, messageId,
       state: end === null ? 'active' : 'ended', startedAt: at(start), endedAt: end === null ? null : at(end),
     });
     await db.insert(sessionTurns).values([
-      // pi: a prompt, a /summarize whose compaction failed (nothing stored, ended), the /summarize, a later one.
+      // The normal case (pi): a prompt, the /summarize named by its compaction, a later id-less turn.
       turn('pi_prompt', 'ses_pi', -10, 'msg_c_u1', -9),
-      turn('pi_failed', 'ses_pi', -8, null, -7),
-      turn('pi_summarize', 'ses_pi', -5, null),
+      turn('pi_summarize', 'ses_pi', -5, 'msg_c_pi'),
       turn('pi_later', 'ses_pi', 5, null),
-      turn('other_thread', 'ses_other', -5, null),
-      // The same thread in another session.
-      turn('other_session', 'ses_pi', -6, null, null, SESSION),
-      // OpenCode: the turn carries the compaction id; an id-less turn open beside it stays unmarked.
+      // The same message id in another session.
+      turn('other_session', 'ses_pi', -6, 'msg_c_pi', null, SESSION),
+      // OpenCode: the same id match; an id-less turn open beside it stays unmarked.
       turn('oc_summarize', 'ses_oc', -5, 'msg_c_oc', -4),
       turn('oc_idless', 'ses_oc', -6, null),
-      // An auto compaction inside a prompt turn.
-      turn('auto_prompt', 'ses_auto', -5, 'msg_c_auto_u'),
-      // A: a delivery without a wire id starts while the /summarize runs.
-      turn('a_summarize', 'ses_a', -5, null),
-      turn('a_delivery', 'ses_a', -4.5, null),
-      // B: two /summarize calls back to back.
-      turn('b_first', 'ses_b', -5, null),
-      turn('b_second', 'ses_b', -4.5, null),
+      // A refused /summarize still open (its bind failed), then an auto compaction inside a prompt turn.
+      turn('r_refused', 'ses_r', -8, null),
+      turn('r_prompt', 'ses_r', -5, 'msg_r_u'),
+      // A re-sent compaction: its turn was marked at the first acknowledgement; a delivery without a
+      // wire id started before the compaction completed and is still open.
+      { ...turn('x_summarize', 'ses_x', -5, null, -3), logDurableAt: at(-3) },
+      turn('x_delivery', 'ses_x', -4.5, null),
+      // A box clock 10 minutes ahead on a replay: an id-less turn started after the compaction.
+      turn('z_later', 'ses_z', 5, null),
     ]);
     const compaction = (id: string, thread: string, completed: number) => ({
       rev: REV + 81,
@@ -354,24 +354,22 @@ describe('journal', () => {
         blocks: [{ type: 'compaction', id: `${id}-p0`, summary: 'the summary', first_kept_message_id: null, trigger: 'manual' }],
       }),
     });
-    const b2 = compaction('msg_c_b2', 'ses_b', -3);
     const res = await journal(batch({
       puts: [
-        compaction('msg_c_pi', 'ses_pi', -4), compaction('msg_c_oc', 'ses_oc', -4), compaction('msg_c_auto', 'ses_auto', -4),
-        compaction('msg_c_a', 'ses_a', -4), compaction('msg_c_b1', 'ses_b', -4), { ...b2, message: { ...b2.message, seq: 1 } },
+        compaction('msg_c_pi', 'ses_pi', -4), compaction('msg_c_oc', 'ses_oc', -4), compaction('msg_c_r_auto', 'ses_r', -4),
+        compaction('msg_c_x', 'ses_x', -4), compaction('msg_c_z', 'ses_z', 10),
       ],
-      threads: ['ses_pi', 'ses_oc', 'ses_auto', 'ses_a', 'ses_b'].map(thread),
+      threads: ['ses_pi', 'ses_oc', 'ses_r', 'ses_x', 'ses_z'].map(thread),
     }), tokens[OTHER]!, OTHER);
     expect(res.status).toBe(200);
-    const durable = Object.fromEntries(
-      (await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT)))
-        .filter((r) => r.token !== `turn-${SESSION}`)
-        .map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]),
-    );
+    const rows = await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT));
+    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
     expect(durable).toEqual({
-      pi_prompt: false, pi_failed: false, pi_summarize: true, pi_later: false, other_thread: false, other_session: false,
-      oc_summarize: true, oc_idless: false, auto_prompt: false, a_summarize: true, a_delivery: false, b_first: true, b_second: true,
+      pi_prompt: false, pi_summarize: true, pi_later: false, other_session: false, oc_summarize: true, oc_idless: false,
+      r_refused: false, r_prompt: false, x_summarize: true, x_delivery: false, z_later: false,
     });
+    // The first acknowledgement's time stays.
+    expect(rows.find((r) => r.token === `x_summarize-${OTHER}`)?.at).toEqual(at(-3));
   });
 
   test('while another batch of the session holds its lock, a batch answers 429 at once and writes nothing; it lands after the release', async () => {
@@ -451,13 +449,13 @@ describe('operator switch', () => {
   });
 });
 
-test('RLS stays on with no policy on the four session-log tables', async () => {
+test('RLS stays on with no policy on the session-log tables', async () => {
   const rows = (await db.execute(sql`
     SELECT c.relname AS name, c.relrowsecurity AS rls,
            (SELECT count(*)::int FROM pg_policies p WHERE p.schemaname = 'kortix' AND p.tablename = c.relname) AS policies
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'kortix' AND c.relkind = 'r' AND c.relname LIKE 'session_log%' ORDER BY 1`)) as unknown as Array<{ name: string; rls: boolean; policies: number }>;
   expect(rows).toEqual(
-    ['session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
+    ['session_log_backfill_state', 'session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
   );
 });

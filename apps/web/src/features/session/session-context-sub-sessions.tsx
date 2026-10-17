@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from '@/i18n/use-translations';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useSessionLogThread, useSessionSync, type SessionMessagesSource } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
-import { allDescendantIds, childMapByParent, formatCost, sessionLogThreadMetrics, type ModelPricingLookup, type Session, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
+import { allDescendantIds, childMapByParent, sessionLogThreadMetrics, type ModelPricingLookup, type Session, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
 
 // ============================================================================
 // Thread metrics
@@ -137,6 +138,7 @@ function SubSessionTreeNode({
   /** The row has been in view: load its thread (about 2 requests). */
   onSeen: (id: string) => void;
 }) {
+  const tCredits = useTranslations('settings.credits');
   const [expanded, setExpanded] = useState(depth < 1);
   const rowRef = useRef<HTMLButtonElement>(null);
   const isRequested = requested.has(id);
@@ -184,7 +186,9 @@ function SubSessionTreeNode({
             <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
               {own.messages.all} {messagesSuffix}
             </span>
-            <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(own.cost)}</span>
+            <span className="text-muted-foreground shrink-0 tabular-nums">
+              {tCredits('creditCount', { count: own.cost * 100, formatted: formatUsdAsCredits(own.cost) })}
+            </span>
           </>
         ) : (
           // No thread yet: loading, not requested, or its read failed. Never a false "0 messages".
@@ -223,6 +227,7 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
   fmt: { number: (value: number | null | undefined) => string };
 }) {
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
+  const tCredits = useTranslations('settings.credits');
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),
     [allSessions],
@@ -287,7 +292,13 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
             </div>
             <div className="bg-popover rounded-md border">
               <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
-                <Stat label={t.raw('combinedCost')} value={formatCost(totals.cost)} />
+                <Stat
+                  label={t.raw('combinedCost')}
+                  value={tCredits('creditCount', {
+                    count: totals.cost * 100,
+                    formatted: formatUsdAsCredits(totals.cost),
+                  })}
+                />
                 <Stat label={t.raw('combinedMessages')} value={totals.messages.all.toLocaleString()} />
                 <Stat label={t.raw('tokensIn')} value={fmt.number(totals.tokens.input)} />
                 <Stat label={t.raw('tokensOut')} value={fmt.number(totals.tokens.output)} />

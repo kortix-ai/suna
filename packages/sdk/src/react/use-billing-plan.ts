@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { setEnterpriseDemo } from '../core/rest/projects-client/iam-enterprise';
 import {
   acceptEnterpriseOffer,
@@ -6,6 +6,8 @@ import {
   type ContactEnterpriseSalesParams,
   type AcceptEnterpriseOfferParams,
   type AcceptEnterpriseOfferResult,
+  previewBillingPlan,
+  type PlanChangePreview,
   setBillingPlan,
   type SetBillingPlanParams,
   type SetBillingPlanResult,
@@ -23,7 +25,22 @@ export function useSetBillingPlan() {
     mutationFn: setBillingPlan,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['account-state'] });
+      queryClient.invalidateQueries({ queryKey: ['billing-plan-preview'] });
     },
+  });
+}
+
+/**
+ * What changing to `monthlyUsd` would do: the charge and credits now for a
+ * raise, the renewal date for a cut ({@link PlanChangePreview}). Idle while
+ * `monthlyUsd` is null.
+ */
+export function useBillingPlanPreview({ monthlyUsd, accountId }: { monthlyUsd: number | null; accountId?: string }) {
+  return useQuery<PlanChangePreview, Error>({
+    queryKey: ['billing-plan-preview', accountId ?? null, monthlyUsd],
+    queryFn: () => previewBillingPlan({ monthlyUsd: monthlyUsd!, accountId }),
+    enabled: monthlyUsd != null && monthlyUsd > 0,
+    staleTime: 30_000,
   });
 }
 

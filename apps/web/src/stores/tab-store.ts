@@ -1,6 +1,7 @@
 'use client';
 
 import { safeLocalStorage } from '@/lib/storage/managed-storage';
+import { withoutAppAccessToken } from '@/lib/utils/app-access-token';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
 import { create } from 'zustand';
@@ -201,7 +202,7 @@ export const useTabStore = create<TabState>()(
       // disposable per-server cache and retries instead of throwing.
       storage: createJSONStorage(() => safeTabStorage),
       partialize: (state) => ({
-        tabs: state.tabs,
+        tabs: withoutAppAccessTokens(state.tabs),
         tabOrder: state.tabOrder,
         activeTabId: state.activeTabId,
       }),
@@ -230,6 +231,29 @@ export const useTabStore = create<TabState>()(
     },
   ),
 );
+
+/**
+ * The tabs as persisted: a preview tab's `url` / `originalUrl` lose a Kortix
+ * App's one-shot `__kortix_access` token (a credential). Memory keeps it; the
+ * frame re-mints one on reload anyway.
+ */
+export function withoutAppAccessTokens(tabs: Record<string, Tab>): Record<string, Tab> {
+  let changed = false;
+  const out: Record<string, Tab> = {};
+  for (const [id, tab] of Object.entries(tabs)) {
+    const meta = tab.metadata;
+    const url = typeof meta?.url === 'string' ? withoutAppAccessToken(meta.url) : meta?.url;
+    const originalUrl =
+      typeof meta?.originalUrl === 'string' ? withoutAppAccessToken(meta.originalUrl) : meta?.originalUrl;
+    if (meta && (url !== meta.url || originalUrl !== meta.originalUrl)) {
+      changed = true;
+      out[id] = { ...tab, metadata: { ...meta, url, originalUrl } };
+    } else {
+      out[id] = tab;
+    }
+  }
+  return changed ? out : tabs;
+}
 
 // Registers this store for `resetClientState()`'s sign-out sweep without
 // `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.

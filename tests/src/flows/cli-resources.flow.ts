@@ -224,6 +224,7 @@ flow(
   'CLI-SESS',
   {
     domain: 'cli',
+    tags: ['deployed'],
     serial: true,
     timeoutMs: 300_000,
     requires: ['daytona', 'funded'],

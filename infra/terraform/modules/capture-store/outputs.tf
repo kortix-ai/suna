@@ -1,11 +1,11 @@
 output "bucket_name" {
   description = "Value for KORTIX_CAPTURE_S3_BUCKET."
-  value       = aws_s3_bucket.this.bucket
+  value       = aws_s3_bucket.capture.bucket
 }
 
 output "bucket_arn" {
   description = "Pass to modules/ecs-api as capture_bucket_arn."
-  value       = aws_s3_bucket.this.arn
+  value       = aws_s3_bucket.capture.arn
 }
 
 output "queue_url" {

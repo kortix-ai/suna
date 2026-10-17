@@ -70,16 +70,12 @@ export const DB_SUITE_ROOTS: readonly DbSuiteRoot[] = [
 ];
 
 /**
- * Suites the lane lists but does not run. Each entry needs a reason a reader
- * can act on. The lane prints every entry on every run; an entry is never a
- * silent skip. Remove the entry when the reason is fixed.
+ * The one suite whose subject is the S3 round trip. The lane hands it local
+ * Supabase Storage's S3 endpoint, the same store the local profile uses for
+ * config releases and Capture. No other suite gets these variables, so their
+ * snapshot code paths stay unconfigured as before.
  */
-export const DB_SUITE_QUARANTINE: Readonly<Record<string, string>> = {
-  'apps/api/src/__tests__/integration-project-snapshot.test.ts':
-    'Needs a reachable S3-compatible bucket (KORTIX_PROJECT_SNAPSHOT_S3_*): the S3 round ' +
-    'trip is the subject under test, and the lane provides only PostgreSQL. Run it by hand ' +
-    'against local MinIO; un-quarantine when the lane can supply a bucket.',
-};
+export const PROJECT_SNAPSHOT_SUITE = 'apps/api/src/__tests__/integration-project-snapshot.test.ts';
 
 export interface DbSuite {
   /** Repository-relative path of the test file. */
@@ -238,13 +234,26 @@ export function withDatabase(url: string, database: string): string {
 export function suiteEnvironment(input: {
   databaseUrl: string;
   adminUrl: string;
+  file?: string;
+  storage?: { apiUrl: string; accessKeyId: string; secretAccessKey: string };
 }): Record<string, string> {
+  const storage: Record<string, string> = input.file === PROJECT_SNAPSHOT_SUITE && input.storage
+    ? {
+        KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: 'kortix-project-snapshots-test',
+        KORTIX_PROJECT_SNAPSHOT_S3_REGION: 'local',
+        KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: `${input.storage.apiUrl.replace(/\/+$/, '')}/storage/v1/s3`,
+        KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: 'true',
+        KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: input.storage.accessKeyId,
+        KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: input.storage.secretAccessKey,
+      }
+    : {};
   return {
     DATABASE_URL: input.databaseUrl,
     TEST_DATABASE_URL: input.databaseUrl,
     TEST_DATABASE_SUPERUSER_URL: withUser(input.databaseUrl, LOCAL_SUPERUSER),
     TEST_DATABASE_ADMIN_URL: input.adminUrl,
     KORTIX_TEST_DB_CONFIRM: 'I_UNDERSTAND_THIS_DELETES_TEST_DATA',
+    ...storage,
   };
 }
 

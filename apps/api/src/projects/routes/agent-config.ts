@@ -18,11 +18,17 @@
 // Distinct from ./agent-scope.ts, which writes ONLY the grant subset
 // (secrets/connectors) into a v1 `[[agents]]` entry.
 //
-// v2-only by construction: a v1 (`[[agents]]`) manifest has no representation
-// for the governance field space, so PUT refuses a v1 project with a clear
-// 400 (the UI degrades to the limited scope editor + an "upgrade to v2"
-// hint instead of ever calling PUT here). GET still works on a v1 project — it
-// reports schemaVersion:1 + a null block so the UI can branch.
+// kortix_version 3: the same wire shape maps onto ONE kortix.yaml block —
+// behavior keys and grants — plus the prompt, written to the block's
+// `prompt_file` (served as `file`) or inline `prompt`. No `.md` frontmatter is
+// written for v3 (see `agentConfigViewV3` / `applyAgentConfigV3` in
+// ../lib/agent-config-v2.ts).
+//
+// A v1 (`[[agents]]`) manifest has no representation for the governance field
+// space, so PUT refuses a v1 project with a clear 400 (the UI degrades to the
+// limited scope editor + an upgrade hint instead of ever calling PUT here). GET
+// still works on a v1 project — it reports schemaVersion:1 + a null block so
+// the UI can branch.
 //
 // Manager-gated on project.agent.write (same leaf the scope editor
 // and every other customize mutation use), threaded through
@@ -46,6 +52,7 @@ import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, grantsByAgent } from '../agents';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
@@ -54,7 +61,9 @@ import {
   loadProjectForUser,
 } from '../lib/access';
 import {
+  agentConfigViewV3,
   applyAgentBlockV2,
+  applyAgentConfigV3,
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
   resolveBehaviorDraft,
@@ -113,6 +122,11 @@ const AgentBlockSchema = z
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
     apps: GrantSetSchema.optional(),
     kortix_permissions: GrantSetSchema.optional(),
+    // kortix_version 3 grants. A PUT that omits one keeps the declared value.
+    subagents: GrantSetSchema.optional(),
+    commands: GrantSetSchema.optional(),
+    extensions: GrantSetSchema.optional(),
+    codemode: z.enum(['on', 'only', 'off']).optional(),
     // Deprecated request alias of kortix_permissions. The handler normalizes it
     // (normalizeKortixPermissionAliases) before serialization.
     kortix_cli: GrantSetSchema.optional(),
@@ -120,9 +134,11 @@ const AgentBlockSchema = z
     // Deprecated input alias for older clients.
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
     // Server-owned; accepted so a GET → PUT round trip keeps working. Only the
-    // value already in effect is allowed (see the PUT handler).
+    // value already in effect is allowed (see the PUT handler). v2: the agent's
+    // `.md`; v3: its `prompt_file`.
     file: z.string().max(1024).optional(),
-    // The agent's behavior half (`.md` frontmatter + body as `prompt`).
+    // The agent's behavior half (v2: `.md` frontmatter + body as `prompt`;
+    // v3: the behavior keys of its kortix.yaml block + its prompt).
     behavior: OpencodeAgentConfigSchema.optional(),
     // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
     opencode: OpencodeAgentConfigSchema.optional(),
@@ -169,6 +185,23 @@ async function readAgentMarkdown(
   const md = await readAgentMarkdownFile(gitProject, manifestRaw, agentName, branch);
   if (md.content === null) return { path: md.path, exists: false, frontmatter: {}, body: '' };
   return { path: md.path, exists: true, ...parseAgentMarkdown(md.content) };
+}
+
+/** A v3 agent's prompt file text on `branch`, or null when it names none or the file is absent. */
+async function readPromptFileV3(
+  project: Parameters<typeof withProjectGitAuth>[0] | Awaited<ReturnType<typeof withProjectGitAuth>>,
+  branch: string,
+  block: Record<string, unknown> | null,
+): Promise<string | null> {
+  const path = block?.prompt_file;
+  if (typeof path !== 'string') return null;
+  const gitProject = 'gitAuthToken' in project ? project : await withProjectGitAuth(project);
+  try {
+    return await readRepoFile(gitProject, path, branch);
+  } catch (err) {
+    if (isRepoFileNotFoundError(err)) return null;
+    throw err;
+  }
 }
 
 /** Merge the editor's draft behavior fields onto the file's EXISTING
@@ -230,8 +263,7 @@ export function registerAgentConfigRoutes(): void {
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
       // The manifest read stays forced: a GET right after a PUT may land on
-      // another replica, and the editor must read back what was saved (see
-      // `manifest-for-edit-freshness.test.ts`). It proves the default branch
+      // another replica, and the editor must read back what was saved. It proves the default branch
       // with one `ls-remote` and fetches only when it moved. The `.md` read
       // below then uses that just-proven mirror instead of starting a second
       // fetch, and one git-auth resolve serves both reads.
@@ -254,7 +286,15 @@ export function registerAgentConfigRoutes(): void {
       let block:
         | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
         | null = read.block;
-      if (read.schemaVersion === 2) {
+      if (read.schemaVersion >= 3) {
+        // v3: one YAML block holds behavior and grants; the prompt is inline or in `prompt_file`.
+        if (read.block) {
+          const raw = read.block as Record<string, unknown>;
+          const promptText = await readPromptFileV3(gitProject, loaded.row.defaultBranch, raw).catch(() => null);
+          const view = agentConfigViewV3(raw, promptText);
+          block = { ...view.governance, behavior: view.behavior, opencode: view.behavior } as typeof block;
+        }
+      } else if (read.schemaVersion === 2) {
         const behavior = behaviorOf(
           await readAgentMarkdown(
             gitProject,
@@ -278,7 +318,7 @@ export function registerAgentConfigRoutes(): void {
       return c.json({
         agent: agentName,
         schema_version: read.schemaVersion,
-        editable: read.schemaVersion === 2,
+        editable: read.schemaVersion >= 2,
         default_agent: read.defaultAgent,
         block,
         harness,
@@ -312,7 +352,7 @@ export function registerAgentConfigRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -416,7 +456,7 @@ export function registerAgentConfigRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const agentName = c.req.param('agentName');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -444,8 +484,6 @@ export function registerAgentConfigRoutes(): void {
         file: requestedFile,
         ...governanceRaw
       } = parsed.data;
-      // Resolved against the current `.md` below, once it is read (v2 only).
-      let behaviorDraft = behaviorName ?? preW4BehaviorName;
       const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
       if (!normalizedGovernance.ok) {
         return c.json({ error: normalizedGovernance.error, code: 'invalid_body' }, 400);
@@ -486,47 +524,26 @@ export function registerAgentConfigRoutes(): void {
         }
       }
 
-      // `file` is server-owned (see the header). Resolve the `.md` against the
-      // CURRENT manifest, before the block is replaced: an explicit `file` stays,
-      // otherwise the path found (or about to be written) is recorded.
-      let agentMd: Awaited<ReturnType<typeof readAgentMarkdown>> | null = null;
-      if (manifest.schemaVersion === 2) {
-        try {
-          agentMd = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, manifest.raw, agentName);
-        } catch (err) {
-          return c.json(
-            { error: `Failed to read the agent's .md: ${(err as Error).message || String(err)}` },
-            502,
-          );
-        }
-        const resolved = resolveBehaviorDraft(
-          { behavior: behaviorName, opencode: preW4BehaviorName },
-          behaviorOf(agentMd),
-        );
-        if (!resolved.ok) return c.json({ error: resolved.error, code: 'invalid_body' }, 400);
-        behaviorDraft = resolved.draft;
-        const currentBlock = readAgentBlockV2(manifest, agentName);
-        const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
-        if (explicitFile !== undefined) governanceBlock.file = explicitFile;
-        else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;
-        if (requestedFile !== undefined && requestedFile !== governanceBlock.file) {
-          return c.json(
-            {
-              error: `agents.${agentName}.file is "${governanceBlock.file ?? agentMd.path}" and cannot be changed here. Move the file in the repository and update kortix.yaml in the same commit.`,
-              code: 'invalid_config',
-            },
-            400,
-          );
-        }
-      }
-
-      const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
-      if (!applied.ok) {
-        return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
-      }
+      // v3: behavior, grants and prompt are one YAML block plus its prompt file.
+      // v2: governance in kortix.yaml, behavior in the agent's `.md`.
+      const edit =
+        manifest.schemaVersion >= 3
+          ? await prepareAgentConfigV3(loaded.row, manifest, agentName, {
+              governance: governanceBlock,
+              requestedFile,
+              behavior: behaviorName,
+              opencode: preW4BehaviorName,
+            })
+          : await prepareAgentConfigV2(loaded.row, manifest, agentName, {
+              governance: governanceBlock,
+              requestedFile,
+              behavior: behaviorName,
+              opencode: preW4BehaviorName,
+            });
+      if (!edit.ok) return c.json(edit.body, edit.status);
 
       // Re-parse through the runtime grant reader before committing.
-      const parsedCheck = extractAgents({ ...manifest, raw: applied.raw });
+      const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
       if (parseProblem) {
         return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
@@ -534,51 +551,18 @@ export function registerAgentConfigRoutes(): void {
       // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
       await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
 
-      // Validate the behavior half (if the request touches it at all) BEFORE
-      // committing anything — a bad frontmatter shape must never land a
-      // governance-only half-write.
-      let mdPath: string | null = null;
-      let nextFrontmatter: Record<string, unknown> | null = null;
-      let nextBody: string | null = null;
-      if (behaviorDraft !== undefined && agentMd) {
-        mdPath = agentMd.path;
-        const existing = agentMd;
-        const draftRecord: Record<string, unknown> = { ...behaviorDraft };
-        delete draftRecord.prompt;
-        nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);
-        nextBody = behaviorDraft.prompt ?? '';
-
-        const issues: ManifestIssue[] = [];
-        validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
-        const errorIssues = issues.filter((i) => i.severity === 'error');
-        if (errorIssues.length > 0) {
-          return c.json(
-            {
-              error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '),
-              code: 'invalid_config',
-              issues: errorIssues,
-            },
-            400,
-          );
-        }
-      }
-
-      manifest.raw = applied.raw;
+      manifest.raw = edit.raw;
       const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
-      const behaviorWrite =
-        mdPath && nextFrontmatter && nextBody !== null
-          ? { path: mdPath, content: serializeAgentMarkdown(nextFrontmatter, nextBody) }
-          : null;
 
-      // ONE atomic commit for both homes. Two sequential single-file commits
-      // (governance then behavior) would let a bad `.md` write fail AFTER the
-      // governance write already landed, stranding kortix.yaml and the agent's
-      // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
-      // every file in one tree/commit, same helper the marketplace install/
-      // uninstall paths use for their own atomic multi-file writes (marketplace-install-session.ts).
+      // ONE atomic commit for every file the edit touches. Two sequential
+      // single-file commits would let the second write fail AFTER the first
+      // landed, stranding kortix.yaml and the agent's `.md` out of sync —
+      // commitMultipleFilesToBranch (git/branches.ts) commits every file in one
+      // tree/commit, same helper the marketplace install/uninstall paths use
+      // for their own atomic multi-file writes (marketplace-install-session.ts).
       const writes = manifestWrites(manifest, manifestPath);
-      const files = [...writes.files, ...(behaviorWrite ? [behaviorWrite] : [])];
-      const message = behaviorWrite
+      const files = [...writes.files, ...(edit.extraWrite ? [edit.extraWrite] : [])];
+      const message = edit.extraWrite
         ? `chore: update agent ${agentName} governance + behavior`
         : `chore: update agent ${agentName} governance`;
 
@@ -611,22 +595,150 @@ export function registerAgentConfigRoutes(): void {
         );
       }
 
-      const read = readAgentBlockV2(manifest, agentName);
-      const responseBehavior =
-        nextFrontmatter !== null
-          ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
-          : undefined;
       return c.json({
         ok: true,
         agent: agentName,
         schema_version: manifest.schemaVersion,
-        block: read.ok
-          ? {
-              ...(read.block ?? {}),
-              ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}),
-            }
-          : governanceBlock,
+        block: edit.responseBlock(manifest),
       });
     },
   );
+}
+
+type AgentConfigEditInput = {
+  governance: AgentBlockV2;
+  requestedFile: string | undefined;
+  behavior: z.infer<typeof OpencodeAgentConfigSchema> | undefined;
+  opencode: z.infer<typeof OpencodeAgentConfigSchema> | undefined;
+};
+
+type ManifestForEdit = Awaited<ReturnType<typeof loadManifestForEdit>>;
+
+/** One validated agent edit, ready to commit: the next manifest, at most one more file, and the PUT response block. */
+type AgentConfigEdit =
+  | {
+      ok: true;
+      raw: Record<string, unknown>;
+      extraWrite: { path: string; content: string } | null;
+      responseBlock: (manifest: ManifestForEdit) => object;
+    }
+  | { ok: false; status: 400 | 502; body: { error: string; code?: string; issues?: ManifestIssue[] } };
+
+/** v2: governance → the kortix.yaml block (with `file`), behavior → the agent's `.md` frontmatter + body. */
+async function prepareAgentConfigV2(
+  row: Parameters<typeof withProjectGitAuth>[0],
+  manifest: ManifestForEdit,
+  agentName: string,
+  input: AgentConfigEditInput,
+): Promise<AgentConfigEdit> {
+  const governanceBlock: AgentBlockV2 = { ...input.governance };
+  let behaviorDraft = input.behavior ?? input.opencode;
+  // `file` is server-owned (see the header). Resolve the `.md` against the
+  // CURRENT manifest, before the block is replaced: an explicit `file` stays,
+  // otherwise the path found (or about to be written) is recorded.
+  let agentMd: Awaited<ReturnType<typeof readAgentMarkdown>> | null = null;
+  if (manifest.schemaVersion === 2) {
+    try {
+      agentMd = await readAgentMarkdown(row, row.defaultBranch, manifest.raw, agentName);
+    } catch (err) {
+      return { ok: false, status: 502, body: { error: `Failed to read the agent's .md: ${(err as Error).message || String(err)}` } };
+    }
+    const resolved = resolveBehaviorDraft({ behavior: input.behavior, opencode: input.opencode }, behaviorOf(agentMd));
+    if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
+    behaviorDraft = resolved.draft;
+    const currentBlock = readAgentBlockV2(manifest, agentName);
+    const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
+    if (explicitFile !== undefined) governanceBlock.file = explicitFile;
+    else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;
+    if (input.requestedFile !== undefined && input.requestedFile !== governanceBlock.file) {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents.${agentName}.file is "${governanceBlock.file ?? agentMd.path}" and cannot be changed here. Move the file in the repository and update kortix.yaml in the same commit.`,
+          code: 'invalid_config',
+        },
+      };
+    }
+  }
+
+  const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+
+  // Validate the behavior half (if the request touches it at all) BEFORE
+  // committing anything — a bad frontmatter shape must never land a
+  // governance-only half-write.
+  let extraWrite: { path: string; content: string } | null = null;
+  let responseBehavior: Record<string, unknown> | undefined;
+  if (behaviorDraft !== undefined && agentMd) {
+    const draftRecord: Record<string, unknown> = { ...behaviorDraft };
+    delete draftRecord.prompt;
+    const nextFrontmatter = mergeFrontmatter(agentMd.frontmatter, draftRecord);
+    const nextBody = behaviorDraft.prompt ?? '';
+    const issues: ManifestIssue[] = [];
+    validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
+    const errorIssues = issues.filter((i) => i.severity === 'error');
+    if (errorIssues.length > 0) {
+      return {
+        ok: false,
+        status: 400,
+        body: { error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '), code: 'invalid_config', issues: errorIssues },
+      };
+    }
+    extraWrite = { path: agentMd.path, content: serializeAgentMarkdown(nextFrontmatter, nextBody) };
+    responseBehavior = { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) };
+  }
+
+  return {
+    ok: true,
+    raw: applied.raw,
+    extraWrite,
+    responseBlock: (written) => {
+      const read = readAgentBlockV2(written, agentName);
+      return read.ok
+        ? { ...(read.block ?? {}), ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}) }
+        : governanceBlock;
+    },
+  };
+}
+
+/** v3: behavior and grants → the agent's kortix.yaml block, the prompt → its `prompt_file` (or inline). */
+async function prepareAgentConfigV3(
+  row: Parameters<typeof withProjectGitAuth>[0],
+  manifest: ManifestForEdit,
+  agentName: string,
+  input: AgentConfigEditInput,
+): Promise<AgentConfigEdit> {
+  const current = readAgentBlockV2(manifest, agentName);
+  if (!current.ok) return { ok: false, status: 400, body: { error: current.error, code: 'manifest_malformed' } };
+  const currentBlock = current.block as Record<string, unknown> | null;
+  let promptText: string | null;
+  try {
+    promptText = await readPromptFileV3(row, row.defaultBranch, currentBlock);
+  } catch (err) {
+    return { ok: false, status: 502, body: { error: `Failed to read the agent's prompt file: ${(err as Error).message || String(err)}` } };
+  }
+  const stored = currentBlock ? agentConfigViewV3(currentBlock, promptText).behavior : {};
+  const resolved = resolveBehaviorDraft({ behavior: input.behavior, opencode: input.opencode }, stored);
+  if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
+
+  const applied = applyAgentConfigV3(manifest, agentName, {
+    governance: { ...input.governance, ...(input.requestedFile !== undefined ? { file: input.requestedFile } : {}) },
+    behavior: resolved.draft,
+  });
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+
+  // An unchanged prompt file is not rewritten.
+  const { promptWrite } = applied;
+  const extraWrite = promptWrite && promptWrite.content !== promptText ? promptWrite : null;
+  return {
+    ok: true,
+    raw: applied.raw,
+    extraWrite,
+    responseBlock: (written) => {
+      const read = readAgentBlockV2(written, agentName);
+      const view = agentConfigViewV3(((read.ok ? read.block : null) ?? {}) as Record<string, unknown>, promptWrite?.content ?? promptText);
+      return { ...view.governance, behavior: view.behavior, opencode: view.behavior };
+    },
+  };
 }
