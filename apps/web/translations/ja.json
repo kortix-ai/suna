@@ -20112,12 +20112,15 @@
       "text8dcda9f17257": "{value0} クレジット",
       "text026c6dbbbec5": "ペイロードをコピー",
       "textff2c3559cd6b": "このペイロードで生成されるプロンプトをプレビューするか、このペイロードでトリガーを実行します。",
-      "text614aa365f41e": "実行済み",
-      "text237112b89b77": "最近の実行",
-      "text9da843b113d4": "バーの高さは実行時間です",
-      "texta36b75929fc3": "直近 {value0} 件の実行、{value1} 件失敗",
       "text15e8856d4d77": "実際のセッションを実行します。費用が発生します。",
-      "text858e4ba7a29f": "一時停止"
+      "text858e4ba7a29f": "一時停止",
+      "texte0ab721ade45": "{count, plural, other {件の実行}}",
+      "text611b8edf2e45": "{count, plural, other {件の失敗}}",
+      "textf1a06b0cb2ca": "中央値の所要時間",
+      "textfa14066e0399": "所要時間の中央値",
+      "text26735edf00f9": "実行なし",
+      "textd2c58b300c07": "時間ごとの実行",
+      "text6de3a7d8e5db": "この期間の実行はありません"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

@@ -20112,12 +20112,15 @@
       "text8dcda9f17257": "{value0} crediti",
       "text026c6dbbbec5": "Copia payload",
       "textff2c3559cd6b": "Visualizza il prompt generato da questo payload o esegui il trigger con esso.",
-      "text614aa365f41e": "Avviata",
-      "text237112b89b77": "Esecuzioni recenti",
-      "text9da843b113d4": "L’altezza della barra è la durata",
-      "texta36b75929fc3": "Ultime {value0} esecuzioni, {value1} non riuscite",
       "text15e8856d4d77": "Avvia una sessione reale. Si applicano costi.",
-      "text858e4ba7a29f": "Metti in pausa"
+      "text858e4ba7a29f": "Metti in pausa",
+      "texte0ab721ade45": "{count, plural, one {esecuzione} other {esecuzioni}}",
+      "text611b8edf2e45": "{count, plural, one {errore} other {errori}}",
+      "textf1a06b0cb2ca": "durata mediana",
+      "textfa14066e0399": "Durata mediana",
+      "text26735edf00f9": "Nessuna esecuzione",
+      "textd2c58b300c07": "Esecuzioni nel tempo",
+      "text6de3a7d8e5db": "Nessuna esecuzione in questo intervallo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

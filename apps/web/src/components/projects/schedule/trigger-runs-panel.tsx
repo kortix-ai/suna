@@ -33,19 +33,23 @@ import {
   type ProjectTriggerRunSource,
 } from '@kortix/sdk';
 import { useProjectTriggers, useTriggerRuns } from '@kortix/sdk/react';
-import { ArrowCounterClockwiseIcon, ArrowUpRightIcon, WarningIcon } from '@phosphor-icons/react';
+import {
+  ArrowCounterClockwiseIcon,
+  ArrowUpRightIcon,
+  WarningIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 
 import { FoldTrigger } from './composer-parts';
+import { RunHistogram, type RunTimeRange, fmtRange } from './trigger-runs-histogram';
 import {
-  BAR_COUNT,
   RUNS_POLL_MS,
   type RunState,
-  type RunTone,
   canReplay,
+  inRunRange,
   relativeRunTime,
-  runBars,
   runState,
   runsInFlight,
 } from './trigger-runs-logic';
@@ -78,23 +82,6 @@ const STATE_BADGE = {
   rejected: { variant: 'warning', tint: '', dot: 'bg-kortix-orange' },
   skipped: { variant: 'accent', tint: '', dot: 'border border-muted-foreground' },
 } as const satisfies Record<RunState, { variant: string; tint: string; dot: string }>;
-
-/** Bar and legend fill per tone (Paper 2.4). */
-const TONE_FILL = {
-  green: 'bg-kortix-green',
-  red: 'bg-kortix-red',
-  orange: 'bg-kortix-orange',
-  yellow: 'bg-kortix-yellow',
-  muted: 'bg-muted',
-} as const satisfies Record<RunTone, string>;
-
-/** The legend: the four outcomes a finished run can have (V03 order). */
-const LEGEND = [
-  ['green', 'text614aa365f41e'],
-  ['red', 'text031a8f0f659d'],
-  ['orange', 'textaea4a04a8042'],
-  ['muted', 'text12698ce1ea5c'],
-] as const;
 
 const STATE_LABEL_KEY = {
   queued: 'text661ff40a07e0',
@@ -155,13 +142,14 @@ export function TriggerRunsPanel({
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const poll = useRunsPoll();
-  // One page of 30: the duration bars draw the latest 30 runs from it.
   const query = useTriggerRuns(projectId, trigger.slug, {
     refetchInterval: poll.refetchInterval,
-    limit: BAR_COUNT,
   });
   const runs = runsOf(query);
   poll.observe(runs);
+  // A bar click narrows the list to its window; the chip clears it.
+  const [range, setRange] = useState<RunTimeRange | null>(null);
+  const shown = useMemo(() => runs.filter((run) => inRunRange(run, range)), [runs, range]);
   const { replay } = useProjectTriggers(projectId);
   const [confirmRun, setConfirmRun] = useState<ProjectTriggerRun | null>(null);
 
@@ -192,10 +180,25 @@ export function TriggerRunsPanel({
 
   return (
     <div className="space-y-4">
-      {runs.length > 0 ? <RunBars runs={runs} /> : null}
+      {runs.length > 0 ? (
+        <RunHistogram runs={runs} live={!query.hasNextPage} onSelectRange={setRange} />
+      ) : null}
+      {range ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="gap-1.5 tabular-nums"
+          onClick={() => setRange(null)}
+          aria-label={`${fmtRange(range)} ×`}
+        >
+          {fmtRange(range)}
+          <XIcon className="size-3.5" />
+        </Button>
+      ) : null}
       <RunList
         query={query}
-        emptyTitle={t.raw('text91f7323997df')}
+        runs={shown}
+        emptyTitle={range ? t.raw('text6de3a7d8e5db') : t.raw('text91f7323997df')}
         actions={(run) =>
           canFire && canReplay(run) ? (
             <Button
@@ -230,79 +233,24 @@ export function TriggerRunsPanel({
   );
 }
 
-/**
- * Paper V20 "Timeline strip": one bar per run, the latest 30, oldest on the
- * left. Height is the run's duration against the longest one shown; colour is
- * its state. Read-only (no click intent in the board): the strip is one image
- * with a text summary for screen readers, and each bar names its run on hover.
- */
-function RunBars({ runs }: { runs: ProjectTriggerRun[] }) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-  const locale = useLocale();
-  const bars = runBars(runs);
-  const failed = bars.filter((b) => b.tone === 'red').length;
-  return (
-    <section className="space-y-2">
-      <div className="flex items-baseline gap-2.5">
-        <span className="text-foreground text-xs font-medium">{t.raw('text237112b89b77')}</span>
-        <span className="text-muted-foreground text-xs">{t.raw('text9da843b113d4')}</span>
-      </div>
-      <div
-        role="img"
-        aria-label={t('texta36b75929fc3', { value0: bars.length, value1: failed })}
-        className="bg-card border-border flex h-8 items-end gap-1 border-b"
-      >
-        {bars.map(({ run, tone, pct }) => {
-          const state = runState(run);
-          const label = [
-            relativeRunTime(run.started_at, locale),
-            t.raw(STATE_LABEL_KEY[state]),
-            run.duration_ms != null ? formatSessionCostDuration(run.duration_ms / 1000) : null,
-            run.cost_usd != null
-              ? t('text8dcda9f17257', { value0: formatSessionCostCredits(run.cost_usd) })
-              : null,
-          ]
-            .filter(Boolean)
-            .join(' · ');
-          return (
-            <Hint key={run.run_id} label={label} side="top">
-              {/* Height is data, so it is the one inline style: a percent of the 26 px strip. */}
-              <span
-                className={cn('w-3.5 shrink-0 rounded-sm', TONE_FILL[tone])}
-                style={{ height: `${pct}%` }}
-              />
-            </Hint>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {LEGEND.map(([tone, key]) => (
-          <span key={tone} className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <span className={cn('size-2 rounded-sm', TONE_FILL[tone])} aria-hidden />
-            {t.raw(key)}
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function RunList({
   projectId,
   query,
+  runs,
   emptyTitle,
   title,
   actions,
 }: {
   projectId: string;
   query: RunsQuery;
+  /** The rows to draw: the loaded runs, or those inside a histogram window. */
+  runs: ProjectTriggerRun[];
   emptyTitle: string;
   /** A leading title per row (the project list names the trigger). */
   title?: (run: ProjectTriggerRun) => ReactNode;
   actions?: (run: ProjectTriggerRun) => ReactNode;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const runs = runsOf(query);
 
   if (query.isLoading) {
     return (

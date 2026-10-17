@@ -1,14 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  BAR_COUNT,
-  BAR_MIN_PCT,
+  bucketRuns,
   canReplay,
+  inRunRange,
   parsePayload,
   relativeRunTime,
-  runBars,
   runState,
-  runTone,
   runsInFlight,
 } from './trigger-runs-logic';
 
@@ -96,54 +94,56 @@ describe('relativeRunTime', () => {
   });
 });
 
-describe('runBars', () => {
+describe('bucketRuns', () => {
+  const at = (min: number) => new Date(Date.UTC(2026, 9, 17, 12, min)).toISOString();
   const run = (
-    status: 'fired' | 'failed' | 'rejected' | 'skipped' | 'queued' | 'running',
-    duration_ms: number | null,
-    run_status: 'succeeded' | 'failed' | 'running' | null = null,
-  ) => ({ status, run_status, duration_ms });
+    min: number,
+    status: 'fired' | 'failed' | 'rejected' | 'skipped',
+    duration_ms: number | null = null,
+    cost_usd: number | null = null,
+    run_status: 'succeeded' | 'failed' | null = null,
+  ) => ({ started_at: at(min), status, run_status, duration_ms, cost_usd });
 
-  test('oldest on the left, scaled to the longest run, with a floor', () => {
-    // The API lists newest first.
-    const bars = runBars([
-      run('fired', 120_000, 'succeeded'),
-      run('failed', 1_000),
-      run('fired', 60_000, 'succeeded'),
-    ]);
-    expect(bars.map((b) => b.pct)).toEqual([50, BAR_MIN_PCT, 100]);
+  test('equal slices from the oldest run to the newest; the last includes its end', () => {
+    const buckets = bucketRuns(
+      [
+        run(0, 'fired', 1000, 0.1, 'succeeded'),
+        run(5, 'failed'),
+        run(10, 'fired', 3000, 0.2, 'succeeded'),
+      ],
+      2,
+    );
+    // 0 lands in the first slice; 5 (the boundary) and 10 (the end) in the last.
+    expect(buckets.map((b) => b.total)).toEqual([1, 2]);
+    expect(buckets[0]!.start).toBe(Date.parse(at(0)));
+    expect(buckets[1]!.end).toBe(Date.parse(at(10)));
   });
 
-  test('a run without a duration, or all zero, draws the floor', () => {
-    expect(runBars([run('queued', null), run('running', null)]).map((b) => b.pct)).toEqual([
-      BAR_MIN_PCT,
-      BAR_MIN_PCT,
-    ]);
-    expect(runBars([run('skipped', 0)])[0]!.pct).toBe(BAR_MIN_PCT);
+  test('counts Failed and Rejected as failures, a fired run whose turn failed too', () => {
+    const [b] = bucketRuns(
+      [run(0, 'failed'), run(1, 'rejected'), run(2, 'fired', 1, null, 'failed'), run(3, 'skipped')],
+      1,
+    );
+    expect(b!.failed).toBe(3);
   });
 
-  test('draws at most the latest 30 runs', () => {
-    const many = Array.from({ length: 45 }, (_, i) => run('fired', i + 1, 'succeeded'));
-    const bars = runBars(many);
-    expect(bars).toHaveLength(BAR_COUNT);
-    // The newest run (index 0) is the rightmost bar.
-    expect(bars[BAR_COUNT - 1]!.run).toBe(many[0]!);
+  test('median duration and summed cost per slice, nulls ignored', () => {
+    const [b] = bucketRuns(
+      [run(0, 'fired', 1000, 0.5), run(1, 'fired', 3000, null), run(2, 'fired', null, 0.25)],
+      1,
+    );
+    expect(b!.medianMs).toBe(2000);
+    expect(b!.cost).toBe(0.75);
   });
 
-  test('colour follows the state the row shows', () => {
-    expect(
-      runBars([
-        run('fired', 1, 'succeeded'),
-        run('fired', 1, null),
-        run('fired', 1, 'running'),
-        run('fired', 1, 'failed'),
-        run('failed', 1),
-        run('rejected', 1),
-        run('skipped', 1),
-        run('queued', 1),
-      ])
-        .reverse()
-        .map((b) => b.tone),
-    ).toEqual(['green', 'green', 'green', 'red', 'red', 'orange', 'muted', 'yellow']);
-    expect(runTone('running')).toBe('green');
+  test('no runs, no bars', () => {
+    expect(bucketRuns([], 48)).toEqual([]);
+  });
+
+  test('inRunRange keeps the runs inside a bar window', () => {
+    const r = run(5, 'fired');
+    expect(inRunRange(r, null)).toBe(true);
+    expect(inRunRange(r, { start: Date.parse(at(5)), end: Date.parse(at(6)) })).toBe(true);
+    expect(inRunRange(r, { start: Date.parse(at(6)), end: Date.parse(at(7)) })).toBe(false);
   });
 });

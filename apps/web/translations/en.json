@@ -20123,12 +20123,15 @@
       "text8dcda9f17257": "{value0} credits",
       "text026c6dbbbec5": "Copy payload",
       "textff2c3559cd6b": "Preview the prompt this payload renders, or run the trigger with it.",
-      "text614aa365f41e": "Fired",
-      "text237112b89b77": "Recent runs",
-      "text9da843b113d4": "Bar height is the run’s duration",
-      "texta36b75929fc3": "Last {value0} runs, {value1} failed",
       "text15e8856d4d77": "Runs a real session. Costs apply.",
-      "text858e4ba7a29f": "Pause"
+      "text858e4ba7a29f": "Pause",
+      "texte0ab721ade45": "{count, plural, one {run} other {runs}}",
+      "text611b8edf2e45": "{count, plural, one {failure} other {failures}}",
+      "textf1a06b0cb2ca": "median duration",
+      "textfa14066e0399": "Median duration",
+      "text26735edf00f9": "No runs",
+      "textd2c58b300c07": "Runs over time",
+      "text6de3a7d8e5db": "No runs in this time range"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

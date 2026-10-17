@@ -20112,12 +20112,15 @@
       "text8dcda9f17257": "{value0} créditos",
       "text026c6dbbbec5": "Copiar payload",
       "textff2c3559cd6b": "Previsualiza el prompt que genera este payload o ejecuta el disparador con él.",
-      "text614aa365f41e": "Disparada",
-      "text237112b89b77": "Ejecuciones recientes",
-      "text9da843b113d4": "La altura de la barra es la duración",
-      "texta36b75929fc3": "Últimas {value0} ejecuciones, {value1} fallidas",
       "text15e8856d4d77": "Inicia una sesión real. Se aplican costes.",
-      "text858e4ba7a29f": "Pausar"
+      "text858e4ba7a29f": "Pausar",
+      "texte0ab721ade45": "{count, plural, one {ejecución} other {ejecuciones}}",
+      "text611b8edf2e45": "{count, plural, one {fallo} other {fallos}}",
+      "textf1a06b0cb2ca": "duración mediana",
+      "textfa14066e0399": "Duración mediana",
+      "text26735edf00f9": "Sin ejecuciones",
+      "textd2c58b300c07": "Ejecuciones en el tiempo",
+      "text6de3a7d8e5db": "No hay ejecuciones en este intervalo"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

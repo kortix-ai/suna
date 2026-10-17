@@ -20112,12 +20112,15 @@
       "text8dcda9f17257": "{value0} crédits",
       "text026c6dbbbec5": "Copier le payload",
       "textff2c3559cd6b": "Prévisualisez le prompt que produit ce payload, ou exécutez le déclencheur avec.",
-      "text614aa365f41e": "Déclenchée",
-      "text237112b89b77": "Exécutions récentes",
-      "text9da843b113d4": "La hauteur de la barre est la durée",
-      "texta36b75929fc3": "{value0} dernières exécutions, {value1} échouées",
       "text15e8856d4d77": "Lance une vraie session. Des coûts s’appliquent.",
-      "text858e4ba7a29f": "Mettre en pause"
+      "text858e4ba7a29f": "Mettre en pause",
+      "texte0ab721ade45": "{count, plural, one {exécution} other {exécutions}}",
+      "text611b8edf2e45": "{count, plural, one {échec} other {échecs}}",
+      "textf1a06b0cb2ca": "durée médiane",
+      "textfa14066e0399": "Durée médiane",
+      "text26735edf00f9": "Aucune exécution",
+      "textd2c58b300c07": "Exécutions dans le temps",
+      "text6de3a7d8e5db": "Aucune exécution sur cette période"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

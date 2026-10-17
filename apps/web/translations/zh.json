@@ -20112,12 +20112,15 @@
       "text8dcda9f17257": "{value0} 积分",
       "text026c6dbbbec5": "复制负载",
       "textff2c3559cd6b": "预览此负载生成的提示词，或使用它运行触发器。",
-      "text614aa365f41e": "已触发",
-      "text237112b89b77": "最近的运行",
-      "text9da843b113d4": "柱高表示运行时长",
-      "texta36b75929fc3": "最近 {value0} 次运行，{value1} 次失败",
       "text15e8856d4d77": "会运行一个真实会话，会产生费用。",
-      "text858e4ba7a29f": "暂停"
+      "text858e4ba7a29f": "暂停",
+      "texte0ab721ade45": "{count, plural, other {次运行}}",
+      "text611b8edf2e45": "{count, plural, other {次失败}}",
+      "textf1a06b0cb2ca": "中位时长",
+      "textfa14066e0399": "中位时长",
+      "text26735edf00f9": "没有运行",
+      "textd2c58b300c07": "随时间的运行",
+      "text6de3a7d8e5db": "此时间范围内没有运行"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

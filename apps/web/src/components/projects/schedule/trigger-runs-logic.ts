@@ -65,38 +65,73 @@ export function parsePayload(
   return { ok: true, value: value as Record<string, unknown> };
 }
 
-/** The hue a run shows in the duration bars and their legend (Paper V20 / V03). */
-export type RunTone = 'green' | 'red' | 'orange' | 'yellow' | 'muted';
-
-export function runTone(state: RunState): RunTone {
-  if (state === 'failed') return 'red';
-  if (state === 'rejected') return 'orange';
-  if (state === 'skipped') return 'muted';
-  if (state === 'queued') return 'yellow';
-  return 'green'; // started, succeeded, running
+/** One histogram bar: a time slice of the loaded runs (the Models logs pattern). */
+export interface RunBucket {
+  /** Start of the slice, epoch ms. */
+  start: number;
+  /** End of the slice, epoch ms. The last slice includes its end. */
+  end: number;
+  total: number;
+  /** Runs that read Failed or Rejected. */
+  failed: number;
+  medianMs: number | null;
+  /** Summed `cost_usd`. */
+  cost: number;
 }
 
-/** Bars the strip draws: the latest 30 runs. */
-export const BAR_COUNT = 30;
-/** A run with no duration, or a very fast one, still draws 6 of the strip's 26 px. */
-export const BAR_MIN_PCT = 23;
+type BucketRun = Pick<
+  ProjectTriggerRun,
+  'started_at' | 'status' | 'run_status' | 'duration_ms' | 'cost_usd'
+>;
 
 /**
- * One bar per run, oldest on the left. Height is the run's duration as a
- * percent of the longest run shown, never under `BAR_MIN_PCT`. `runs` is the
- * list as the API returns it, newest first.
+ * The loaded runs split into `count` equal time slices by `started_at`, from
+ * the oldest loaded run to the newest: `bucketLogStats` in `gateway-logs.tsx`,
+ * over runs. It describes the window on screen, not all history.
  */
-export function runBars<R extends Pick<ProjectTriggerRun, 'status' | 'run_status' | 'duration_ms'>>(
-  runs: readonly R[],
-): { run: R; tone: RunTone; pct: number }[] {
-  const shown = runs.slice(0, BAR_COUNT).reverse();
-  const longest = Math.max(0, ...shown.map((r) => r.duration_ms ?? 0));
-  return shown.map((run) => ({
-    run,
-    tone: runTone(runState(run)),
-    pct:
-      longest > 0 && run.duration_ms
-        ? Math.max(BAR_MIN_PCT, Math.round((run.duration_ms / longest) * 100))
-        : BAR_MIN_PCT,
+export function bucketRuns(runs: readonly BucketRun[], count: number): RunBucket[] {
+  const at = (r: BucketRun) => Date.parse(r.started_at);
+  const timed = runs.filter((r) => Number.isFinite(at(r)));
+  if (timed.length === 0 || count < 1) return [];
+  const times = timed.map(at);
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  const size = Math.max(1, max - min) / count;
+  const groups: BucketRun[][] = Array.from({ length: count }, () => []);
+  for (const run of timed)
+    groups[Math.min(count - 1, Math.floor((at(run) - min) / size))]!.push(run);
+  return groups.map((group, i) => ({
+    start: min + i * size,
+    end: i === count - 1 ? max : min + (i + 1) * size,
+    total: group.length,
+    failed: group.filter((r) => {
+      const state = runState(r);
+      return state === 'failed' || state === 'rejected';
+    }).length,
+    medianMs: medianDuration(group),
+    cost: group.reduce((n, r) => n + (r.cost_usd ?? 0), 0),
   }));
+}
+
+/** The median `duration_ms` of the runs that have one, or null. */
+export function medianDuration(
+  runs: readonly Pick<ProjectTriggerRun, 'duration_ms'>[],
+): number | null {
+  const values = runs
+    .map((r) => r.duration_ms)
+    .filter((v): v is number => v != null && Number.isFinite(v) && v >= 0)
+    .sort((a, b) => a - b);
+  if (values.length === 0) return null;
+  const mid = Math.floor(values.length / 2);
+  return values.length % 2 ? values[mid]! : (values[mid - 1]! + values[mid]!) / 2;
+}
+
+/** True when the run started inside the window (both ends inclusive). */
+export function inRunRange(
+  run: Pick<ProjectTriggerRun, 'started_at'>,
+  range: { start: number; end: number } | null,
+): boolean {
+  if (!range) return true;
+  const t = Date.parse(run.started_at);
+  return t >= range.start && t <= range.end;
 }
