@@ -279,6 +279,13 @@ describe('kortix channels connect — one-click (cloud)', () => {
     expect(stripAnsi(stderr)).toContain("got '-5'");
     expect(requests).toEqual([]);
   });
+
+  test('--wait --timeout 2e305 fails fast too (a finite value whose ms deadline overflows to Infinity)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', '2e305']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '2e305'");
+    expect(requests).toEqual([]);
+  });
 });
 
 describe('kortix channels connect — manual (self-host)', () => {

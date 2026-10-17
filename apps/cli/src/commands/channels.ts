@@ -188,12 +188,15 @@ export async function runChannels(argv: string[]): Promise<number> {
     case 'status':
       return platform === 'teams' ? teamsStatus(ctxOpts, json) : channelsStatus(ctxOpts, json);
     case 'connect': {
-      // A non-numeric or negative --timeout used to reach the poll deadline
-      // raw: NaN never satisfies `Date.now() >= deadline` (Infinity never
-      // does either), so `connect --wait` hung forever. Reject it here,
-      // before the command resolves the project or touches the API.
+      // Reject an invalid --timeout here, at the one read site: a
+      // non-numeric or negative value used to reach the poll deadline raw,
+      // and NaN never satisfies `Date.now() >= deadline` (Infinity never
+      // does either), so `connect --wait` hung forever. A finite value whose
+      // ms multiplication overflows (`--timeout 2e305`) hangs the same way.
       const timeoutSec = timeoutFlag ? Number(timeoutFlag) : 300;
-      if (!Number.isFinite(timeoutSec) || timeoutSec < 0) {
+      if (
+        !Number.isFinite(timeoutSec) || timeoutSec < 0 || !Number.isFinite(timeoutSec * 1000)
+      ) {
         return fail(`--timeout requires a non-negative number of seconds, got '${timeoutFlag}'`);
       }
       return platform === 'teams'
