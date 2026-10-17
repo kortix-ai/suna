@@ -1,6 +1,4 @@
 'use client';
-import { agentStatus } from './agent-status';
-import { useDefaultAgent } from './use-default-agent';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
@@ -22,15 +20,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
+import { toArray } from '@/features/workspace/customize/shared/utils';
 import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -38,6 +37,7 @@ import {
   listProjectResourceGrants,
   listProjectTriggers,
   type ProjectConfigSummary,
+  updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
@@ -47,18 +47,22 @@ import {
   RobotIcon,
   StarIcon as StarSolid,
 } from '@phosphor-icons/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
+import {
+  DENSE_GRID_CLASSNAME,
+  DENSE_GRID_CONTAINER_CLASSNAME,
+} from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 
+import { agentInMode, filterAgents } from './agent-filter';
 import { useSlashFocus } from '@/hooks/utils';
-import { filterAgents } from './agent-filter';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -147,17 +151,33 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 
   const agents = useMemo(() => toArray(config?.agents), [config]);
 
-  // No mode filter (Marko, 2026-09-03): the list is the manifest's `agents:`
-  // map, and whether one is a subagent is a chip on its card, not a lens on
-  // the list — three agents do not need a tab bar.
-  const filtered = useMemo(() => filterAgents(agents, { query }), [agents, query]);
+  const filtered = useMemo(() => filterAgents(agents, { mode: null, query }), [agents, query]);
+  const defaultAgent = config?.default_agent ?? config?.open_code_default_agent ?? null;
+
+  // Agents first, subagents second (Marko, 2026-10-17). A project with 2
+  // agents and 15 subagents buried the 2 a person starts in one alphabetical
+  // grid. The agents a person starts get the full cards, the default first;
+  // the ones other agents call sit below in a compact list. `all` is usable
+  // both ways, so it stays with the agents a person starts.
+  const primaryAgents = useMemo(
+    () =>
+      filtered
+        .filter((agent) => agentInMode(agent, 'primary'))
+        .sort((a, b) => Number(b.name === defaultAgent) - Number(a.name === defaultAgent)),
+    [filtered, defaultAgent],
+  );
+  const subagents = useMemo(
+    () => filtered.filter((agent) => !agentInMode(agent, 'primary')),
+    [filtered],
+  );
+  const subagentTotal = agents.filter((agent) => !agentInMode(agent, 'primary')).length;
+  const primaryTotal = agents.length - subagentTotal;
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
   // points at the wrong fix (clear the filter, not create an agent).
   const emptyKind = catalogEmptyKind(agents.length, filtered.length);
-  const defaultAgent = config?.default_agent ?? config?.open_code_default_agent ?? null;
 
   // One control, two labels — same rule as the Skills page. The header has a
   // title beside it and can be terse; the empty state is the whole screen and
@@ -211,7 +231,10 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ) : config ? (
           <>
             <p className="text-muted-foreground text-xs">
-              {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
+              {primaryTotal} {primaryTotal === 1 ? 'agent' : 'agents'}
+              {subagentTotal > 0
+                ? ` · ${subagentTotal} ${subagentTotal === 1 ? 'subagent' : 'subagents'}`
+                : null}{' '}
               {tI18nComplete.raw('text582967534d0f')}{' '}
               <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>
             </p>
@@ -251,16 +274,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           )
         }
       >
-        {filtered.map((agent) => (
+        {primaryAgents.map((agent) => (
           <CatalogCard
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={
-              isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)
-            }
+            title={agentTitle(agent.name)}
             description={agent.description}
-            badges={<AgentCardBadges agent={agent} config={config} />}
+            badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
               <AgentCardFacts
                 agent={agent}
@@ -268,16 +289,65 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                 peopleCount={canManageMembers ? (grantCounts.get(agent.name) ?? 0) : null}
               />
             }
-            trailing={
-              <CaretRightIcon
-                aria-hidden
-                className="text-muted-foreground/40 group-hover:text-muted-foreground mt-0.5 size-4 transition-colors"
-              />
-            }
+            trailing={<CardCaret />}
           />
         ))}
       </CatalogGrid>
+      {!detailQuery.isLoading && !detailQuery.isError && subagents.length > 0 ? (
+        <section
+          aria-labelledby="subagents-heading"
+          className={cn('space-y-2', primaryAgents.length > 0 && 'mt-8')}
+        >
+          <div>
+            <h2 id="subagents-heading" className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('agentsListSubagentsTitle')}{' '}
+              <span className="text-muted-foreground font-normal tabular-nums">
+                {subagents.length}
+              </span>
+            </h2>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {tI18nComplete.raw('agentsListSubagentsHint')}
+            </p>
+          </div>
+          {/* `-mx-3` cancels the plain card's `px-3`, so each title lines up
+              with the heading above it. */}
+          <div className={cn(DENSE_GRID_CONTAINER_CLASSNAME, '-mx-3')}>
+            <div className={DENSE_GRID_CLASSNAME}>
+              {subagents.map((agent) => (
+                <CatalogCard
+                  key={agent.path}
+                  variant="plain"
+                  href={agentHref(projectId, agent.name)}
+                  onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
+                  title={agentTitle(agent.name)}
+                  description={agent.description}
+                  badges={<AgentCardBadges agent={agent} isDefault={false} />}
+                  meta={
+                    <span className={cn('truncate', agent.model && 'font-mono')}>
+                      {agent.model?.split('/').pop() ?? tI18nComplete.raw('text3840d9d29421')}
+                    </span>
+                  }
+                  trailing={<CardCaret />}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
     </CapabilityPageShell>
+  );
+}
+
+function agentTitle(name: string): string {
+  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+}
+
+function CardCaret() {
+  return (
+    <CaretRightIcon
+      aria-hidden
+      className="text-muted-foreground group-hover:text-foreground mt-0.5 size-4 transition-colors"
+    />
   );
 }
 
@@ -301,7 +371,7 @@ function AgentCardFacts({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const model = agent.model ? agent.model.split('/').pop() : null;
   const sep = (
-    <span aria-hidden className="text-muted-foreground/40">
+    <span aria-hidden className="text-muted-foreground">
       ·
     </span>
   );
@@ -329,21 +399,20 @@ function AgentCardFacts({
 }
 
 /**
- * Card badges — mode, the default-agent star, disabled.
+ * Card badges — "also a subagent", the default-agent star, disabled.
  *
- * `mode` is omitted when it is the implicit `primary`: every agent would
- * otherwise carry the same badge, which distinguishes nothing and just adds
- * noise to a grid. A subagent (or an explicit both-ways `all`) is the case
- * worth marking.
+ * The section already says primary or subagent, so a mode chip only marks the
+ * both-ways `all` agent: it sits with the primaries but other agents call it
+ * too.
  */
-function AgentCardBadges({ agent, config }: { agent: Agent; config: ProjectConfigSummary | null }) {
+function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolean }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const { showMode, isDefault, disabled } = agentStatus(agent, config);
+  const mode = agent.mode?.toLowerCase();
   return (
     <>
-      {showMode ? (
+      {mode === 'all' ? (
         <Badge variant="muted" size="xs">
-          {formatMode(agent.mode ?? '')}
+          {tI18nComplete.raw('agentsListAlsoSubagent')}
         </Badge>
       ) : null}
       {isDefault ? (
@@ -353,7 +422,7 @@ function AgentCardBadges({ agent, config }: { agent: Agent; config: ProjectConfi
           className="text-kortix-orange size-3.5 shrink-0"
         />
       ) : null}
-      {disabled ? (
+      {agent.enabled === false ? (
         <Badge variant="muted" size="xs">
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
@@ -383,9 +452,25 @@ function DefaultAgentSelector({
   const queryClient = useQueryClient();
   // v2 and v3 declare `default_agent` in kortix.yaml; v1 has no such key.
   const declaresDefaultAgent = detectManifestVersion(config.manifest_raw) >= 2;
-  const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
+  // A subagent cannot start a chat, so it is not offered as the default.
+  const availableAgents = toArray(config.agents).filter(
+    (agent) => agent.enabled !== false && agentInMode(agent, 'primary'),
+  );
   const current = config.default_agent ?? config.open_code_default_agent;
-  const mutation = useDefaultAgent(projectId);
+  const mutation = useMutation({
+    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
+    onSuccess: async (result) => {
+      successToast(
+        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
+      );
+      // One invalidation, not two: the project CONFIG is a `select` projection
+      // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
+      // its own fetch. The retired standalone `['project-config', id]` slot no
+      // longer exists, so a second call for it would invalidate nothing.
+      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+    },
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
+  });
 
   if (!declaresDefaultAgent || availableAgents.length === 0 || !current) return null;
 
