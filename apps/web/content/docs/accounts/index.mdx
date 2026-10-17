@@ -89,14 +89,15 @@ Opening another person's private session is a separate, owner-controlled setting
 
 ### Who sees the member list
 
-Owners and admins see every member and every group. A `member` sees only the people and groups they share access with:
+Owners and admins see every member and every group. A `member` sees only:
 
-- themselves, and the account's owners and admins;
-- every person and group with a role or a grant on a project they can open;
-- the groups they belong to;
-- the members of every group above.
+- themselves;
+- the groups they belong to, and the members of those groups;
+- on a project they manage, every person and group with a role or a grant on it, and the members of those groups.
 
-The same rule applies to **Members**, **Groups**, a project's access list, the Files share dialog, `kortix members` and `kortix groups`. A group outside that set answers `404`. On a visible group, a `member` sees only the projects they can open. Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins.
+Working in a project is not enough. A project `member` does not see the project's other people. **Members** and **Groups** do not appear in account settings for a `member`.
+
+The same rule applies to a project's access list, the Files share dialog, `kortix members` and `kortix groups`. A group outside that set answers `404`. On a visible group, a `member` sees only the projects they can open. Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins.
 
 To show the whole directory to more people, create a custom account role with `member.read` (every member) and `group.read` (every group), and assign it to those people or to a group. See [Custom roles](#custom-roles).
 

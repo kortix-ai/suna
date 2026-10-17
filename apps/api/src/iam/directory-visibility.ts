@@ -4,9 +4,12 @@
 // admins hold both. The built-in `member` role holds neither
 // (20261013172952181_member_directory_visibility), so a plain member sees only
 // the people and groups they share access with:
-//   - themselves, and the account's owners and admins;
-//   - every user and group with a role or a grant on a project they can read;
-//   - the groups they are in, and every member of a group they can see.
+//   - themselves;
+//   - the groups they are in, and every member of those groups;
+//   - every user and group with a role or a grant on a project they manage
+//     (`project.members.manage`), and the members of those groups.
+// Reading a project is not enough. When every group of an account holds a role
+// on one shared project, "anyone on a project you can read" is the whole org.
 // An owner restores the full directory with a custom account role holding
 // `member.read` and `group.read`.
 import { roleAssignments } from '@kortix/db';
@@ -16,7 +19,6 @@ import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 import type { Actor } from './actor';
 import { authorize, listAccessible } from './authorize';
 import { groupMemberRows, groupsForMemberRows } from './group-read';
-import { accountRoleMap, isAccountManagerRole } from './read-models';
 
 export interface VisibleDirectory {
   /** The member user ids the caller may see; null = every member. */
@@ -38,18 +40,18 @@ export async function visibleDirectory(actor: Actor): Promise<VisibleDirectory> 
   ]);
   if (members.allowed && groups.allowed) return { userIds: null, groupIds: null, projectIds: null };
 
-  const [projects, ownGroups, roles] = await Promise.all([
+  const [projects, managed, ownGroups] = await Promise.all([
     listAccessible(actor, PROJECT_ACTIONS.PROJECT_READ, 'project'),
+    listAccessible(actor, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, 'project'),
     groupsForMemberRows(actor.accountId, actor.userId),
-    accountRoleMap(actor.accountId),
   ]);
   const projectIds = projects.mode === 'allow_only' ? projects.allowed : null;
+  const managedIds = managed.mode === 'allow_only' ? managed.allowed : null;
   const holders =
-    projects.mode === 'none' ? [] : await projectPrincipals(actor.accountId, projectIds ? [...projectIds] : undefined);
+    managed.mode === 'none' ? [] : await projectPrincipals(actor.accountId, managedIds ? [...managedIds] : undefined);
 
   const userIds = new Set([actor.userId]);
   const groupIds = new Set(ownGroups.map((g) => g.groupId));
-  for (const [userId, role] of roles) if (isAccountManagerRole(role)) userIds.add(userId);
   for (const h of holders) (h.principalType === 'group' ? groupIds : userIds).add(h.principalId);
   if (groupIds.size) for (const m of await groupMemberRows([...groupIds])) userIds.add(m.userId);
 

@@ -179,14 +179,13 @@ flow(
         if (!JSON.stringify(r.json()).includes(outsider.userId!)) throw new Error(`owner cannot name an account member: ${r.text()}`);
       });
 
-      await ctx.step('the member names the owner and themselves, not an account member outside the project', async () => {
+      await ctx.step('the member names themselves, not the owner or an account member outside the project', async () => {
         const people = (await asMember.get('/v1/drives/:driveId/principals', { params: { driveId } }))
           .status(200)
           .json<{ people: { id: string }[] }>()
           .people.map((p) => p.id);
-        if (!people.includes(member.userId!) || !people.includes(ctx.P.OWNER.userId!)) {
-          throw new Error(`member principals miss self or the owner: ${JSON.stringify(people)}`);
-        }
+        if (!people.includes(member.userId!)) throw new Error(`member principals miss self: ${JSON.stringify(people)}`);
+        if (people.includes(ctx.P.OWNER.userId!)) throw new Error('member principals listed the owner (MEM-8)');
         if (people.includes(outsider.userId!)) throw new Error('member principals leaked an account member outside the project');
       });
 

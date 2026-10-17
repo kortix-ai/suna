@@ -161,7 +161,7 @@ flow(
       r.status(403);
     });
     await ctx.step(
-      "plain MEMBER sees self and the owner, not an unrelated teammate, with other members' sensitive columns redacted",
+      "plain MEMBER sees self, not the owner or an unrelated teammate, with other members' sensitive columns redacted",
       async () => {
         const memberA = await team.addMember('member');
         const memberB = await team.addMember('member');
@@ -172,8 +172,8 @@ flow(
         const list = r.json<any[]>();
         if (!list.some((m) => m.user_id === memberA.userId))
           throw new Error('member cannot see their own row');
-        if (!list.some((m) => m.user_id === ctx.P.OWNER.userId))
-          throw new Error('member directory omitted the account owner');
+        if (list.some((m) => m.user_id === ctx.P.OWNER.userId))
+          throw new Error('member directory listed the account owner');
         if (list.some((m) => m.user_id === memberB.userId))
           throw new Error('member directory listed a teammate they share no project or group with');
         for (const m of list) {
@@ -213,8 +213,10 @@ flow(
     const groupMate = await team.addMember('member');
     const viaGroup = await team.addMember('member');
     const stranger = await team.addMember('member');
+    const manager = await team.addMember('member');
     const admin = await team.addMember('admin');
     const asViewer = ctx.client.as(viewer);
+    const asManager = ctx.client.as(manager);
     const shared = await team.project();
     const hidden = await team.project();
     let mine = '';
@@ -264,10 +266,11 @@ flow(
     };
 
     await ctx.step(
-      'setup: the viewer shares one project with a teammate and a group with another; a third reaches the project through a group; a fourth shares nothing',
+      'setup: the viewer shares one project with a teammate and a group with another; a third reaches the project through a group; a fourth shares nothing; a plain account member manages the project',
       async () => {
         await team.grantProjectRole(shared.id, viewer.userId!, 'member');
         await team.grantProjectRole(shared.id, coProject.userId!, 'member');
+        await team.grantProjectRole(shared.id, manager.userId!, 'manager');
         mine = await group('grp-mine', [viewer, groupMate]);
         onShared = await group('grp-shared', [viaGroup]);
         elsewhere = await group('grp-elsewhere', [stranger]);
@@ -278,13 +281,25 @@ flow(
     );
 
     await ctx.step(
-      'a plain member lists self, the owner, the admin and the people they share a project or a group with; not the stranger',
+      'a plain member lists self and their group mates; not the owner, the admin, the people on a project they only read, or the stranger',
       async () => {
         expectIds(
           'viewer members',
           await memberIds(asViewer),
-          [viewer, ctx.P.OWNER, admin, coProject, groupMate, viaGroup].map((p) => p.userId!),
-          [stranger.userId!],
+          [viewer, groupMate].map((p) => p.userId!),
+          [ctx.P.OWNER, admin, coProject, viaGroup, stranger].map((p) => p.userId!),
+        );
+      },
+    );
+
+    await ctx.step(
+      'a project manager who is a plain account member lists the people on the project they manage; not the stranger',
+      async () => {
+        expectIds(
+          'manager members',
+          await memberIds(asManager),
+          [manager, viewer, coProject, viaGroup].map((p) => p.userId!),
+          [stranger.userId!, groupMate.userId!],
         );
       },
     );
@@ -296,17 +311,18 @@ flow(
     });
 
     await ctx.step(
-      'a plain member lists their own group and the group on their project; not a group they share nothing with',
+      'a plain member lists only their own group; the manager lists the group on their project',
       async () => {
-        expectIds('viewer groups', await groupIds(asViewer), [mine, onShared], [elsewhere]);
+        expectIds('viewer groups', await groupIds(asViewer), [mine], [onShared, elsewhere]);
+        expectIds('manager groups', await groupIds(asManager), [onShared], [mine, elsewhere]);
         expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
-        // The group on `shared` is also granted on `hidden`: the viewer's count
+        // The group on `shared` is also granted on `hidden`: the manager's count
         // covers only the project they can read.
         const counted = (rows: Array<{ group_id: string; project_count: number }>) =>
           rows.find((g) => g.group_id === onShared)?.project_count;
-        const [viewerCount, ownerCount] = [counted(await groupRows(asViewer)), counted(await groupRows(owner))];
-        if (viewerCount !== 1 || ownerCount !== 2) {
-          throw new Error(`onShared project_count: viewer ${viewerCount} (want 1), owner ${ownerCount} (want 2)`);
+        const [managerCount, ownerCount] = [counted(await groupRows(asManager)), counted(await groupRows(owner))];
+        if (managerCount !== 1 || ownerCount !== 2) {
+          throw new Error(`onShared project_count: manager ${managerCount} (want 1), owner ${ownerCount} (want 2)`);
         }
       },
     );
@@ -314,31 +330,33 @@ flow(
     await ctx.step(
       'a group outside that set → 404 on read, members and project grants',
       async () => {
-        const at = { params: { ...params, groupId: elsewhere } };
-        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at)).status(404);
-        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at)).status(404);
-        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at)).status(404);
+        for (const groupId of [elsewhere, onShared]) {
+          const at = { params: { ...params, groupId } };
+          (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at)).status(404);
+          (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at)).status(404);
+          (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at)).status(404);
+        }
       },
     );
 
     await ctx.step(
-      'a visible group shows its members, and only the projects the viewer can read',
+      'a visible group shows its members, and only the projects the manager can read',
       async () => {
         const at = { params: { ...params, groupId: onShared } };
-        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at))
+        (await asManager.get('/v1/accounts/:accountId/iam/groups/:groupId', at))
           .status(200)
           .body()
           .has('$.group_id', onShared);
-        const members = (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at))
+        const members = (await asManager.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at))
           .status(200)
           .json<{ members: Array<{ user_id: string }> }>()
           .members.map((m) => m.user_id);
         expectIds('onShared members', members, [viaGroup.userId!], []);
-        const grants = (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at))
+        const grants = (await asManager.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at))
           .status(200)
           .json<{ grants: Array<{ project_id: string }> }>()
           .grants.map((g) => g.project_id);
-        expectIds('viewer onShared grants', grants, [shared.id], [hidden.id]);
+        expectIds('manager onShared grants', grants, [shared.id], [hidden.id]);
         const all = (await owner.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at))
           .status(200)
           .json<{ grants: Array<{ project_id: string }> }>()
@@ -348,7 +366,7 @@ flow(
     );
 
     await ctx.step(
-      "the project's access list shows the viewer the same people; the owner sees every member",
+      "the project's access list shows the viewer only themselves, the manager the project's people, the owner every member",
       async () => {
         const ids = async (who: Client) =>
           (await who.get('/v1/projects/:projectId/access', { params: { projectId: shared.id } }))
@@ -358,6 +376,12 @@ flow(
         expectIds(
           'viewer project access',
           await ids(asViewer),
+          [viewer.userId!],
+          [coProject, viaGroup, stranger].map((p) => p.userId!),
+        );
+        expectIds(
+          'manager project access',
+          await ids(asManager),
           [viewer, coProject, viaGroup].map((p) => p.userId!),
           [stranger.userId!],
         );
