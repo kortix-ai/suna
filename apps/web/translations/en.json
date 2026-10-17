@@ -20120,8 +20120,6 @@
       "texta9cd409ba9ca": "Replay this unsigned run?",
       "text776bb15115b3": "Its signature was not verified. A replay sends the same payload to the agent again.",
       "text2f1b3ba06cfb": "Could not replay the run",
-      "text24afc952b6cc": "Failed runs",
-      "text6c5ebd6c3b4f": "Failed runs will show up here",
       "text8dcda9f17257": "{value0} credits",
       "text026c6dbbbec5": "Copy payload",
       "textff2c3559cd6b": "Preview the prompt this payload renders, or run the trigger with it.",

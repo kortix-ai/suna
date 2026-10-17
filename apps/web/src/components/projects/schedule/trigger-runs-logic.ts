@@ -31,23 +31,6 @@ export function canReplay(
   return (state === 'failed' || state === 'rejected') && run.payload?.truncated !== true;
 }
 
-/**
- * The Failed runs badge: failures of a trigger on this page since its last
- * successful fire. A failure followed by a good run no longer needs attention.
- * The list itself still shows every failed run.
- */
-export function unseenFailures(
-  runs: readonly Pick<ProjectTriggerRun, 'slug' | 'started_at'>[],
-  triggers: readonly { slug: string; last_fired_at?: string | null }[],
-): number {
-  const lastFired = new Map(triggers.map((t) => [t.slug, t.last_fired_at ?? null] as const));
-  return runs.filter((run) => {
-    if (!lastFired.has(run.slug)) return false;
-    const last = lastFired.get(run.slug);
-    return !last || Date.parse(run.started_at) > Date.parse(last);
-  }).length;
-}
-
 /** "5 minutes ago", "yesterday", in the viewer's locale; a date after 30 days. */
 export function relativeRunTime(iso: string, locale: string, now: number = Date.now()): string {
   const at = Date.parse(iso);

@@ -10,7 +10,6 @@ import {
   runState,
   runTone,
   runsInFlight,
-  unseenFailures,
 } from './trigger-runs-logic';
 
 describe('runState', () => {
@@ -79,33 +78,6 @@ describe('parsePayload', () => {
     expect(parsePayload('[]')).toEqual({ ok: false, error: 'object' });
     expect(parsePayload('null')).toEqual({ ok: false, error: 'object' });
     expect(parsePayload('3')).toEqual({ ok: false, error: 'object' });
-  });
-});
-
-describe('unseenFailures', () => {
-  const runs = [
-    { slug: 'nightly', started_at: '2026-10-10T10:00:00.000Z' },
-    { slug: 'nightly', started_at: '2026-10-12T10:00:00.000Z' },
-    { slug: 'hook', started_at: '2026-10-11T10:00:00.000Z' },
-    { slug: 'gone', started_at: '2026-10-12T10:00:00.000Z' },
-  ];
-
-  test('counts failures after the last good fire, of triggers on the page', () => {
-    expect(
-      unseenFailures(runs, [
-        { slug: 'nightly', last_fired_at: '2026-10-11T00:00:00.000Z' },
-        { slug: 'hook', last_fired_at: null },
-      ]),
-    ).toBe(2);
-  });
-
-  test('zero once every trigger fired well after its failures', () => {
-    expect(
-      unseenFailures(runs, [
-        { slug: 'nightly', last_fired_at: '2026-10-13T00:00:00.000Z' },
-        { slug: 'hook', last_fired_at: '2026-10-13T00:00:00.000Z' },
-      ]),
-    ).toBe(0);
   });
 });
 

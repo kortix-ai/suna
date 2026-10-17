@@ -20109,8 +20109,6 @@
       "texta9cd409ba9ca": "Rejouer cette exécution non signée ?",
       "text776bb15115b3": "Sa signature n’a pas été vérifiée. Un rejeu renvoie le même payload à l’agent.",
       "text2f1b3ba06cfb": "Impossible de rejouer l’exécution",
-      "text24afc952b6cc": "Exécutions échouées",
-      "text6c5ebd6c3b4f": "Les exécutions échouées apparaîtront ici",
       "text8dcda9f17257": "{value0} crédits",
       "text026c6dbbbec5": "Copier le payload",
       "textff2c3559cd6b": "Prévisualisez le prompt que produit ce payload, ou exécutez le déclencheur avec.",

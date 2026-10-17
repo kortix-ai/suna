@@ -20109,8 +20109,6 @@
       "texta9cd409ba9ca": "Repetir esta execução sem assinatura?",
       "text776bb15115b3": "A assinatura não foi verificada. Uma repetição envia o mesmo payload ao agente novamente.",
       "text2f1b3ba06cfb": "Não foi possível repetir a execução",
-      "text24afc952b6cc": "Execuções com falha",
-      "text6c5ebd6c3b4f": "As execuções com falha aparecerão aqui",
       "text8dcda9f17257": "{value0} créditos",
       "text026c6dbbbec5": "Copiar payload",
       "textff2c3559cd6b": "Pré-visualize o prompt que este payload gera ou execute o gatilho com ele.",

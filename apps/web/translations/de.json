@@ -20109,8 +20109,6 @@
       "texta9cd409ba9ca": "Diesen unsignierten Lauf wiederholen?",
       "text776bb15115b3": "Die Signatur wurde nicht verifiziert. Eine Wiederholung sendet denselben Payload erneut an den Agenten.",
       "text2f1b3ba06cfb": "Lauf konnte nicht wiederholt werden",
-      "text24afc952b6cc": "Fehlgeschlagene Läufe",
-      "text6c5ebd6c3b4f": "Fehlgeschlagene Läufe erscheinen hier",
       "text8dcda9f17257": "{value0} Credits",
       "text026c6dbbbec5": "Payload kopieren",
       "textff2c3559cd6b": "Zeige den Prompt, den dieser Payload erzeugt, oder führe den Trigger damit aus.",

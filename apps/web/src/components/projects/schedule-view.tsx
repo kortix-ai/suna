@@ -30,7 +30,6 @@ import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CountBadge } from '@/components/ui/count-badge';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
@@ -61,13 +60,7 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import {
-  contract,
-  qk,
-  useProjectTriggerEventApps,
-  useProjectTriggerRuns,
-  useVisibleAgents,
-} from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import {
   LightningIcon,
   LockKeyIcon,
@@ -107,11 +100,8 @@ import {
   groupTriggersByApp,
   parseTriggerFilter,
   readTriggerSheet,
-  triggerCounts,
   triggerSheetHref,
 } from './schedule/trigger-filter';
-import { unseenFailures } from './schedule/trigger-runs-logic';
-import { RunList, runsOf } from './schedule/trigger-runs-panel';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { useEventTitles } from './schedule/use-event-titles';
 
@@ -291,9 +281,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   );
   // `?type=cron|event|webhook` is the kind filter; anything else, and `event` while events are off, is all.
   const filter = parseTriggerFilter(searchParams?.get('type'), filters);
-  // `?type=failed` lists the project's failed runs instead of its triggers.
-  const failedView = searchParams?.get('type') === 'failed';
-  const setFilter = (next: TriggerFilter | 'failed') => {
+  const setFilter = (next: TriggerFilter) => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (next === 'all') params.delete('type');
     else params.set('type', next);
@@ -390,7 +378,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, showContent && triggers.length > 0);
   const eventNames = useEventTitles(projectId, triggers, eventsOn, eventApps.data?.apps);
-  const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
   const filtered = useMemo(
     () => ofKind.filter((t) => matchesQuery(t, debouncedQuery, tI18nComplete)),
@@ -416,18 +403,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     [filter, filtered, eventApps.data],
   );
 
-  const failedRuns = useProjectTriggerRuns(
-    projectId,
-    { status: 'failed' },
-    { enabled: showContent },
-  );
-  const failedCount = useMemo(
-    () => unseenFailures(runsOf(failedRuns), triggers),
-    [failedRuns, triggers],
-  );
-  // The tab follows every loaded failed run; only the badge follows the unseen ones.
-  const showFailed = runsOf(failedRuns).length > 0 || failedView;
-  const showFilter = showContent && (triggers.length > 0 || filter !== 'all' || showFailed);
+  const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
   // An unknown slug matches nothing: the sheet stays closed, with no error.
   const selected = triggers.find((t) => t.slug === sheet.slug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
@@ -457,8 +433,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           // search, Pause all and New trigger share one full-width row.
           stacked={!!selected}
           search={
-            // The search filters triggers, not runs: the Failed runs view has none.
-            showContent && triggers.length > 0 && !failedView ? (
+            showContent && triggers.length > 0 ? (
               <InputGroupSearch>
                 <InputGroupSearchIcon>
                   <SearchIcon />
@@ -478,25 +453,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           filters={
             showFilter ? (
               <Tabs
-                value={failedView ? 'failed' : filter}
-                onValueChange={(next) =>
-                  setFilter(next === 'failed' ? 'failed' : parseTriggerFilter(next, filters))
-                }
+                value={filter}
+                onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
                 className="max-w-full overflow-x-auto"
               >
                 <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
                   {filters.map((value) => (
-                    <TabsTrigger key={value} value={value} className="gap-1.5">
+                    <TabsTrigger key={value} value={value}>
                       {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                      <CountBadge count={counts[value]} />
                     </TabsTrigger>
                   ))}
-                  {showFailed ? (
-                    <TabsTrigger value="failed" className="gap-1.5">
-                      {tI18nComplete.raw('text24afc952b6cc')}
-                      {failedCount > 0 ? <CountBadge count={failedCount} tone="waiting" /> : null}
-                    </TabsTrigger>
-                  ) : null}
                 </TabsList>
               </Tabs>
             ) : undefined
@@ -567,26 +533,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     {tI18nComplete.raw('textd8b8392e2c54')}
                   </Button>
                 }
-              />
-            ) : failedView ? (
-              <RunList
-                projectId={projectId}
-                query={failedRuns}
-                emptyTitle={tI18nComplete.raw('text6c5ebd6c3b4f')}
-                title={(run) => {
-                  const owner = triggers.find((t) => t.slug === run.slug);
-                  return owner ? (
-                    <button
-                      type="button"
-                      onClick={() => openTrigger(run.slug, 'runs')}
-                      className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none focus-visible:underline"
-                    >
-                      {triggerName(owner)}
-                    </button>
-                  ) : (
-                    <span className="min-w-0 truncate text-sm font-medium">{run.slug}</span>
-                  );
-                }}
               />
             ) : filter !== 'all' && ofKind.length === 0 ? (
               <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />

@@ -29,17 +29,6 @@ export function filterTriggers(
   return filter === 'all' ? triggers : triggers.filter((t) => t.type === filter);
 }
 
-export function triggerCounts(triggers: ProjectTrigger[]): Record<TriggerFilter, number> {
-  const counts: Record<TriggerFilter, number> = {
-    all: triggers.length,
-    cron: 0,
-    event: 0,
-    webhook: 0,
-  };
-  for (const t of triggers) if (t.type in counts) counts[t.type as TriggerKind] += 1;
-  return counts;
-}
-
 export interface TriggerAppGroup {
   /** Provider app slug, falling back to the connector slug. */
   app: string;
