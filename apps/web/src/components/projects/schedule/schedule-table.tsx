@@ -34,13 +34,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Copy } from '@/features/icon/icons/copy';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
-import {
-  DotsThreeIcon,
-  LinkIcon,
-  PauseIcon,
-  PlayIcon,
-  TrashIcon,
-} from '@phosphor-icons/react';
+import { DotsThreeIcon, LinkIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 import { Fragment, type ReactNode } from 'react';
 import type { TriggerControls } from './trigger-controls';
 
@@ -233,7 +227,7 @@ function ScheduleTableRow({
               >
                 {name}
               </button>
-              <TriggerStatusBadge trigger={trigger} hideLive hint={reason} />
+              <TriggerStatusBadge trigger={trigger} hint={reason} />
             </span>
             <span className="text-muted-foreground block truncate text-xs @lg/triggers:hidden">
               {when}

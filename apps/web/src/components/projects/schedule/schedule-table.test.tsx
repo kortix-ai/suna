@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectTrigger } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { type EventApp, indexEventApps } from './event-trigger-copy';
@@ -61,7 +61,11 @@ function row(trigger: ProjectTrigger, withCatalog = true): string {
 // showed it as an ordinary active schedule.
 describe('a trigger whose last run failed', () => {
   test('shows the Error badge on its row, and no red tile or error line', () => {
-    const out = row({ ...base, last_status: 'failed', last_error: 'Provider unavailable: socket hang up' });
+    const out = row({
+      ...base,
+      last_status: 'failed',
+      last_error: 'Provider unavailable: socket hang up',
+    });
     expect(out).toContain('Error');
     expect(out).not.toContain('Provider unavailable');
   });
@@ -69,8 +73,17 @@ describe('a trigger whose last run failed', () => {
   test('a healthy trigger shows no badge at all', () => {
     const out = row(base);
     expect(out).not.toContain('data-slot="badge"');
-    expect(out).not.toContain('Live');
+    // The state rides on the clock: a green reflection, named for screen readers.
+    expect(out).toContain('role="img" aria-label="Live"');
+    expect(out).toContain('text-kortix-green');
     expect(out).not.toContain('kortix-red');
+  });
+
+  test('a paused trigger shows no badge: a muted clock named Paused', () => {
+    const out = row({ ...base, enabled: false });
+    expect(out).not.toContain('data-slot="badge"');
+    expect(out).toContain('role="img" aria-label="Paused"');
+    expect(out).not.toContain('text-kortix-green');
   });
 });
 
@@ -134,7 +147,10 @@ describe('an app event trigger', () => {
   });
 
   test('falls back to the slug as written, never a capitalised slug', () => {
-    const out = row(eventTrigger({ app: 'docs-mcp', connector: 'docs-mcp', type: 'DOCS_MCP_PAGE_EDITED' }), false);
+    const out = row(
+      eventTrigger({ app: 'docs-mcp', connector: 'docs-mcp', type: 'DOCS_MCP_PAGE_EDITED' }),
+      false,
+    );
     expect(out).toContain('docs-mcp');
     expect(out).not.toContain('Docs-mcp');
     expect(out).not.toContain('Docs mcp');
@@ -148,7 +164,9 @@ describe('an app event trigger', () => {
   });
 
   test('a live trigger shows no status badge', () => {
-    expect(row(eventTrigger({}))).not.toContain('Live');
+    const out = row(eventTrigger({}));
+    expect(out).not.toContain('data-slot="badge"');
+    expect(out).toContain('role="img" aria-label="Live"');
   });
 
   test('shows Needs connection until a shared account exists', () => {
@@ -172,7 +190,9 @@ describe('an app event trigger', () => {
   });
 
   test('shows the last event, not the last fire', () => {
-    const out = row(eventTrigger({ last_event_at: new Date(Date.now() - 3 * 60_000).toISOString() }));
+    const out = row(
+      eventTrigger({ last_event_at: new Date(Date.now() - 3 * 60_000).toISOString() }),
+    );
     expect(out).toContain('3 minutes ago');
   });
 });

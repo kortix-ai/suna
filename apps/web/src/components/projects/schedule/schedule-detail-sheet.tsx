@@ -283,6 +283,7 @@ function SheetPanel({
         <div className={cn('flex min-w-0 items-center gap-3', !split && 'pr-10')}>
           <TriggerTile
             trigger={trigger}
+            size="sm"
             logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
           />
           <div className="min-w-0 flex-1 space-y-1">
