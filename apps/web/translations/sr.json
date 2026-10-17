@@ -20145,7 +20145,8 @@
       "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
       "agentsListSubagentsTitle": "Подагенти",
       "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
-      "agentsListAlsoSubagent": "Такође подагент"
+      "agentsListAlsoSubagent": "Такође подагент",
+      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

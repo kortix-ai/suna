@@ -20145,7 +20145,8 @@
       "textced57bebd466": "Reativa os agendamentos e webhooks deste projeto.",
       "agentsListSubagentsTitle": "Subagentes",
       "agentsListSubagentsHint": "Outros agentes os chamam durante uma sessão. Ninguém inicia um chat com eles.",
-      "agentsListAlsoSubagent": "Também subagente"
+      "agentsListAlsoSubagent": "Também subagente",
+      "servedModelTurnRow": "{requested} falhou ({reason}) — alterado para {served}."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

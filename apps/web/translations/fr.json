@@ -20145,7 +20145,8 @@
       "textced57bebd466": "Réactive les planifications et les webhooks de ce projet.",
       "agentsListSubagentsTitle": "Sous-agents",
       "agentsListSubagentsHint": "D'autres agents les appellent pendant une session. Personne ne démarre de chat avec eux.",
-      "agentsListAlsoSubagent": "Aussi sous-agent"
+      "agentsListAlsoSubagent": "Aussi sous-agent",
+      "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

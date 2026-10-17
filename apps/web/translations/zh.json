@@ -20145,7 +20145,8 @@
       "textced57bebd466": "重新开启此项目的定时任务和 Webhook。",
       "agentsListSubagentsTitle": "子代理",
       "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
-      "agentsListAlsoSubagent": "也可作为子代理"
+      "agentsListAlsoSubagent": "也可作为子代理",
+      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

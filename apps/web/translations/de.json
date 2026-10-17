@@ -20145,7 +20145,8 @@
       "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
       "agentsListSubagentsTitle": "Subagenten",
       "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
-      "agentsListAlsoSubagent": "Auch Subagent"
+      "agentsListAlsoSubagent": "Auch Subagent",
+      "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

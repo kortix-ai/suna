@@ -20145,7 +20145,8 @@
       "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto.",
       "agentsListSubagentsTitle": "Subagentes",
       "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
-      "agentsListAlsoSubagent": "También subagente"
+      "agentsListAlsoSubagent": "También subagente",
+      "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

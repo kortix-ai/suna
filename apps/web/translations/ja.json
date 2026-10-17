@@ -20145,7 +20145,8 @@
       "textced57bebd466": "このプロジェクトのスケジュールと Webhook を再開します。",
       "agentsListSubagentsTitle": "サブエージェント",
       "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
-      "agentsListAlsoSubagent": "サブエージェントとしても使用"
+      "agentsListAlsoSubagent": "サブエージェントとしても使用",
+      "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

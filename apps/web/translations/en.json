@@ -20156,7 +20156,8 @@
       "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
       "agentsListSubagentsTitle": "Subagents",
       "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
-      "agentsListAlsoSubagent": "Also a subagent"
+      "agentsListAlsoSubagent": "Also a subagent",
+      "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
