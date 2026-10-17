@@ -20116,7 +20116,8 @@
       "text237112b89b77": "Letzte Läufe",
       "text9da843b113d4": "Balkenhöhe = Dauer des Laufs",
       "texta36b75929fc3": "Letzte {value0} Läufe, {value1} fehlgeschlagen",
-      "text15e8856d4d77": "Startet eine echte Sitzung. Es fallen Kosten an."
+      "text15e8856d4d77": "Startet eine echte Sitzung. Es fallen Kosten an.",
+      "text858e4ba7a29f": "Pausieren"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

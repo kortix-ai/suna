@@ -20116,7 +20116,8 @@
       "text237112b89b77": "Exécutions récentes",
       "text9da843b113d4": "La hauteur de la barre est la durée",
       "texta36b75929fc3": "{value0} dernières exécutions, {value1} échouées",
-      "text15e8856d4d77": "Lance une vraie session. Des coûts s’appliquent."
+      "text15e8856d4d77": "Lance une vraie session. Des coûts s’appliquent.",
+      "text858e4ba7a29f": "Mettre en pause"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

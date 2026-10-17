@@ -20116,7 +20116,8 @@
       "text237112b89b77": "Execuções recentes",
       "text9da843b113d4": "A altura da barra é a duração",
       "texta36b75929fc3": "Últimas {value0} execuções, {value1} com falha",
-      "text15e8856d4d77": "Inicia uma sessão real. Há custos."
+      "text15e8856d4d77": "Inicia uma sessão real. Há custos.",
+      "text858e4ba7a29f": "Pausar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

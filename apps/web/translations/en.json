@@ -20127,7 +20127,8 @@
       "text237112b89b77": "Recent runs",
       "text9da843b113d4": "Bar height is the run’s duration",
       "texta36b75929fc3": "Last {value0} runs, {value1} failed",
-      "text15e8856d4d77": "Runs a real session. Costs apply."
+      "text15e8856d4d77": "Runs a real session. Costs apply.",
+      "text858e4ba7a29f": "Pause"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

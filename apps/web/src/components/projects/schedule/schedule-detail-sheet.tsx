@@ -278,15 +278,20 @@ function SheetPanel({
           Run now / Pause actions would scroll away. `bg-sidebar` matches the
           sheet's own surface so content passes behind it, not through it.
           `text-left` is not redundant: SheetHeader's base centres on a phone. */}
-      <SheetHeader className={cn(surface, 'sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left')}>
-        {/* `pr-10` clears the floating sheet's own close button; the split column renders its own. */}
-        <div className={cn('flex min-w-0 items-center gap-3', !split && 'pr-10')}>
-          <TriggerTile
-            trigger={trigger}
-            size="sm"
-            logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
-          />
-          <div className="min-w-0 flex-1 space-y-1">
+      {/* `pb-0`: the tab bar's own rule is the header's bottom edge. */}
+      <SheetHeader className={cn(surface, 'sticky top-0 z-10 space-y-3 px-4 pt-4 pb-0 text-left')}>
+        {/* Top-aligned on the title's 24 px line: `mt-1` centres the 16 px mark on
+            it, `-my-1` the 29 px close button. `pr-10` clears the floating
+            sheet's own close button; the split column renders its own. */}
+        <div className={cn('flex min-w-0 items-start gap-2.5', !split && 'pr-10')}>
+          <span className="mt-1 flex shrink-0">
+            <TriggerTile
+              trigger={trigger}
+              size="sm"
+              logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
+            />
+          </span>
+          <div className="min-w-0 flex-1 space-y-0.5">
             <div className="flex min-w-0 items-center gap-2">
               <Title className="truncate text-base font-semibold tracking-tight">
                 {triggerName(trigger)}
@@ -311,7 +316,7 @@ function SheetPanel({
                   variant="ghost"
                   size="icon-base"
                   aria-label={t.raw('text7d9eb7acb13e')}
-                  className="-mr-1.5 shrink-0"
+                  className="-my-1 -mr-1.5 shrink-0"
                 >
                   <XIcon className="size-4" />
                 </Button>
@@ -327,7 +332,7 @@ function SheetPanel({
                 {running ? (
                   <Loading className="size-3.5 shrink-0" />
                 ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  <PlayIcon className="size-3.5 shrink-0" />
                 )}
                 {t.raw('text0991397702fa')}
               </Button>
@@ -335,7 +340,7 @@ function SheetPanel({
             {controls.canUpdate ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 className="gap-1.5"
                 onClick={() => toggle.mutate(!active)}
                 disabled={toggle.isPending}
@@ -343,18 +348,18 @@ function SheetPanel({
                 {toggle.isPending ? (
                   <Loading className="size-3.5 shrink-0" />
                 ) : active ? (
-                  <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+                  <PauseIcon className="size-3.5 shrink-0" />
                 ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  <PlayIcon className="size-3.5 shrink-0" />
                 )}
-                {active ? 'Pause' : 'Resume'}
+                {active ? t.raw('text858e4ba7a29f') : t.raw('textd640c7421da0')}
               </Button>
             ) : null}
             <div className="min-w-2 flex-1" />
             {controls.canFire || controls.canDelete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
+                  <Button size="icon-base" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
                     <DotsThreeIcon className="size-4 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -381,11 +386,13 @@ function SheetPanel({
           </div>
         ) : null}
 
-        <TabsList type="underline" size="sm" className="justify-start">
-          <TabsTrigger value="settings" className="w-fit flex-none">
+        {/* Full width with `px-0` triggers: the labels start on the content edge
+            and the rule spans the column, as the header's bottom line. */}
+        <TabsList type="underline" size="sm" className="w-full justify-start gap-5">
+          <TabsTrigger value="settings" className="flex-none px-0">
             {t.raw('text74a883a037bc')}
           </TabsTrigger>
-          <TabsTrigger value="runs" className="w-fit flex-none">
+          <TabsTrigger value="runs" className="flex-none px-0">
             {t.raw('text848f54e89660')}
           </TabsTrigger>
         </TabsList>
@@ -397,7 +404,7 @@ function SheetPanel({
           stayed a shrinkable flex child that clipped panels below the fold.
           The content element above owns scrolling; a second scroller here
           would send the wheel to whichever surface the cursor is over. */}
-      <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-2 pb-0">
+      <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-5 pb-0">
         {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
         <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
           {loading ? (
