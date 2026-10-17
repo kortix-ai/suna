@@ -3,9 +3,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   __testing,
   clampCode,
+  PRELOAD_LANGS,
   highlightAsync,
   highlightSync,
-  PRELOAD_LANGS,
   SHIKI_THEME_DARK,
   SHIKI_THEME_LIGHT,
   shikiKey,

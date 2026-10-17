@@ -52,6 +52,9 @@ test('a mounted cold grammar honors mode changes and toggle-back', async () => {
       mounted?.unmount();
     });
     importer.mockRestore();
+    // The grammars stay in the module-level loadedLangs singleton otherwise,
+    // and the highlighter suite asserts they were never loaded.
+    __testing.loadedLangs.delete('zig');
     __testing.shikiCache.clear();
   }
 });
@@ -103,6 +106,7 @@ test('retained async HTML cannot satisfy the opposite mode while its grammar rel
       mounted?.unmount();
     });
     importer.mockRestore();
+    __testing.loadedLangs.delete('ruby');
     __testing.shikiCache.clear();
   }
 });
