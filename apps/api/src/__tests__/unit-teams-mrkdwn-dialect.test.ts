@@ -73,8 +73,9 @@ describe('mrkdwnToTeamsMarkdown', () => {
     expect(toTeams('```\n*not bold* :warning:\n```')).toBe('```\n*not bold* :warning:\n```');
   });
 
-  test('a balance stays bold and keeps its currency', () => {
-    const out = toTeams(classifyTurnError({ name: 'APIError', statusCode: 402, message: 'insufficient credits: $1.23 remaining' }).text);
+  test('a balance stays bold and keeps its unit', () => {
+    const out = toTeams(classifyTurnError({ name: 'APIError', statusCode: 402, message: 'Insufficient credits. Balance: 123 credits, required: 3 credits' }).text);
+    expect(out).toContain('**123 credits**');
     expect(out).toContain('💳');
     expect(out).not.toContain(':credit_card:');
   });

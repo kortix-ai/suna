@@ -110,7 +110,6 @@ export async function assertAppAccountFunded(accountId: string): Promise<void> {
   if (gate.ok) return;
   throw new AppAccountUnfundedError(accountId, gate.message, gate.reason, {
     balance: gate.balance,
-    billing_model: gate.billingModel,
     has_subscription: gate.hasSubscription,
     billing_state: gate.billingState,
     account_id: accountId,
@@ -138,7 +137,8 @@ export async function countAccountApps(accountId: string): Promise<number> {
   const [row] = await db
     .select({ value: count() })
     .from(apps)
-    .where(and(eq(apps.accountId, accountId), isNull(apps.deletedAt)));
+    // An external App runs nothing, so it takes no slot.
+    .where(and(eq(apps.accountId, accountId), isNull(apps.deletedAt), isNull(apps.externalUrl)));
   return Number(row?.value ?? 0);
 }
 

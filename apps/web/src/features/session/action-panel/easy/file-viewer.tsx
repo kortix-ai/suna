@@ -24,6 +24,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
@@ -54,7 +55,13 @@ function extensionOf(fileName: string): string {
 
 export function languageFor(fileName: string): string {
   const language = getLanguageFromExt(fileName);
-  return extensionOf(fileName) === 'svg' ? 'xml' : extensionOf(fileName) === 'htm' ? 'html' : language === 'plaintext' ? 'text' : language;
+  return extensionOf(fileName) === 'svg'
+    ? 'xml'
+    : extensionOf(fileName) === 'htm'
+      ? 'html'
+      : language === 'plaintext'
+        ? 'text'
+        : language;
 }
 
 export function isMarkdown(fileName: string): boolean {
@@ -173,20 +180,23 @@ export function FileViewer({
           />
         </ViewerPathPill>
 
-        <span className="flex shrink-0 items-center gap-1">
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
           {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
           {markdown && (
             <SaveAsPdfButton
+              variant="secondary"
               fileName={fileName}
               content={content}
-              className="size-7"
               iconClassName="size-3.5"
             />
           )}
           <ViewerDownloadAction download={path ? { path, fileName } : undefined} />
           <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
-        </span>
+        </ButtonGroup>
       </div>
 
       {/* Only scrolling and sizing live here. Padding belongs to each view (see
@@ -314,7 +324,7 @@ function FileBody({
     // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
     // off and renders the body as a document (embedded markup stays text), the
     // same component the chat's inline preview uses.
-    return <MarkdownWithFrontmatter content={content} className="p-6" />;
+    return <MarkdownWithFrontmatter content={content} documentPath={path} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

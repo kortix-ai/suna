@@ -133,7 +133,7 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets).toHaveLength(1);
     expect(walletResets[0].accountId).toBe('acc_300_left');
     expect(walletResets[0].amount).toBe(2);
-    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 2 credits');
+    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 200 credits');
     expect(walletResets[0].key).toEqual({ event: 'free_tier_rotation_acc_300_left_2026-07' });
   });
 
@@ -185,7 +185,7 @@ describe('free tier monthly credit rotation', () => {
   test.each([
     ['a free account never granted before is processed', { tier: 'free', nextCreditGrant: null }, 'processed'],
     ['a free account not due yet is skipped', { tier: 'free', nextCreditGrant: '2026-08-25T00:00:00.000Z' }, 'skipped'],
-    ['a per-seat account is skipped', { tier: 'per_seat', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
+    ['a credits account is skipped', { tier: 'credits', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
     ['a none-tier account is skipped', { tier: 'none', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
   ] as const)('%s', async (_name, row, outcome) => {
     freeAccountsDueResult = [createMockCreditAccount({ accountId: 'acc_row', ...row })];

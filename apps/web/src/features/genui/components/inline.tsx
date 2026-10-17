@@ -29,9 +29,13 @@ const BADGE_CLASS: Record<BadgeTone, string> = {
   destructive: 'bg-kortix-red/15 text-foreground',
 };
 
+/** The badge's classes, for a host chip that must look exactly like a genui badge. */
+export const genuiBadgeClass = (tone: BadgeTone) =>
+  cn('inline-flex w-fit items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap', BADGE_CLASS[tone]);
+
 export function GenuiBadge({ props }: GenuiComponentProps) {
   return (
-    <span className={cn('inline-flex w-fit items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap', BADGE_CLASS[badgeTone(props.tone)])}>
+    <span className={genuiBadgeClass(badgeTone(props.tone))}>
       {props.label}
     </span>
   );
@@ -61,6 +65,17 @@ export function GenuiImage({ props }: GenuiComponentProps) {
   const t = useTranslations('genui');
   const inGrid = useContext(GenuiImageGridContext);
   const src = String(props.src);
+  // An image with text is a figure: the picture beside the sentences that say what to look for in it.
+  if (props.text && !inGrid) {
+    return (
+      <figure className="flex items-start gap-4">
+        <span className="bg-muted w-28 shrink-0 overflow-hidden rounded-lg sm:w-40 [&_img]:w-full [&_img]:rounded-none [&_img]:outline-0 [&>span]:block">
+          <MarkdownImage src={src} alt={props.alt} flush />
+        </span>
+        <figcaption className="text-foreground min-w-0 text-sm text-pretty">{props.text}</figcaption>
+      </figure>
+    );
+  }
   return (
     <figure
       className={cn(

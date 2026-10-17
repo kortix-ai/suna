@@ -95,6 +95,13 @@ describe('the notice text', () => {
     expect(body).toContain('`/workspace/skills`')
   })
 
+  test('a kortix.yaml v3 project is told about kortix.yaml only: it has no harness folder', () => {
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('harnesses/opencode', '{"schema":3,"agent":{}}') })
+    expect(body).toContain('edit `/workspace/kortix.yaml`')
+    expect(body).not.toContain('/workspace/harnesses')
+    expect(body).not.toContain('/workspace/agents')
+  })
+
   test('names the project config dir when the manifest moved it', () => {
     const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('config/agents') })
     expect(body).toContain('/workspace/config/agents')

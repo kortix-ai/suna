@@ -22,6 +22,7 @@ import {
   materializeRelease,
   readBootConfigPointer,
   readBootLinkTarget,
+  readBootReleaseRoot,
   readQuarantine,
   releaseDir,
   type ReleaseManifest,
@@ -285,6 +286,33 @@ describe('the desired release is what the box runs', () => {
     expect(run.starts).toBe(1)
     expect(await readBootLinkTarget(store)).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect(api.archiveRequests.length).toBe(1)
+  })
+
+  // Project tools load from the release root (`readBootReleaseRoot`), not from
+  // the config dir: a tools-only release (an agent without repository access)
+  // has no OpenCode config dir and serves the image default.
+  test('the served release is recorded as the project tool root, with or without an OpenCode config dir', async () => {
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, release.descriptor.release_id!))
+
+    resetConfigReleaseStateForTests()
+    const toolsOnly = mkdtempSync(join(root, 'tools-only-'))
+    initRepo(toolsOnly)
+    write(toolsOnly, 'tools/lookup_order.ts', 'export default {}\n')
+    const built = buildRelease(toolsOnly, commitAll(toolsOnly, 'tools'), null, { governance: GOV })
+    serveRelease(api, built)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id })
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, built.descriptor.release_id!))
+    expect(existsSync(join(releaseDir(store, built.descriptor.release_id!), 'tools/lookup_order.ts'))).toBe(true)
+  })
+
+  test('a governance-only release records no project tool root', async () => {
+    await boot()
+    resetConfigReleaseStateForTests()
+    api.respond({ status: 200, json: { ...release.descriptor, release_id: 'b'.repeat(64), config_tree_id: null, archive: null, files: null, reason: 'repository access withheld' } })
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBeNull()
   })
 
   test('an intact copy from an earlier boot is reused without a download', async () => {
@@ -626,5 +654,32 @@ describe('what the API decides, the session is told and the box runs', () => {
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe('{}')
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(none.descriptor.compiled_governance_etag!)
     expect(await readQuarantine(store)).toEqual({})
+  })
+})
+
+// kortix.yaml v3 has no harness config folder: the compiled set is the only
+// input. A `harnesses/opencode` or `.kortix/opencode` left in the repository is
+// never served, and the boot is still proven on the image default.
+describe('kortix.yaml v3: no project OpenCode config dir', () => {
+  const V3 = '{"schema":3,"default_agent":"kortix","agent":{"kortix":{"mode":"primary"}}}'
+
+  test('a v3 release serves the image default, keeps the release as the config root, and is proven', async () => {
+    write(work, 'kortix.yaml', 'kortix_version: 3\n')
+    const built = buildRelease(work, commitAll(work, 'v3'), DIR, { governance: V3 })
+    serveRelease(api, built)
+    const run = await boot()
+    const releaseRoot = releaseDir(store, built.descriptor.release_id!)
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id, proven: true })
+    expect(run.servedDirs).not.toContain(join(releaseRoot, DIR))
+    expect(await readBootReleaseRoot(store)).toBe(releaseRoot)
+    expect(await readBootConfigPointer(store)).toMatchObject({ release_id: built.descriptor.release_id, config_dir: null, proven: true })
+  })
+
+  test('config releases off: a v3 checkout serves the image default, with /workspace as the config root', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = V3
+    api.respond(FEATURE_DISABLED)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, releasesEnabled: false, proven: true })
+    expect(await readBootReleaseRoot(store)).toBe(work)
   })
 })

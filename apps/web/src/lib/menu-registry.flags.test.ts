@@ -76,13 +76,14 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-apps` is the only remaining flagged palette entry. The filter
-    // line is the whole gate, so it is pinned literally — a rename or a
-    // fail-OPEN rewrite of it would otherwise pass every other test here.
+    // `proj-shared-files` is the only remaining flagged palette entry (Apps
+    // graduated off the flag system in 2026-10). The filter line is the whole
+    // gate, so it is pinned literally — a rename or a fail-OPEN rewrite of it
+    // would otherwise pass every other test here.
     const flagged = menuRegistry.filter(
       (item) => item.requiresFlag && item.showIn.includes('commandPalette'),
     );
-    expect(flagged.map((item) => item.id)).toContain('proj-apps');
+    expect(flagged.map((item) => item.id)).toEqual(['proj-shared-files']);
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );

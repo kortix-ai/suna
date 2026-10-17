@@ -1,9 +1,25 @@
 'use client';
 
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  type DarkThemeId,
+  type LightThemeId,
+} from '@/lib/interface-themes';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { create } from 'zustand';
+
+// A literal here for the persisted-store registry (persisted-store-coverage.test.ts reads
+// it from this file); the type pins it to the key the pre-paint theme script reads.
+const USER_PREFERENCES_STORE_NAME = 'kortix-user-preferences' satisfies typeof USER_PREFERENCES_STORAGE_KEY;
 import { persist } from 'zustand/middleware';
+
+// The disk key. `interface-themes.ts` interpolates the same literal into the
+// no-flash boot script, and the persisted-store-coverage walker requires a
+// `persist()` name it can resolve in this file — so it is declared here and
+// the two copies must stay in sync (both say 'kortix-user-preferences').
+const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
 
 // ============================================================================
 // Types
@@ -32,8 +48,15 @@ export interface KeyboardShortcutPreferences {
 
 export interface UserPreferences {
   keyboard: KeyboardShortcutPreferences;
-  /** Selected Kortix theme ID (e.g. 'default', 'ember', 'aurora') */
-  themeId: string;
+  /**
+   * The palette used in light mode and in dark mode — defaults 'pure-light'
+   * and 'pure-dark'. The mode itself (light / dark / system) stays in
+   * `next-themes`; see `lib/interface-themes.ts`. Legacy persisted preferences
+   * predate these keys, so read sites go through `normalizeLightTheme` /
+   * `normalizeDarkTheme`.
+   */
+  lightTheme: LightThemeId;
+  darkTheme: DarkThemeId;
   /** Selected desktop wallpaper ID */
   wallpaperId: string;
   /** Session action panel mode — defaults to 'easy' for all users */
@@ -75,8 +98,11 @@ interface UserPreferencesState {
   /** Update keyboard shortcut preferences (partial merge) */
   setKeyboardPreferences: (prefs: Partial<KeyboardShortcutPreferences>) => void;
 
-  /** Set the active Kortix theme by ID */
-  setThemeId: (themeId: string) => void;
+  /** Set the palette used in light mode */
+  setLightTheme: (theme: LightThemeId) => void;
+
+  /** Set the palette used in dark mode */
+  setDarkTheme: (theme: DarkThemeId) => void;
 
   /** Set the active desktop wallpaper by ID */
   setWallpaperId: (wallpaperId: string) => void;
@@ -96,7 +122,8 @@ interface UserPreferencesState {
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   keyboard: getDefaultKeyboardPreferences(),
-  themeId: 'graphite',
+  lightTheme: DEFAULT_LIGHT_THEME,
+  darkTheme: DEFAULT_DARK_THEME,
   wallpaperId: DEFAULT_WALLPAPER_ID,
   panelMode: 'easy',
   conversationDensity: 'normal',
@@ -110,9 +137,12 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
 
       patchPreferences: (partial) => set({ preferences: { ...get().preferences, ...partial } }),
 
-      setKeyboardPreferences: (prefs) => get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
+      setKeyboardPreferences: (prefs) =>
+        get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
 
-      setThemeId: (themeId) => get().patchPreferences({ themeId }),
+      setLightTheme: (lightTheme) => get().patchPreferences({ lightTheme }),
+
+      setDarkTheme: (darkTheme) => get().patchPreferences({ darkTheme }),
 
       setWallpaperId: (wallpaperId) => get().patchPreferences({ wallpaperId }),
 
@@ -137,7 +167,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       },
     }),
     {
-      name: 'kortix-user-preferences',
+      name: USER_PREFERENCES_STORE_NAME,
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,

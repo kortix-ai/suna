@@ -14,7 +14,7 @@ describe('/developers copy', () => {
 
   test('renders in the visitor language', () => {
     expect(de.hero.headline.ink).toBe('Deine KI-Belegschaft als Code.');
-    expect(de.closing.title).toBe('Fragen und Antworten.');
+    expect<string>(de.closing.title).toBe('Fragen und Antworten.');
     expect(de.cli.groups[0].label).toBe('Aufsetzen und ausliefern');
   });
 

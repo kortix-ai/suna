@@ -100,22 +100,23 @@ function component(input: {
 
 /**
  * A model string as inline markdown text: newlines collapse to one space, and the characters that
- * open links, emphasis, code, fences, or HTML are escaped. Every `toMarkdown` passes model strings
- * through this, so a string can never add markdown structure (a link, a fence, a new block).
+ * open links, emphasis, code, fences, HTML, or table cells are escaped. Every `toMarkdown` passes
+ * model strings through this, so a string can never add markdown structure (a link, a fence, a new
+ * block, a table cell).
  */
-const escapeLine = (value: string): string => value.replace(/[\\`*_[\]()<]/g, '\\$&');
+const escapeLine = (value: string): string => value.replace(/[\\`*_[\]()<|]/g, '\\$&');
 const inline = (value: unknown): string => escapeLine(String(value ?? '').replace(/\s*[\r\n]+\s*/g, ' '));
 
 /** A safe URL as a markdown link target: parentheses would end the target early. */
 const target = (value: unknown): string => String(value ?? '').replace(/\(/g, '%28').replace(/\)/g, '%29');
 
-/** A table cell: a string goes through `inline`, a number prints as is; `|` is escaped. */
-const cell = (value: unknown): string => (typeof value === 'number' ? String(value) : inline(value)).replace(/\|/g, '\\|');
+/** A table cell: a string goes through `inline` (which escapes `|`), a number prints as is. */
+const cell = (value: unknown): string => (typeof value === 'number' ? String(value) : inline(value));
 
-/** `head` is markdown already (escaped); `rows` are raw cell values. */
+/** `head` is markdown already (passed through `inline`, so `|` is escaped); `rows` are raw cell values. */
 const mdTable = (head: string[], rows: unknown[][]): string =>
   [
-    `| ${head.map((text) => text.replace(/\|/g, '\\|')).join(' | ')} |`,
+    `| ${head.join(' | ')} |`,
     `| ${head.map(() => '---').join(' | ')} |`,
     ...rows.map((row) => `| ${head.map((_, i) => cell(row[i] ?? '')).join(' | ')} |`),
   ].join('\n');
@@ -173,11 +174,13 @@ component({
 
 component({
   name: 'Image',
-  description: 'A picture. Use only URLs from tool results or files',
-  fields: { src: url(), alt: text(200), caption: optText(200) },
+  description: 'A picture. Use only URLs from tool results or files. With text, the picture sits beside 1 to 3 sentences',
+  fields: { src: url(), alt: text(200), caption: optText(200), text: optText(400) },
   urls: { src: 'required' },
   toMarkdown: (p) =>
-    [`![${inline(p.alt)}](${target(p.src)})`, p.caption ? `*${inline(p.caption)}*` : ''].filter(Boolean).join('\n\n'),
+    [`![${inline(p.alt)}](${target(p.src)})`, p.caption ? `*${inline(p.caption)}*` : '', p.text ? inline(p.text) : '']
+      .filter(Boolean)
+      .join('\n\n'),
 });
 
 component({
@@ -274,7 +277,7 @@ component({
 
 component({
   name: 'RankedItem',
-  description: 'One entry inside RankedList',
+  description: 'One entry inside RankedList. Leave image empty: options with photos are Cards',
   block: false,
   fields: { title: text(80), reason: text(240), meta: optText(80), image: url().optional(), href: url().optional() },
   urls: { image: 'optional', href: 'optional' },
@@ -414,8 +417,8 @@ component({
 component({
   name: 'Card',
   description:
-    'One item: a hotel, product, place, or person. body is plain text. subtitle is a short location or kind line. ' +
-    'rating is 0 to 5, reviews is how many, price is a short text. 2 or more Cards in a Stack show as a grid or a list (see Stack)',
+    'One item: a hotel, product, place, or person. subtitle is a short location or kind line. ' +
+    'rating is 0 to 5, reviews is how many, price is a short text. 2 or more Cards in a Stack show as a grid or a list',
   fields: {
     title: text(80),
     body: optText(600),
@@ -443,11 +446,37 @@ component({
       .join('\n\n'),
 });
 
+// ── Steps and Checklist ─────────────────────────────────────────────────────
+
+component({
+  name: 'Step',
+  description:
+    'One row inside Steps: a leg or action, what to do, its photo, and a time or cost',
+  block: false,
+  fields: { title: text(80), text: optText(500), image: url().optional(), meta: optText(40) },
+  urls: { image: 'optional' },
+  toMarkdown: (p) => `**${inline(p.title)}**${p.text ? ` — ${inline(p.text)}` : ''}${p.meta ? ` (${inline(p.meta)})` : ''}`,
+});
+
+component({
+  name: 'Steps',
+  description: 'A journey or a process in order: up to 12 rows, each with its photo, joined by a line',
+  fields: { steps: { accepts: ['Step'], min: 1, max: 12 } },
+  toMarkdown: (p, child) => nodes(p.steps).map((step, i) => `${i + 1}. ${child(step)}`).join('\n'),
+});
+
+component({
+  name: 'Checklist',
+  description: 'Things to pack or gather: a title and up to 20 items, each under 120 characters, the reader ticks off',
+  fields: { title: text(80), items: z.array(text(120)).min(1).max(20) },
+  toMarkdown: (p) => `**${inline(p.title)}**\n\n${(p.items as string[]).map((item) => `- [ ] ${inline(item)}`).join('\n')}`,
+});
+
 // ── Containers ──────────────────────────────────────────────────────────────
 
 export const GENUI_BLOCKS = [
   'Stack', 'Card', 'Stat', 'StatRow', 'Table', 'Compare', 'RankedList', 'BarChart', 'LineChart',
-  'PieChart', 'Map', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link',
+  'PieChart', 'Map', 'Steps', 'Checklist', 'Tabs', 'Accordion', 'Badge', 'Callout', 'Image', 'Link',
 ] as const;
 const INNER_BLOCKS = GENUI_BLOCKS.filter((name) => name !== 'Tabs' && name !== 'Accordion');
 
@@ -486,7 +515,7 @@ component({
 component({
   name: 'Stack',
   description:
-    'Layout. root is always a Stack. children: 1 to 12 blocks. direction: col (default) or row. ' +
+    'Layout: 2 or more blocks in one block. children: 2 to 12 blocks. direction: col (default) or row. ' +
     'layout, for 2 or more Cards: grid (big images) or list (small thumbnails); empty lets the app choose from the images',
   container: true,
   fields: {

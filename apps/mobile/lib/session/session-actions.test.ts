@@ -9,6 +9,8 @@ import {
   splitChangePath,
   summarizeSessionChanges,
   type SessionActionRowsInput,
+  sessionListActions,
+  sessionListChange,
 } from './session-actions';
 
 describe('summarizeSessionChanges', () => {
@@ -221,5 +223,25 @@ describe('sessionActionRows', () => {
 
   test('Open change request stays enabled while the session works (the prompt queues)', () => {
     expect(sessionActionRows({ ...base, busy: true }).openChangeRequest).toEqual({ visible: true, enabled: true });
+  });
+});
+
+// KRTX-2418: Pin and Archive change only the viewer's own list.
+describe('sessionListActions', () => {
+  test('Pin and Archive by default; Unpin while pinned; Unarchive while archived', () => {
+    expect(sessionListActions({ pinned_at: null, archived_at: null })).toEqual({ pin: 'pin', archive: 'archive' });
+    expect(sessionListActions({ pinned_at: '2026-10-15T10:00:00Z', archived_at: null })).toEqual({ pin: 'unpin', archive: 'archive' });
+    expect(sessionListActions({ pinned_at: null, archived_at: '2026-10-15T10:00:00Z' })).toEqual({ pin: 'pin', archive: 'unarchive' });
+  });
+
+  test('no rows when the server keeps no list state for this caller (no pinned_at field)', () => {
+    expect(sessionListActions({})).toBeNull();
+  });
+
+  test('each action sends its own flag', () => {
+    expect(sessionListChange('pin')).toEqual({ pinned: true });
+    expect(sessionListChange('unpin')).toEqual({ pinned: false });
+    expect(sessionListChange('archive')).toEqual({ archived: true });
+    expect(sessionListChange('unarchive')).toEqual({ archived: false });
   });
 });

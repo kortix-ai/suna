@@ -19,6 +19,8 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
+import { type InlinePermissionReply, replyToInlinePermission } from '@/features/session/tool/inline-permission-reply';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { partError, partStreamingInput } from '@/features/session/tool/shared/infrastructure-parts';
 import {
@@ -34,7 +36,7 @@ import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'rea
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
-  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onReply?: (requestId: string, reply: InlinePermissionReply) => Promise<void> | void;
 }
 
 function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineProps) {
@@ -50,10 +52,14 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   const label = PERMISSION_LABELS[permission.permission] || permission.permission;
 
   const handleReply = useCallback(
-    (reply: 'once' | 'always' | 'reject') => {
+    async (reply: InlinePermissionReply) => {
       if (replying) return;
       setReplying(true);
-      onReply?.(permission.id, reply);
+      // The card disappears once the runtime accepts; a refusal re-enables it.
+      const accepted = await replyToInlinePermission(onReply, permission.id, reply, (error) =>
+        errorToast(error instanceof Error ? error.message : String(error)),
+      );
+      if (!accepted) setReplying(false);
     },
     [replying, permission.id, onReply],
   );
@@ -69,7 +75,7 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
       <div className="flex items-center gap-1.5">
         <Button
           disabled={replying}
-          onClick={() => handleReply('reject')}
+          onClick={() => void handleReply('reject')}
           variant="muted"
           size="xs"
           className="hover:text-destructive hover:bg-destructive/10"
@@ -78,13 +84,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
         </Button>
         <Button
           disabled={replying}
-          onClick={() => handleReply('always')}
+          onClick={() => void handleReply('always')}
           variant="outline"
           size="xs"
         >
           {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}
         </Button>
-        <Button disabled={replying} onClick={() => handleReply('once')} variant="default" size="xs">
+        <Button disabled={replying} onClick={() => void handleReply('once')} variant="default" size="xs">
           {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}
         </Button>
       </div>
@@ -101,7 +107,7 @@ interface ToolPartRendererProps {
   call: ToolCallBlock;
   permission?: PermissionRequest;
   question?: QuestionRequest;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (requestId: string, reply: InlinePermissionReply) => Promise<void> | void;
   onQuestionReply?: (requestId: string, answers: string[][]) => void;
   onQuestionReject?: (requestId: string) => void;
   defaultOpen?: boolean;
@@ -166,8 +172,11 @@ function ToolPartRendererImpl({
   const errorStr = partError(call);
   const childBearingTaskError =
     errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
+  // A failed codemode script keeps its partial output and the calls it made before
+  // the failure: its own row draws them, with the error.
+  const drawsOwnError = childBearingTaskError || call.name === 'codemode';
 
-  if (errorStr !== undefined && !childBearingTaskError) {
+  if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {
       const slashIdx = call.name.lastIndexOf('/');
       const s = slashIdx > 0 ? call.name.slice(0, slashIdx) : null;

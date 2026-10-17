@@ -45,6 +45,8 @@ let failStatementFrom: { index: number; error: unknown } | null = null;
 let burnBudgetAt: { index: number; startedAtAgoMs: number } | null = null;
 /** Wall-clock milliseconds each mocked INSERT consumes; 0 by default. */
 let insertDelayMs = 0;
+/** Request budget each mocked INSERT burns on the scope clock, without sleeping; 0 by default. */
+let insertCostMs = 0;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -89,6 +91,8 @@ mock.module('../../shared/db', () => ({
           onConflictDoNothing: () => ({
             returning: async () => {
               if (insertDelayMs > 0) await Bun.sleep(insertDelayMs);
+              const costScope = insertCostMs > 0 ? currentInboundAuditScope() : null;
+              if (costScope) (costScope as { startedAt: number }).startedAt -= insertCostMs;
               if (failStatementAt?.index === index) throw failStatementAt.error;
               if (failStatementFrom && index >= failStatementFrom.index) {
                 throw failStatementFrom.error;
@@ -149,6 +153,7 @@ beforeEach(() => {
   failStatementFrom = null;
   burnBudgetAt = null;
   insertDelayMs = 0;
+  insertCostMs = 0;
 });
 
 afterAll(() => {
@@ -604,11 +609,12 @@ describe('audit ingest request-deadline budget', () => {
 
   test('keeps writing slow chunks while the race bound still fits the deadline', async () => {
     // 10s spent before the handler, and each chunk consumes 1.5s in a slow
-    // statement (a degraded pool). Eight 25-row statements take 12s, finishing
-    // ~3s before the deadline — all 200 rows land. The race, not a statement
+    // statement (a degraded pool), burned on the scope clock, not slept. Eight
+    // 25-row statements take 12s, finishing ~3s before the deadline — all 200
+    // rows land. The race, not a statement
     // worst case, is what bounds this: a chunk slower than its race bound is
     // abandoned mid-flight and answered with the contended 503 instead.
-    insertDelayMs = 1_500;
+    insertCostMs = 1_500;
     const { status, retryAfter, body } = await postWithStartedAt(200, 10_000);
 
     expect(status).toBe(200);
@@ -617,7 +623,7 @@ describe('audit ingest request-deadline budget', () => {
     expect(insertStatements.map((batch) => batch.length)).toEqual(
       Array.from({ length: 8 }, () => 25),
     );
-  }, 20_000);
+  });
 });
 
 /**
@@ -807,14 +813,15 @@ describe('audit ingest contention fallback', () => {
     // The mocked INSERT resolves after 60s — far past every budget, the
     // shape of a statement queued behind a saturated audit pool. Without the
     // race the route hangs past the 25s deadline; with it, the route answers
-    // the controlled contended 503 the relay already paces on.
+    // the controlled contended 503 the relay already paces on. 22.5s are
+    // already spent, so the race bound is 2.5s - 1s margin, not ~23s.
     insertDelayMs = 60_000;
     const started = Date.now();
     const { status, retryAfter, body } = await runWithContext(
       'POST',
       `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
       async () => {
-        attachInboundAuditScope({ owner: 'hono', method: 'POST', startedAt: Date.now() - 1_000 });
+        attachInboundAuditScope({ owner: 'hono', method: 'POST', startedAt: Date.now() - 22_500 });
         return post(200);
       },
     );
@@ -823,11 +830,11 @@ describe('audit ingest contention fallback', () => {
     expect(status).toBe(503);
     expect(retryAfter).toBe('5');
     expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
-    // One statement was attempted, and the route answered inside the 25s
-    // deadline the request-deadline middleware would otherwise abort at.
+    // One statement was attempted, and the route answered inside the 2.5s
+    // left before the deadline the request-deadline middleware would abort at.
     expect(insertStatements).toHaveLength(1);
-    expect(wallMs).toBeLessThan(24_000);
-  }, 40_000);
+    expect(wallMs).toBeLessThan(2_500);
+  });
 });
 
 describe('boundChunkWrite', () => {

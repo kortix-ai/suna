@@ -380,3 +380,33 @@ describe('runtime-truth: the periodic floor (Rule 3.4)', () => {
     stop() // idempotent
   })
 })
+
+// A real idle box, 2026-10-14: every periodic asset pass asked for its staged
+// daemon swap while the SAME tick's config convergence was in flight, so the
+// `config-convergence` swap blocker refused it on every tick and the box ran
+// the old daemon for as long as it stayed idle.
+describe('runtime-truth: the asset pass starts after the tick settles its convergence', () => {
+  beforeEach(() => resetRuntimeTruthForTests())
+  afterEach(() => resetRuntimeTruthForTests())
+
+  test('reconcileAssets runs only after config release and catalog finished', async () => {
+    const order: string[] = []
+    configureRuntimeTruth({
+      reconcileAssets: () => { order.push('assets') },
+      readConfigRelease: () => configReleaseReport(),
+      reconcileConfigRelease: async () => {
+        order.push('config:start')
+        await new Promise((r) => setTimeout(r, 5))
+        order.push('config:end')
+      },
+      readCatalog: () => ({ configuredIds: null, liveKnown: false, missingIds: [] }),
+      reconcileCatalog: async () => {
+        await new Promise((r) => setTimeout(r, 5))
+        order.push('catalog:end')
+      },
+    })
+    await runReconcileTick('periodic')
+    expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('config:end'))
+    expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('catalog:end'))
+  })
+})

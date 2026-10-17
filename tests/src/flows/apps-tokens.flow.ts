@@ -14,8 +14,6 @@
 import { createPublicKey, verify } from "node:crypto";
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
-import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
-import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -50,17 +48,23 @@ flow(
     let otherAppId = "";
     const appSlug = (name: string) => ctx.fixtures.name(name).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
 
-    await ctx.step("apps flag off: the token route answers 403 feature_disabled", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", null);
+    await ctx.step("the graduated apps key is unknown: token route works with no flag; PATCH /features answers 400", async () => {
+      // Apps went GA (2026-10-14): there is no `apps` flag. Regression gate
+      // for the old 403 `feature_disabled` on the token route, and for the old
+      // operator-only 403 on the features write.
       const params = { ...projectParams, appId: UNKNOWN_ID };
       (await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params }))
-        .status(403)
-        .body()
-        .has("$.code", "feature_disabled");
+        .status(404);
+      const flagWrite = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      flagWrite.status(400);
+      flagWrite.body().has("$.error", "Unknown feature flag 'apps'");
     });
 
-    await ctx.step("an operator enables apps; an invalid slug answers 400", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+    await ctx.step("an invalid slug answers 400", async () => {
       (
         await owner.post("/v1/projects/:projectId/apps", { slug: "Bad Slug", name: "x" }, { params: projectParams })
       ).status(400);
@@ -147,11 +151,10 @@ flow(
       (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status(401);
     });
 
-    await ctx.step("cleanup: delete the Apps, clear the flag override", async () => {
+    await ctx.step("cleanup: delete the Apps", async () => {
       for (const appId of [webAppId, otherAppId].filter(Boolean)) {
         (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
       }
-      await setFeatureAsOperator(ctx, project.id, "apps", null);
     });
   },
 );
@@ -179,7 +182,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -239,9 +241,7 @@ flow(
         (await anon.get("/v1/projects/:projectId/jwks.json", { params: { projectId: "not-a-uuid" } })).status(400);
       });
 
-      await ctx.step("enable Apps in both projects; create C, B, and A that uses C in one, D in the other", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
-        await setFeatureAsOperator(ctx, otherProject.id, "apps", true);
+      await ctx.step("create C, B, and A that uses C in one, D in the other", async () => {
         const create = async (projectId: string, name: string, uses: string[] = []) => {
           const created = await owner.post("/v1/projects/:projectId/apps", { slug: name, name, uses }, { params: { projectId } });
           created.status(201).body().has("$.uses", uses);
@@ -313,8 +313,6 @@ flow(
       for (const [projectId, appId] of [[project.id, ids.a], [project.id, ids.b], [project.id, ids.c], [otherProject.id, ids.d]]) {
         if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { projectId, appId } }).catch(() => {});
       }
-      await setFeatureAsOperator(ctx, project.id, "apps", null).catch(() => {});
-      await setFeatureAsOperator(ctx, otherProject.id, "apps", null).catch(() => {});
     }
   },
 );
@@ -324,7 +322,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -366,8 +363,7 @@ flow(
     };
 
     try {
-      await ctx.step("enable Apps; the owner creates a private backend and an App that uses it, restricted to the reader", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("the owner creates a private backend and an App that uses it, restricted to the reader", async () => {
         const backend = await owner.post("/v1/projects/:projectId/apps", { slug: names.backend, name: names.backend }, { params });
         backend.status(201).body().has("$.access_mode", "private");
         ids.backend = backend.json<any>().app_id;
@@ -428,7 +424,6 @@ flow(
       for (const appId of [ids.app, ids.backend]) {
         if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } }).catch(() => {});
       }
-      await setFeatureAsOperator(ctx, project.id, "apps", null).catch(() => {});
     }
   },
 );

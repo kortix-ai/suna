@@ -15,6 +15,7 @@ const Empty = () => null;
 
 let list: any;
 let paged: any;
+let pagedOptions: any;
 const haptic = { count: 0 };
 const fakes: Record<string, Record<string, unknown>> = {
   'react-native': {
@@ -44,7 +45,12 @@ const fakes: Record<string, Record<string, unknown>> = {
     useProjectRoute: () => route,
     useCoveringRoute: () => openSession,
   },
-  '@/lib/projects/hooks': { useProjectSessionsPaged: () => paged },
+  '@/lib/projects/hooks': {
+    useProjectSessionsPaged: (_projectId: string, options: unknown) => {
+      pagedOptions = options;
+      return paged;
+    },
+  },
   '@/lib/review/use-review': { useReviewNeedsYou: () => review },
   '@kortix/sdk/react': {
     useSessionsNeedingInput: (_projectId: string, options: unknown) => {
@@ -62,7 +68,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-i18next': {
     useTranslation: () => ({
       // i18next's plural defaults: `defaultValue_one` for 1, `defaultValue_other` otherwise (English rules).
-      t: (_key: string, options: Record<string, unknown>) =>
+      // No default: the key itself (the Archived view's strings).
+      t: (key: string, options: Record<string, unknown> = { defaultValue: key }) =>
         String(options[options.count === 1 ? 'defaultValue_one' : 'defaultValue_other'] ?? options.defaultValue).replace(
           /\{\{(\w+)\}\}/g,
           (_, name) => String(options[name])
@@ -415,5 +422,66 @@ describe('useSessionStarterOf', () => {
     // Another viewer re-derives the label.
     await act(async () => tree.update(React.createElement(Probe, { viewerId: 'other' })));
     expect(starterOf(row)).toEqual({ type: 'member', label: 'Jay', icon: null });
+  });
+});
+
+// KRTX-2418: the filter sheet's Archived row swaps the list for the viewer's
+// archived sessions.
+describe('Sessions page Archived view', () => {
+  const texts = () => tree.root.findAll((node: any) => node.type === 'Text').map(textOf);
+  // Inside act: the page is still mounted when this runs (before the file's unmount).
+  afterEach(async () => {
+    await act(async () => useSessionFilterStore.getState().reset());
+  });
+  let useSessionFilterStore: typeof import('@/stores/session-filter-store').useSessionFilterStore;
+  beforeAll(async () => {
+    ({ useSessionFilterStore } = await import('@/stores/session-filter-store'));
+  });
+
+  test('the list asks for top-level sessions; Archived asks for every archived one, sub-agent ones too', async () => {
+    paged = pagedOf([session('a', Date.now())]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(pagedOptions).toMatchObject({ parent: 'root' });
+    expect(pagedOptions.view).toBeUndefined();
+
+    await act(async () => useSessionFilterStore.getState().toggleArchived('p-1'));
+    expect(pagedOptions).toMatchObject({ view: 'archived' });
+    expect(pagedOptions.parent).toBeUndefined();
+  });
+
+  test('archived rows list with the chip naming the view; rows without the stamp do not', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    const at = new Date().toISOString();
+    paged = pagedOf([
+      session('arch', Date.now(), { archived_at: at, pinned_at: null }),
+      session('arch-child', Date.now() - 1000, { archived_at: at, pinned_at: null, parent_session_id: 'arch' }),
+      session('legacy', Date.now() - 2000),
+    ]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(list.data.map((item: any) => item.key)).toEqual(['arch', 'arch-child']);
+    expect(texts()).toContain('sessions.archivedView');
+  });
+
+  test('nothing archived: the short empty state and Reset back to the list', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    paged = pagedOf([]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(texts()).toContain('sessions.archivedEmpty');
+    expect(texts()).not.toContain('No matching sessions');
+    const reset = tree.root.findAll((node: any) => node.type === 'Button' && textOf(node) === 'Reset');
+    expect(reset).toHaveLength(1);
+    await act(async () => reset[0].props.onPress());
+    expect(useSessionFilterStore.getState().byProject['p-1']).toBeUndefined();
+  });
+
+  test('Archived with a search that finds nothing reads "No matching sessions"', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    useSessionFilterStore.getState().setQuery('p-1', 'zzz');
+    paged = pagedOf([]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    // The debounce has not run yet: a loader, then the verdict.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+    expect(texts()).toContain('No matching sessions');
+    expect(texts()).not.toContain('sessions.archivedEmpty');
   });
 });

@@ -5,7 +5,8 @@
  * bounded: one read-only snapshot, and Postgres projects each block to the few fields
  * `switchPreflight` (`@kortix/api-contract/session-log`, `capabilities.ts`) reads. Text, tool input
  * and output and attachment bytes never leave the database; a reasoning text leaves as `x` or `''`
- * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob row is read. The projection is cast to
+ * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob is read, only the blob
+ * sizes for the restore cap (`sessionLogRestoreFits`). The projection is cast to
  * `SessionLog`: only the fields `switchPreflight` reads are real.
  */
 import {
@@ -18,10 +19,12 @@ import {
 } from '@kortix/api-contract/session-log';
 import { sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { asc, eq, sql } from 'drizzle-orm';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
+import { sessionLogRestoreFits } from './session-log-restore';
 
 type Thread = SessionLog['threads'][number];
 
@@ -36,7 +39,7 @@ const SLIM_BLOCKS = sql<unknown[]>`COALESCE((
       'content', (SELECT COALESCE(jsonb_agg(jsonb_build_object('type', c->'type')), '[]'::jsonb)
         FROM jsonb_array_elements(COALESCE(b#>'{result,content}', '[]'::jsonb) || COALESCE(b#>'{result,model_content}', '[]'::jsonb)) c)
     ) END
-  ))) FROM jsonb_array_elements(${sessionLogMessages.record}->'blocks') b
+  ))) FROM jsonb_array_elements(${qualifiedColumn(sessionLogMessages.record)}->'blocks') b
 ), '[]'::jsonb)`;
 
 export async function sessionLogSwitchPreflight(input: {
@@ -71,8 +74,8 @@ export async function sessionLogSwitchPreflight(input: {
           role: sessionLogMessages.role,
           deleted: sql<boolean>`${sessionLogMessages.deletedAt} IS NOT NULL`,
           slim: sql<Partial<SessionLogMessage>>`jsonb_strip_nulls(jsonb_build_object(
-            'in_context', ${sessionLogMessages.record}->'in_context', 'hidden_reason', ${sessionLogMessages.record}->'hidden_reason',
-            'origin', ${sessionLogMessages.record}->'origin', 'model', ${sessionLogMessages.record}->'model', 'blocks', ${SLIM_BLOCKS}))`,
+            'in_context', ${qualifiedColumn(sessionLogMessages.record)}->'in_context', 'hidden_reason', ${qualifiedColumn(sessionLogMessages.record)}->'hidden_reason',
+            'origin', ${qualifiedColumn(sessionLogMessages.record)}->'origin', 'model', ${qualifiedColumn(sessionLogMessages.record)}->'model', 'blocks', ${SLIM_BLOCKS}))`,
         })
         .from(sessionLogMessages)
         .where(eq(sessionLogMessages.sessionId, input.sessionId))
@@ -104,7 +107,11 @@ export async function sessionLogSwitchPreflight(input: {
       } as unknown as SessionLog;
       return switchPreflight(slim, input.to, {
         llmGateway: projectLlmGatewayEnabled(input.projectMetadata),
-        restore: config.SESSION_LOG_RESTORE_ENABLED && resolveFeatureFlag(input.projectMetadata, 'session_log_restore'),
+        // Over the restore cap the new box gets the note alone (413): the history does not restore.
+        restore:
+          config.SESSION_LOG_RESTORE_ENABLED &&
+          resolveFeatureFlag(input.projectMetadata, 'session_log_restore') &&
+          (await sessionLogRestoreFits(tx, input.sessionId)),
         deletedMessages: deleted,
       });
     },

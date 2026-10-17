@@ -1,14 +1,19 @@
 /**
  * A fake apps/api for the session-log boot reconcile (P6.4) on the real harnesses: the manifest,
- * the restore claim, the journal (with the generation fence) and the attachments route, over one
- * stored `SessionLog`. It points the daemon's control-plane env at itself; `stop` puts the env back.
+ * the restore claim, the journal (with the generation fence), the attachment bytes (`log/blobs`, P2.13:
+ * stored in `objects` under `blob-<sha256>`; `failBlobPuts` answers that many PUTs 503) and the
+ * attachments route, over one stored `SessionLog`. `maxBytes`: a log whose messages' JSON plus 2/5 of its stored objects is longer
+ * answers the restore 413 `session_log_too_large` (claimed, no message), as the API's cap does. It points the daemon's control-plane env at itself;
+ * `stop` puts the env back.
  */
-import type { SessionLog, SessionLogJournalRequest, SessionLogMessage, SessionLogManifest, SessionLogRestore } from '@kortix/api-contract/session-log'
+import type { SessionLog, SessionLogJournalRequest, SessionLogMessage, SessionLogManifest, SessionLogRestore, SessionLogRestoreTooLarge } from '@kortix/api-contract/session-log'
 
 const KEYS = ['KORTIX_API_URL', 'KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_RUNTIME_STATE_DIR', 'KORTIX_SESSION_LOG_RESTORE'] as const
 
-export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string; stateDir: string; generation?: number; objects?: Map<string, Buffer> }) {
+export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string; stateDir: string; generation?: number; objects?: Map<string, Buffer>; failBlobPuts?: number; maxBytes?: number }) {
   const stored = structuredClone(initial)
+  const objects = env.objects ?? new Map<string, Buffer>()
+  let failBlobPuts = env.failBlobPuts ?? 0
   let generation = env.generation ?? 0
   const calls: string[] = []
   const journal: SessionLogJournalRequest[] = []
@@ -27,10 +32,26 @@ export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string;
       if (route === 'log/restore') {
         generation += 1
         const seq_max = Object.fromEntries(stored.threads.map((t) => [t.thread_id, Math.max(0, ...t.messages.map((m) => m.seq))]))
+        const bytes = messages().reduce((n, m) => n + JSON.stringify(m).length, 0) + Math.ceil([...objects.values()].reduce((n, b) => n + b.length, 0) * 0.4)
+        if (env.maxBytes !== undefined && bytes > env.maxBytes) {
+          const log = { ...stored, threads: stored.threads.map((t) => ({ ...t, messages: [] })) }
+          const revs = Object.fromEntries(messages().map((m) => [m.message_id, 1]))
+          return Response.json({ generation, log, revs, seq_max, blobs: [], error: 'session_log_too_large', bytes, limit: env.maxBytes, messages: messages().length } satisfies SessionLogRestoreTooLarge, { status: 413 })
+        }
         return Response.json({ generation, log: stored, revs: {}, seq_max, blobs: [] } satisfies SessionLogRestore)
       }
+      if (path.includes('/log/blobs/')) {
+        const sha256 = path.split('/').at(-1)!
+        const ref = `kortix-attachment://${env.projectId}/${initial.session_id}/blob-${sha256}`
+        if (request.method === 'GET') return Response.json({ ref: objects.has(`blob-${sha256}`) ? ref : null })
+        if (failBlobPuts > 0 && failBlobPuts--) return new Response('unavailable', { status: 503 })
+        const bytes = Buffer.from(await request.arrayBuffer())
+        if (new Bun.CryptoHasher('sha256').update(bytes).digest('hex') !== sha256) return new Response('sha256 mismatch', { status: 400 })
+        objects.set(`blob-${sha256}`, bytes)
+        return Response.json({ ref })
+      }
       if (path.includes('/attachments/')) {
-        const bytes = env.objects?.get(path.split('/').at(-1)!)
+        const bytes = objects.get(path.split('/').at(-1)!)
         return bytes ? new Response(new Uint8Array(bytes)) : new Response('not found', { status: 404 })
       }
       if (route === 'log/journal') {
@@ -61,6 +82,7 @@ export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string;
     calls,
     journal,
     stored: () => stored,
+    objects,
     generation: () => generation,
     stop() {
       server.stop(true)

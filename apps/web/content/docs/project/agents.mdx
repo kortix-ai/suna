@@ -139,7 +139,13 @@ kortix agents config support --set behavior.temperature=0.2
 - Any other key is a tool name and passes through to the harness.
 - A tool with no rule is allowed.
 
-A pattern is matched against the command line for `bash`, the skill name for `skill`, and the file path for the file tools. `*` matches any text and `?` matches one character. The longest matching pattern wins, so `"*"` is the fallback. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+A pattern is matched against the command line for `bash`, the skill name for `skill`, the subagent name for `task`, and the file path for the file tools. `*` matches any text and `?` matches one character. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+
+**The most specific rule wins, on OpenCode and on pi, whatever order the keys are written in.**
+
+- The longest matching pattern wins, so `"*"` is the fallback wherever it sits. Two patterns of equal length: the later one in code-unit order wins.
+- The same rule picks between keys: `bash: ask` outranks `"*": allow`. A tool whose pattern map matches nothing falls back to the `"*"` key.
+- An agent's own `permission` outranks the project-wide one in `opencode.jsonc`.
 
 This agent asks before any shell command, runs read-only git commands freely, and never deletes recursively:
 
@@ -238,7 +244,7 @@ Set grants in one of three ways. Each one commits `kortix.yaml` on the default b
 <Tabs>
 
 <Tab title="Dashboard">
-Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. **Apps** shows only when the project has the Apps feature flag on. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
+Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
 </Tab>
 
 <Tab title="CLI">
@@ -429,7 +435,7 @@ The optional features are capabilities:
 | --- | --- | --- | --- |
 | `session.subagents` | Subagents through the `task` tool | Yes | Yes |
 | `session.compact` | Summarize the conversation, on demand and near the context window | Yes | Yes |
-| `session.commands` | Project slash commands | Yes, from `commands/` | Yes, from `prompts/` and pi packages |
+| `session.commands` | Project slash commands | Yes, from `commands/` (v1, v2) or `kortix.yaml` `commands` (v3) | Yes, from `prompts/` and pi packages (v1, v2) or `kortix.yaml` `commands` (v3) |
 | `session.steer` | A message sent during a turn is read at the turn's next step | OpenCode 1.18.15 or later | Yes |
 | `session.log.v2` | The event stream serves the session log as `log.*` frames (`?schema=v2`) | Yes | Yes |
 | `session.rewind` | Rewind to a message; edit and resend | Yes | No |
@@ -442,9 +448,11 @@ The optional features are capabilities:
 
 A pi session answers a request for a feature it does not serve with `501` and `code: "feature_not_supported"`, and `/global/config` with `404`. pi also refuses message part edits with `501`. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. pi subagents are `general`, `explore` (read-only) and every agent with `mode: subagent` or `all`. A pi subagent cannot start another subagent.
 
+pi has one tool OpenCode does not: `codemode`. The model writes a script that calls the other tools, and only the script's output returns to it, so one step can run several calls and filter their output. It is on by default; [`harnesses.pi.codemode`](/docs/project/manifest#harnesses-opencode-and-pi) turns it off or makes it the only tool. The session view shows a script as its calls, its code and its output. A subagent does not get `codemode`.
+
 ### Harness-only files
 
-Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here.
+Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here. A `kortix_version: 3` project reads neither directory: declare its slash commands in [`kortix.yaml`](/docs/project/manifest#commands-v3) and its plugins under `extensions`.
 
 | | OpenCode | pi |
 | --- | --- | --- |

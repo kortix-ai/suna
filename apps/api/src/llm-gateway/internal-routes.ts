@@ -109,9 +109,11 @@ export function createInternalGatewayRoutes() {
     }
   });
 
+  // Any principal: a gateway API key has no session (KRTX-2417). The rest is
+  // keyed by the account and the secret alone.
   app.post('/pool-rate-limit', async (c) => {
     const parsed = z.object({
-      principal: z.object({ accountId: z.string().uuid(), sessionId: z.string().uuid() }),
+      principal: z.object({ accountId: z.string().uuid() }),
       secretId: z.string().uuid(), seconds: z.number().int().min(1).max(MAX_ACCOUNT_SECRET_REST_SECONDS),
     }).safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);

@@ -24,8 +24,13 @@ import { unwrap, asRuntimeList } from './shared';
  *
  * Slash commands are a runtime capability (`session.commands`): a runtime
  * without them is never asked, and the list stays empty.
+ *
+ * Pass `agent` to list only the commands that agent may run: a kortix.yaml v3
+ * command carries `agents`, and a command without `agents` (v1/v2) is listed
+ * for every agent. Every agent reads the same cached list.
  */
-export function useRuntimeCommands() {
+export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
+  const { agent } = options;
   const runtimeReady = useRuntimeReady();
   const supported = useRuntimeSupports('session.commands');
   return useQuery<Command[]>({
@@ -35,10 +40,34 @@ export function useRuntimeCommands() {
       const result = await client.command.list();
       return asRuntimeList<Command>(unwrap(result));
     },
+    select: agent
+      ? (commands) => commands.filter((command) => !command.agents || command.agents.includes(agent))
+      : undefined,
     enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
+}
+
+export interface UseRuntimeCommandsOptions {
+  /** The selected agent. Omitted: every command is listed. */
+  agent?: string;
+}
+
+/**
+ * The runtime refused a command the agent does not enable (kortix.yaml v3):
+ * `403 { error: "command_not_enabled", command, agent }`.
+ */
+export class CommandNotEnabledError extends Error {
+  readonly status = 403;
+  readonly code = 'command_not_enabled';
+  constructor(
+    readonly command: string,
+    readonly agent: string,
+  ) {
+    super(`The agent "${agent}" cannot run /${command}.`);
+    this.name = 'CommandNotEnabledError';
+  }
 }
 
 export interface ExecuteRuntimeCommandInput {
@@ -67,6 +96,10 @@ export async function executeRuntimeCommand({
     ...(model ? { model } : {}),
     ...(variant ? { variant } : {}),
   });
+  const body = result.error as { error?: unknown; command?: unknown; agent?: unknown } | undefined;
+  if (result.response?.status === 403 && body?.error === 'command_not_enabled') {
+    throw new CommandNotEnabledError(String(body.command ?? command), String(body.agent ?? agent ?? ''));
+  }
   unwrap(result);
 }
 

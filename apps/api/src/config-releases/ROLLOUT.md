@@ -4,10 +4,13 @@ Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
 `/workspace` checkout. A release is a checkout of the base branch: the
 commit's whole tree, with the same files and folders `/workspace` holds
-(`release-tree.ts`). Each harness reads its own dirs inside it exactly as it
-reads them in `/workspace` (`harnesses/opencode`, `skills/`, `harnesses/pi`).
-The one change from the commit is per-agent plugin selection: an agent variant
-drops the plugin entry files its manifest does not select.
+(`release-tree.ts`). A `kortix_version: 3` session reads only the paths its compiled
+set names (prompt files, registered skill folders, project tool modules,
+extension modules) inside the release. A v1/v2 session reads its harness dirs
+inside it exactly as it reads them in `/workspace` (`harnesses/opencode`,
+`skills/`, `harnesses/pi`). The one change from the commit is per-agent plugin
+selection: an agent variant drops the plugin entry files its manifest does not
+select.
 Both session runtimes apply them: OpenCode swaps in a proven replacement
 process, pi reloads the release in place. Full contract:
 `apps/api/src/config-releases/`,

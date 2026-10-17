@@ -160,6 +160,19 @@ describe('printLogMessage — the human output is rendered from blocks', () => {
     expect(capture(() => printLogMessage(record('m2', 2, { role: 'assistant', status: 'streaming', blocks: [open] })))).toContain('[bash · running]');
   });
 
+  test('a failed call prints its error text: the result error, else the result text', () => {
+    const failed = (result: ToolCallBlock['result']): ToolCallBlock => ({
+      type: 'tool_call', id: 'b2', call_id: 'c2', name: 'bash', kind: 'shell', input: { command: 'cat /w/missing.txt' }, status: 'error', result,
+    });
+    const text = 'cat: /w/missing.txt: No such file or directory\n\nCommand exited with code 1';
+    const print = (block: ToolCallBlock) => capture(() => printLogMessage(record('m4', 4, { role: 'assistant', blocks: [block] })));
+    const shown = '[bash · error]\n  cat: /w/missing.txt: No such file or directory\n  \n  Command exited with code 1\n';
+    // The error only on `result.error`, no result text: this printed `[bash · error]` and nothing else.
+    expect(print(failed({ content: [], is_error: true, error: { message: text } }))).toContain(shown);
+    // A native export closes a failed call with `is_error` and the tool's text only.
+    expect(print(failed({ content: [{ type: 'text', text }], is_error: true }))).toContain(shown);
+  });
+
   test('a compaction is one message: its header says compaction, its body is the summary', () => {
     const out = capture(() => printLogMessage(record('m3', 3, { kind: 'compaction', blocks: [{ type: 'compaction', id: 'c', summary: 'SUMMARY of turns 0-2.', first_kept_message_id: null, trigger: 'manual' }] })));
     expect(out).toBe(`\ncompaction ${new Date(AT + 3000).toLocaleTimeString()}\n  SUMMARY of turns 0-2.\n`);

@@ -38,6 +38,7 @@ export function pushBodyFor(kind: NotificationKindName, detail: string): string 
   if (kind === 'question') return detail ? `Kortix has a question: ${detail}` : 'Kortix has a question.';
   if (kind === 'automation_failed') return detail ? `Failing: ${detail}` : 'This automation is failing.';
   if (kind === 'automation_recovered') return 'This automation works again.';
+  if (kind === 'capture_device_down' || kind === 'capture_device_recovered') return detail || 'Open Kortix Capture to see it.';
   return detail || 'Open Kortix to see it.';
 }
 
@@ -54,8 +55,14 @@ export function notificationUrl(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
+  kind?: string;
+  accountId?: string;
 }): string {
   const query = `?notification=${encodeURIComponent(input.notificationId)}`;
+  // A Capture fleet-health alert opens the account's Devices page.
+  if (input.kind?.startsWith('capture_device_') && input.accountId) {
+    return `/capture/${encodeURIComponent(input.accountId)}/devices${query}`;
+  }
   if (input.projectId && input.sessionId) {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
   }
@@ -81,6 +88,7 @@ export function buildPushContent(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
+  accountId?: string;
 }): NotificationPushContent {
   return {
     title: input.title.trim() || DEFAULT_PUSH_TITLE,
@@ -106,6 +114,8 @@ const SOUNDS: Record<NotificationKindName, { sound: string; channelId: string }>
   shared: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
   turn_error: { sound: 'kortix_error.wav', channelId: 'session-error' },
   automation_failed: { sound: 'kortix_error.wav', channelId: 'session-error' },
+  capture_device_down: { sound: 'kortix_error.wav', channelId: 'session-error' },
+  capture_device_recovered: { sound: 'kortix_complete.wav', channelId: 'session-complete' },
 };
 const SILENT_CHANNEL_ID = 'session-silent';
 

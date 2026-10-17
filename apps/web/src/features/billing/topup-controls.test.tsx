@@ -29,12 +29,24 @@ const render = (state: AccountState | undefined) =>
 // KRTX-1720: a member at $0 was offered packages, a custom amount and auto
 // top-up. Buy answers a member 403.
 describe('TopupControls', () => {
-  test('an owner on a plan that buys credits gets both purchase controls', () => {
+  test('an owner on a plan that buys credits gets the buy control and a collapsed auto top-up', () => {
     const markup = render(account(true));
     expect(markup).toContain('buy-credits-control');
-    expect(markup).toContain('auto-topup-control');
+    // Auto top-up sits behind a closed disclosure: its summary line shows, its card does not.
+    expect(markup).toContain('Auto top-up: off');
+    expect(markup).not.toContain('auto-topup-control');
     expect(markup).toContain('Add credits');
     expect(markup).not.toContain('ask-an-owner');
+  });
+
+  test('auto top-up on: the purchase amount reads in $, the threshold in credits', () => {
+    const state = {
+      ...account(true),
+      auto_topup: { enabled: true, amount: 20, threshold: 5 },
+    } as unknown as AccountState;
+    expect(render(state)).toContain(
+      'Auto top-up: adds $20 when the balance drops below 500 credits',
+    );
   });
 
   test('a member gets the fallback and no purchase control', () => {

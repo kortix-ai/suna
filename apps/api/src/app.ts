@@ -60,6 +60,7 @@ import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
+import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -77,6 +78,17 @@ registerClientRoutes(app);
 registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
+
+// /<capture bucket>/* — the Capture store's S3 path prefix, only when
+// KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
+registerCaptureStoreProxy(app);
+
+// /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
+// device credential endpoint (device token), the approval reads and the agent
+// tool's /v1/capture/me reads (per-route supabaseAuth). The account-scoped
+// Capture routes live under /v1/accounts/:accountId/capture.
+import { createCaptureRouter } from './capture/device-routes';
+app.route('/v1/capture', createCaptureRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -162,9 +174,7 @@ app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedbac
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 // Same wiring, same reason, for the daemon's runtime-projection push. A route
 // mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
-// every fire-and-forget push, in silence. That is the exact defect
-// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
-// pins this route too.
+// every fire-and-forget push, in silence.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 // A project's sign-in token issuer: public OpenID configuration and key set

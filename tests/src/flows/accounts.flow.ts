@@ -6,13 +6,13 @@ import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { Principal } from '../core/types';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
 
 flow(
   'ME-1',
-  { domain: 'accounts', tags: ['smoke'], routes: ['GET /v1/accounts/me'] },
+  { domain: 'accounts', tags: ['deployed', 'smoke'], routes: ['GET /v1/accounts/me'] },
   async (ctx) => {
     await ctx.step('OWNER sees own identity', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
@@ -48,7 +48,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -1044,6 +1044,7 @@ flow(
   'TOK-3',
   {
     domain: 'accounts',
+    tags: ['deployed'],
     serial: true,
     routes: [
       'POST /v1/accounts/tokens',

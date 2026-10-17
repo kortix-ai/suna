@@ -61,6 +61,7 @@ import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
+import { stopRefusalMessage, turnStoppedBy, viewerMayStop } from '@/lib/session/turn-stop';
 import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
@@ -114,6 +115,7 @@ import {
 import {
   createSessionPrompt,
   deleteSessionPrompt,
+  latestPromptModel,
   listSessionPrompts,
   retrySessionPrompt,
   SESSION_LOG_MINOR,
@@ -178,6 +180,8 @@ import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { queueHeaderLabel, queueRowCaption, queueRowText } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import type { Command } from '@/lib/session/runtime-data';
 import { useResolvedConfig } from '@/lib/session/local-config';
 import { log } from '@/lib/logger';
@@ -243,6 +247,8 @@ interface SessionPageProps {
   onCreateAgent?: () => void;
   /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model the composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
 }
@@ -315,7 +321,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -400,6 +406,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
+  const { t } = useTranslation();
   const flatListRef = useRef<FlatList>(null);
   // Saved scroll offset: read once per session, not subscribed. Subscribing
   // re-rendered the whole thread on every persisted offset write.
@@ -514,6 +521,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // it does before the runtime is bound.
   const streamBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
   const isBusy = runtime && !isSubThread ? runtime.isBusy : streamBusy;
+  // In a shared session only the member who prompted the running turn, the
+  // owner or a project manager may stop it (`useSession().canStop`). Anyone
+  // else gets no Stop; a send while the turn runs still queues.
+  const canStop = viewerMayStop(runtime);
   // The SDK tracks compaction for the session's root (a compaction this device
   // started, or one the runtime reports).
   const isCompacting = !isSubThread && !!runtime?.isCompacting;
@@ -834,7 +845,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const failed = (reason: unknown) => {
       log.error('[SessionPage] Abort failed:', reason instanceof Error ? reason.message : reason);
       if (previousStatus) setLocalSessionStatus(sessionId, previousStatus);
-      toast.error("Couldn't stop. Kortix is still working.");
+      // A refused stop (403 `not_turn_prompter`) says who may stop the run.
+      toast.error(stopRefusalMessage(reason, t('sessions.stopNotAllowed')) ?? "Couldn't stop. Kortix is still working.");
     };
     try {
       const current = runtimeRef.current;
@@ -850,7 +862,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     } catch (err) {
       failed(err);
     }
-  }, [runtimeReady, isSubThread, sessionId, toast]);
+  }, [runtimeReady, isSubThread, sessionId, toast, t]);
 
   const handleQueueSendNow = useCallback(async (promptId: string) => {
     if (!projectId || !projectSessionId) return;
@@ -877,6 +889,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const agentsLoading = !rawAgents;
   // Web defaults the picker to the agent of the latest assistant turn.
   const latestAgent = useMemo(() => latestAssistantAgent(storeThread?.messages ?? EMPTY_MESSAGES), [storeThread]);
+  // The model the session last ran on. With the session's pin it keeps a
+  // session set from the CLI, the SDK or Slack on its model (`useResolvedConfig`).
+  const lastPromptModel = useMemo(() => latestPromptModel(storeThread?.messages), [storeThread]);
   // Models: the project's list (`useComposerModels`), the same one project home
   // and web show; the sandbox's `/provider` joins it off-gateway.
   const {
@@ -932,7 +947,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     providers,
     modelDefaults,
     configModel: config?.model,
+    sessionKey: projectSessionId ?? sessionId,
+    session: projectSession,
+    lastPromptModel,
+    gatewayEnabled,
   });
+
+  // The composer lists only the commands the selected agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentRuntimeCommands = EMPTY_COMMANDS } = useRuntimeCommands({ agent: resolved.agent?.name });
+  const composerCommands = canRunCommands ? agentRuntimeCommands : EMPTY_COMMANDS;
 
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
@@ -1123,8 +1147,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     ],
     [turns, queuedMessages],
   );
-  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds).data;
+  // `isBusy`: a turn's end reads the authors again, for who stopped it.
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds, isBusy).data;
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // The signed-in user: the participants list holds at most 20 people.
+  const signedInUserId = useAuthContext().user?.id;
   // The sender of a message, built once per message while the authors and the
   // participants stay the same: the same object each render keeps the memoized
   // rows from rendering again.
@@ -1153,6 +1180,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       return cache.get(messageId) ?? null;
     };
   }, [messageAuthors, userMessageIds]);
+  // The member who stopped a turn, when not the viewer: "Stopped by {name}".
+  const stoppedByOf = useCallback(
+    (messageId: string) => turnStoppedBy(messageAuthors, signedInUserId, messageId),
+    [messageAuthors, signedInUserId],
+  );
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
@@ -1872,9 +1904,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     async (requestId: string) => {
       if (!runtimeReady) throw new Error('Runtime not ready');
       await rejectQuestion(requestId);
-      handleStop();
+      // A member who may not stop the run only dismisses the question.
+      if (canStop) handleStop();
     },
-    [runtimeReady, handleStop],
+    [runtimeReady, canStop, handleStop],
   );
 
   // Command handler — executes a slash command via the server
@@ -1980,6 +2013,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
             sessionAuthor={sessionAuthorOf(id)}
+            stoppedBy={stoppedByOf(id)}
             onScreen={isWorkingTurn ? workingTurnOnScreen : true}
             changeRequests={changesByTurn.get(id)}
             onOpenChangeRequest={openChangeRequest}
@@ -1988,7 +2022,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         </View>
       );
     },
-    [lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf],
+    [lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf, stoppedByOf],
   );
 
   const keyExtractor = useCallback((item: SessionLogTurn) => item.id, []);
@@ -2002,6 +2036,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       toast.info('Removed from queue', {
         action: {
           label: 'Undo',
+          kind: 'undo',
           onPress: () => void createSessionPrompt(projectId, projectSessionId, {
             clientMessageId: removed.client_message_id,
             messageId: removed.message_id,
@@ -2298,7 +2333,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             autoFocus={bottomSwap.keepKeyboard}
             inputNativeID={composerInputNativeID}
             onSend={handleSend}
-            onStop={handleStop}
+            onStop={canStop ? handleStop : undefined}
             isBusy={isBusy}
             initialText={savedInputText}
             onTextChange={handleTextChange}
@@ -2328,7 +2363,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             disabled={subThreadReadOnly}
             placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
-            commands={commands}
+            commands={composerCommands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />

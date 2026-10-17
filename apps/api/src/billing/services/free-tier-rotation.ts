@@ -6,6 +6,7 @@ import {
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { ROTATION_BATCH_SIZE } from './rotation-batch';
 import { wallet } from '../wallet';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 const FREE_TIER_MONTHLY_CREDITS_USD = 2;
 
@@ -42,7 +43,7 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
         await wallet.reset({
           accountId: account.accountId,
           amount: FREE_TIER_MONTHLY_CREDITS_USD,
-          description: `Free tier monthly credit reset: ${FREE_TIER_MONTHLY_CREDITS_USD} credits`,
+          description: `Free tier monthly credit reset: ${formatUsdAsCredits(FREE_TIER_MONTHLY_CREDITS_USD)} credits`,
           key: { event: idempotencyKey },
         });
 
