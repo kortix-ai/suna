@@ -16,6 +16,10 @@ export interface ServedModel {
   /** The model the request was routed to, when a fallback model answered in its place. */
   fallback_from: string | null;
   at: string;
+  /** How the request ended: `answered` (a model answered it), `client_aborted`
+   *  (the caller canceled it) or `error` (it failed outright). A cancel is not
+   *  a model failure — the UI must not present one as such (KRTX-2572). */
+  outcome: 'answered' | 'client_aborted' | 'error';
 }
 
 export interface TurnModelUsage {
@@ -27,7 +31,7 @@ export interface TurnModelUsage {
 }
 
 export interface SessionModelUsage {
-  /** The newest answered request. Null before the first answer. */
+  /** The newest request and how it ended. Null before the first request. */
   latest: ServedModel | null;
   billed_cost: number;
   /** Keyed by the runtime message id of the prompt that started the turn. */
@@ -58,10 +62,13 @@ export async function sessionModelUsage(session: {
 }): Promise<SessionModelUsage> {
   const ofSession = and(eq(logs.projectId, session.projectId), eq(logs.sessionId, session.sessionId));
   const [[latest], [total], perTurn] = await Promise.all([
+    // The newest request of ANY outcome: after an intentional cancel the
+    // newest row is the aborted one, and the UI needs to see that instead of
+    // staying pinned to an older answered row (KRTX-2572).
     db
-      .select({ served: servedModelSql, fallbackFrom: fallbackFromSql, at: logs.createdAt })
+      .select({ served: servedModelSql, fallbackFrom: fallbackFromSql, at: logs.createdAt, ok: logs.ok, errorCode: logs.errorCode })
       .from(logs)
-      .where(and(ofSession, eq(logs.ok, true)))
+      .where(ofSession)
       .orderBy(desc(logs.createdAt))
       .limit(1),
     db.select({ cost: kortixBilledSpendSql }).from(logs).where(ofSession),
@@ -100,7 +107,12 @@ export async function sessionModelUsage(session: {
   }
   return {
     latest: latest
-      ? { served_model: latest.served, fallback_from: latest.fallbackFrom ?? null, at: latest.at.toISOString() }
+      ? {
+          served_model: latest.served,
+          fallback_from: latest.fallbackFrom ?? null,
+          at: latest.at.toISOString(),
+          outcome: latest.ok ? 'answered' : latest.errorCode === 'client_aborted' ? 'client_aborted' : 'error',
+        }
       : null,
     billed_cost: Number(total?.cost ?? 0),
     turns,

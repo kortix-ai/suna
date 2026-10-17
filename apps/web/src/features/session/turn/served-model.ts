@@ -38,6 +38,10 @@ export function servedModelNotice(
   models: readonly NamedModel[] | undefined,
 ): ServedModelNotice | null {
   const latest = usage?.latest;
+  // A request the user canceled did not fail: the selected model "not
+  // answering" is the cancel's effect, not a fallback to report (KRTX-2572).
+  // The notice returns with the next answered request, as before.
+  if (latest && latest.outcome !== 'answered') return null;
   if (!latest?.fallback_from) return null;
   if (selected && modelKeyToWire(selected) !== latest.fallback_from) return null;
   return {

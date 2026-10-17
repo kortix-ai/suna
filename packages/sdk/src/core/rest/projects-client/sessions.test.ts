@@ -42,6 +42,7 @@ import {
   getSessionTranscriptSync,
   getSessionTurn,
   getSessionModelUsage,
+  type SessionModelUsage,
   getSessionWatch,
   holdSessionPrompts,
   listProjectSessions,
@@ -1860,8 +1861,8 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
-  const body = {
-    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  const body: SessionModelUsage = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
     billed_cost: 0.875,
     turns: {
       msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
