@@ -20113,7 +20113,12 @@
       "text6c5ebd6c3b4f": "Les exécutions échouées apparaîtront ici",
       "text8dcda9f17257": "{value0} crédits",
       "text026c6dbbbec5": "Copier le payload",
-      "textff2c3559cd6b": "Prévisualisez le prompt que produit ce payload, ou exécutez le déclencheur avec."
+      "textff2c3559cd6b": "Prévisualisez le prompt que produit ce payload, ou exécutez le déclencheur avec.",
+      "text614aa365f41e": "Déclenchée",
+      "text237112b89b77": "Exécutions récentes",
+      "text9da843b113d4": "La hauteur de la barre est la durée",
+      "texta36b75929fc3": "{value0} dernières exécutions, {value1} échouées",
+      "text15e8856d4d77": "Lance une vraie session. Des coûts s’appliquent."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

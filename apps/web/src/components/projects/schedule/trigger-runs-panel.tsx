@@ -25,6 +25,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { projectSessionHref } from '@/lib/navigation/session-href';
+import { cn } from '@/lib/utils';
 import {
   ApiError,
   type ProjectTrigger,
@@ -32,15 +33,19 @@ import {
   type ProjectTriggerRunSource,
 } from '@kortix/sdk';
 import { useProjectTriggers, useTriggerRuns } from '@kortix/sdk/react';
+import { ArrowCounterClockwiseIcon, ArrowUpRightIcon, WarningIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { type ReactNode, useState } from 'react';
 
 import { FoldTrigger } from './composer-parts';
 import {
+  BAR_COUNT,
   RUNS_POLL_MS,
   type RunState,
+  type RunTone,
   canReplay,
   relativeRunTime,
+  runBars,
   runState,
   runsInFlight,
 } from './trigger-runs-logic';
@@ -55,15 +60,41 @@ const absoluteFormatter = new Intl.DateTimeFormat(undefined, {
   second: 'numeric',
 });
 
-const STATE_VARIANT = {
-  queued: 'outline',
-  running: 'outline',
-  started: 'success',
-  succeeded: 'success',
-  failed: 'destructive',
-  rejected: 'destructive',
-  skipped: 'outline',
-} as const satisfies Record<RunState, string>;
+/**
+ * Status badge per state (Paper V03 run table): a /15 tint and a dot. Failed
+ * and queued have no Badge variant, so they tint `outline` with the kortix
+ * hue. Running and skipped draw a hollow ring, a static glyph, not a spinner.
+ */
+const STATE_BADGE = {
+  queued: {
+    variant: 'outline',
+    tint: 'bg-kortix-yellow/15 ring-kortix-yellow/15',
+    dot: 'bg-kortix-yellow',
+  },
+  running: { variant: 'success', tint: '', dot: 'border border-kortix-green' },
+  started: { variant: 'success', tint: '', dot: 'bg-kortix-green' },
+  succeeded: { variant: 'success', tint: '', dot: 'bg-kortix-green' },
+  failed: { variant: 'outline', tint: 'bg-kortix-red/15 ring-kortix-red/15', dot: 'bg-kortix-red' },
+  rejected: { variant: 'warning', tint: '', dot: 'bg-kortix-orange' },
+  skipped: { variant: 'accent', tint: '', dot: 'border border-muted-foreground' },
+} as const satisfies Record<RunState, { variant: string; tint: string; dot: string }>;
+
+/** Bar and legend fill per tone (Paper 2.4). */
+const TONE_FILL = {
+  green: 'bg-kortix-green',
+  red: 'bg-kortix-red',
+  orange: 'bg-kortix-orange',
+  yellow: 'bg-kortix-yellow',
+  muted: 'bg-muted',
+} as const satisfies Record<RunTone, string>;
+
+/** The legend: the four outcomes a finished run can have (V03 order). */
+const LEGEND = [
+  ['green', 'text614aa365f41e'],
+  ['red', 'text031a8f0f659d'],
+  ['orange', 'textaea4a04a8042'],
+  ['muted', 'text12698ce1ea5c'],
+] as const;
 
 const STATE_LABEL_KEY = {
   queued: 'text661ff40a07e0',
@@ -124,8 +155,13 @@ export function TriggerRunsPanel({
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const poll = useRunsPoll();
-  const query = useTriggerRuns(projectId, trigger.slug, { refetchInterval: poll.refetchInterval });
-  poll.observe(runsOf(query));
+  // One page of 30: the duration bars draw the latest 30 runs from it.
+  const query = useTriggerRuns(projectId, trigger.slug, {
+    refetchInterval: poll.refetchInterval,
+    limit: BAR_COUNT,
+  });
+  const runs = runsOf(query);
+  poll.observe(runs);
   const { replay } = useProjectTriggers(projectId);
   const [confirmRun, setConfirmRun] = useState<ProjectTriggerRun | null>(null);
 
@@ -155,21 +191,24 @@ export function TriggerRunsPanel({
   };
 
   return (
-    <>
+    <div className="space-y-4">
+      {runs.length > 0 ? <RunBars runs={runs} /> : null}
       <RunList
         query={query}
         emptyTitle={t.raw('text91f7323997df')}
         actions={(run) =>
           canFire && canReplay(run) ? (
             <Button
-              variant="ghost"
+              variant="outline"
               size="xs"
               disabled={replay.isPending}
               onClick={() => startReplay(run)}
             >
               {replay.isPending && replay.variables?.runId === run.run_id ? (
                 <Loading className="size-3.5 shrink-0" />
-              ) : null}
+              ) : (
+                <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+              )}
               {t.raw('text98c78fbb22fe')}
             </Button>
           ) : null
@@ -187,7 +226,64 @@ export function TriggerRunsPanel({
         isPending={replay.isPending}
         onConfirm={() => confirmRun && startReplay(confirmRun, true)}
       />
-    </>
+    </div>
+  );
+}
+
+/**
+ * Paper V20 "Timeline strip": one bar per run, the latest 30, oldest on the
+ * left. Height is the run's duration against the longest one shown; colour is
+ * its state. Read-only (no click intent in the board): the strip is one image
+ * with a text summary for screen readers, and each bar names its run on hover.
+ */
+function RunBars({ runs }: { runs: ProjectTriggerRun[] }) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
+  const bars = runBars(runs);
+  const failed = bars.filter((b) => b.tone === 'red').length;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline gap-2.5">
+        <span className="text-foreground text-xs font-medium">{t.raw('text237112b89b77')}</span>
+        <span className="text-muted-foreground text-xs">{t.raw('text9da843b113d4')}</span>
+      </div>
+      <div
+        role="img"
+        aria-label={t('texta36b75929fc3', { value0: bars.length, value1: failed })}
+        className="bg-card border-border flex h-8 items-end gap-1 border-b"
+      >
+        {bars.map(({ run, tone, pct }) => {
+          const state = runState(run);
+          const label = [
+            relativeRunTime(run.started_at, locale),
+            t.raw(STATE_LABEL_KEY[state]),
+            run.duration_ms != null ? formatSessionCostDuration(run.duration_ms / 1000) : null,
+            run.cost_usd != null
+              ? t('text8dcda9f17257', { value0: formatSessionCostCredits(run.cost_usd) })
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return (
+            <Hint key={run.run_id} label={label} side="top">
+              {/* Height is data, so it is the one inline style: a percent of the 26 px strip. */}
+              <span
+                className={cn('w-3.5 shrink-0 rounded-sm', TONE_FILL[tone])}
+                style={{ height: `${pct}%` }}
+              />
+            </Hint>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {LEGEND.map(([tone, key]) => (
+          <span key={tone} className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <span className={cn('size-2 rounded-sm', TONE_FILL[tone])} aria-hidden />
+            {t.raw(key)}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -281,10 +377,19 @@ function RunRow({
   const payload = JSON.stringify(run.payload, null, 2);
 
   return (
-    <li className="space-y-1.5 py-3 first:pt-0">
+    <li className="space-y-1.5 py-2 first:pt-0">
       <div className="flex min-w-0 items-center gap-2">
         {/* `font-sans normal-case`: the badge base is mono uppercase, which reads as code (trigger-status-badge.tsx). */}
-        <Badge variant={STATE_VARIANT[state]} size="sm" className="font-sans normal-case">
+        <Badge
+          variant={STATE_BADGE[state].variant}
+          size="sm"
+          className={cn('font-sans normal-case', STATE_BADGE[state].tint)}
+        >
+          <span
+            data-slot="status-dot"
+            aria-hidden
+            className={cn('rounded-full', STATE_BADGE[state].dot)}
+          />
           {t.raw(STATE_LABEL_KEY[state])}
         </Badge>
         {title}
@@ -293,7 +398,12 @@ function RunRow({
         </span>
         {run.payload_verified ? null : (
           <Hint label={t.raw('text7f2b8f3a675c')} side="top">
-            <Badge variant="warning" size="sm" className="font-sans normal-case">
+            <Badge
+              variant="outline"
+              size="sm"
+              className="[&>svg]:text-kortix-orange font-sans normal-case"
+            >
+              <WarningIcon />
               {t.raw('text9daf8e05c684')}
             </Badge>
           </Hint>
@@ -305,7 +415,9 @@ function RunRow({
         </Hint>
       </div>
 
-      {error ? <p className="text-destructive text-xs break-words">{error}</p> : null}
+      {error ? (
+        <p className="text-kortix-red font-mono text-xs tracking-tight break-words">{error}</p>
+      ) : null}
 
       <div className="flex min-w-0 items-center gap-2">
         <InlineMeta className="flex-1">
@@ -323,9 +435,10 @@ function RunRow({
         {run.session_id || action ? (
           <ButtonGroup>
             {run.session_id ? (
-              <Button variant="ghost" size="xs" asChild>
+              <Button variant="outline" size="xs" asChild>
                 <Link href={projectSessionHref(projectId, run.session_id)}>
                   {t.raw('textb205bb47f81a')}
+                  <ArrowUpRightIcon className="size-3.5 shrink-0" />
                 </Link>
               </Button>
             ) : null}

@@ -20113,7 +20113,12 @@
       "text6c5ebd6c3b4f": "Fehlgeschlagene Läufe erscheinen hier",
       "text8dcda9f17257": "{value0} Credits",
       "text026c6dbbbec5": "Payload kopieren",
-      "textff2c3559cd6b": "Zeige den Prompt, den dieser Payload erzeugt, oder führe den Trigger damit aus."
+      "textff2c3559cd6b": "Zeige den Prompt, den dieser Payload erzeugt, oder führe den Trigger damit aus.",
+      "text614aa365f41e": "Ausgelöst",
+      "text237112b89b77": "Letzte Läufe",
+      "text9da843b113d4": "Balkenhöhe = Dauer des Laufs",
+      "texta36b75929fc3": "Letzte {value0} Läufe, {value1} fehlgeschlagen",
+      "text15e8856d4d77": "Startet eine echte Sitzung. Es fallen Kosten an."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

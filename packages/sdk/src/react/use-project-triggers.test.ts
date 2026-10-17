@@ -190,3 +190,34 @@ describe('run hooks take { enabled, refetchInterval } (useReviewItems pattern)',
     expect((useTriggerRuns('proj-1', null, { enabled: true }) as any).enabled).toBe(false);
   });
 });
+
+describe('useTriggerRuns takes an optional page { limit }', () => {
+  test('limit is sent on every page and keys its own cache entry under the trigger key', async () => {
+    const { useTriggerRuns, triggerRunsKey } = await import('./use-project-triggers');
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return new Response('{"runs":[],"next_cursor":null}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+
+    const plain = useTriggerRuns('proj-1', 'nightly') as any;
+    const limited = useTriggerRuns('proj-1', 'nightly', { limit: 30 }) as any;
+    // No limit: the key and the request are unchanged.
+    expect(plain.queryKey).toEqual(triggerRunsKey('proj-1', 'nightly'));
+    expect(limited.queryKey).not.toEqual(plain.queryKey);
+    expect(limited.queryKey.slice(0, plain.queryKey.length)).toEqual([...plain.queryKey]);
+
+    await plain.queryFn({ pageParam: undefined });
+    await limited.queryFn({ pageParam: undefined });
+    await limited.queryFn({ pageParam: 'c2' });
+    expect(urls).toEqual([
+      'http://test.local/projects/proj-1/triggers/nightly/runs',
+      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30',
+      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30&cursor=c2',
+    ]);
+  });
+});

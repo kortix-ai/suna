@@ -142,6 +142,8 @@ export const projectTriggerRunsKey = (
 export interface TriggerRunsQueryOptions {
   enabled?: boolean;
   refetchInterval?: number | false;
+  /** Runs per page (1–100, server default 25). A set limit keys its own cache entry. */
+  limit?: number;
 }
 
 const nextRunsCursor = (page: ProjectTriggerRunList) => page.next_cursor ?? undefined;
@@ -156,9 +158,11 @@ export function useTriggerRuns(
   slug: string | null | undefined,
   options?: TriggerRunsQueryOptions,
 ) {
+  const limit = options?.limit;
   return useInfiniteQuery({
-    queryKey: triggerRunsKey(projectId, slug),
-    queryFn: ({ pageParam }) => listTriggerRuns(projectId as string, slug as string, { cursor: pageParam }),
+    queryKey: limit === undefined ? triggerRunsKey(projectId, slug) : [...triggerRunsKey(projectId, slug), { limit }],
+    queryFn: ({ pageParam }) =>
+      listTriggerRuns(projectId as string, slug as string, { cursor: pageParam, limit }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextRunsCursor,
     enabled: !!projectId && !!slug && options?.enabled !== false,

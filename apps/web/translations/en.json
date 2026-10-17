@@ -20124,7 +20124,12 @@
       "text6c5ebd6c3b4f": "Failed runs will show up here",
       "text8dcda9f17257": "{value0} credits",
       "text026c6dbbbec5": "Copy payload",
-      "textff2c3559cd6b": "Preview the prompt this payload renders, or run the trigger with it."
+      "textff2c3559cd6b": "Preview the prompt this payload renders, or run the trigger with it.",
+      "text614aa365f41e": "Fired",
+      "text237112b89b77": "Recent runs",
+      "text9da843b113d4": "Bar height is the run’s duration",
+      "texta36b75929fc3": "Last {value0} runs, {value1} failed",
+      "text15e8856d4d77": "Runs a real session. Costs apply."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

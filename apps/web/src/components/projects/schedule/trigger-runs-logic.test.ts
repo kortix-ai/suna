@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  BAR_COUNT,
+  BAR_MIN_PCT,
   canReplay,
   parsePayload,
   relativeRunTime,
+  runBars,
   runState,
+  runTone,
   runsInFlight,
   unseenFailures,
 } from './trigger-runs-logic';
@@ -117,5 +121,57 @@ describe('relativeRunTime', () => {
 
   test('an unparsable time renders nothing', () => {
     expect(relativeRunTime('nope', 'en', now)).toBe('');
+  });
+});
+
+describe('runBars', () => {
+  const run = (
+    status: 'fired' | 'failed' | 'rejected' | 'skipped' | 'queued' | 'running',
+    duration_ms: number | null,
+    run_status: 'succeeded' | 'failed' | 'running' | null = null,
+  ) => ({ status, run_status, duration_ms });
+
+  test('oldest on the left, scaled to the longest run, with a floor', () => {
+    // The API lists newest first.
+    const bars = runBars([
+      run('fired', 120_000, 'succeeded'),
+      run('failed', 1_000),
+      run('fired', 60_000, 'succeeded'),
+    ]);
+    expect(bars.map((b) => b.pct)).toEqual([50, BAR_MIN_PCT, 100]);
+  });
+
+  test('a run without a duration, or all zero, draws the floor', () => {
+    expect(runBars([run('queued', null), run('running', null)]).map((b) => b.pct)).toEqual([
+      BAR_MIN_PCT,
+      BAR_MIN_PCT,
+    ]);
+    expect(runBars([run('skipped', 0)])[0]!.pct).toBe(BAR_MIN_PCT);
+  });
+
+  test('draws at most the latest 30 runs', () => {
+    const many = Array.from({ length: 45 }, (_, i) => run('fired', i + 1, 'succeeded'));
+    const bars = runBars(many);
+    expect(bars).toHaveLength(BAR_COUNT);
+    // The newest run (index 0) is the rightmost bar.
+    expect(bars[BAR_COUNT - 1]!.run).toBe(many[0]!);
+  });
+
+  test('colour follows the state the row shows', () => {
+    expect(
+      runBars([
+        run('fired', 1, 'succeeded'),
+        run('fired', 1, null),
+        run('fired', 1, 'running'),
+        run('fired', 1, 'failed'),
+        run('failed', 1),
+        run('rejected', 1),
+        run('skipped', 1),
+        run('queued', 1),
+      ])
+        .reverse()
+        .map((b) => b.tone),
+    ).toEqual(['green', 'green', 'green', 'red', 'red', 'orange', 'muted', 'yellow']);
+    expect(runTone('running')).toBe('green');
   });
 });

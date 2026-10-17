@@ -20113,7 +20113,12 @@
       "text6c5ebd6c3b4f": "As execuções com falha aparecerão aqui",
       "text8dcda9f17257": "{value0} créditos",
       "text026c6dbbbec5": "Copiar payload",
-      "textff2c3559cd6b": "Pré-visualize o prompt que este payload gera ou execute o gatilho com ele."
+      "textff2c3559cd6b": "Pré-visualize o prompt que este payload gera ou execute o gatilho com ele.",
+      "text614aa365f41e": "Disparada",
+      "text237112b89b77": "Execuções recentes",
+      "text9da843b113d4": "A altura da barra é a duração",
+      "texta36b75929fc3": "Últimas {value0} execuções, {value1} com falha",
+      "text15e8856d4d77": "Inicia uma sessão real. Há custos."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

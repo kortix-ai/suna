@@ -20113,7 +20113,12 @@
       "text6c5ebd6c3b4f": "Le esecuzioni non riuscite appariranno qui",
       "text8dcda9f17257": "{value0} crediti",
       "text026c6dbbbec5": "Copia payload",
-      "textff2c3559cd6b": "Visualizza il prompt generato da questo payload o esegui il trigger con esso."
+      "textff2c3559cd6b": "Visualizza il prompt generato da questo payload o esegui il trigger con esso.",
+      "text614aa365f41e": "Avviata",
+      "text237112b89b77": "Esecuzioni recenti",
+      "text9da843b113d4": "L’altezza della barra è la durata",
+      "texta36b75929fc3": "Ultime {value0} esecuzioni, {value1} non riuscite",
+      "text15e8856d4d77": "Avvia una sessione reale. Si applicano costi."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

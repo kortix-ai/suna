@@ -81,3 +81,39 @@ export function parsePayload(
   }
   return { ok: true, value: value as Record<string, unknown> };
 }
+
+/** The hue a run shows in the duration bars and their legend (Paper V20 / V03). */
+export type RunTone = 'green' | 'red' | 'orange' | 'yellow' | 'muted';
+
+export function runTone(state: RunState): RunTone {
+  if (state === 'failed') return 'red';
+  if (state === 'rejected') return 'orange';
+  if (state === 'skipped') return 'muted';
+  if (state === 'queued') return 'yellow';
+  return 'green'; // started, succeeded, running
+}
+
+/** Bars the strip draws: the latest 30 runs. */
+export const BAR_COUNT = 30;
+/** A run with no duration, or a very fast one, still draws 6 of the strip's 26 px. */
+export const BAR_MIN_PCT = 23;
+
+/**
+ * One bar per run, oldest on the left. Height is the run's duration as a
+ * percent of the longest run shown, never under `BAR_MIN_PCT`. `runs` is the
+ * list as the API returns it, newest first.
+ */
+export function runBars<R extends Pick<ProjectTriggerRun, 'status' | 'run_status' | 'duration_ms'>>(
+  runs: readonly R[],
+): { run: R; tone: RunTone; pct: number }[] {
+  const shown = runs.slice(0, BAR_COUNT).reverse();
+  const longest = Math.max(0, ...shown.map((r) => r.duration_ms ?? 0));
+  return shown.map((run) => ({
+    run,
+    tone: runTone(runState(run)),
+    pct:
+      longest > 0 && run.duration_ms
+        ? Math.max(BAR_MIN_PCT, Math.round((run.duration_ms / longest) * 100))
+        : BAR_MIN_PCT,
+  }));
+}
