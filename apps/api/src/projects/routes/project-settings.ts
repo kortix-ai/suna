@@ -347,10 +347,11 @@ export function registerProjectSettingsRoutes(): void {
       if (!isUuid(targetAccountId)) {
         return c.json({ error: 'account_id must be a project target account id' }, 400);
       }
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded || loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-      // Gate 1 — destructive tier on the source (see the DELETE handler: the
-      // `manage` floor lets project.write through, which is NOT enough here).
+      // Gate 1 — project.delete is the gate; the load above only proves
+      // membership (same idiom as the DELETE handler since 'manage' was retired
+      // with customize permissions).
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
       if (targetAccountId === loaded.row.accountId) {
         return c.json({ error: 'Project is already in that account' }, 400);
