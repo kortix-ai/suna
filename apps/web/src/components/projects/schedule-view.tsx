@@ -28,6 +28,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
+import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -38,13 +39,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -71,12 +72,10 @@ import {
   CheckSquareIcon,
   DotsThreeIcon,
   LightningIcon,
-  LockKeyIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
   MagnifyingGlassIcon as SearchIcon,
-  WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -354,6 +353,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
 
+  // The paused alert's own Resume all: the same switch as the toolbar menu.
+  const resumeAll = useMutation({
+    mutationFn: () => setProjectTriggersActivation(projectId, false),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      successToast(tI18nComplete.raw('text5e4efd91b927'));
+    },
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
+  });
+
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
     onSuccess: (_data, trigger) => {
@@ -596,13 +605,23 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
             {paused && showContent && (
-              <InfoBanner
-                tone="warning"
-                icon={WarningIcon}
-                title={tI18nComplete.raw('textb18b93a52cd2')}
-              >
-                {tI18nComplete.raw('text3bc554b5c290')}
-              </InfoBanner>
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('textb18b93a52cd2')}</AlertTitle>
+                <AlertDescription>{tI18nComplete.raw('textc9e9d972eda2')}</AlertDescription>
+                {controls.canUpdate ? (
+                  <AlertActions>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={resumeAll.isPending}
+                      onClick={() => resumeAll.mutate()}
+                    >
+                      {resumeAll.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                      {tI18nComplete.raw('text43e673c5503d')}
+                    </Button>
+                  </AlertActions>
+                ) : null}
+              </Alert>
             )}
 
             {triggersQuery.isLoading ? (
@@ -613,14 +632,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 ))}
               </div>
             ) : isForbidden ? (
-              <InfoBanner
-                tone="warning"
-                icon={LockKeyIcon}
-                title={tI18nComplete.raw('textabb84be05cfa')}
-              >
-                {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
-                {tI18nComplete.raw('text382584f2456e')}
-              </InfoBanner>
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('textabb84be05cfa')}</AlertTitle>
+                <AlertDescription>
+                  {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
+                  {tI18nComplete.raw('text382584f2456e')}
+                </AlertDescription>
+              </Alert>
             ) : triggersQuery.isError ? (
               <ErrorState
                 size="sm"
@@ -721,19 +739,18 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             ) : null}
 
             {parseErrors.length > 0 && (
-              <InfoBanner
-                tone="warning"
-                icon={WarningIcon}
-                title={tI18nComplete.raw('text5f6dc605ac36')}
-              >
-                <ul className="space-y-0.5 text-xs">
-                  {parseErrors.map((err) => (
-                    <li key={err.slug}>
-                      <code className="font-mono">{err.path}</code> — {err.error}
-                    </li>
-                  ))}
-                </ul>
-              </InfoBanner>
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('text5f6dc605ac36')}</AlertTitle>
+                <AlertDescription>
+                  <ul className="space-y-0.5 text-xs">
+                    {parseErrors.map((err) => (
+                      <li key={err.slug}>
+                        <code className="font-mono">{err.path}</code> — {err.error}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
             )}
           </div>
 

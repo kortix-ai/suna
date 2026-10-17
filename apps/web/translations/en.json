@@ -20147,7 +20147,8 @@
       "texte57e0a07011b": "{ok, plural, other {# resumed}}{failed, plural, =0 {} other {, # failed}}",
       "text1412a8506003": "{ok, plural, other {# deleted}}{failed, plural, =0 {} other {, # failed}}",
       "textd142c482800c": "Delete {count, plural, one {# trigger} other {# triggers}}?",
-      "text75af4531ed17": "They are removed from the project manifest. This cannot be undone."
+      "text75af4531ed17": "They are removed from the project manifest. This cannot be undone.",
+      "textc9e9d972eda2": "Nothing in this project runs on its own right now. You can still start a trigger by hand."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

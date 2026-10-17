@@ -4,7 +4,8 @@
  * The Triggers select-mode bar. Its composition copies
  * `SessionsSelectionBar` (`features/workspace/project-sessions`): the count,
  * then the actions at `h-8`, then the exit button. It floats at the bottom
- * centre of the list column. The actions are one `outline` group; Delete is
+ * centre of the list column. The actions are one `secondary` group (the
+ * Button's own disabled style); Delete is
  * the destructive tone inside it. While a bulk action runs, the count line
  * reads its progress with the session dot matrix.
  */
@@ -72,7 +73,7 @@ export function TriggerSelectionBar({
     <Hint label={label} side="top">
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         size="sm"
         aria-label={label}
         onClick={onClick}

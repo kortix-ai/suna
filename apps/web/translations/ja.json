@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# 件を再開}}{failed, plural, =0 {} other {、# 件失敗}}",
       "text1412a8506003": "{ok, plural, other {# 件を削除}}{failed, plural, =0 {} other {、# 件失敗}}",
       "textd142c482800c": "{count, plural, other {# 件のトリガー}}を削除しますか？",
-      "text75af4531ed17": "プロジェクトのマニフェストから削除されます。元に戻せません。"
+      "text75af4531ed17": "プロジェクトのマニフェストから削除されます。元に戻せません。",
+      "textc9e9d972eda2": "現在、このプロジェクトでは何も自動で実行されません。トリガーは手動で開始できます。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

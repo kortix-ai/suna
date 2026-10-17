@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# fortgesetzt}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
       "text1412a8506003": "{ok, plural, other {# gelöscht}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
       "textd142c482800c": "{count, plural, one {# Trigger} other {# Trigger}} löschen?",
-      "text75af4531ed17": "Sie werden aus dem Projektmanifest entfernt. Das lässt sich nicht rückgängig machen."
+      "text75af4531ed17": "Sie werden aus dem Projektmanifest entfernt. Das lässt sich nicht rückgängig machen.",
+      "textc9e9d972eda2": "In diesem Projekt läuft gerade nichts von selbst. Du kannst einen Trigger weiterhin von Hand starten."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

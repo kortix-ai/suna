@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# reanudados}}{failed, plural, =0 {} other {, # con error}}",
       "text1412a8506003": "{ok, plural, other {# eliminados}}{failed, plural, =0 {} other {, # con error}}",
       "textd142c482800c": "¿Eliminar {count, plural, one {# disparador} other {# disparadores}}?",
-      "text75af4531ed17": "Se eliminan del manifiesto del proyecto. No se puede deshacer."
+      "text75af4531ed17": "Se eliminan del manifiesto del proyecto. No se puede deshacer.",
+      "textc9e9d972eda2": "Ahora mismo nada de este proyecto se ejecuta solo. Aún puedes iniciar un disparador a mano."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

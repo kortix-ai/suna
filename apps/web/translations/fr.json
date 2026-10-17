@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# repris}}{failed, plural, =0 {} other {, # en échec}}",
       "text1412a8506003": "{ok, plural, other {# supprimés}}{failed, plural, =0 {} other {, # en échec}}",
       "textd142c482800c": "Supprimer {count, plural, one {# déclencheur} other {# déclencheurs}} ?",
-      "text75af4531ed17": "Ils sont retirés du manifeste du projet. Cette action est irréversible."
+      "text75af4531ed17": "Ils sont retirés du manifeste du projet. Cette action est irréversible.",
+      "textc9e9d972eda2": "Rien dans ce projet ne s’exécute seul pour l’instant. Vous pouvez toujours lancer un déclencheur à la main."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

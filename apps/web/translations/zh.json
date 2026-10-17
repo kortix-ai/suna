@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {已恢复 #}}{failed, plural, =0 {} other {，# 个失败}}",
       "text1412a8506003": "{ok, plural, other {已删除 #}}{failed, plural, =0 {} other {，# 个失败}}",
       "textd142c482800c": "删除 {count, plural, other {# 个触发器}}？",
-      "text75af4531ed17": "它们会从项目清单中移除。此操作无法撤销。"
+      "text75af4531ed17": "它们会从项目清单中移除。此操作无法撤销。",
+      "textc9e9d972eda2": "此项目目前不会自动运行任何内容。你仍可以手动启动触发器。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

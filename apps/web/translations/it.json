@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# ripresi}}{failed, plural, =0 {} other {, # non riusciti}}",
       "text1412a8506003": "{ok, plural, other {# eliminati}}{failed, plural, =0 {} other {, # non riusciti}}",
       "textd142c482800c": "Eliminare {count, plural, one {# trigger} other {# trigger}}?",
-      "text75af4531ed17": "Vengono rimossi dal manifest del progetto. L’operazione non può essere annullata."
+      "text75af4531ed17": "Vengono rimossi dal manifest del progetto. L’operazione non può essere annullata.",
+      "textc9e9d972eda2": "Al momento nulla in questo progetto parte da solo. Puoi comunque avviare un trigger a mano."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

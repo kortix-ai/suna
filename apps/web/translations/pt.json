@@ -20136,7 +20136,8 @@
       "texte57e0a07011b": "{ok, plural, other {# retomados}}{failed, plural, =0 {} other {, # com falha}}",
       "text1412a8506003": "{ok, plural, other {# excluídos}}{failed, plural, =0 {} other {, # com falha}}",
       "textd142c482800c": "Excluir {count, plural, one {# gatilho} other {# gatilhos}}?",
-      "text75af4531ed17": "Eles são removidos do manifesto do projeto. Isso não pode ser desfeito."
+      "text75af4531ed17": "Eles são removidos do manifesto do projeto. Isso não pode ser desfeito.",
+      "textc9e9d972eda2": "Nada neste projeto está rodando sozinho agora. Você ainda pode iniciar um gatilho manualmente."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
