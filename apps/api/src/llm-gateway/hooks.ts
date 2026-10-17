@@ -49,9 +49,32 @@ export async function authenticatePrincipal(token: string): Promise<AuthedPrinci
 
 async function resolvePrincipalWithReason(
   token: string,
-): Promise<{ principal: AuthedPrincipal | null; reason: string | null }> {
+): Promise<{
+  principal: AuthedPrincipal | null;
+  reason: string | null;
+  /** Set when the presented secret hash-matches a stored credential that is
+   *  refused (revoked/expired/dead/lease-closed). The gateway refusal stays
+   *  401 but now carries its real identity so the trace lands on the owning
+   *  account (KRTX-1749). Absent when no row matches: garbage stays
+   *  unattributed. */
+  refusedPrincipal?: AuthedPrincipal;
+}> {
   if (isGatewayKey(token)) {
-    return { principal: await validateGatewayKey(token), reason: null };
+    const gw = await validateGatewayKey(token);
+    if (!gw) return { principal: null, reason: null };
+    if (gw.refused) {
+      return {
+        principal: null,
+        reason: null,
+        refusedPrincipal: {
+          userId: gw.userId,
+          accountId: gw.accountId,
+          projectId: gw.projectId,
+          keyId: gw.keyId,
+        },
+      };
+    }
+    return { principal: gw, reason: null };
   }
   const yolo = await attributeYoloToken(token);
   if (yolo) return { principal: yolo, reason: null };
@@ -84,7 +107,23 @@ async function resolvePrincipalWithReason(
       reason: null,
     };
   }
-  return { principal: null, reason: tokenRefusalReason(account.error) };
+  // The token refused but hash-matched a real row (revoked, expired, dead,
+  // lease closed): keep refusing, but attribute the refusal (KRTX-1749).
+  const refused = account.refusedIdentity;
+  const refusedPrincipal =
+    refused && refused.accountId && refused.userId
+      ? {
+          userId: refused.userId,
+          accountId: refused.accountId,
+          ...(refused.projectId ? { projectId: refused.projectId } : {}),
+          ...(refused.sessionId ? { sessionId: refused.sessionId } : {}),
+        }
+      : undefined;
+  return {
+    principal: null,
+    reason: tokenRefusalReason(account.error),
+    ...(refusedPrincipal ? { refusedPrincipal } : {}),
+  };
 }
 
 /**
@@ -181,11 +220,19 @@ export async function authorizeRequest(
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
     // a valid, unexpired token whose session was parked is a wrong answer, and
     // it costs whoever reads it a search through the wrong system.
+    //
+    // A refusal whose secret still hash-matches a stored credential (revoked
+    // key, dead PAT, parked session) carries that credential's identity: the
+    // gateway pipeline emits one attributed trace for it, so the refusal is
+    // visible in usage and logs (KRTX-1749). A token matching no row has no
+    // identity — the denial stays principal-less and unrecorded, so garbage
+    // traffic cannot flood the log store.
     return {
       ok: false,
       status: 401,
       errorCode: resolved.reason ? 'session_not_running' : 'invalid_token',
       message: resolved.reason ?? 'Invalid token',
+      ...(resolved.refusedPrincipal ? { principal: resolved.refusedPrincipal } : {}),
     };
   }
   // Old gateway processes omit deferBilling and still expect this RPC to take
