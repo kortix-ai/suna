@@ -199,6 +199,7 @@ flow(
   "OAU-5",
   {
     domain: "oauth",
+    tags: ["deployed"],
     routes: [
       "GET /.well-known/oauth-authorization-server",
       "GET /v1/oauth/.well-known/oauth-authorization-server",

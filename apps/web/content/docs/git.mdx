@@ -181,13 +181,13 @@ Five permissions control git:
 
 | Permission | Allows |
 | --- | --- |
-| `project.gitops.read` | Clone and fetch every branch. |
+| `project.gitops.read` | Read commits, diffs and change requests. For a session: clone and fetch. |
 | `project.gitops.push` | Push. Open change requests. |
 | `project.gitops.merge` | Merge change requests. |
 | `project.gitops.ref.any` | For a session: push a branch other than its own. |
 | `project.gitops.ref.delete` | Delete a branch. |
 
-A project **Member** holds `project.gitops.read` only: a Member can clone but cannot push. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/accounts).
+A project **Member** holds `project.gitops.read` only. A Member reads the branches, commits and change requests of their own sessions and of sessions they may open, and nothing of another member's private session. A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch: a Member cannot clone from their own git client. A Member's sessions still clone and push their own branch. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/accounts).
 
 **People** with push access:
 

@@ -276,6 +276,7 @@ test('the drawer docs row stays a plain anchor: the tap marks it pending and lea
   await act(async () => {
     click = lib.click(row!);
   });
+  if (!click) throw new Error('the tap dispatched no click event');
   // The handler must not hijack the tap: the anchor's default document load is
   // what serves the docs site. A `preventDefault` here would either strand the
   // reader (no soft nav exists into a static file) or force a doomed `RSC: 1`

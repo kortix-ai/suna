@@ -5,6 +5,7 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
   parseDurationSeconds,
 } from '@kortix/manifest-schema';
@@ -134,6 +135,22 @@ export function eventOnlyKeyError(
     }
   }
   return null;
+}
+
+/**
+ * A cron trigger's `max_lateness` (KRTX-1743): the misfire bound. Absent → `{}`,
+ * so a spec without it keeps its shape and schedule revision. Mirrors
+ * `@kortix/manifest-schema`'s rule: cron only, at least 60s.
+ */
+export function parseMaxLateness(
+  row: Record<string, unknown>,
+  type: GitTriggerType,
+): { maxLatenessSeconds?: number } | { error: string } {
+  const raw = row.max_lateness;
+  if (raw === undefined || raw === null) return {};
+  if (type !== 'cron') return { error: 'max_lateness is only valid on a cron trigger' };
+  const parsed = parseMonitorDuration(raw, 'max_lateness', TRIGGER_MIN_MAX_LATENESS_SECONDS);
+  return 'error' in parsed ? parsed : { maxLatenessSeconds: parsed.seconds };
 }
 
 function parseMonitorDuration(
@@ -328,6 +345,7 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
       entry.cron = spec.cron ?? '';
     }
     entry.timezone = spec.timezone;
+    if (spec.maxLatenessSeconds) entry.max_lateness = formatDurationSeconds(spec.maxLatenessSeconds);
   } else if (spec.type === 'monitor') {
     entry.run = spec.run ?? '';
     entry.mode = spec.monitorMode ?? '';
@@ -395,6 +413,8 @@ function parseTriggerEntry(
     );
   }
   const type = typeRaw as GitTriggerType;
+  const lateness = parseMaxLateness(row, type);
+  if ('error' in lateness) return err(slug, lateness.error);
   if (type !== 'event') {
     const bad = eventOnlyKeyError(row, 'config', type);
     if (bad) return err(slug, bad);
@@ -591,6 +611,7 @@ function parseTriggerEntry(
           monitorMode: null,
           intervalSeconds: null,
           expectEventWithinSeconds: null,
+          ...lateness,
         },
       };
     }
@@ -612,6 +633,7 @@ function parseTriggerEntry(
         monitorMode: null,
         intervalSeconds: null,
         expectEventWithinSeconds: null,
+        ...lateness,
       },
     };
   }

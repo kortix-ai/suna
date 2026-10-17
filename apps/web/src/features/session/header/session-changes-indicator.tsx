@@ -37,7 +37,9 @@ import {
   useSessionBaseRef,
   useSessionChanges,
 } from '@/features/session/session-changes-shared';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import { ArrowRightIcon, FilesIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
@@ -64,6 +66,10 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   const { files: changedFiles, count: changedCount } = useSessionChanges();
   const baseRef = useSessionBaseRef(projectId, gitSessionId);
   const { asking, openChangeRequest } = useOpenChangeRequest(sessionId, baseRef);
+  // Opening a change request asserts project.write + project.gitops.push: the
+  // button shows only on an explicit allow, the same rule as the change
+  // request dialog.
+  const { canOpen } = changeRequestControlsFrom(useProjectCans(projectId, REVIEW_CONTROL_ACTIONS));
 
   const [open, setOpen] = useState(false);
 
@@ -174,12 +180,14 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
               'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b',
             )}
           </Button>
-          <Button size="sm" onClick={openChangeRequest} disabled={asking}>
-            {asking ? <Loading className="size-3.5 shrink-0" /> : null}
-            {tI18nHardcoded.raw(
-              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624',
-            )}
-          </Button>
+          {canOpen ? (
+            <Button size="sm" onClick={openChangeRequest} disabled={asking}>
+              {asking ? <Loading className="size-3.5 shrink-0" /> : null}
+              {tI18nHardcoded.raw(
+                'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624',
+              )}
+            </Button>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>

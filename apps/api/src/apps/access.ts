@@ -3,6 +3,7 @@ import { appAccessGrants, apps, type AgentGrant } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
+import { requestMemo } from '../lib/request-context';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorForToken } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';
@@ -493,26 +494,44 @@ export function appVisibleToSubject(input: {
   }
 }
 
-/** Bulk-load App grants → map appId → grants. Mirrors loadSessionGrants. */
+/** Bulk-load App grants → map appId → grants. Mirrors loadSessionGrants.
+ *
+ *  One read per distinct id set per request (`requestMemo`): the Apps list
+ *  calls this back-to-back with the same restricted ids — once for the
+ *  visibility filter, once for the openable set over the visible rows
+ *  (appsOpenableByUser re-resolves what filterAppsVisibleToUser just
+ *  resolved; KRTX-2341) — and the second call answered from the DB only to
+ *  compute a second predicate over identical data. (When a restricted App is
+ *  not visible to the caller the openable set's ids are a subset of the
+ *  filter's — their own memo key, one honest extra read.) Sorted ids make the
+ *  key independent of caller ordering. Request scope, not a TTL: every
+ *  request still reads fresh, and no flow writes grants and re-reads them
+ *  through this loader in the same request (the policy PUT route returns the
+ *  row it built and re-serializes through the single-app `loadAppAccessGrants`,
+ *  and `reconcileAccountIdentities` — the bulk grants write — does not
+ *  re-read through this loader either). */
 export async function loadAppAccessGrantsFor(
   appIds: string[],
 ): Promise<Map<string, SecretGrant[]>> {
-  const out = new Map<string, SecretGrant[]>();
-  if (appIds.length === 0) return out;
-  const rows = await db.select({
-    appId: appAccessGrants.appId,
-    principalType: appAccessGrants.principalType,
-    principalId: appAccessGrants.principalId,
-  }).from(appAccessGrants).where(inArray(appAccessGrants.appId, appIds));
-  for (const row of rows) {
-    const list = out.get(row.appId) ?? [];
-    list.push({
-      principalType: row.principalType as 'member' | 'group',
-      principalId: row.principalId,
-    });
-    out.set(row.appId, list);
-  }
-  return out;
+  const key = `app-access-grants:${[...appIds].sort().join(',')}`;
+  return requestMemo(key, async () => {
+    const out = new Map<string, SecretGrant[]>();
+    if (appIds.length === 0) return out;
+    const rows = await db.select({
+      appId: appAccessGrants.appId,
+      principalType: appAccessGrants.principalType,
+      principalId: appAccessGrants.principalId,
+    }).from(appAccessGrants).where(inArray(appAccessGrants.appId, appIds));
+    for (const row of rows) {
+      const list = out.get(row.appId) ?? [];
+      list.push({
+        principalType: row.principalType as 'member' | 'group',
+        principalId: row.principalId,
+      });
+      out.set(row.appId, list);
+    }
+    return out;
+  });
 }
 
 interface TeamScopedApp {

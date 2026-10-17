@@ -22,8 +22,7 @@
  * - The rename mutation (`GeneralWorkspaceCard` below) — same
  *   `useMutation`/`renameOnMutate`/`renameOnError`/`renameOnSettled` wiring
  *   as the old `GeneralProjectCard`, byte-identical apart from the name of
- *   the enclosing function. `general-tab.rename.test.tsx` pins this the same
- *   way `settings-view.rename.test.tsx` used to.
+ *   the enclosing function.
  * - The Danger Zone (renamed "Delete workspace" per the task brief, to match
  *   the Profile tab's own "Delete account" section naming) — same
  *   `archiveProject` mutation. The mechanism is still an archive, NOT a row

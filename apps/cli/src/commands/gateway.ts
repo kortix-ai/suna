@@ -1,3 +1,5 @@
+import type { Auth } from '../api/auth.ts';
+import { sdkBackendUrl } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -357,6 +359,18 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
 
 // ── External gateway API keys ───────────────────────────────────────────────
 
+// The gateway base a key is used against — {base}/v1/chat/completions is the
+// OpenAI-compatible endpoint. The API reports the standalone gateway's public
+// origin (LLM_GATEWAY_BASE_URL) and null when it has none; then the API's own
+// public mount is the gateway, <api origin>/v1/llm (the self-host convention).
+// sdkBackendUrl normalizes the configured base, so a host URL with or without
+// a /v1 suffix resolves to the same origin.
+function gatewayUrl(auth: Auth, fromApi: unknown): string {
+  const url = typeof fromApi === 'string' ? fromApi.trim() : '';
+  if (url) return url;
+  return `${new URL(sdkBackendUrl(auth.api_base)).origin}/v1/llm`;
+}
+
 async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
@@ -366,8 +380,9 @@ async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promis
   try {
     if (action === 'ls' || action === 'list') {
       const data = await ctx.client.get<any>(base);
-      if (json) return outJson(data);
-      process.stdout.write(`\n  ${C.dim}Gateway URL: ${data.gateway_url}${C.reset}\n\n`);
+      const gw = gatewayUrl(ctx.auth, data.gateway_url);
+      if (json) return outJson({ ...data, gateway_url: gw });
+      process.stdout.write(`\n  ${C.dim}Gateway URL: ${gw}${C.reset}\n\n`);
       if (!data.keys?.length) {
         process.stdout.write(
           `  ${C.dim}No gateway keys. Create one: kortix gateway keys new <name>${C.reset}\n\n`,
@@ -388,11 +403,13 @@ async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promis
       const name = rest.find((a) => !a.startsWith('-'));
       if (!name) return fail('keys new needs a name');
       const created = await ctx.client.post<any>(base, { name });
-      if (json) return outJson(created);
+      const gw = gatewayUrl(ctx.auth, created.gateway_url);
+      if (json) return outJson({ ...created, gateway_url: gw });
       process.stdout.write(
         `\n  ${status.ok(`created gateway key "${name}"`)}\n\n` +
           `  ${C.bold}${created.secret_key}${C.reset}\n\n` +
-          `  ${C.dim}Shown once — store it now. Use as the Bearer token against the gateway URL.${C.reset}\n\n`,
+          `  ${C.dim}Shown once — store it now. Use as the Bearer token against the gateway URL:${C.reset}\n` +
+          `  ${C.bold}${gw}/v1/chat/completions${C.reset}\n\n`,
       );
       return 0;
     }

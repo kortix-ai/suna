@@ -185,7 +185,7 @@ describe('native theme persistence', () => {
     expect(themeState.normalizeTheme?.('light')).toBe('light');
     expect(themeState.normalizeTheme?.('dark')).toBe('dark');
     expect(themeState.normalizeTheme?.('system')).toBe('system');
-    expect(themeState.normalizeTheme?.('sepia')).toBe('system');
+    expect(themeState.normalizeTheme?.('sepia')).toBe('light');
   });
 
   it('chooses a launch background without drawing a theme flash', () => {

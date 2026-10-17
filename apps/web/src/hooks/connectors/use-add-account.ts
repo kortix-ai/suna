@@ -11,10 +11,13 @@ import {
 import { useProjectAccountId } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { errorToast } from '@/components/ui/toast';
+import { errorToast, warningToast } from '@/components/ui/toast';
 import { proposeAccountLabel } from '@/features/workspace/capabilities/connectors/install/install';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
-import { startDiscoveredSignIn } from '@/features/workspace/customize/sections/connector-oauth2-start';
+import {
+  signInOrReason,
+  startDiscoveredSignIn,
+} from '@/features/workspace/customize/sections/connector-oauth2-start';
 import {
   connectorConnectionRows,
   newAccountGrantees,
@@ -51,6 +54,7 @@ export function useAddAccount({
   onCredential: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const accountId = useProjectAccountId(projectId);
   // Same key and fetcher as `ConnectionsList`, so both share one cache entry.
   const connectionsQuery = useQuery({
@@ -112,20 +116,16 @@ export function useAddAccount({
         owner: draft.audience === 'private' ? ('me' as const) : ('project' as const),
       };
       // An MCP server that signs in with OAuth: straight to its consent page.
+      // Without one-click OAuth, credential entry; a start that failed says why.
       if (connector.provider === 'mcp') {
-        try {
-          const url = await startDiscoveredSignIn(
-            projectId,
-            connection.connection_id,
-            window.location.href,
-          );
-          if (url) {
-            window.location.assign(url);
-            return;
-          }
-        } catch {
-          // No one-click OAuth here: fall through to credential entry.
+        const { url, error } = await signInOrReason(() =>
+          startDiscoveredSignIn(projectId, connection.connection_id, window.location.href),
+        );
+        if (url) {
+          window.location.assign(url);
+          return;
         }
+        if (error) warningToast(tPages('addMcpSignInFailed', { name: displayName, reason: error }));
       }
       onAdded();
       onCredential(target);
@@ -138,14 +138,16 @@ export function useAddAccount({
   });
 
   const pending = createAccount.isPending || addManaged.isPending;
-  /** The next free name for a new account: `<name>`, `<name> 2`, … */
-  const proposedLabel = () =>
-    proposeAccountLabel(
+  /** The next free name for a new account: `<name>`, `<name> 2`, … The
+   *  unlisted empty slot does not take a name: "Everyone" reuses it. */
+  const proposedLabel = () => {
+    const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+    const slot = emptyProjectSlot(connector, rows);
+    return proposeAccountLabel(
       displayName,
-      connectorConnectionRows(connectionsQuery.data?.connections, connector.slug).map(
-        (row) => row.label,
-      ),
+      rows.filter((row) => row !== slot).map((row) => row.label),
     );
+  };
   const submit = (draft: NewAccountDraft) => {
     if (pending) return;
     if (isManagedConnectorProvider(connector.provider)) {
@@ -166,8 +168,15 @@ export function useAddAccount({
  * connector that needs no credential (`requestAuthType` `'none'`) has none:
  * its first account already works.
  */
-function emptyProjectSlot(connector: AdminConnector, rows: readonly Connection[]): Connection | null {
-  if (connector.requestAuthType === 'none') return null;
+export function emptyProjectSlot(
+  connector: AdminConnector,
+  rows: readonly Connection[],
+): Connection | null {
+  // `none` means the account works unsigned, for a direct connector only: a
+  // managed app reports `none` because Composio holds its sign-in.
+  if (connector.requestAuthType === 'none' && !isManagedConnectorProvider(connector.provider)) {
+    return null;
+  }
   const shared = rows.filter((row) => row.owner_type === 'project');
   const slot = shared.length === 1 ? shared[0]! : null;
   return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;

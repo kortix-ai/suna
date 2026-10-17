@@ -251,7 +251,8 @@ async function runPtySession(
   };
 
   const onStdinData = (chunk: Buffer) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
+    // stdin chunks never sit on a SharedArrayBuffer; TypeScript 7 lib types need it said.
+    if (ws.readyState === WebSocket.OPEN) ws.send(chunk as Buffer<ArrayBuffer>);
   };
 
   let rawModeOn = false;

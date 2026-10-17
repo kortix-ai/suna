@@ -4,13 +4,6 @@
 
 Control which actions require approval to run.
 
-> **In a Kortix project (`kortix_version: 3`):** `permission` is set per
-> agent, on `agents.<name>.permission` in `kortix.yaml`. There is no
-> project-wide permission and no `opencode.json`. Omitted, it is `allow`.
-> `skill` and `task` keys are errors: the agent's `skills` and `subagents`
-> grants compile to `permission.skill` and `permission.task` (each granted
-> name `allow`, then `"*": deny`). The rule syntax below applies unchanged.
-
 OpenCode uses the `permission` config to decide whether a given action should run automatically, prompt you, or be blocked.
 
 As of `v1.1.1`, the legacy `tools` boolean config is deprecated and has been merged into `permission`. The old `tools` config is still supported for backwards compatibility.
@@ -76,7 +69,7 @@ For most permissions, you can use an object to apply different actions based on 
 }
 ```
 
-Rules are evaluated by pattern match, with the **last matching rule winning**. A common pattern is to put the catch-all `"*"` rule first, and more specific rules after it.
+In a Kortix session the **most specific matching rule wins**, whatever order the keys are written in: the longest matching pattern decides, and `"*"` is the fallback. The same holds between keys: `bash` outranks `"*"`. Two patterns of equal length: the later one in code-unit order wins. kortixd orders every block before OpenCode reads it, so pi and OpenCode resolve the same rule. (Stock OpenCode applies the last matching rule in key order.)
 
 ### Wildcards
 

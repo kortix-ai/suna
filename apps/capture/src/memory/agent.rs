@@ -483,6 +483,7 @@ pub fn grab_screen(paths: &MemoryPaths, a: GrabScreenArgs, json_out: bool) -> Re
             "cmd": if s.privacy.redact_pii { "capture_private" } else { "capture" }, "out": out.to_string_lossy(), "max_height": s.max_height, "quality": s.staging_quality,
             "exclude_bundle_ids": s.effective_excluded_bundle_ids(), "exclude_domains": s.effective_excluded_domains(),
             "exclude_private": s.exclude_private_browsing, "record_unknown": s.record_unknown_bundle_ids,
+            "only_included": s.record_only_included, "include_bundle_ids": s.included_bundle_ids, "include_domains": s.effective_included_domains(),
             "max_idle_seconds": 0.0, "ax": false,
             "level": s.ocr_level, "languages": s.ocr_languages,
         }),

@@ -11,7 +11,7 @@ import {
   getAccountTokenOwner,
   revokeAccountToken,
 } from '../../repositories/account-tokens';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
 import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../../projects/lib/access';
@@ -167,9 +167,9 @@ accountsRouter.openapi(
           // keys — no other member's keys, no session connector tokens, no
           // service-account bearers. That is what a person's own settings page
           // shows (`/settings/tokens`); the account hub's Tokens tab is the
-          // automation surface and reads service accounts instead. Any other
-          // value is the unnarrowed account-wide list this route always
-          // returned, so no existing caller changes behaviour.
+          // automation surface and reads service accounts instead. Without
+          // it a caller with `token.revoke` gets every live token of the
+          // account; any other caller gets only the live tokens they own.
           mine: z.string(),
         })
         .partial(),
@@ -190,12 +190,16 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
+  const actor = await actorOf(c, accountId);
+  await assertAuthorized(actor, ACCOUNT_ACTIONS.TOKEN_READ);
 
-  const onlyMine = isTruthyFlag(c.req.query('mine'));
-  const tokens = onlyMine
+  // The account-wide list names every member's keys. Only a caller who may
+  // revoke them (token.revoke) reads it; anyone else gets the live tokens
+  // they own (their keys and their sessions' tokens).
+  const canSeeAll = (await authorize(actor, ACCOUNT_ACTIONS.TOKEN_REVOKE)).allowed;
+  const tokens = isTruthyFlag(c.req.query('mine'))
     ? await listPersonalAccountTokens(accountId, userId)
-    : await listAccountTokens(accountId);
+    : await listAccountTokens(accountId, undefined, canSeeAll ? undefined : userId);
   return c.json(
     tokens.map((t) => ({
       token_id: t.tokenId,

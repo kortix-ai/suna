@@ -52,7 +52,12 @@ mock.module('@/lib/use-project-can', () => ({
   projectPermissionProbes: () => [],
 }));
 
-mock.module('@/features/workspace/customize/migrate-to-v3/manifest-version', () => ({
+mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
+  // The mock replaces the whole module, and the tab also statically imports
+  // `manifestFilename` — a missing binding fails the module link, so mirror
+  // the real pair (a v2 read renders the kortix.yaml label).
+  manifestFilename: (version: number | null) =>
+    (version ?? 1) >= 2 ? 'kortix.yaml' : 'kortix.toml',
   useProjectManifestVersion: () => ({ version: 2, isLoading: false }),
 }));
 

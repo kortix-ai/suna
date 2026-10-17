@@ -529,15 +529,21 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            APPLE_INSTALLER_CERTIFICATE?
+            APPLE_INSTALLER_CERTIFICATE_PASSWORD?
       - name: Import the Developer ID certificates and choose the notary credentials
         id: sign
         env:
           APPLE_CERTIFICATE: ${{ env.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE: ${{ env.APPLE_INSTALLER_CERTIFICATE }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ env.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           mkdir -p "$EV"
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            [ "$CHANNEL" != stable ] || { echo "::error::A stable release needs the Apple certificate in kortix-ci-env."; exit 1; }
             echo "::warning::No Apple certificate in kortix-ci-env: the app is signed ad hoc and the pkg is unsigned."
             echo "APPLE_CODESIGN_IDENTITY=-" >> "$GITHUB_ENV"
             echo "signed=false" >> "$GITHUB_OUTPUT"; echo "notarized=false" >> "$GITHUB_OUTPUT"
@@ -551,6 +557,11 @@ jobs:
           security set-keychain-settings -lut 21600 "$kc"
           security unlock-keychain -p "$kcpw" "$kc"
           security import "$p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          # The Developer ID Installer identity signs the .pkg. It is its own .p12, so the desktop app's certificate stays as it is.
+          if [ -n "${APPLE_INSTALLER_CERTIFICATE:-}" ] && [ -n "${APPLE_INSTALLER_CERTIFICATE_PASSWORD:-}" ]; then
+            printf '%s' "$APPLE_INSTALLER_CERTIFICATE" | base64 --decode > "$p12" 2>/dev/null || printf '%s' "$APPLE_INSTALLER_CERTIFICATE" | base64 -D > "$p12"
+            security import "$p12" -P "$APPLE_INSTALLER_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          fi
           security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" > /dev/null
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -s "$kc"
@@ -560,6 +571,8 @@ jobs:
           [ -n "$app_id" ] || { echo "::error::The Apple certificate holds no Developer ID Application identity."; exit 1; }
           echo "application identity: $app_id"
           echo "installer identity: ${inst_id:-none (the pkg stays unsigned)}"
+          # macOS refuses to open a downloaded pkg that is not signed and notarized. A stable release never ships one.
+          [ -n "$inst_id" ] || [ "$CHANNEL" != stable ] || { echo "::error::A stable release needs the Developer ID Installer identity (APPLE_INSTALLER_CERTIFICATE)."; exit 1; }
           echo "APPLE_CODESIGN_IDENTITY=$app_id" >> "$GITHUB_ENV"
           [ -z "$inst_id" ] || echo "APPLE_INSTALLER_IDENTITY=$inst_id" >> "$GITHUB_ENV"
           echo "signed=true" >> "$GITHUB_OUTPUT"
@@ -572,6 +585,7 @@ jobs:
             echo "MACOS_NOTARIZE=1" >> "$GITHUB_ENV"
             echo "notary credentials: Apple ID"; echo "notarized=true" >> "$GITHUB_OUTPUT"
           else
+            [ "$CHANNEL" != stable ] || { echo "::error::A stable release needs notary credentials in kortix-ci-env."; exit 1; }
             echo "::warning::No notary credentials in kortix-ci-env: the app is signed but not notarized."
             echo "notarized=false" >> "$GITHUB_OUTPUT"
           fi
@@ -902,6 +916,13 @@ jobs:
           } 2>&1 | tee "$EV/gatekeeper.txt"
           grep -q "accepted" "$EV/gatekeeper.txt" && grep -q "source=Notarized Developer ID" "$EV/gatekeeper.txt"
           grep -q "The validate action worked" "$EV/gatekeeper.txt"
+          # The pkg is the file people download: Gatekeeper must accept it too, or macOS says "Apple could not verify".
+          if [ -n "${APPLE_INSTALLER_IDENTITY:-}" ]; then
+            pkg="$RUNNER_TEMP/pkg/KortixCapture-$TAG-universal.pkg"
+            { echo "== spctl pkg"; spctl --assess --type install -vv "$pkg" 2>&1; echo "== stapler pkg"; xcrun stapler validate "$pkg" 2>&1; } | tee "$EV/gatekeeper-pkg.txt"
+            grep -q "accepted" "$EV/gatekeeper-pkg.txt" && grep -q "source=Notarized Developer ID" "$EV/gatekeeper-pkg.txt"
+            grep -q "The validate action worked" "$EV/gatekeeper-pkg.txt"
+          fi
           sudo "$app/Contents/Resources/uninstall.sh" > /dev/null 2>&1 || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

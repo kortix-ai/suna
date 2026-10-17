@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import type { ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 // The pre-refactor Hero read auth for disabled CTAs. Keep this collaborator
@@ -9,6 +10,12 @@ const { default: Hero, RivalEyebrow } = await import('./hero');
 const { ROLES, getRole } = await import('./solutions/registry');
 const { default: SolutionsPage } = await import('../../app/[locale]/(public)/(marketing)/solutions/page');
 const { default: SolutionRolePage, generateStaticParams } = await import('../../app/[locale]/(public)/(marketing)/solutions/[role]/page');
+
+// The prop type is the literal-narrowed shipped English content. These tests
+// feed synthetic content, so the fixture is widened here once.
+type EyebrowContent = ComponentProps<typeof RivalEyebrow>['content'];
+const eyebrow = (content: { lead: string; rivals: readonly { id: string; icon: string; label: string }[] }) =>
+  content as unknown as EyebrowContent;
 
 describe('hero and solutions characterization', () => {
   test('Hero renders its shipped fold without CTA buttons', () => {
@@ -21,24 +28,24 @@ describe('hero and solutions characterization', () => {
   });
 
   test('RivalEyebrow renders both supported logos and the separator', () => {
-    expect(renderToStaticMarkup(<RivalEyebrow content={{
+    expect(renderToStaticMarkup(<RivalEyebrow content={eyebrow({
       lead: 'Compare with',
       rivals: [
         { id: 'claude', icon: 'Claude', label: 'Claude' },
         { id: 'openai', icon: 'OpenAI', label: 'OpenAI' },
       ],
-    }} />)).toMatchSnapshot();
+    })} />)).toMatchSnapshot();
   });
 
   test('RivalEyebrow renders an empty rival list', () => {
-    expect(renderToStaticMarkup(<RivalEyebrow content={{ lead: 'Compare with', rivals: [] }} />)).toMatchSnapshot();
+    expect(renderToStaticMarkup(<RivalEyebrow content={eyebrow({ lead: 'Compare with', rivals: [] })} />)).toMatchSnapshot();
   });
 
   test('RivalEyebrow retains a label when its icon is unknown', () => {
-    const html = renderToStaticMarkup(<RivalEyebrow content={{
+    const html = renderToStaticMarkup(<RivalEyebrow content={eyebrow({
       lead: 'Compare with',
       rivals: [{ id: 'synthetic', icon: 'Unknown', label: 'Synthetic rival' }],
-    }} />);
+    })} />);
     expect(html).toMatchSnapshot();
     expect(html).toContain('Synthetic rival');
     expect(html).not.toContain('<svg');

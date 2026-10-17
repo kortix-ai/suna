@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { withoutAppAccessToken } from '@/lib/utils/app-access-token';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 export interface BrowserRecent {
@@ -17,11 +18,15 @@ const MAX_RECENTS = 8;
 
 /**
  * Canonical form used for dedupe and display: requires an http(s) scheme and
- * a host, strips trailing slashes so `/` and `` are the same entry.
+ * a host, strips trailing slashes so `/` and `` are the same entry. Drops an
+ * App's one-shot `__kortix_access` token: it expires in 5 minutes and is a
+ * credential, so it never belongs in persisted history.
  */
 export function normalizeRecentUrl(url: string): string {
-  const trimmed = url.trim();
+  let trimmed = url.trim();
   if (!/^https?:\/\/[^/\s]+/i.test(trimmed)) return '';
+  trimmed = withoutAppAccessToken(trimmed);
+  if (!trimmed) return '';
   return trimmed.replace(/\/+$/, '');
 }
 

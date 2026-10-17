@@ -26,13 +26,16 @@ const TAKER = crypto.randomUUID();
 const SERVICE_ACCOUNT = crypto.randomUUID(); // not in auth.users, not a member
 
 let n = 0;
-async function seedSession(): Promise<string> {
+/** A session LAUNCHER created. Shared (`project`) unless a test asks for a private one. */
+async function seedSession(visibility: 'private' | 'project' = 'project'): Promise<string> {
   const sessionId = `turn-identity-${crypto.randomUUID()}`;
   await db.insert(projectSessions).values({
     sessionId,
     accountId: ACCOUNT,
     projectId: PROJECT,
     branchName: `kortix/${sessionId}`,
+    createdBy: LAUNCHER,
+    visibility,
   });
   return sessionId;
 }
@@ -189,6 +192,52 @@ describe('bindSessionTurnIdentity', () => {
         .where(and(eq(accountMemberships.userId, outsider), eq(accountMemberships.accountId, OTHER_ACCOUNT)));
       await db.execute(sql`delete from auth.users where id = ${outsider}::uuid`);
     }
+  });
+});
+
+// A private session is its creator's. Another member can still prompt it (an
+// admin through oversight, a Slack thread participant): that turn runs and
+// bills as them, but with NO personal accounts — neither theirs, which would
+// land in a transcript the creator owns, nor the creator's, which they would
+// then drive.
+describe('bindSessionTurnIdentity on a private session', () => {
+  test('a member who did not create it: user_id is theirs, on_behalf_of is cleared, the session is stamped', async () => {
+    const sessionId = await seedSession('private');
+    const token = await seedToken(sessionId);
+
+    expect(await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: TAKER })).toBe(true);
+
+    expect(await identityOf(token)).toEqual({ userId: TAKER, onBehalfOf: null });
+    expect(typeof (await clearedStampOf(sessionId))).toBe('string');
+  });
+
+  test('the creator prompts next: on_behalf_of is the creator again and the stamp is removed', async () => {
+    const sessionId = await seedSession('private');
+    const token = await seedToken(sessionId);
+    await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: TAKER });
+
+    expect(await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: LAUNCHER })).toBe(true);
+
+    expect(await identityOf(token)).toEqual({ userId: LAUNCHER, onBehalfOf: LAUNCHER });
+    expect(await clearedStampOf(sessionId)).toBeUndefined();
+  });
+
+  test('the same other member prompting again writes nothing', async () => {
+    const sessionId = await seedSession('private');
+    await seedToken(sessionId);
+    await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: TAKER });
+
+    expect(await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: TAKER })).toBe(false);
+  });
+
+  test('a private session with no recorded creator gives no member its personal accounts', async () => {
+    const sessionId = await seedSession('private');
+    await db.update(projectSessions).set({ createdBy: null }).where(eq(projectSessions.sessionId, sessionId));
+    const token = await seedToken(sessionId);
+
+    await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: LAUNCHER });
+
+    expect(await identityOf(token)).toEqual({ userId: LAUNCHER, onBehalfOf: null });
   });
 });
 

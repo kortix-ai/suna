@@ -1,0 +1,42 @@
+diff --git a/cjs/src/connection.js b/cjs/src/connection.js
+index 07f6716702ac888215c86ad6e0071aaf55ae519c..188320e758c83c180536cefa78b1f5fe2ccc11a3 100644
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -252,6 +252,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // A connection can close while a small write is still queued: closed() sets
++    // socket to null and a later write() schedules this immediate, which would
++    // then throw an uncatchable TypeError and kill the process
++    // (porsager/postgres#1066, #1154, #1208; guard from upstream PRs #1168 and
++    // #1176, not released as of 3.4.9). With no socket there is nowhere to
++    // write, so drop the buffered chunk and report the write as not accepted.
++    if (!socket) {
++      chunk = nextWriteTimer = null
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+diff --git a/src/connection.js b/src/connection.js
+index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..b404b79ba78c9abe1fc281a5eca7abc1767f3be1 100644
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -252,6 +252,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // A connection can close while a small write is still queued: closed() sets
++    // socket to null and a later write() schedules this immediate, which would
++    // then throw an uncatchable TypeError and kill the process
++    // (porsager/postgres#1066, #1154, #1208; guard from upstream PRs #1168 and
++    // #1176, not released as of 3.4.9). With no socket there is nowhere to
++    // write, so drop the buffered chunk and report the write as not accepted.
++    if (!socket) {
++      chunk = nextWriteTimer = null
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null

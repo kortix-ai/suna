@@ -51,10 +51,31 @@ pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
         || contains_ci(own, &b)
 }
 
+/// With `record_only_included` on: the app is included, or the page's website is.
+/// With it off, everything is included.
+pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
+    if !s.record_only_included {
+        return true;
+    }
+    contains_ci(&s.included_bundle_ids, bundle_id)
+        || url.and_then(super::store::normalize_domain).is_some_and(|host| {
+            s.effective_included_domains()
+                .iter()
+                .any(|d| domain_covers(d, &host))
+        })
+}
+
 /// Why nothing in front of `front` may be recorded under the effective
-/// settings `s`: `own_app` (Kortix itself), `excluded_app`, `private_browsing`
-/// or `excluded_domain` (the screen recorder's skip reasons, in its order).
+/// settings `s`: `own_app` (Kortix itself), `excluded_app`, `private_browsing`,
+/// `excluded_domain` (the screen recorder's skip reasons, in its order) or
+/// `not_included` (record only included apps and websites is on).
 pub fn excluded_reason(s: &Settings, front: &Front) -> Option<&'static str> {
+    excluded_by_list(s, front).or_else(|| {
+        (!included(s, &front.bundle_id, front.url.as_deref())).then_some("not_included")
+    })
+}
+
+fn excluded_by_list(s: &Settings, front: &Front) -> Option<&'static str> {
     if is_own_app(&front.bundle_id, &s.own_bundle_ids) {
         return Some("own_app");
     }
@@ -821,4 +842,32 @@ mod tests {
             Value::Null
         );
     }
+
+    #[test]
+    fn record_only_included_records_included_apps_and_sites_and_exclusions_win() {
+        let mut s = Settings::default();
+        let front = |b: &str, url: Option<&str>| Front {
+            bundle_id: b.into(),
+            url: url.map(str::to_string),
+            title: String::new(),
+        };
+        assert_eq!(excluded_reason(&s, &front("com.spotify.client", None)), None, "off: everything");
+        s.record_only_included = true;
+        s.included_bundle_ids = vec!["com.tinyspeck.slackmacgap".into()];
+        s.included_domains = vec!["https://www.GitHub.com/x".into()];
+        assert_eq!(excluded_reason(&s, &front("com.spotify.client", None)), Some("not_included"));
+        assert_eq!(excluded_reason(&s, &front("com.tinyspeck.slackmacgap", None)), None);
+        assert_eq!(excluded_reason(&s, &front("com.google.chrome", Some("https://docs.github.com/a"))), None);
+        assert_eq!(
+            excluded_reason(&s, &front("com.google.chrome", Some("https://youtube.com/watch"))),
+            Some("not_included")
+        );
+        s.excluded_bundle_ids = vec!["com.tinyspeck.slackmacgap".into()];
+        assert_eq!(
+            excluded_reason(&s, &front("com.tinyspeck.slackmacgap", None)),
+            Some("excluded_app"),
+            "an exclusion wins"
+        );
+    }
+
 }

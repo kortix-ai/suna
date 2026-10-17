@@ -157,7 +157,7 @@ describe('rollbackOptimisticProjectSecretSave', () => {
 
     rollbackOptimisticProjectSecretSave(queryClient, QUERY_KEY, previous);
 
-    expect(queryClient.getQueryData(QUERY_KEY)).toEqual(original);
+    expect<unknown>(queryClient.getQueryData(QUERY_KEY)).toEqual(original);
   });
 });
 

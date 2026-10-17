@@ -40,8 +40,7 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
- * every page view of a repo-less project is both wrong and noisy enough to fail
- * `08-accounts-project-access.spec.ts` (which asserts no 5xx on /v1/projects).
+ * every page view of a repo-less project is both wrong and noisy.
  */
 /**
  * `workspace_refresh` is a required field of the published
@@ -309,7 +308,7 @@ export function registerWarmSessionsRoutes(): void {
 
       const view = {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       };
       const existing = await findWarmProjectSession({
         accountId: loaded.row.accountId,
@@ -520,7 +519,7 @@ export function registerWarmSessionsRoutes(): void {
       return c.json(
         serializeSession(claimed, {
           viewerId: loaded.userId,
-          canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+          canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
         }),
         200,
       );

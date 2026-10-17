@@ -47,11 +47,13 @@ mock.module('../../../shared/db', () => ({
   hasDatabase: true,
 }));
 
-// `authorize` (the trigger-session probe) must never run in these fixtures:
-// they use non-trigger sessions. Fail the test loudly if it does.
+// Manager standing is the engine's `project.members.manage` verdict (#10136):
+// the fixture caller holds it. Any other probe (the trigger-session one) must
+// never run in these non-trigger fixtures. Fail the test loudly if it does.
 mock.module('../../../iam/authorize', () => ({
-  authorize: async () => {
-    throw new Error('authorize() must not run for non-trigger list fixtures');
+  authorize: async (_actor: unknown, action: string) => {
+    if (action === 'project.members.manage') return { allowed: true };
+    throw new Error(`authorize(${action}) must not run for non-trigger list fixtures`);
   },
 }));
 
@@ -100,7 +102,7 @@ const loaded = {
   userId: 'human-1',
   effectiveRole: 'manager' as const,
   adminBypass: false,
-  actor: null,
+  actor: { userId: 'human-1', credential: { kind: 'user' } } as any,
 };
 
 function sessionRow(sessionId: string, overrides: Record<string, unknown> = {}) {
