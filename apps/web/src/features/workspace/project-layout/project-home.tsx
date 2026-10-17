@@ -6,6 +6,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { draftCommandText } from '@/features/session/composer/composer-logic';
+import { useSessionHarness } from '@/lib/use-session-harness';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -178,6 +180,8 @@ export function ProjectHome({
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
+  // The harness the NEXT session boots — the draft pick spells a picked skill with it.
+  const sessionHarness = useSessionHarness(projectId);
   // Send rejects on failure so the composer keeps its attachment handles.
   // These callers have no composer draft; the session hook shows the error.
   const sendOutsideComposer = useCallback(
@@ -201,9 +205,9 @@ export function ProjectHome({
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
+      sendOutsideComposer(draftCommandText(cmd, args, sessionHarness), options);
     },
-    [sendOutsideComposer],
+    [sendOutsideComposer, sessionHarness],
   );
 
   const applySuggestion = (s: string) => {

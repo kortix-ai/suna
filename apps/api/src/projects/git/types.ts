@@ -24,6 +24,11 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** The session runtime the manifest selects — the SAME `manifestRuntime` the
+   *  provisioning decision (`selectSessionHarness`) rides, so the web's draft
+   *  pick spells a picked skill for the harness the next session boots
+   *  (KRTX-2543). The sdk mirrors it (optional, for older servers). */
+  runtime: 'opencode' | 'pi';
   manifest: Record<string, unknown>;
   /** Server-decided manifest version verdict — the only thing a client may read
    *  to decide whether to offer an upgrade. See `../lib/manifest-verdict`. */

@@ -26,6 +26,7 @@ import {
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
 import { authGitEnv } from '../git-ops.ts';
+import { projectSkills } from './project-skills.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -81,6 +82,11 @@ Subcommands:
   features disable <flag>  Turn a flag off for the project.
   features reset <flag>    Clear the project's override (follow the default).
                        features takes --project <id>; defaults to linked/default.
+  skills ls            List the project's skills — the same scan the web
+                       Customize → Skills page and the slash menu render from.
+  skills get <name>    Print one skill's SKILL.md in full. Resolves the name
+                       or the folder slug, case-insensitively.
+                       skills takes --project <id>; defaults to linked/default.
 
 An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
@@ -226,6 +232,8 @@ export async function runProjects(argv: string[]): Promise<number> {
     case 'features':
     case 'flags':
       return projectsFeatures(rest);
+    case 'skills':
+      return projectSkills(rest);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;

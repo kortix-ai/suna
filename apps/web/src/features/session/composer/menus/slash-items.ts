@@ -1,5 +1,6 @@
 import type { Command } from '@kortix/sdk/react';
 
+import { skillFolderSlug, type ProjectConfigSkill } from '@/features/workspace/capabilities/skills/skill-resolve';
 import { filterSlashActions, SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import { filterSlashFiles, type SlashFile } from './slash-files';
 
@@ -60,6 +61,42 @@ function bucketFor(command: Command): CommandBucket {
   if (command.source === 'skill') return 'skill';
   if (command.source === 'mcp') return 'mcp';
   return 'command';
+}
+
+/**
+ * Folds the project's config-scan skills into a runtime command list, so the
+ * `/` menu lists them wherever it renders (KRTX-2543).
+ *
+ * A session's live list comes from the runtime (`GET /command`) and, since the
+ * pi harness fixes, already carries the project's skills as `source: 'skill'`
+ * rows. The draft composer has no runtime at all — but the project detail's
+ * config scan does name every skill the form wrote, and OpenCode served those
+ * same rows natively. This is what restores that surface: the config rows are
+ * appended under the ones the runtime did not already supply, deduped on the
+ * name OR the path's folder slug (pi names a skill from its frontmatter while
+ * the scan names the folder — the form sets both to the slug, hand-authored
+ * skills can differ).
+ *
+ * Returns the list unchanged-shaped when there is nothing to add, and
+ * `undefined` only when there is nothing at all — the caller keeps its own
+ * "no commands yet" distinction.
+ */
+export function mergeProjectSkillCommands(
+  runtime: Command[] | undefined,
+  configSkills: readonly ProjectConfigSkill[] | undefined,
+): Command[] | undefined {
+  const skills = configSkills ?? [];
+  if (!(Array.isArray(runtime) && runtime.length > 0) && skills.length === 0) return undefined;
+
+  const commands = [...(runtime ?? [])];
+  const known = new Set(commands.flatMap((command) => (command.name ? [command.name.toLowerCase()] : [])));
+  for (const skill of skills) {
+    const slug = skillFolderSlug(skill.path)?.toLowerCase();
+    if (known.has(skill.name.toLowerCase()) || (slug !== undefined && known.has(slug))) continue;
+    commands.push({ name: skill.name, description: skill.description ?? '', template: '', hints: [], source: 'skill' });
+    known.add(skill.name.toLowerCase());
+  }
+  return commands;
 }
 
 export interface CommandGroup {

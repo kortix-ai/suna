@@ -182,6 +182,10 @@ opencode:
       unknown_reason: null,
       path: 'kortix.yaml',
     });
+    // The runtime the manifest selects — the SAME `manifestRuntime` the
+    // provisioning decision rides (the web's draft pick reads it). No
+    // `runtime:` key in the manifest ⇒ OpenCode (KRTX-2543).
+    expect(config.runtime).toBe('opencode');
     // The merged document carries the imported trigger and the root env/opencode keys.
     expect(config.manifest.env).toEqual({
       required: ['FOO_TOKEN', 'BAR_KEY'],

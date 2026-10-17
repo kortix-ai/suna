@@ -225,6 +225,11 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** The session runtime the manifest selects (`'pi'` | `'opencode'`), read by
+   *  the SAME `manifestRuntime` the provisioning decision rides. Absent on
+   *  servers released before KRTX-2543 — hosts fall back to the flags-only
+   *  read (`selectSessionHarness` with `runtime: null`). */
+  runtime?: 'opencode' | 'pi';
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
   default_agent?: string | null;

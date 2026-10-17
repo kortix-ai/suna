@@ -5,6 +5,7 @@ import {
   acknowledgeQuoteRequests,
   appendComposerQuote,
   classifyPaste,
+  draftCommandText,
   isUndoKey,
   popPasteUndo,
   extractReplyQuotes,
@@ -471,6 +472,47 @@ describe('planDraftSubmission', () => {
     { name: 'deep-research', description: 'Research deeply' },
     { name: 'compact', description: 'Compact the thread' },
   ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
+
+  describe('draftCommandText (KRTX-2543)', () => {
+    test('a plain command serializes as /name args', () => {
+      expect(draftCommandText({ name: 'deep-research', template: '', hints: [] } as never, 'the query')).toBe(
+        '/deep-research the query',
+      );
+    });
+
+    test('a skill-backed command serializes as /skill:name args on pi — the only form pi expands', () => {
+      expect(
+        draftCommandText(
+          { name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never,
+          'for onboarding',
+          'pi',
+        ),
+      ).toBe('/skill:dogfood-skill for onboarding');
+    });
+
+    test('a skill-backed command keeps the bare name on OpenCode — that is what OpenCode ran', () => {
+      expect(
+        draftCommandText(
+          { name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never,
+          'for onboarding',
+          'opencode',
+        ),
+      ).toBe('/dogfood-skill for onboarding');
+      expect(
+        draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, 'args'),
+      ).toBe('/dogfood-skill args');
+    });
+
+    test('no args drops the trailing space', () => {
+      expect(draftCommandText({ name: 'deep-research', template: '', hints: [] } as never, undefined)).toBe('/deep-research');
+      expect(draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, '', 'pi')).toBe(
+        '/skill:dogfood-skill',
+      );
+      expect(draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, '', 'opencode')).toBe(
+        '/dogfood-skill',
+      );
+    });
+  });
 
   test('unknown command with plain args still joins them with one space', () => {
     expect(planDraftSubmission({ commandName: 'gone', text: 'run it', commands })).toEqual({

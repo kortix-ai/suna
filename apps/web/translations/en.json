@@ -20150,6 +20150,9 @@
       "text46bc646c9bfe": "Show a site hosted anywhere in this project. Kortix opens it in place, beside the Apps it runs.",
       "text08e6480e9b78": "{value0} added",
       "text6241684827b2": "This site does not allow Kortix to show it here.",
+      "textd60d2a2ab6b4": "Delete skill",
+      "text53e5a805315a": "This removes the skill's folder from the repo. This cannot be undone.",
+      "text8693bf9c2831": "Skill deleted",
       "textdae75dce541f": "Pauses every schedule and webhook in this project.",
       "textced57bebd466": "Turns this project’s schedules and webhooks back on."
     },

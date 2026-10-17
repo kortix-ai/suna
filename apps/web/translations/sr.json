@@ -20139,6 +20139,9 @@
       "text46bc646c9bfe": "Prikaži u ovom projektu sajt hostovan bilo gde. Kortix ga otvara ovde, pored aplikacija koje pokreće.",
       "text08e6480e9b78": "{value0} je dodata",
       "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
+      "textd60d2a2ab6b4": "Обриши вештину",
+      "text53e5a805315a": "Ово уклања фасциклу вештине из репозиторијума. Ово се не може поништити.",
+      "text8693bf9c2831": "Вештина је обрисана",
       "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
       "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта."
     },

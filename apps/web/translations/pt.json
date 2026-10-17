@@ -20139,6 +20139,9 @@
       "text46bc646c9bfe": "Mostre neste projeto um site hospedado em qualquer lugar. O Kortix o abre aqui mesmo, ao lado dos apps que executa.",
       "text08e6480e9b78": "{value0} adicionado",
       "text6241684827b2": "Este site não permite que o Kortix o mostre aqui.",
+      "textd60d2a2ab6b4": "Excluir skill",
+      "text53e5a805315a": "Isto remove a pasta da skill do repositório. Não pode ser desfeito.",
+      "text8693bf9c2831": "Skill excluída",
       "textdae75dce541f": "Pausa todos os agendamentos e webhooks deste projeto.",
       "textced57bebd466": "Reativa os agendamentos e webhooks deste projeto."
     },

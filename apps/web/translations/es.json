@@ -20139,6 +20139,9 @@
       "text46bc646c9bfe": "Muestra en este proyecto un sitio alojado en cualquier lugar. Kortix lo abre aquí mismo, junto a las apps que ejecuta.",
       "text08e6480e9b78": "{value0} añadida",
       "text6241684827b2": "Este sitio no permite que Kortix lo muestre aquí.",
+      "textd60d2a2ab6b4": "Eliminar habilidad",
+      "text53e5a805315a": "Esto elimina la carpeta de la habilidad del repositorio. No se puede deshacer.",
+      "text8693bf9c2831": "Habilidad eliminada",
       "textdae75dce541f": "Pausa todas las programaciones y webhooks de este proyecto.",
       "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto."
     },

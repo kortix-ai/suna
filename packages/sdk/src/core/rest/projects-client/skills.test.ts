@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import { createProjectSkill } from './skills';
+import { createProjectSkill, deleteProjectSkill } from './skills';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 
@@ -57,5 +57,46 @@ describe('createProjectSkill', () => {
       error = e as Error;
     }
     expect(error?.message).toContain('already exists');
+  });
+});
+
+describe('deleteProjectSkill (KRTX-2543)', () => {
+  test('DELETEs the skill by its folder slug and reports the removed file count', async () => {
+    configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+    nextResponse = () =>
+      new Response(JSON.stringify({ ok: true, slug: 'release-notes', deleted: 3 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    const deleted = await deleteProjectSkill('proj-1', 'release-notes');
+
+    expect(deleted).toEqual({ ok: true, slug: 'release-notes', deleted: 3 });
+
+    const call = (globalThis.fetch as unknown as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(call[0]).toBe('http://backend.test/v1/projects/proj-1/skills/release-notes');
+    expect(call[1]?.method).toBe('DELETE');
+    const headers = new Headers(call[1]?.headers);
+    expect(headers.get('authorization')).toBe('Bearer tok');
+  });
+
+  test('surfaces the API error message instead of toasting it globally', async () => {
+    configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+    nextResponse = () =>
+      new Response(JSON.stringify({ error: 'No skill folder "gone" exists' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    let error: Error | null = null;
+    try {
+      await deleteProjectSkill('proj-1', 'gone');
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error?.message).toContain('No skill folder');
   });
 });

@@ -103,6 +103,27 @@ export function skillSlugFromPath(path: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * A skill folder segment the DELETE route accepts: what the create path
+ * derives (`slugifySlug`), the detail URL resolves and the CLI keys on.
+ * Anything else — traversal, nesting, blank — is a bad request, not a lookup.
+ */
+export const PROJECT_SKILL_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * Every repo file under one skill's folder (`skills/<slug>/…`), the deletion
+ * commit's file list. The trailing slash in the prefix is the guard: a slug
+ * that prefixes another folder's name (`deploy` vs `deploy-alt`) must not
+ * swallow it. Empty when the repo carries no such folder — the route's 404.
+ */
+export function skillFolderFilePaths(
+  repoFiles: ReadonlyArray<{ path: string }>,
+  slug: string,
+): string[] {
+  const prefix = `skills/${slug}/`;
+  return repoFiles.map((file) => file.path).filter((path) => path.startsWith(prefix));
+}
+
 /** Map a loaded project config → the grantable agent/skill resource ids. */
 export function projectResourcesFromConfig(config: ProjectConfigSummary): ProjectResources {
   return {

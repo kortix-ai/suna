@@ -70,6 +70,7 @@ import {
   type PermissionRuleV2,
   type RuntimeV2,
 } from '@kortix/manifest-schema';
+import { manifestRuntime, manifestSchemaVersion, selectSessionHarness } from '@kortix/shared/session-harness';
 import { parseAgentMarkdown } from './agent-markdown';
 import {
   isRepoFileNotFoundError,
@@ -105,17 +106,6 @@ export class CompileAgentConfigError extends Error {
     super(message);
     this.name = 'CompileAgentConfigError';
   }
-}
-
-/** Tolerant `kortix_version` read — mirrors apps/api's own manifest readers
- *  (e.g. `parseManifestString` in projects/triggers.ts), which coerce a
- *  string version too. Real YAML/TOML decode `kortix_version: 2` to a native
- *  number; the string branch is defensive only. */
-function manifestSchemaVersion(manifest: Record<string, unknown>): number {
-  const raw = manifest.kortix_version;
-  if (typeof raw === 'number') return raw;
-  if (typeof raw === 'string') return Number(raw);
-  return Number.NaN;
 }
 
 /**
@@ -677,41 +667,6 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
-/**
- * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
- *
- * Null means "could not tell" (no manifest, not v2, read/parse failure) and
- * always falls back to the OpenCode path — the same fail-open-to-legacy
- * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
- * well-formed `runtime: pi` can move a session onto the worker.
- */
-/**
- * The harness a session boots, from the two inputs that can ask for pi:
- * the project's `pi_harness` feature flag (on ⇒ pi, whatever the manifest
- * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
- * off). Everything else is OpenCode. `runtime: null` is "no readable v2
- * manifest", which counts as opencode.
- *
- * pi calls models only through the Kortix LLM gateway (kortixd
- * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
- * gateway URL, so it always boots OpenCode, which calls providers directly.
- */
-export function selectSessionHarness(input: {
-  piHarnessFlag: boolean;
-  runtime: RuntimeV2 | null;
-  llmGateway: boolean;
-}): 'opencode' | 'pi' {
-  if (!input.llmGateway) return 'opencode';
-  if (input.piHarnessFlag) return 'pi';
-  return input.runtime === 'pi' ? 'pi' : 'opencode';
-}
-
-/** The harness a parsed manifest selects. `runtime` is a v2 field; anything but `pi` is OpenCode. */
-export function manifestRuntime(raw: unknown): RuntimeV2 {
-  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return 'opencode';
-  return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
-}
-
 type PiHarness = { pi?: { packages?: unknown; exclude?: unknown; codemode?: unknown } } | undefined;
 
 function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
@@ -974,3 +929,8 @@ export async function resolveSelectedAgentConfigForSession(
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }
+
+/** The harness decision moved to `@kortix/shared/session-harness` — one function for the api that
+ *  boots the worker and the web that spells the draft pick (KRTX-2543). Re-exported here for
+ *  the existing consumers (routes/agent-config, session-sandbox-env-build). */
+export { manifestRuntime, manifestSchemaVersion, selectSessionHarness } from '@kortix/shared/session-harness';
