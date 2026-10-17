@@ -252,6 +252,33 @@ describe('kortix channels connect — one-click (cloud)', () => {
     expect(out).toContain(INSTALL_URL);
     expect(out).toContain('Connected to Acme');
   });
+
+  // A non-numeric --timeout made the poll deadline `Number('abc')` = NaN; the
+  // poll's only exit is `Date.now() >= deadline`, which NaN never satisfies —
+  // the CLI hung forever. Same for a deadline of Infinity. Reject the value
+  // where the flag is parsed, before the command touches the API.
+  test('--wait --timeout abc fails fast with a usage error instead of hanging on a NaN deadline', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'abc']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain(
+      "--timeout requires a non-negative number of seconds, got 'abc'",
+    );
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout Infinity fails fast too (a deadline that never arrives hangs the poll)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'Infinity']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got 'Infinity'");
+    expect(requests).toEqual([]);
+  });
+
+  test('--timeout=-5 fails fast (a negative timeout is invalid input)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout=-5']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '-5'");
+    expect(requests).toEqual([]);
+  });
 });
 
 describe('kortix channels connect — manual (self-host)', () => {
