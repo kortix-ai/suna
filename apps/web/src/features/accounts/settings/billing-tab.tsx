@@ -157,7 +157,10 @@ export function BillingTab({
           itself rather than in a banner over a pane about subscriptions. */}
       {walletVisible && highlight === 'credits' && totalCredits <= 0 && (
         <InfoBanner tone="warning" title={t('outOfCredits')}>
-          {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
+          {/* This banner only leads the wallet blocks, so the plan can always
+              purchase credits here — "buy credits below or turn on auto
+              top-up" is the only advice it can give. */}
+          {t('buyCreditsHint')}
         </InfoBanner>
       )}
 
