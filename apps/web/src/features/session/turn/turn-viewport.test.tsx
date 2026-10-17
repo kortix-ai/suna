@@ -116,6 +116,15 @@ describe('TurnViewport', () => {
     expect(render({ className: 'mt-12' })).toContain('mt-12');
   });
 
+  test('carries data-turn-continues only for a row the auto-scroll must never anchor on', () => {
+    // `useAutoScroll.sizeRoom` filters `[data-turn-id]:not([data-turn-continues])`:
+    // a compaction and the work after it continue the turn above, and anchoring
+    // on either is the running-compaction blank page (KRTX-2565). Losing the
+    // attribute silently re-opens that bug.
+    expect(render({ continues: true })).toContain('data-turn-continues="true"');
+    expect(render({ continues: false })).not.toContain('data-turn-continues');
+  });
+
   test('renders its children', () => {
     expect(render()).toContain('turn body');
   });
