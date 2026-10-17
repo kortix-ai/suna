@@ -1206,6 +1206,11 @@ export function CommandPalette() {
         'proj-files': repoRow,
         'proj-apps': appsRow,
         'proj-invite': canInvite,
+        // The roster is read-only without the leaf that changes it.
+        'proj-members': canInvite,
+        // Open change requests are the Review tab's business: only a caller
+        // who can act on reviews gets the list.
+        'review-changes': customizeTabs.split(' ').includes('review'),
       },
     };
     const result: MenuItemDef[] = [];
