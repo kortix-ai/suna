@@ -1,0 +1,22 @@
+{
+  "source_hash": "9e4951e2a94483c88ba526e7fda08ce794fc548626eff66e07ac2c9d9a82942e",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-preview-proxy.test.ts",
+    "apps/api/src/sandbox-proxy/forward/retry.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/instance-guard.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/proxy.ts",
+    "apps/web/src/features/session/tool/shared/file-list.tsx",
+    "apps/web/src/features/session/tool/tool-kind-fallback.test.tsx",
+    "tests/src/flows/config-releases.flow.ts",
+    "tests/src/flows/sessions.flow.ts"
+  ],
+  "diff_hash": "1408a33799a64bc3c159c0893cd2d3d2fb4f12707c4f6208dae24475fb4dd5ed",
+  "head": "8d53ef335d4f70e43a4d929c08071a87a2628564",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-15T18:16:26.115Z"
+}
