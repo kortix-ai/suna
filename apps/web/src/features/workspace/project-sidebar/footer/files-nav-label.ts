@@ -23,7 +23,7 @@ export function filesRow(
   target: 'repo' | 'folders',
   volumesOn: boolean,
 ): { label: RepoNavLabel; href: string } {
-  return target === 'folders'
-    ? { label: 'files', href: capabilityTabHref(projectId, 'files') }
-    : { label: repoNavLabel(volumesOn), href: `/projects/${projectId}/files` };
+  if (target === 'repo') return { label: repoNavLabel(volumesOn), href: `/projects/${projectId}/files` };
+  // The shared folders are always "Files", Volumes or not.
+  return { label: repoNavLabel(false), href: capabilityTabHref(projectId, 'files') };
 }
