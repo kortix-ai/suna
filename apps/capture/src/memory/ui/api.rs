@@ -1131,8 +1131,9 @@ impl Ctx {
     ) -> Result<Response> {
         {
             let mut jobs = self.jobs.lock().map_err(|_| anyhow!("job lock poisoned"))?;
+            // A second click while it runs joins the run: same answer, no error.
             if jobs.get(name).is_some_and(|j| j["running"] == true) {
-                return Ok(Response::error(409, &format!("{name} is already running")));
+                return Ok(Response::json(json!({"job": name, "running": true})));
             }
             jobs.insert(
                 name.into(),

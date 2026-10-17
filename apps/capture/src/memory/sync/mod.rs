@@ -279,6 +279,17 @@ pub fn app_version() -> &'static str {
     }
 }
 
+/// The User-Agent of every HTTP request the app makes. Cloudflare, in front of
+/// Kortix, refuses a request without one (403), so no client may leave it out.
+pub fn user_agent() -> String {
+    format!(
+        "kortix-capture/{} ({}; {})",
+        app_version().trim_start_matches('v'),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
 /// What device.json and the issuer's sign-in learn about this computer.
 #[derive(Debug, Clone, Serialize)]
 pub struct Identity {
