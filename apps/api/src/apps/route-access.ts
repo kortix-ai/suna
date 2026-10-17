@@ -17,9 +17,11 @@ import { type AppCapability, type AppHostingType, appCapabilities, capabilityUns
  * The App permission a route needs. Apps own these leaves outright — they no
  * longer borrow project.customize.write / project.gitops.read, so a custom role
  * can grant or revoke Apps without touching any other capability.
- *   read    list and inspect Apps, connect, mint a member token
- *   write   create, rename, resize, set access, read logs
- *   deploy  ship a version, roll back, start, stop
+ *   read    list and open the Apps the caller may see, connect, mint a member token
+ *   write   create, rename, resize, read and set the access policy
+ *   deploy  ship a version, roll back, start, stop; read the operations view:
+ *           deployments, their events and runtime logs, machines, volumes,
+ *           snapshots
  *   admin   administer the App
  */
 export type AppPermission = 'read' | 'write' | 'deploy' | 'admin';

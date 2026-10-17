@@ -1079,6 +1079,9 @@ flow(
       'GET /v1/accounts/me',
       'PATCH /v1/accounts/:accountId',
       'POST /v1/accounts/:accountId/iam/oauth-clients',
+      'GET /v1/accounts/tokens',
+      'GET /v1/accounts/:accountId/iam/service-accounts',
+      'GET /v1/accounts/:accountId/iam/oauth-clients',
     ],
   },
   async (ctx) => {
@@ -1145,6 +1148,29 @@ flow(
         query: { account_id },
       });
       r.status(403);
+    });
+
+    await ctx.step("MEMBER lists the account's tokens → only their own; OWNER (token.revoke) → both", async () => {
+      const ids = async (as: ReturnType<typeof ctx.client.as>) => {
+        const r = await as.get('/v1/accounts/tokens', { query: { account_id } });
+        r.status(200);
+        return r.json<Array<{ token_id: string }>>().map((t) => t.token_id);
+      };
+      const mine = await ids(ctx.client.as(member));
+      if (!mine.includes(memberTokenId)) throw new Error('member list must hold the member token');
+      if (mine.includes(ownerTokenId)) throw new Error("member list must not hold the owner's token");
+      const all = await ids(ctx.client.as(ctx.P.OWNER));
+      if (!all.includes(memberTokenId) || !all.includes(ownerTokenId)) {
+        throw new Error('owner list must hold every live token of the account');
+      }
+    });
+
+    await ctx.step('MEMBER cannot list service accounts or OAuth clients → 403 (token.create); OWNER → 200', async () => {
+      const params = { accountId: account_id };
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(403);
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(403);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(200);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(200);
     });
 
     await ctx.step("the owner's token still authenticates after the refused revoke → 200", async () => {
