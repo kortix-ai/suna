@@ -284,6 +284,8 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 
 `IAM-42` **Demoting an owner ends the super-admin bypass** — an owner makes a co-founder owner and super-admin; demoting that owner to `member` (`PATCH /accounts/:id/members/:userId`) clears `is_super_admin` in the same call and records `iam.member.super_admin.revoke`. The demoted member cannot grant themselves `owner` again (`POST …/iam/assignments` → 403). A super-admin flag granted while the principal is not an owner survives a role change that removes no owner role.
 
+`IAM-44` **The leaf is the gate** — a route whose permission is a specific leaf loads the project with `project.read` and then asserts that leaf; no coarse `project.write` floor stands in front of it. A custom project role holding only `project.read` plus the leaf passes: `project.trigger.read` + `project.trigger.create` → `POST /projects/:id/triggers` 201, while `PATCH …/triggers/:slug` (`project.trigger.update`) → 403; `project.app.read` + `project.app.deploy` → `POST /projects/:id/apps/artifacts` 201, while `POST /projects/:id/apps` (`project.app.write`) → 403; `project.secret.read` + `project.secret.write` → `POST /projects/:id/secrets` 200, `GET /projects/:id/secrets` `can_manage: true`, `DELETE /projects/:id/secrets/:name` 200. A built-in `member` (none of those write leaves) → 403 on each write.
+
 ### SSO identity trust (which email an IdP may vouch for)
 
 Supabase marks every SAML-asserted email as verified and does not compare it with the IdP's domains. The API trusts an IdP-asserted email only on a domain the IdP's account proved it controls (`account_sso_providers.domain_verified_at`); inside the IdP's own account the identity still joins and syncs groups.

@@ -186,7 +186,7 @@ export function registerChangeRequestsRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Human-side capability gate (Git Ops). Managers hold it; a custom
       // role omits project.gitops.push to take Git-Ops away from a department.
@@ -365,7 +365,7 @@ export function registerChangeRequestsRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const sessionId = c.req.param('sessionId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -550,10 +550,11 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: editing a CR is part of the change-request capability,
-      // which is `project.gitops.push` (see the create route above).
+      // Editing a CR is part of the change-request capability,
+      // `project.gitops.push` (see the create route above).
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);
@@ -606,7 +607,7 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // request-changes is a human review decision on a CR, not a code push —
       // gate it on project.review.act (the same leaf as /review/items/{id}/act),
