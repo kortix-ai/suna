@@ -203,6 +203,9 @@ async function startReplicaServices() {
 // election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
 // The guard makes start/stop idempotent across leadership flaps.
 let singletonWorkersRunning = false;
+// The stops of the workers started from a dynamic import, so stopSingletonWorkers can call every
+// stop before its first await.
+const lazyStops: Array<() => void> = [];
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
@@ -235,14 +238,17 @@ async function startSingletonWorkers() {
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
+  const { startGrantExpirySweeper, stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   startGrantExpirySweeper();
+  lazyStops.push(stopGrantExpirySweeper);
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
-  const { startOAuthSweeper } = await import('./workers/oauth-sweep-worker');
+  const { startOAuthSweeper, stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();
+  lazyStops.push(stopOAuthSweeper);
   // Kortix Drive: conflict-copy scanner + the volume deletion queue.
-  const { startDriveWorkers } = await import('./workers/drive-worker');
+  const { startDriveWorkers, stopDriveWorkers } = await import('./workers/drive-worker');
   startDriveWorkers();
+  lazyStops.push(stopDriveWorkers);
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
   startBillingRotation();
@@ -260,6 +266,9 @@ async function startSingletonWorkers() {
   // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
   startSessionLogBackfillWorker();
 }
+// Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
+// await left its worker "started" across that await; a re-acquire then started nothing, and the
+// stop ran after it (2026-10-16 prod: 18 workers stayed off after a lease flap).
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
@@ -269,26 +278,21 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
-  await stopAuditWebhookWorker();
-  await stopAuditReconciliationWorker();
+  const drains = [stopAuditWebhookWorker(), stopAuditReconciliationWorker()];
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
-  await stopProjectSnapshotWorker();
+  drains.push(stopProjectSnapshotWorker());
   stopCaptureWorkers();
   stopCaptureHealthWorker();
-  const { stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
-  stopGrantExpirySweeper();
-  const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
-  stopOAuthSweeper();
-  const { stopDriveWorkers } = await import('./workers/drive-worker');
-  stopDriveWorkers();
+  for (const stop of lazyStops.splice(0)) stop();
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
-  await stopAccountDeletionSchedule();
+  drains.push(stopAccountDeletionSchedule());
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
   stopSessionLogBackfillWorker();
+  await Promise.all(drains);
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

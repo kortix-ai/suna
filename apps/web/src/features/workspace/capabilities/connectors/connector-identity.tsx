@@ -111,12 +111,6 @@ export function ConnectorStatusBadge({ connector }: { connector: AdminConnector 
         {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
       </Badge>
     );
-  if (status === 'user_managed')
-    return (
-      <Badge variant="outline" size="sm">
-        {tI18nHardcoded.raw('i18nComplete.text82bcb52dba1e')}
-      </Badge>
-    );
   if (status === 'needs_setup')
     return (
       <Badge variant="info" size="sm">
