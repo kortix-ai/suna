@@ -160,6 +160,9 @@ export function BillingTab({
           {/* This banner only leads the wallet blocks, so the plan can always
               purchase credits here — "buy credits below or turn on auto
               top-up" is the only advice it can give. */}
+          {/* ponytail: `topupWalletHint` is unreachable in every catalog now
+              (KRTX-2376); prune the key across the nine locales when i18n
+              churn is cheap — the copy collapse stayed inside this diff. */}
           {t('buyCreditsHint')}
         </InfoBanner>
       )}
