@@ -3,8 +3,10 @@
  *
  * One hidden WebView (`MermaidRendererHost`) runs Mermaid. Every diagram block
  * asks this queue for its SVG. The queue:
- * - answers from a content-hash cache first (web's `mermaidCache`), so a block
- *   that scrolls back into view never renders twice;
+ * - answers from a cache keyed by the trimmed source text first (web's
+ *   post-collision design: a content hash served one diagram another
+ *   diagram's SVG), so a block that scrolls back into view never renders
+ *   twice;
  * - merges concurrent requests for the same chart into one render;
  * - holds requests until the WebView reports ready, and re-sends them after
  *   the WebView process dies and the host remounts it;
@@ -14,8 +16,6 @@
  * Timeouts and renderer crashes are not cached, so a later mount retries.
  */
 import {
-  hasRenderableMermaidStarter,
-  mermaidChartHash,
   mermaidErrorMessage,
   MERMAID_RENDER_TIMEOUT_MS,
   parseMermaidViewBox,
@@ -33,7 +33,7 @@ export type MermaidOutcome = { ok: true; diagram: MermaidDiagram } | { ok: false
 interface Pending {
   id: number;
   chart: string;
-  hash: string;
+  key: string;
   sent: boolean;
   promise: Promise<MermaidOutcome>;
   settle: (outcome: MermaidOutcome) => void;
@@ -53,19 +53,14 @@ export class MermaidRenderQueue {
 
   /** A finished render for `chart`, or null. Synchronous, for the first paint. */
   peek(chart: string): MermaidOutcome | null {
-    return this.results.get(mermaidChartHash(chart)) ?? null;
+    return this.results.get(chart.trim()) ?? null;
   }
 
   render(chart: string): Promise<MermaidOutcome> {
-    const hash = mermaidChartHash(chart);
-    const known = this.results.get(hash);
+    const key = chart.trim();
+    const known = this.results.get(key);
     if (known) return Promise.resolve(known);
-    if (!hasRenderableMermaidStarter(chart)) {
-      const outcome: MermaidOutcome = { ok: false, error: 'Invalid diagram type' };
-      this.results.set(hash, outcome);
-      return Promise.resolve(outcome);
-    }
-    const inFlight = this.pending.get(hash);
+    const inFlight = this.pending.get(key);
     if (inFlight) return inFlight.promise;
 
     let settle!: (outcome: MermaidOutcome) => void;
@@ -75,13 +70,13 @@ export class MermaidRenderQueue {
     const request: Pending = {
       id: this.nextId++,
       chart,
-      hash,
+      key,
       sent: false,
       promise,
       settle,
       timer: setTimeout(() => this.finish(request, { ok: false, error: 'timeout' }, false), this.timeoutMs),
     };
-    this.pending.set(hash, request);
+    this.pending.set(key, request);
     this.byId.set(request.id, request);
     this.send(request);
     if (!this.wanted) {
@@ -156,11 +151,11 @@ export class MermaidRenderQueue {
   }
 
   private finish(request: Pending, outcome: MermaidOutcome, cache: boolean): void {
-    if (this.pending.get(request.hash) !== request) return;
+    if (this.pending.get(request.key) !== request) return;
     clearTimeout(request.timer);
-    this.pending.delete(request.hash);
+    this.pending.delete(request.key);
     this.byId.delete(request.id);
-    if (cache) this.results.set(request.hash, outcome);
+    if (cache) this.results.set(request.key, outcome);
     request.settle(outcome);
   }
 
