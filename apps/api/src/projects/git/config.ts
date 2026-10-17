@@ -19,6 +19,7 @@ import {
 import { type LoadedAgents, extractAgents } from '../agents';
 import { listManagedSkills } from '../../skills/catalog';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
+import { manifestRuntime } from '@kortix/shared/session-harness';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -463,6 +464,9 @@ export async function loadProjectConfig(
       signals: { manifest: true, openCodeConfig: false, openCodeAgent: loadedAgents.specs.length > 0 },
       manifest_raw: resolved?.rootContent ?? manifestRaw,
       manifest,
+      // The session runtime the manifest selects — the SAME `manifestRuntime` the
+      // provisioning decision rides (see the v2 return below).
+      runtime: manifestRuntime(manifest),
       manifest_version: resolveManifestVerdict({ raw: manifestRaw, format: manifestFormat, path: resolved?.path ?? null }),
       env: envRequirements(manifest),
       open_code_raw: null,
@@ -509,6 +513,11 @@ export async function loadProjectConfig(
     // merged document when the root declares `imports:`.
     manifest_raw: resolved?.rootContent ?? manifestRaw,
     manifest,
+    // The session runtime the manifest selects — the SAME `manifestRuntime` the
+    // provisioning decision (`selectSessionHarness`) rides, so the web's draft
+    // pick (composer-logic `draftCommandText`) spells a picked skill for the
+    // harness the next session will actually boot (KRTX-2543).
+    runtime: manifestRuntime(manifest),
     // The authoritative version verdict. Computed here so no client ever has to
     // infer a version from the raw text — and so an unreadable manifest reports
     // `unknown` instead of being mistaken for a legacy v1.

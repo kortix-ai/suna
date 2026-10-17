@@ -26,6 +26,7 @@ describe('platform meta agent', () => {
       is_kortix_repo: true,
       signals: {},
       manifest_raw: null,
+      runtime: 'opencode',
       manifest: {},
       manifest_version: resolveManifestVerdict({
         raw: null,

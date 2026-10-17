@@ -480,16 +480,36 @@ describe('planDraftSubmission', () => {
       );
     });
 
-    test('a skill-backed command serializes as /skill:name args — the only form pi expands', () => {
+    test('a skill-backed command serializes as /skill:name args on pi — the only form pi expands', () => {
       expect(
-        draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, 'for onboarding'),
+        draftCommandText(
+          { name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never,
+          'for onboarding',
+          'pi',
+        ),
       ).toBe('/skill:dogfood-skill for onboarding');
+    });
+
+    test('a skill-backed command keeps the bare name on OpenCode — that is what OpenCode ran', () => {
+      expect(
+        draftCommandText(
+          { name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never,
+          'for onboarding',
+          'opencode',
+        ),
+      ).toBe('/dogfood-skill for onboarding');
+      expect(
+        draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, 'args'),
+      ).toBe('/dogfood-skill args');
     });
 
     test('no args drops the trailing space', () => {
       expect(draftCommandText({ name: 'deep-research', template: '', hints: [] } as never, undefined)).toBe('/deep-research');
-      expect(draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, '')).toBe(
+      expect(draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, '', 'pi')).toBe(
         '/skill:dogfood-skill',
+      );
+      expect(draftCommandText({ name: 'dogfood-skill', source: 'skill', template: '', hints: [] } as never, '', 'opencode')).toBe(
+        '/dogfood-skill',
       );
     });
   });

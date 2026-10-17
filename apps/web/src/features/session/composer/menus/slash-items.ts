@@ -1,5 +1,6 @@
 import type { Command } from '@kortix/sdk/react';
 
+import { skillFolderSlug } from '@/features/workspace/capabilities/skills/skill-resolve';
 import { filterSlashActions, SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import { filterSlashFiles, type SlashFile } from './slash-files';
 
@@ -60,17 +61,6 @@ function bucketFor(command: Command): CommandBucket {
   if (command.source === 'skill') return 'skill';
   if (command.source === 'mcp') return 'mcp';
   return 'command';
-}
-
-/**
- * The skill-directory segment of a config-scan path: the segment right before
- * the trailing `SKILL.md`. The v2 scan reports `skills/<slug>/SKILL.md`; the
- * legacy `.opencode/skill/<slug>/SKILL.md` layout reports the same way.
- */
-function skillFolderSlug(path: string): string | undefined {
-  const segments = path.split('/').filter(Boolean);
-  if (segments.length < 2 || segments.at(-1) !== 'SKILL.md') return undefined;
-  return segments.at(-2);
 }
 
 /**

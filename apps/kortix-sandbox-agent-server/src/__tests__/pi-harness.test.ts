@@ -3059,6 +3059,26 @@ describe('pi slash commands', () => {
       expect(state.commands.value.some((command) => command.name === 'deploy' && command.source === 'skill')).toBe(true)
     })
 
+    test('a template whose name equals a skill name still runs the template — the re-spell keys on the row, not the name', async () => {
+      const prepare = (workspace: string) => {
+        plantSkill(workspace)
+        mkdirSync(join(workspace, '.pi', 'prompts'), { recursive: true })
+        writeFileSync(join(workspace, '.pi', 'prompts', 'deploy.md'), 'Run the deploy pipeline.\n')
+      }
+      const r = await boot({ script: [{ text: 'Pipeline done.' }], prepare })
+      const root = r.service.runtime()!.rootId
+      const messageID = 'msg_0198e2a4b0e3DEPLOYPIPE0001'
+      const res = await command(r, root, { command: 'deploy', arguments: '', messageID })
+      expect(res.status).toBe(200)
+      await waitFor(() => !r.service.runtime()!.busy())
+      // The row is a template: the turn runs the template text, NOT the skill
+      // expansion (a name scan against the loaded skills would re-spell it to
+      // /skill:deploy and ship the skill instead).
+      const sent = JSON.stringify(gateway.sent.at(-1)!)
+      expect(sent).toContain('Run the deploy pipeline.')
+      expect(sent).not.toContain('<skill name="deploy"')
+    })
+
     test('a picked skill runs: the turn carries the skill content and the arguments', async () => {
       const r = await boot({ script: [{ text: 'Shipped.' }], prepare: plantSkill })
       const root = r.service.runtime()!.rootId

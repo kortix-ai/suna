@@ -182,9 +182,6 @@ export function registerProjectSkillsRoutes(): void {
   },
 );
 
-/** A skill folder segment: what the scan, the detail URL and the CLI key on. */
-const SKILL_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
 // DELETE /v1/projects/:projectId/skills/:slug — remove a skill folder from the
 // default branch. The complement of the form create above: once a skill is
 // listed (and now linked, runnable, deletable), deleting it is the same

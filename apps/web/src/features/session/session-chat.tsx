@@ -250,6 +250,7 @@ import {
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
+import { useSessionHarness } from '@/lib/use-session-harness';
 import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useReloadForensics } from './reload-forensics';
 import {
@@ -719,6 +720,8 @@ export function SessionChat({
   const { data: allSessions } = useRuntimeSessions();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
+  // The harness the NEXT session boots — the draft pick spells a picked skill with it.
+  const sessionHarness = useSessionHarness(projectId);
   const abortSession = useAbortRuntimeSession();
   const executeCommand = useExecuteRuntimeCommand();
 
@@ -3352,8 +3355,8 @@ export function SessionChat({
       // position is not recoverable from `args`, so it has to be carried
       // (`split`, from the editor's serializer) or it is lost here.
       const label = split
-        ? [split.before, draftCommandText(cmd), split.after].filter(Boolean).join(' ')
-        : draftCommandText(cmd, args);
+        ? [split.before, draftCommandText(cmd, undefined, sessionHarness), split.after].filter(Boolean).join(' ')
+        : draftCommandText(cmd, args, sessionHarness);
       const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
         // A command that was DELIVERED and then lost its connection is not a

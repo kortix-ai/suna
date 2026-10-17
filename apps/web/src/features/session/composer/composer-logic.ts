@@ -536,15 +536,21 @@ export function planDraftSubmission({
 /**
  * The text a picked command becomes when the draft is sent.
  *
- * Skill-backed rows are re-spelled `/skill:<name>` — the only form pi expands
- * (pi's prompt templates and skills share the `/` namespace, and a bare
- * `/name` that collides with a template runs the template, not the skill).
- * OpenCode ran a skill as a plain `/name`; pi does not, so every host that
- * turns a picked row into a first message serializes through here
- * (KRTX-2543).
+ * Skill-backed rows are re-spelled `/skill:<name>` only on the pi harness —
+ * the only form pi expands (pi's prompt templates and skills share the `/`
+ * namespace, and a bare `/name` that collides with a template runs the
+ * template, not the skill). OpenCode ran a skill as a plain `/name`, so the
+ * caller passes the harness the next session boots (`useSessionHarness` — the
+ * api's own `selectSessionHarness`); `undefined` or `'opencode'` keeps the
+ * bare name. Every host that turns a picked row into a first message
+ * serializes through here (KRTX-2543).
  */
-export function draftCommandText(command: Pick<Command, 'name' | 'source'>, args?: string): string {
-  const head = command.source === 'skill' ? `/skill:${command.name}` : `/${command.name}`;
+export function draftCommandText(
+  command: Pick<Command, 'name' | 'source'>,
+  args?: string,
+  harness?: 'opencode' | 'pi',
+): string {
+  const head = command.source === 'skill' && harness === 'pi' ? `/skill:${command.name}` : `/${command.name}`;
   return args ? `${head} ${args}` : head;
 }
 

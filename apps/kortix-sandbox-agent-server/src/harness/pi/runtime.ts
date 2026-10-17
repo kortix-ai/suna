@@ -991,7 +991,12 @@ export class PiRuntime {
     // A skill row is not a template: pi expands only the `/skill:<name>` form
     // (`prompt()`'s own skill expansion), so the picked row is re-spelled into
     // it rather than sent as a bare `/<name>` the model would read literally.
-    const skillBacked = this.skills.some((skill) => skill.name === name)
+    // Keyed on the PICKED ROW's source — the FIRST row `commandList` built for
+    // the name, not a name scan: a v2 template or v3 command whose name equals
+    // a loaded skill's name keeps running as the command it is (templates are
+    // listed first), and the row the menu showed is the row the expansion
+    // follows (KRTX-2543).
+    const skillBacked = this.commandList().find((command) => command.name === name)?.source === 'skill'
     const text = skillBacked ? `/skill:${name}${args ? ` ${args}` : ''}` : `/${name}${args ? ` ${args}` : ''}`
     return {
       ...parsePromptBody({
