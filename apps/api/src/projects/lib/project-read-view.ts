@@ -16,6 +16,7 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isAgentPrincipalActor } from '../../iam/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { db } from '../../shared/db';
+import { uuidsIn } from '../../shared/validate';
 import { loadProjectForUser, projectCapabilityAllowed } from './http-project-access';
 import { sessionListViewerSql } from './session-list';
 import { loadVisibleSession, viewerManagerStanding } from './session-visibility';
@@ -41,8 +42,6 @@ export interface ProjectReadView {
   /** Of these session ids, the ones the caller may open. */
   visibleSessionIds(ids: readonly string[]): Promise<Set<string>>;
 }
-
-const UUID_IN_REF = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /**
  * Manager standing for project-wide reads. A session-bound credential never
@@ -114,7 +113,7 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
     full: false,
     visibleSessionIds,
     refsVisible: async (...refs) => {
-      const ids = refs.flatMap((ref) => ref?.match(UUID_IN_REF) ?? []);
+      const ids = refs.flatMap((ref) => (ref ? uuidsIn(ref) : []));
       if (ids.length === 0) return true;
       const visible = await visibleSessionIds(ids);
       return ids.every((id) => visible.has(id));
