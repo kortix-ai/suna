@@ -209,10 +209,7 @@ function ScheduleTableRow({
     <TableRow className="group cursor-pointer" onClick={onOpen}>
       <TableCell className="max-w-[16rem] align-middle">
         <div className="flex min-w-0 items-center gap-3">
-          <TriggerTile
-            trigger={trigger}
-            logo={event ? (apps?.get(event.app ?? event.connector)?.logo ?? null) : null}
-          />
+          <TriggerTile trigger={trigger} />
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               {/* A real button, so the row is reachable by keyboard — a

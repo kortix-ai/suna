@@ -1,81 +1,99 @@
 'use client';
 
 /**
- * The leading mark of a trigger: the app's logo for an app event, a clock for
- * a schedule, the webhook mark for a webhook. It also carries the trigger's
- * state, so the list and the sheet need no Live or Paused badge.
+ * A trigger's clock (Paper C16): the trigger toast's entity icon with a
+ * corner status dot. Every trigger type draws the clock in the list and the
+ * sheet; the toast keeps its per-type glyphs.
  *
- * The glyph is drawn the way the trigger toast draws its entity icon
- * (`EntityTile` in `components/ui/toast.tsx`): bare and muted, then again in
- * the state's colour under the same radial mask, so the colour reaches in
- * from the corner. Paused draws the muted glyph alone; a paused app logo is
- * desaturated. The state is the image's accessible name.
+ * The glyph is drawn as `EntityTile` in `components/ui/toast.tsx` draws it:
+ * muted, then again in the health colour under the toast's `REFLECTION_MASK`,
+ * so the colour reaches in from the corner the dot sits on. The dot is a plain
+ * 5 px dot on a disc in the row's own surface. Paused, never run and setting
+ * up draw no reflection and a muted dot. The health is the image's name.
  */
 
-import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import { REFLECTION_MASK } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectTrigger } from '@kortix/sdk';
-import { ClockIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
+import { ClockIcon } from '@phosphor-icons/react';
 
-import { type TriggerBadgeState, triggerBadgeState } from './schedule-copy';
+import { triggerBadgeState } from './schedule-copy';
 import { LABEL_KEY } from './trigger-status-badge';
 
-/** The toast's reflection tones, by trigger state. Paused has none. */
-const TONE = {
-  live: 'text-kortix-green',
-  error: 'text-kortix-red',
+export type ClockState = 'ok' | 'failed' | 'needs_connection' | 'pending' | 'paused' | 'never';
+
+/** The health the clock shows: the badge state, with "live" split by whether it ever ran. */
+export function clockState(trigger: ProjectTrigger): ClockState {
+  const state = triggerBadgeState(trigger);
+  if (state === 'error') return 'failed';
+  if (state !== 'live') return state;
+  return trigger.last_fired_at || trigger.event?.last_event_at ? 'ok' : 'never';
+}
+
+const REFLECTION = {
+  ok: 'text-kortix-green',
+  failed: 'text-kortix-red',
   needs_connection: 'text-kortix-orange',
-  pending: 'text-foreground',
+  pending: null,
   paused: null,
-} as const satisfies Record<TriggerBadgeState, string | null>;
+  never: null,
+} as const satisfies Record<ClockState, string | null>;
+
+const DOT = {
+  ok: 'bg-kortix-green',
+  failed: 'bg-kortix-red',
+  needs_connection: 'bg-kortix-orange',
+  pending: 'bg-muted-foreground',
+  paused: 'bg-muted-foreground',
+  never: 'bg-muted-foreground',
+} as const satisfies Record<ClockState, string>;
+
+const LABEL = {
+  ok: LABEL_KEY.live,
+  failed: LABEL_KEY.error,
+  needs_connection: LABEL_KEY.needs_connection,
+  pending: LABEL_KEY.pending,
+  paused: LABEL_KEY.paused,
+  never: 'text3d40a69d3160',
+} as const satisfies Record<ClockState, string>;
 
 export function TriggerTile({
   trigger,
-  logo,
-  size = 'md',
+  surface = 'bg-background',
 }: {
   trigger: ProjectTrigger;
-  /** The app's logo from the event catalog; null when the catalog does not have it. */
-  logo: string | null;
-  /** `md` (the toast's 20 px) beside a two-line row; `sm` in the sheet header. */
-  size?: 'sm' | 'md';
+  /** The disc behind the dot paints the row's own surface, so the dot reads as cut out. */
+  surface?: 'bg-background' | 'bg-muted' | 'bg-surface' | 'bg-popover' | 'bg-sidebar';
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const state = triggerBadgeState(trigger);
-  const label = t.raw(LABEL_KEY[state]);
-
-  if (trigger.type === 'event') {
-    return (
-      <span
-        role="img"
-        aria-label={label}
-        title={label}
-        className={cn('inline-flex shrink-0', state === 'paused' && 'opacity-50 grayscale')}
-      >
-        <AppLogo src={logo} />
-      </span>
-    );
-  }
-
-  const Icon = trigger.type === 'cron' ? ClockIcon : WebhooksLogoIcon;
-  const tone = TONE[state];
-  const box = size === 'sm' ? 'size-4 [&_svg]:size-4' : 'size-5 [&_svg]:size-5';
+  const state = clockState(trigger);
+  const label = t.raw(LABEL[state]);
+  const tone = REFLECTION[state];
   return (
-    <span role="img" aria-label={label} title={label} className={cn('relative shrink-0', box)}>
-      <span className="text-muted-foreground absolute inset-0 flex items-center justify-center">
-        <Icon />
+    <span role="img" aria-label={label} title={label} className="relative size-5 shrink-0">
+      <span className="text-muted-foreground absolute inset-0 flex items-center justify-center [&_svg]:size-5">
+        <ClockIcon />
       </span>
       {tone ? (
         <span
           aria-hidden
-          className={cn('absolute inset-0 flex items-center justify-center', tone)}
+          className={cn('absolute inset-0 flex items-center justify-center [&_svg]:size-5', tone)}
           style={{ maskImage: REFLECTION_MASK, WebkitMaskImage: REFLECTION_MASK }}
         >
-          <Icon />
+          <ClockIcon />
         </span>
       ) : null}
+      {/* The toast's badge disc (`size-3`, −0.75 offset) holding Paper's plain dot. */}
+      <span
+        aria-hidden
+        className={cn(
+          'absolute -right-0.75 -bottom-0.75 flex size-3 items-center justify-center rounded-full',
+          surface,
+        )}
+      >
+        <span className={cn('size-1.5 rounded-full', DOT[state])} />
+      </span>
     </span>
   );
 }

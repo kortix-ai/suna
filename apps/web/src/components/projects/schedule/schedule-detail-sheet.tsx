@@ -294,11 +294,7 @@ function SheetPanel({
             sheet's own close button; the split column renders its own. */}
         <div className={cn('flex min-w-0 items-start gap-2.5', !split && 'pr-10')}>
           <span className="mt-1 flex shrink-0">
-            <TriggerTile
-              trigger={trigger}
-              size="sm"
-              logo={event ? (appIndex.get(event.app ?? event.connector)?.logo ?? null) : null}
-            />
+            <TriggerTile trigger={trigger} surface={surface} />
           </span>
           <div className="min-w-0 flex-1 space-y-0.5">
             <div className="flex min-w-0 items-center gap-2">
