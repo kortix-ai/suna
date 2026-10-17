@@ -362,7 +362,8 @@ jobs:
           foreach ($i in 1..3) {
             $p = Start-Process $cli -ArgumentList "sync", "setup", "--provider", "kortix", "--issuer", "https://dev-api.kortix.com", "--no-browser" -RedirectStandardOutput "$lib\out.txt" -RedirectStandardError "$lib\err.txt" -PassThru -NoNewWindow
             $deadline = (Get-Date).AddSeconds(30)
-            while ((Get-Date) -lt $deadline -and -not $ok) { Start-Sleep 1; $ok = [bool](Select-String -Path "$lib\out.txt" -Pattern "user_code=" -SimpleMatch -Quiet) }
+            # The code goes to stderr.
+            while ((Get-Date) -lt $deadline -and -not $ok) { Start-Sleep 1; $ok = [bool](Select-String -Path "$lib\out.txt", "$lib\err.txt" -Pattern "user_code=" -SimpleMatch -Quiet -ErrorAction SilentlyContinue) }
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             if ($ok) { break }
             Start-Sleep 10
@@ -814,14 +815,18 @@ jobs:
           # The CI stand-in issuer is local; Cloudflare in front of Kortix refused requests
           # without a User-Agent (403) and only a real host shows it. No secret needed: the
           # device grant starts unauthenticated, and nothing is approved.
-          lib="$(mktemp -d)"
+          lib="$(mktemp -d)"; log="$lib/out.txt"; ok=""
           for i in 1 2 3; do
-            out="$(KORTIX_CAPTURE_DIR="$lib" timeout 30 /usr/local/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser 2>&1 || true)"
-            grep -q "user_code=" <<< "$out" && break
+            # The code goes to stderr; macOS has no `timeout`: run it in the background and poll.
+            KORTIX_CAPTURE_DIR="$lib" /usr/local/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser > "$log" 2>&1 &
+            pid=$!
+            for _ in $(seq 1 30); do grep -q "user_code=" "$log" && ok=1 && break; sleep 1; done
+            kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+            [ -n "$ok" ] && break
             sleep 10
           done
+          [ -n "$ok" ] || { echo "::error::sign-in did not start at dev-api.kortix.com"; tail -20 "$log"; rm -rf "$lib"; exit 1; }
           rm -rf "$lib"
-          grep -q "user_code=" <<< "$out" || { echo "::error::sign-in did not start at dev-api.kortix.com"; printf '%s\n' "$out" | tail -20; exit 1; }
           echo "sign-in started at dev-api.kortix.com (device code issued)" | tee "$EV/cloudflare-signin.txt"
       - name: Uninstall
         run: |
@@ -967,7 +972,9 @@ jobs:
 
   linux-deb:
     name: Linux deb (build and verify)
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    # A real VM: the job installs systemd units and a login session. Sandbox runners
+    # (CI_RUNNER_M_2204) have no systemd ("not booted with systemd as init system").
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     env:
       EV: ${{ github.workspace }}/evidence
@@ -1095,14 +1102,18 @@ jobs:
           # The CI stand-in issuer is local; Cloudflare in front of Kortix refused requests
           # without a User-Agent (403) and only a real host shows it. No secret needed: the
           # device grant starts unauthenticated, and nothing is approved.
-          lib="$(mktemp -d)"
+          lib="$(mktemp -d)"; log="$lib/out.txt"; ok=""
           for i in 1 2 3; do
-            out="$(KORTIX_CAPTURE_DIR="$lib" timeout 30 /usr/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser 2>&1 || true)"
-            grep -q "user_code=" <<< "$out" && break
+            # The code goes to stderr; macOS has no `timeout`: run it in the background and poll.
+            KORTIX_CAPTURE_DIR="$lib" /usr/bin/kortix-capture sync setup --provider kortix --issuer https://dev-api.kortix.com --no-browser > "$log" 2>&1 &
+            pid=$!
+            for _ in $(seq 1 30); do grep -q "user_code=" "$log" && ok=1 && break; sleep 1; done
+            kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+            [ -n "$ok" ] && break
             sleep 10
           done
+          [ -n "$ok" ] || { echo "::error::sign-in did not start at dev-api.kortix.com"; tail -20 "$log"; rm -rf "$lib"; exit 1; }
           rm -rf "$lib"
-          grep -q "user_code=" <<< "$out" || { echo "::error::sign-in did not start at dev-api.kortix.com"; printf '%s\n' "$out" | tail -20; exit 1; }
           echo "sign-in started at dev-api.kortix.com (device code issued)" | tee "$EV/cloudflare-signin.txt"
       - name: The signed-in person is enrolled and recorded
         run: |
@@ -1671,7 +1682,7 @@ jobs:
           menu = text("tray-menu.txt"); print("tray menu:", menu.strip())
           if "Open Kortix Capture" in menu:
               assert "Settings" in menu and menu.index("Open Kortix Capture") < menu.index("Settings"), menu
-              assert "Quit" not in menu, "the tray has no Quit: " + menu
+              assert "Quit Kortix Capture" in menu and "Restart Kortix Capture" in menu, "the tray offers Restart and Quit: " + menu
               assert "Pause" in menu, menu
           legacy = text("legacy-after.txt"); print(legacy)
           assert "legacy plists left: 0" in legacy and "legacy processes left: 0" in legacy and "library kept: personal library file" in legacy, legacy
