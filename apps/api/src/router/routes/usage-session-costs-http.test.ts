@@ -3,6 +3,8 @@ import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import * as realDirectoryVisibility from '../../iam/directory-visibility';
+import * as realActor from '../../middleware/actor';
 import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
@@ -91,6 +93,26 @@ mock.module('../../iam/authorize', () => ({
   assertAuthorized: async (_actor: unknown, action: string) => {
     authorizedActions.push(action);
   },
+}));
+
+// #10113: session costs name each session's owner, so the route reads the
+// caller through `actorOf` and narrows the owner filter with the caller's
+// visible directory (iam/directory-visibility.ts). `userIds: null` means the
+// caller holds `member.read` and `group.read`, so the requested owner filter
+// passes through unchanged — exactly what these tests assert; the narrowing
+// itself (own sessions only, 403 on a foreign owner) is flow coverage.
+mock.module('../../middleware/actor', () => ({
+  ...realActor,
+  actorOf: async () => ({
+    userId: USER_ID,
+    accountId: ACCOUNT_ID,
+    credential: { kind: 'jwt' },
+    ctx: {},
+  }),
+}));
+mock.module('../../iam/directory-visibility', () => ({
+  ...realDirectoryVisibility,
+  visibleDirectory: async () => ({ userIds: null, groupIds: null, projectIds: null }),
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
