@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "Introduce un objeto JSON.",
       "text2631c2f64174": "El filtro coincide",
       "text2319ec274750": "Clave de sesión",
-      "text91f7323997df": "Las ejecuciones aparecerán aquí",
       "text398d270b036a": "No se pudieron cargar las ejecuciones.",
       "text4c2e1df4570b": "Monitor",
       "text31757bbfa17e": "Recordatorio",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "Inicia una sesión real. Se aplican costes.",
       "text858e4ba7a29f": "Pausar",
       "texte0ab721ade45": "{count, plural, one {ejecución} other {ejecuciones}}",
-      "text611b8edf2e45": "{count, plural, one {fallo} other {fallos}}",
       "textf1a06b0cb2ca": "duración mediana",
       "textfa14066e0399": "Duración mediana",
       "text26735edf00f9": "Sin ejecuciones",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "Más",
       "text3ec84fbbfd0e": "{count, plural, one {# activo} other {# activos}}",
       "textc8dae6371b33": "Repetir",
-      "text4aaee10f3594": "ID de sesión copiado"
+      "text4aaee10f3594": "ID de sesión copiado",
+      "text4001631320f1": "{count, plural, one {fallida} other {fallidas}}",
+      "textd835122c9dd1": "{count, plural, one {crédito} other {créditos}}",
+      "text72a85758b69c": "Aún no hay ejecuciones.",
+      "text75c4316dcad4": "Aún no hay ejecuciones. Este disparador está en pausa.",
+      "textdf86da65c421": "Aún no hay ejecuciones. La primera empieza el {value0}."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

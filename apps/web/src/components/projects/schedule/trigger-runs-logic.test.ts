@@ -110,6 +110,7 @@ describe('bucketRuns', () => {
       1,
     );
     expect(b!.failed).toBe(3);
+    expect(b!.succeeded).toBe(0);
   });
 
   test('median duration and summed cost per slice, nulls ignored', () => {
@@ -118,6 +119,7 @@ describe('bucketRuns', () => {
       1,
     );
     expect(b!.medianMs).toBe(2000);
+    expect(b!.succeeded).toBe(3);
     expect(b!.cost).toBe(0.75);
   });
 

@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "Insira um objeto JSON.",
       "text2631c2f64174": "O filtro corresponde",
       "text2319ec274750": "Chave da sessão",
-      "text91f7323997df": "As execuções aparecerão aqui",
       "text398d270b036a": "Não foi possível carregar as execuções.",
       "text4c2e1df4570b": "Monitor",
       "text31757bbfa17e": "Lembrete",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "Inicia uma sessão real. Há custos.",
       "text858e4ba7a29f": "Pausar",
       "texte0ab721ade45": "{count, plural, one {execução} other {execuções}}",
-      "text611b8edf2e45": "{count, plural, one {falha} other {falhas}}",
       "textf1a06b0cb2ca": "duração mediana",
       "textfa14066e0399": "Duração mediana",
       "text26735edf00f9": "Nenhuma execução",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "Mais",
       "text3ec84fbbfd0e": "{count, plural, one {# ativo} other {# ativos}}",
       "textc8dae6371b33": "Repetir",
-      "text4aaee10f3594": "ID da sessão copiado"
+      "text4aaee10f3594": "ID da sessão copiado",
+      "text4001631320f1": "{count, plural, one {com falha} other {com falha}}",
+      "textd835122c9dd1": "{count, plural, one {crédito} other {créditos}}",
+      "text72a85758b69c": "Ainda não há execuções.",
+      "text75c4316dcad4": "Ainda não há execuções. Este gatilho está pausado.",
+      "textdf86da65c421": "Ainda não há execuções. A primeira começa {value0}."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

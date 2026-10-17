@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "JSON オブジェクトを入力してください。",
       "text2631c2f64174": "フィルター一致",
       "text2319ec274750": "セッションキー",
-      "text91f7323997df": "実行はここに表示されます",
       "text398d270b036a": "実行履歴を読み込めませんでした。",
       "text4c2e1df4570b": "モニター",
       "text31757bbfa17e": "リマインダー",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "実際のセッションを実行します。費用が発生します。",
       "text858e4ba7a29f": "一時停止",
       "texte0ab721ade45": "{count, plural, other {件の実行}}",
-      "text611b8edf2e45": "{count, plural, other {件の失敗}}",
       "textf1a06b0cb2ca": "中央値の所要時間",
       "textfa14066e0399": "所要時間の中央値",
       "text26735edf00f9": "実行なし",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "その他",
       "text3ec84fbbfd0e": "{count, plural, other {# 件有効}}",
       "textc8dae6371b33": "再実行",
-      "text4aaee10f3594": "セッション ID をコピーしました"
+      "text4aaee10f3594": "セッション ID をコピーしました",
+      "text4001631320f1": "{count, plural, other {件失敗}}",
+      "textd835122c9dd1": "{count, plural, other {クレジット}}",
+      "text72a85758b69c": "まだ実行はありません。",
+      "text75c4316dcad4": "まだ実行はありません。このトリガーは一時停止中です。",
+      "textdf86da65c421": "まだ実行はありません。最初の実行は {value0} に始まります。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

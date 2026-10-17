@@ -46,7 +46,7 @@ import {
 } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -445,13 +445,24 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
                 className="max-w-full overflow-x-auto"
               >
-                <TabsListCompact aria-label={tI18nComplete.raw('text51035b5b67dc')}>
+                {/* The sheet's tab style (underline), so both tab bars match. */}
+                <TabsList
+                  type="underline"
+                  underlineSize="md"
+                  size="sm"
+                  aria-label={tI18nComplete.raw('text51035b5b67dc')}
+                  className="h-8 justify-start gap-5"
+                >
                   {filters.map((value) => (
-                    <TabsTriggerCompact key={value} value={value}>
+                    <TabsTrigger
+                      key={value}
+                      value={value}
+                      className="flex-none px-0 text-xs font-medium"
+                    >
                       {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                    </TabsTriggerCompact>
+                    </TabsTrigger>
                   ))}
-                </TabsListCompact>
+                </TabsList>
               </Tabs>
             ) : undefined
           }

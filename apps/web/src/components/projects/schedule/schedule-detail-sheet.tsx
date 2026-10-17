@@ -438,7 +438,13 @@ function SheetPanel({
           )}
         </TabsContent>
         <TabsContent value="runs" className="pb-8">
-          <TriggerRunsPanel projectId={projectId} trigger={trigger} canFire={controls.canFire} />
+          <TriggerRunsPanel
+            projectId={projectId}
+            trigger={trigger}
+            canFire={controls.canFire}
+            onRun={onRun}
+            running={running}
+          />
         </TabsContent>
       </SheetBody>
 

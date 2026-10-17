@@ -8,8 +8,10 @@
  * The glyph is drawn as `EntityTile` in `components/ui/toast.tsx` draws it:
  * muted, then again in the health colour under the toast's `REFLECTION_MASK`,
  * so the colour reaches in from the corner the dot sits on. The dot is a plain
- * 5 px dot on a disc in the row's own surface. Paused, never run and setting
- * up draw no reflection and a muted dot. The health is the image's name.
+ * 5 px dot on a disc in the row's own surface. Paused keeps its health's
+ * reflection at half strength with a muted dot; never run and setting up draw
+ * no reflection. `text-kortix-*` tokens carry both themes. The health is the
+ * image's name.
  */
 
 import { REFLECTION_MASK } from '@/components/ui/toast';
@@ -64,12 +66,20 @@ export function TriggerTile({
 }: {
   trigger: ProjectTrigger;
   /** The disc behind the dot paints the row's own surface, so the dot reads as cut out. */
-  surface?: 'bg-background' | 'bg-muted' | 'bg-surface' | 'bg-popover' | 'bg-sidebar';
+  surface?: 'bg-background' | 'bg-card' | 'bg-muted' | 'bg-surface' | 'bg-popover' | 'bg-sidebar';
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const state = clockState(trigger);
   const label = t.raw(LABEL[state]);
-  const tone = REFLECTION[state];
+  // Paused keeps the gradient of the health it would have, at half strength.
+  const tone =
+    state === 'paused'
+      ? trigger.last_status === 'failed'
+        ? REFLECTION.failed
+        : trigger.last_fired_at || trigger.event?.last_event_at
+          ? REFLECTION.ok
+          : null
+      : REFLECTION[state];
   return (
     <span role="img" aria-label={label} title={label} className="relative size-5 shrink-0">
       <span className="text-muted-foreground absolute inset-0 flex items-center justify-center [&_svg]:size-5">
@@ -78,7 +88,11 @@ export function TriggerTile({
       {tone ? (
         <span
           aria-hidden
-          className={cn('absolute inset-0 flex items-center justify-center [&_svg]:size-5', tone)}
+          className={cn(
+            'absolute inset-0 flex items-center justify-center [&_svg]:size-5',
+            tone,
+            state === 'paused' && 'opacity-50',
+          )}
           style={{ maskImage: REFLECTION_MASK, WebkitMaskImage: REFLECTION_MASK }}
         >
           <ClockIcon />

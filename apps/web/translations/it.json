@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "Inserisci un oggetto JSON.",
       "text2631c2f64174": "Il filtro corrisponde",
       "text2319ec274750": "Chiave di sessione",
-      "text91f7323997df": "Le esecuzioni appariranno qui",
       "text398d270b036a": "Impossibile caricare le esecuzioni.",
       "text4c2e1df4570b": "Monitor",
       "text31757bbfa17e": "Promemoria",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "Avvia una sessione reale. Si applicano costi.",
       "text858e4ba7a29f": "Metti in pausa",
       "texte0ab721ade45": "{count, plural, one {esecuzione} other {esecuzioni}}",
-      "text611b8edf2e45": "{count, plural, one {errore} other {errori}}",
       "textf1a06b0cb2ca": "durata mediana",
       "textfa14066e0399": "Durata mediana",
       "text26735edf00f9": "Nessuna esecuzione",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "Altro",
       "text3ec84fbbfd0e": "{count, plural, one {# attivo} other {# attivi}}",
       "textc8dae6371b33": "Ripeti",
-      "text4aaee10f3594": "ID sessione copiato"
+      "text4aaee10f3594": "ID sessione copiato",
+      "text4001631320f1": "{count, plural, one {non riuscita} other {non riuscite}}",
+      "textd835122c9dd1": "{count, plural, one {credito} other {crediti}}",
+      "text72a85758b69c": "Ancora nessuna esecuzione.",
+      "text75c4316dcad4": "Ancora nessuna esecuzione. Questo trigger è in pausa.",
+      "textdf86da65c421": "Ancora nessuna esecuzione. La prima parte {value0}."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

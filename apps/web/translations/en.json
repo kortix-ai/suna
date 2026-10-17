@@ -20109,7 +20109,6 @@
       "text6ea4fcc31727": "Enter a JSON object.",
       "text2631c2f64174": "Filter matches",
       "text2319ec274750": "Session key",
-      "text91f7323997df": "Runs will show up here",
       "text398d270b036a": "Could not load runs.",
       "text4c2e1df4570b": "Monitor",
       "text31757bbfa17e": "Reminder",
@@ -20124,7 +20123,6 @@
       "text15e8856d4d77": "Runs a real session. Costs apply.",
       "text858e4ba7a29f": "Pause",
       "texte0ab721ade45": "{count, plural, one {run} other {runs}}",
-      "text611b8edf2e45": "{count, plural, one {failure} other {failures}}",
       "textf1a06b0cb2ca": "median duration",
       "textfa14066e0399": "Median duration",
       "text26735edf00f9": "No runs",
@@ -20135,7 +20133,12 @@
       "textd47d7cb0e4f8": "More",
       "text3ec84fbbfd0e": "{count, plural, other {# active}}",
       "textc8dae6371b33": "Replay",
-      "text4aaee10f3594": "Session ID copied"
+      "text4aaee10f3594": "Session ID copied",
+      "text4001631320f1": "{count, plural, other {failed}}",
+      "textd835122c9dd1": "{count, plural, one {credit} other {credits}}",
+      "text72a85758b69c": "No runs yet.",
+      "text75c4316dcad4": "No runs yet. This trigger is paused.",
+      "textdf86da65c421": "No runs yet. The first one starts {value0}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

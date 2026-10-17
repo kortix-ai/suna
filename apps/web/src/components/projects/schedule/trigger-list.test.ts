@@ -21,11 +21,11 @@ describe('nextRunLabel (C09 trailing, line one)', () => {
   test('this week: the weekday and time', () => {
     expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toBe('next Mon 09:00');
   });
-  test('webhooks and app events run on an event; paused or unscheduled reads —', () => {
+  test('webhooks and app events run on an event; paused reads Paused; unscheduled reads —', () => {
     expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null }, t, 'en', now)).toBe(
       'On event',
     );
-    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0), false), t, 'en', now)).toBe('—');
+    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0), false), t, 'en', now)).toBe('Paused');
     expect(nextRunLabel(cron(null), t, 'en', now)).toBe('—');
   });
 });

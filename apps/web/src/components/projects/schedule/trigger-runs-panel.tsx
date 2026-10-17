@@ -35,6 +35,7 @@ import { useProjectTriggers, useTriggerRuns } from '@kortix/sdk/react';
 import {
   ArrowCounterClockwiseIcon,
   ArrowSquareOutIcon,
+  PlayIcon,
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
@@ -157,12 +158,18 @@ export function TriggerRunsPanel({
   projectId,
   trigger,
   canFire,
+  onRun,
+  running = false,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
   canFire: boolean;
+  /** The sheet's Run now, offered by the empty state. */
+  onRun?: () => void;
+  running?: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const poll = useRunsPoll();
   const query = useTriggerRuns(projectId, trigger.slug, {
     refetchInterval: poll.refetchInterval,
@@ -219,9 +226,42 @@ export function TriggerRunsPanel({
         }
       />
     );
+  } else if (range && shown.length === 0) {
+    body = <EmptyState size="sm" title={t.raw('text6de3a7d8e5db')} />;
   } else if (shown.length === 0 && !query.hasNextPage) {
+    // Paper C06 / C14: one line, then Run now; no histogram.
+    const next = trigger.next_fire_at ? Date.parse(trigger.next_fire_at) : Number.NaN;
+    const line = !trigger.enabled
+      ? t.raw('text75c4316dcad4')
+      : Number.isFinite(next)
+        ? t('textdf86da65c421', {
+            value0: new Date(next).toLocaleString(locale, {
+              weekday: 'long',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          })
+        : t.raw('text72a85758b69c');
     body = (
-      <EmptyState size="sm" title={range ? t.raw('text6de3a7d8e5db') : t.raw('text91f7323997df')} />
+      <div className="flex flex-col items-start gap-3">
+        <p className="text-muted-foreground text-sm">{line}</p>
+        {canFire && onRun ? (
+          <Button
+            variant="secondary"
+            size="xs"
+            className="gap-1.5 text-xs"
+            onClick={onRun}
+            disabled={running}
+          >
+            {running ? (
+              <SessionDotMatrix sessionId={trigger.slug} size={14} className="shrink-0" />
+            ) : (
+              <PlayIcon weight="fill" className="size-2.5 shrink-0" />
+            )}
+            {t.raw('text0991397702fa')}
+          </Button>
+        ) : null}
+      </div>
     );
   } else {
     body = (

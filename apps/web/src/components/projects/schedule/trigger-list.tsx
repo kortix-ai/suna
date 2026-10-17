@@ -19,14 +19,14 @@ import { TriggerTile } from './trigger-tile';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** "next Mon 09:00", "next 08:45" today, "On event" for webhooks and app events, "—" while paused. */
+/** "next Mon 09:00", "next 08:45" today, "On event" for webhooks and app events, "Paused" while paused. */
 export function nextRunLabel(
   trigger: Pick<ProjectTrigger, 'type' | 'enabled' | 'next_fire_at'>,
   t: UiTranslator,
   locale: string,
   now: number = Date.now(),
 ): string {
-  if (!trigger.enabled) return '—';
+  if (!trigger.enabled) return t.raw('texte159b06187d3');
   if (trigger.type !== 'cron') return t.raw('text84b05fbb7f76');
   const at = trigger.next_fire_at ? Date.parse(trigger.next_fire_at) : Number.NaN;
   if (!Number.isFinite(at)) return '—';
@@ -88,7 +88,9 @@ export function TriggerList({
     />
   );
   return (
-    <ul className="flex flex-col">
+    // A resting panel (`bg-card`, border, `rounded-lg`), so the rows sit on a
+    // surface in both themes; hover is one step up, the open row one more.
+    <ul className="bg-card border-border flex flex-col rounded-lg border p-1">
       {groups
         ? groups.map((group) => (
             <Fragment key={group.key}>
@@ -134,7 +136,7 @@ function TriggerRow({
           selected ? 'bg-muted' : 'hover:bg-muted/60 focus-visible:bg-muted/60',
         )}
       >
-        <TriggerTile trigger={trigger} surface={selected ? 'bg-muted' : 'bg-background'} />
+        <TriggerTile trigger={trigger} surface={selected ? 'bg-muted' : 'bg-card'} />
         {/* No gap and tight leading: the two lines read as one block, centred on the clock. */}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-foreground truncate text-sm leading-tight font-medium">{name}</span>
@@ -143,7 +145,12 @@ function TriggerRow({
           ) : null}
         </span>
         <span className="flex w-24 shrink-0 flex-col items-end text-xs tabular-nums">
-          <span className="text-foreground whitespace-nowrap">
+          <span
+            className={cn(
+              'whitespace-nowrap',
+              trigger.enabled ? 'text-foreground' : 'text-muted-foreground',
+            )}
+          >
             {nextRunLabel(trigger, t, locale)}
           </span>
           {running ? (

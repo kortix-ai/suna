@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "Gib ein JSON-Objekt ein.",
       "text2631c2f64174": "Filter trifft zu",
       "text2319ec274750": "Sitzungsschlüssel",
-      "text91f7323997df": "Läufe erscheinen hier",
       "text398d270b036a": "Läufe konnten nicht geladen werden.",
       "text4c2e1df4570b": "Monitor",
       "text31757bbfa17e": "Erinnerung",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "Startet eine echte Sitzung. Es fallen Kosten an.",
       "text858e4ba7a29f": "Pausieren",
       "texte0ab721ade45": "{count, plural, one {Lauf} other {Läufe}}",
-      "text611b8edf2e45": "{count, plural, one {Fehler} other {Fehler}}",
       "textf1a06b0cb2ca": "mittlere Dauer",
       "textfa14066e0399": "Mittlere Dauer",
       "text26735edf00f9": "Keine Läufe",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "Mehr",
       "text3ec84fbbfd0e": "{count, plural, other {# aktiv}}",
       "textc8dae6371b33": "Wiederholen",
-      "text4aaee10f3594": "Sitzungs-ID kopiert"
+      "text4aaee10f3594": "Sitzungs-ID kopiert",
+      "text4001631320f1": "{count, plural, other {fehlgeschlagen}}",
+      "textd835122c9dd1": "{count, plural, one {Credit} other {Credits}}",
+      "text72a85758b69c": "Noch keine Läufe.",
+      "text75c4316dcad4": "Noch keine Läufe. Dieser Trigger ist pausiert.",
+      "textdf86da65c421": "Noch keine Läufe. Der erste startet {value0}."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

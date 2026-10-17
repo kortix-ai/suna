@@ -31,12 +31,12 @@ describe('TriggerTile', () => {
     expect(out).toContain('text-kortix-green');
     expect(out).toContain('bg-kortix-green');
   });
-  test('paused: no reflection, a muted dot on the row surface', () => {
+  test('paused: the health reflection at half strength, a muted dot on the row surface', () => {
     const out = renderToStaticMarkup(
       <TriggerTile trigger={{ ...base, enabled: false }} surface="bg-muted" />,
     );
     expect(out).toContain('aria-label="Paused"');
-    expect(out).not.toContain('text-kortix-green');
+    expect(out).toContain('text-kortix-green opacity-50');
     expect(out).toContain('bg-muted-foreground');
     expect(out).toContain('rounded-full bg-muted');
   });

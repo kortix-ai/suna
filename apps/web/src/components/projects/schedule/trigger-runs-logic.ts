@@ -54,6 +54,8 @@ export interface RunBucket {
   /** End of the slice, epoch ms. The last slice includes its end. */
   end: number;
   total: number;
+  /** Runs whose agent turn finished, or that fired without a turn to wait on. */
+  succeeded: number;
   /** Runs that read Failed or Rejected. */
   failed: number;
   medianMs: number | null;
@@ -86,6 +88,10 @@ export function bucketRuns(runs: readonly BucketRun[], count: number): RunBucket
     start: min + i * size,
     end: i === count - 1 ? max : min + (i + 1) * size,
     total: group.length,
+    succeeded: group.filter((r) => {
+      const state = runState(r);
+      return state === 'succeeded' || state === 'started';
+    }).length,
     failed: group.filter((r) => {
       const state = runState(r);
       return state === 'failed' || state === 'rejected';

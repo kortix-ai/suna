@@ -20098,7 +20098,6 @@
       "text6ea4fcc31727": "请输入一个 JSON 对象。",
       "text2631c2f64174": "过滤器匹配",
       "text2319ec274750": "会话键",
-      "text91f7323997df": "运行记录将显示在这里",
       "text398d270b036a": "无法加载运行记录。",
       "text4c2e1df4570b": "监视器",
       "text31757bbfa17e": "提醒",
@@ -20113,7 +20112,6 @@
       "text15e8856d4d77": "会运行一个真实会话，会产生费用。",
       "text858e4ba7a29f": "暂停",
       "texte0ab721ade45": "{count, plural, other {次运行}}",
-      "text611b8edf2e45": "{count, plural, other {次失败}}",
       "textf1a06b0cb2ca": "中位时长",
       "textfa14066e0399": "中位时长",
       "text26735edf00f9": "没有运行",
@@ -20124,7 +20122,12 @@
       "textd47d7cb0e4f8": "更多",
       "text3ec84fbbfd0e": "{count, plural, other {# 个启用}}",
       "textc8dae6371b33": "重放",
-      "text4aaee10f3594": "已复制会话 ID"
+      "text4aaee10f3594": "已复制会话 ID",
+      "text4001631320f1": "{count, plural, other {次失败}}",
+      "textd835122c9dd1": "{count, plural, other {积分}}",
+      "text72a85758b69c": "还没有运行。",
+      "text75c4316dcad4": "还没有运行。此触发器已暂停。",
+      "textdf86da65c421": "还没有运行。第一次将于 {value0} 开始。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
