@@ -3,9 +3,10 @@
 // A client is a third-party app that signs Kortix users in through /v1/oauth
 // and then acts as them (scope `kortix`) or just identifies them (`profile`).
 // It is an account-owned credential like a service account, so it lives under
-// the same `token.*` permission family: reading the registry needs
-// `token.read`, registering/editing/rotating needs `token.create`, deleting
-// needs `token.revoke`. The client secret is returned exactly once.
+// the same `token.*` permission family: reading the registry,
+// registering, editing and rotating need `token.create` (a plain member holds
+// only `token.read`, which covers their own API keys), deleting needs
+// `token.revoke`. The client secret is returned exactly once.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
@@ -87,7 +88,7 @@ export function registerIamOauthClientsRoutes(): void {
     }),
     async (c: any) => {
       const accountId = c.req.param('accountId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
       const rows = await listOAuthClients(accountId);
       return c.json({ oauth_clients: rows.map((r) => serialize(r)), scopes_supported: [...OAUTH_SCOPES] });
     },
@@ -174,7 +175,7 @@ export function registerIamOauthClientsRoutes(): void {
     async (c: any) => {
       const accountId = c.req.param('accountId');
       const clientId = c.req.param('clientId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
       const client = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
       if (!client) return c.json({ error: 'OAuth client not found' }, 404);
       return c.json(serialize(client));

@@ -693,6 +693,24 @@ function neverRows(s, groups, pp, org) {
   for (const i of ownItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: '', locked: false, key: i.key });
   return rows;
 }
+/* Record only included apps and websites: whether it is on, whether the organization set it
+   (locked on), and the rows: the organization's entries locked, then the person's own (removable).
+   Row: {kind: app|site, id, sub, locked, key}. */
+function onlyIncluded(s, pp, org) {
+  pp = pp || {};
+  const by = org ? `Required by ${org}` : 'Required by policy';
+  const orgSet = !!pp.record_only_included;
+  const rows = [];
+  const seen = new Set();
+  const add = (list, kind, locked, key) => {
+    for (const v of list || []) if (v && !seen.has(kind + v)) { seen.add(kind + v); rows.push({ kind, id: v, sub: locked ? by : '', locked, key }); }
+  };
+  add(pp.included_bundle_ids, 'app', true, null);
+  add(pp.included_domains, 'site', true, null);
+  add(s.included_bundle_ids, 'app', false, 'included_bundle_ids');
+  add(s.included_domains, 'site', false, 'included_domains');
+  return { on: orgSet || !!s.record_only_included, locked: orgSet, sub: orgSet ? by : '', rows };
+}
 /* "Keep recordings on this computer" says its rule in one line: with sync on, 7 days and never
    anything not uploaded yet; with sync off, nothing is uploaded, so only space frees it. */
 function keepHint(keep, syncOn, limitGb) {
@@ -1932,6 +1950,7 @@ function renderSettings() {
   const pc = privacyControls(syncData?.view, syncData?.status?.policy?.policy, s);
   const managed = !!appData?.managed;
   const items = exclusionItems(s, pp);
+  const only = onlyIncluded(s, pp, orgKnown);
   const keep = keepChoice(s.storage);
   const audioBlocked = syncData?.layers?.audio?.blocked_by;
   const scroll = $('.panel-body', settingsEl)?.scrollTop || 0;
@@ -1948,6 +1967,13 @@ function renderSettings() {
       <h3 id="sec-sync">Sync</h3>
       <div id="sync-status" class="sync-status"></div>
       <div id="sync-box"></div>
+
+      ${pc.on || only.on ? `<h3 id="sec-only">Record only</h3>
+      <p class="hint">${only.on ? 'Only these apps and websites are recorded. Everything else is blacked out and never saved.' : 'Off: everything not in Never record is recorded.'}</p>
+      <div class="never">${row(`Record only included apps and websites${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}On</span>` : sw('record_only_included', only.on, ' aria-label="Record only included apps and websites"'))}
+        ${only.on ? only.rows.map((r) => neverRow({ ...r, label: r.id })).join('') + `
+        <div class="add-row"><input type="text" id="add-in" placeholder="Add an app or website, such as com.tinyspeck.slackmacgap or github.com" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}
+      </div>` : ''}
 
       ${pc.on ? `<h3 id="sec-never">Never record</h3>      <p class="hint">Kortix Capture skips these before it records. Nothing here is saved or uploaded.</p>
       ${never.some((r) => r.locked) ? `<p class="hint">${esc(orgKnown ? orgKnown + ' requires the locked ones.' : 'Policy requires the locked ones.')}</p>` : ''}
@@ -2028,6 +2054,16 @@ function bindSettings() {
     renderSettings();
   };
   if ($('#add-ex-btn')) { $('#add-ex-btn').onclick = addEx; $('#add-ex').onkeydown = (e) => e.key === 'Enter' && addEx(); }
+  const addIn = () => {
+    const c = classifyExclusion($('#add-in').value);
+    if (!c) { toast('Enter an app such as com.example.App or a website such as example.com'); return; }
+    const key = c.kind === 'site' ? 'included_domains' : 'included_bundle_ids';
+    const list = s[key] || [];
+    if (list.includes(c.value)) { toast('Already included'); return; }
+    patch({ [key]: [...list, c.value] });
+    renderSettings();
+  };
+  if ($('#add-in-btn')) { $('#add-in-btn').onclick = addIn; $('#add-in').onkeydown = (e) => e.key === 'Enter' && addIn(); }
 }
 const SYNC_FIELDS = { 's3-endpoint': 'endpoint', 's3-bucket': 'bucket', 's3-region': 'region', 's3-prefix': 'prefix', 's3-key': 'access_key_id', 's3-secret': 'secret_access_key' };
 settingsEl.addEventListener('input', (e) => {
@@ -2063,7 +2099,7 @@ settingsEl.addEventListener('change', async (e) => {
   if (typeof v === 'number' && Number.isNaN(v)) return;
   if (t.dataset.scale) v = Math.round(v * +t.dataset.scale);
   patch(pathPatch(t.dataset.path, v));
-  if (t.dataset.path === 'audio.enabled' || t.dataset.path === 'experimental.privacy_controls') renderSettings();
+  if (t.dataset.path === 'audio.enabled' || t.dataset.path === 'experimental.privacy_controls' || t.dataset.path === 'record_only_included') renderSettings();
 });
 settingsEl.addEventListener('click', async (e) => {
   const b = e.target.closest('button, [data-rm]');

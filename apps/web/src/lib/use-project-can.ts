@@ -89,6 +89,7 @@ export const PROJECT_PAGE_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
   PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ] as const;
 
 export function useProjectPageCans(projectId: string | undefined): Record<string, CanResult> {

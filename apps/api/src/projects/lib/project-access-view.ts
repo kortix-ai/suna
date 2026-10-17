@@ -1,6 +1,7 @@
 import { accountMemberJoinRows } from '../../iam/membership-read';
 import { accountGroupNames, groupMemberRows } from '../../iam/group-read';
-import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
+import { isAccountManager, type AccountRole, type ProjectRole } from '../access';
+import { authorize } from '../../iam/authorize';
 import { normalizeProjectRole } from '../../iam/roles';
 import { accountRoleMap, customRoleBindings, foldProjectAccess, groupProjectGrants, objectGrantRows, projectRoleGrants } from '../../iam/read-models';
 import { resolveUserIdentities } from './access';
@@ -86,7 +87,9 @@ export async function buildProjectAccessView(loaded: AwaitedProjectAccessLoad) {
   return {
     project_id: loaded.row.projectId,
     account_id: loaded.row.accountId,
-    can_manage: roleAllows(loaded.effectiveRole, 'manage'),
+    can_manage: (
+      await authorize(loaded.actor, 'project.members.manage', { type: 'project', id: loaded.row.projectId })
+    ).allowed,
     viewer_user_id: loaded.userId,
     members,
     /** Every group with SOME access to this project — a project-role grant,

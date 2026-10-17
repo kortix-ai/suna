@@ -318,7 +318,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
@@ -871,7 +871,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -891,7 +891,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -918,7 +918,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);

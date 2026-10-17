@@ -313,6 +313,12 @@ export const PolicySchema = z.object({
       excluded_domains: z.array(normalized(normalizeCaptureDomain, 'not a domain')).max(2000).default([]).transform(unique),
       exclusion_groups: z.array(z.enum(CAPTURE_EXCLUSION_GROUPS)).default(['password_managers']).transform(unique),
       exclude_private_browsing: z.boolean().default(true),
+      // Record only what is included: with `record_only_included`, a device records a window only
+      // when its app is in `included_bundle_ids` or its website is in `included_domains`, and the
+      // member can add to both lists but not turn the mode off. Exclusions still win.
+      record_only_included: z.boolean().default(false),
+      included_bundle_ids: z.array(normalized(normalizeCaptureAppId, 'not an app')).max(500).default([]).transform(unique),
+      included_domains: z.array(normalized(normalizeCaptureDomain, 'not a domain')).max(2000).default([]).transform(unique),
     })
     .passthrough()
     .default({}),

@@ -30,23 +30,24 @@ function lists(byAccount: Record<string, KortixProject[] | Error>) {
 }
 
 describe('creatableAccounts', () => {
-  test('keeps owner and admin accounts in order, drops member-only accounts', () => {
-    expect(creatableAccounts([member, personal, team]).map((a) => a.account_id)).toEqual(['acc-personal', 'acc-team']);
+  test('keeps the accounts whose project.create verdict is yes, in order', () => {
+    const verdicts = { 'acc-personal': true, 'acc-team': true, 'acc-member': false };
+    expect(creatableAccounts([member, personal, team], verdicts).map((a) => a.account_id)).toEqual(['acc-personal', 'acc-team']);
   });
-  test('an account with no role is not creatable', () => {
-    expect(creatableAccounts([{ account_id: 'x' } as KortixAccount])).toEqual([]);
+  test('a role label never decides: an owner without a verdict is not creatable', () => {
+    expect(creatableAccounts([personal], {})).toEqual([]);
   });
 });
 
 describe('orderLandingAccounts', () => {
-  test('selected account first, then owned or admin accounts, then member-only accounts', () => {
-    const order = orderLandingAccounts([member, personal, team], 'acc-member');
+  test('selected account first, then the rest in the given order', () => {
+    const order = orderLandingAccounts([personal, member, team], 'acc-member');
     expect(order.map((a) => a.account_id)).toEqual(['acc-member', 'acc-personal', 'acc-team']);
   });
 
   test('a stale selection is ignored', () => {
     const order = orderLandingAccounts([member, personal], 'acc-gone');
-    expect(order.map((a) => a.account_id)).toEqual(['acc-personal', 'acc-member']);
+    expect(order.map((a) => a.account_id)).toEqual(['acc-member', 'acc-personal']);
   });
 });
 

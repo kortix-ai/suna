@@ -99,7 +99,8 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
+import { useCans, useSummarizeRuntimeSession } from '@kortix/sdk/react';
 import { useRuntimeSupports } from '@/lib/session/runtime-capabilities';
 import { useSessionChanges } from '@/hooks/useSessionChanges';
 import { sessionStatus as readSessionStatus, useSessionStatus } from '@/lib/session/session-store';
@@ -187,6 +188,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const toast = useToast();
     const queryClient = useQueryClient();
     const { t } = useTranslation();
+    const cans = useCans({ projectId }, REVIEW_CONTROL_ACTIONS);
 
     // The freshest copy of the session: a caller may have long-pressed a row
     // from a list that has since refetched, and Rename/Share should never
@@ -528,12 +530,14 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
 
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
+    const canOpenChangeRequest = changeRequestControlsFrom(cans).canOpen;
     const canManageSharing = menuSession?.can_manage_sharing !== false;
     const listActions = menuSession ? sessionListActions(liveRow(menuSession)) : null;
     const topRows = sessionActionRows({
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
+      canOpenChangeRequest,
       canCompact,
       changes: {
         pending: changesQuery.isPending,
