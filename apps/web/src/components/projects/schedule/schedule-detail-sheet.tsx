@@ -18,6 +18,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +61,6 @@ import {
 import {
   BracketsCurlyIcon,
   DotsThreeIcon,
-  PauseIcon,
   PlayIcon,
   TrashIcon,
   XIcon,
@@ -72,19 +72,11 @@ import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
   accountToWrite,
   appConnectors,
-  describeEventSource,
-  describeEventStatus,
   indexEventApps,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
-import {
-  describeLastRun,
-  describeNextRun,
-  describeWhen,
-  triggerBadgeState,
-  triggerName,
-} from './schedule-copy';
+import { describeLastRun, describeWhen, triggerName } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import { TriggerCallouts } from './trigger-callouts';
@@ -100,7 +92,6 @@ import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
 import { TriggerOptions } from './trigger-options';
 import { TriggerReadOnly } from './trigger-readonly';
 import { TriggerRunsPanel } from './trigger-runs-panel';
-import { TriggerStatusBadge } from './trigger-status-badge';
 import { TriggerTestDialog } from './trigger-test-dialog';
 import { TriggerTile } from './trigger-tile';
 import { useEventAppConnect } from './use-event-app-connect';
@@ -262,14 +253,7 @@ function SheetPanel({
 
   const canWrite = controls.canUpdate;
   const active = trigger.enabled;
-  const nextRun = describeNextRun(trigger);
   const when = describeWhen(trigger, eventNames);
-  const status = event ? describeEventStatus(event, t, appIndex) : null;
-  const state = triggerBadgeState(trigger);
-  const reason =
-    state === 'error' || state === 'needs_connection'
-      ? (status?.detail ?? trigger.last_error)
-      : null;
   // The form needs the event's schema to build its settings; wait for it, never flash a half-built form.
   const loading = catalogOn && (apps.isLoading || eventTypes.isLoading);
 
@@ -283,36 +267,26 @@ function SheetPanel({
       }}
       className="gap-0"
     >
-      {/* Sticky, because the content element is what scrolls: without this the
-          Run now / Pause actions would scroll away. `bg-sidebar` matches the
-          sheet's own surface so content passes behind it, not through it.
-          `text-left` is not redundant: SheetHeader's base centres on a phone. */}
-      {/* `pb-0`: the tab bar's own rule is the header's bottom edge. */}
-      <SheetHeader className={cn(surface, 'sticky top-0 z-10 space-y-3 px-4 pt-4 pb-0 text-left')}>
-        {/* Top-aligned on the title's 24 px line: `mt-1` centres the 16 px mark on
-            it, `-my-1` the 29 px close button. `pr-10` clears the floating
-            sheet's own close button; the split column renders its own. */}
-        <div className={cn('flex min-w-0 items-start gap-2.5', !split && 'pr-10')}>
-          <span className="mt-1 flex shrink-0">
-            <TriggerTile trigger={trigger} surface={surface} />
-          </span>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <Title className="truncate text-base font-semibold tracking-tight">
-                {triggerName(trigger)}
-              </Title>
-              <TriggerStatusBadge trigger={trigger} hint={reason} />
-            </div>
-            <Description className="text-xs">
-              {[
-                // The name often is the event's own name: say it once.
-                when === triggerName(trigger) ? null : when,
-                nextRun,
-                event ? describeEventSource(event, t, appIndex) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </Description>
+      {/* Paper C05 (`7C7-0`). Sticky, because the content element is what
+          scrolls. The surface paints the sheet's own colour so content passes
+          behind it. `text-left`: SheetHeader's base centres on a phone. */}
+      <SheetHeader
+        className={cn(
+          surface,
+          'border-border sticky top-0 z-10 gap-2.5 space-y-0 border-b pt-4 pr-4 pb-0 pl-6 text-left',
+        )}
+      >
+        {/* Title row: the clock, the name, the trigger sentence, close. `pr-10`
+            clears the floating sheet's own close button. */}
+        <div className={cn('flex h-8 min-w-0 items-center gap-2.5', !split && 'pr-10')}>
+          <TriggerTile trigger={trigger} surface={surface} />
+          <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
+            <Title className="max-w-full shrink-0 truncate text-sm font-medium">
+              {triggerName(trigger)}
+            </Title>
+            {when !== triggerName(trigger) ? (
+              <Description className="min-w-0 truncate text-xs">{when}</Description>
+            ) : null}
           </div>
           {split ? (
             <Hint label={t.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
@@ -321,7 +295,7 @@ function SheetPanel({
                   variant="ghost"
                   size="icon-base"
                   aria-label={t.raw('text7d9eb7acb13e')}
-                  className="-my-1 -mr-1.5 shrink-0"
+                  className="text-muted-foreground -mr-1.5 shrink-0"
                 >
                   <XIcon className="size-4" />
                 </Button>
@@ -330,77 +304,96 @@ function SheetPanel({
           ) : null}
         </div>
 
-        {controls.canFire || controls.canUpdate || controls.canDelete ? (
-          <div className="flex items-center gap-1.5">
-            {controls.canFire ? (
-              <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
-                {running ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon className="size-3.5 shrink-0" />
-                )}
-                {t.raw('text0991397702fa')}
-              </Button>
-            ) : null}
-            {controls.canUpdate ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-1.5"
-                onClick={() => toggle.mutate(!active)}
-                disabled={toggle.isPending}
-              >
-                {toggle.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : active ? (
-                  <PauseIcon className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon className="size-3.5 shrink-0" />
-                )}
-                {active ? t.raw('text858e4ba7a29f') : t.raw('textd640c7421da0')}
-              </Button>
-            ) : null}
-            <div className="min-w-2 flex-1" />
-            {controls.canFire || controls.canDelete ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon-base" variant="ghost" aria-label={t.raw('textf8d46c2570e7')}>
-                    <DotsThreeIcon className="size-4 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {controls.canFire ? (
-                    <DropdownMenuItem onClick={() => setTestOpen(true)}>
-                      <BracketsCurlyIcon className="size-3.5 shrink-0" />
-                      {t.raw('textb098a09c78aa')}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {controls.canDelete ? (
-                    <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                      <TrashIcon className="size-3.5 shrink-0" />
-                      {trigger.type === 'cron'
-                        ? t.raw('textd8d0bd5c5106')
-                        : event
-                          ? t.raw('textf2f698118cc1')
-                          : t.raw('text60f85e57e4a7')}
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Tabs left; the actions share the tab line, quiet ones first and
+            Run now, the one filled button, at the far right. */}
+        <div className="flex items-end justify-between gap-2">
+          <TabsList
+            type="underline"
+            underlineSize="md"
+            size="sm"
+            className="h-8 justify-start gap-5 border-b-0"
+          >
+            <TabsTrigger value="runs" className="flex-none px-0 text-xs font-medium">
+              {t.raw('text848f54e89660')}
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex-none px-0 text-xs font-medium">
+              {t.raw('text74a883a037bc')}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Full width with `px-0` triggers: the labels start on the content edge
-            and the rule spans the column, as the header's bottom line. */}
-        <TabsList type="underline" size="sm" className="w-full justify-start gap-5">
-          <TabsTrigger value="runs" className="flex-none px-0">
-            {t.raw('text848f54e89660')}
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex-none px-0">
-            {t.raw('text74a883a037bc')}
-          </TabsTrigger>
-        </TabsList>
+          {controls.canFire || controls.canUpdate || controls.canDelete ? (
+            <div className="flex items-center gap-0.5 pb-2">
+              {controls.canUpdate ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="text-muted-foreground text-xs"
+                  onClick={() => toggle.mutate(!active)}
+                  disabled={toggle.isPending}
+                >
+                  {toggle.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {active ? t.raw('text858e4ba7a29f') : t.raw('textd640c7421da0')}
+                </Button>
+              ) : null}
+              {controls.canFire && trigger.type === 'webhook' ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="text-muted-foreground text-xs"
+                  onClick={() => setTestOpen(true)}
+                >
+                  {t.raw('textb098a09c78aa')}
+                </Button>
+              ) : null}
+              {(controls.canFire && trigger.type !== 'webhook') || controls.canDelete ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      aria-label={t.raw('textf8d46c2570e7')}
+                    >
+                      <DotsThreeIcon className="size-4 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {controls.canFire && trigger.type !== 'webhook' ? (
+                      <DropdownMenuItem onClick={() => setTestOpen(true)}>
+                        <BracketsCurlyIcon />
+                        {t.raw('textb098a09c78aa')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {controls.canDelete ? (
+                      <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                        <TrashIcon />
+                        {trigger.type === 'cron'
+                          ? t.raw('textd8d0bd5c5106')
+                          : event
+                            ? t.raw('textf2f698118cc1')
+                            : t.raw('text60f85e57e4a7')}
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {controls.canFire ? (
+                <>
+                  <span aria-hidden className="w-1 shrink-0" />
+                  <Button size="xs" className="gap-1.5 text-xs" onClick={onRun} disabled={running}>
+                    {/* The run is the agent's work: the session busy mark, not a fetch spinner. */}
+                    {running ? (
+                      <SessionDotMatrix sessionId={trigger.slug} size={14} className="shrink-0" />
+                    ) : (
+                      <PlayIcon weight="fill" className="size-2.5 shrink-0" />
+                    )}
+                    {t.raw('text0991397702fa')}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </SheetHeader>
 
       {/* `flex-none` and `!overflow-visible` are load-bearing. SheetBody's base
