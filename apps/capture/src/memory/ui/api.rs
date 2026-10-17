@@ -306,6 +306,10 @@ impl Ctx {
             ("POST", "/api/audio/permission") => self.audio_permission(),
             ("GET", "/api/apps") => self.apps()?,
             ("GET", "/api/domains") => self.domains()?,
+            ("GET", "/api/installed-apps") => Response::json(json!({
+                "apps": super::super::exclusions::installed_apps().into_iter()
+                    .map(|(bundle, name)| json!({"bundle": bundle, "name": name})).collect::<Vec<_>>()
+            })),
             ("GET", "/api/settings") => self.settings_get(),
             ("POST", "/api/settings") => self.settings_set(body)?,
             ("GET", "/api/privacy-model") => {
@@ -1905,7 +1909,6 @@ mod tests {
         "storage.retention_days",
         "storage.retention_action",
         "launch_at_login",
-        "experimental.privacy_controls",
         "interval_ms",
         "max_width",
         "max_height",

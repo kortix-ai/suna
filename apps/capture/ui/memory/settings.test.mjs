@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,privacyControls,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,suggestionList,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, privacyControls, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, suggestionList, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -110,13 +110,6 @@ assert.equal(neverRows(own, groups, pp, null)[0].sub, 'Required by policy');
 assert.ok(!JSON.stringify(withOrg).includes('your organization'));
 
 // Privacy controls are hidden by default. A Kortix policy decides while synced; else the local switch.
-assert.deepEqual(privacyControls({ destination: 'off' }, null, {}), { on: false, local: true });
-assert.deepEqual(privacyControls({ destination: 'off' }, null, { experimental: { privacy_controls: true } }), { on: true, local: true });
-assert.deepEqual(privacyControls({ destination: 'kortix' }, { experimental: { privacy_controls: true } }, {}), { on: true, local: false });
-assert.deepEqual(privacyControls({ destination: 'kortix' }, { experimental: { privacy_controls: false } }, { experimental: { privacy_controls: true } }), { on: false, local: false }, 'the policy wins');
-assert.deepEqual(privacyControls({ destination: 'kortix' }, {}, {}), { on: false, local: false });
-assert.deepEqual(privacyControls({ destination: 'kortix' }, null, { experimental: { privacy_controls: true } }), { on: true, local: true }, 'no policy cached yet');
-assert.deepEqual(privacyControls({ destination: 's3' }, { experimental: { privacy_controls: true } }, {}), { on: false, local: true }, 'a policy applies only while synced to Kortix');
 
 // The keep row states its rule; the forget range starts as the last hour.
 assert.match(keepHint('7', true, 50), /only once uploaded/);
@@ -198,9 +191,9 @@ assert.equal(audioStateText(false, { state: 'recording' }), 'Off');
 assert.equal(audioStateText(true, { state: 'recording', sources: { microphone: { state: 'recording' }, system: { state: 'silent' } } }), 'Recording microphone + system audio');
 assert.equal(audioStateText(true, { state: 'permission_missing', sources: {} }), 'Needs permission to record');
 
-// The window shows six sections (Record only and Never record appear with privacy controls or record only on; plus a folded Advanced) and nothing from the old settings.
+// The window shows five sections (Apps and websites always; plus a folded Advanced) and nothing from the old settings.
 const ui = src.slice(src.indexOf('function renderSettings()'), src.indexOf('/* ---- audio: one switch'));
-assert.deepEqual([...ui.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Recording', 'Sync', 'Record only', 'Never record', 'Storage', 'About']);
+assert.deepEqual([...ui.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]), ['Recording', 'Sync', 'Apps and websites', 'Storage', 'About']);
 assert.ok(ui.includes('<summary>Advanced</summary>'));
 for (const gone of ['staging_quality', 'video_quality', 'chunk_max_frames', 'ocr_languages', 'ax_enabled', 'record_unknown_bundle_ids', 'airgap', 'min_free_gb', 'reserve_mb', 'pause_on_inactivity', 'inactivity_seconds', 'management_mode', 'shortcuts', 'agent_routing', 'sync-provider']) {
   assert.ok(!ui.includes(gone), `${gone} is not in the settings window`);
@@ -223,3 +216,10 @@ assert.equal(orgOnly.on, true, 'the organization turns it on');
 assert.equal(orgOnly.locked, true, 'the person cannot turn it off');
 assert.equal(orgOnly.sub, 'Required by Example Org');
 assert.deepEqual(orgOnly.rows.map((r) => [r.id, r.locked]), [['com.tinyspeck.slackmacgap', true], ['linear.app', true], ['com.mine.editor', false]], 'an entry both hold shows once, locked');
+
+// Suggestions where a person includes or excludes: installed and recorded apps (once each, by bundle id), then websites.
+assert.deepEqual(
+  suggestionList([{ bundle: 'com.tinyspeck.slackmacgap', name: 'Slack' }], [{ bundle: 'COM.tinyspeck.slackmacgap', name: 'Slack' }, { bundle: 'code.exe', name: null }], [{ name: 'github.com' }]),
+  [{ value: 'com.tinyspeck.slackmacgap', label: 'Slack' }, { value: 'code.exe', label: 'code.exe' }, { value: 'github.com', label: 'Website' }],
+);
+assert.deepEqual(suggestionList(undefined, undefined, undefined), []);

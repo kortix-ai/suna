@@ -818,6 +818,11 @@ channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
   subdomain, case-insensitively (`chase.com` covers `secure.chase.com`;
   `notchase.com` stays visible). It is best-effort: add missing banks under
   `excluded_domains`.
+- Settings ▸ **Apps and websites** (always shown): "What to record" (everything
+  except Never record, or only included apps and websites), the Included list
+  and the Never record list. Adding one suggests installed apps (macOS,
+  `/api/installed-apps`), recorded apps and recorded websites. The policy's
+  `experimental.privacy_controls` now shows or hides personal-data masking only.
 - Record only included (`record_only_included`, `included_bundle_ids`,
   `included_domains`; the policy's `privacy.*` of the same names turn it on and
   add to the lists, and the person cannot turn it off). A window is recorded

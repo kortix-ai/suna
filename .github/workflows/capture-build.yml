@@ -1622,7 +1622,7 @@ jobs:
           end tell
           APPLESCRIPT
           cat "$EV/tray-menu.txt"
-      - name: Settings with Sync off, the S3 form, privacy controls hidden and on
+      - name: Settings with Sync off, the S3 form, Apps and websites
         run: |
           shot() { killall UserNotificationCenter 2>/dev/null || true; sleep 1; screencapture -x "$EV/$1.png"; }
           "$EXE" open kortix-capture://settings >/dev/null 2>&1 & sleep 6; shot settings-sync-off
