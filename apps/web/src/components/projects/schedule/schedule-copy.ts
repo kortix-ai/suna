@@ -447,3 +447,22 @@ export function matchesQuery(
     triggerStatus(trigger.enabled, tI18nComplete).label,
   ].some((field) => field.toLowerCase().includes(q));
 }
+
+/**
+ * The line under (or beside) a trigger's name: its schedule, unless that is
+ * the name itself (a trigger named after its schedule); then the first line
+ * of its prompt; null when there is neither, so the name stands alone.
+ */
+export function triggerSubtitle(
+  name: string,
+  when: string,
+  prompt: string | null | undefined,
+): string | null {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  if (when.trim() && !same(when, name)) return when;
+  const first = (prompt ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  return first && !same(first, name) ? first : null;
+}

@@ -202,22 +202,11 @@ export interface SettingsPaletteParams {
 /**
  * Whether the palette may offer a tab at all.
  *
- * Mirrors the one flag-free clause of `isSettingsTabAllowed`
- * (settings-panel.tsx): a project-scoped tab is unreachable without a project.
- * The `billingEnabled` clause that used to sit beside it is gone with the
- * Billing tab, which now lives on `/accounts/[id]`. The remaining clause in
- * that function is an IAM probe keyed off `GATED_TAB_SECTION`, which is
- * module-private to `settings-panel.tsx`; the panel itself fail-opens on it
- * until it resolves and falls back to a visible tab when it denies, so an
- * offered-then-denied tab lands on a real pane rather than on nothing.
+ * Mirrors `isSettingsTabAllowed` (settings-panel-body.tsx): a project-scoped
+ * tab is unreachable without a project.
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
-  if (!params.hasProject && !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab)) return false;
-  // Sandbox templates and Feature flags also gate on a project capability
-  // (`PROJECT_GATED_TABS` in `settings-panel.tsx`). The palette offers them
-  // without probing — the panel hides a denied row and falls back to a visible
-  // tab, exactly the offered-then-denied path this function's header describes.
-  return true;
+  return params.hasProject || PALETTE_ACCOUNT_SCOPED_TABS.includes(tab);
 }
 
 function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem {

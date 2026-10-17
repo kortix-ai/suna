@@ -105,7 +105,7 @@ export function registerProjectSkillsRoutes(): void {
   async (c: Context<AppEnv>) => {
     const projectId = c.req.param('projectId');
     if (!projectId) return c.json({ error: 'Not found' }, 404);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // A session whose workspace denies repository access must not reach the
     // repo, even with project.skill.write — the same gate every other

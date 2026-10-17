@@ -41,7 +41,7 @@ export function registerProjectGitRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // This endpoint hands back a RAW git push credential. project.write is
     // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
@@ -176,7 +176,7 @@ export function registerProjectGitRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a git collaborator grants a human standing access to the repo —
     // membership-tier, not plain write. Gate on members.manage so a member (or a

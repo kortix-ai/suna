@@ -200,7 +200,7 @@ const REFLECTION_TONE: Partial<Record<ToastVariant, string>> = {
  * The badge is 0.72x the clock's radius, as on the board, so it leaves the
  * rim it lights visible.
  */
-const REFLECTION_MASK = 'radial-gradient(circle 16px at 85% 85%, #000 45%, transparent 100%)';
+export const REFLECTION_MASK = 'radial-gradient(circle 16px at 85% 85%, #000 45%, transparent 100%)';
 
 /**
  * The subject's icon, bare, with the status glyph badged on its bottom-right

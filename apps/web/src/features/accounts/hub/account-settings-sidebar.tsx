@@ -163,7 +163,7 @@ function SettingsNav() {
   const membersQuery = useAccountMembers(accountId);
 
   // The count of the people this caller sees: the whole directory with
-  // `member.read`, else the people they share access with. Hidden while loading.
+  // `member.read`, else only the caller. Hidden while loading.
   const memberCount = membersQuery.isLoading ? null : (membersQuery.data ?? []).length;
 
   // The account list (no account picked) has no sections: the switcher above

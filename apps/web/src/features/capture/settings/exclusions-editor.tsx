@@ -37,6 +37,7 @@ import {
   type ExclusionRow,
   type ExclusionTab,
   type ExclusionsView,
+  type IncludedView,
 } from './exclusions-model';
 
 const GROUP_ICONS: Record<string, Icon> = {
@@ -255,5 +256,77 @@ function Tile({ icon: TileIcon }: { icon: Icon }) {
     <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-sm">
       <TileIcon className="size-4" />
     </span>
+  );
+}
+
+/**
+ * Record only included (account settings ▸ Kortix Capture): Apps | Websites the
+ * organization includes. An included app is recorded in full; an included website
+ * in any browser. Everything else is blacked out. People can add their own.
+ */
+export function IncludedEditor({
+  view,
+  onChange,
+}: {
+  view: IncludedView;
+  onChange: (change: ExclusionChange) => void;
+}) {
+  const t = useTranslations('capture.settings.included');
+  const [tab, setTab] = useState<ExclusionTab>('apps');
+  const [query, setQuery] = useState('');
+  const apps = tab === 'apps';
+  const list = apps ? view.apps : view.domains;
+  const addable = apps ? normalizeCaptureAppId(query) : normalizeCaptureDomain(query);
+  const canAdd = addable && !list.some((row) => row.id === addable);
+  const add = () => {
+    if (!canAdd) return;
+    onChange({ kind: apps ? 'include-app' : 'include-domain', id: addable, on: true });
+    setQuery('');
+  };
+  const placeholder = apps ? t('addAppPlaceholder') : t('addSitePlaceholder');
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as ExclusionTab)}>
+          <TabsList aria-label={t('kindLabel')}>
+            <TabsTrigger value="apps">{t('apps')}</TabsTrigger>
+            <TabsTrigger value="websites">{t('websites')}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <InputGroupSearch className="flex-1">
+          <InputGroupSearchIcon>
+            <PlusIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            size="sm"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              add();
+            }}
+            placeholder={placeholder}
+            aria-label={placeholder}
+          />
+        </InputGroupSearch>
+      </div>
+      {canAdd ? (
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={add}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {apps ? t('addApp', { app: addable }) : t('addDomain', { domain: addable })}
+        </Button>
+      ) : null}
+      <ExclusionList
+        title={t('included')}
+        empty={t(apps ? 'noApps' : 'noSites')}
+        rows={list}
+        apps={apps}
+        setBy=""
+        onChange={(row, on) =>
+          onChange({ kind: apps ? 'include-app' : 'include-domain', id: row.id, on })
+        }
+      />
+    </div>
   );
 }

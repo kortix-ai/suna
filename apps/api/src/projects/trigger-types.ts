@@ -56,6 +56,12 @@ export interface GitTriggerSpec {
   /** For type=cron only. IANA timezone. Defaults to UTC. */
   timezone: string;
   /**
+   * For type=cron only (`max_lateness`). A slot claimed more than this many
+   * seconds after its time is recorded as a skipped run instead of firing.
+   * Omitted when unset: the late slot fires once, as before.
+   */
+  maxLatenessSeconds?: number;
+  /**
    * For type=webhook only — the project_secrets key that holds the HMAC
    * signing secret. The actual secret value is never inline.
    */

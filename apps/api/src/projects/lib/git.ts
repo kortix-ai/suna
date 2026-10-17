@@ -1055,14 +1055,25 @@ async function authorizeGitProxyUncached(
   // caller. The git proxy binds the full principal on success.
   bindAuditPrincipal({ accountId: project.accountId, projectId: project.projectId });
 
-  /** Does this token's USER hold the git capability this operation needs? */
+  /**
+   * Does this token's USER hold the git capability this operation needs?
+   *
+   * A clone or fetch by a person (not a session) needs `project.gitops.push`:
+   * the proxy serves every ref, and every session branch is a ref, so a read
+   * here is the full project view a member does not hold. A session reads
+   * with `project.gitops.read`; its ref policy (git-proxy/ref-policy.ts)
+   * bounds what it pushes.
+   */
   const grantedByProjectRole = async (
     userId: string | null | undefined,
-    actingTokenId?: string,
+    actingTokenId: string | undefined,
+    principalIsSession: boolean,
   ): Promise<boolean> => {
     if (!userId) return false;
     const action =
-      scope === 'write' ? PROJECT_ACTIONS.PROJECT_GITOPS_PUSH : PROJECT_ACTIONS.PROJECT_GITOPS_READ;
+      scope === 'write' || !principalIsSession
+        ? PROJECT_ACTIONS.PROJECT_GITOPS_PUSH
+        : PROJECT_ACTIONS.PROJECT_GITOPS_READ;
     // The git proxy authenticates its own token (a PAT or a session connector
     // token), so the actor is built FROM that token id rather than from a Hono
     // context — same classification, same agent-grant fold.
@@ -1143,7 +1154,7 @@ async function authorizeGitProxyUncached(
     if (!sessionPrincipal || result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
-      if (!(await grantedByProjectRole(result.userId, result.tokenId))) {
+      if (!(await grantedByProjectRole(result.userId, result.tokenId, sessionPrincipal !== null))) {
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }

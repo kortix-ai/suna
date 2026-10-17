@@ -14,7 +14,6 @@ import {
   type SettingsTabAllowedParams,
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
-  probeAdmits,
 } from './settings-panel-body';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
 import type { RailItem } from './type';
@@ -527,10 +526,7 @@ describe('buildSettingsPanelSettingsNav', () => {
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
  * `app/[locale]/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
- * rows the rail may show on each, and — for the two Workspace rows that
- * mount config-page panes — whether the caller's project capabilities admit
- * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves
- * `/projects/[id]/customize/settings` reads.
+ * rows the rail may show on each.
  */
 describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
@@ -563,48 +559,9 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     }
   });
 
-  /**
-   * Sandbox templates and Feature flags gate on the same IAM read leaf the
-   * config page gates them on (`isCustomizeSectionVisible`). No capability
-   * answer yet — the probe in flight, or a caller that passed none — hides
-   * the row rather than showing a pane the API would refuse.
-   */
-  test('the IAM-gated workspace tabs follow the project capability answer', () => {
-    const allow = () => true;
-    const deny = () => false;
-    for (const tab of ['sandbox', 'feature-flags', 'upgrades'] as const) {
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(false);
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: deny }))).toBe(
-        false,
-      );
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: allow }))).toBe(
-        true,
-      );
-      // A capability grant never overrides the scope rule.
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: false, canProject: allow }))).toBe(
-        false,
-      );
-    }
-  });
-
-  /**
-   * The probe answer the container feeds the gate. Fail-open while loading
-   * is load-bearing: an in-flight probe reads `allowed: false`, and the
-   * panel bounces an active tab that is not in the rail — so `=== true`
-   * sent every `/settings/sandbox` deep link to Profile in CI.
-   */
-  test('an in-flight probe admits the row; only a received denial hides it', () => {
-    expect(probeAdmits(undefined)).toBe(true);
-    expect(probeAdmits({ allowed: false, isLoading: true })).toBe(true);
-    expect(probeAdmits({ allowed: true, isLoading: false })).toBe(true);
-    expect(probeAdmits({ allowed: false, isLoading: false })).toBe(false);
-  });
-
-  test('with a project and every capability, the scope gate admits every tab', () => {
+  test('with a project, the scope gate admits every tab', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(
-        isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: () => true })),
-      ).toBe(true);
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(true);
     }
   });
 

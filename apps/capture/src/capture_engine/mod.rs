@@ -146,8 +146,43 @@ pub struct DisplayPlan<'a> {
     pub top: HashMap<i64, &'a WinInfo>,
 }
 
+/// Record only included apps and websites (`only_included`, `include_bundle_ids`,
+/// `include_domains` of the request). Off: everything not excluded is recorded.
+#[derive(Default)]
+pub struct Include {
+    pub on: bool,
+    pub apps: Vec<String>,
+    pub domains: Vec<String>,
+}
+
+impl Include {
+    pub fn from_request(req: &Value) -> Self {
+        let list = |k: &str| -> Vec<String> {
+            req.get(k)
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_lowercase)).collect())
+                .unwrap_or_default()
+        };
+        Include {
+            on: req.get("only_included").and_then(Value::as_bool) == Some(true),
+            apps: list("include_bundle_ids"),
+            domains: list("include_domains"),
+        }
+    }
+
+    /// The app is included, or the page's website is. Off: always true.
+    pub fn allows(&self, bundle: &str, url: Option<&str>) -> bool {
+        !self.on
+            || self.apps.iter().any(|a| a.eq_ignore_ascii_case(bundle))
+            || url.is_some_and(|u| url_excluded(u, &self.domains))
+    }
+}
+
 /// `windows` front to back. A window is hidden when its app is excluded or
-/// unknown, its title marks a private window, or its URL is on an excluded site.
+/// unknown, its title marks a private window, its URL is on an excluded site,
+/// or record only included is on and neither its app nor its website is included.
+/// With record only included, a display with no included window writes no frame.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_displays<'a>(
     windows: &'a [WinInfo],
     displays: &[DisplayInfo],
@@ -156,15 +191,18 @@ pub fn plan_displays<'a>(
     excluded_domains: &[String],
     exclude_private: bool,
     record_unknown: bool,
+    include: &Include,
 ) -> DisplayPlan<'a> {
     let is_hidden = |w: &WinInfo| {
         let bundle = w.bundle_id.to_lowercase();
         if bundle.is_empty() {
-            return !record_unknown;
+            return !record_unknown || include.on;
         }
+        let url = url_of(w);
         excluded_app(&bundle)
             || (exclude_private && looks_private(&w.title))
-            || url_of(w).is_some_and(|u| url_excluded(&u, excluded_domains))
+            || url.as_deref().is_some_and(|u| url_excluded(u, excluded_domains))
+            || !include.allows(&bundle, url.as_deref())
     };
     let hidden: HashSet<u64> = windows
         .iter()
@@ -188,6 +226,9 @@ pub fn plan_displays<'a>(
                 continue;
             }
             top.entry(d.id).or_insert(w);
+        }
+        if include.on && !top.contains_key(&d.id) {
+            covered.insert(d.id);
         }
     }
     DisplayPlan {
@@ -398,6 +439,7 @@ fn capture(req: &Value) -> Result<Value> {
         .get("record_unknown")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let include = Include::from_request(req);
     let want_ax = req.get("ax").and_then(Value::as_bool).unwrap_or(false);
     let ax_depth = req
         .get("ax_max_depth")
@@ -462,6 +504,9 @@ fn capture(req: &Value) -> Result<Value> {
         .is_some_and(|u| url_excluded(u, &excluded_domains))
     {
         return skip(res, "excluded_domain");
+    }
+    if !include.allows(&fg_id, url.as_deref()) {
+        return skip(res, "not_included");
     }
     if want_ax {
         if let Some(ax) = os::ax_tree(&fg, ax_depth, ax_nodes) {
@@ -542,6 +587,7 @@ fn capture_all(req: &Value) -> Result<Value> {
         .get("record_unknown")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let include = Include::from_request(req);
     let want_ax = req.get("ax").and_then(Value::as_bool).unwrap_or(false);
     let private = req.get("cmd").and_then(Value::as_str) == Some("capture_private");
     let unchanged = req.get("unchanged").cloned().unwrap_or(Value::Null);
@@ -572,7 +618,8 @@ fn capture_all(req: &Value) -> Result<Value> {
             || (exclude_private && looks_private(&fg.title))
             || fg_url
                 .as_deref()
-                .is_some_and(|u| url_excluded(u, &excluded_domains));
+                .is_some_and(|u| url_excluded(u, &excluded_domains))
+            || !include.allows(&id, fg_url.as_deref());
         if !hidden {
             res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "name": fg.name, "version": fg.version});
             res["title"] = json!(fg.title);
@@ -633,6 +680,7 @@ fn capture_all(req: &Value) -> Result<Value> {
         &excluded_domains,
         exclude_private,
         record_unknown,
+        &include,
     );
     let visible: Vec<&WinInfo> = windows
         .iter()
@@ -1247,6 +1295,7 @@ mod tests {
             &["bank.example".into()],
             true,
             false,
+            &Include::default(),
         );
         let mut hidden: Vec<u64> = plan.hidden.iter().copied().collect();
         hidden.sort();
@@ -1267,6 +1316,28 @@ mod tests {
             plan.top.get(&2).map(|w| w.bundle_id.as_str()),
             Some("slack.exe")
         );
+
+        // Record only included: Slack (an app) and github.com (a website) only.
+        let include = Include {
+            on: true,
+            apps: vec!["slack.exe".into()],
+            domains: vec!["github.com".into()],
+        };
+        let gh = |w: &WinInfo| (w.id == 40).then(|| "https://github.com/kortix-ai".to_string());
+        let plan = plan_displays(&windows, &displays, &gh, &excluded, &[], true, false, &include);
+        let mut hidden: Vec<u64> = plan.hidden.iter().copied().collect();
+        hidden.sort();
+        assert_eq!(hidden, [10, 20, 25], "not included, excluded or own: hidden");
+        assert!(plan.covered.contains(&1), "no included window on a display: no frame");
+        assert_eq!(plan.top.get(&2).map(|w| w.id), Some(30));
+        let plan = plan_displays(&windows, &displays, &url, &excluded, &[], true, false, &include);
+        assert!(
+            plan.hidden.contains(&40),
+            "a website not included is hidden, even in a browser"
+        );
+        let slack_excluded = |b: &str| b == "slack.exe";
+        let plan = plan_displays(&windows, &displays, &gh, &slack_excluded, &[], true, false, &include);
+        assert!(plan.hidden.contains(&30), "an exclusion wins over an inclusion");
     }
 
     #[test]

@@ -48,6 +48,12 @@ pub struct Settings {
     /// Built-in groups, see `exclusion_groups()`.
     pub enabled_exclusion_groups: Vec<String>,
     pub exclude_private_browsing: bool,
+    /// Record only what is included: a window is recorded only when its app is in
+    /// `included_bundle_ids` or its website is in `included_domains`. Exclusions still win.
+    /// The organization's policy can turn it on; the person cannot turn that off.
+    pub record_only_included: bool,
+    pub included_bundle_ids: Vec<String>,
+    pub included_domains: Vec<String>,
     pub record_unknown_bundle_ids: bool,
     pub storage: StorageSettings,
     /// Cloud sync of finished chunks (S3-compatible storage or Kortix).
@@ -186,6 +192,9 @@ impl Default for Settings {
             excluded_domains: Vec::new(),
             enabled_exclusion_groups: vec!["password_managers".into()],
             exclude_private_browsing: true,
+            record_only_included: false,
+            included_bundle_ids: Vec::new(),
+            included_domains: Vec::new(),
             record_unknown_bundle_ids: false,
             storage: StorageSettings::default(),
             sync: SyncSettings::default(),
@@ -576,6 +585,18 @@ impl Settings {
                     .flat_map(|g| g.domains.iter().copied()),
             )
             .filter_map(super::exclusions::normalize_domain_input)
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// The included websites as bare hosts (the one domain rule), sorted.
+    pub fn effective_included_domains(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .included_domains
+            .iter()
+            .filter_map(|d| super::exclusions::normalize_domain_input(d))
             .collect();
         out.sort();
         out.dedup();
