@@ -915,9 +915,11 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
-  // Where public demo-request / "book a demo" lead notifications are sent.
-  // Comma-separated list; every address gets every submission.
-  DEMO_LEAD_NOTIFY_EMAIL: optStrDefault('marko@kortix.ai,hey@kortix.ai'),
+  // Where Kortix sales hears about leads: "book a demo", "Talk to sales", the
+  // Enterprise demo turned on, billing ops copies. Comma-separated list; every
+  // address gets every email. Unset → the sales inboxes on prod only: dev,
+  // staging, local and self-host test accounts must never email sales.
+  DEMO_LEAD_NOTIFY_EMAIL: z.string().optional(),
   // Sender for those notifications. kortix.ai (not the global MAILTRAP_FROM_
   // EMAIL on kortix.com) so the send is DKIM-aligned with the kortix.ai
   // recipient inboxes — the kortix.com sender was landing in spam.
@@ -1597,7 +1599,8 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
-  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
+  DEMO_LEAD_NOTIFY_EMAIL:
+    env.DEMO_LEAD_NOTIFY_EMAIL ?? (env.INTERNAL_KORTIX_ENV === 'prod' ? 'marko@kortix.ai,hey@kortix.ai' : ''),
   DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
 
   // ─── Mailtrap contact sync (signup → automation lists) ────────────────────
