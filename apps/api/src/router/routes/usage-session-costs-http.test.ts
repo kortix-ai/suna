@@ -91,6 +91,9 @@ mock.module('../../iam/authorize', () => ({
   assertAuthorized: async (_actor: unknown, action: string) => {
     authorizedActions.push(action);
   },
+  // The caller holds member.read + group.read (an admin), so visibleDirectory
+  // sees every owner (#10113) and never reads the permissions table.
+  authorize: async () => ({ allowed: true }),
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
