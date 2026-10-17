@@ -1089,9 +1089,14 @@ mod tests {
         crate::memory::policy::write(&paths, Some(&cached)).unwrap();
         let e = Settings::effective(&paths);
         assert_eq!(e.inactive_reason(0), None);
-        // Kortix answered and has no policy: that releases the wait too.
+        // Kortix answered and has no policy: that releases the wait too, and the
+        // settings file gets a new mtime so every running part reloads.
         crate::memory::policy::write(&paths, None).unwrap();
+        crate::memory::policy::forget(&paths);
+        let before = std::fs::metadata(paths.settings()).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
         crate::memory::policy::mark_checked(&paths);
+        assert!(std::fs::metadata(paths.settings()).unwrap().modified().unwrap() > before);
         assert_eq!(Settings::effective(&paths).inactive_reason(0), None);
         // A new sign-in forgets both: it waits again.
         crate::memory::policy::forget(&paths);
