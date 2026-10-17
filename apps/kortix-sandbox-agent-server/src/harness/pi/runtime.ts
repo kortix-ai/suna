@@ -1774,9 +1774,9 @@ export class PiRuntime {
     ).filter((dir) => existsSync(dir))
   }
 
-  private async loadSkills(dirs?: string[]): Promise<Skill[]> {
+  private async loadSkills(): Promise<Skill[]> {
     if (!this.coding) return []
-    const resolved = dirs ?? (await this.skillDirectories())
+    const resolved = await this.skillDirectories()
     if (resolved.length === 0) return []
     try {
       // Two directories can carry the same skill (a project's OpenCode copy and the managed

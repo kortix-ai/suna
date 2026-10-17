@@ -3448,6 +3448,7 @@ export function SessionChat({
       scrollToBottom,
       sessionState,
       executeCommand,
+      sessionHarness,
       composerAgentName,
       local.model.currentKey,
       local.model.sendKey,

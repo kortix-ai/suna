@@ -70,6 +70,7 @@ import {
   type PermissionRuleV2,
   type RuntimeV2,
 } from '@kortix/manifest-schema';
+import { manifestRuntime, manifestSchemaVersion, selectSessionHarness } from '@kortix/shared/session-harness';
 import { parseAgentMarkdown } from './agent-markdown';
 import {
   isRepoFileNotFoundError,
@@ -666,13 +667,6 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
-/** The harness decision and its inputs moved to `@kortix/shared/session-harness` — one
- *  function for the api that boots the worker and the web that spells the draft pick
- *  (KRTX-2543). The tolerant version read and `manifestRuntime` stay in use in this
- *  module, so they are imported under their own names and re-exported for the
- *  consumers that import them from here (routes/agent-config, session-sandbox-env-build). */
-import { manifestSchemaVersion, manifestRuntime, selectSessionHarness } from '@kortix/shared/session-harness';
-export { manifestSchemaVersion, manifestRuntime, selectSessionHarness };
 type PiHarness = { pi?: { packages?: unknown; exclude?: unknown; codemode?: unknown } } | undefined;
 
 function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
@@ -935,3 +929,8 @@ export async function resolveSelectedAgentConfigForSession(
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }
+
+/** The harness decision moved to `@kortix/shared/session-harness` — one function for the api that
+ *  boots the worker and the web that spells the draft pick (KRTX-2543). Re-exported here for
+ *  the existing consumers (routes/agent-config, session-sandbox-env-build). */
+export { manifestRuntime, manifestSchemaVersion, selectSessionHarness } from '@kortix/shared/session-harness';

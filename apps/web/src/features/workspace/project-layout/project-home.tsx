@@ -207,7 +207,7 @@ export function ProjectHome({
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       sendOutsideComposer(draftCommandText(cmd, args, sessionHarness), options);
     },
-    [sendOutsideComposer],
+    [sendOutsideComposer, sessionHarness],
   );
 
   const applySuggestion = (s: string) => {

@@ -10,7 +10,16 @@
  * CLI's `projects skills get` uses.
  */
 
-import type { ProjectConfigSkill } from '@/features/session/composer/menus/slash-items';
+/**
+ * The skill rows a project's config scan carries (`ProjectConfigSummary.skills`,
+ * `packages/sdk/src/core/rest/projects-client/projects.ts`), as the menu and the
+ * detail URL read them: the config names the folder, the description is nullable.
+ */
+export interface ProjectConfigSkill {
+  name: string;
+  path: string;
+  description?: string | null;
+}
 
 /** The folder segment a scan path points at; `null` when the path is not one. */
 export function skillFolderSlug(path: string): string | null {

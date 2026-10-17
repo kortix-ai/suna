@@ -1,6 +1,6 @@
 import type { Command } from '@kortix/sdk/react';
 
-import { skillFolderSlug } from '@/features/workspace/capabilities/skills/skill-resolve';
+import { skillFolderSlug, type ProjectConfigSkill } from '@/features/workspace/capabilities/skills/skill-resolve';
 import { filterSlashActions, SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import { filterSlashFiles, type SlashFile } from './slash-files';
 
@@ -61,17 +61,6 @@ function bucketFor(command: Command): CommandBucket {
   if (command.source === 'skill') return 'skill';
   if (command.source === 'mcp') return 'mcp';
   return 'command';
-}
-
-/**
- * The skill rows a project's config scan carries (`ProjectConfigSummary.skills`,
- * `packages/sdk/src/core/rest/projects-client/projects.ts`), as a menu can read
- * them: the config names the folder, the description is nullable.
- */
-export interface ProjectConfigSkill {
-  name: string;
-  path: string;
-  description?: string | null;
 }
 
 /**

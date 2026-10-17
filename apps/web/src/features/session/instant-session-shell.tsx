@@ -215,7 +215,7 @@ export function InstantSessionShell({
       // Defer slash-commands through the same handoff as a normal first message.
       handleSend(draftCommandText(cmd, args, sessionHarness), undefined, options);
     },
-    [handleSend],
+    [handleSend, sessionHarness],
   );
 
   // Keyed by the session this shell is booting, so a reload mid-boot finds the
