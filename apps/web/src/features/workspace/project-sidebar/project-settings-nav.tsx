@@ -18,7 +18,6 @@ import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
-import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * The one project-configuration entry in the sidebar:

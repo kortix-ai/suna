@@ -82,7 +82,7 @@ describe('account creation handoff', () => {
       });
       const navigate = (method: string) => (path: string) => {
         events.push([method, path]);
-        expect(client.getQueryData(key)).toEqual([account('created')]);
+        expect(client.getQueryData<KortixAccount[]>(key)).toEqual([account('created')]);
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
@@ -156,9 +156,9 @@ describe('account creation handoff', () => {
       mock.module('./create-account-modal', () => ({ CreateAccountModal: CreationBoundary }));
       const originalWindow = globalThis.window;
       // The sidebar host registers a window event listener in an effect. A
-      // real happy-dom window replaces the global, the same fixture the
-      // repo's other DOM tests install — never a partial fake behind a cast.
-      (globalThis as Record<string, unknown>).window = new Window();
+      // real happy-dom window replaces the global — the same cast-free
+      // fixture apps-feature-gate.test.ts installs.
+      Object.assign(globalThis, { window: new Window() });
       let renderer: ReactTestRenderer | undefined;
       try {
         const Host =
@@ -187,7 +187,7 @@ describe('account creation handoff', () => {
         );
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
-        (globalThis as Record<string, unknown>).window = originalWindow;
+        Object.assign(globalThis, { window: originalWindow });
         stopSelection();
         stopPanel();
         client.clear();

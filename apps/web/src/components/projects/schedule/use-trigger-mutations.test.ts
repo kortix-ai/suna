@@ -75,8 +75,12 @@ function renderMutations(
     messages
       ? createElement(
           NextIntlClientProvider,
-          { locale: 'en', timeZone: 'UTC', messages: { hardcodedUi: { i18nComplete: messages } } },
-          probe,
+          {
+            locale: 'en',
+            timeZone: 'UTC',
+            messages: { hardcodedUi: { i18nComplete: messages } },
+            children: probe,
+          },
         )
       : probe,
   );
