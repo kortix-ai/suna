@@ -1551,9 +1551,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     runtimeSessionId: ocSessionId,
   });
   const canStop = useSessionCanStop(projectId, sessionId);
-  // A turn keeps the computer on and moves presence's cap (2 h after the
-  // latest turn), so the window from before it is wrong after it (KRTX-1729):
-  // a turn that starts clears it, and a turn that ends reads it again.
+  // A turn keeps the computer on and moves presence's cap (the idle window
+  // after the latest turn), so the window from before it is wrong after it
+  // (KRTX-1729): a turn that starts clears it, and a turn that ends reads it
+  // again.
   const turnRunning = working.state === 'working';
   const turnRanRef = useRef(turnRunning);
   useEffect(() => {
@@ -2135,8 +2136,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     /**
      * Until when this person's presence keeps the session's computer on
      * (KRTX-1729): `until` is the computer's stop time after the latest
-     * renewal, `capAt` the time presence cannot keep it on past (2 h after the
-     * latest turn). Set from the presence lease's responses, so it needs
+     * renewal, `capAt` the time presence cannot keep it on past (the idle
+     * window after the latest turn). Set from the presence lease's responses,
+     * so it needs
      * `browserPresence`. Null while the person is absent (hidden tab, or no
      * input for 10 min), for a viewer who may not start the session, after a
      * renewal that found the computer not running, from a turn's start until
