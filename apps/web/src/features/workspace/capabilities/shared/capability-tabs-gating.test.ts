@@ -43,12 +43,28 @@ describe('capabilityAccess', () => {
   test('a manager opens every tab, in bar order', () => {
     expect(capabilityAccess(every(verdict(true)), true)).toEqual({
       settled: true,
-      tabs: ['agent', 'skills', 'connectors', 'triggers', 'models', 'secrets', 'files', 'config'],
+      tabs: [
+        'agent',
+        'skills',
+        'connectors',
+        'triggers',
+        'models',
+        'secrets',
+        'files',
+        'review',
+        'config',
+      ],
     });
   });
 
   test('a plain member opens only Files: no Agents, no Triggers, no dead-end tab', () => {
     expect(access(allowOnly(...MEMBER))).toEqual({ settled: true, tabs: ['files'] });
+  });
+
+  test('Review shows only to a caller who can act on it, not to one who only reads it', () => {
+    const read = PROJECT_ACTIONS.PROJECT_REVIEW_READ;
+    expect(access(allowOnly(read)).tabs).toEqual([]);
+    expect(access(allowOnly(read, PROJECT_ACTIONS.PROJECT_REVIEW_ACT)).tabs).toEqual(['review']);
   });
 
   test('a caller without project.read gets no tab, so no Customize row', () => {
