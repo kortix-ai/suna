@@ -4,6 +4,7 @@ import {
   bucketRuns,
   canReplay,
   inRunRange,
+  isDefaultSource,
   parsePayload,
   relativeRunTime,
   runState,
@@ -145,5 +146,15 @@ describe('bucketRuns', () => {
     expect(inRunRange(r, null)).toBe(true);
     expect(inRunRange(r, { start: Date.parse(at(5)), end: Date.parse(at(6)) })).toBe(true);
     expect(inRunRange(r, { start: Date.parse(at(6)), end: Date.parse(at(7)) })).toBe(false);
+  });
+});
+
+describe('isDefaultSource', () => {
+  test('a run from the trigger’s own kind is the default; any other source is named', () => {
+    expect(isDefaultSource('cron', 'cron')).toBe(true);
+    expect(isDefaultSource('webhook', 'webhook')).toBe(true);
+    expect(isDefaultSource('event', 'event')).toBe(true);
+    expect(isDefaultSource('cron', 'manual')).toBe(false);
+    expect(isDefaultSource('webhook', 'reminder')).toBe(false);
   });
 });

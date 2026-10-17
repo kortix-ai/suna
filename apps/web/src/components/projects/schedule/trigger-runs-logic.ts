@@ -135,3 +135,11 @@ export function inRunRange(
   const t = Date.parse(run.started_at);
   return t >= range.start && t <= range.end;
 }
+
+/** The source a trigger's own runs come from; a row names any other one (manual, replay, reminder). */
+export function isDefaultSource(
+  triggerType: 'cron' | 'webhook' | 'event' | 'monitor',
+  source: ProjectTriggerRun['source'],
+): boolean {
+  return source === triggerType;
+}

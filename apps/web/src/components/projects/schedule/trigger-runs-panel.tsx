@@ -1,20 +1,16 @@
 'use client';
 
 /**
- * The trigger sheet's Runs tab, and the run list the Triggers page reuses for
- * its Failed runs filter. One row per run: status, source, when (relative,
- * the exact time on hover, in the viewer's time zone), the error, duration,
- * cost, the session it opened, and Replay on a failed or rejected fire.
+ * The trigger sheet's Runs tab: the runs histogram, then one dense row per
+ * run in the Models page Logs row style (`LogRow` in `gateway-logs.tsx`):
+ * time, outcome, duration, cost, and the source when it is not the trigger's
+ * own. A row with a session opens it. A failed row offers Replay on hover or
+ * focus and carries its error as one muted line, in full on hover.
  */
 
-import { CopyButton } from '@/components/markdown/copy-button';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import {
@@ -33,22 +29,17 @@ import {
   type ProjectTriggerRunSource,
 } from '@kortix/sdk';
 import { useProjectTriggers, useTriggerRuns } from '@kortix/sdk/react';
-import {
-  ArrowCounterClockwiseIcon,
-  ArrowUpRightIcon,
-  WarningIcon,
-  XIcon,
-} from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { type ReactNode, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import { FoldTrigger } from './composer-parts';
 import { RunHistogram, type RunTimeRange, fmtRange } from './trigger-runs-histogram';
 import {
   RUNS_POLL_MS,
   type RunState,
   canReplay,
   inRunRange,
+  isDefaultSource,
   relativeRunTime,
   runState,
   runsInFlight,
@@ -64,24 +55,16 @@ const absoluteFormatter = new Intl.DateTimeFormat(undefined, {
   second: 'numeric',
 });
 
-/**
- * Status badge per state (Paper V03 run table): a /15 tint and a dot. Failed
- * and queued have no Badge variant, so they tint `outline` with the kortix
- * hue. Running and skipped draw a hollow ring, a static glyph, not a spinner.
- */
-const STATE_BADGE = {
-  queued: {
-    variant: 'outline',
-    tint: 'bg-kortix-yellow/15 ring-kortix-yellow/15',
-    dot: 'bg-kortix-yellow',
-  },
-  running: { variant: 'success', tint: '', dot: 'border border-kortix-green' },
-  started: { variant: 'success', tint: '', dot: 'bg-kortix-green' },
-  succeeded: { variant: 'success', tint: '', dot: 'bg-kortix-green' },
-  failed: { variant: 'outline', tint: 'bg-kortix-red/15 ring-kortix-red/15', dot: 'bg-kortix-red' },
-  rejected: { variant: 'warning', tint: '', dot: 'bg-kortix-orange' },
-  skipped: { variant: 'accent', tint: '', dot: 'border border-muted-foreground' },
-} as const satisfies Record<RunState, { variant: string; tint: string; dot: string }>;
+/** The one status mark per row: a dot, as `StatusMark` in the Models logs. */
+const STATE_DOT = {
+  queued: 'bg-kortix-yellow',
+  running: 'bg-kortix-green',
+  started: 'bg-kortix-green',
+  succeeded: 'bg-kortix-green',
+  failed: 'bg-destructive',
+  rejected: 'bg-kortix-orange',
+  skipped: 'bg-muted-foreground/45',
+} as const satisfies Record<RunState, string>;
 
 const STATE_LABEL_KEY = {
   queued: 'text661ff40a07e0',
@@ -102,7 +85,13 @@ const SOURCE_LABEL_KEY = {
   event: 'text5441e7146193',
 } as const satisfies Record<ProjectTriggerRunSource, string>;
 
-/** What a run list needs from `useTriggerRuns` / `useProjectTriggerRuns`. */
+/** Column widths, named once (the Models logs `LANE`). */
+const LANE = {
+  time: 'w-22 shrink-0 whitespace-nowrap',
+  duration: 'w-14 shrink-0 text-right whitespace-nowrap',
+  cost: 'w-16 shrink-0 text-right whitespace-nowrap @max-sm/runs:hidden',
+} as const;
+
 type RunsQuery = Pick<
   ReturnType<typeof useTriggerRuns>,
   | 'data'
@@ -178,6 +167,76 @@ export function TriggerRunsPanel({
     );
   };
 
+  let body;
+  if (query.isLoading) {
+    body = (
+      <div className="flex justify-center py-6">
+        <Loading />
+      </div>
+    );
+  } else if (query.isError) {
+    body = (
+      <ErrorState
+        size="sm"
+        title={t.raw('text398d270b036a')}
+        action={
+          <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+            {t.raw('textd8b8392e2c54')}
+          </Button>
+        }
+      />
+    );
+  } else if (shown.length === 0 && !query.hasNextPage) {
+    body = (
+      <EmptyState size="sm" title={range ? t.raw('text6de3a7d8e5db') : t.raw('text91f7323997df')} />
+    );
+  } else {
+    body = (
+      <div className="@container/runs flex flex-col">
+        <div className="text-muted-foreground border-border flex h-8 items-center gap-3 border-b px-3 text-xs">
+          <span className={LANE.time}>{t.raw('text33b93476cf59')}</span>
+          <span className="min-w-0 flex-1">{t.raw('text920e413c7d41')}</span>
+          <span className={LANE.duration}>{t.raw('text4fc52a3c4c55')}</span>
+          <span className={LANE.cost}>{t.raw('text204a5eb2cd28')}</span>
+        </div>
+        <ul>
+          {shown.map((run) => (
+            <RunRow
+              key={run.run_id}
+              projectId={projectId}
+              trigger={trigger}
+              run={run}
+              replay={
+                canFire && canReplay(run)
+                  ? {
+                      pending: replay.isPending && replay.variables?.runId === run.run_id,
+                      disabled: replay.isPending,
+                      onReplay: () => startReplay(run),
+                    }
+                  : null
+              }
+            />
+          ))}
+        </ul>
+        {/* A page can be short while more remain: the button follows the cursor, not the count. */}
+        {query.hasNextPage ? (
+          <div className="flex justify-center px-4 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={query.isFetchingNextPage}
+              onClick={() => query.fetchNextPage()}
+            >
+              {query.isFetchingNextPage ? <Loading className="size-3.5 shrink-0" /> : null}
+              {t.raw('textac8991ef0101')}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {runs.length > 0 ? (
@@ -195,29 +254,7 @@ export function TriggerRunsPanel({
           <XIcon className="size-3.5" />
         </Button>
       ) : null}
-      <RunList
-        query={query}
-        runs={shown}
-        emptyTitle={range ? t.raw('text6de3a7d8e5db') : t.raw('text91f7323997df')}
-        actions={(run) =>
-          canFire && canReplay(run) ? (
-            <Button
-              variant="outline"
-              size="xs"
-              disabled={replay.isPending}
-              onClick={() => startReplay(run)}
-            >
-              {replay.isPending && replay.variables?.runId === run.run_id ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
-              )}
-              {t.raw('text98c78fbb22fe')}
-            </Button>
-          ) : null
-        }
-        projectId={projectId}
-      />
+      {body}
       <ConfirmDialog
         open={!!confirmRun}
         onOpenChange={(next) => {
@@ -233,183 +270,97 @@ export function TriggerRunsPanel({
   );
 }
 
-export function RunList({
-  projectId,
-  query,
-  runs,
-  emptyTitle,
-  title,
-  actions,
-}: {
-  projectId: string;
-  query: RunsQuery;
-  /** The rows to draw: the loaded runs, or those inside a histogram window. */
-  runs: ProjectTriggerRun[];
-  emptyTitle: string;
-  /** A leading title per row (the project list names the trigger). */
-  title?: (run: ProjectTriggerRun) => ReactNode;
-  actions?: (run: ProjectTriggerRun) => ReactNode;
-}) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-
-  if (query.isLoading) {
-    return (
-      <div className="flex justify-center py-6">
-        <Loading />
-      </div>
-    );
-  }
-  if (query.isError) {
-    return (
-      <ErrorState
-        size="sm"
-        title={t.raw('text398d270b036a')}
-        action={
-          <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-            {t.raw('textd8b8392e2c54')}
-          </Button>
-        }
-      />
-    );
-  }
-  if (runs.length === 0 && !query.hasNextPage) {
-    return <EmptyState size="sm" title={emptyTitle} />;
-  }
-
-  return (
-    <div className="space-y-4">
-      <ul className="divide-border divide-y">
-        {runs.map((run) => (
-          <RunRow
-            key={run.run_id}
-            projectId={projectId}
-            run={run}
-            title={title?.(run)}
-            action={actions?.(run)}
-          />
-        ))}
-      </ul>
-      {/* A page can be short while more remain: the button follows the cursor, not the count. */}
-      {query.hasNextPage ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={query.isFetchingNextPage}
-          onClick={() => query.fetchNextPage()}
-        >
-          {query.isFetchingNextPage ? <Loading className="size-3.5 shrink-0" /> : null}
-          {t.raw('textac8991ef0101')}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
 function RunRow({
   projectId,
+  trigger,
   run,
-  title,
-  action,
+  replay,
 }: {
   projectId: string;
+  trigger: ProjectTrigger;
   run: ProjectTriggerRun;
-  title?: ReactNode;
-  action?: ReactNode;
+  replay: { pending: boolean; disabled: boolean; onReplay: () => void } | null;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const state = runState(run);
   const error = run.error ?? run.run_error;
-  const at = new Date(run.started_at);
-  const payload = JSON.stringify(run.payload, null, 2);
+  const failed = state === 'failed' || state === 'rejected';
 
-  return (
-    <li className="space-y-1.5 py-2 first:pt-0">
-      <div className="flex min-w-0 items-center gap-2">
-        {/* `font-sans normal-case`: the badge base is mono uppercase, which reads as code (trigger-status-badge.tsx). */}
-        <Badge
-          variant={STATE_BADGE[state].variant}
-          size="sm"
-          className={cn('font-sans normal-case', STATE_BADGE[state].tint)}
-        >
-          <span
-            data-slot="status-dot"
-            aria-hidden
-            className={cn('rounded-full', STATE_BADGE[state].dot)}
-          />
-          {t.raw(STATE_LABEL_KEY[state])}
-        </Badge>
-        {title}
-        <span className="text-muted-foreground shrink-0 text-xs">
-          {t.raw(SOURCE_LABEL_KEY[run.source])}
+  const cells = (
+    <>
+      <Hint label={absoluteFormatter.format(new Date(run.started_at))} side="top">
+        <span className={cn(LANE.time, 'text-muted-foreground tabular-nums')}>
+          {relativeRunTime(run.started_at, locale)}
         </span>
+      </Hint>
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span aria-hidden className={cn('size-2 shrink-0 rounded-full', STATE_DOT[state])} />
+        <span className="text-foreground truncate font-medium">
+          {t.raw(STATE_LABEL_KEY[state])}
+        </span>
+        {isDefaultSource(trigger.type, run.source) ? null : (
+          <span className="text-muted-foreground shrink-0 truncate">
+            {t.raw(SOURCE_LABEL_KEY[run.source])}
+          </span>
+        )}
         {run.payload_verified ? null : (
           <Hint label={t.raw('text7f2b8f3a675c')} side="top">
-            <Badge
-              variant="outline"
-              size="sm"
-              className="[&>svg]:text-kortix-orange font-sans normal-case"
-            >
-              <WarningIcon />
-              {t.raw('text9daf8e05c684')}
-            </Badge>
+            <WarningIcon
+              aria-label={t.raw('text9daf8e05c684')}
+              className="text-muted-foreground size-3.5 shrink-0"
+            />
           </Hint>
         )}
-        <Hint label={absoluteFormatter.format(at)} side="top">
-          <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
-            {relativeRunTime(run.started_at, locale)}
-          </span>
+      </span>
+      <span className={cn(LANE.duration, 'text-foreground tabular-nums')}>
+        {run.duration_ms != null ? formatSessionCostDuration(run.duration_ms / 1000) : '—'}
+      </span>
+      {/* No cost line for a run that spent nothing: "0 credits" reads like a measurement. */}
+      <span className={cn(LANE.cost, 'text-foreground tabular-nums')}>
+        {run.cost_usd ? formatSessionCostCredits(run.cost_usd) : null}
+      </span>
+    </>
+  );
+  const rowClass =
+    'flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-xs transition-[background-color] duration-(--duration-normal)';
+
+  return (
+    <li className="group relative">
+      {run.session_id ? (
+        <Link
+          href={projectSessionHref(projectId, run.session_id)}
+          className={cn(rowClass, 'hover:bg-muted/60 focus-visible:bg-muted/60 outline-none')}
+        >
+          {cells}
+        </Link>
+      ) : (
+        <div className={rowClass}>{cells}</div>
+      )}
+      {failed && error ? (
+        <Hint label={error} side="top" className="max-w-80 text-pretty">
+          <p className="text-muted-foreground truncate pr-3 pb-2 pl-28 text-xs">{error}</p>
         </Hint>
-      </div>
-
-      {error ? (
-        <p className="text-kortix-red font-mono text-xs tracking-tight break-words">{error}</p>
       ) : null}
-
-      <div className="flex min-w-0 items-center gap-2">
-        <InlineMeta className="flex-1">
-          {run.duration_ms != null ? (
-            <span className="tabular-nums">
-              {formatSessionCostDuration(run.duration_ms / 1000)}
-            </span>
-          ) : null}
-          {run.cost_usd != null ? (
-            <span className="tabular-nums">
-              {t('text8dcda9f17257', { value0: formatSessionCostCredits(run.cost_usd) })}
-            </span>
-          ) : null}
-        </InlineMeta>
-        {run.session_id || action ? (
-          <ButtonGroup>
-            {run.session_id ? (
-              <Button variant="outline" size="xs" asChild>
-                <Link href={projectSessionHref(projectId, run.session_id)}>
-                  {t.raw('textb205bb47f81a')}
-                  <ArrowUpRightIcon className="size-3.5 shrink-0" />
-                </Link>
-              </Button>
-            ) : null}
-            {action}
-          </ButtonGroup>
-        ) : null}
-      </div>
-
-      <Disclosure className="group">
-        <FoldTrigger>{t.raw('text99733344956d')}</FoldTrigger>
-        <DisclosureContent>
-          <div className="relative pt-2">
-            <pre className="bg-background max-h-64 overflow-auto rounded-md border px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap">
-              {payload}
-            </pre>
-            <CopyButton
-              code={payload}
-              label={t.raw('text026c6dbbbec5')}
-              className="absolute top-3 right-1"
-            />
-          </div>
-        </DisclosureContent>
-      </Disclosure>
+      {replay ? (
+        // Over the row's right edge; shown on hover or keyboard focus only.
+        <span className="bg-background absolute top-1 right-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+          <Button
+            variant="outline"
+            size="xs"
+            className="gap-1.5"
+            disabled={replay.disabled}
+            onClick={replay.onReplay}
+          >
+            {replay.pending ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+            )}
+            {t.raw('text98c78fbb22fe')}
+          </Button>
+        </span>
+      ) : null}
     </li>
   );
 }
