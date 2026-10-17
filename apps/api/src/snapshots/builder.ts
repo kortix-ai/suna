@@ -465,6 +465,8 @@ async function runInlineBuild(
       slug: template.slug,
       isShared: !!template.isShared,
       containerRuntime: template.containerRuntime,
+      // Built where its sessions boot, so they never wait for a copy.
+      region: identity.region,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
       // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.
