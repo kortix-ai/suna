@@ -1808,4 +1808,38 @@ describe('refused requests are traced', () => {
     await sleep(120);
     expect(traces).toHaveLength(0);
   });
+
+  // The API's authorizeRequest now attaches the matched credential row's
+  // identity to a 401 denial when the presented secret hash-matches a
+  // revoked/expired key or a dead token (KRTX-1749). The handler contract for
+  // that shape: one attributed failed trace, no usage row.
+  test('an admission refusal with a principal on a 401 (revoked key) leaves one attributed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          authorize: async () => ({
+            ok: false,
+            status: 401,
+            errorCode: 'invalid_token',
+            message: 'Invalid token',
+            principal,
+          }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(401);
+    const trace = await firstTrace(traces);
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(401);
+    expect(trace?.errorCode).toBe('invalid_token');
+    expect(trace?.accountId).toBe('account');
+    expect(trace?.projectId).toBe('project');
+    expect(usage).toHaveLength(0);
+  });
 });
