@@ -21553,7 +21553,23 @@
       "resolution": "Resolución",
       "resolutionHint": "Las pantallas más grandes se reducen a esta altura. 4K conserva los detalles finos, como los planos CAD.",
       "framesHint": "Sin valor, cada ordenador usa el suyo (una imagen cada 2 s a 1440p). Con valor, todos los ordenadores lo usan y nadie puede cambiarlo. Los clics, la escritura y el desplazamiento se graban con sus propias capturas con cualquier intervalo.",
-      "computerDecides": "Cada ordenador decide"
+      "computerDecides": "Cada ordenador decide",
+      "included": {
+        "title": "Grabar solo estas apps y sitios web",
+        "hint": "Activado: cada equipo de {org} graba solo lo que aparece aquí. Todo lo demás se oculta en negro y nunca se guarda. Las personas pueden añadir los suyos en Kortix Capture; no pueden desactivarlo ni quitar estos.",
+        "switch": "Grabar solo apps y sitios web incluidos",
+        "switchHint": "Desactivado: se graba todo lo que no está excluido.",
+        "kindLabel": "Apps o sitios web",
+        "apps": "Apps",
+        "websites": "Sitios web",
+        "addAppPlaceholder": "Añade una app por su ID, como com.tinyspeck.slackmacgap o slack.exe",
+        "addSitePlaceholder": "Añade un sitio web, como github.com",
+        "addApp": "Incluir {app}",
+        "addDomain": "Incluir {domain}",
+        "included": "Incluidos",
+        "noApps": "Ninguna app incluida. Solo se graban los sitios web incluidos.",
+        "noSites": "Ningún sitio web incluido. Los navegadores solo se graban si la app del navegador está incluida."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

@@ -21553,7 +21553,23 @@
       "resolution": "Rezolucija",
       "resolutionHint": "Veći ekrani se smanjuju na ovu visinu. 4K čuva fine detalje, na primer CAD crteže.",
       "framesHint": "Bez vrednosti, svaki računar koristi svoju (jedan snimak na svake 2 s u 1440p). Sa vrednošću, svi računari je koriste i niko ne može da je promeni. Klikovi, kucanje i skrolovanje snimaju se sa sopstvenim snimcima ekrana pri bilo kom intervalu.",
-      "computerDecides": "Svaki računar odlučuje"
+      "computerDecides": "Svaki računar odlučuje",
+      "included": {
+        "title": "Snimaj samo ove aplikacije i veb-sajtove",
+        "hint": "Uključeno: svaki računar u {org} snima samo ono što je ovde navedeno. Sve ostalo je zatamnjeno i nikad se ne čuva. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ovo isključiti niti ukloniti ove stavke.",
+        "switch": "Snimaj samo uključene aplikacije i veb-sajtove",
+        "switchHint": "Isključeno: snima se sve što nije izuzeto.",
+        "kindLabel": "Aplikacije ili veb-sajtovi",
+        "apps": "Aplikacije",
+        "websites": "Veb-sajtovi",
+        "addAppPlaceholder": "Dodajte aplikaciju po ID-u, npr. com.tinyspeck.slackmacgap ili slack.exe",
+        "addSitePlaceholder": "Dodajte veb-sajt, npr. github.com",
+        "addApp": "Uključi {app}",
+        "addDomain": "Uključi {domain}",
+        "included": "Uključeno",
+        "noApps": "Nijedna aplikacija nije uključena. Snimaju se samo uključeni veb-sajtovi.",
+        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

@@ -105,7 +105,9 @@ import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
 import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
+import { useCans, useProjectApps } from '@kortix/sdk/react';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { NAV_ACTIONS, REVIEW_ACCESS, appsRowVisible, navAccessAllowed } from '@/lib/session/nav-access';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
@@ -286,6 +288,13 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // covers the project.
   // Poll for provisioning rows only while the project screen is focused.
   const isFocused = useIsFocused();
+
+  // Review and Apps show only to a caller who can act on them (web's rule):
+  // nothing renders before the verdict lands.
+  const navCans = useCans({ projectId }, NAV_ACTIONS);
+  const appsQuery = useProjectApps(projectId);
+  const showReview = navAccessAllowed(navCans, REVIEW_ACCESS);
+  const showApps = appsRowVisible(navCans, appsQuery.data?.length);
 
   // The switcher row's project tile, name, and account line: the project's
   // own account, not necessarily the globally selected one — a deep link can
@@ -759,13 +768,15 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
         <View className="px-2 -mx-1 space-y-1">
           <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
           <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
-          <NavPill
-            icon={SealCheckIcon}
-            label="Review"
-            accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
-            onPress={goToReview}
-            trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
-          />
+          {showReview ? (
+            <NavPill
+              icon={SealCheckIcon}
+              label="Review"
+              accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
+              onPress={goToReview}
+              trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
+            />
+          ) : null}
           {notificationsEnabled ? (
             <NavPill
               icon={BellIcon}
@@ -777,7 +788,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
               trailing={<CountBadge count={notificationsUnreadCount} tone="waiting" />}
             />
           ) : null}
-          <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
+          {showApps ? <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} /> : null}
         </View>
         {needsYouSessions.length > 0 ? (
           <View className="px-2 -mx-1">
@@ -808,6 +819,8 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       goToReview,
       goToNotifications,
       goToApps,
+      showReview,
+      showApps,
       reviewNeedsYouCount,
       notificationsEnabled,
       notificationsUnreadCount,

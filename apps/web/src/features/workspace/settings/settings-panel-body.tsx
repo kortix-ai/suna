@@ -23,13 +23,6 @@ import {
 } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import {
-  CUSTOMIZE_SECTION_GATE_ACTIONS,
-  isCustomizeSectionVisible,
-  type CustomizeSection,
-  type ProjectAction,
-} from '@/lib/project-actions';
-import { useProjectCans, type CanResult } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
@@ -95,56 +88,25 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // there is no project to name.
 ];
 
-/**
- * The three Workspace rows that gate on an IAM read leaf, keyed to the
- * `CustomizeSection` the retired config page gated the same pane on — the
- * section keys outlived that page and live in `lib/project-actions.ts`.
- * `workspace` (General) is not here: every
- * member may see the workspace's name and icon, and `GeneralTab` gates its own
- * controls on write.
- */
-const PROJECT_GATED_TABS: Partial<Record<SettingsTab, CustomizeSection>> = {
-  sandbox: 'sandbox',
-  'feature-flags': 'feature-flags',
-  upgrades: 'upgrade',
-};
-
 export interface SettingsTabAllowedParams {
   hasProject: boolean;
-  /**
-   * The caller's resolved project capabilities, `action -> allowed`. Read only
-   * for the tabs in `PROJECT_GATED_TABS`; an absent function hides those
-   * tabs. The container answers through `probeAdmits`, which is fail-open
-   * while a probe is in flight.
-   */
-  canProject?: (action: ProjectAction) => boolean;
 }
 
 /**
- * Whether one capability probe admits its row.
+ * Whether the overlay may show a tab at all.
  *
- * Fail-open while the probe is in flight — the rule the retired config page
- * applied to the same rows: a row disappears only on a denial actually
- * received. It is not tidiness. The SDK reports an unresolved probe as
- * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
- * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
- * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
- * landed on Profile every time, before the answer could arrive.
- * Pinned by `settings-panel.test.tsx`.
+ * One rule: Profile, Preferences and the other personal tabs render with or
+ * without a project; every other tab needs one. The per-tab IAM gate that
+ * used to sit here (`PROJECT_GATED_TABS`) went with Sandbox templates,
+ * Feature flags and Upgrades, which left the rail for the Customize Settings
+ * tab (`RETIRED_RAIL_ITEMS`), where the capability rule gates them.
+ *
+ * The function stays because the CONCEPT stays: a tab added here must declare
+ * whether it needs a project, and the command palette mirrors this decision
+ * (`isSettingsTabOfferable` in `settings-palette-items.ts`).
  */
-export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {
-  if (!probe) return true;
-  return probe.isLoading || probe.allowed;
-}
-
 export function isSettingsTabAllowed(tab: SettingsTab, params: SettingsTabAllowedParams): boolean {
-  if (!params.hasProject && !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab)) return false;
-  const gate = PROJECT_GATED_TABS[tab];
-  if (gate) {
-    if (!params.canProject) return false;
-    return isCustomizeSectionVisible(gate, params.canProject);
-  }
-  return true;
+  return params.hasProject || ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab);
 }
 
 export function buildSettingsPanelSettingsNav(state: {
@@ -204,17 +166,9 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // account-scoped tabs — see `ACCOUNT_SCOPED_SETTINGS_TABS` above.
   const resolvedAccountId = useSettingsAccountId(project?.account_id);
 
-  // The same batched probe the config page runs (`CUSTOMIZE_SECTION_GATE_ACTIONS`
-  // is a stable module constant, so the two share one React Query entry) —
-  // disabled without a project, since the target is then `undefined`.
-  const projectCans = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS);
-  const canProject = useCallback(
-    (action: ProjectAction) => probeAdmits(projectCans[action]),
-    [projectCans],
-  );
   const isTabAllowed = useCallback(
-    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId, canProject }),
-    [projectId, canProject],
+    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId }),
+    [projectId],
   );
 
   const groups = useMemo(() => {

@@ -7,6 +7,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import {
+  type AnyColumn,
   type SQL,
   type SQLWrapper,
   and,
@@ -884,6 +885,8 @@ export async function listProjectGatewaySessionSpend(input: {
   accountId: string;
   projectId: string;
   days: number;
+  /** The caller's session filter (`ProjectReadView.where`); absent reads every session. */
+  sessionsVisibleTo?: (sessionColumn: AnyColumn) => SQL | undefined;
 }): Promise<{ window_days: number; sessions: LegacyGatewaySessionRow[] }> {
   const [llmRows, computeRows] = await Promise.all([
     db
@@ -903,6 +906,7 @@ export async function listProjectGatewaySessionSpend(input: {
           eq(gatewayRequestLogs.projectId, input.projectId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
+          input.sessionsVisibleTo?.(gatewayRequestLogs.sessionId),
         ),
       )
       .groupBy(gatewayRequestLogs.sessionId),
@@ -922,6 +926,7 @@ export async function listProjectGatewaySessionSpend(input: {
           eq(sessionSandboxes.projectId, input.projectId),
           sql`${sandboxComputeSessions.sessionId} is not null`,
           sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${input.days})`,
+          input.sessionsVisibleTo?.(sandboxComputeSessions.sessionId),
         ),
       )
       .groupBy(sandboxComputeSessions.sessionId),

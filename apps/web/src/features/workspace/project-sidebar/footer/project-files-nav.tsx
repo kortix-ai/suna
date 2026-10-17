@@ -7,21 +7,25 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectPageCans } from '@/lib/use-project-can';
+import { CountBadge } from '@/components/ui/count-badge';
+import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useProjectNavRows } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { getProject } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
 
-import { repoNavLabel } from './files-nav-label';
+import { filesRow } from './files-nav-label';
 
 /**
- * Top-level repo browser entry: Repo when the project has Volumes on (the
- * shared folders are then Files, a tab under Customize), Files otherwise. Hidden when the caller lacks `project.file.read`: that
- * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
- * floor `member` role), so showing it to a plain member would just land them on
- * a page whose every read 403s. Optimistic while the probe loads — the entry
- * only disappears on an explicit deny.
+ * Top-level Files entry, decided by `useProjectNavRows` (the same rule the
+ * More menu and the Customize row read). For a caller with `project.file.read`
+ * it is the repo browser: Repo when the project has Volumes on (the shared
+ * folders are then Files, a tab under Customize), Files otherwise. That leaf
+ * is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
+ * `member` role), so a plain member never gets the repo browser: with Volumes
+ * on, this row opens their shared folders instead, and carries their conflict
+ * count. Absent until the probe answers.
  *
  * A real `<Link prefetch>`, not `router.push`. The button form could not be
  * prefetched, so every click paid for the route's RSC payload AND its JS chunk
@@ -45,12 +49,18 @@ export function ProjectFilesNavItem() {
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
-  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
+  const target = useProjectNavRows(projectId).files;
   const queryClient = useQueryClient();
   // Volumes on for the project (its derived `drives` flag).
   const volumes = useFeatureFlag(projectId, 'drives');
-  const label = repoNavLabel(volumes.enabled);
+  const tDrives = useTranslations('drives');
+  const drive = useProjectDrive(projectId, target === 'folders');
+  const conflicts = target === 'folders' ? (drive.data?.openConflicts ?? 0) : 0;
+  const isActive =
+    !!pathname &&
+    (target === 'folders'
+      ? activeCapabilityTab(pathname) === 'files'
+      : /^\/projects\/[^/]+\/files(\/|$)/.test(pathname));
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,
   // `project-layout/resolve-files-ref.ts`) until it knows the project's
@@ -72,16 +82,16 @@ export function ProjectFilesNavItem() {
     });
   }, [projectId, queryClient]);
 
-  if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
   // No project id means no valid href. The old onClick already no-op'd in this
   // case, so rendering a dead button was never useful.
-  if (!projectId) return null;
+  if (!target || !projectId) return null;
+  const { label, href } = filesRow(projectId, target, volumes.enabled);
 
   return (
     <ProjectNavRow
       active={isActive}
       label={t(label)}
-      href={`/projects/${projectId}/files`}
+      href={href}
       prefetch
 
       onMouseEnter={prefetchSummary}
@@ -90,6 +100,15 @@ export function ProjectFilesNavItem() {
     >
       {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
       {t(label)}
+      {conflicts > 0 ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <CountBadge
+            count={conflicts}
+            tone="conflict"
+            aria-label={tDrives('conflictCount', { count: conflicts })}
+          />
+        </span>
+      ) : null}
     </ProjectNavRow>
   );
 }

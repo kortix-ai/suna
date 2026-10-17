@@ -77,11 +77,8 @@ export function registerProjectAccessRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const targetUserId = c.req.param('userId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Member management is admin-only; loadProjectForUser('manage') now
-    // resolves to project.write, so we add an explicit
-    // stricter gate here.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
     const body = await readJsonObject(c);
@@ -155,7 +152,7 @@ export function registerProjectAccessRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const targetUserId = c.req.param('userId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

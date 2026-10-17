@@ -21553,7 +21553,23 @@
       "resolution": "Resolution",
       "resolutionHint": "Larger screens are scaled down to this height. 4K keeps fine detail, such as CAD drawings.",
       "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
-      "computerDecides": "Each computer decides"
+      "computerDecides": "Each computer decides",
+      "included": {
+        "title": "Record only these apps and websites",
+        "hint": "On: every computer in {org} records only what is listed here. Everything else is blacked out and never saved. People can add their own in Kortix Capture; they cannot turn this off or remove these.",
+        "switch": "Record only included apps and websites",
+        "switchHint": "Off: everything not excluded is recorded.",
+        "kindLabel": "Apps or websites",
+        "apps": "Apps",
+        "websites": "Websites",
+        "addAppPlaceholder": "Add an app by its app ID, such as com.tinyspeck.slackmacgap or slack.exe",
+        "addSitePlaceholder": "Add a website, such as github.com",
+        "addApp": "Include {app}",
+        "addDomain": "Include {domain}",
+        "included": "Included",
+        "noApps": "No app is included. Only included websites are recorded.",
+        "noSites": "No website is included. Browsers record only if the browser app is included."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",

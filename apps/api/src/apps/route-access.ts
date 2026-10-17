@@ -17,9 +17,11 @@ import { type AppCapability, type AppHostingType, appCapabilities, capabilityUns
  * The App permission a route needs. Apps own these leaves outright — they no
  * longer borrow project.customize.write / project.gitops.read, so a custom role
  * can grant or revoke Apps without touching any other capability.
- *   read    list and inspect Apps, connect, mint a member token
- *   write   create, rename, resize, set access, read logs
- *   deploy  ship a version, roll back, start, stop
+ *   read    list and open the Apps the caller may see, connect, mint a member token
+ *   write   create, rename, resize, read and set the access policy
+ *   deploy  ship a version, roll back, start, stop; read the operations view:
+ *           deployments, their events and runtime logs, machines, volumes,
+ *           snapshots
  *   admin   administer the App
  */
 export type AppPermission = 'read' | 'write' | 'deploy' | 'admin';
@@ -32,14 +34,15 @@ const APP_PERMISSION_ACTION: Record<AppPermission, string> = {
 };
 
 /**
- * Membership + permission, in that order. Returns the loaded project on
+ * Membership, then the App leaf: the leaf is the only permission gate, so a
+ * custom role that holds project.app.deploy alone may deploy. Returns the loaded project on
  * success, or the Response the route must return:
  *   • 404 — the project does not exist or the caller is not a member (a
  *     non-member must not be able to distinguish the two).
  * A permission denial still throws (403) from assertProjectCapability.
  */
 export async function authorizedProject(c: Context<AppEnv>, projectId: string, permission: AppPermission = 'read') {
-  const loaded = await loadProjectForUser(c, projectId, permission === 'read' ? 'read' : 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, APP_PERMISSION_ACTION[permission]);
   return loaded;

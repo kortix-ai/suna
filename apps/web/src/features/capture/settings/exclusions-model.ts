@@ -15,7 +15,10 @@ export type ExclusionChange =
   | { kind: 'app'; id: string; on: boolean }
   | { kind: 'domain'; id: string; on: boolean }
   | { kind: 'group'; id: string; on: boolean }
-  | { kind: 'private-browsing'; on: boolean };
+  | { kind: 'private-browsing'; on: boolean }
+  | { kind: 'include-app'; id: string; on: boolean }
+  | { kind: 'include-domain'; id: string; on: boolean }
+  | { kind: 'record-only'; on: boolean };
 type Privacy = CapturePolicy['privacy'];
 
 /** One app or website row: `id` is the bundle id or the domain. `locked`: set by the organization. */
@@ -104,5 +107,34 @@ export function applyToPrivacy(privacy: Privacy, input: ExclusionChange): Privac
       };
     case 'private-browsing':
       return { ...privacy, exclude_private_browsing: input.on };
+    case 'include-app':
+      return {
+        ...privacy,
+        included_bundle_ids: toggle(privacy.included_bundle_ids ?? [], input.id, input.on),
+      };
+    case 'include-domain':
+      return {
+        ...privacy,
+        included_domains: toggle(privacy.included_domains ?? [], input.id, input.on),
+      };
+    case 'record-only':
+      return { ...privacy, record_only_included: input.on };
   }
+}
+
+export interface IncludedView {
+  on: boolean;
+  apps: ExclusionRow[];
+  domains: ExclusionRow[];
+}
+
+/** Record only included apps and websites: the switch and both lists, as rows. */
+export function includedView(privacy: Privacy): IncludedView {
+  const rows = (list: string[] | undefined): ExclusionRow[] =>
+    (list ?? []).map((id) => ({ id, name: id, locked: false }));
+  return {
+    on: privacy.record_only_included ?? false,
+    apps: rows(privacy.included_bundle_ids),
+    domains: rows(privacy.included_domains),
+  };
 }

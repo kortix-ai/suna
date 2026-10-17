@@ -35,10 +35,8 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * slot); it was never its own top-level concept, just a workspace detail.
  * Marketplace was removed from this surface outright
  * (not relocated) at the product owner's explicit request. Voice was removed
- * later, and Review became a capability tab with no flag; nothing else pointed
- * at Marketplace, but the sidebar's change-requests nav still links to Review
- * (`project-sidebar/footer/project-change-requests-nav.tsx`), so dropping it
- * too would have broken a live row, not just tidied a list. Sandbox templates
+ * later, and Review became a capability tab with no flag; Review is the
+ * Customize Review tab (`reviewHref`). Sandbox templates
  * and Snapshots were merged into one `sandbox` section — a snapshot IS the
  * build history of a sandbox template, not a separate concept.
  *

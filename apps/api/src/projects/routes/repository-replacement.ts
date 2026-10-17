@@ -39,7 +39,7 @@ export function registerRepositoryReplacementRoutes(): void {
     },
   }), async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
@@ -47,7 +47,7 @@ export function registerRepositoryReplacementRoutes(): void {
     const parsed = Body.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid repository replacement request' }, 400);
     if (parsed.data.copy_shared_secrets_from_project_id) {
-      const source = await loadProjectForUser(c, parsed.data.copy_shared_secrets_from_project_id, 'manage');
+      const source = await loadProjectForUser(c, parsed.data.copy_shared_secrets_from_project_id, 'read');
       if (!source || source.row.accountId !== loaded.row.accountId) return c.json({ error: 'Secret source project not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
       await assertProjectCapability(c, source.userId, source.row.accountId, source.row.projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);

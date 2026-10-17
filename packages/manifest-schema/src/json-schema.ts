@@ -761,6 +761,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
             properties: {
               project_repository: {
                 type: 'boolean',
+                default: true,
                 description: 'Check out the project repository and allow repository access. Defaults to true.',
               },
             },
@@ -1099,7 +1100,18 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       secrets: v2.properties.secrets,
       apps: v2.properties.apps,
       kortix_permissions: v2.properties.kortix_permissions,
-      workspace: v2.properties.workspace.oneOf[0],
+      workspace: {
+        description: 'What new sessions of this agent get in /workspace.',
+        type: 'object',
+        properties: {
+          project_repository: {
+            type: 'boolean',
+            default: false,
+            description: 'Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true.',
+          },
+        },
+        additionalProperties: false,
+      },
       sandbox: v2.properties.sandbox,
       network_egress: v2.properties.network_egress,
     },

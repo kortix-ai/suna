@@ -47,7 +47,6 @@ const page = (limit: number, cursor: string | null = null) =>
     projectId: PROJECT,
     accountId: ACCOUNT,
     userId: VIEWER,
-    effectiveRole: 'write' as never,
     scope: 'visible',
     boundCredentialSessionId: null,
     probeManageCapability: async () => false,
