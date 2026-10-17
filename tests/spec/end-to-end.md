@@ -185,10 +185,10 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ### Account PATs (CLI tokens)
 
-`TOK-1` `GET /accounts/tokens` → list, live rows only (`status='active'` and `revoked_at` null — what `TOK-3` would still accept; a dead row's revoke only answers 404). `?mine=true` narrows to the caller's own hand-minted keys, revoked ones included as marked history.
+`TOK-1` `GET /accounts/tokens` → list, live rows only (`status='active'` and `revoked_at` null — what `TOK-3` would still accept; a dead row's revoke only answers 404). `?mine=true` narrows to the caller's own hand-minted keys, revoked ones included as marked history. Without `mine`, a caller with `token.revoke` (OWNER, ADMIN) gets every live token of the account; any other caller gets only the live tokens they own (`TOK-6`).
 `TOK-2` `POST /accounts/tokens {name}` → `TOKEN_PERSONAL_CREATE` (browser session or unscoped PAT; any other credential needs `TOKEN_CREATE`) → 201, `secret_key` returned **once** (absent from list). Account-scoped only — this route does **not** accept `projectId`; project-scoped PATs are minted via the project cli-token route (GH-8).
 `TOK-3` `DELETE /accounts/tokens/:tokenId` → own personal token: `TOKEN_PERSONAL_REVOKE`; any other token: `TOKEN_REVOKE` → 200; unknown/already-revoked → 404; revoked token on any route → 401.
-`TOK-6` Plain account MEMBER (the `kortix login` path): mints a personal PAT in the team account → 201; the PAT authenticates as the member (`/accounts/me` 200, `auth_type` `pat`) and carries only member rights (account rename → 403); the unscoped PAT mints and revokes another personal PAT → 201 / 200. MEMBER cannot register an OAuth client → 403, cannot revoke the OWNER's token → 403 (owner token still authenticates), revoking an unknown id → 403 (not 404). MEMBER revokes their own token → 200, its secret then → 401.
+`TOK-6` Plain account MEMBER (the `kortix login` path): mints a personal PAT in the team account → 201; the PAT authenticates as the member (`/accounts/me` 200, `auth_type` `pat`) and carries only member rights (account rename → 403); the unscoped PAT mints and revokes another personal PAT → 201 / 200. MEMBER cannot register an OAuth client → 403, lists the account's tokens and gets only their own (the OWNER's list holds both), cannot list service accounts or OAuth clients → 403 (`token.create`), cannot revoke the OWNER's token → 403 (owner token still authenticates), revoking an unknown id → 403 (not 404). MEMBER revokes their own token → 200, its secret then → 401.
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
 
 ### Account deletion
@@ -686,7 +686,7 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 `GH-6` `PUT /projects/:id/git-credential` (BYO) → `manage` → stores a platform git credential (`GH-21`); already server-managed → 409.
 `GH-21` `PUT /projects/:id/git-credential {token}` on a GitLab project → 200 `{configured:true, provider:"gitlab", git_connection:{auth_method:"project_credential", status:"connected"}}` with no token in the response. The value is one encrypted `project_git_credentials` row, never a project secret: `GET /projects/:id/secrets` does not list it, and `DELETE …/secrets/KORTIX_GIT_AUTH_TOKEN` → 403.
 `GH-7` `POST /projects/:id/git-token` → mint a fresh managed-GitHub installation token; **409 for BYO**; 503 if managed Git is unavailable.
-`GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens. The list hides session-bound tokens (the runtime's per-session `KORTIX_TOKEN`) and reports the count as `session_tokens`.
+`GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens. The list hides session-bound tokens (the runtime's per-session `KORTIX_TOKEN`) and reports the count as `session_tokens`. Listing needs `project.credentials.issue`, the leaf that mints and revokes them: a project `member` → 403.
 
 ### `kortix ship` (alias `deploy`)
 
@@ -752,10 +752,10 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `BILL-1` `GET /billing/account-state` (always available; off → unlimited mock) · `GET …/account-state/minimal`.
 `BILL-3` Credits plan, real Stripe test mode: a team on a $20/month credits subscription (adopted by `POST /billing/sync-subscription`) reads `subscription.tier_key:"credits"`, `plan.monthly_usd:20`, `tier.monthly_credits:20` and no `seats`; `POST /billing/plan {monthly_usd:40}` charges the prorated difference and answers `{status:"updated",monthly_usd:40}`, after which account-state reads `plan.monthly_usd:40`.
 `BILL-4` `POST /billing/cancel-subscription` · `reactivate-subscription` · `cancel-scheduled-change` · `sync-subscription`; `GET /billing/proration-preview`.
-`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage`, `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId`.
+`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage` (these three and `auto-topup/settings|setup-status` need `billing.read`; every built-in account role holds it, a caller without it → 403), `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId`.
 `BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
 `BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
-`BILL-9` billing write ops (`plan`/`create-portal-session`/`cancel-subscription`/`reactivate-subscription`/`purchase-credits`/`auto-topup/configure`/`sync-subscription`) — auth boundary: ANON → 401; non-account-member → 403; account `MEMBER` (`billing.read` only) → 403. They require `billing.write` (OWNER + the `billing_manager` BILLING policy only; ADMIN/AUDITOR/MEMBER denied), enforced by `billing/require-billing-write.ts` (`resolveScopedAccountId` membership check + `assertAuthorized(billing.write)`) — so a non-billing teammate can't change the plan / cancel / top-up / reconcile on the account's behalf. Read-only ops (`checkout-session/:id`) stay member-accessible (membership only). **(finding 2026-06-04 RESOLVED 2026-06-11: the `billing.write` gate now exists in code; extended 2026-08-19 to `sync-subscription`, `sync-seat-quantity`, `confirm-checkout-session`, which mutate billing state and were still membership-only.)**
+`BILL-9` billing write ops (`plan`/`create-portal-session`/`cancel-subscription`/`reactivate-subscription`/`purchase-credits`/`auto-topup/configure`/`sync-subscription`) — auth boundary: ANON → 401; non-account-member → 403; account `MEMBER` (`billing.read` only) → 403. They require `billing.write` (OWNER and ADMIN, or a custom role that holds it; MEMBER denied), enforced by `billing/require-billing-write.ts` (`resolveScopedAccountId` membership check + `assertAuthorized(billing.write)`) — so a non-billing teammate can't change the plan / cancel / top-up / reconcile on the account's behalf. Read-only ops (`checkout-session/:id`) stay member-accessible (membership only). **(finding 2026-06-04 RESOLVED 2026-06-11: the `billing.write` gate now exists in code; extended 2026-08-19 to `sync-subscription`, `sync-seat-quantity`, `confirm-checkout-session`, which mutate billing state and were still membership-only.)**
 `BILL-13` The internal free-tier rotation cron runs through its authenticated route and returns processed, skipped, and error counts.
 `BILL-16` The yearly credit rotation cron rejects missing and invalid internal credentials without mutating account credits.
 `BILL-18` A one-off credit purchase grants credit only for settled money. A signed `checkout.session.completed` (`mode=payment`) with `payment_status=unpaid` → 200 and no `purchase` ledger row and no wallet change. `checkout.session.async_payment_succeeded` for the same session → 200 and exactly one `purchase` row of `amount_total`. Redelivering that event → 200 `{deduped:true}`; a paid event for the same session under a new event id → 200 and still one row. `checkout.session.async_payment_failed` → 200 and no credit. The Stripe dedupe marker is written only after the handler succeeds, so a failed or interrupted delivery is retried in full.
@@ -768,7 +768,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `COST-3` A real sandbox on an account that never subscribed is metered. `credit_accounts.billing_model` defaults to `legacy`; a session on such an account, whose tier is not a legacy paid plan, opens a `sandbox_compute_sessions` row once its sandbox is active. Only a legacy paid plan (`tier_2_20`, `tier_6_50`, `tier_25_200`, `tier_200_1000`, `pro`) on the legacy billing model is exempt.
 
-`COST-4` Account-wide usage reads (`GET /usage`, `/usage/cost-summary`, `/usage/cost-by-project`, `/usage/session-costs` without `project_id`) require `billing.read` for every credential class. A service account with no role assignment → 403; a member's PAT (members hold `billing.read`) → 200; a project filter naming a project outside the caller's account or without read access → 403/404; project-scoped tokens → 403 on account-wide reads.
+`COST-4` Account-wide usage reads (`GET /usage`, `/usage/cost-summary`, `/usage/cost-by-project`, `/usage/session-costs` without `project_id`) require `billing.read` for every credential class. A service account with no role assignment → 403; a member's PAT (members hold `billing.read`) → 200; a project filter naming a project outside the caller's account or without read access → 403/404; project-scoped tokens → 403 on account-wide reads. `cost-by-project` lists only the projects the caller can read (`project.read`): a plain member sees their own project and not one they are not in; the OWNER sees both, and `total` counts only the listed rows.
 
 ---
 
@@ -801,7 +801,7 @@ Every BYOK route has `billingMode:'none'` and zero markup. The gateway resolves 
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
 `OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
 `OAU-5` RFC 8414 discovery: `GET /.well-known/oauth-authorization-server` (API root) and its mirror `GET /v1/oauth/.well-known/oauth-authorization-server` (public) → `issuer` = the configured public API origin, every endpoint, `scopes_supported` ⊇ {`profile`,`email`,`kortix`}, `code_challenge_methods_supported` = [`S256`], `service_documentation` on the web host (`FRONTEND_URL`). `GET /.well-known/openid-configuration` serves the same document.
-`OAU-6` Self-serve client registry `GET/POST /accounts/:accountId/iam/oauth-clients` · `GET/PATCH/DELETE /:clientId` · `POST /:clientId/rotate-secret` (`token.read` / `token.create` / `token.revoke`). Create/rotate return `client_secret` exactly once (null for `client_type: "public"`); list/get never do. Redirect URIs must be absolute https (http on localhost only, no fragment); scopes ⊆ {`profile`,`email`,`kortix`} else 400. NONMEMBER → 403; unknown/malformed id → 404. `GET /accounts/<non-uuid>/iam/scim/tokens` → 404, not 500.
+`OAU-6` Self-serve client registry `GET/POST /accounts/:accountId/iam/oauth-clients` · `GET/PATCH/DELETE /:clientId` · `POST /:clientId/rotate-secret` (read, create, edit, rotate: `token.create`; delete: `token.revoke`). Create/rotate return `client_secret` exactly once (null for `client_type: "public"`); list/get never do. Redirect URIs must be absolute https (http on localhost only, no fragment); scopes ⊆ {`profile`,`email`,`kortix`} else 400. NONMEMBER → 403; unknown/malformed id → 404. `GET /accounts/<non-uuid>/iam/scim/tokens` → 404, not 500.
 `OAU-7` The full "Sign in with Kortix" exchange over HTTP with a real client: `/authorize` (302, opaque `request_id`, request persisted) → consent GET (`remembered:false` the first time) → consent POST (code bound to the STORED redirect/scopes/challenge; replay → 400; consent remembered → a later authorize for ⊆ scopes reports `remembered:true`) → `/token` (`authorization_code` + PKCE: wrong verifier → 400 `invalid_grant` and the code is spent, so the right verifier no longer redeems it; a verifier outside 43–128 unreserved characters is refused) → `kortix_oat_`/`kortix_ort_`. A `kortix`-scoped access token is a first-class credential on every auth middleware (`GET /accounts/me` → `token_context.auth_type: "oauth"`); `refresh_token` rotates with a 30 s grace (`KORTIX_OAUTH_REFRESH_GRACE_MS`; RFC 9700 §4.14.2): a rotated refresh token used again inside the window by the same client is accepted and issues a fresh pair, and the old access token stays valid until its own expiry; after the window (2 s on the local profile, the 30 s default on a deployed target, which the flow waits out), replaying a rotated refresh token → 400 `invalid_grant` and every live token of that client+user is revoked (reuse detection); reusing an authorization code → 400 and revokes the tokens issued from it (tokens of that client+user created at or after the code, so earlier tokens survive); `POST /oauth/revoke` (RFC 7009, client-authenticated, form-encoded) kills the pair — revoking the refresh token kills its access token (401), revoking a live access token kills it (401) and its refresh token (400 `invalid_grant`) — answers 200 `revoked:false` for an unknown token, 401 for a bad client secret.
 `OAU-8` Identity-only + public clients: a `client_type: "public"` client exchanges with PKCE alone and is refused (401) when it sends a secret; a token without the `kortix` scope reaches only `/oauth/userinfo` and `/accounts/me` — the general API answers 403 `insufficient_scope`.
 `OAU-9` Connected apps: a self-registered public client approved by OWNER appears in `GET /oauth/grants` with its `name`, `self_registered: true`, `redirect_hosts` (the loopback host), `scopes` [`kortix`], `granted_at`, `last_active_at` and `active: true`. Another user never sees it, and their `DELETE /oauth/grants/:clientId` is 404. The app's own `kortix_oat_` gets 403 on both routes and on `POST /accounts/tokens` and `POST /projects/:projectId/cli-token` (it cannot mint a durable token that outlives a revoke), and 403 `insufficient_scope` on `PATCH /auth/user`, `POST /auth/password/update` and `POST /account/request-deletion` (a delegated token never changes sign-in state or deletes the account); an unscoped PAT lists it. `DELETE /oauth/grants/<non-uuid>` → 404. `DELETE` → 200 `revoked_tokens: 2`: the access token then answers 401, the refresh grant `invalid_grant`, the grant is gone from the list, a second `DELETE` is 404, and a new `/authorize` is no longer remembered.
@@ -913,25 +913,39 @@ Run these against representative endpoints from each domain.
 
 ### Role × project-action grid (assert per row)
 
-| Action level                                                   | OWNER | ADMIN | M_MANAGER | M_EDITOR | M_VIEWER | MEMBER (no grant) | NONMEMBER |
-| -------------------------------------------------------------- | ----- | ----- | --------- | -------- | -------- | ----------------- | --------- |
-| `read` (GET project/files/sessions)                            | ✓     | ✓     | ✓         | ✓        | ✓        | ✗ 403             | ✗ 403     |
-| `session` (create/PATCH/DELETE/restart session — use the chat) | ✓     | ✓     | ✓         | ✓        | ✓        | ✗ 403             | ✗ 403     |
-| `write` (PATCH project, CR merge, deploy, triggers)            | ✓     | ✓     | ✓         | ✓        | ✗ 403    | ✗ 403             | ✗ 403     |
-| `manage` (DELETE project, secrets, members/access)             | ✓     | ✓     | ✓         | ✗ 403    | ✗ 403    | ✗ 403             | ✗ 403     |
+The built-in roles and their leaves are rows of `kortix.roles` and
+`kortix.role_permissions` (account scope: `owner`, `admin`, `member`; project
+scope: `manager`, `member`). OWNER and ADMIN hold an implicit project
+`manager` on every project. `MEMBER (no grant)` is an account member with no
+project role.
+
+| Project leaves | OWNER / ADMIN | project `manager` | project `member` | MEMBER (no grant) | NONMEMBER |
+| --- | --- | --- | --- | --- | --- |
+| `project.read`, `project.session.read/start/stop` | ✓ | ✓ | ✓ | ✗ 403/404 | ✗ 403/404 |
+| `project.agent.read`, `project.command.read`, `project.members.read`, `project.gitops.read`, `project.review.read/submit`, `project.trigger.read/fire`, `project.app.read`, `project.gateway.logs.read`, `project.gateway.spend.read` | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `project.write`, `project.settings.write`, `project.sandbox.write`, `project.model.read/write`, `project.agent.write`, `project.skill.read/write`, `project.command.write`, `project.file.read/write`, `project.secret.read/write`, `project.connector.read/write/connections.manage` | ✓ | ✓ | ✗ 403 | ✗ | ✗ |
+| `project.gitops.push/merge/ref.any/ref.delete`, `project.trigger.create/update/delete`, `project.review.act`, `project.session.bindings.write` | ✓ | ✓ | ✗ 403 | ✗ | ✗ |
+| `project.app.write/deploy/admin`, `project.usage.read`, `project.gateway.budget.set`, `project.gateway.keys.manage` | ✓ | ✓ | ✗ 403 | ✗ | ✗ |
+| `project.members.manage`, `project.credentials.issue`, `project.delete` | ✓ | ✓ | ✗ 403 | ✗ | ✗ |
 
 ### Role × account-action grid
 
-| Action                                    | OWNER | ADMIN | BILLING | AUDITOR | MEMBER |
-| ----------------------------------------- | ----- | ----- | ------- | ------- | ------ |
-| `account.read`                            | ✓     | ✓     | ✓       | ✓       | ✓      |
-| `member.read` / `group.read` (full lists) | ✓     | ✓     | policy  | policy  | ✗ (`MEM-8`) |
-| `account.write` (rename)                  | ✓     | ✓     | ✗       | ✗       | ✗      |
-| `member.invite/update/remove`             | ✓     | ✓     | ✗       | ✗       | ✗      |
-| `member.super_admin.grant` (owner role)   | ✓     | ✗     | ✗       | ✗       | ✗      |
-| `billing.write`                           | ✓     | ✗     | ✓       | ✗       | ✗      |
-| `account.delete`                          | ✓     | ✗     | ✗       | ✗       | ✗      |
-| `project.create`                          | ✓     | ✓     | ✗       | ✗       | ✗      |
+| Account leaves | OWNER | ADMIN | MEMBER |
+| --- | --- | --- | --- |
+| `account.read`, `billing.read`, `token.read`, `token.personal.create/revoke` | ✓ | ✓ | ✓ |
+| `account.write`, `billing.write`, `project.create`, `audit.read` | ✓ | ✓ | ✗ |
+| `member.read/invite/update/remove`, `group.read/create/update/delete/members.manage` | ✓ | ✓ | ✗ (`MEM-8`) |
+| `role.read/create/update/delete`, `policy.read/create/delete` | ✓ | ✓ | ✗ |
+| `token.create`, `token.revoke`, `capture.manage`, `capture.read_all` | ✓ | ✓ | ✗ |
+| `member.super_admin.grant`, `account.delete` | ✓ | ✗ | ✗ |
+
+What a plain MEMBER reads at account scope: the account, its plan and credit
+balance (`GET /billing/account-state`), the billing ledger (`billing.read`:
+transactions, credit usage, account-wide usage totals), `cost-by-project`
+rows of only the projects they can read, session costs of only their own
+sessions, the member list holding only themselves, and only their own API
+keys. Service accounts, OAuth clients, roles, policies, groups, the audit log
+and other members' tokens → 403.
 
 ---
 
@@ -1136,7 +1150,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 `IAM-19` `GET/PATCH …/iam/session-policy` → 200; >10080m → 400; null clears.
 `IAM-20` `GET …/iam/sessions` · `POST …/sessions/:sid/revoke` → unknown → 404; NONMEMBER → 403.
 `IAM-21` `GET/POST …/iam/scim/tokens` · `DELETE …/:tid` → mint 201 secret-once; missing name → 400; double-revoke → 404.
-`IAM-22` `GET/POST …/iam/service-accounts` · `POST …/:saId/disable` · `DELETE …/:saId` → 201 secret-once; double-disable → 409; unknown → 404.
+`IAM-22` `GET/POST …/iam/service-accounts` (`token.create`) · `POST …/:saId/disable` · `DELETE …/:saId` (`token.revoke`) → 201 secret-once; double-disable → 409; unknown → 404.
 `IAM-23` `GET/PUT/DELETE …/iam/sso/provider` → none={provider:null}; bad UUID/domain → 400; double-delete → 404.
 `IAM-24` `GET/POST …/iam/sso/mappings` · `DELETE …/:mid` → no-provider → 409; bad group → 400; unknown delete → 404.
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
@@ -1675,7 +1689,10 @@ and `503 app_binding_unavailable` for C, which A uses but which has no
 running release.
 
 `APP-11` Machines, scale, exec and volumes on an App with no
-server release. `GET …/machines` and `GET …/volumes` → **200** with empty
+server release. The operations view (access policy, deployments, deployment
+events, runtime logs, machines, volumes, snapshots) needs `project.app.deploy`
+(the access policy: `project.app.write`): a project `member` who can open the
+App → **200** on the App, **403** on each of those reads. `GET …/machines` and `GET …/volumes` → **200** with empty
 lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
 `kortix apps scale count <app> 2` exits 1 with "deploy a server release first".
 `start`, `stop`, `restart` and `DELETE` of an unknown machine → **404**
