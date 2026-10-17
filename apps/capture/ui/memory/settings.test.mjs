@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('/* ---- settings: pure ---- */'), src.indexOf('/* ---- end settings: pure ---- */'));
-const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,suggestionList,policySource,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
+const names = 'onlyIncluded,deviceNoun,fmtBytes,forgetRange,pathPatch,deepMerge,syncPanel,guessPathStyle,s3Check,plainError,onboardingStep,inputsMissing,neverRows,suggestionList,policySource,groupMembers,keepHint,lastHour,DESTINATIONS,syncShown,statusView,pauseUntil,keepChoice,keepPatch,classifyExclusion,exclusionItems,audioStateText,policyText,PAUSE_CHOICES,KEEP_CHOICES';
 const f = new Function(block + `;return {${names}}`)();
-const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, suggestionList, policySource, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
+const { onlyIncluded, deviceNoun, fmtBytes, forgetRange, pathPatch, deepMerge, syncPanel, guessPathStyle, s3Check, plainError, onboardingStep, inputsMissing, neverRows, suggestionList, policySource, groupMembers, keepHint, lastHour, DESTINATIONS, syncShown, statusView, pauseUntil, keepChoice, keepPatch, classifyExclusion, exclusionItems, audioStateText, policyText } = f;
 
 // The copy names the machine by platform.
 assert.equal(deviceNoun('MacIntel'), 'Mac');
@@ -232,3 +232,8 @@ assert.deepEqual(orgOwnOnly.rows.map((r) => r.id), ['com.tinyspeck.slackmacgap']
 assert.equal(policySource(null, '', { locked: false, own: true }), 'Set on this computer. Nothing here is uploaded.');
 assert.equal(policySource({}, 'Example Org', { locked: true, own: true }), 'Synced from Example Org, which uses an inclusion policy. Its entries are locked. You can add your own; you cannot remove theirs.');
 assert.match(policySource({}, 'Example Org', { locked: false, own: false }), /only Example Org adds what is recorded/);
+
+// A managed computer before its policy arrives says so.
+assert.equal(policySource(null, 'Example Org', { locked: false, own: true }, true), 'Managed by Example Org. Its rules arrive with its policy.');
+// Category members by name where this computer knows them.
+assert.deepEqual(groupMembers({ bundle_ids: ['com.1password.1password', '1password.exe', 'x.y'], domains: ['1password.com'] }, [{ value: 'com.1password.1password', label: '1Password' }, { value: '1password.exe', label: '1Password' }]), ['1Password', 'x.y', '1password.com']);
