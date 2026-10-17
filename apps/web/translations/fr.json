@@ -20088,7 +20088,10 @@
       "text68cf13547e38": "Ajouter une app par URL",
       "text46bc646c9bfe": "Affichez dans ce projet un site hébergé n’importe où. Kortix l’ouvre sur place, à côté des apps qu’il exécute.",
       "text08e6480e9b78": "{value0} ajoutée",
-      "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici."
+      "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici.",
+      "textd60d2a2ab6b4": "Supprimer la compétence",
+      "text53e5a805315a": "Ceci supprime le dossier de la compétence du dépôt. Cette action est irréversible.",
+      "text8693bf9c2831": "Compétence supprimée"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

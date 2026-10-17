@@ -20088,7 +20088,10 @@
       "text68cf13547e38": "Aggiungi un’app tramite URL",
       "text46bc646c9bfe": "Mostra in questo progetto un sito ospitato ovunque. Kortix lo apre qui, accanto alle app che esegue.",
       "text08e6480e9b78": "{value0} aggiunta",
-      "text6241684827b2": "Questo sito non consente a Kortix di mostrarlo qui."
+      "text6241684827b2": "Questo sito non consente a Kortix di mostrarlo qui.",
+      "textd60d2a2ab6b4": "Elimina skill",
+      "text53e5a805315a": "Questa azione rimuove la cartella della skill dal repository. Non può essere annullata.",
+      "text8693bf9c2831": "Skill eliminata"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

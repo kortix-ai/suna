@@ -178,6 +178,20 @@ export interface PiSessionInput {
   /** Where a `./` entry of `projectPackages` resolves: the release root while a release runs, else `cwd`. */
   packageRoot?: string
   /**
+   * The project's skills, as the runtime loaded them (filtered, granted,
+   * duplicates resolved) — read live, so a reload sees the current set. pi's
+   * own discovery never reads a Kortix project's `skills/` layout, and
+   * `/skill:<name>` expansion answers from pi's loader — without these the
+   * project's skills never expand (KRTX-2543).
+   *
+   * They are marked `disable-model-invocation` in the loader's view: pi's own
+   * system-prompt builder would otherwise append a second skills section under
+   * the one the runtime's `systemPrompt()` already wrote
+   * (`formatSkillsForPrompt` skips such skills; expansion reads them
+   * regardless). The runtime's section stays the single listing.
+   */
+  skills?: () => readonly Skill[]
+  /**
    * Where pi discovers project-local resources (`.pi/{extensions,skills,prompts}`,
    * `.agents/skills`): the running config's root. Null: none (the image default).
    * Never `cwd` while a release runs: the workspace is not config.
@@ -353,6 +367,18 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
         : [],
       additionalPromptTemplatePaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'prompts'))
         ? [join(input.projectConfigDir, 'prompts')] : [],
+      // The runtime's skills join pi's own scan: project skills first (they
+      // win a name collision, as `skillList` orders them), pi-package skills
+      // after. The provided rows are marked `disable-model-invocation` so pi's
+      // system-prompt builder skips them — the runtime's `systemPrompt()`
+      // already lists them, and a second section would double every skill.
+      skillsOverride: input.skills
+        ? (base) => {
+            const provided = input.skills!().map((skill) => ({ ...skill, disableModelInvocation: true }))
+            const seen = new Set(provided.map((skill) => skill.name))
+            return { skills: [...provided, ...base.skills.filter((skill) => !seen.has(skill.name))], diagnostics: base.diagnostics }
+          }
+        : undefined,
       noContextFiles: true,
       noThemes: true,
     },

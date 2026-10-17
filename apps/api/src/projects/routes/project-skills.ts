@@ -23,9 +23,10 @@ import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
-import { GitFileRevisionConflictError, commitFileToBranch } from '../git/branches';
-import { isRepoFileNotFoundError, readRepoFile } from '../git/files';
+import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
+import { isRepoFileNotFoundError, listRepoFiles, readRepoFile } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
+import { PROJECT_SKILL_SLUG_PATTERN, skillFolderFilePaths } from '../lib/project-resources';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -178,6 +179,92 @@ export function registerProjectSkillsRoutes(): void {
     }
 
     return c.json({ ok: true as const, slug, path }, 201);
+  },
+);
+
+/** A skill folder segment: what the scan, the detail URL and the CLI key on. */
+const SKILL_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+// DELETE /v1/projects/:projectId/skills/:slug — remove a skill folder from the
+// default branch. The complement of the form create above: once a skill is
+// listed (and now linked, runnable, deletable), deleting it is the same
+// direct-commit shape — every file under `skills/<slug>/` (the SKILL.md plus
+// any references the skill collected) goes in one commit.
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/skills/{slug}',
+    tags: ['projects'],
+    summary: 'Delete a skill folder from the default branch',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+    },
+    responses: {
+      200: json(
+        z.object({
+          ok: z.literal(true),
+          slug: z.string(),
+          deleted: z.number().int().nonnegative(),
+        }),
+        'Deleted skill',
+      ),
+      ...errors(400, 403, 404, 409, 502),
+    },
+  }),
+  async (c: Context<AppEnv>) => {
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug') ?? '';
+    if (!projectId) return c.json({ error: 'Not found' }, 404);
+    if (!PROJECT_SKILL_SLUG_PATTERN.test(slug)) {
+      return c.json({ error: 'Invalid skill slug', code: 'invalid_slug' }, 400);
+    }
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
+    );
+
+    const gitProject = await withProjectGitAuth(loaded.row);
+    let repoFiles: Array<{ path: string }>;
+    try {
+      repoFiles = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+    } catch (err) {
+      return c.json(
+        { error: `Failed to read the project repo: ${(err as Error).message || String(err)}`, code: 'repo_read' },
+        502,
+      );
+    }
+    const deletes = skillFolderFilePaths(repoFiles, slug);
+    if (deletes.length === 0) {
+      return c.json({ error: `No skill folder "${slug}" exists`, code: 'skill_not_found' }, 404);
+    }
+
+    try {
+      await commitMultipleFilesToBranch(gitProject, {
+        deletes,
+        message: `chore: remove skill ${slug}`,
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (err) {
+      if (err instanceof GitFileRevisionConflictError) {
+        return c.json({ error: err.message }, 409);
+      }
+      if (isRemotePushPolicyRejection(err)) {
+        return c.json({ error: 'The repository rejected the push', code: 'push_policy' }, 409);
+      }
+      return c.json(
+        { error: `Failed to commit the deletion: ${(err as Error).message || String(err)}` },
+        502,
+      );
+    }
+
+    return c.json({ ok: true as const, slug, deleted: deletes.length }, 200);
   },
 );
 }

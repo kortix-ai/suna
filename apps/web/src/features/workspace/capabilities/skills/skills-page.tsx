@@ -4,7 +4,19 @@ import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-enti
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
@@ -35,7 +47,11 @@ import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/ca
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 import { NewSkillModal } from '@/features/workspace/capabilities/skills/new-skill-modal';
+import { deleteProjectSkill } from '@kortix/sdk';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { TrashIcon } from '@phosphor-icons/react';
 import { filterSkills, type SkillScope } from './skill-scope';
+import { skillFolderSlug } from './skill-resolve';
 import { useSlashFocus } from '@/hooks/utils';
 
 type ScopeFilter = SkillScope | 'all';
@@ -73,6 +89,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE, { accountId }).allowed === true;
   const configure = useConfigureThread(projectId);
+  const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -80,6 +97,23 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+
+  // The delete affordance, on the selected skill. The slug is the folder the
+  // SKILL.md lives in — the id the API's DELETE route keys on, the same one
+  // the detail URL resolves. The button only applies to the v2 `skills/`
+  // layout the form writes: a legacy-layout scan entry (`.opencode/skill/…`)
+  // is outside what the route removes, so it gets no button — deleting that
+  // is an agent-edit job, not a one-click commit.
+  const selectedSlug = selectedPath?.startsWith('skills/') ? skillFolderSlug(selectedPath) : null;
+  const deleteSkill = useMutation({
+    mutationFn: (slug: string) => deleteProjectSkill(projectId, slug),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      setSelectedPath(null);
+      successToast(tI18nComplete.raw('text8693bf9c2831'));
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : String(err)),
+  });
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -231,6 +265,32 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         kind="skill"
         open={detail.open}
         isResolving={detail.isResolving}
+        aside={
+          selectedSlug && canWrite ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="secondary" size="sm" className="w-full justify-start border text-destructive" disabled={deleteSkill.isPending}>
+                  <TrashIcon className="size-3.5 shrink-0" />
+                  {tI18nComplete.raw('textd60d2a2ab6b4')}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{tI18nComplete.raw('textd60d2a2ab6b4')}</AlertDialogTitle>
+                  <AlertDialogDescription>{tI18nComplete.raw('text53e5a805315a')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{tI18nComplete.raw('text19766ed6ccb2')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => selectedSlug && deleteSkill.mutate(selectedSlug)}
+                  >
+                    {tI18nComplete.raw('textd60d2a2ab6b4')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null
+        }
         onOpenChange={(next) => {
           if (!next) setSelectedPath(null);
         }}

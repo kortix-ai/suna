@@ -3036,6 +3036,47 @@ describe('pi slash commands', () => {
     expect(gateway.requests.length).toBe(calls)
     expect((await command(r, root, { arguments: 'x' })).status).toBe(400)
   })
+
+  describe('project skills (KRTX-2543)', () => {
+    const plantSkill = (workspace: string) => {
+      mkdirSync(join(workspace, 'skills', 'deploy'), { recursive: true })
+      writeFileSync(
+        join(workspace, 'skills', 'deploy', 'SKILL.md'),
+        `---\nname: deploy\ndescription: Ship the release\n---\nShip the release safely.\n`,
+      )
+    }
+
+    test('a project skill is listed as a skill-backed command (the / menu reads this)', async () => {
+      const r = await boot({ script: [], prepare: plantSkill })
+      expect(await r.user('/command').then((res) => res.json())).toEqual([
+        { name: 'deploy', description: 'Ship the release', source: 'skill', template: '', hints: [] },
+      ])
+      // The runtime projection the session-open bundle serves carries the same row.
+      const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as {
+        commands: { known: boolean; value: Array<Record<string, unknown>> }
+      }
+      expect(state.commands.known).toBe(true)
+      expect(state.commands.value.some((command) => command.name === 'deploy' && command.source === 'skill')).toBe(true)
+    })
+
+    test('a picked skill runs: the turn carries the skill content and the arguments', async () => {
+      const r = await boot({ script: [{ text: 'Shipped.' }], prepare: plantSkill })
+      const root = r.service.runtime()!.rootId
+      const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLMN'
+      const res = await command(r, root, { command: 'deploy', arguments: 'stage-1', messageID })
+      expect(res.status).toBe(200)
+      await waitFor(() => !r.service.runtime()!.busy())
+      const sent = JSON.stringify(gateway.sent.at(-1)!)
+      expect(sent).toContain(JSON.stringify('<skill name="deploy"').slice(1, -1))
+      expect(sent).toContain('stage-1')
+      // The transcript records the expanded text under the client's message id,
+      // like a template command does.
+      const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+      const user = page.messages.find((m) => m.info.id === messageID)!
+      expect(user.parts.map((p) => p.text).join('\n')).toContain('Ship the release safely.')
+      expect(user.parts.map((p) => p.text).join('\n')).toContain('stage-1')
+    })
+  })
 })
 
 describe('pi steering', () => {
@@ -3951,7 +3992,15 @@ describe('kortix.yaml v3 on pi', () => {
     expect(names).toContain('folder-harnessespi')
     expect(names).toContain('unregistered')
     expect(names).not.toContain('review')
-    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual(['folder-prompt'])
+    // The harness's prompt templates stay first, and the project's own skills
+    // follow as `source: 'skill'` rows — the KRTX-2543 fix: a v2 session can
+    // pick the skills it already had listed in `/skill`.
+    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual([
+      'folder-prompt',
+      'deploy',
+      'unregistered',
+      'folder-harnessespi',
+    ])
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {

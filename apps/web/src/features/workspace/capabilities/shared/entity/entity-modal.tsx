@@ -407,7 +407,12 @@ function EntityModalBody({
   );
 }
 
-function EntityFilePane({
+/**
+ * One file's rendered source — the shared right-hand pane of the entity
+ * detail (modal and the `/customize/skills/[name]` page alike): markdown with
+ * its frontmatter rendered, anything else highlighted.
+ */
+export function EntityFilePane({
   path,
   content,
   isLoading,

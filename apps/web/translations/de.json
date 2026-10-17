@@ -20088,7 +20088,10 @@
       "text68cf13547e38": "App per URL hinzufügen",
       "text46bc646c9bfe": "Zeige eine beliebig gehostete Website in diesem Projekt. Kortix öffnet sie direkt hier, neben den Apps, die es betreibt.",
       "text08e6480e9b78": "{value0} hinzugefügt",
-      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen."
+      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
+      "textd60d2a2ab6b4": "Fähigkeit löschen",
+      "text53e5a805315a": "Damit wird der Ordner der Fähigkeit aus dem Repository entfernt. Das kann nicht rückgängig gemacht werden.",
+      "text8693bf9c2831": "Fähigkeit gelöscht"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

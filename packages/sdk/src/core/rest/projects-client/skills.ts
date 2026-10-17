@@ -20,6 +20,28 @@ export interface CreatedProjectSkill {
   path: string;
 }
 
+/** Body of `DELETE /v1/projects/:projectId/skills/:slug`. */
+export interface DeletedProjectSkill {
+  ok: true;
+  slug: string;
+  /** How many repo files the deletion commit removed (the SKILL.md plus any
+   *  reference files the skill folder had collected). */
+  deleted: number;
+}
+
+export async function deleteProjectSkill(
+  projectId: string,
+  slug: string,
+  options?: ApiClientOptions,
+): Promise<DeletedProjectSkill> {
+  return unwrap(
+    await backendApi.delete<DeletedProjectSkill>(`/projects/${projectId}/skills/${encodeURIComponent(slug)}`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
 export async function createProjectSkill(
   projectId: string,
   input: CreateProjectSkillInput,

@@ -20088,7 +20088,10 @@
       "text68cf13547e38": "Dodaj aplikaciju preko URL-a",
       "text46bc646c9bfe": "Prikaži u ovom projektu sajt hostovan bilo gde. Kortix ga otvara ovde, pored aplikacija koje pokreće.",
       "text08e6480e9b78": "{value0} je dodata",
-      "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde."
+      "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
+      "textd60d2a2ab6b4": "Обриши вештину",
+      "text53e5a805315a": "Ово уклања фасциклу вештине из репозиторијума. Ово се не може поништити.",
+      "text8693bf9c2831": "Вештина је обрисана"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

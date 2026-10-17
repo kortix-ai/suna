@@ -612,6 +612,11 @@ export class PiRuntime {
         packageRoot: packageRoot ?? undefined,
         // v3 reads no `.pi/` or `.agents/skills`: the compiled set is the only config input.
         discoveryRoot: this.v3() ? null : packageRoot,
+        // pi's loader must see what the harness loaded: `/skill:<name>`
+        // expansion (pi answers from its OWN loader, not the harness's
+        // `loadSkills` result) returned "unknown command" for every project
+        // skill without this — the form-created skill never ran (KRTX-2543).
+        skills: () => this.skills,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
@@ -917,9 +922,16 @@ export class PiRuntime {
 
   /**
    * The command list a client reads (`GET /command`). v3: every compiled
-   * command, with the agents that enable it. Otherwise pi's prompt templates.
+   * command, with the agents that enable it — skills stay out, matching the
+   * OpenCode proxy's v3 filter. Otherwise pi's prompt templates PLUS the
+   * project's loaded skills: OpenCode served each skill as a `source: 'skill'`
+   * command row here (the web's `/` menu buckets those under a Skills
+   * heading), and the pi migration dropped them — a form-created skill never
+   * surfaced in the menu (KRTX-2543). The rows are invocable through
+   * `/skill:<name>` (pi's own expansion), so `commandPrompt` maps a picked
+   * row to that form.
    */
-  commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
+  commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
     if (this.v3()) {
       return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
@@ -931,13 +943,28 @@ export class PiRuntime {
         agents: command.agents,
       }))
     }
-    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
-      name: template.name,
-      description: template.description,
-      source: 'command' as const,
-      template: template.content,
-      hints: hints(template.content),
-    }))
+    return [
+      ...(this.pi?.session.promptTemplates ?? []).map((template) => ({
+        name: template.name,
+        description: template.description,
+        source: 'command' as const,
+        template: template.content,
+        hints: hints(template.content),
+      })),
+      // Skills are invocable, not templates: pi expands `/skill:<name>` against
+      // its own loaded set, so the row needs no template of its own. The same
+      // grant filter the system prompt applies, so the menu never offers a
+      // skill the turn cannot expand.
+      ...this.skills
+        .filter((skill) => skillGranted(this.policy, skill.name))
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          source: 'skill' as const,
+          template: '',
+          hints: [],
+        })),
+    ]
   }
 
   /** The prompt a `POST /session/:id/command` body asks for: `/name arguments`, which pi expands. */
@@ -961,9 +988,14 @@ export class PiRuntime {
         ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
       })
     }
+    // A skill row is not a template: pi expands only the `/skill:<name>` form
+    // (`prompt()`'s own skill expansion), so the picked row is re-spelled into
+    // it rather than sent as a bare `/<name>` the model would read literally.
+    const skillBacked = this.skills.some((skill) => skill.name === name)
+    const text = skillBacked ? `/skill:${name}${args ? ` ${args}` : ''}` : `/${name}${args ? ` ${args}` : ''}`
     return {
       ...parsePromptBody({
-        parts: [{ type: 'text', text: `/${name}${args ? ` ${args}` : ''}` }],
+        parts: [{ type: 'text', text }],
         ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
         ...(body.agent !== undefined ? { agent: body.agent } : {}),
         ...(body.variant !== undefined ? { variant: body.variant } : {}),
@@ -1728,18 +1760,23 @@ export class PiRuntime {
     return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
   }
 
-  private async loadSkills(): Promise<Skill[]> {
-    if (!this.coding) return []
-    const dirs = (
+  /** The project's skill directories: the release's while a release runs, else the working tree's. Filtered to what exists. */
+  private async skillDirectories(): Promise<string[]> {
+    return (
       this.v3()
         ? resolvePiV3SkillDirectories(this.compiled?.skills, this.projectRoot())
         : resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null)
     ).filter((dir) => existsSync(dir))
-    if (dirs.length === 0) return []
+  }
+
+  private async loadSkills(dirs?: string[]): Promise<Skill[]> {
+    if (!this.coding) return []
+    const resolved = dirs ?? (await this.skillDirectories())
+    if (resolved.length === 0) return []
     try {
       // Two directories can carry the same skill (a project's OpenCode copy and the managed
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
-      const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
+      const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: resolved, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
       // The kortix-genui system skill exists only while the project's `genui` flag is on.
       return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { SLASH_ACTIONS } from './slash-actions';
-import { buildSlashSections, groupCommandsBySource } from './slash-items';
+import { buildSlashSections, groupCommandsBySource, mergeProjectSkillCommands } from './slash-items';
 
 const cmd = (name: string, source?: 'command' | 'mcp' | 'skill', description = '') =>
   ({ name, description, template: '', hints: [], source }) as never;
@@ -383,5 +383,47 @@ describe("buildSlashSections — the session's own files", () => {
 
     expect(sections.map((s) => s.heading)).toEqual(['Outputs']);
     expect(sections[0].rows[0].index).toBe(0);
+  });
+});
+
+describe('mergeProjectSkillCommands (KRTX-2543)', () => {
+  const configSkill = (name: string, path: string, description: string | null = 'made in the form') => ({
+    name,
+    path,
+    description,
+  });
+
+  test('a draft with no runtime lists the project’s own skills as skill rows', () => {
+    const merged = mergeProjectSkillCommands(undefined, [configSkill('dogfood-skill', 'skills/dogfood-skill/SKILL.md')]);
+    expect(merged).toEqual([
+      { name: 'dogfood-skill', description: 'made in the form', source: 'skill', template: '', hints: [] },
+    ]);
+  });
+
+  test('no config skills changes nothing, including an undefined runtime list', () => {
+    expect(mergeProjectSkillCommands(undefined, undefined)).toBeUndefined();
+    expect(mergeProjectSkillCommands([cmd('build')], undefined)).toEqual([cmd('build')]);
+    expect(mergeProjectSkillCommands(undefined, [])).toBeUndefined();
+  });
+
+  test('a runtime list keeps its rows and gains only the skills it does not already carry', () => {
+    const runtime = [cmd('build'), cmd('deploy', 'skill')];
+    const merged = mergeProjectSkillCommands(runtime, [
+      configSkill('deploy', 'skills/deploy/SKILL.md'),
+      configSkill('release', 'skills/release/SKILL.md'),
+    ]);
+    expect(merged!.map((c) => c.name)).toEqual(['build', 'deploy', 'release']);
+    // The config-derived row is a skill row the menu can bucket.
+    expect(merged!.at(-1)).toMatchObject({ source: 'skill', name: 'release' });
+  });
+
+  test('a skill whose runtime name differs from its folder slug is not duplicated', () => {
+    // pi names a skill from its frontmatter; the config scan names the folder.
+    // The form sets both to the slug, but a hand-authored skill can differ.
+    const runtime = [cmd('release-notes', 'skill')];
+    const merged = mergeProjectSkillCommands(runtime, [
+      configSkill('release', '.opencode/skill/release-notes/SKILL.md'),
+    ]);
+    expect(merged!.map((c) => c.name)).toEqual(['release-notes']);
   });
 });

@@ -100,6 +100,7 @@ import {
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
+  draftCommandText,
   type QuoteRequest,
 } from '@/features/session/composer/composer-logic';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
@@ -3351,10 +3352,8 @@ export function SessionChat({
       // position is not recoverable from `args`, so it has to be carried
       // (`split`, from the editor's serializer) or it is lost here.
       const label = split
-        ? [split.before, `/${cmd.name}`, split.after].filter(Boolean).join(' ')
-        : args
-          ? `/${cmd.name} ${args}`
-          : `/${cmd.name}`;
+        ? [split.before, draftCommandText(cmd), split.after].filter(Boolean).join(' ')
+        : draftCommandText(cmd, args);
       const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
         // A command that was DELIVERED and then lost its connection is not a

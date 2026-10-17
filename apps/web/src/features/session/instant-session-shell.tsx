@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 
 import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { draftCommandText } from '@/features/session/composer/composer-logic';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
@@ -209,7 +210,7 @@ export function InstantSessionShell({
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       // Defer slash-commands through the same handoff as a normal first message.
-      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+      handleSend(draftCommandText(cmd, args), undefined, options);
     },
     [handleSend],
   );

@@ -636,6 +636,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PUT /v1/projects/:projectId/secrets/:identifier/strategy': { action: 'secret.strategy.update', title: 'Updated secret delivery strategy', events: ['secret.strategy.changed'] },
   'DELETE /v1/projects/:projectId/secrets/:name': { action: 'secret.delete', title: 'Removed shared secret', events: ['secret.deleted'] },
   'DELETE /v1/projects/:projectId/secrets/:name/personal': { action: 'secret.personal.delete', title: 'Removed personal secret' },
+  'DELETE /v1/projects/:projectId/skills/:slug': { action: 'skill.delete', title: 'Deleted project skill' },
   'PUT /v1/projects/:projectId/secrets/:name/personal': { action: 'secret.personal.set', title: 'Set personal secret' },
   'POST /v1/projects/:projectId/secrets/sync': { action: 'secret.sync', title: 'Synced secrets to active sandboxes' },
   'GET /v1/projects/:projectId/sessions': { action: 'session.list', title: 'Listed project sessions' },

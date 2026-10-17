@@ -6,6 +6,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { draftCommandText } from '@/features/session/composer/composer-logic';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -201,7 +202,7 @@ export function ProjectHome({
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
+      sendOutsideComposer(draftCommandText(cmd, args), options);
     },
     [sendOutsideComposer],
   );

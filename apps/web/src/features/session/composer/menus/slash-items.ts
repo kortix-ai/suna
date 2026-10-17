@@ -62,6 +62,64 @@ function bucketFor(command: Command): CommandBucket {
   return 'command';
 }
 
+/**
+ * The skill-directory segment of a config-scan path: the segment right before
+ * the trailing `SKILL.md`. The v2 scan reports `skills/<slug>/SKILL.md`; the
+ * legacy `.opencode/skill/<slug>/SKILL.md` layout reports the same way.
+ */
+function skillFolderSlug(path: string): string | undefined {
+  const segments = path.split('/').filter(Boolean);
+  if (segments.length < 2 || segments.at(-1) !== 'SKILL.md') return undefined;
+  return segments.at(-2);
+}
+
+/**
+ * The skill rows a project's config scan carries (`ProjectConfigSummary.skills`,
+ * `packages/sdk/src/core/rest/projects-client/projects.ts`), as a menu can read
+ * them: the config names the folder, the description is nullable.
+ */
+export interface ProjectConfigSkill {
+  name: string;
+  path: string;
+  description?: string | null;
+}
+
+/**
+ * Folds the project's config-scan skills into a runtime command list, so the
+ * `/` menu lists them wherever it renders (KRTX-2543).
+ *
+ * A session's live list comes from the runtime (`GET /command`) and, since the
+ * pi harness fixes, already carries the project's skills as `source: 'skill'`
+ * rows. The draft composer has no runtime at all — but the project detail's
+ * config scan does name every skill the form wrote, and OpenCode served those
+ * same rows natively. This is what restores that surface: the config rows are
+ * appended under the ones the runtime did not already supply, deduped on the
+ * name OR the path's folder slug (pi names a skill from its frontmatter while
+ * the scan names the folder — the form sets both to the slug, hand-authored
+ * skills can differ).
+ *
+ * Returns the list unchanged-shaped when there is nothing to add, and
+ * `undefined` only when there is nothing at all — the caller keeps its own
+ * "no commands yet" distinction.
+ */
+export function mergeProjectSkillCommands(
+  runtime: Command[] | undefined,
+  configSkills: readonly ProjectConfigSkill[] | undefined,
+): Command[] | undefined {
+  const skills = configSkills ?? [];
+  if (!(Array.isArray(runtime) && runtime.length > 0) && skills.length === 0) return undefined;
+
+  const commands = [...(runtime ?? [])];
+  const known = new Set(commands.flatMap((command) => (command.name ? [command.name.toLowerCase()] : [])));
+  for (const skill of skills) {
+    const slug = skillFolderSlug(skill.path)?.toLowerCase();
+    if (known.has(skill.name.toLowerCase()) || (slug !== undefined && known.has(slug))) continue;
+    commands.push({ name: skill.name, description: skill.description ?? '', template: '', hints: [], source: 'skill' });
+    known.add(skill.name.toLowerCase());
+  }
+  return commands;
+}
+
 export interface CommandGroup {
   heading: string;
   commands: Command[];

@@ -15,6 +15,7 @@ import type { AttachmentSubmission } from './composer/attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { appendMentionRefs } from '@/lib/project-preamble';
+import { mergeProjectSkillCommands } from './composer/menus/slash-items';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
@@ -192,8 +193,15 @@ export function ComposerChatInput({
   // An empty project roster refuses an unbound composer; the resolver answers
   // `disabled` for exactly that case.
   const noAccessibleAgents = agentResolution.disabled;
-  // The slash menu lists only the commands the selected agent may run.
-  const { data: commands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
+  // The slash menu lists only the commands the selected agent may run, plus
+  // the project's own skills: the config scan names them whether or not a
+  // sandbox runtime is up, and a draft — which has no runtime list at all —
+  // would otherwise offer nothing to run (KRTX-2543).
+  const { data: runtimeCommands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
+  const commands = useMemo(
+    () => mergeProjectSkillCommands(runtimeCommands, projectConfig?.skills),
+    [runtimeCommands, projectConfig?.skills],
+  );
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
