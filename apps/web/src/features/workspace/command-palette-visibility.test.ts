@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { runtimeSupports } from '@kortix/sdk';
 
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
+import {
+  LEGACY_PALETTE_HIDDEN,
+  paletteRowPermitted,
+} from '@/features/workspace/command-palette-visibility';
 import { menuRegistry } from '@/lib/menu-registry';
 
 describe('session maintenance command palette actions', () => {
@@ -30,5 +33,31 @@ describe('runtime-gated command palette actions (E1)', () => {
     expect(source).toContain(
       'if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;',
     );
+  });
+});
+
+// A palette row is offered only when the caller can act on it: an account row
+// follows its hub section, a project row the sidebar row it mirrors.
+describe('paletteRowPermitted', () => {
+  const byId = (id: string) => menuRegistry.find((entry) => entry.id === id)!;
+  const member = {
+    accountSections: { members: true, transactions: true, 'access-projects': true, help: true },
+    rows: { 'proj-customize': false, 'proj-files': false, 'proj-apps': false, 'proj-invite': false },
+  };
+
+  test('a plain member sees no account section they cannot open', () => {
+    const accountRows = menuRegistry.filter((e) => e.kind === 'account' && e.accountTab);
+    expect(accountRows.length).toBeGreaterThan(0);
+    const offered = accountRows.filter((e) => paletteRowPermitted(e, member)).map((e) => e.accountTab);
+    expect(offered.sort()).toEqual(['access-projects', 'help', 'members', 'transactions']);
+  });
+
+  test('project rows follow the sidebar verdicts, and ungated rows stay', () => {
+    for (const id of ['proj-customize', 'proj-files', 'proj-apps', 'proj-invite']) {
+      expect(paletteRowPermitted(byId(id), member)).toBe(false);
+      expect(paletteRowPermitted(byId(id), { ...member, rows: { [id]: true } })).toBe(true);
+    }
+    expect(paletteRowPermitted(byId('proj-sessions'), member)).toBe(true);
+    expect(paletteRowPermitted(byId('nav-accounts'), member)).toBe(true);
   });
 });
