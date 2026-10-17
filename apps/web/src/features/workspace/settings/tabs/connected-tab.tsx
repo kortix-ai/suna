@@ -15,14 +15,13 @@
  * place to configure one workspace, and a disabled Connect button is a poor way
  * to say so.
  *
- * **Where ChatGPT connect actually lives, and did before this deletion:** the
- * project sidebar's "Connect GPT subscription" row
- * (`project-sidebar/footer/project-chatgpt-connect-nav.tsx`, mounted at
- * `project-sidebar.tsx:245`). It is not a link — it opens
- * `ChatGptSubscriptionConnectDialog`, the complete device-code flow
- * (`components/projects/chatgpt-subscription-connect.tsx:424`), scoped to the
- * project whose sidebar it is in. Two further project-scoped surfaces host the
- * same connect card: Models → Providers (`ProviderConnect` →
+ * **Where ChatGPT connect actually lives:** `ChatGptSubscriptionConnectDialog`,
+ * the complete device-code flow
+ * (`components/projects/chatgpt-subscription-connect.tsx`), opened from
+ * project-scoped surfaces. The project sidebar's "Connect GPT subscription"
+ * row was one of them until 2026-10-12, when the sidebar footer was cut down
+ * to status and the two connect rows. The remaining hosts of the same connect
+ * card: Models → Providers (`ProviderConnect` →
  * `llm-api-keys-tab.tsx:97`) and `ProjectProviderModal`
  * (`llm-provider-modal.tsx:136`). So the row deleted here was the fourth copy
  * of a flow that already had a correct home — nothing about CONNECTING was
@@ -31,16 +30,14 @@
  * **One capability WAS lost, deliberately, and it is not connect:** this row
  * held the only Disconnect in the product for a ChatGPT subscription
  * (`providerDisconnectPlan({ id: 'codex', … })` → `deleteProjectProviderOAuth`
- * + `deleteProjectSecret`). The sidebar row cannot carry it —
+ * + `deleteProjectSecret`). The old sidebar row could not carry it —
  * `useShowChatGptConnectPrompt` hides that row once connected — and the
  * provider list has no `codex` row to remove, because `codex` is synthetic
  * (`use-connected-providers.ts:113`) while rows come from the static
  * `LLM_PROVIDERS` catalog. Removing the OpenAI key does NOT disconnect it
  * either: `providerDisconnectPlan` filters `CODEX_AUTH_JSON` out by hand
  * (`llm-provider/utils.ts:17`). Its home is project-scoped and it should be
- * rebuilt there — the natural place is the same sidebar row, ungated so it
- * reads "Disconnect GPT subscription" once connected, or a `codex` row in
- * `ProviderConnect`. Do NOT re-add it to this account-scoped pane.
+ * rebuilt there — the natural place is a `codex` row in `ProviderConnect`. Do NOT re-add it to this account-scoped pane.
  */
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';

@@ -168,6 +168,28 @@ describe('Web Push delivery', () => {
     expect(service.posted.map((p) => p.url)).toEqual([stepped.endpoint]);
   });
 
+  test('a super admin of an MFA-required account gets the push on an aal1 browser; a plain member does not', async () => {
+    await db.update(accounts).set({ mfaRequired: true }).where(eq(accounts.accountId, project.account_id));
+    const admin = await signedInUser();
+    const member = await signedInUser();
+    for (const [user, superAdmin] of [[admin, true], [member, false]] as const) {
+      await db.execute(sql`
+        insert into kortix.account_memberships (user_id, account_id, is_super_admin)
+        values (${user.userId}::uuid, ${project.account_id}::uuid, ${superAdmin})`);
+    }
+    const adminBrowser = await subscribe(admin, 'aal1');
+    await subscribe(member, 'aal1');
+    const content = {
+      title: 'S', body: 'b',
+      payload: { notificationId: crypto.randomUUID(), kind: 'turn_done' as const, type: 'completion', projectId: project.project_id, sessionId, triggerSlug: null, url: '/projects' },
+    };
+    const service = pushService();
+
+    expect(await sendWebPushToUser({ userId: admin.userId, accountId: project.account_id, content }, { fetch: service.fetch })).toEqual({ sent: 1 });
+    expect(await sendWebPushToUser({ userId: member.userId, accountId: project.account_id, content }, { fetch: service.fetch })).toEqual({ sent: 0 });
+    expect(service.posted.map((p) => p.url)).toEqual([adminBrowser.endpoint]);
+  });
+
   test('a browser whose sign-in ended gets nothing, and its subscription is deleted', async () => {
     const alice = await signedInUser();
     await subscribe(alice);

@@ -132,8 +132,8 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * including the manager-tier leaves project.delete / project.members.manage /
  * project.gateway.keys.manage, still reachable via a project's `manager`
  * role). Mirrored here (not imported) because the manifest-schema/api
- * packages aren't in the web bundle — same mirror discipline as
- * apps/web/src/lib/project-actions.ts. Kept in sync by
+ * packages aren't in the web bundle. (The leaf catalog itself is
+ * `PROJECT_ACTIONS` in `@kortix/sdk`.) Kept in sync by
  * agent-editor.test.tsx's drift guard against the real
  * `GRANTABLE_KORTIX_PERMISSIONS` constant.
  *

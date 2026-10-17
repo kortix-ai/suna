@@ -19,6 +19,7 @@ import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-p
 import { normalizeSessionListFilter, type SessionListFilter } from '@/lib/session/session-tree';
 import {
   createdSessionListRow,
+  sessionRowsOf,
   upsertIntoSessionCache,
   writeSessionLists,
 } from '@/lib/session/session-cache-write';
@@ -54,6 +55,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectSession,
   getModelDefaults,
   getProjectLlmCatalog,
   getProjectLlmCatalogProviders,
@@ -111,7 +113,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { shouldScanPastEmptySessionPages, useRuntimeProviders } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -144,6 +146,12 @@ export const projectKeys = {
   /** One parent's children (`parent=<id>`), optionally narrowed by a search. */
   sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
     ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
+  /**
+   * One session's row by id (`useProjectSession`). Under `projectSessions`, so
+   * every session-list invalidation and write reaches it too.
+   */
+  projectSession: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'session', sessionId] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
   /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
   sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
@@ -215,17 +223,36 @@ export function sessionListKeys(queryClient: QueryClient, projectId: string) {
     .map((query) => query.queryKey);
 }
 
-/** A session's freshest cached row, from any cached list of the project. */
+/**
+ * A session's freshest cached row, from any cached list of the project or its
+ * by-id read. An entry under the prefix that holds no rows (message authors)
+ * is skipped.
+ */
 export function cachedSessionRow(queryClient: QueryClient, projectId: string, sessionId: string): ProjectSession | null {
   for (const key of sessionListKeys(queryClient, projectId)) {
-    const data = queryClient.getQueryData(key);
-    const rows = Array.isArray(data)
-      ? (data as ProjectSession[])
-      : flattenSessionPages(data as Parameters<typeof flattenSessionPages<ProjectSession>>[0]);
-    const row = rows.find((r) => r.session_id === sessionId);
+    const row = sessionRowsOf<ProjectSession>(queryClient.getQueryData(key)).find((r) => r.session_id === sessionId);
     if (row) return row;
   }
   return null;
+}
+
+/**
+ * One session's row by its Kortix id: `GET /projects/:id/sessions/:sid`
+ * (KRTX-2316). A session older than the first list page has a row too. While
+ * the read runs, the row any cached list holds shows (`cachedSessionRow`).
+ */
+export function useProjectSession(projectId: string | null | undefined, sessionId: string | null | undefined) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: projectKeys.projectSession(projectId, sessionId),
+    queryFn: () => getProjectSession(projectId!, sessionId!, { showErrors: false }),
+    enabled: !!projectId && !!sessionId,
+    // A new function each render: TanStack recomputes it, so the seed follows
+    // the lists until the read answers. Never the previous session's row.
+    placeholderData: () =>
+      projectId && sessionId ? (cachedSessionRow(queryClient, projectId, sessionId) ?? undefined) : undefined,
+    staleTime: 10_000,
+  });
 }
 
 /** Where a session the viewer just started belongs: their top-level "Sessions" list. */
@@ -446,12 +473,14 @@ const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
  * any of `wantedMessageIds` (the transcript's user messages and the queued
  * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
  * of missing ids. A message that never gets an author (a slash command) stops
- * after the last delay.
+ * after the last delay. When `busy` goes from true to false (a turn ended), it
+ * asks once more: a stop records who stopped the turn (`stops`).
  */
 export function useSessionMessageAuthors(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
   wantedMessageIds: readonly string[] = [],
+  busy = false,
 ) {
   const query = useQuery({
     queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
@@ -473,6 +502,11 @@ export function useSessionMessageAuthors(
     }, delay);
     return () => clearTimeout(timer);
   }, [missing, data, refetch]);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && projectId && sessionId) void refetch();
+    wasBusy.current = busy;
+  }, [busy, projectId, sessionId, refetch]);
   return query;
 }
 
@@ -598,17 +632,18 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
 }
 
 /**
- * `query` plus `sessions`. A spread (`{ ...query, sessions }`) reads every
- * field of TanStack's tracked result, which turns off its tracked-field
- * renders: the consumer then re-rendered on every fetch start and end
- * (`isFetching`), also when it never reads it (`useReviewItems` documents
- * the same bug). The proxy passes each read through, so only the fields a
- * consumer reads subscribe it.
+ * `query` plus `extra` (`sessions`, `isScanning`). A spread
+ * (`{ ...query, sessions }`) reads every field of TanStack's tracked result,
+ * which turns off its tracked-field renders: the consumer then re-rendered on
+ * every fetch start and end (`isFetching`), also when it never reads it
+ * (`useReviewItems` documents the same bug). The proxy passes each read
+ * through, so only the fields a consumer reads subscribe it.
  */
-function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T & { sessions: ProjectSession[] } {
+function withSessions<T extends object, E extends { sessions: ProjectSession[] }>(query: T, extra: E): T & E {
   return new Proxy(query, {
-    get: (target, key) => (key === 'sessions' ? sessions : Reflect.get(target, key)),
-  }) as T & { sessions: ProjectSession[] };
+    get: (target, key) =>
+      Object.prototype.hasOwnProperty.call(extra, key) ? extra[key as keyof E] : Reflect.get(target, key),
+  }) as T & E;
 }
 
 /**
@@ -619,6 +654,12 @@ function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T
  * `sessions` is every loaded page, flattened and de-duplicated. A refetch
  * (poll, pull to refresh, invalidation) refetches every loaded page, so the
  * cost is bounded by what the user scrolled to.
+ *
+ * KRTX-1727: the server drops rows the viewer may not see, and deleted ones,
+ * after a bounded scan, so a page can be empty and still carry a cursor.
+ * While every page so far is empty, the hook reads the next one on its own,
+ * up to the SDK's `EMPTY_SESSION_PAGE_SCAN_LIMIT` pages (`isScanning`). A
+ * failed page ends the scan; the list's Show more is the retry.
  */
 export function useProjectSessionsPaged(
   projectId: string | null,
@@ -646,7 +687,19 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  // A failed fetch ends the scan: the list's Show more (or a refresh) is the retry.
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
+  // A refetch that answers the same pages keeps the same `data` (structural
+  // sharing), so the effect also runs on each answer's time. Read only while
+  // scanning: an idle list keeps its tracked-field renders.
+  const answeredAt = isScanning ? query.dataUpdatedAt : 0;
+  const { data, fetchNextPage } = query;
+  useEffect(() => {
+    // `cancelRefetch: false` joins a fetch already running (a poll, a mount
+    // refetch) instead of cancelling it. Its answer runs this again.
+    if (isScanning) void fetchNextPage({ cancelRefetch: false });
+  }, [isScanning, data, answeredAt, fetchNextPage]);
+  return withSessions(query, { sessions, isScanning });
 }
 
 /** Rows a parent shows per "Show more". */
@@ -676,7 +729,7 @@ export function useSessionChildren(
     staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return withSessions(query, sessions);
+  return withSessions(query, { sessions });
 }
 
 export function useCreateProjectSession(projectId: string | null) {
@@ -1137,15 +1190,27 @@ const retryUnlessDenied = (count: number, err: any) => {
   return count < 3;
 };
 
+/** Entries per folder page. A folder with more shows "Load more items". */
+export const PROJECT_DIRECTORY_PAGE_SIZE = 500;
+
 /**
- * One folder level at a ref (`path` '' is the root). The recursive list stops
- * at 1,000 files, and a tree built from it lost every folder after file 1,000
- * (KRTX-1723).
+ * One folder level at a ref (`path` '' is the root), in pages of
+ * `PROJECT_DIRECTORY_PAGE_SIZE`. The recursive list stops at 1,000 files, and
+ * a tree built from it lost every folder after file 1,000 (KRTX-1723). The
+ * cursor pins the commit the first page read.
  */
 export function useProjectDirectory(projectId: string | null, ref: string, path: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: projectKeys.projectDirectory(projectId, ref, path),
-    queryFn: () => listProjectDirectory(projectId!, { ref, path: path || undefined }),
+    queryFn: ({ pageParam }) =>
+      listProjectDirectory(projectId!, {
+        ref,
+        path: path || undefined,
+        cursor: pageParam,
+        limit: PROJECT_DIRECTORY_PAGE_SIZE,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !!projectId && !!ref,
     staleTime: 20_000,
     retry: retryUnlessDenied,

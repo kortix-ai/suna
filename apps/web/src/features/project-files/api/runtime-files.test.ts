@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { configureKortix } from '@kortix/sdk';
 
-import { listFiles, readFile, readFileAsBlob, searchFiles } from './runtime-files';
+import {
+  FILE_LIST_PAGE_SIZE,
+  listFiles,
+  readFile,
+  readFileAsBlob,
+  searchFileContents,
+  searchFiles,
+} from './runtime-files';
 
 // Byte-level responses for /files/raw and JSON for /files/content, per-URL.
 let routes: Record<string, { status: number; body: BodyInit; contentType: string }> = {};
@@ -33,7 +40,7 @@ const PNG_LIKE_BYTES = new Uint8Array([
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0xff, 0xfe, 0xfa, 0xde,
 ]);
 
-function stubRaw(suffix: string, bytes: Uint8Array) {
+function stubRaw(suffix: string, bytes: Uint8Array<ArrayBuffer>) {
   routes[suffix] = { status: 200, body: bytes, contentType: 'application/octet-stream' };
 }
 
@@ -128,14 +135,16 @@ test('listFiles reads one folder level (depth=1) and maps folders and files', as
         { path: 'src/index.ts', type: 'file' },
       ],
       truncated: false,
+      next_cursor: null,
     }),
     contentType: 'application/json',
   };
-  const nodes = await listFiles('P1', 'main', '/workspace/src');
+  const { nodes, nextCursor } = await listFiles('P1', 'main', '/workspace/src');
   const url = new URL(calls[0]);
   expect(url.searchParams.get('depth')).toBe('1');
   expect(url.searchParams.get('path')).toBe('src');
   expect(url.searchParams.get('ref')).toBe('main');
+  expect(nextCursor).toBeNull();
   expect(nodes).toEqual([
     { name: 'lib', path: '/workspace/src/lib', absolute: '/workspace/src/lib', type: 'directory', ignored: false },
     { name: 'index.ts', path: '/workspace/src/index.ts', absolute: '/workspace/src/index.ts', type: 'file', ignored: false },
@@ -155,13 +164,75 @@ test('listFiles at the root lists a folder that sorts after 1,000 files', async 
     }),
     contentType: 'application/json',
   };
-  const nodes = await listFiles('P1', 'main', '/workspace');
+  const { nodes } = await listFiles('P1', 'main', '/workspace');
   expect(new URL(calls[0]).searchParams.has('path')).toBe(false);
   expect(nodes.map((n) => `${n.type}:${n.path}`)).toEqual([
     'directory:/workspace/a',
     'directory:/workspace/z',
     'file:/workspace/README.md',
   ]);
+});
+
+// KRTX-1723: a folder over one page shows its first 500 entries and "Load more".
+test('listFiles asks for one page and returns the cursor of the next', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({
+      entries: [{ path: 'a/f0000.txt', type: 'file' }],
+      truncated: true,
+      next_cursor: 'CURSOR-2',
+    }),
+    contentType: 'application/json',
+  };
+  const page = await listFiles('P1', 'main', '/workspace/a');
+  const url = new URL(calls[0]);
+  expect(url.searchParams.get('limit')).toBe(String(FILE_LIST_PAGE_SIZE));
+  expect(FILE_LIST_PAGE_SIZE).toBe(500);
+  expect(url.searchParams.has('cursor')).toBe(false);
+  expect(page.nextCursor).toBe('CURSOR-2');
+});
+
+test('listFiles sends the cursor for the next page', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({ entries: [{ path: 'a/f1199.txt', type: 'file' }], truncated: false, next_cursor: null }),
+    contentType: 'application/json',
+  };
+  const page = await listFiles('P1', 'main', '/workspace/a', 'CURSOR-2');
+  const url = new URL(calls[0]);
+  expect(url.searchParams.get('cursor')).toBe('CURSOR-2');
+  expect(url.searchParams.get('path')).toBe('a');
+  expect(page).toEqual({
+    nodes: [
+      { name: 'f1199.txt', path: '/workspace/a/f1199.txt', absolute: '/workspace/a/f1199.txt', type: 'file', ignored: false },
+    ],
+    nextCursor: null,
+    truncated: false,
+  });
+});
+
+test('an API without next_cursor reads as the last page', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({ entries: [], truncated: false }),
+    contentType: 'application/json',
+  };
+  const page = await listFiles('P1', 'main', '/workspace');
+  expect(page.nextCursor).toBeNull();
+  expect(page.truncated).toBe(false);
+});
+
+// An API older than paging ignores `limit`: it cuts the folder at 5,000 and
+// sends no cursor. The page must say it is cut, never read as complete.
+test('a cut response without next_cursor reads as truncated, with no next page', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({ entries: [{ path: 'a/f0000.txt', type: 'file' }], truncated: true }),
+    contentType: 'application/json',
+  };
+  const page = await listFiles('P1', 'main', '/workspace/a');
+  expect(page.nextCursor).toBeNull();
+  expect(page.truncated).toBe(true);
 });
 
 // KRTX-1723: the Files page had no search; a file past the old 1,000-file cut
@@ -183,5 +254,31 @@ test('searchFiles asks the server by filename and returns workspace paths', asyn
 
 test('searchFiles sends nothing for a blank query', async () => {
   expect(await searchFiles('P1', 'main', '   ')).toEqual([]);
+  expect(calls).toHaveLength(0);
+});
+
+// KRTX-1723: content search finds a line in a file; choosing it opens that line.
+test('searchFileContents asks the server for a content search and keeps the line', async () => {
+  routes['/projects/P1/files/search'] = {
+    status: 200,
+    body: JSON.stringify({
+      query: 'last',
+      ref: 'main',
+      content_search: true,
+      results: [{ path: 'z/last.txt', line_number: 1, line_text: 'last' }],
+    }),
+    contentType: 'application/json',
+  };
+  const matches = await searchFileContents('P1', 'main', ' last ', { limit: 50 });
+  const url = new URL(calls[0]);
+  expect(url.searchParams.get('q')).toBe('last');
+  expect(url.searchParams.get('content')).toBe('1');
+  expect(url.searchParams.get('ref')).toBe('main');
+  expect(url.searchParams.get('limit')).toBe('50');
+  expect(matches).toEqual([{ path: '/workspace/z/last.txt', lineNumber: 1, lineText: 'last' }]);
+});
+
+test('searchFileContents sends nothing for a blank query', async () => {
+  expect(await searchFileContents('P1', 'main', '  ')).toEqual([]);
   expect(calls).toHaveLength(0);
 });

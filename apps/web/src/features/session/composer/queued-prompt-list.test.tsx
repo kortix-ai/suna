@@ -1,11 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { QueueRow } from '../queue-projection';
-import { QueuedPromptList, type QueuedPromptListProps } from './queued-prompt-list';
+import {
+  QueuedPromptList,
+  queuedRowActions,
+  type QueuedPromptListProps,
+} from './queued-prompt-list';
 
 const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   clientMessageId: `c-${over.id}`,
@@ -42,6 +47,13 @@ const render = (props: Partial<QueuedPromptListProps>) =>
 
 const count = (haystack: string, needle: string) => haystack.split(needle).length - 1;
 
+const noop = () => {};
+const keys = (r: QueueRow, handlers: Parameters<typeof queuedRowActions>[1] = {
+  onEdit: noop,
+  onRetry: noop,
+  onRemove: noop,
+}) => queuedRowActions(r, handlers).map((action) => action.key);
+
 describe('QueuedPromptList', () => {
   test('renders nothing at all when nothing is queued or held', () => {
     // The composer's inset strip hides itself with `:empty`; any wrapper here
@@ -61,23 +73,89 @@ describe('QueuedPromptList', () => {
   });
 
   test('Remove only where the server will honour a removal', () => {
-    const markup = render({
-      rows: [
-        row({ id: 'queued' }),
-        row({ id: 'delivering', state: 'delivering', removable: false }),
-        row({ id: 'sending', state: 'sending', removable: false }),
-      ],
-    });
-    expect(count(markup, 'aria-label="Remove from queue"')).toBe(1);
+    expect(keys(row({ id: 'queued' }))).toContain('remove');
+    expect(keys(row({ id: 'delivering', state: 'delivering', removable: false }))).not.toContain('remove');
+    expect(keys(row({ id: 'sending', state: 'sending', removable: false }))).not.toContain('remove');
   });
 
-  test('a failed row says so and offers Retry and Remove, both visible without hover', () => {
+  test('the row actions live in one menu per row: no inline buttons, one trigger per row with actions', () => {
+    const markup = render({
+      rows: [
+        row({ id: 'q' }),
+        // Nothing to do on this row, so it draws no menu trigger.
+        row({ id: 'd', state: 'delivering', removable: false, takeBackEligible: false, interruptible: false }),
+      ],
+      onEdit: () => {},
+      onStopAndSend: () => {},
+    });
+    expect(count(markup, 'data-queued-actions')).toBe(1);
+    expect(markup).toContain('aria-label="Message actions"');
+    expect(markup).not.toContain('Send now');
+    expect(markup).not.toContain('Stop and send');
+    expect(markup).not.toContain('aria-label="Remove from queue"');
+    expect(markup).not.toContain('aria-label="Edit"');
+  });
+
+  test('a held `/` command says when it runs and offers Remove only', () => {
+    const held = row({
+      id: 'command:x',
+      text: '/review',
+      command: true,
+      interruptible: false,
+      takeBackEligible: false,
+    });
+    expect(keys(held)).toEqual(['remove']);
+    expect(render({ rows: [held] })).toContain('data-queued-command');
+  });
+
+  test('menu order: Edit, Send now, Stop and send, then Remove', () => {
+    expect(
+      keys(row({ id: 'q' }), { onEdit: noop, onRetry: noop, onStopAndSend: noop, onRemove: noop }),
+    ).toEqual(['edit', 'sendNow', 'stopAndSend', 'remove']);
+  });
+
+  test('the action matrix: Send now on the one queued own row only; a failed row keeps Retry and gets no second button; delivering, sending and another member\'s rows get nothing to hurry', () => {
+    // One render pins the whole matrix, so the failed-row half is not a
+    // vacuous pass at the base (where no Send now exists anywhere): the
+    // queued row's counted Send now already fails there.
+    expect(keys(row({ id: 'q' }))).toContain('sendNow');
+    expect(keys(row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false }))).toEqual([
+      'retry',
+      'remove',
+    ]);
+    const hurry = (r: QueueRow) => keys(r).filter((k) => k === 'sendNow' || k === 'retry');
+    expect(
+      hurry(row({ id: 'd', state: 'delivering', removable: false, takeBackEligible: false, interruptible: false })),
+    ).toEqual([]);
+    expect(
+      hurry(row({ id: 's', state: 'sending', removable: false, takeBackEligible: false, interruptible: false })),
+    ).toEqual([]);
+    expect(hurry(row({ id: 'o', fromAnotherMember: true }))).toEqual([]);
+  });
+
+  test('a row the running turn already took — steer, no fallback — keeps only Remove; a fallen-back row still offers Send now', () => {
+    // A steered row is read at the turn's NEXT step: there is nothing left to
+    // hurry. A row whose fallback holds it for the turn's end is still
+    // waiting, so Send now (the promote) is meaningful there. The server
+    // clears the steer delivery when it writes the fallback
+    // (command-transitions.ts), so the two rows here are the two shapes the
+    // projection can produce.
+    expect(keys(row({ id: 'steer', steer: true as const, takeBackEligible: false }))).toEqual(['remove']);
+    expect(keys(row({ id: 'fallback', steerFallback: 'turn_ended' }))).toContain('sendNow');
+  });
+
+  test('a held row still offers Send now — the hold\'s per-row way out (KRTX-683 releases its batch)', () => {
+    const markup = render({ rows: [row({ id: 'h' })], heldCount: 1 });
+    expect(markup).toContain('Queue paused');
+    expect(keys(row({ id: 'h' }))).toContain('sendNow');
+  });
+
+  test('a failed row says so, and its menu (Retry, Remove) is visible without hover', () => {
     const markup = render({
       rows: [row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })],
     });
     expect(markup).toContain('Not sent');
-    expect(markup).toContain('aria-label="Retry"');
-    expect(markup).toContain('aria-label="Remove from queue"');
+    expect(markup).toContain('data-queued-actions');
     expect(markup).not.toContain('group-hover/queued:opacity-100');
   });
 
@@ -114,7 +192,8 @@ describe('QueuedPromptList', () => {
     expect(markup).not.toContain('data-queued-prompt-id="b"');
     expect(markup).toContain('old b');
     expect(markup).toContain('aria-label="Cancel"');
-    expect(markup).not.toContain('aria-label="Edit"');
+    // The list passes no Edit handler while an edit is open.
+    expect(keys(row({ id: 'a' }), { onRemove: noop })).not.toContain('edit');
   });
 
   test('an edit whose row has gone draws no editing row', () => {
@@ -158,7 +237,9 @@ describe('steering rows', () => {
       row({ id: 'delivering', state: 'delivering', removable: false, interruptible: false }),
       row({ id: 'sending', state: 'sending', removable: false, interruptible: false }),
     ];
-    expect(count(render({ rows, onStopAndSend: () => {} }), 'Stop and send')).toBe(1);
-    expect(render({ rows })).not.toContain('Stop and send');
+    expect(rows.filter((r) => keys(r, { onStopAndSend: noop }).includes('stopAndSend')).map((r) => r.id)).toEqual([
+      'waiting',
+    ]);
+    expect(rows.some((r) => keys(r).includes('stopAndSend'))).toBe(false);
   });
 });

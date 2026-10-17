@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
@@ -28,6 +28,8 @@ interface DriveHeaderProps {
   isDownloading?: boolean;
   /** Offer "Find a file" (⌘P) in the `⋯` menu. */
   showSearch?: boolean;
+  /** Turn the `⋯` menu's sort picker off: the folder is only partly loaded. */
+  sortDisabled?: boolean;
   /**
    * Draw the page-level sidebar opener. Only the standalone Files page needs
    * it: ProjectShell does not render a web opener, and the embedded session
@@ -82,6 +84,7 @@ export function DriveHeader({
   onDownloadDir,
   isDownloading,
   showSearch = false,
+  sortDisabled = false,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -91,7 +94,7 @@ export function DriveHeader({
 
   const reviewCount = reviewsToggle.openCount ?? 0;
   const params = useParams<{ id?: string }>();
-  // Volumes on for the organization: the repo browser is Repo; off, it is Files.
+  // Volumes on for the project: the repo browser is Repo; off, it is Files.
   const volumes = useFeatureFlag(params?.id, 'drives');
 
   const actions = (
@@ -139,9 +142,7 @@ export function DriveHeader({
         <FileDiff className="size-4 shrink-0" />
         <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
         {reviewCount > 0 && (
-          <Badge variant="success" size="tabular" className="ml-0.5">
-            {reviewCount}
-          </Badge>
+          <CountBadge count={reviewCount} tone="waiting" className="ml-0.5" />
         )}
       </Button>
 
@@ -150,6 +151,7 @@ export function DriveHeader({
         onDownloadDir={onDownloadDir}
         isDownloading={isDownloading}
         showSearch={showSearch}
+        sortDisabled={sortDisabled}
       />
     </div>
   );
@@ -163,7 +165,7 @@ export function DriveHeader({
       repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
-        <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>
+        <ProjectPageHeader title={title}>
           {actions}
         </ProjectPageHeader>
         <DrivePathBar rootLabel={title} as="row" />

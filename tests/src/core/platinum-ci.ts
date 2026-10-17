@@ -12,7 +12,7 @@ export const PLATINUM_CI_TEMPLATE_VERSION = 'v15';
 const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v13';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.2-bookworm@sha256:62e4daa6819762bbd3072af77cc282ab72c631c4aed30dd7980192babaf385b3';
-export const PLATINUM_CI_BUN_VERSION = '1.3.14';
+export const PLATINUM_CI_BUN_VERSION = '1.4.3';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 export const CI_DOCKER_COMPOSE_VERSION = 'v2.40.3';
 export const CI_DOCKER_COMPOSE_AMD64_SHA256 =

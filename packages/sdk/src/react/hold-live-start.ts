@@ -32,7 +32,7 @@ export function holdLiveStart(
   if (next.stage !== 'starting') return next;
   if (next.sandbox) {
     if (next.sandbox.sandbox_id !== previous.sandbox?.sandbox_id) return next;
-    // An ephemeral session keeps its sandbox id across boxes: a new external id
+    // A session keeps its sandbox id across boxes: a new external id
     // is a new box, never a transport blip on the old one.
     if (next.sandbox.external_id !== previous.sandbox?.external_id) return next;
     if (next.sandbox.status !== 'active') return next;

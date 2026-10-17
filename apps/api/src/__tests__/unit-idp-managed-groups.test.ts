@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: {
+    ACCOUNT_READ: 'account.read',
     GROUP_READ: 'group.read',
     GROUP_CREATE: 'group.create',
     GROUP_UPDATE: 'group.update',
@@ -55,6 +56,12 @@ mock.module('../iam/actor', () => ({
     credential: { kind: 'jwt' as const },
     ctx: {},
   }),
+}));
+
+// The read routes ask which groups the caller may see; this suite is about
+// writes, so the caller sees every group.
+mock.module('../iam/directory-visibility', () => ({
+  visibleDirectory: async () => ({ userIds: null, groupIds: null, projectIds: null }),
 }));
 
 const base = {

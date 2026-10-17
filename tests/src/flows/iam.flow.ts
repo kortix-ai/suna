@@ -10,15 +10,14 @@
  * Source of truth: apps/api/src/accounts/iam.ts (mounted on accountsRouter
  * at '/', i.e. under /v1/accounts).
  *
- * Entitlement-gated routes (rbac/sso/scim) need the fixture account unlocked
- * first. The enterprise-demo PUT that does the unlock is platform-admin-only,
- * so the unlock runs as the run-scoped platform admin — see
- * fixtures/enterprise-demo.ts.
+ * Entitlement-gated routes (rbac/sso/scim) need the Enterprise features first:
+ * the fixture turns the Enterprise demo on — see fixtures/enterprise-access.ts.
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { createDatabaseSession } from '../fixtures/database-project';
+import { waitFor } from '../core/poll';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
 
@@ -31,7 +30,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -85,7 +84,7 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -161,7 +160,7 @@ flow(
     const member = await team.addMember('member');
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group/member management)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group/member management)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -244,7 +243,7 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated group creation)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated group creation)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -695,7 +694,7 @@ flow(
     const team = await ctx.fixtures.team();
     let tokenId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for scim-gated token minting)',
+      'the Enterprise demo is turned on (entitles this fresh account for scim-gated token minting)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -855,7 +854,7 @@ flow(
     const supabaseProviderId = crypto.randomUUID();
     const primaryDomain = `${ctx.fixtures.name('sso')}.test`;
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated provider writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for sso-gated provider writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -938,7 +937,7 @@ flow(
     let groupId = '';
     let mappingId = '';
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for sso-gated mapping writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for sso-gated mapping writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -1002,6 +1001,16 @@ flow(
         );
       r.status(201);
       mappingId = r.json<any>().mapping_id;
+      // A mapping names its group: a plain member lists none (MEM-8).
+      const member = await team.addMember('member');
+      const listed = async (who: typeof member) =>
+        (await ctx.client.as(who).get('/v1/accounts/:accountId/iam/sso/mappings', { params: { accountId: team.id } }))
+          .status(200)
+          .json<{ mappings: Array<{ mapping_id: string }> }>()
+          .mappings.map((m) => m.mapping_id);
+      if (!(await listed(ctx.P.OWNER)).includes(mappingId)) throw new Error('the owner does not list the new mapping');
+      const seen = await listed(member);
+      if (seen.length !== 0) throw new Error(`a plain member listed SSO mappings: ${JSON.stringify(seen)}`);
       const del = await ctx.client
         .as(ctx.P.OWNER)
         .del('/v1/accounts/:accountId/iam/sso/mappings/:mappingId', {
@@ -1049,7 +1058,7 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated custom-role writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated custom-role writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -1184,7 +1193,7 @@ flow(
     let policyId = '';
 
     await ctx.step(
-      'platform admin enables enterprise-demo (entitles this fresh account for rbac-gated role/policy writes)',
+      'the Enterprise demo is turned on (entitles this fresh account for rbac-gated role/policy writes)',
       async () => {
         await enableEnterpriseDemo(ctx, team.id);
       },
@@ -2357,7 +2366,14 @@ flow(
           params: { projectId: project.id, grantId },
         });
       del.status(200);
-      const agents = await visibleAgents(member);
+      // The principal cache (15 s) is cleared only on the replica that took the
+      // DELETE; another replica serves the old grant until its TTL ends
+      // (release gate 37953042131). Poll for 20 s.
+      let agents = await visibleAgents(member);
+      for (const deadline = Date.now() + 20_000; agents.includes(AGENT) && Date.now() < deadline; ) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        agents = await visibleAgents(member);
+      }
       assert({
         kind: 'body',
         description: 'member no longer sees the agent',
@@ -2366,5 +2382,97 @@ flow(
         actual: agents,
       });
     });
+  },
+);
+
+// A route whose real gate is a leaf loads the project with `read` and asserts
+// the leaf. A custom project role that holds only that leaf (plus project.read)
+// passes; the built-in `member` role, which lacks it, is still refused.
+flow(
+  'IAM-44',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/roles',
+      'POST /v1/accounts/:accountId/iam/policies',
+      'POST /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/projects/:projectId/apps/artifacts',
+      'POST /v1/projects/:projectId/apps',
+      'POST /v1/projects/:projectId/secrets',
+      'GET /v1/projects/:projectId/secrets',
+      'DELETE /v1/projects/:projectId/secrets/:name',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const accountParams = { accountId: team.id };
+    const params = { projectId: project.id };
+    const floorMember = await team.addMember('member');
+    await team.grantProjectRole(project.id, floorMember.userId!, 'member');
+    const asFloor = ctx.client.as(floorMember);
+
+    const leafHolder = async (slug: string, actions: string[]) => {
+      const who = await team.addMember('member');
+      const key = `${slug}_${Date.now().toString(36)}`;
+      const role = await owner.post(
+        '/v1/accounts/:accountId/iam/roles',
+        { key, name: key, resourceType: 'project', actions: ['project.read', ...actions] },
+        { params: accountParams },
+      );
+      const roleId = role.status(201).json<{ role_id: string }>().role_id;
+      (
+        await owner.post(
+          '/v1/accounts/:accountId/iam/policies',
+          { principalType: 'member', principalId: who.userId, roleId, scopeType: 'project', scopeId: project.id },
+          { params: accountParams },
+        )
+      ).status(201);
+      return ctx.client.as(who);
+    };
+    // IAM verdicts are cached for up to 15 s: a fresh assignment can read the old answer first.
+    const once = <T extends { statusCode: number }>(send: () => Promise<T>, description: string) =>
+      waitFor(send, { until: (r) => r.statusCode !== 403, timeoutMs: 20_000, intervalMs: 1_000, description });
+
+    await ctx.step(
+      'a custom role with only project.trigger.create (+ project.read, project.trigger.read) creates a trigger → 201; PATCH (trigger.update) → 403; a floor member → 403',
+      async () => {
+        const author = await leafHolder('trigger_author', ['project.trigger.read', 'project.trigger.create']);
+        const trigger = { name: 'Leaf Only', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'noop' };
+        (await once(() => author.post('/v1/projects/:projectId/triggers', trigger, { params }), 'trigger create'))
+          .status(201);
+        (await author.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
+          .status(403);
+        (await asFloor.post('/v1/projects/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
+      },
+    );
+
+    await ctx.step(
+      'a custom role with only project.app.deploy (+ project.read, project.app.read) registers a deploy artifact → 201; creating an App (app.write) → 403; a floor member → 403',
+      async () => {
+        const deployer = await leafHolder('app_deployer', ['project.app.read', 'project.app.deploy']);
+        const artifact = { kind: 'oci_image', image: 'docker.io/library/nginx:alpine' };
+        (await once(() => deployer.post('/v1/projects/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
+          .status(201)
+          .body()
+          .exists('$.artifact.artifact_id');
+        (await deployer.post('/v1/projects/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
+        (await asFloor.post('/v1/projects/:projectId/apps/artifacts', artifact, { params })).status(403);
+      },
+    );
+
+    await ctx.step(
+      'a custom role with project.secret.write (+ project.read, project.secret.read) writes, lists with can_manage: true and deletes a shared secret; a floor member → 403',
+      async () => {
+        const writer = await leafHolder('secret_writer', ['project.secret.read', 'project.secret.write']);
+        (await once(() => writer.post('/v1/projects/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
+          .status([200, 201]);
+        (await writer.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
+        (await writer.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
+        (await asFloor.post('/v1/projects/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
+      },
+    );
   },
 );

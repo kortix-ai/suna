@@ -403,17 +403,27 @@ export function TimezoneField({
   value,
   onChange,
   disabled,
+  inline = false,
+  className,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
+  /** A field in a row of fields: the daylight-saving note moves to the
+   *  trigger's tooltip so the row keeps one height. */
+  inline?: boolean;
+  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const hint = tI18nComplete.raw('textbd2b129daf78');
   return (
-    <div className="space-y-1.5">
+    <div className={cn('space-y-1.5', className)}>
       <Label className="text-xs">{tI18nComplete.raw('text4ceca1d52ced')}</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="w-full cursor-pointer text-sm">
+        <SelectTrigger
+          className={cn('w-full cursor-pointer text-sm', inline && 'h-9')}
+          title={inline ? hint : undefined}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -424,7 +434,7 @@ export function TimezoneField({
           ))}
         </SelectContent>
       </Select>
-      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textbd2b129daf78')}</p>
+      {inline ? null : <p className="text-muted-foreground text-xs">{hint}</p>}
     </div>
   );
 }

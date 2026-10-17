@@ -4,6 +4,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
+  CHANGE_REQUEST_LIST_MAX_LIMIT,
+  decodeChangeRequestCursor,
   getCrById,
   getNextCrNumber,
   listChangeRequestsForProject,
@@ -22,7 +24,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import {
-  assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
 } from '../lib/access';
@@ -33,6 +34,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
@@ -88,6 +90,24 @@ export async function refreshCrTips(input: {
   }
 }
 
+/**
+ * A change request this caller may read: `project.gitops.read`, and for a
+ * non-manager only a CR they opened or whose origin session they may open.
+ * Null answers 404, the same as a CR that does not exist.
+ */
+async function readableCr(
+  c: Parameters<typeof projectReadView>[0],
+  loaded: Parameters<typeof projectReadView>[1],
+  crId: string,
+) {
+  const projectId = loaded.row.projectId;
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return null;
+  const view = await projectReadView(c, loaded);
+  return (await view.allows({ sessionId: cr.originSessionId, createdBy: cr.createdBy })) ? cr : null;
+}
+
 export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -95,6 +115,8 @@ export function registerChangeRequestsRoutes(): void {
       path: '/{projectId}/change-requests',
       tags: ['change-requests'],
       summary: 'List change requests of a project',
+      description:
+        'One page, newest number first. `limit` defaults to 50; above 500 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -109,6 +131,8 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+      const view = await projectReadView(c, loaded);
 
       const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
       if (statusFilter && statusFilter !== 'all' && !['open', 'merged', 'closed'].includes(statusFilter)) {
@@ -121,27 +145,35 @@ export function registerChangeRequestsRoutes(): void {
       // actually opened. This scopes that at the source.
       const originSessionId = normalizeString(c.req.query('origin_session_id'));
 
-      // `limit` is opt-in: omitted keeps the historical unbounded behavior every
-      // existing caller (the panel, the open-CR badge, `kortix cr list`) already
-      // depends on. A caller that adopts it gets a bounded, capped page.
+      // One keyset page, newest number first (KRTX-1727). `limit` defaults to
+      // CHANGE_REQUEST_LIST_DEFAULT_LIMIT; above the ceiling answers 400.
+      // `next_cursor` continues the list; null means the last page.
       // normalizeString answers null for an absent param: test nullish, or
       // every plain list is refused as "Invalid limit" (Number(null) is 0).
       const rawLimit = normalizeString(c.req.query('limit'));
       let limit: number | undefined;
       if (rawLimit != null) {
         limit = Number(rawLimit);
-        if (!Number.isInteger(limit) || limit < 1) {
-          return c.json({ error: 'Invalid limit' }, 400);
+        if (!Number.isInteger(limit) || limit < 1 || limit > CHANGE_REQUEST_LIST_MAX_LIMIT) {
+          return c.json(
+            { error: `limit must be an integer from 1 to ${CHANGE_REQUEST_LIST_MAX_LIMIT}` },
+            400,
+          );
         }
       }
+      const rawCursor = normalizeString(c.req.query('cursor'));
+      const cursor = rawCursor ? decodeChangeRequestCursor(rawCursor) : null;
+      if (rawCursor && cursor == null) return c.json({ error: 'Invalid cursor' }, 400);
 
-      const change_requests = await listChangeRequestsForProject(projectId, {
-        status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
-        originSessionId: originSessionId ?? undefined,
-        limit,
-      });
-
-      return c.json({ change_requests });
+      return c.json(
+        await listChangeRequestsForProject(projectId, {
+          status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
+          originSessionId: originSessionId ?? undefined,
+          limit,
+          cursor: cursor ?? undefined,
+          visibleTo: view.where(changeRequests.originSessionId, changeRequests.createdBy),
+        }),
+      );
     },
   );
 
@@ -175,7 +207,7 @@ export function registerChangeRequestsRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Human-side capability gate (Git Ops). Managers hold it; a custom
       // role omits project.gitops.push to take Git-Ops away from a department.
@@ -354,7 +386,7 @@ export function registerChangeRequestsRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const sessionId = c.req.param('sessionId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -444,11 +476,18 @@ export function registerChangeRequestsRoutes(): void {
         branch?: string | null;
         headSha?: string | null;
         message?: string;
+        error?: string;
       } | null;
 
       if (!daemonRes.ok || !result?.ok) {
+        // Name what answered: the daemon's own error, or a non-JSON body from
+        // the sandbox edge (a 2026-10-13 gate failure said only "Failed to
+        // save changes", which hid the upstream status).
         return c.json(
-          { error: result?.message || 'Failed to save changes' },
+          {
+            error: result?.message || result?.error || 'Failed to save changes',
+            upstream_status: daemonRes.status,
+          },
           daemonRes.status === 409 ? 409 : 502,
         );
       }
@@ -493,7 +532,7 @@ export function registerChangeRequestsRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-      let cr = await getCrById(crId, projectId);
+      let cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       await refreshCrTips({
@@ -532,10 +571,11 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: editing a CR is part of the change-request capability,
-      // which is `project.gitops.push` (see the create route above).
+      // Editing a CR is part of the change-request capability,
+      // `project.gitops.push` (see the create route above).
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);
@@ -588,7 +628,7 @@ export function registerChangeRequestsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // request-changes is a human review decision on a CR, not a code push —
       // gate it on project.review.act (the same leaf as /review/items/{id}/act),
@@ -679,9 +719,7 @@ export function registerChangeRequestsRoutes(): void {
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-
-      const cr = await getCrById(crId, projectId);
+      const cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       const projectForGit = await withProjectGitAuth(loaded.row);
@@ -738,9 +776,7 @@ export function registerChangeRequestsRoutes(): void {
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-
-      const cr = await getCrById(crId, projectId);
+      const cr = await readableCr(c, loaded, crId);
       if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
       try {

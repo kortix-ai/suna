@@ -19,8 +19,10 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
+import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
+import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
@@ -69,7 +71,6 @@ import {
   ImagesSquareIcon as WallpaperIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
-import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Types
@@ -190,7 +191,7 @@ export interface MenuItemDef {
   /** For kind='settings': which settings tab to open */
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
-  themeValue?: string;
+  themeValue?: InterfaceThemeId;
   /** For kind='wallpaper': which wallpaper to apply */
   wallpaperValue?: string;
   /** For kind='sandboxService': the container port */
@@ -221,8 +222,6 @@ export interface MenuItemDef {
   keywords?: string;
   /** If true, item is only shown when billing is enabled */
   requiresBilling?: boolean;
-  /** If true, item is only shown for admin users */
-  requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
@@ -231,10 +230,6 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
   /** If set, the item is only shown when the named per-project FEATURE FLAG is
    *  enabled (mirrors the Customize rail gating). A disabled feature's surface
    *  is invisible, so EVERY registry consumer must honour this — the command
@@ -418,8 +413,8 @@ export const menuRegistry: MenuItemDef[] = [
     // anything, which is why it read as a list rather than as the switcher it
     // opens. The verb stays; only the noun changed.
     //
-    // It said "Switch workspace" until the product settled on ONE noun
-    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // It said "Switch workspace" until the product settled on ONE noun.
+    // "Project" won
     // because it is the load-bearing one — the URL (`/projects/<id>`), the API
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
@@ -723,7 +718,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The roster half. 'invite' belongs to `proj-invite`, the verb row.
     keywords:
-      'members member workspace access collaborators people teammates roster who can see permissions grant share seats',
+      'members member workspace access collaborators people teammates roster who can see permissions grant share',
   },
   {
     id: 'proj-files',
@@ -759,7 +754,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
@@ -798,8 +792,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own project page since 2026-10-02, outside Customize.
-    href: '/projects/{projectId}/review',
+    // The Customize Review tab (`reviewHref`).
+    href: '/projects/{projectId}/customize/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -884,6 +878,17 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/scheduled-tasks',
+  },
+  {
+    // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
+    id: 'capture',
+    label: 'Kortix Capture',
+    icon: MonitorIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/capture',
+    keywords: 'capture recording screen devices install enrollment',
   },
   {
     id: 'running-services',
@@ -1121,7 +1126,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins seats',
+    keywords: 'account members organization roster owners admins',
   },
   {
     id: 'account-billing',
@@ -1265,6 +1270,17 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   // THEME
   // ──────────────────────────────────────────────────────────────────────────
+  // Same rows, same order as INTERFACE_THEME_OPTIONS (features/layout/interface-theme.tsx).
+  {
+    id: 'theme-system',
+    label: 'System Theme',
+    icon: MonitorIcon,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: 'system',
+    keywords: 'theme system auto default os',
+  },
   {
     id: 'theme-light',
     label: 'Light Theme',
@@ -1274,6 +1290,16 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'theme',
     themeValue: 'light',
     keywords: 'theme light mode bright day',
+  },
+  {
+    id: 'theme-pure-light',
+    label: 'Pure Light Theme',
+    icon: Sun,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: 'pure-light',
+    keywords: 'theme light mode pure white',
   },
   {
     id: 'theme-dark',
@@ -1286,15 +1312,31 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'theme dark mode night',
   },
   {
-    id: 'theme-system',
-    label: 'System Theme',
-    icon: MonitorIcon,
+    id: 'theme-pure-dark',
+    label: 'Pure Dark Theme',
+    icon: Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
-    themeValue: 'system',
-    keywords: 'theme system auto default os',
+    themeValue: 'pure-dark',
+    keywords: 'theme dark mode pure black',
   },
+  // One row per generated terminal theme (`TERMINAL_THEMES`,
+  // `lib/kortix-themes.generated.json`) — 39 proper-noun palettes from
+  // terminalcolors.com, e.g. "Catppuccin Mocha", "Tokyo Night Storm". The
+  // label is a proper noun and MUST NOT be translated: `translateMenuText`
+  // looks it up in `MENU_TRANSLATION_KEYS` and, finding no entry, falls
+  // through to the label as written, which is the correct behaviour here.
+  ...TERMINAL_THEMES.map((theme): MenuItemDef => ({
+    id: `theme-${theme.id}`,
+    label: theme.name,
+    icon: theme.mode === 'dark' ? Moon : Sun,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: theme.id,
+    keywords: `theme ${theme.mode} ${theme.familyName}`.toLowerCase(),
+  })),
 
   // ──────────────────────────────────────────────────────────────────────────
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
@@ -1325,6 +1367,20 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'toggleSidebar',
     shortcut: 'Ctrl+B',
+  },
+  {
+    // Opens the Customize sidebar modal (`customize-sidebar-modal.tsx`),
+    // mounted by the project sidebar, so it needs a project.
+    id: 'customize-sidebar',
+    label: 'Customize Sidebar',
+    icon: PanelLeftClose,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'customizeSidebar',
+    requiresProject: true,
+    // No 'navigation': a group word, not one on screen (command-palette-search.test.ts).
+    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

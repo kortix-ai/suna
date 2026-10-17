@@ -1,11 +1,12 @@
 'use client';
 
-import { ArrowLeftIcon, CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,12 +69,11 @@ export function AccountTopBar({
         <Button
           asChild
           variant="ghost"
-          size="sm"
-          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+          size="xs"
+          className={backPillClass('kx-web-only-back')}
         >
           <Link href={back.href}>
-            <ArrowLeftIcon className="size-4" />
-            {back.label}
+            <BackPillBody label={back.label} />
           </Link>
         </Button>
       ) : (

@@ -71,6 +71,21 @@ mock.module('../sandbox-proxy/http-prefetch', () => ({
   },
 }));
 
+// Track every sandbox touch the proxy fires and forgets, so a request's
+// capture can wait for its own touch to finish.
+const pendingTouches = new Set<Promise<void>>();
+const realBackend = await import('../sandbox-proxy/backend');
+const realMarkSandboxUsed = realBackend.markSandboxUsed;
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realBackend,
+  markSandboxUsed: (...args: Parameters<typeof realMarkSandboxUsed>) => {
+    const touch = realMarkSandboxUsed(...args);
+    pendingTouches.add(touch);
+    void touch.finally(() => pendingTouches.delete(touch));
+    return touch;
+  },
+}));
+
 const { accounts, accountMembers, accountTokens, projects, projectSessions, sessionSandboxes } =
   await import('@kortix/db');
 const { eq } = await import('drizzle-orm');
@@ -96,6 +111,24 @@ const app = new Hono().route('/v1/p', sandboxProxyApp);
 
 type Measured = { status: number; queries: string[] };
 
+/**
+ * Resolves once every sandbox touch this request fired has finished and then
+ * no statement arrived for 250 ms (at most 5 s).
+ */
+async function settleStatements(): Promise<void> {
+  await Promise.allSettled([...pendingTouches]);
+  const deadline = Date.now() + 5_000;
+  let seen = statements.length;
+  let quietSince = Date.now();
+  while (Date.now() < deadline && Date.now() - quietSince < 250) {
+    await Bun.sleep(25);
+    if (statements.length !== seen) {
+      seen = statements.length;
+      quietSince = Date.now();
+    }
+  }
+}
+
 async function proxied(
   sandboxId: string,
   path: string,
@@ -111,8 +144,12 @@ async function proxied(
         const res = await app.request(`/v1/p/${sandboxId}/8000${path}`, init);
         await res.arrayBuffer();
         // Fire-and-forget writes (activity touch, last-used, audit) run on the
-        // request's context; let them land so a cold run sees all of them.
-        await Bun.sleep(150);
+        // request's context. Wait until they land, so they count for this
+        // request and never leak into the next one's capture. A fixed 150 ms
+        // sleep was too short on a loaded CI runner: the cold request's
+        // `markSandboxUsed` writes (a select and two updates) landed inside
+        // the warm request's window.
+        await settleStatements();
         return { status: res.status, queries: [...statements] };
       },
     );
@@ -195,10 +232,11 @@ describe('/v1/p hot path database round trips', () => {
     const warm = await proxied(EXTERNAL_ID, '/file?path=/workspace', { headers: asUser() });
     expect(warm.status).toBe(200);
     const queries = requestStatements(warm);
-    expect(queries).toHaveLength(2);
     // Authentication first: the row is never read before the caller is known.
-    expect(isTokenValidation(queries[0] ?? '')).toBe(true);
-    expect(isSandboxRowRead(queries[1] ?? '')).toBe(true);
+    // A failure prints every statement the request sent.
+    const label = (q: string) =>
+      isTokenValidation(q) ? 'token validation' : isSandboxRowRead(q) ? 'sandbox row read' : q;
+    expect(queries.map(label)).toEqual(['token validation', 'sandbox row read']);
   });
 
   test('the row read overlaps an upload body that is still arriving', async () => {

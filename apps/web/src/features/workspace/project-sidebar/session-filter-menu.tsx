@@ -2,6 +2,7 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
+import Link from 'next/link';
 
 import {
   matchesSourceFilters,
@@ -65,6 +66,7 @@ import {
   type SessionGroupMode,
   type SessionOrderMode,
 } from './session-grouping';
+import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * The Cursor-style nested `⋯` menu behind the sidebar's Sessions header and
@@ -225,6 +227,66 @@ export const SESSION_ACCESS_ICONS: Record<
   project: GlobeIcon,
 };
 
+/**
+ * Localized labels for the Show submenu's section rows, keyed by the section
+ * ids `groupSessions` can emit for the declared grouping modes. A missing
+ * entry is silent: the row falls back to `option.label`, and a section whose
+ * catalog label has no product-catalog translation key (Teams) stays the raw
+ * English string in every locale. The unit test pins every id.
+ *
+ * Owner mode's `owner:<key>` ids are per-owner data keys and intentionally
+ * have no entry: their `option.label` is localized at the source
+ * (`ownerSections` labels the viewer's and the unknown owner's rows from the
+ * translated `ownerLabels`, and every other owner by name or email).
+ */
+export type SectionLabelKey =
+  | 'section.needsYou'
+  | 'section.running'
+  | 'section.recent'
+  | 'section.today'
+  | 'section.yesterday'
+  | 'section.week'
+  | 'section.older'
+  | 'section.chat'
+  | 'section.slack'
+  | 'section.telegram'
+  | 'section.teams'
+  | 'section.email'
+  | 'section.scheduled'
+  | 'section.webhook'
+  | 'section.event'
+  | 'section.manual'
+  | 'section.all';
+
+/** The minimal shape `resolveSectionLabels` needs: a callable that turns the
+ *  section-label keys above into localized strings. The component's scoped
+ *  `useTranslations('sidebar.filter')` translator and any concrete
+ *  `createTranslator` over the same catalog both satisfy it, so the unit test
+ *  can pin the labels without a provider and without a cast. */
+export function resolveSectionLabels(
+  t: { (key: SectionLabelKey): string },
+): Record<string, string> {
+  return {
+    'needs-you': t('section.needsYou'),
+    running: t('section.running'),
+    recent: t('section.recent'),
+    today: t('section.today'),
+    yesterday: t('section.yesterday'),
+    week: t('section.week'),
+    older: t('section.older'),
+    chat: t('section.chat'),
+    slack: t('section.slack'),
+    telegram: t('section.telegram'),
+    teams: t('section.teams'),
+    email: t('section.email'),
+    schedule: t('section.scheduled'),
+    webhook: t('section.webhook'),
+    event: t('section.event'),
+    manual: t('section.manual'),
+    all: t('section.all'),
+  };
+}
+
 /** `size-1.5` filled dot — marks a facet's trigger row when that facet's own
  *  array is non-empty, so the collapsed submenu still signals "filtered". */
 function FacetActiveDot() {
@@ -261,6 +323,7 @@ export function SessionFilterMenu({
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
   const t = useTranslations('sidebar.filter');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
   const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
@@ -300,24 +363,7 @@ export function SessionFilterMenu({
     created: t('order.created'),
     name: t('order.name'),
   };
-  const sectionLabels: Record<string, string> = {
-    'needs-you': t('section.needsYou'),
-    running: t('section.running'),
-    recent: t('section.recent'),
-    today: t('section.today'),
-    yesterday: t('section.yesterday'),
-    week: t('section.week'),
-    older: t('section.older'),
-    chat: t('section.chat'),
-    slack: t('section.slack'),
-    telegram: t('section.telegram'),
-    email: t('section.email'),
-    schedule: t('section.scheduled'),
-    webhook: t('section.webhook'),
-    event: t('section.event'),
-    manual: t('section.manual'),
-    all: t('section.all'),
-  };
+  const sectionLabels = resolveSectionLabels(t);
   const statusLabels: Record<SessionStatusFilter, string> = {
     running: t('statusValue.running'),
     done: t('statusValue.done'),
@@ -521,9 +567,7 @@ export function SessionFilterMenu({
                     onSelect={(event) => event.preventDefault()}
                   >
                     <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
-                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                      {option.count}
-                    </span>
+                    <CountBadge count={option.count} className="ml-auto" />
                   </DropdownMenuCheckboxItem>
                 ))}
               </DropdownMenuSubContent>
@@ -548,9 +592,7 @@ export function SessionFilterMenu({
                     >
                       <OptionIcon className="size-4" />
                       <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -574,9 +616,7 @@ export function SessionFilterMenu({
                   >
                     <TagIcon className="size-4" />
                     <span className="min-w-0 flex-1 truncate">{option.value}</span>
-                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                      {option.count}
-                    </span>
+                    <CountBadge count={option.count} className="ml-auto" />
                   </DropdownMenuCheckboxItem>
                 ))}
               </DropdownMenuSubContent>
@@ -609,9 +649,7 @@ export function SessionFilterMenu({
                         email={option.email ?? ''}
                       />
                       <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -637,9 +675,7 @@ export function SessionFilterMenu({
                     >
                       <OptionIcon className="size-4" />
                       <span className="min-w-0 flex-1 truncate">{accessLabels[option.value]}</span>
-                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                        {option.count}
-                      </span>
+                      <CountBadge count={option.count} className="ml-auto" />
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -670,6 +706,12 @@ export function SessionFilterMenu({
       >
         {t('collapseAll')}
       </DropdownMenuItem>
+      {/* The sidebar hides archived sessions; the sessions page lists them. */}
+      {!pageFacets && (
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
+        </DropdownMenuItem>
+      )}
     </DropdownMenuContent>
   );
 }

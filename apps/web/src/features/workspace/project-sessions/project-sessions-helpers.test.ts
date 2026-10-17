@@ -1,8 +1,14 @@
 import type { ProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
+import deMessages from '../../../../translations/de.json';
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  bulkDeleteConfirmLabel,
+  cachedSessionsScope,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -12,6 +18,17 @@ import {
   summarizeBulkDelete,
   toggleSelection,
 } from './project-sessions-helpers';
+
+// A second, non-English catalog: these helpers must render their labels
+// through the keys the caller's locale resolves, not through hardcoded
+// English. Asserting the German copy pins both the key lookup and the routing
+// of the translator — an English translator cannot tell a hardcoded literal
+// from a catalog hit, because both read the same.
+const deUiTranslator = createTranslator({
+  locale: 'de',
+  messages: deMessages,
+  namespace: 'hardcodedUi.i18nComplete',
+});
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -44,18 +61,31 @@ describe('session inventory identity and access labels', () => {
     expect(
       sessionOwnerLabel(
         makeSession({ owner_type: 'user', owner_name: 'Ari', owner_email: 'ari@kortix.ai' }),
+        testUiTranslator,
       ),
     ).toBe('Ari');
     expect(
       sessionOwnerLabel(
         makeSession({ owner_type: 'service_account', owner_name: 'backend-debugger' }),
+        testUiTranslator,
       ),
     ).toBe('backend-debugger');
     expect(
       sessionOwnerLabel(
         makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+        testUiTranslator,
       ),
     ).toBe('Unknown owner');
+  });
+
+  test('resolves "You" and "Unknown owner" through the catalog, in the caller\'s locale', () => {
+    expect(sessionOwnerLabel(makeSession({ is_owner: true }), deUiTranslator)).toBe('Du');
+    expect(
+      sessionOwnerLabel(
+        makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+        deUiTranslator,
+      ),
+    ).toBe('Unbekannter Eigentümer');
   });
 
   test('distinguishes permission from a missing or archived runtime', () => {
@@ -85,6 +115,27 @@ describe('session inventory identity and access labels', () => {
 });
 
 describe('sessionDetailFields', () => {
+  test('labels Source, Trigger, Last activity, Created and Owner through the catalog, in the caller\'s locale', () => {
+    const cron = makeSession({
+      is_owner: true,
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'nightly-audit' },
+    });
+    const fields = sessionDetailFields(cron, FORMATTED, deUiTranslator);
+    const labels = fields.map((field) => field.label);
+
+    expect(labels).toContain('Quelle');
+    expect(labels).toContain('Trigger');
+    expect(labels).toContain('Letzte Aktivität');
+    expect(labels).toContain('Erstellt');
+    expect(labels).toContain('Eigentümer');
+    expect(labels).not.toContain('Source');
+    expect(labels).not.toContain('Last activity');
+    expect(labels).not.toContain('Created');
+    expect(labels).not.toContain('Owner');
+    // The Owner field's VALUE routes through the same translator.
+    expect(fields.find((field) => field.label === 'Eigentümer')?.value).toBe('Du');
+  });
+
   test('never emits a placeholder formatted like real data', () => {
     const bare = makeSession({
       // Typed non-nullable, but the API returns empty strings before the
@@ -214,6 +265,14 @@ describe('sessionDetailFields', () => {
       label: 'Conversations',
       value: '2 · 1 archived',
     });
+  });
+});
+
+describe('bulkDeleteConfirmLabel', () => {
+  test('reads the Delete {value0} message through the translator, in the caller\'s locale', () => {
+    expect(bulkDeleteConfirmLabel(5, testUiTranslator)).toBe('Delete 5');
+    expect(bulkDeleteConfirmLabel(5, deUiTranslator)).toBe('5 löschen');
+    expect(bulkDeleteConfirmLabel(1, deUiTranslator)).toBe('1 löschen');
   });
 });
 
@@ -373,5 +432,57 @@ describe('filterProjectSessions — owner and access facets', () => {
 
   test('omitting the owner and access facets keeps the old behaviour', () => {
     expect(ids(filterProjectSessions([alice, bob, bob2], [], [], testUiTranslator))).toEqual(['alice', 'bob', 'bob-2']);
+  });
+});
+
+describe('cachedSessionsScope — the list a reload shows before the manager probe answers', () => {
+  const ROOT = { parent: 'root' } as const;
+  const page = (id: string) => ({ pages: [{ items: [{ session_id: id }], next_cursor: null }], pageParams: [null] });
+  const write = (
+    client: QueryClient,
+    scope: 'project' | 'visible',
+    filters: Parameters<typeof qk.project.sessionsPaged>[2],
+    updatedAt: number,
+  ) => client.setQueryData(qk.project.sessionsPaged('p-1', scope, filters), page(scope), { updatedAt });
+
+  test('nothing restored: no scope, the page waits for the probe as before', () => {
+    expect(cachedSessionsScope(new QueryClient(), 'p-1', ROOT)).toBeNull();
+  });
+
+  test("a manager's restored inventory: the 'project' scope", () => {
+    const client = new QueryClient();
+    write(client, 'project', ROOT, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('project');
+  });
+
+  test("a member's restored list: the 'visible' scope", () => {
+    const client = new QueryClient();
+    write(client, 'visible', ROOT, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('visible');
+  });
+
+  test('both restored: the newer read, which carries the latest access this user had', () => {
+    const client = new QueryClient();
+    write(client, 'project', ROOT, 1_000);
+    write(client, 'visible', ROOT, 2_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('visible');
+    write(client, 'project', ROOT, 3_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBe('project');
+  });
+
+  test('only the entry of the filters on screen counts', () => {
+    const client = new QueryClient();
+    // The sidebar's own list, and this page under another tab.
+    write(client, 'visible', { parent: 'root', startedBy: 'me' }, 1_000);
+    write(client, 'project', { parent: 'root', startedBy: 'automated' }, 1_000);
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBeNull();
+    expect(cachedSessionsScope(client, 'p-1', { parent: 'root', startedBy: 'automated' })).toBe('project');
+    expect(cachedSessionsScope(client, 'p-2', { parent: 'root', startedBy: 'automated' })).toBeNull();
+  });
+
+  test('a query that never answered holds no rows to show', () => {
+    const client = new QueryClient();
+    client.getQueryCache().build(client, { queryKey: qk.project.sessionsPaged('p-1', 'project', ROOT) });
+    expect(cachedSessionsScope(client, 'p-1', ROOT)).toBeNull();
   });
 });

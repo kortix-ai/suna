@@ -85,11 +85,21 @@ export async function apiKeyAuth(c: Context, next: Next) {
 async function resolveApiKeyAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
-  const token = bearerToken(authHeader);
-  if (token === null) {
+  // Absent and non-Bearer are different failures (KRTX-2168): an edge that
+  // drops the header and a browser answering an HTTP auth challenge with
+  // `Authorization: Basic` must not share one 401 shape.
+  if (!authHeader) {
     auditLoginFail({ c, reason: 'missing_auth_header', authType: 'apiKey' });
     throw new HTTPException(401, {
-      message: 'Missing or invalid Authorization header',
+      message: 'Missing Authorization header',
+    });
+  }
+
+  const token = bearerToken(authHeader);
+  if (token === null) {
+    auditLoginFail({ c, reason: 'invalid_auth_scheme', authType: 'apiKey' });
+    throw new HTTPException(401, {
+      message: 'Unsupported Authorization scheme: expected "Bearer <token>"',
     });
   }
 
@@ -171,10 +181,18 @@ export async function supabaseAuth(c: Context, next: Next) {
 async function resolveSupabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
+  // Same distinction as resolveApiKeyAuth (KRTX-2168).
+  if (!authHeader) {
+    auditLoginFail({ c, reason: 'missing_auth_header' });
+    throw new HTTPException(401, { message: 'Missing Authorization header' });
+  }
+
   const token = bearerToken(authHeader);
   if (token === null) {
-    auditLoginFail({ c, reason: 'missing_auth_header' });
-    throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
+    auditLoginFail({ c, reason: 'invalid_auth_scheme' });
+    throw new HTTPException(401, {
+      message: 'Unsupported Authorization scheme: expected "Bearer <token>"',
+    });
   }
 
   if (!token) {

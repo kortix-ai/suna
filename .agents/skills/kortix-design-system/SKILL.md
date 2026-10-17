@@ -50,6 +50,7 @@ file (the shadow ladder that never existed, the press value) are recorded in
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`** (deleted; never recreate it), raw `sonner`, `toast.success/error/info/warning()`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx`. An action button is the `button` option (a `Button`), not sonner's `action`. `tests/unit/toast-single-source.test.ts` fails on any other `sonner` import |
 | Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
+| A count beside a label (row, tab, menu item, button) as muted text or a `Badge` | **`CountBadge`** from `apps/web/src/components/ui/count-badge.tsx`: the sidebar Review-count recipe (tabular pill, row text colour, 15% tint, `99+`). Tone by meaning: `waiting`, `reminder`, `conflict`, `neutral`. Mobile: `CountBadge` in `apps/mobile/components/kortix/count-badge.tsx` |
 | **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `apps/web/src/components/ui/loading.tsx` — the spinner. The one other busy mark is `SessionDotMatrix`, for session-scoped work only (D4f in `decisions.md`) |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
@@ -232,6 +233,41 @@ Access rows use `py-2.5` (`shared/access/access-row.tsx`). Changes use `py-2`.
 
 Detail header: `text-2xl font-semibold tracking-tight` title; meta `Badge variant="outline" size="sm"`; toolbar `absolute top-4 right-4` with `ButtonGroup` + `Hint`.
 
+### Dropdown item with icon + title + description
+
+One recipe for every menu row that carries a glyph, a title and a one-line
+explanation (the "New ▾" menu on Agents, Skills, Connectors, Triggers and
+Secrets). Source: `RichRowBody` in
+`apps/web/src/features/workspace/capabilities/shared/new-entity-menu.tsx`;
+Paper "New menu · icon + title + description", V03 (Jay, 2026-10-13).
+
+```tsx
+<DropdownMenuContent align="end" className="w-76">            {/* 280px */}
+  <DropdownMenuItem className="items-start gap-2.5 py-1.5">   {/* px-2 rounded-sm from menuRow */}
+    <ChatCircleIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className="text-foreground text-sm font-[550]">Create in chat</span>
+      <span className="text-muted-foreground mt-0.5 text-xs font-normal text-pretty">
+        An agent scaffolds it and opens a change request.
+      </span>
+    </span>
+  </DropdownMenuItem>
+</DropdownMenuContent>
+```
+
+- **First-line alignment, after `alert.tsx`.** `items-start` plus `mt-0.5` on the
+  16px glyph centres it on the title's first 20px line. Never `items-center`
+  (the glyph drifts to the middle of a two-line block) and never a bare
+  `items-start` (the glyph sits on the cap height).
+- **Two tiers.** Title `text-sm font-[550] text-foreground`, ink even before
+  hover; the row's own `text-foreground/80` and `font-medium` would make it read
+  lighter than the description's job. Description `text-xs text-muted-foreground
+  font-normal`, `mt-0.5` under the title.
+- **Width.** `w-76` (280px) lets a one-sentence description wrap at most once.
+  `w-64` wrapped after about 30 characters.
+- **Glyph.** Muted, `size-4`, no tile. Use the row's leading glyph, never a
+  second one at the end.
+
 ### Danger zone (settings)
 
 Neutral bordered row — no red panel fill:
@@ -264,6 +300,32 @@ Match the customize views — consistent sizes and variants:
 | Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `CircleNotchIcon` |
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
+
+### Button groups — the default for buttons in a row
+
+**Two or more buttons side by side that serve one surface are a `ButtonGroup`** (`@/components/ui/button-group`). A toolbar cluster, a back/forward pair, a header's action set and a viewer's close cluster are all groups. Do not line buttons up with `flex gap-1` and hand-tuned `ml-*`: the group owns the spacing (`gap-px`) and joins the corners of neighbours, so a row of controls reads as one object instead of loose icons.
+
+| Rule | Why |
+| --- | --- |
+| One variant for every member: all `ghost`, all `secondary` or all `outline`. | Mixed weights break the group into a primary plus strays. A real primary action stands outside the group. |
+| The close `X` joins the group of the actions beside it. | It is part of the toolbar, not a separate control. |
+| Every member is a direct child: `Hint` (it renders `asChild`) wrapping a `Button` is fine, and so are `asChild` links. | The corner rounding targets direct children (`[&>*]`). A `<span>` or a `PopoverAnchor` wrapper between the group and the `Button` takes the rounding instead. |
+| No dividers, `gap-*`, `ml-*` or `mx-*` inside a group. | The group sets the rhythm; one override drifts every row. |
+| One group per job. Navigation (back/forward) and page actions (open, full screen, close) are two groups, with the address bar or title between them. | A group says "these act on the same thing". |
+| A hidden member (`{cond && …}`) is fine; a group of one is not: render the lone `Button` bare. | A group of one adds nothing. |
+
+**Not a group:** a modal or form footer (Cancel + Confirm stay a spaced pair, so the destructive or primary choice is not glued to Cancel), and a button beside a text input that is not part of it. Icon buttons inside an address or path pill are a group too: the pill holds the group at its trailing edge.
+
+Reference implementations:
+
+| File | Group |
+| --- | --- |
+| `app/[locale]/(public)/share/session/[token]/page.tsx` | Header actions, all `secondary`: open app, full screen, download or copy link, Open in Kortix |
+| `features/session/action-panel/shared/sandbox-browser-chrome.tsx` | Back / forward, `ghost`; Reload and the pill's trailing actions inside the address pill |
+| `features/session/action-panel/easy/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
+| `features/session/action-panel/easy/app-preview.tsx` | Open in new tab, full screen, close, `ghost` |
+| `features/session/action-panel/easy/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
+| `features/changes/change-list.tsx` | Unified / split diff toggle, `outline` |
 
 ## Cursor affordance
 
@@ -499,7 +561,7 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 - **Default `TabsList`:** the segmented control (recessed track, raised `shadow-xs` chip). A vertical list (a settings rail) is never segmented (`tabs.tsx`, `capability-tabs.tsx`).
 - **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`channels-view.tsx`)
 - **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`project-sessions-view.tsx`, `secrets-view.tsx`)
-- Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
+- Tab badge count: `<CountBadge count={n} />` inside trigger
 
 ## Loading pattern (canonical)
 
@@ -557,6 +619,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
 - ✅ Destructive actions → `ConfirmDialog` (or the inline two-step Cancel/confirm swap, `channels-view.tsx`). ❌ firing a delete/revoke mutation directly from a `variant="destructive"` click.
 - ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
+- ✅ Two or more buttons in a row on one surface → `ButtonGroup`, one variant, close `X` included. ❌ `flex gap-1` rows of loose buttons, ❌ `ml-*` / dividers between members, ❌ a group of one, ❌ grouping a modal's Cancel + Confirm.
 - ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast` (deleted), raw sonner, `toast.success()`.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
 - ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
@@ -577,7 +640,7 @@ Standard content block (`agents-page.tsx` pattern):
 1. **Load [`kortix-brand`](../kortix-brand/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
-4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
+4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. Buttons in a row → `ButtonGroup`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
 6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.
 7. New primitive? Tokens only, tiny API, add to `/design-system`.

@@ -5,6 +5,7 @@ import {
   TURN_MIN_CONTAIN_PX,
   TurnViewport,
   turnIntrinsicSize,
+  turnLayoutHeight,
   turnViewportClassName,
 } from './turn-viewport';
 
@@ -28,7 +29,23 @@ describe('turnViewportClassName — the two containment rules', () => {
     expect(className).not.toContain('contain-intrinsic-size');
     expect(turnIntrinsicSize('measured', 101)).toBe('auto 101px');
     expect(turnIntrinsicSize('measured', 503)).toBe('auto 503px');
-    expect(turnIntrinsicSize('measured', 320.4)).toBe('auto 320px');
+  });
+
+  test('the stand-in is the EXACT height: a rounded one moves everything under the turn when it is contained', () => {
+    // Turn heights here are fractional (`--spacing` is 0.23rem). A whole-pixel
+    // stand-in differs from the real height by up to 0.5px, and containment
+    // swaps one for the other: 29 freshly loaded older turns, contained 500ms
+    // after they rendered, moved the reader by ~4.5px in sum (measured).
+    expect(turnIntrinsicSize('measured', 320.4)).toBe('auto 320.4px');
+    expect(turnIntrinsicSize('measured', 279.59375)).toBe('auto 279.59375px');
+  });
+
+  test("a turn is measured at its layout height, not offsetHeight's whole pixels", () => {
+    const turn = {
+      offsetHeight: 280,
+      getBoundingClientRect: () => ({ height: 279.59375 }),
+    } as unknown as HTMLElement;
+    expect(turnLayoutHeight(turn)).toBe(279.59375);
   });
 
   test('a measured turn with no height yet is not contained — no stand-in, no guess', () => {

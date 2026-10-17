@@ -7,7 +7,8 @@ import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
   type TurnStreamBody,
@@ -124,6 +125,11 @@ export function registerTurnStreamRoutes(): void {
             projectId,
             PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
           );
+        }
+        // Every kind mutates this one session (`end` settles its turn and
+        // promotes queued prompts), so the caller must be able to see it.
+        if (!(await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))) {
+          return c.json({ error: 'Not found' }, 404);
         }
       }
 

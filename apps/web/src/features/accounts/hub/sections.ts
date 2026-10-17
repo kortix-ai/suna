@@ -170,15 +170,22 @@ export function localizedAccountPaneMeta(tI18nComplete: UiTranslator) {
  * next step up, and the usage ledger needs the room a table with seven
  * columns takes.
  */
-export type AccountPaneWidth = 'default' | 'wide' | 'full';
+/** `fluid`: the whole pane, Linear's members table — no centred column. */
+export type AccountPaneWidth = 'default' | 'wide' | 'full' | 'fluid';
+
+const WIDE_SECTIONS: readonly AccountSection[] = [
+  'groups',
+  'access-projects',
+  'roles',
+  'identity',
+  'help',
+  'audit',
+  'billing',
+];
 
 const PANE_WIDTH: Partial<Record<AccountSection, AccountPaneWidth>> = {
-  members: 'wide',
-  groups: 'wide',
-  'access-projects': 'wide',
-  roles: 'wide',
-  audit: 'wide',
-  billing: 'wide',
+  members: 'fluid',
+  ...Object.fromEntries(WIDE_SECTIONS.map((section) => [section, 'wide' as const])),
   transactions: 'full',
 };
 
@@ -228,6 +235,14 @@ export interface HubCrumbInput {
   /** `sso` | `scim` while a guided wizard has taken over the Identity pane. */
   setup?: string | null;
   accountName?: string | null;
+  /** `?member=` while a member's access panel replaces the Members list. */
+  memberId?: string | null;
+  /** That member's label, once the member list has loaded. */
+  memberName?: string | null;
+  /** `?project=` while a project's access panel replaces the Projects list. */
+  projectId?: string | null;
+  /** That project's name, once it has loaded. */
+  projectName?: string | null;
 }
 
 /**
@@ -241,7 +256,8 @@ export interface HubCrumbInput {
  * a real href for whatever page the modal is open on.
  */
 export function accountHubCrumbs(input: HubCrumbInput, tI18nComplete: UiTranslator): HubCrumb[] {
-  const { accountId, activeSection, setup, accountName } = input;
+  const { accountId, activeSection, setup, accountName, memberId, memberName, projectId, projectName } =
+    input;
   // The root crumb goes to the account LIST — the hub with no account chosen.
   const root: HubCrumb = { label: tI18nComplete.raw('text74a883a037bc'), to: hubTarget(null) };
   if (!accountId) return [root, { label: tI18nComplete.raw('text8a7c8b67fe8b') }];
@@ -271,6 +287,33 @@ export function accountHubCrumbs(input: HubCrumbInput, tI18nComplete: UiTranslat
             ? tI18nComplete.raw('text196534a6c8ac')
             : tI18nComplete.raw('textea1cf924a71b'),
       },
+    ];
+  }
+
+  // A member's panel sits ON Members, so it gets a fourth crumb and the
+  // third links back to the list — the panel itself has no back link.
+  if (activeSection === 'members' && memberId) {
+    return [
+      root,
+      account,
+      {
+        label: sectionLabel('members', tI18nComplete),
+        to: hubTarget(accountId, { tab: 'members' }),
+      },
+      memberName ? { label: memberName } : { label: memberId, pending: true },
+    ];
+  }
+
+  // Same for a project's access panel: Projects / <project>.
+  if (activeSection === 'access-projects' && projectId) {
+    return [
+      root,
+      account,
+      {
+        label: sectionLabel('access-projects', tI18nComplete),
+        to: hubTarget(accountId, { tab: 'access-projects' }),
+      },
+      projectName ? { label: projectName } : { label: projectId, pending: true },
     ];
   }
 

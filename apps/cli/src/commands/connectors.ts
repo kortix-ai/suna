@@ -4,6 +4,7 @@ import {
   type ConnectionSharePrincipal,
   getConnectorCatalog,
   renameConnection,
+  revokeConnection,
   setConnectorSecretBinding,
   shareConnection,
 } from '@kortix/sdk';
@@ -683,21 +684,27 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stderr.write(`${status.err('No value provided.')}\n`);
           return 2;
         }
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential`, { value });
+        const resp = await ctx.client.put<{ sync?: SyncResult }>(
+          `${ex}/connectors/${encodeURIComponent(slug)}/credential`,
+          { value },
+        );
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
+        reportSync(resp?.sync);
         return 0;
       }
       case 'secret': {
         const input = connectorSecretBindingInput(positional, clearSecretBinding);
         if ('error' in input) return missing(input.error);
-        await withKortixScope(ctx.auth, () =>
+        // An MCP connector re-lists its tools with the bound secret; show why when that fails.
+        const resp = (await withKortixScope(ctx.auth, () =>
           setConnectorSecretBinding(ctx.projectId, input.slug, input.secretIdentifier),
-        );
+        )) as { sync?: SyncResult } | undefined;
         process.stdout.write(
           input.secretIdentifier
             ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
             : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
         );
+        reportSync(resp?.sync);
         return 0;
       }
       /**
@@ -1615,10 +1622,20 @@ async function runConnections(input: {
     case 'default': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
-      const response = await ctx.client.put<{ ok: true }>(
-        `${base}/${encodeURIComponent(connectionId)}/${action}`,
-        {},
-      );
+      const response = action === 'revoke'
+        ? await withKortixScope(ctx.auth, () => revokeConnection(ctx.projectId, connectionId))
+        : await ctx.client.put<{ ok: true }>(
+            `${base}/${encodeURIComponent(connectionId)}/${action}`,
+            {},
+          );
+      if (action === 'revoke') {
+        if (response?.ok !== true) return fail('Revoke was not acknowledged by the server.');
+        // A 200 acknowledgement is not proof that the connection stopped being usable.
+        const persisted = await ctx.client.get<{ connections: Connection[] }>(base);
+        if (persisted?.connections?.find((row) => row.connection_id === connectionId)?.status !== 'revoked') {
+          return fail('Could not verify the connection is revoked. Read its status before retrying.');
+        }
+      }
       if (json) emitJson(response);
       else
         process.stdout.write(

@@ -2,7 +2,7 @@
  * The device's store of saved copies (`createSavedCopyStore`), kept on the
  * signed-in user: the same lifecycle as the persisted query cache
  * (lib/query/query-cache.ts). A sign-in keeps that user's copies; another user,
- * or a sign-out, forgets the previous user's. `lib/session/saved-copy.ts`
+ * or a sign-out, forgets the previous user's. `hooks/useSavedCopy.ts`
  * paints from the registered store while a session's computer wakes.
  */
 

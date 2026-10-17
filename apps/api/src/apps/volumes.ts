@@ -22,7 +22,7 @@ import { and, asc, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { AppVolumeStoreError, appVolumeStore } from './volume-store';
+import { AppVolumeStoreError, appVolumeStore, type AppVolumeInfo } from './volume-store';
 
 export type AppVolumeRow = typeof appVolumes.$inferSelect;
 
@@ -42,6 +42,33 @@ export class AppVolumeError extends Error {
 /** Volumes live on Platinum only. */
 export function appVolumesSupported(provider: string): boolean {
   return provider === 'platinum';
+}
+
+export type ReleaseProviderChoice =
+  | { ok: true; provider: string | null }
+  | { ok: false; provider: string };
+
+/**
+ * The provider a release deploys to. A named provider wins. Otherwise a
+ * release with mounts needs Platinum, so it takes Platinum when configured;
+ * else an App keeps the provider of its latest release; else `null` leaves
+ * the platform default to the deployment worker.
+ */
+export function chooseReleaseProvider(input: {
+  requested?: string | null;
+  hasMounts: boolean;
+  previous?: string | null;
+  platinumEnabled: boolean;
+  platformDefault: string;
+}): ReleaseProviderChoice {
+  const { requested, hasMounts, previous, platinumEnabled, platformDefault } = input;
+  let provider: string | null = requested ?? null;
+  if (!provider && hasMounts && platinumEnabled) provider = 'platinum';
+  if (!provider) provider = previous ?? null;
+  if (hasMounts && !appVolumesSupported(provider ?? platformDefault)) {
+    return { ok: false, provider: provider ?? platformDefault };
+  }
+  return { ok: true, provider };
 }
 
 /** The Platinum volume name: environments share a provider org, not a database. */
@@ -229,30 +256,47 @@ export async function createAppVolume(input: {
   });
 }
 
-/** Grow a volume's allotment (never shrink) or change its snapshot retention. */
+/**
+ * Change a volume's snapshot retention, or confirm its size. Platinum allots
+ * every volume a fixed size at create (it takes no size and cannot grow one),
+ * so a size above that is refused and a size within it records the real one.
+ */
 export async function updateAppVolume(
   appId: string,
   volumeId: string,
   input: { sizeGb?: number; retentionDays?: number },
 ): Promise<AppVolumeRow> {
   const volume = await appVolume(appId, volumeId);
+  let sizeGb: number | undefined;
   if (input.sizeGb !== undefined) {
     if (!Number.isInteger(input.sizeGb) || input.sizeGb > MAX_VOLUME_GB) {
       throw new AppVolumeError(400, 'volume_size_invalid', `size_gb must be at most ${MAX_VOLUME_GB}.`);
     }
-    if (input.sizeGb < volume.sizeGb) {
-      throw new AppVolumeError(400, 'volume_shrink_refused', `A volume only grows: it is ${volume.sizeGb} GB.`);
+    sizeGb = (await appVolumeStore.info(volume.externalId).catch(() => {
+      throw new AppVolumeError(503, 'volume_size_unknown', 'The provider did not report the volume size; retry.');
+    })).size_gb;
+    if (input.sizeGb > sizeGb) {
+      throw new AppVolumeError(400, 'volume_fixed_size', `The volume is ${sizeGb} GB, its fixed size: a volume cannot grow.`);
     }
   }
   if (input.retentionDays !== undefined && (!Number.isInteger(input.retentionDays) || input.retentionDays < 1 || input.retentionDays > 60)) {
     throw new AppVolumeError(400, 'volume_retention_invalid', 'snapshot_retention_days must be 1 to 60.');
   }
   const [row] = await db.update(appVolumes).set({
-    ...(input.sizeGb !== undefined ? { sizeGb: input.sizeGb } : {}),
+    ...(sizeGb !== undefined ? { sizeGb } : {}),
     ...(input.retentionDays !== undefined ? { snapshotRetentionDays: input.retentionDays } : {}),
     updatedAt: new Date(),
   }).where(eq(appVolumes.volumeId, volume.volumeId)).returning();
   return row!;
+}
+
+/** A volume's live size, use and last commit from Platinum; null when unknown (not ready, or Platinum did not answer). */
+export async function volumeInfo(volume: AppVolumeRow): Promise<AppVolumeInfo | null> {
+  if (volume.status !== 'ready') return null;
+  return appVolumeStore.info(volume.externalId).catch((error) => {
+    logger.warn('[apps] volume info failed', { volumeId: volume.volumeId, error: String(error) });
+    return null;
+  });
 }
 
 export async function getAppVolume(appId: string, volumeId: string): Promise<AppVolumeRow> {

@@ -2,7 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { chalkColors } from '@kortix/shared';
+import { AVATAR_INK, avatarFill } from '@kortix/shared';
 import * as React from 'react';
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
@@ -31,7 +31,7 @@ function initialsFromIdentity(name: string | undefined, email: string): string {
 const SIZE_MAP = {
   xs: { box: 'size-5', text: 'text-xs', initials: 1 },
   sm: { box: 'size-6', text: 'text-xs', initials: 1 },
-  md: { box: 'size-8 rounded-md', text: 'text-xs', initials: 2 },
+  md: { box: 'size-8', text: 'text-xs', initials: 2 },
   lg: { box: 'size-10', text: 'text-sm', initials: 2 },
   xl: { box: 'size-14', text: 'text-base', initials: 2 },
 } as const;
@@ -62,27 +62,26 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || '').slice(0, sizes.initials),
     [name, email, sizes.initials],
   );
-  // Keyed on the email when there is no name, so nameless people still differ.
-  const chalk = chalkColors(name || email);
+  // Avatar v2: a solid fill keyed on the email, so a rename keeps the colour.
+  const fill = avatarFill(email || name || '');
 
   return (
     <Avatar
       className={cn(
         sizes.box,
-        'shrink-0 overflow-hidden rounded-sm p-0 font-medium tracking-tight',
+        'shrink-0 overflow-hidden rounded-sm p-0 font-medium',
         ring && 'ring-background ring-2',
+        // A photo keeps an edge on a light page: a 1px inset hairline over it.
+        avatarUrl &&
+          'after:ring-border after:pointer-events-none after:absolute after:inset-0 after:rounded-sm after:ring-1 after:ring-inset',
         variant === 'primary' && 'bg-primary text-primary-foreground',
         className,
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
       <AvatarFallback
-        className={cn('border-border text-foreground border bg-transparent font-semibold', sizes.text)}
-        style={{
-          backgroundColor: chalk.background,
-          color: chalk.foreground,
-          borderColor: chalk.border,
-        }}
+        className={cn('rounded-sm font-medium', sizes.text)}
+        style={{ backgroundColor: fill, color: AVATAR_INK }}
       >
         {initials || '?'}
       </AvatarFallback>

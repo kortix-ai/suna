@@ -39,7 +39,7 @@ export type ModelView = ModelViewItem[];
  *  - `reasoning_replay: 'same_model'` (default): an assistant message whose `model` has the same
  *    provider and model keeps its reasoning in the item's `reasoning`; any other reasoning is dropped
  *    (a message without a `model` counts as another model);
- *  - `'lowers_to_text'` (pi, OpenCode v1 and v2): same as above, but another model's reasoning stays
+ *  - `'lowers_to_text'` (OpenCode v1 and v2): same as above, but another model's reasoning stays
  *    in place as assistant text, in block order;
  *  - `'none'`: no reasoning is replayed.
  * Use the target harness's `CapabilityFeatures.reasoning_replay`. `api` names the wire dialect for
@@ -304,6 +304,9 @@ export type CanonItem =
   | { role: 'summary' };
 
 const squash = (s: string) => s.replace(/\s+/g, '');
+/** A JSON value with object keys sorted at every depth; arrays keep their order. Key order is not semantic (v1 `same`), and jsonb does not keep it. */
+const sortKeys = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(sortKeys) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys((v as Record<string, unknown>)[k])])) : v;
 
 /**
  * The comparable form of a view, applied to both sides:
@@ -311,6 +314,7 @@ const squash = (s: string) => s.replace(/\s+/g, '');
  *  - the text of one item is joined and compared without whitespace (harnesses join with "", "\n" or blocks);
  *  - consecutive user items merge; an assistant item with calls absorbs a following one without text;
  *  - freeform string tool input equals the `{ input }` wrapper that object-only harnesses use;
+ *  - tool input compares without key order (Postgres jsonb reorders keys); arrays keep their order;
  *  - reasoning is provider state, not conversation content, and is dropped.
  */
 export function canonicalizeView(view: ModelView, opts: ViewCompareOptions = {}): CanonItem[] {
@@ -359,7 +363,7 @@ export function canonicalizeView(view: ModelView, opts: ViewCompareOptions = {})
       if (prev?.role === 'user') { prev.t += t; prev.att.push(...images); continue; }
       out.push({ role: 'user', t, att: images });
     } else {
-      const calls = it.calls.map((c) => ({ id: ord(c.id), name: c.name, input: typeof c.input === 'string' ? { input: c.input } : c.input }));
+      const calls = it.calls.map((c) => ({ id: ord(c.id), name: c.name, input: typeof c.input === 'string' ? { input: c.input } : sortKeys(c.input) }));
       const prev = out[out.length - 1];
       if (prev?.role === 'assistant' && (!prev.calls.length || !t)) { prev.t += t; prev.calls.push(...calls); continue; }
       if (!t && !calls.length) continue;

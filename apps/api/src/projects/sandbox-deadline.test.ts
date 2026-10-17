@@ -48,6 +48,7 @@ mock.module('../shared/db', () => ({
 const {
   NON_TURN_DEADLINE_CAP_MS,
   extendSandboxDeadline,
+  extendSandboxDeadlineForPresence,
   extendUnconfirmedTurnDeadline,
   grantWarmPoolLifetime,
   idleGraceMs,
@@ -153,6 +154,52 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
     expect(executed[0]).toContain('sandbox_id');
     expect(executed[1]).toContain('session_id');
     expect(executed[2]).toContain('external_id');
+  });
+});
+
+// KRTX-1729: the composer shows how long presence keeps the computer on. The
+// renewal returns the deadline it wrote and the cap it used, from the same
+// statement, so the two values cannot disagree with the write.
+describe('extendSandboxDeadlineForPresence — the idle grace, capped 2 h past the latest turn', () => {
+  test('is monotone and capped, and returns the deadline and the cap from one statement', async () => {
+    await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' });
+
+    expect(executed).toHaveLength(1);
+    // RETURNING repeats the cap: each half is asserted on its own, or a SET
+    // that lost the cap still matched 7200 and 86400 from RETURNING.
+    const parts = squish(executed[0]).split(' RETURNING ');
+    expect(parts).toHaveLength(2);
+    const [write, readBack] = parts as [string, string];
+    expect(write).toMatch(/deadline_at = GREATEST\( ?s\.deadline_at, LEAST\(/);
+    expect(write).toContain('7200'); // PRESENCE_ONLY_CAP_MS in seconds
+    expect(write).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
+    expect(write).toContain(String(idleGraceMs() / 1000));
+    expect(write).toContain("status IN ('active', 'provisioning')");
+    expect(write).not.toMatch(/active_since\s*=/);
+    // The deadline the SET wrote, and the cap it applied.
+    expect(readBack).toMatch(/s\.deadline_at.*AS deadline_ms/);
+    expect(readBack).toMatch(/86400.*7200.*AS cap_ms/);
+  });
+
+  test('returns the written deadline and the cap as Dates', async () => {
+    const deadline = Date.UTC(2026, 9, 12, 10, 15);
+    const cap = Date.UTC(2026, 9, 12, 11, 40);
+    // postgres.js may return a float8 as a number or as a string.
+    executeResult = [{ deadline_ms: deadline, cap_ms: String(cap) }];
+
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toEqual({
+      deadlineAt: new Date(deadline),
+      capAt: new Date(cap),
+    });
+  });
+
+  test('returns null when no live box matched', async () => {
+    executeResult = [];
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = { rows: [] };
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = undefined;
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 title: Plans & credits
-description: The Free, Team and Enterprise plans, what spends credits, how the account wallet, top-ups and seats work, and where to track usage.
+description: The Free and Credits plans, Enterprise, what spends credits, how the account wallet, top-ups, rollover and plan changes work, and where to track usage.
 ---
 
 Credits are the balance of an account's wallet. Every project in the account spends from that one wallet. This page is for the people who pay for an account and the members who watch its spend.
@@ -11,23 +11,24 @@ To see the balance now, run `kortix billing status`, or open the project menu �
 
 ## Plans
 
-An account is on one of three plans. See [kortix.com/pricing](https://kortix.com/pricing) for what each plan costs and grants.
+An account is on one of two plans: Free or Credits. See [kortix.com/pricing](https://kortix.com/pricing) for what each plan costs and grants. Enterprise is not a plan: it turns the Enterprise features on, on either plan. See [Enterprise features](/docs/accounts/identity#enterprise-features).
 
-| | Free | Team | Enterprise |
-| --- | --- | --- | --- |
-| Billed | No charge | Per seat | By contract |
-| Credit grant | Every month, for the account | Every billing cycle, per seat, pooled in one wallet | By contract |
-| Kortix-managed models | The platform default only | All | All |
-| Buy credits and auto top-up | No | Yes | Yes |
-| Projects | 1 | 200 | No limit |
-| SSO, SCIM, groups and custom roles, audit log, branding | No | No | Yes |
+| | Free | Credits |
+| --- | --- | --- |
+| Billed | No charge | A monthly amount you choose |
+| Credit grant | Every month, for the account | Every billing cycle, 100 credits per dollar of the monthly amount, in one wallet |
+| Members | Unlimited | Unlimited, no per-member charge |
+| Kortix-managed models | The platform default only | All |
+| Buy credits and auto top-up | No | Yes |
+| Projects | 1 | 200 (no limit with an Enterprise license) |
+| SSO, SCIM, groups and custom roles, audit log, branding | With Enterprise | With Enterprise |
 
 - Every plan can use models on your own provider key or a ChatGPT subscription. See [Models](/docs/project/models).
 - A managed model outside your plan returns `plan_upgrade_required`.
-- An Enterprise feature outside your plan returns `402` with code `entitlement_required`. See [Sign-in, SSO & API keys](/docs/accounts/identity#enterprise-features).
-- An account on an older plan sees it under its family name: Free, Team or Enterprise. It keeps the terms it bought. Some older paid plans do not meter sandbox compute.
+- An Enterprise feature without Enterprise on returns `402` with code `entitlement_required`. An owner or admin can turn the Enterprise demo on. See [Enterprise features](/docs/accounts/identity#enterprise-features).
+- Every older paid plan became a Credits plan at the same monthly price. A per-seat plan receives its full bill as credits in one shared wallet. Seats no longer exist: members are free and unlimited.
 - Creating a project over the limit returns `403` with code `project_limit_reached`. An archived project does not count.
-- To move from Free to Team, select **Subscribe to Team** on **Billing → Plan**. For Enterprise, email [support@kortix.com](mailto:support@kortix.com).
+- To move from Free to Credits, choose a tier on **Billing → Plan** and select **Subscribe**. Tiers run from 5,000 credits a month to 1,000,000 credits a month, all at one rate: a bigger tier buys more credits, never a cheaper credit. For an Enterprise license, select **Talk to sales** in the app, or email [support@kortix.com](mailto:support@kortix.com).
 
 A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNAL_ENABLED=false`). It has no credits, no plan limits and no managed models. `kortix billing status` still answers there and never blocks a run. `kortix billing transactions` returns `404` with `billing_disabled: true`. See [Self-hosting](/docs/host).
 
@@ -35,15 +36,25 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 
 | What | How Kortix meters it |
 | --- | --- |
-| Kortix-managed model calls | Input, output and cache tokens of each request. |
+| Kortix-managed model calls | Input, output and cache tokens of each request, at the provider's base price plus a 5.5% platform fee. |
+| Model calls on your own provider key | Nothing for the first $1,000 of usage a month at the provider's list price. After that, 5% of each request's list price. A ChatGPT subscription and OpenCode Go are never charged. Enterprise has no fee, and Kortix can waive it per account. |
 | Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes, App machines and project monitors all count. |
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
 - Compute meters the spec the sandbox reserves, not what it uses. Set the spec in `kortix.yaml`. See [Sandboxes & previews](/docs/work/runtime#hardware-and-docker).
-- One compute rate applies to every sandbox provider.
+- One compute rate applies to every sandbox provider and to every plan, billed per second for the reserved size:
+
+  | Resource | Rate |
+  | --- | --- |
+  | vCPU | $0.0324 per hour |
+  | Memory | $0.0108 per GB-hour |
+  | Storage | $0.0526 per GB-month |
+
+  The default 2 vCPU / 4 GB / 20 GB sandbox costs about $0.11 an hour, about 11 credits.
 - A stopped or sleeping sandbox accrues nothing. See [Sessions](/docs/work/sessions#when-a-session-sleeps).
 - A running sandbox is billed every 5 minutes and again when it stops.
-- A model request on your own provider key or a ChatGPT subscription has no Kortix charge. Your provider bills you.
+- Your provider bills a request on your own provider key. Kortix charges only the 5% fee past the monthly $1,000 allowance, after the request completes: an empty wallet never blocks your own key.
+- Model prices in the app are the provider's base prices. The 5.5% fee is added when the request is charged.
 
 ## Credit buckets
 
@@ -51,8 +62,8 @@ The wallet holds two buckets.
 
 | Bucket | Filled by | Expires |
 | --- | --- | --- |
-| Expiring | The plan grant | The next grant replaces it. Unused credits do not carry over. |
-| Non-expiring | Top-ups, auto top-ups, refunds and promotional grants | Never |
+| Expiring | The plan grant | Unused credits roll over for one month. The grant after that replaces them. |
+| Non-expiring | Top-ups, auto top-ups, top-up bonuses, refunds and promotional grants | Never |
 
 - Kortix spends the expiring bucket first, then the non-expiring bucket.
 - Work that finished is always recorded. When it costs more than the balance, the non-expiring bucket goes below zero. The balance stays below zero until new credits cover the difference.
@@ -61,7 +72,19 @@ The wallet holds two buckets.
 
 ## Top-ups and auto top-up
 
-Only paid plans can buy credits. Top-ups go into the non-expiring bucket.
+Only paid plans can buy credits. Top-ups never expire and go into the non-expiring bucket.
+
+A top-up or auto top-up of $50 or more adds bonus credits:
+
+| Top-up | Bonus |
+| --- | --- |
+| $50 to $99 | +1% |
+| $100 to $249 | +2% |
+| $250 to $499 | +3% |
+| $500 to $999 | +4% |
+| $1,000 or more | +5% |
+
+The bonus is a separate `topup_bonus` ledger entry. A refund or a lost dispute removes the same share of the bonus.
 
 <Steps>
 <Step title="Add credits">
@@ -81,15 +104,15 @@ When an auto top-up charge fails:
 3. Every owner gets an email with the reason. **Auto top-up** shows the date and the reason beside the switch.
 4. Update the payment method in **Manage billing**, then turn auto top-up on again. This clears the failure count.
 
-## Seats and plan changes
+## Plan changes
 
-A seat is an accepted member of a Team account. Seats follow membership: when a member joins or leaves, the seat count changes. Billing counts at most 100 seats.
+Members do not change the bill. The whole account shares one wallet, and the only number you set is the monthly amount.
 
 | Change | Charge | Credits |
 | --- | --- | --- |
-| Add a member | The seat is charged now, prorated for the rest of the cycle. | The prorated share of the seat's grant arrives when that charge is paid. |
-| Remove a member | The lower count applies from the next renewal. No refund. | Credits already granted stay in the wallet. |
-| Move a paid plan to a higher plan | The difference is charged now. The upgrade applies only when that payment succeeds. | The prorated share of the new grant arrives with the payment. The next renewal grants the full amount. |
+| Raise the monthly amount | The difference is charged now, prorated for the rest of the cycle. The raise applies only when that payment succeeds. | The prorated share of the new grant arrives with the payment. The next renewal grants the full amount. |
+| Lower the monthly amount | The lower amount applies from the next renewal. No refund. | Credits already granted stay in the wallet. |
+| Choose an amount with no paid plan yet | Stripe Checkout charges the first period. | The grant arrives when the payment settles. |
 | Cancel | **Cancel subscription** ends the plan at the end of the current billing period. **Reactivate subscription** undoes it until then. | The plan grant stops after the period ends. |
 
 Manage the plan, the payment method and invoices under **Billing → Plan** and **Manage billing**. These changes need the `billing.write` permission, which only the owner role holds by default. Every member can read billing (`billing.read`). See [Accounts & access](/docs/accounts).
@@ -100,13 +123,14 @@ When the balance reaches zero, agents pause and triggers stop starting sessions.
 
 | Code | Means | Fix |
 | --- | --- | --- |
-| `insufficient_credits` | The wallet is empty, or the last payment failed. | Add credits, or update the payment method. On Free, subscribe to Team or wait for the next monthly grant. |
-| `subscription_required` | A Team account has no active subscription. | Subscribe on **Billing → Plan**. |
+| `insufficient_credits` | The wallet is empty, or the last payment failed. | Add credits, or update the payment method. On Free, subscribe to Credits or wait for the next monthly grant. |
+| `subscription_required` | The account has no active plan. | Subscribe on **Billing → Plan**. |
 | `no_account` | The account has no credit account yet. | Finish account setup, or email [support@kortix.com](mailto:support@kortix.com). |
 
 - The `402` body also carries `billing_state`: `out_of_credits`, `payment_failed`, `no_subscription` or `no_account`.
 - Kortix stops the running Apps of the account. A visitor gets `402` with code `app_account_unfunded` and an **App paused** page. See [Apps](/docs/apps).
 - On a paid plan with auto top-up off, every owner gets one email per UTC day when the balance reaches zero.
+- Buying credits and auto top-up show only to a person who may change billing (`billing.write`), on a plan that may buy credits. A member sees who can add credits instead.
 - A member who cannot add credits can select **Ask an owner** in the out-of-credits notice. Every owner gets an email with the balance and a link to billing. Each member can ask once per 24 hours per account.
 
 ## Track usage
@@ -120,14 +144,14 @@ When the balance reaches zero, agents pause and triggers stop starting sessions.
 The CLI reads the same data. It cannot change billing.
 
 ```bash
-kortix billing status                                   # plan, credits, seats, subscription
+kortix billing status                                   # plan, credits, subscription
 kortix billing transactions --summary --days 7          # credits in and out
 kortix billing costs                                    # account totals and model breakdown, last 30 days
 kortix billing costs --by project --since 2026-09-01T00:00:00Z
 kortix billing costs --by session --csv sessions.csv    # CSV needs --by
 ```
 
-`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status` and `kortix billing transactions` show credits. `kortix billing costs` shows money amounts. `--json` keeps the money amounts the API returns.
+`kortix billing costs` takes `--project`, `--session`, `--owner`, `--since`, `--until`, `--sort total_desc|total_asc|recent|name_asc` (`name_asc` with `--by project` only), `--limit` and `--offset`. Add `--account <id>` for an account other than the active one. `kortix billing status`, `kortix billing transactions` and `kortix billing costs` show the balance and spend in credits. Prices stay in dollars: the plan price and the auto top-up amount. `--json` returns the US dollar amounts of the API unchanged.
 
 For scripts, the same reports are on the REST API. An account-wide read needs `billing.read`. A read with `project_id` needs `project.gateway.spend.read` on that project. A project-scoped token needs `project.usage.read` and its own `project_id`.
 

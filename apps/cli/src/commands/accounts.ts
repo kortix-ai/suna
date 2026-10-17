@@ -1,14 +1,15 @@
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import {
   accountLabel,
   activeAccount,
   defaultProject,
+  getHost,
   setActiveAccount,
 } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { selectFromList } from '../tui-select.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, takeFlagBool, tokenRejectedLine } from '../command-helpers.ts';
+import { emitJson, fail, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 
@@ -27,6 +28,7 @@ Subcommands:
   info [<slug|id>]     Show one account (defaults to the active one) (--json)
 
 Global options:
+  --host <name>  Use the named host for this invocation.
   --json         Machine-readable JSON output (read subcommands).
   -h, --help     Show this help.
 
@@ -42,20 +44,27 @@ export async function runAccounts(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  let hostArg: string | undefined;
+  try {
+    hostArg = takeFlagValue(rest, ['--host']);
+    if (hostArg === '') throw new Error('--host requires a value');
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
   switch (sub) {
     case 'ls':
     case 'list':
-      return accountsLs(takeFlagBool([...rest], ['--json']));
+      return accountsLs(takeFlagBool([...rest], ['--json']), hostArg);
     case 'use':
     case 'switch':
-      return accountsUse(rest.find((a) => !a.startsWith('-')));
+      return accountsUse(rest.find((a) => !a.startsWith('-')), hostArg);
     case 'current':
-      return accountsCurrent(takeFlagBool([...rest], ['--json']));
+      return accountsCurrent(takeFlagBool([...rest], ['--json']), hostArg);
     case 'info':
     case 'show': {
       const restCopy = [...rest];
       const json = takeFlagBool(restCopy, ['--json']);
-      return accountsInfo(restCopy.find((a) => !a.startsWith('-')), json);
+      return accountsInfo(restCopy.find((a) => !a.startsWith('-')), json, hostArg);
     }
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
@@ -65,10 +74,10 @@ export async function runAccounts(argv: string[]): Promise<number> {
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-function requireAuth() {
-  const auth = loadAuth();
+function requireAuth(hostArg?: string) {
+  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
   if (!auth?.token) {
-    process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    process.stderr.write(`${status.err(hostArg ? `Not logged in to host "${hostArg}". Run \`kortix login --host ${hostArg}\`.` : 'Not logged in. Run `kortix login`.')}\n`);
     return null;
   }
   return auth;
@@ -76,8 +85,8 @@ function requireAuth() {
 
 /** Fetch the caller's account memberships. `/accounts/me` is identity-scoped,
  *  so it stays unscoped (no account_id query param). */
-async function fetchAccounts(): Promise<{ me: MeResponse } | number> {
-  const auth = requireAuth();
+async function fetchAccounts(hostArg?: string): Promise<{ me: MeResponse } | number> {
+  const auth = requireAuth(hostArg);
   if (!auth) return 1;
   const client = clientFromAuth(auth);
   try {
@@ -100,11 +109,11 @@ function accountJson(a: AccountMembership, active: boolean) {
 
 // ── ls ─────────────────────────────────────────────────────────────────────
 
-async function accountsLs(json = false): Promise<number> {
-  const result = await fetchAccounts();
+async function accountsLs(json = false, hostArg?: string): Promise<number> {
+  const result = await fetchAccounts(hostArg);
   if (typeof result === 'number') return result;
   const { me } = result;
-  const activeId = activeAccount()?.id ?? loadAuth()?.account_id ?? '';
+  const activeId = (hostArg ? getHost(hostArg)?.account_id : activeAccount()?.id) ?? '';
 
   if (json) {
     emitJson(me.accounts.map((a) => accountJson(a, a.account_id === activeId)));
@@ -141,8 +150,8 @@ async function accountsLs(json = false): Promise<number> {
 
 // ── use ──────────────────────────────────────────────────────────────────
 
-async function accountsUse(arg?: string): Promise<number> {
-  const result = await fetchAccounts();
+async function accountsUse(arg?: string, hostArg?: string): Promise<number> {
+  const result = await fetchAccounts(hostArg);
   if (typeof result === 'number') return result;
   const { me } = result;
   if (me.accounts.length === 0) {
@@ -161,7 +170,7 @@ async function accountsUse(arg?: string): Promise<number> {
       return 1;
     }
   } else {
-    const activeId = activeAccount()?.id ?? loadAuth()?.account_id ?? '';
+    const activeId = (hostArg ? getHost(hostArg)?.account_id : activeAccount()?.id) ?? '';
     const picked = await selectFromList<AccountMembership>({
       title: 'Switch active account',
       items: me.accounts.map((a) => ({
@@ -179,8 +188,8 @@ async function accountsUse(arg?: string): Promise<number> {
   }
 
   // Capture whether switching will orphan the current default project.
-  const prevDefault = defaultProject();
-  setActiveAccount({ id: target.account_id, slug: target.slug, name: target.name });
+  const prevDefault = hostArg ? getHost(hostArg)?.default_project : defaultProject();
+  setActiveAccount({ id: target.account_id, slug: target.slug, name: target.name }, hostArg);
 
   process.stdout.write(
     `${status.ok(`Active account is now ${C.bold}${target.name}${C.reset} ${C.faded}(${target.slug}, ${target.role})${C.reset}`)}\n`,
@@ -196,10 +205,13 @@ async function accountsUse(arg?: string): Promise<number> {
 
 // ── current ──────────────────────────────────────────────────────────────
 
-function accountsCurrent(json = false): number {
-  const auth = requireAuth();
+function accountsCurrent(json = false, hostArg?: string): number {
+  const auth = requireAuth(hostArg);
   if (!auth) return 1;
-  const active = activeAccount();
+  const host = hostArg ? getHost(hostArg) : null;
+  const active = hostArg
+    ? host?.account_id ? { id: host.account_id, slug: host.account_slug || host.account_id.slice(0, 8), name: host.account_name || '' } : null
+    : activeAccount();
   if (!active) {
     // Both forms fail together: stdout stays valid JSON (null), exit 1, diagnostic on stderr.
     if (json) emitJson(null);
@@ -218,11 +230,11 @@ function accountsCurrent(json = false): number {
 
 // ── info ───────────────────────────────────────────────────────────────────
 
-async function accountsInfo(arg?: string, json = false): Promise<number> {
-  const result = await fetchAccounts();
+async function accountsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
+  const result = await fetchAccounts(hostArg);
   if (typeof result === 'number') return result;
   const { me } = result;
-  const activeId = activeAccount()?.id ?? loadAuth()?.account_id ?? '';
+  const activeId = (hostArg ? getHost(hostArg)?.account_id : activeAccount()?.id) ?? '';
   const wanted = arg ?? activeId;
   const a = me.accounts.find((x) => x.account_id === wanted || x.slug === wanted);
   if (!a) {

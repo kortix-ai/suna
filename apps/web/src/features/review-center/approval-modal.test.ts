@@ -9,6 +9,9 @@ const connectorCall: ReviewItem = {
   status: 'needs_you',
   risk: 'medium',
   title: 'Send email (Gmail)',
+  summary: 'Send the draft to the reviewer',
+  source: 'agent',
+  actor: { name: 'Agent 1', initials: 'A1' },
   project: 'Project 1',
   agent: 'Agent 1',
   createdAt: '2026-10-02T10:00:00.000Z',
@@ -34,7 +37,7 @@ const connectorCall: ReviewItem = {
       },
     ],
   },
-} as ReviewItem;
+};
 
 describe('reviewApprovalDetails', () => {
   test('a Connector call reads exactly as the approve page loads it', () => {
@@ -50,6 +53,13 @@ describe('reviewApprovalDetails', () => {
       args_preview: { to: 'person@example.test', subject: 'Draft' },
       review_complete: true,
       approval_context: 'Send the draft to the reviewer',
+    });
+  });
+
+  test('a call waiting on someone else is still pending (KRTX-1724)', () => {
+    expect(reviewApprovalDetails({ ...connectorCall, status: 'waiting' })).toMatchObject({
+      pending: true,
+      status: 'pending_approval',
     });
   });
 

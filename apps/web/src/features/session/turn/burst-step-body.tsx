@@ -1,29 +1,26 @@
-import { isToolPart, type Part } from '@/ui';
+import type { SessionLogBurstStep, ToolCallBlock } from '@kortix/sdk';
 import { normalizeActivityToolName } from '../session-activity-groups';
-import { ActivityFileChipStep, isFileChipPart } from './activity-file-chips';
+import { ActivityFileChipStep, isFileChipCall } from './activity-file-chips';
 import { ActivityGroupStep } from './activity-group-step';
-import { ActivityStep } from './activity-step';
-import { AnsweredQuestionStep, isAnsweredQuestionPart } from './answered-question-step';
-import type { BurstStep } from './merge-steps';
+import { ActivityStep, StepLabelRow } from './activity-step';
+import { AnsweredQuestionStep, isAnsweredQuestionCall } from './answered-question-step';
+import { stepLabel } from './step-label';
 
 /**
  * True when this run is entirely one file family, so it can render as chips.
  *
- * `isFileChipPart` alone is not enough at a group row. `groupSteps` buckets by
+ * `isFileChipCall` alone is not enough at a group row. `groupSteps` buckets by
  * NARRATION family, and `explore` holds `glob`/`grep`/`list` beside `read`
  * while `edit` holds `edit`/`apply_patch` beside `write` — so a run of two
  * reads and a grep arrives here as one group. Requiring the same normalized
  * tool name throughout keeps a grep out of a row whose only vocabulary is
  * files, and keeps `edit`/`apply_patch` on their diff renderer.
  */
-function isFileChipRun(parts: ReadonlyArray<Part>): boolean {
-  const first = parts[0];
-  if (!first || !isToolPart(first) || !isFileChipPart(first)) return false;
-  const name = normalizeActivityToolName(first.tool);
-  return parts.every(
-    (part) =>
-      isToolPart(part) && isFileChipPart(part) && normalizeActivityToolName(part.tool) === name,
-  );
+function isFileChipRun(calls: ReadonlyArray<ToolCallBlock>): boolean {
+  const first = calls[0];
+  if (!first || !isFileChipCall(first)) return false;
+  const name = normalizeActivityToolName(first.name);
+  return calls.every((call) => isFileChipCall(call) && normalizeActivityToolName(call.name) === name);
 }
 
 /**
@@ -43,7 +40,7 @@ export function StepBody({
   sessionId,
   disableNavigation,
 }: {
-  step: Exclude<BurstStep, { kind: 'thought' }>;
+  step: Exclude<SessionLogBurstStep, { kind: 'thought' }>;
   bareRow?: boolean;
   running: boolean;
   sessionId: string;
@@ -51,50 +48,44 @@ export function StepBody({
 }) {
   if (step.kind === 'group') {
     // Files, not tool cards, when the whole run is reads or writes. The choice
-    // is made here rather than in `mergeBurstSteps` so the merge module stays
-    // pure and its unwrap-a-run-of-one rule is untouched — which is also why
-    // the single-part branch below can reach the same row.
-    return isFileChipRun(step.step.parts) ? (
-      <ActivityFileChipStep
-        parts={step.step.parts}
-        running={running}
-        sessionId={sessionId}
-        disableNavigation={disableNavigation}
-      />
+    // is made here rather than in the burst steps so the merge rules stay
+    // pure and their unwrap-a-run-of-one rule is untouched — which is also why
+    // the single-call branch below can reach the same row.
+    const calls = step.blocks;
+    return isFileChipRun(calls) ? (
+      <ActivityFileChipStep calls={calls} sessionId={sessionId} disableNavigation={disableNavigation} />
     ) : (
       <ActivityGroupStep
-        step={step.step}
+        step={{ id: calls[0]!.call_id, family: step.family, label: step.label, parts: calls, status: step.status, durationMs: step.durationMs }}
         sessionId={sessionId}
-        running={running}
         disableNavigation={disableNavigation}
       />
     );
   }
+  // Neither tool nor reasoning: the label row only. The turn modules never
+  // silently drop a block (`stepLabel` falls back to a generic 'Used' label).
+  if (step.block.type !== 'tool_call') {
+    return <StepLabelRow label={stepLabel(step.block)} running={running} bare={bareRow} />;
+  }
+  const call = step.block;
   // An answered question renders as its own chain row — "Questions · N
   // answered", opening in place — never as the generic tool card.
-  if (isAnsweredQuestionPart(step.part)) {
-    return <AnsweredQuestionStep part={step.part} bare={bareRow} />;
+  if (isAnsweredQuestionCall(call)) {
+    return <AnsweredQuestionStep call={call} bare={bareRow} />;
   }
-  // A run of one read is unwrapped into a flat row by `mergeBurstSteps`, which
+  // A run of one read is unwrapped into a flat row by the burst steps, which
   // is right for a shell command and wrong here: one file is still a file.
-  if (isFileChipPart(step.part)) {
+  if (isFileChipCall(call)) {
     return (
       <ActivityFileChipStep
-        parts={[step.part]}
+        calls={[call]}
         bare={bareRow}
-        running={running}
         sessionId={sessionId}
         disableNavigation={disableNavigation}
       />
     );
   }
   return (
-    <ActivityStep
-      part={step.part}
-      bare={bareRow}
-      sessionId={sessionId}
-      running={running}
-      disableNavigation={disableNavigation}
-    />
+    <ActivityStep call={call} bare={bareRow} sessionId={sessionId} disableNavigation={disableNavigation} />
   );
 }

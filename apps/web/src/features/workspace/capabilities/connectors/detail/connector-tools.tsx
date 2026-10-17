@@ -23,6 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -414,9 +415,7 @@ export function ConnectorTools({
                   >
                     <CaretRightIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-(--duration-normal) ease-out group-data-[state=open]:rotate-90 motion-reduce:transition-none" />
                     <span className="truncate text-sm font-medium">{group.label}</span>
-                    <Badge variant="secondary" size="tabular">
-                      {group.actions.length}
-                    </Badge>
+                    <CountBadge count={group.actions.length} />
                   </Button>
                 </DisclosureTrigger>
                 <DropdownMenu>

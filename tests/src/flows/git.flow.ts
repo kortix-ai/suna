@@ -17,6 +17,7 @@
  *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
+import { withTransientGitRetry } from "../fixtures/git-transient";
 import { serveFixtureRepoLocally } from "../fixtures/local-git";
 import { withDb } from "../fixtures/chat";
 
@@ -519,9 +520,9 @@ flow(
       let code = 0;
       let output = '';
       try {
-        const result = await exec('git', args, { cwd: root, timeout: 60_000,
+        const result = await withTransientGitRetry(args, () => exec('git', args, { cwd: root, timeout: 60_000,
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
+            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } }));
         output = result.stdout + result.stderr;
       } catch (error: any) {
         code = typeof error.code === 'number' ? error.code : -1;
@@ -932,6 +933,7 @@ flow(
   'GH-19',
   {
     domain: 'git',
+    tags: ['deployed'],
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',
@@ -1010,8 +1012,12 @@ flow(
         if ((await mainSha()) !== before) throw new Error('an account member without a project role changed main');
       });
 
-      await ctx.step('project member PAT may read but not push main; main is unchanged', async () => {
-        await git(memberSecret, ['ls-remote', remote, 'refs/heads/main'], 'ok');
+      // A clone advertises every session branch, private sessions included, so
+      // a personal token reads the repository only with project.gitops.push.
+      // A member's own sessions read through their session credentials.
+      await ctx.step('project member PAT can neither read nor push main; main is unchanged', async () => {
+        const read = await git(memberSecret, ['ls-remote', remote, 'refs/heads/main'], 'rejected');
+        if (!/403|not authorized/i.test(read)) throw new Error(`expected a 403 refusal, got: ${read}`);
         await git(memberSecret, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
         if ((await mainSha()) !== before) throw new Error('a project member without gitops.push changed main');
       });

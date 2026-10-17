@@ -8,15 +8,15 @@ describe('session filter store (KRTX-250)', () => {
   beforeEach(() => get().reset());
 
   test('an unknown project has no filter', () => {
-    expect(get().byProject['p1'] ?? EMPTY_SESSION_FILTER).toEqual({ query: '', statuses: [], scope: 'all' });
+    expect(get().byProject['p1'] ?? EMPTY_SESSION_FILTER).toEqual({ query: '', statuses: [], scope: 'all', archived: false });
   });
 
   test('query and statuses are kept per project', () => {
     get().setQuery('p1', 'login');
     get().toggleStatus('p1', 'failed');
     get().toggleStatus('p2', 'running');
-    expect(get().byProject['p1']).toEqual({ query: 'login', statuses: ['failed'], scope: 'all' });
-    expect(get().byProject['p2']).toEqual({ query: '', statuses: ['running'], scope: 'all' });
+    expect(get().byProject['p1']).toEqual({ query: 'login', statuses: ['failed'], scope: 'all', archived: false });
+    expect(get().byProject['p2']).toEqual({ query: '', statuses: ['running'], scope: 'all', archived: false });
   });
 
   test('toggling a picked status removes it', () => {
@@ -41,6 +41,19 @@ describe('session filter store (KRTX-250)', () => {
     expect(get().byProject['p2']?.scope).toBe('mine');
     get().resetProject('p1');
     expect(get().byProject['p1']).toBeUndefined();
+  });
+
+  // KRTX-2418: the filter sheet's Archived row.
+  test('Archived toggles per project and keeps the other choices; Reset returns to the list', () => {
+    get().setQuery('p1', 'login');
+    get().toggleArchived('p1');
+    expect(get().byProject['p1']).toEqual({ query: 'login', statuses: [], scope: 'all', archived: true });
+    expect(get().byProject['p2']).toBeUndefined();
+    get().toggleArchived('p1');
+    expect(get().byProject['p1']?.archived).toBe(false);
+    get().toggleArchived('p1');
+    get().resetProject('p1');
+    expect(get().byProject['p1'] ?? EMPTY_SESSION_FILTER).toEqual(EMPTY_SESSION_FILTER);
   });
 
   test('reset (sign-out) clears every project', () => {

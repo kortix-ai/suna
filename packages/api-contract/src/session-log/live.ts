@@ -34,11 +34,15 @@ export function v1Seqs(v1: V1Transcript, options: FromV1Options = {}): Map<strin
 }
 
 /**
- * `fromV1` of one message, reopened: `fromV1` reads a turn at rest, so it marks an open reply
- * `interrupted` and closes its open calls with a synthetic result. Here the turn runs: the message
- * is `streaming` and an open call keeps its v1 status (`pending`, else `running`) with no result.
- * `known` names the fields the v1 frames do not carry: the message's `seq` in its thread, and
- * `created_at` when the harness times the message itself. The thread is `info.sessionID`.
+ * `fromV1` of one message of the running turn (`live: true`): the message is `streaming` while
+ * it is open or has an open call (pi completes a reply before its calls run; the rule is `fromV1`'s), an open call keeps
+ * its v1 status (`pending`, else `running`) with no result, and a pending call that streams its
+ * input carries the text so far as its `input`. The residual is taken against
+ * those blocks, so a running call keeps its display metadata (task `sessionId`, bash `command`)
+ * and `toV1` gives back the frames. `known` names the fields the v1 frames do not carry: the
+ * message's `seq` in its thread, and `created_at` when the harness times the message itself.
+ * The thread is `info.sessionID`. The API relay (old daemons) and kortixd both build their live
+ * puts with it.
  */
 export function liveMessageFromV1(
   row: { info: KortixMessageInfo; parts: KortixPart[] },
@@ -48,18 +52,7 @@ export function liveMessageFromV1(
   const thread = row.info.sessionID;
   const message = fromV1(
     { session_id: thread, root_id: thread, rows: [{ runtime_session_id: thread, info: row.info, parts: row.parts }] },
-    { harness },
+    { harness, live: true },
   ).threads[0]!.messages[0]!;
-  Object.assign(message, known);
-  let open = message.status === 'interrupted';
-  for (const block of message.blocks) {
-    if (block.type !== 'tool_call' || block.result?.error?.code !== 'interrupted' || !block.result.synthetic) continue;
-    const part = row.parts.find((p) => p.id === block.id) as { state?: { status?: string } } | undefined;
-    block.status = part?.state?.status === 'pending' ? 'pending' : 'running';
-    delete block.result;
-    delete block.ext; // the v1 residual of the closed call
-    open = true;
-  }
-  if (open) Object.assign(message, { status: 'streaming', completed_at: null, finish: null });
-  return message;
+  return Object.assign(message, known);
 }

@@ -2,6 +2,7 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory, visibleProjectRoster } from '../../iam/directory-visibility';
 import { revokeProjectRole } from '../../iam/assignments';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -20,7 +21,10 @@ import { readJsonObject } from '../../shared/http-body';
 
 export function registerProjectAccessRoutes(): void {
   // GET /v1/projects/:projectId/access
-  // Lists every account member and their explicit/effective project access.
+  // Lists the account members the caller may see and their explicit/effective
+  // project access: every member with `member.read`, only themselves without
+  // it, and everyone with access when they manage the project
+  // (iam/directory-visibility.ts).
 
   projectsApp.openapi(
     createRoute({
@@ -43,7 +47,11 @@ export function registerProjectAccessRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
 
-    return c.json(await buildProjectAccessView(loaded));
+    const [view, visible] = await Promise.all([
+      buildProjectAccessView(loaded),
+      visibleDirectory(await actorOf(c, loaded.row.accountId)),
+    ]);
+    return c.json(visibleProjectRoster(view, visible));
   },
   );
 
@@ -69,11 +77,8 @@ export function registerProjectAccessRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const targetUserId = c.req.param('userId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Member management is admin-only; loadProjectForUser('manage') now
-    // resolves to project.write, so we add an explicit
-    // stricter gate here.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
     const body = await readJsonObject(c);
@@ -147,7 +152,7 @@ export function registerProjectAccessRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const targetUserId = c.req.param('userId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

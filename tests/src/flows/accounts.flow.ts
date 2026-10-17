@@ -6,12 +6,13 @@ import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { Principal } from '../core/types';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
+import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
 
 flow(
   'ME-1',
-  { domain: 'accounts', tags: ['smoke'], routes: ['GET /v1/accounts/me'] },
+  { domain: 'accounts', tags: ['deployed', 'smoke'], routes: ['GET /v1/accounts/me'] },
   async (ctx) => {
     await ctx.step('OWNER sees own identity', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
@@ -47,7 +48,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -160,7 +161,7 @@ flow(
       r.status(403);
     });
     await ctx.step(
-      "plain MEMBER sees the directory, with other members' sensitive columns redacted",
+      'plain MEMBER lists only themselves: not the owner, not a teammate',
       async () => {
         const memberA = await team.addMember('member');
         const memberB = await team.addMember('member');
@@ -168,16 +169,210 @@ flow(
           .as(memberA)
           .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
         r.status(200);
-        const list = r.json<any[]>();
-        if (!list.some((m) => m.user_id === memberA.userId))
-          throw new Error('member cannot see their own row');
-        if (!list.some((m) => m.user_id === memberB.userId))
-          throw new Error('member directory omitted a teammate');
-        for (const m of list) {
-          if (m.user_id === memberA.userId) continue;
-          if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
-            throw new Error('sensitive member columns leaked to plain member');
-        }
+        const ids = r.json<Array<{ user_id: string }>>().map((m) => m.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([memberA.userId]))
+          throw new Error(`a plain member must list only themselves, got ${JSON.stringify(ids)} (teammate ${memberB.userId})`);
+      },
+    );
+  },
+);
+
+flow(
+  'MEM-8',
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/iam/groups',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants',
+      'GET /v1/projects/:projectId/access',
+      'GET /v1/accounts/:accountId/iam/mfa-required/preview',
+      'GET /v1/accounts/:accountId/iam/sessions',
+      'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
+      'POST /v1/accounts/:accountId/iam/roles',
+      'POST /v1/accounts/:accountId/iam/policies',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: team.id };
+    const viewer = await team.addMember('member');
+    const coProject = await team.addMember('member');
+    const groupMate = await team.addMember('member');
+    const viaGroup = await team.addMember('member');
+    const stranger = await team.addMember('member');
+    const admin = await team.addMember('admin');
+    const asViewer = ctx.client.as(viewer);
+    const shared = await team.project();
+    const hidden = await team.project();
+    let mine = '';
+    let onShared = '';
+    let elsewhere = '';
+
+    const group = async (slug: string, members: Principal[]) => {
+      const created = await owner.post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name(slug) },
+        { params },
+      );
+      const groupId = created.status(201).json<{ group_id: string }>().group_id;
+      (
+        await owner.post(
+          '/v1/accounts/:accountId/iam/groups/:groupId/members',
+          { userIds: members.map((m) => m.userId!) },
+          { params: { ...params, groupId } },
+        )
+      ).status(200);
+      return groupId;
+    };
+    const grantGroup = async (projectId: string, groupId: string) =>
+      (
+        await owner.post(
+          '/v1/projects/:projectId/group-grants',
+          { group_id: groupId, role: 'member' },
+          { params: { projectId } },
+        )
+      ).status(201);
+    const memberIds = async (who: Client) =>
+      (await who.get('/v1/accounts/:accountId/members', { params }))
+        .status(200)
+        .json<Array<{ user_id: string }>>()
+        .map((m) => m.user_id);
+    const groupRows = async (who: Client) =>
+      (await who.get('/v1/accounts/:accountId/iam/groups', { params }))
+        .status(200)
+        .json<{ groups: Array<{ group_id: string; project_count: number }> }>().groups;
+    const groupIds = async (who: Client) => (await groupRows(who)).map((g) => g.group_id);
+    const expectIds = (label: string, ids: string[], present: string[], absent: string[]) => {
+      const missing = present.filter((id) => !ids.includes(id));
+      const leaked = absent.filter((id) => ids.includes(id));
+      if (missing.length || leaked.length) {
+        throw new Error(`${label}: missing ${JSON.stringify(missing)}, leaked ${JSON.stringify(leaked)}`);
+      }
+    };
+
+    await ctx.step(
+      'setup: the viewer shares one project with a teammate and a group with another; a third reaches the project through a group; a fourth shares nothing',
+      async () => {
+        await team.grantProjectRole(shared.id, viewer.userId!, 'member');
+        await team.grantProjectRole(shared.id, coProject.userId!, 'member');
+        mine = await group('grp-mine', [viewer, groupMate]);
+        onShared = await group('grp-shared', [viaGroup]);
+        elsewhere = await group('grp-elsewhere', [stranger]);
+        await grantGroup(shared.id, onShared);
+        await grantGroup(hidden.id, onShared);
+        await grantGroup(hidden.id, elsewhere);
+      },
+    );
+
+    await ctx.step(
+      'a plain member lists only themselves: not the owner, the admin, nor anyone they share a project or a group with',
+      async () => {
+        expectIds(
+          'viewer members',
+          await memberIds(asViewer),
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, groupMate, viaGroup, stranger].map((p) => p.userId!),
+        );
+      },
+    );
+
+    await ctx.step('the owner and an admin still list every member', async () => {
+      const everyone = [viewer, coProject, groupMate, viaGroup, stranger].map((p) => p.userId!);
+      expectIds('owner members', await memberIds(owner), everyone, []);
+      expectIds('admin members', await memberIds(ctx.client.as(admin)), everyone, []);
+    });
+
+    await ctx.step('a plain member lists no group, not even their own; the owner lists every group', async () => {
+      expectIds('viewer groups', await groupIds(asViewer), [], [mine, onShared, elsewhere]);
+      expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
+    });
+
+    await ctx.step('every group → 404 for a plain member on read, members and project grants', async () => {
+      for (const groupId of [mine, onShared, elsewhere]) {
+        const at = { params: { ...params, groupId } };
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at)).status(404);
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at)).status(404);
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at)).status(404);
+      }
+      (await owner.get('/v1/accounts/:accountId/iam/groups/:groupId', { params: { ...params, groupId: onShared } }))
+        .status(200)
+        .body()
+        .has('$.group_id', onShared);
+    });
+
+    await ctx.step(
+      "a project's access list: a plain member sees only themselves; a member who manages it sees the people and groups with access to it, nobody else; the owner sees every member",
+      async () => {
+        const manager = await team.addMember('member');
+        await team.grantProjectRole(shared.id, manager.userId!, 'manager');
+        const roster = async (who: Client) => {
+          const view = (await who.get('/v1/projects/:projectId/access', { params: { projectId: shared.id } }))
+            .status(200)
+            .json<{ members: Array<{ user_id: string }>; group_access: Array<{ group_id: string }> }>();
+          return { people: view.members.map((m) => m.user_id), groups: view.group_access.map((g) => g.group_id) };
+        };
+        const asViewerRoster = await roster(asViewer);
+        expectIds(
+          'viewer project access',
+          asViewerRoster.people,
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, viaGroup, stranger].map((p) => p.userId!),
+        );
+        expectIds('viewer project groups', asViewerRoster.groups, [], [onShared]);
+        const managerRoster = await roster(ctx.client.as(manager));
+        expectIds(
+          'manager project access',
+          managerRoster.people,
+          [manager, viewer, coProject, viaGroup].map((p) => p.userId!),
+          [groupMate, stranger].map((p) => p.userId!),
+        );
+        expectIds('manager project groups', managerRoster.groups, [onShared], [mine, elsewhere]);
+        expectIds('owner project access', (await roster(owner)).people, [stranger.userId!], []);
+      },
+    );
+
+    await ctx.step(
+      "other members' MFA status, sign-in sessions and access details → 403 for a plain member; their own access → 200",
+      async () => {
+        (await asViewer.get('/v1/accounts/:accountId/iam/mfa-required/preview', { params })).status(403);
+        (await owner.get('/v1/accounts/:accountId/iam/mfa-required/preview', { params })).status(200);
+        (await asViewer.get('/v1/accounts/:accountId/iam/sessions', { params })).status(403);
+        const access = '/v1/accounts/:accountId/iam/members/:userId/project-access';
+        (await asViewer.get(access, { params: { ...params, userId: coProject.userId! } })).status(403);
+        (await asViewer.get(access, { params: { ...params, userId: viewer.userId! } })).status(200);
+      },
+    );
+
+    await ctx.step(
+      'an owner restores the full directory for one member with a custom role holding member.read and group.read',
+      async () => {
+        const key = `directory_${Date.now().toString(36)}`;
+        const role = await owner.post(
+          '/v1/accounts/:accountId/iam/roles',
+          { key, name: key, resourceType: 'account', actions: ['member.read', 'group.read'] },
+          { params },
+        );
+        const roleId = role.status(201).json<{ role_id: string }>().role_id;
+        (
+          await owner.post(
+            '/v1/accounts/:accountId/iam/policies',
+            { principalType: 'member', principalId: viewer.userId, roleId, scopeType: 'account' },
+            { params },
+          )
+        ).status(201);
+        // IAM verdicts are cached for up to 15 s: a fresh assignment can read the old answer first.
+        const ids = await waitFor(() => memberIds(asViewer), {
+          until: (list) => list.includes(stranger.userId!),
+          timeoutMs: 20_000,
+          intervalMs: 1_000,
+          description: 'the full member list after the custom role',
+        });
+        expectIds('viewer members after the role', ids, [stranger.userId!], []);
+        expectIds('viewer groups after the role', await groupIds(asViewer), [elsewhere], []);
       },
     );
   },
@@ -691,16 +886,11 @@ flow(
       if (!(await pending(admin)).some((i) => i.invite_id === inviteId)) throw new Error('admin cannot see the pending invite');
       (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, { params: { ...params, userId: admin.userId! } }))
         .status(200).body().has('$.account_role', 'member');
-      // Each API process caches a caller's role for up to 15 s, and the demotion
-      // clears only the process that took it. Read until 8 lists in a row are
-      // empty, so every process behind the load balancer sees a member before
-      // the next step tries the admin-only writes.
-      const deadline = Date.now() + 30_000;
-      for (let streak = 0; streak < 8; ) {
-        const leaked = (await pending(admin)).length;
-        if (leaked !== 0 && Date.now() > deadline) throw new Error('pending invites leaked to a demoted member');
-        streak = leaked === 0 ? streak + 1 : 0;
-        if (streak < 8) await new Promise((resolve) => setTimeout(resolve, leaked === 0 ? 100 : 1_000));
+      // The demotion busts the caller's cached role on every API process over
+      // LISTEN/NOTIFY (iam/cache-invalidation.ts), so no process behind the load
+      // balancer may still serve the admin view. Every read must be empty.
+      for (let read = 0; read < 8; read++) {
+        if ((await pending(admin)).length !== 0) throw new Error(`read ${read + 1}: pending invites leaked to a demoted member`);
       }
     });
     await ctx.step('a plain member cannot resend the invite or promote themselves → 403; the invite is unchanged', async () => {
@@ -824,6 +1014,7 @@ flow(
   'TOK-3',
   {
     domain: 'accounts',
+    tags: ['deployed'],
     serial: true,
     routes: [
       'POST /v1/accounts/tokens',
@@ -888,6 +1079,9 @@ flow(
       'GET /v1/accounts/me',
       'PATCH /v1/accounts/:accountId',
       'POST /v1/accounts/:accountId/iam/oauth-clients',
+      'GET /v1/accounts/tokens',
+      'GET /v1/accounts/:accountId/iam/service-accounts',
+      'GET /v1/accounts/:accountId/iam/oauth-clients',
     ],
   },
   async (ctx) => {
@@ -954,6 +1148,29 @@ flow(
         query: { account_id },
       });
       r.status(403);
+    });
+
+    await ctx.step("MEMBER lists the account's tokens → only their own; OWNER (token.revoke) → both", async () => {
+      const ids = async (as: ReturnType<typeof ctx.client.as>) => {
+        const r = await as.get('/v1/accounts/tokens', { query: { account_id } });
+        r.status(200);
+        return r.json<Array<{ token_id: string }>>().map((t) => t.token_id);
+      };
+      const mine = await ids(ctx.client.as(member));
+      if (!mine.includes(memberTokenId)) throw new Error('member list must hold the member token');
+      if (mine.includes(ownerTokenId)) throw new Error("member list must not hold the owner's token");
+      const all = await ids(ctx.client.as(ctx.P.OWNER));
+      if (!all.includes(memberTokenId) || !all.includes(ownerTokenId)) {
+        throw new Error('owner list must hold every live token of the account');
+      }
+    });
+
+    await ctx.step('MEMBER cannot list service accounts or OAuth clients → 403 (token.create); OWNER → 200', async () => {
+      const params = { accountId: account_id };
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(403);
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(403);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(200);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(200);
     });
 
     await ctx.step("the owner's token still authenticates after the refused revoke → 200", async () => {

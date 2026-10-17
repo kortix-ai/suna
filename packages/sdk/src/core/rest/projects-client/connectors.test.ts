@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  checkMcpServerSignIn,
   addComputerToProject,
   createConnector,
   deleteConnector,
@@ -1046,6 +1047,15 @@ test('setConnectorCredential PUTs a native OAuth2 client-credentials configurati
   expect(last().body).toEqual({ oauth2 });
 });
 
+// Storing a credential re-syncs an MCP connector. The response carries that
+// sync, so a caller can tell "stored" from "stored, and the tools load".
+test('setConnectorCredential returns the re-sync the credential ran', async () => {
+  const errors = [{ slug: 'linear', error: 'MCP tools/list failed: HTTP 401' }];
+  nextResponse = { status: 200, body: { ok: true, sync: { synced: 1, errors } } };
+  const result = await setConnectorCredential('P1', 'linear', 'sekret');
+  expect(result.sync?.errors).toEqual(errors);
+});
+
 test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', async () => {
   nextResponse = { status: 200, body: { connected: true, accountId: 'acc_1' } };
   const result = await pipedreamFinalize('P1', 'github');
@@ -1537,4 +1547,18 @@ test('connectorConnect forwards the redirect URIs the hosted flow returns to', a
 
   await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
   expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
+});
+
+test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is one click', async () => {
+  nextResponse = { status: 200, body: { requires_sign_in: true, one_click: true } };
+  const check: import('./connectors').McpServerSignInCheck = await checkMcpServerSignIn(
+    'p1',
+    'https://mcp.example.test/mcp',
+  );
+  expect(check).toEqual({ requires_sign_in: true, one_click: true });
+  expect(last()).toEqual({
+    url: 'http://test.local/connectors/projects/p1/connectors/mcp-sign-in-check',
+    method: 'POST',
+    body: { url: 'https://mcp.example.test/mcp' },
+  });
 });

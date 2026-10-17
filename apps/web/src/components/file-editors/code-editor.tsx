@@ -25,6 +25,7 @@ import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contentAfterExternalChange } from './external-content';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
+import { jumpToLine, targetLineField } from './target-line';
 
 // Language id (from `getLanguageFromExtension` or the `language` prop) →
 // candidate keys in the @uiw/codemirror-extensions-langs `langs` map, tried in
@@ -331,6 +332,10 @@ export function CodeEditor({
   const [isReady, setIsReady] = useState(!!content);
   // Track last targetLine we scrolled to, so we only scroll once per value
   const lastScrolledLine = useRef<number | null>(null);
+  // CodeMirror creates its view in its own effect, after this component's
+  // first effects ran, so `editorRef.current.view` is still unset there. The
+  // scroll below waits for this instead.
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
 
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
@@ -391,23 +396,16 @@ export function CodeEditor({
     injectDiagnosticStyles();
   }, []);
 
-  // Scroll to targetLine when it changes
+  // Scroll to targetLine when it changes, or once the view exists
   useEffect(() => {
     if (!targetLine || targetLine === lastScrolledLine.current) return;
-    const view = editorRef.current?.view;
+    const view = editorView;
     if (!view) return;
 
-    // targetLine is 1-indexed, CodeMirror doc.line is 1-indexed
-    const lineNumber = Math.max(1, Math.min(targetLine, view.state.doc.lines));
-    const line = view.state.doc.line(lineNumber);
-
-    // Scroll so the line is centered vertically
-    view.dispatch({
-      selection: { anchor: line.from },
-      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
-    });
+    // Centre the line and mark it: a read-only view draws no cursor.
+    view.dispatch(jumpToLine(view.state, targetLine));
     lastScrolledLine.current = targetLine;
-  }, [targetLine]);
+  }, [targetLine, editorView]);
 
   // Calculate editor height based on container - never exceed container bounds
   // For read-only mode, use auto height to let content expand naturally (better for preview contexts)
@@ -569,7 +567,7 @@ export function CodeEditor({
     }
 
     // Always add these core extensions
-    exts.push(EditorView.lineWrapping, keymap.of([indentWithTab]));
+    exts.push(EditorView.lineWrapping, keymap.of([indentWithTab]), targetLineField);
 
     // Add lint gutter + diagnostic decorations when diagnostics are present
     if (diagExt) {
@@ -718,7 +716,7 @@ export function CodeEditor({
       <div
         ref={editorContainerRef}
         className={cn(
-          'w-full max-w-full bg-white dark:bg-zinc-900',
+          'bg-background w-full max-w-full',
           editorClassName,
           readOnly
             ? 'min-h-full flex-1 overflow-visible' // Stretch to fill parent so short files still fill the viewport
@@ -729,6 +727,7 @@ export function CodeEditor({
         {mounted && (
           <CodeMirror
             ref={editorRef}
+            onCreateEditor={setEditorView}
             value={localContent}
             onChange={handleChange}
             theme={theme}

@@ -1,5 +1,6 @@
 import type { StatusTone } from '@/components/ui/status';
-import type { FlatModel, MessageWithParts } from '@kortix/sdk/react';
+import type { SessionLogMessage } from '@kortix/sdk';
+import type { FlatModel } from '@kortix/sdk/react';
 
 export interface ContextBreakdown {
   input: number;
@@ -17,26 +18,32 @@ const EMPTY_BREAKDOWN: ContextBreakdown = {
   total: 0,
 };
 
+/**
+ * The context size: the usage of the last reply (an assistant message, or a
+ * compaction, whose usage is its summary reply's) with a positive token total.
+ * `sessionLogThreadMetrics(...).context` picks the same message, but prices the
+ * whole thread to do it.
+ */
 export function getLastAssistantTokenBreakdown(
-  messages: MessageWithParts[] | undefined,
+  messages: SessionLogMessage[] | undefined,
 ): ContextBreakdown {
   if (!messages) return EMPTY_BREAKDOWN;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg.info.role !== 'assistant') continue;
-    const t = msg.info.tokens;
+    if (msg.role !== 'assistant' && msg.kind !== 'compaction') continue;
+    const t = msg.usage;
     if (!t) continue;
-    const input = t.input ?? 0;
-    const output = t.output ?? 0;
+    const input = t.input;
+    const output = t.output;
     const reasoning = t.reasoning ?? 0;
-    const cache = (t.cache?.read ?? 0) + (t.cache?.write ?? 0);
+    const cache = t.cache_read + t.cache_write;
     const total = input + output + reasoning + cache;
     if (total > 0) return { input, output, reasoning, cache, total };
   }
   return EMPTY_BREAKDOWN;
 }
 
-export function getLastAssistantTokenTotal(messages: MessageWithParts[] | undefined): number {
+export function getLastAssistantTokenTotal(messages: SessionLogMessage[] | undefined): number {
   return getLastAssistantTokenBreakdown(messages).total;
 }
 
@@ -100,7 +107,7 @@ export interface ContextUsage extends ContextReading {
 }
 
 export function getContextUsage(
-  messages: MessageWithParts[] | undefined,
+  messages: SessionLogMessage[] | undefined,
   models?: FlatModel[],
   selectedModel?: { providerID: string; modelID: string } | null,
 ): ContextUsage {
@@ -118,7 +125,7 @@ export function getContextUsage(
 }
 
 export function getContextReading(
-  messages: MessageWithParts[] | undefined,
+  messages: SessionLogMessage[] | undefined,
   models?: FlatModel[],
   selectedModel?: { providerID: string; modelID: string } | null,
 ): ContextReading {

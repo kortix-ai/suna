@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   fromV1,
+  liveMessageFromV1,
   toV1,
   upcast,
   SessionLogMessageSchema,
@@ -453,11 +454,44 @@ describe('fromV1 live: the turn that runs is not closed', () => {
     expect((m.blocks[0] as ToolCallBlock).input).toBe('{"filePath":"/w/a.ts","content":"exp');
   });
 
-  test('an open reply is streaming; a reply with an error keeps its error status', () => {
+  test('an open reply is streaming; an aborted reply with open calls streams while they are open; a failed attempt keeps its error status', () => {
     expect(message(live, 'msg_r05')).toMatchObject({ status: 'streaming', in_context: true, completed_at: null });
     expect(block(message(live, 'msg_r05'), 'prt_r05a')).toMatchObject({ status: 'pending', input: { url: 'https://example.com' } });
-    expect(message(live, 'msg_r03')).toMatchObject({ status: 'aborted', finish: 'aborted' });
+    // msg_r03 is aborted with a running and a pending call, in context: `aborted` with open calls fails rule C2 (an
+    // in-context message that is not streaming holds no open call), so the live view streams it until the calls close.
+    expect(message(live, 'msg_r03')).toMatchObject({ status: 'streaming', in_context: true, error: { code: 'aborted', message: 'Aborted' } });
+    expect(SessionLogMessageSchema.safeParse(message(live, 'msg_r03')).success).toBe(true);
     expect(message(live, 'msg_r04')).toMatchObject({ status: 'error', in_context: false });
+  });
+
+  test('a complete reply with an open call streams (pi completes a reply before its calls run); the round trip stays exact', () => {
+    const row = assistant(ROOT, 'msg_pi_open', T0 + 40_000, 'msg_r01', (m) => [
+      tool(ROOT, m, 'prt_pi_open', 'bash', { status: 'running', input: { command: 'make' }, title: 'make', time: { start: T0 + 40_001 } }),
+    ], { finish: 'tool-calls', time: { created: T0 + 40_000, completed: T0 + 40_500 } });
+    const x: V1Transcript = { session_id: 's', root_id: ROOT, rows: [row] };
+    const m = message(fromV1(json(x), { live: true }), 'msg_pi_open');
+    expect(m).toMatchObject({ status: 'streaming', in_context: true, finish: 'tool_calls' });
+    expect(SessionLogMessageSchema.safeParse(m).success).toBe(true);
+    expectExact(x, roundTrip(x, { live: true }));
+    // At rest the closure rule closes the call and the reply stays complete.
+    expect(message(fromV1(json(x)), 'msg_pi_open')).toMatchObject({ status: 'complete', blocks: [{ status: 'error', result: { synthetic: true } }] });
+  });
+
+  test('an aborted live row with a visible block and an open call streams (it stays in context, C2); an errored one keeps `error` (out of context)', () => {
+    const open = (m: string) => [text(ROOT, m, 'prt_lv_t', 'partial'), tool(ROOT, m, 'prt_lv_c', 'bash', { status: 'running', input: { command: 'sleep 9' }, time: { start: T0 + 50_001 } })];
+    const aborted = assistant(ROOT, 'msg_lv_abort', T0 + 50_000, 'msg_r01', open, { finish: undefined, time: { created: T0 + 50_000 }, error: { name: 'MessageAbortedError', data: { message: 'Aborted' } } });
+    const failed = assistant(ROOT, 'msg_lv_fail', T0 + 51_000, 'msg_r01', open, { finish: undefined, time: { created: T0 + 51_000 }, error: { name: 'APIError', data: { message: 'boom', isRetryable: false } } });
+    const x: V1Transcript = { session_id: 's', root_id: ROOT, rows: [aborted, failed] };
+    const live = fromV1(json(x), { live: true });
+    expect(message(live, 'msg_lv_abort')).toMatchObject({ status: 'streaming', in_context: true, error: { message: 'Aborted' } });
+    expect(message(live, 'msg_lv_fail')).toMatchObject({ status: 'error', in_context: false, hidden_reason: 'failed_attempt' });
+    for (const id of ['msg_lv_abort', 'msg_lv_fail']) {
+      expect((block(message(live, id), 'prt_lv_c') as ToolCallBlock).status).toBe('running');
+      expect(SessionLogMessageSchema.safeParse(message(live, id)).success).toBe(true);
+    }
+    expectExact(x, roundTrip(x, { live: true }));
+    // At rest both are closed: the abort stays aborted, the failure stays an error.
+    expect(message(fromV1(json(x)), 'msg_lv_abort')).toMatchObject({ status: 'aborted', blocks: [{}, { status: 'error', result: { synthetic: true } }] });
   });
 
   test('a compaction whose summary has not arrived is streaming, not interrupted', () => {
@@ -467,6 +501,58 @@ describe('fromV1 live: the turn that runs is not closed', () => {
   test('settled calls and messages are the same as at rest', () => {
     const rest = fromV1(mainFixture());
     for (const id of ['msg_r01', 'msg_r02', 'msg_r04', 'msg_r06', 'msg_r11', 'msg_c02']) expect(message(live, id)).toEqual(message(rest, id));
+  });
+});
+
+describe('liveMessageFromV1: a message of the running turn keeps its v1 residual (P4.7)', () => {
+  // The frames so far of one reply: a running task, a running bash call, a pending call that streams its input.
+  const reply = assistant(ROOT, 'msg_lv02', T0 + 100, 'msg_lv01', (m) => [
+    tool(ROOT, m, 'prt_lv02a', 'task', { status: 'running', input: { description: 'sub', prompt: 'p', subagent_type: 'general' }, title: 'sub', metadata: { sessionId: CHILD }, time: { start: T0 + 110 } }),
+    tool(ROOT, m, 'prt_lv02b', 'bash', { status: 'running', input: { command: 'ls -la', description: 'Lists' }, title: 'Lists', metadata: { command: 'ls -la', output: 'total 0' }, time: { start: T0 + 120 } }),
+    tool(ROOT, m, 'prt_lv02c', 'write', { status: 'pending', input: {}, raw: '{"filePath":"/w/a.ts","content":"exp' }),
+  ], { finish: undefined, time: { created: T0 + 100 } });
+  const live = liveMessageFromV1(json({ info: reply.info, parts: reply.parts }), { seq: 2 });
+  /** The v1 parts `toV1` rebuilds from the live message, in a v1-derived thread. */
+  const partsBack = (m: SessionLogMessage) => {
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows: [json(reply)] }, { live: true });
+    log.threads[0]!.messages = [m];
+    return toV1(json(log)).rows[0]!.parts;
+  };
+
+  test('the message streams; the open calls stay open with no result', () => {
+    expect(live).toMatchObject({ seq: 2, status: 'streaming', completed_at: null, finish: null });
+    expect(live.blocks.map((b) => [(b as ToolCallBlock).status, (b as ToolCallBlock).result])).toEqual([['running', undefined], ['running', undefined], ['pending', undefined]]);
+  });
+
+  test('a running task keeps state.metadata.sessionId: toV1 restores the part', () => {
+    expect(partsBack(live)[0]).toEqual(json(reply.parts[0]));
+    expect((partsBack(live)[0] as { state: { metadata: unknown } }).state.metadata).toEqual({ sessionId: CHILD });
+  });
+
+  test('a running bash call keeps state.metadata.command: toV1 restores the part', () => {
+    expect(partsBack(live)[1]).toEqual(json(reply.parts[1]));
+  });
+
+  test('a pending call carries its partial input as a string; toV1 restores raw and the empty input', () => {
+    expect((live.blocks[2] as ToolCallBlock).input).toBe('{"filePath":"/w/a.ts","content":"exp');
+    expect(partsBack(live)[2]).toEqual(json(reply.parts[2]));
+    expect(SessionLogMessageSchema.safeParse(live).success).toBe(true);
+  });
+
+  test('the whole live message round-trips: toV1 gives back the frames', () => {
+    expect(partsBack(live)).toEqual(json(reply.parts));
+  });
+
+  test('pi completes a reply before its calls run: a completed reply with an open call streams, and toV1 keeps its completion', () => {
+    const pi = assistant(ROOT, 'msg_lv03', T0 + 200, 'msg_lv01', (m) => [
+      tool(ROOT, m, 'prt_lv03a', 'bash', { status: 'running', input: { command: 'echo hi' }, metadata: { output: '' }, time: { start: T0 + 210 } }),
+    ], { finish: undefined });
+    const m = liveMessageFromV1(json({ info: pi.info, parts: pi.parts }), { seq: 3 }, 'pi');
+    expect(m).toMatchObject({ status: 'streaming', in_context: true });
+    expect(SessionLogMessageSchema.safeParse(m).success).toBe(true);
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows: [json(pi)] }, { harness: 'pi', live: true });
+    log.threads[0]!.messages = [m];
+    expect(toV1(json(log)).rows).toEqual([json(pi)]);
   });
 });
 
@@ -533,6 +619,18 @@ describe('toV1 on native v2 records', () => {
     m.blocks.push({ type: 'harness', id: 'h1', harness: 'pi', kind: 'custom', data: { anything: true }, model_visible: false });
     const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
     expect(row.parts.some((p) => (p as { anything?: boolean }).anything)).toBe(false);
+  });
+
+  test('a native tool call: its display data is the v1 state.metadata, as the harness v1 part has it (result.details, else the adapter ext details)', () => {
+    const log = JSON.parse(readFileSync(join(FIXTURE_DIR, 'pi.v2.json'), 'utf8')) as SessionLog;
+    const parts = toV1(log).rows.flatMap((r) => r.parts as Array<{ type: string; tool?: string; state?: { status: string; metadata?: unknown } }>);
+    const task = parts.find((p) => p.tool === 'task')!;
+    expect(task.state!.metadata).toMatchObject({ sessionId: 'ses_pilive0000000000000001-child1' });
+    const call = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'task') as { result: { details?: unknown }; ext?: unknown };
+    call.ext = { pi: { version: '1.0.3', native_id: 'r1', data: { details: { answers: [['Yes']] } } } };
+    delete call.result.details;
+    const moved = toV1(log).rows.flatMap((r) => r.parts as typeof parts).find((p) => p.tool === 'task')!;
+    expect(moved.state!.metadata).toEqual({ answers: [['Yes']] });
   });
 
   test('toV1 does not alias its input', () => {

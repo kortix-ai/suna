@@ -76,6 +76,8 @@ export interface FilePreviewModalProps extends FilePreviewState {
   shareContext?: { projectId: string; sessionId: string };
   /** History button tooltip. */
   historyLabel?: string;
+  /** 1-based line to scroll to, e.g. a content-search match. Opens Markdown as source. */
+  targetLine?: number | null;
   /**
    * When true, the viewer renders INLINE — filling its (relative) parent
    * container instead of portaling to a full-screen overlay. An "Expand"
@@ -126,6 +128,7 @@ export function FilePreviewModal({
   shareContext,
   historyLabel = 'History',
   embedded = false,
+  targetLine = null,
 }: FilePreviewModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
@@ -169,12 +172,13 @@ export function FilePreviewModal({
   // The dialog surface — focus target for the trap and the focus-on-open below.
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset transient view state when the file changes.
+  // Reset transient view state when the file changes. A jump to a line shows
+  // the source: rendered Markdown has no lines to scroll to.
   useEffect(() => {
     setHistoryPath(null);
-    setMarkdownPreview(true);
+    setMarkdownPreview(!targetLine);
     setExpanded(false);
-  }, [selectedFilePath]);
+  }, [selectedFilePath, targetLine]);
 
   // Keyboard navigation. Capture-phase + stopImmediatePropagation so ESC only
   // closes the preview, not a host Radix dialog underneath (Customize overlay).
@@ -505,6 +509,7 @@ export function FilePreviewModal({
             reloadKey={reloadKey}
             showHeader={false}
             readOnly
+            targetLine={targetLine}
             markdownPreview={markdownPreview}
             onMarkdownPreviewChange={setMarkdownPreview}
           />

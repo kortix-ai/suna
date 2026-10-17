@@ -142,13 +142,19 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix secrets ls`                             | List secret names + manifest `[env]` requirements                    | `GET /v1/projects/:id/secrets`                                      |
 | `kortix secrets set <NAME>=<VALUE>...`          | Upsert one or more secrets (read VALUE from stdin if `-`)            | `POST /v1/projects/:id/secrets` (per entry)                         |
 | `kortix secrets unset <NAME>...`                | Remove                                                               | `DELETE /v1/projects/:id/secrets/:name`                             |
-| `kortix sessions ls`                            | List sessions with their starter; `--mine/--shared/--automated` list top-level sessions, `--search`, `--children` | `GET /v1/projects/:id/sessions`                                     |
+| `kortix sessions ls`                            | List sessions with their starter; `--mine/--shared/--automated` list top-level sessions, `--search`, `--children`; leaves out your archived sessions, `--pinned/--archived` list only those | `GET /v1/projects/:id/sessions`                                     |
 | `kortix sessions new [--prompt "..."]`          | Start a session                                                      | `POST /v1/projects/:id/sessions`                                    |
 | `kortix sessions open <session-id>`             | Print / open the dashboard URL for one session                       | none                                                                |
 | `kortix sessions logs <session-id> [-f]`        | Stream session output                                                | `GET /v1/projects/:id/sessions/:sid/events` (SSE — exists)          |
-| `kortix sessions rm <session-id>`               | Stop + delete                                                        | `DELETE /v1/projects/:id/sessions/:sid`                             |
+| `kortix sessions rm <session-id>`               | Stop + delete; restorable for 30 days, branch kept                   | `DELETE /v1/projects/:id/sessions/:sid`                             |
+| `kortix sessions restore <session-id>`          | Restore a deleted session within 30 days (full id)                  | `POST /v1/projects/:id/sessions/:sid/restore`                       |
+| `kortix sessions pin/unpin <session-id>...`     | Pin or unpin sessions in your own list                               | `PUT /v1/projects/:id/sessions/:sid/pin`                            |
+| `kortix sessions archive/unarchive <session-id>...` | Take sessions out of your own list, or put them back; archiving unpins | `PUT /v1/projects/:id/sessions/:sid/archive`                    |
 | `kortix triggers ls`                            | List triggers                                                        | `GET /v1/projects/:id/triggers`                                     |
 | `kortix triggers fire <slug>`                   | Manually fire, wait for the run outcome, exit non-zero on failure     | `POST /v1/projects/:id/triggers/:slug/fire`                         |
+| `kortix triggers fire <slug> --payload <json> [--dry-run]` | Fire with a payload, or render the fire without running it | `POST /v1/projects/:id/triggers/:slug/fire` `{payload, dry_run}` |
+| `kortix triggers runs <slug>`                   | List the trigger's runs, newest first                                | `GET /v1/projects/:id/triggers/:slug/runs`                          |
+| `kortix triggers replay <slug> <run_id>`        | Fire again with a run's stored payload                               | `POST /v1/projects/:id/triggers/:slug/runs/:run_id/replay`          |
 | `kortix triggers enable/disable <slug>`         | Flip `enabled` in manifest                                           | `PATCH /v1/projects/:id/triggers/:slug`                             |
 | `kortix triggers events --apps / --app <app> / --connector <slug> [--event <TYPE>]` | List event-capable apps, a connector's events, or one event's config and payload | `GET /v1/projects/:id/triggers/event-apps`, `…/event-types`         |
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |

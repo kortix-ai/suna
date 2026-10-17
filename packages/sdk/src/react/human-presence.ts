@@ -15,6 +15,12 @@
 export const PRESENCE_INPUT_WINDOW_MS = 10 * 60_000;
 /** How often the view re-checks, and renews while its stream is down. */
 export const PRESENCE_CHECK_MS = 30_000;
+/**
+ * How often a present view re-sends present to read the awake window again.
+ * The stream renews the lease and the deadline without a response, so the
+ * window the view holds is as old as its last PUT.
+ */
+export const PRESENCE_AWAKE_REFRESH_MS = 5 * 60_000;
 
 const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll', 'focus'] as const;
 
@@ -103,5 +109,25 @@ export function presenceReporter(
       alerts = next;
       if (present) put({ active: true, alerts });
     },
+    /** Re-send present to read the awake window again (KRTX-1729). Nothing while absent. */
+    refresh() {
+      if (present) put({ active: true, alerts });
+    },
   };
+}
+
+/**
+ * The awake window from a presence response (KRTX-1729): until when the
+ * computer stays on, and the cap presence cannot keep it on past. Null when
+ * the response has none: a read-only viewer, a stopped computer, an absent
+ * report, or an API from before the window existed.
+ */
+export function presenceAwakeFrom(body: {
+  awake_until?: string | null;
+  awake_cap_at?: string | null;
+}): { until: Date; capAt: Date } | null {
+  if (!body.awake_until || !body.awake_cap_at) return null;
+  const until = new Date(body.awake_until);
+  const capAt = new Date(body.awake_cap_at);
+  return Number.isNaN(until.getTime()) || Number.isNaN(capAt.getTime()) ? null : { until, capAt };
 }

@@ -3,8 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { MessageWithParts } from '@/ui';
-import type { SessionMessageAuthor } from '@kortix/sdk';
+import { sessionLogOfV1Rows, type SessionMessageAuthor } from '@kortix/sdk';
 
 import { UserMessage } from './user-message';
 
@@ -17,10 +16,12 @@ const render = (props: Record<string, unknown> = {}) =>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <UserMessage
           message={
-            {
-              info: { id: 'message-1', role: 'user' },
-              parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: 'Looks good to me.' }],
-            } as MessageWithParts
+            sessionLogOfV1Rows('session-1', 'ses_runtime', [
+              {
+                info: { id: 'message-1', role: 'user' },
+                parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: 'Looks good to me.' }],
+              } as never,
+            ]).threads[0]!.messages[0]!
           }
           sessionId="session-1"
           ownsPlan={false}

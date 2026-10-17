@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -222,7 +222,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps is Kortix-managed: listed as `on kortix` only while on; only Kortix changes it. |
+| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
@@ -383,9 +383,8 @@ type. `labels` (for example `backend`) only group and filter Apps.
   an admins-only dashboard (`backend-dashboard`). Its code lives in
   `apps/backend/convex/` and ships with `npx convex deploy`.
 
-Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The CLI labels
-Apps as experimental.
+Apps are generally available in every project. Use Apps directly; no feature
+flag or enablement request is required.
 
 New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
@@ -417,8 +416,7 @@ A server App supports HTTP services (each on its own host), HTTP streaming,
 SSE and WebSockets. Apps do not support TCP or UDP services, private
 networking between Apps, private registries, or custom domains yet.
 
-**Build a product: what to create.** Check the flag first:
-`kortix projects info --json` → `experimental.apps`.
+**Build a product: what to create.**
 
 | The user wants | Build |
 | --- | --- |
@@ -427,10 +425,6 @@ networking between Apps, private registries, or custom domains yet.
 | A backend (data, functions, realtime) or an API only | The `convex` template, or a server App with a volume |
 | A call to an external system from an App | The connector gateway (`kortix-connectors`) |
 | Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
-
-When `apps` is off, build with the project's own storage and code (the
-project's web-app skills, `webapp`, `web-publishing-and-deployments`), and tell
-the user once that Kortix can enable it.
 
 Load the `kortix-apps` system skill before you deploy or operate an App, and
 before you write Convex code.

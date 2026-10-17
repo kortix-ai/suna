@@ -64,6 +64,10 @@ Subcommands:
                                     and ignores both.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
+    --url <https-url>               An external App: a site hosted elsewhere that
+                                    Kortix lists and shows in the Apps page, and
+                                    never deploys. It runs no machine and takes
+                                    no App slot.
   launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
@@ -107,6 +111,7 @@ Subcommands:
                                     deployment. A run-mode change applies within
                                     5 minutes.
     --name <name>
+    --url <https-url>               Move an external App to another URL.
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
@@ -133,15 +138,19 @@ Subcommands:
                                     Destroy one machine. Its volume stays; its group runs
                                     one machine fewer.
   scale count <id|slug> <n>         Machines for a process group (0-20). --process <group>
-                                    (default app). A group with a mount gets one new, empty
-                                    volume per new machine.
+                                    (default app). A group with a mount runs one machine:
+                                    scale its machine size instead (apps set --cpu/--memory).
+    --new-volumes                   Accept more: each new machine gets its own, EMPTY
+                                    volume and serves different data behind the same URL.
   scale show <id|slug>              Machines per process group.
   exec <id|slug> -- <command…>      Run one command in a running machine and print its
                                     output (admins). --machine <id>, --timeout <s> (≤ 300).
-  volumes [ls] <id|slug>            Volumes: name, group, size, attached, retention.
+  volumes [ls] <id|slug>            Volumes: name, group, used, size, attached, retention.
   volumes create <id|slug> <name> --size <gb> [--process <group>]
-  volumes extend <id|slug> <volume> --size <gb>
-                                    Grow a volume (it never shrinks).
+  volumes set <id|slug> <volume> --retention <days>
+                                    Keep daily snapshots 1-60 days (default 5).
+                                    A volume has a fixed size (100 GB on Platinum) and
+                                    cannot grow: past that, keep files in object storage.
   volumes snapshots <id|slug> <volume>
                                     Daily snapshots (kept snapshot_retention_days), manual
                                     ones and the final one of a destroyed volume.
@@ -203,8 +212,9 @@ export function resolveDeploymentTarget(
  * active deployment, whatever `desired_state` says, so it reads `static`.
  */
 export function appStateLabel(
-  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'>,
+  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id' | 'external_url'>,
 ): string {
+  if (app.external_url) return 'external';
   if (!app.active_deployment_id) return 'undeployed';
   if (app.hosting_type === 'static') return 'static';
   return app.desired_state;
@@ -329,6 +339,7 @@ async function createCommand(
   dropRetiredBudgetFlag(rest);
   const uses = usesList(takeFlagValue(rest, ['--uses']));
   const name = takeFlagValue(rest, ['--name']);
+  const externalUrl = takeFlagValue(rest, ['--url']);
   const slugInput = rest.find((value) => !value.startsWith('-'));
   if (!slugInput) return fail('create needs a slug');
   rest.splice(rest.indexOf(slugInput), 1);
@@ -344,6 +355,7 @@ async function createCommand(
       '--idle-timeout',
     ),
     ...(uses ? { uses } : {}),
+    ...(externalUrl ? { external_url: externalUrl } : {}),
     ...runMode(rest),
   };
   // Omitted flags stay off the wire: the server picks the defaults.
@@ -359,7 +371,7 @@ async function createCommand(
 
 /** How a server App runs: 24/7, or on demand. None for a static App (no machine). */
 function runModeRows(app: App): string {
-  if (app.hosting_type === 'static') return '';
+  if (app.hosting_type === 'static' || app.external_url) return '';
   const value = app.always_on === false ? `on demand (stops after ${app.idle_timeout_seconds}s idle)` : '24/7';
   return `  ${C.dim}${pad('runs', 14)}${C.reset}${value}\n`;
 }
@@ -380,11 +392,12 @@ function appLines(app: App): string {
     value ? `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n` : '';
   return (
     row('url', app.url) +
-    row('capabilities', app.capabilities?.join(', ')) +
+    row('hosted', app.external_url ? 'elsewhere (external App: Kortix shows it, never deploys it)' : null) +
+    row('capabilities', app.capabilities?.length ? app.capabilities.join(', ') : app.external_url ? 'none (the site refuses a frame: it opens in a new tab)' : null) +
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
     row('shown', displaySummary(app)) +
-    row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
+    (app.external_url ? '' : row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`)) +
     runModeRows(app)
   );
 }
@@ -426,6 +439,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const uses = usesList(takeFlagValue(rest, ['--uses']));
+  const externalUrl = takeFlagValue(rest, ['--url']);
   Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
@@ -435,9 +449,10 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (disk !== undefined) input.disk_gb = disk;
   if (idle !== undefined) input.idle_timeout_seconds = idle;
   if (uses !== undefined) input.uses = uses;
+  if (externalUrl !== undefined) input.external_url = externalUrl;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
+      'set needs at least one of --name, --url, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
     );
   }
   const ctx = await context(options);
@@ -450,6 +465,10 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (json) emitJson(app);
   else {
     process.stdout.write(`\n  ${status.ok(`updated ${app.slug}`)}\n`);
+    if (app.external_url) {
+      process.stdout.write(`${appLines(app)}\n`);
+      return 0;
+    }
     process.stdout.write(
       `  ${C.dim}${pad('machine', 14)}${C.reset}${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk\n`,
     );
@@ -671,7 +690,9 @@ async function showCommand(
   if (json) emitJson(result);
   else {
     const app = result.app;
-    const hosting = app.hosting_type === 'static'
+    const hosting = app.external_url
+      ? 'external · hosted elsewhere'
+      : app.hosting_type === 'static'
         ? 'static · served from storage, no runtime'
         : app.hosting_type === 'sandbox'
           ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state}`

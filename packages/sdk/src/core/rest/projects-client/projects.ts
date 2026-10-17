@@ -24,13 +24,14 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams` and
- * `config_releases` are deprecated. `agent_tunnel` graduated like
+ * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
+ * `config_releases` and `apps` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
- * runs its base branch's config release.
+ * runs its base branch's config release. And `apps`: Apps is generally
+ * available — every project can create and deploy Apps.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -51,6 +52,7 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
+  /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
   | 'monitors'
   | 'reminders'
@@ -62,6 +64,7 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
   /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
@@ -70,10 +73,13 @@ export type FeatureFlagKey =
   | 'event_triggers'
   | 'notification_center'
   | 'volumes'
+  /** @deprecated Withdrawn — stateless sessions left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'stateless_sessions'
   | 'drives'
+  /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -86,7 +92,10 @@ type GraduatedFeatureFlagKey =
   | 'agent_principal'
   | 'human_messaging'
   | 'pi_worker'
-  | 'config_releases';
+  | 'config_releases'
+  | 'apps'
+  | 'stateless_sessions'
+  | 'ephemeral_sandboxes';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -101,21 +110,20 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'llm_gateway',
   'meta_agent',
-  'apps',
   'monitors',
   'reminders',
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
   'pi_harness',
+  'genui',
   'us_region',
   'event_triggers',
   'notification_center',
   'volumes',
-  'stateless_sessions',
   'drives',
-  'ephemeral_sandboxes',
   'session_log',
+  'session_log_restore',
 ] as const;
 
 /**
@@ -138,15 +146,16 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`apps`). The catalog lists one
-   * only while it is on, so agents and people can see it. Only a Kortix
-   * platform operator can change it: `PATCH /features` answers `403` with
-   * `feature_operator_only`. Absent on servers older than this field.
+   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * catalog lists one only while it is on, so agents and people can see it.
+   * Only a Kortix platform operator can change it: `PATCH /features` answers
+   * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
   /**
-   * `organization`: one value for every project of the organization (`volumes`).
-   * Changing it needs `account.write`. Absent on servers older than this field.
+   * Always `project`: every flag is set per project. A server from
+   * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
+   * Absent on servers older than this field.
    */
   scope?: 'project' | 'organization';
 }
@@ -317,7 +326,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Customer USD per million tokens for each eligible managed route. */
+  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  platformFeePercent?: number;
+  /** Base provider USD per million tokens, before `platformFeePercent`. */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';

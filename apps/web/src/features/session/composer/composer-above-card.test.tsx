@@ -5,13 +5,16 @@
  * No other suite renders this subtree: `quote-list.test.tsx` renders the list
  * itself, `composer-input-slot.test.tsx` renders notices into the slot class
  * directly, and nothing rendered the WRAPPER structure around them — the
- * width-based rounding stack (`queue strip` narrower than the full-width
- * notice) and the in-flow `'above'` dock anchor. The assertions are on the
+ * rounding stack (every layer full width, square under a visible strip) and
+ * the in-flow `'above'` dock anchor. The assertions are on the
  * RENDERED MARKUP, never on source text, with the same
  * `renderToStaticMarkup` shell `composer-underbar.test.tsx` uses.
  */
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+import messages from '../../../../translations/en.json';
 
 import { COMPOSER_INPUT_SLOT_CLASS, COMPOSER_SHELL_CLASS } from './composer';
 import { ComposerAboveCard } from './ComposerAboveCard';
@@ -30,20 +33,27 @@ function render(props?: {
   onNoticeRetry?: () => void;
   inputSlot?: React.ReactNode;
   quotes?: unknown[];
+  questionActive?: boolean;
+  served?: boolean;
 }): string {
   return renderToStaticMarkup(
-    <ComposerAboveCard
-      dockId="composer-slash-dock-test"
-      quotes={(props?.quotes ?? []) as never}
-      quoteListLabels={labels}
-      handleRemoveQuote={noop}
-      notice={props?.notice ?? null}
-      onNoticeRetry={props?.onNoticeRetry}
-      inputSlot={props?.inputSlot}
-      slashMenuPlacement="above"
-      sessionId="ses_test"
-      onSend={async () => {}}
-    />,
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <ComposerAboveCard
+        dockId="composer-slash-dock-test"
+        quotes={(props?.quotes ?? []) as never}
+        quoteListLabels={labels}
+        handleRemoveQuote={noop}
+        notice={props?.notice ?? null}
+        onNoticeRetry={props?.onNoticeRetry}
+        inputSlot={props?.inputSlot}
+        questionActive={props?.questionActive}
+        servedModel={props?.served ? { served: 'Model B', fallbackFrom: 'Model A' } : null}
+        onModelChange={props?.served ? noop : undefined}
+        slashMenuPlacement="above"
+        sessionId="ses_test"
+        onSend={async () => {}}
+      />
+    </NextIntlClientProvider>,
   );
 }
 
@@ -86,5 +96,66 @@ describe('ComposerAboveCard (the moved above-card stack)', () => {
     expect(html).not.toContain('role="status"');
     // And the shell class it will be mounted into is not part of this subtree.
     expect(html).not.toContain(COMPOSER_SHELL_CLASS);
+  });
+});
+
+/** The class list of the first element with `marker` in its attributes. */
+function classOf(html: string, marker: string): string {
+  const tag = html.slice(0, html.indexOf(marker)).lastIndexOf('<');
+  return /class="([^"]*)"/.exec(html.slice(tag))?.[1] ?? '';
+}
+
+const NOTICE = 'role="status" aria-live="polite" class=';
+const SERVED = 'data-testid="served-model-bar"';
+const question = <div>question</div>;
+
+// A bar under a full-width layer is a middle layer: square top, side ring
+// only. A rounded top there cut notches into the docked question.
+describe('ComposerAboveCard stack corners', () => {
+  test('alone, the notice and the served bar round their tops and carry no ring', () => {
+    expect(classOf(render({ notice: 'waking' }), NOTICE)).toContain('rounded-t-xl');
+    const served = classOf(render({ served: true }), SERVED);
+    expect(served).toContain('rounded-t-xl');
+    expect(served).not.toContain('ring-3');
+  });
+
+  test('under a docked question, the notice is square with the side ring', () => {
+    const cls = classOf(
+      render({ notice: 'waking', inputSlot: question, questionActive: true }),
+      NOTICE,
+    );
+    expect(cls).toContain('rounded-t-none');
+    expect(cls).not.toContain('rounded-t-xl');
+    expect(cls).toContain('ring-3 [clip-path:inset(0_-8px_0_-8px)]');
+  });
+
+  test('under a docked question, the served bar is square with the side ring', () => {
+    const cls = classOf(
+      render({ served: true, inputSlot: question, questionActive: true }),
+      SERVED,
+    );
+    expect(cls).toContain('rounded-t-none');
+    expect(cls).not.toContain('rounded-t-xl');
+    expect(cls).toContain('ring-3 [clip-path:inset(0_-8px_0_-8px)]');
+  });
+
+  test('under the notice, the served bar is square without a ring', () => {
+    const cls = classOf(render({ notice: 'waking', served: true }), SERVED);
+    expect(cls).toContain('rounded-t-none');
+    expect(cls).not.toContain('rounded-t-xl');
+    expect(cls).not.toContain('ring-3');
+  });
+
+  test('the strip is always full width: a narrower strip exposes the corners under it', () => {
+    expect(COMPOSER_INPUT_SLOT_CLASS).toContain('w-full');
+    expect(COMPOSER_INPUT_SLOT_CLASS).not.toMatch(/\bw-\[|\bw-\d|max-w-/);
+  });
+
+  test('a visible strip squares every layer under it (CSS: the strip may be empty)', () => {
+    const html = render({ notice: 'waking', inputSlot: question });
+    expect(html).toContain('data-composer-strip="true"');
+    expect(classOf(html, 'data-composer-stack="true"')).toContain(
+      '[&amp;&gt;[data-composer-strip]:not(:empty)~*]:rounded-t-none',
+    );
   });
 });

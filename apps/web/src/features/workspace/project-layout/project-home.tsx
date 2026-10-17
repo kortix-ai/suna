@@ -20,6 +20,7 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
+  type SessionPromptOverrides,
 } from '@kortix/sdk';
 import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
@@ -27,6 +28,7 @@ import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { notificationCenterOn } from '@/features/notifications/use-notification-center';
 import { FirstChat } from './home/first-chat';
+import { MobileAppPromo } from './home/mobile-app-promo';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
@@ -77,9 +79,13 @@ export function ProjectHome({
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [prefill, setPrefill] = useState<{ text: string; id: number; submit?: boolean } | null>(
-    null,
-  );
+  const [prefill, setPrefill] = useState<{
+    text: string;
+    id: number;
+    submit?: boolean;
+    files?: AttachedFile[];
+    options?: SessionPromptOverrides;
+  } | null>(null);
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
@@ -130,6 +136,12 @@ export function ProjectHome({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
+  // The onboarding wizard opens over this page until the project is stamped
+  // (`project-shell.tsx`); the promo waits for the stamp (KRTX-2378).
+  const onboarded = Boolean(
+    (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
+      ?.onboarding_completed_at,
+  );
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
@@ -178,7 +190,13 @@ export function ProjectHome({
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
-    setPrefill({ text: pendingPrefill.text, id: Date.now() });
+    setPrefill({
+      text: pendingPrefill.text,
+      id: Date.now(),
+      submit: pendingPrefill.submit,
+      files: pendingPrefill.files,
+      options: pendingPrefill.options,
+    });
   }, [pendingPrefill, projectId, consumePrefill]);
 
   const handleCommand = useCallback(
@@ -269,6 +287,8 @@ export function ProjectHome({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
+      {/* Not over the first chat or the onboarding wizard: onboarding owns those screens. */}
+      {firstChat || !onboarded ? null : <MobileAppPromo />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

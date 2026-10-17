@@ -187,8 +187,12 @@ export function FileContentRenderer({
     markdownPreview,
     onMarkdownPreviewChange,
     onStatusChange,
+    targetLine,
   });
   const bytesOnly = !!source.bytesOnly;
+  // The table has no lines: a jump to a line (a content-search match) opens
+  // CSV and TSV in the code editor.
+  const csvAsTable = fileCategory === 'csv' && !targetLine;
   const saveThroughSource = useCallback(
     (file: File) =>
       source.save
@@ -391,7 +395,7 @@ export function FileContentRenderer({
           )}
 
           {/* CSV / TSV preview */}
-          {!isLoading && !error && fileCategory === 'csv' && fileContent && (
+          {!isLoading && !error && csvAsTable && fileContent && (
             <Suspense fallback={<RendererFallback />}>
               <CsvRenderer
                 content={fileContent.content}
@@ -499,8 +503,10 @@ export function FileContentRenderer({
             fileContent &&
             fileContent.type === 'text' &&
             !imageDataUrl &&
-            fileCategory !== 'csv' &&
-            fileCategory !== 'html' && (
+            !csvAsTable &&
+            // HTML has its own preview/source branches above, except from a
+            // bytes-only source: there it is plain text in the editor.
+            !isHtmlFile && (
               <div
                 className={cn(
                   'relative flex flex-col',
@@ -553,6 +559,7 @@ export function FileContentRenderer({
                     <div className="mx-auto w-full max-w-2xl">
                       <MarkdownWithFrontmatter
                         content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                        documentPath={filePath}
                       />
                     </div>
                   </div>

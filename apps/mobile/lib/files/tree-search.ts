@@ -124,18 +124,28 @@ export function searchFileTree(entries: readonly TreeSearchEntry[], query: strin
 
 /**
  * One folder level (`GET /files?depth=1`) as the page's rows: folder names and
- * files, in entry order.
+ * files, in page order, then entry order. A folder over one page arrives as
+ * several pages (KRTX-1723).
  */
 export function directoryChildren(
-  entries: readonly { path: string; type: 'file' | 'directory'; size?: number }[],
+  pages: readonly { entries: readonly { path: string; type: 'file' | 'directory'; size?: number }[] }[],
 ): { dirs: string[]; files: TreeSearchEntry[] } {
   const dirs: string[] = [];
   const files: TreeSearchEntry[] = [];
-  for (const entry of entries) {
+  for (const entry of pages.flatMap((page) => page.entries)) {
     if (entry.type === 'directory') dirs.push(basename(entry.path));
     else files.push({ path: entry.path, size: entry.size ?? null });
   }
   return { dirs, files };
+}
+
+/**
+ * The folder's last page was cut and names no next page: an API older than
+ * paging returned its first 5,000 entries. The rows are not the whole folder.
+ */
+export function isCutDirectory(pages: readonly { truncated?: boolean; next_cursor?: string | null }[]): boolean {
+  const last = pages.at(-1);
+  return !!last?.truncated && !last.next_cursor;
 }
 
 /** The folder line under a search result: "src/app", or "Files" at the root. */

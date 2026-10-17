@@ -14,10 +14,14 @@ import type { SupabaseGrant } from "./supabase-session";
 
 const SUPABASE_TIMEOUT_MS = Number(process.env.KE2E_SUPABASE_TIMEOUT_MS ?? 15_000);
 
-async function supaFetch(url: string, init: RequestInit): Promise<Response> {
+async function supaFetch(url: string, init: RequestInit, retried = false): Promise<Response> {
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(SUPABASE_TIMEOUT_MS) });
   } catch (err) {
+    // One retry on a dropped keep-alive socket (release gate 37933459772, PACC-1).
+    if (!retried && /socket connection was closed|ECONNRESET/i.test(String(err))) {
+      return supaFetch(url, init, true);
+    }
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new Error(
         `Supabase request timed out after ${SUPABASE_TIMEOUT_MS}ms: ${url} — is KE2E_SUPABASE_URL reachable from CI?`,
@@ -112,8 +116,8 @@ export async function ssoFixtureToken(
     }),
     body: JSON.stringify({
       password,
-      app_metadata: { sso_provider_id: providerId },
-      user_metadata: { custom_claims: { memberOf: groups } },
+      // A server-written source: the API never trusts user_metadata for groups.
+      app_metadata: { sso_provider_id: providerId, memberOf: groups },
     }),
   });
   if (!res.ok) throw new Error(`SSO fixture metadata update failed: ${res.status}`);

@@ -2,7 +2,7 @@
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +36,7 @@ import { detailSelection } from '@/features/workspace/capabilities/shared/detail
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 import { NewSkillModal } from '@/features/workspace/capabilities/skills/new-skill-modal';
 import { filterSkills, type SkillScope } from './skill-scope';
+import { useSlashFocus } from '@/hooks/utils';
 
 type ScopeFilter = SkillScope | 'all';
 
@@ -74,6 +75,8 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const configure = useConfigureThread(projectId);
 
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef);
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -151,6 +154,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
+            ref={searchRef}
             placeholder={tI18nComplete.raw('text76c02b7eddca')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

@@ -3,7 +3,7 @@
  *
  * Mirrors apps/web `tool/tool-part-renderer.tsx`:
  * - `todoread` renders nothing;
- * - a thrown call (`state.status === 'error'`) is a `BasicTool` titled with the
+ * - a thrown call (`status === 'error'`) is a `BasicTool` titled with the
  *   humanised tool name, subtitle "failed", the MCP server as its arg, and a
  *   `ToolError` body;
  * - every other call supplies the ambient row state (`ToolRunningContext`,
@@ -16,7 +16,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { getToolInfo, partOutcome, stripAnsi, type ToolPart as SdkToolPart } from '@kortix/sdk';
+import { getToolInfo, partOutcome, sessionLogOpenCall, stripAnsi, type ToolCallBlock } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import type { PermissionRequest } from '@/lib/session/types';
 import { usePendingPermissions } from '@/lib/session/session-store';
@@ -42,7 +42,7 @@ import {
 } from './shared/infrastructure';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
 import { getToolIconByName } from './shared/tool-icons';
-import { partInput } from '@/lib/session/tool-part-accessors';
+import { partError, partInput, partRawOutput, partStatus } from '@/lib/session/tool-part-accessors';
 import { ToolError } from './tool-error';
 import { ToolRegistry } from './shared/registry';
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -82,7 +82,11 @@ function PermissionPromptInline({ permission }: { permission: PermissionRequest 
 // ─── ToolPartRenderer ────────────────────────────────────────────────────────
 
 export interface ToolPartRendererProps {
-  part: SdkToolPart;
+  /**
+   * The session-log tool call. A closure-rule (interrupted) call is read open
+   * (`sessionLogOpenCall`), so a dead call renders the same on v1 and v2.
+   */
+  call: ToolCallBlock;
   /** Reads the call's pending permission from the sync store when `permission` is not passed. */
   sessionId?: string;
   /** The owning turn is still working. Defaults to `TurnLiveContext`. */
@@ -92,9 +96,9 @@ export interface ToolPartRendererProps {
   defaultOpen?: boolean;
 }
 
-function usePendingPermission(part: SdkToolPart, sessionId?: string, permissionProp?: PermissionRequest) {
+function usePendingPermission(call: ToolCallBlock, sessionId?: string, permissionProp?: PermissionRequest) {
   const sessionPermissions = usePendingPermissions(permissionProp ? undefined : sessionId);
-  return permissionProp ?? sessionPermissions.find((p) => p.tool?.callID === part.callID);
+  return permissionProp ?? sessionPermissions.find((p) => p.tool?.callID === call.call_id);
 }
 
 function RowAmbient({ running, stale, turnLive, outcome, durationMs, permission, onPermissionReply, children }: {
@@ -136,7 +140,7 @@ function RowAmbient({ running, stale, turnLive, outcome, durationMs, permission,
 }
 
 function ToolPartRendererImpl({
-  part,
+  call: given,
   sessionId,
   turnLive: turnLiveProp,
   permission: permissionProp,
@@ -145,47 +149,49 @@ function ToolPartRendererImpl({
 }: ToolPartRendererProps) {
   const ambientTurnLive = React.useContext(TurnLiveContext);
   const turnLive = turnLiveProp ?? ambientTurnLive;
+  // One open block per call object (`sessionLogOpenCall` caches it), so the
+  // memos below and the renderers' own memos hold while the call is unchanged.
+  const call = sessionLogOpenCall(given);
 
-  const permission = usePendingPermission(part, sessionId, permissionProp);
+  const permission = usePendingPermission(call, sessionId, permissionProp);
 
-  const outcome = useMemo(() => partOutcome(part), [part]);
-  const durationMs = useMemo(() => toolDurationMs(part), [part]);
-  const stale = isStalePending(part, turnLive);
-  const running = isToolRunning(part, turnLive);
+  const outcome = useMemo(() => partOutcome(call), [call]);
+  const durationMs = useMemo(() => toolDurationMs(call), [call]);
+  const stale = isStalePending(call, turnLive);
+  const running = isToolRunning(call, turnLive);
   const forceOpen = Boolean(permission);
-  const rowKey = disclosureKey('tool', part.id);
+  const rowKey = disclosureKey('tool', call.id);
 
-  // `getToolInput` also reads the legacy top-level `input` mobile parts may carry.
-  const input = partInput(part);
-  const info = getToolInfo(part.tool, input);
+  const input = partInput(call);
+  const info = getToolInfo(call.name, input);
 
   const stat = useMemo(() => {
-    if (part.tool !== 'edit' && part.tool !== 'morph_edit') return undefined;
+    if (call.name !== 'edit' && call.name !== 'morph_edit') return undefined;
     if (typeof input.oldString !== 'string' || typeof input.newString !== 'string') return undefined;
     return getDiffStats(input.oldString, input.newString);
-  }, [part.tool, input.oldString, input.newString]);
+  }, [call.name, input.oldString, input.newString]);
 
   // Project tools open the project instead of expanding.
   const projectTarget = useMemo(() => {
-    const normalized = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
+    const normalized = call.name.replace(/^oc-/, '').replace(/-/g, '_');
     if (normalized !== 'project_select' && normalized !== 'project_create') return null;
-    if (part.state.status !== 'completed') return null;
-    const output = typeof part.state.output === 'string' ? part.state.output : '';
+    if (call.status !== 'complete') return null;
+    const output = partRawOutput(call);
     const idMatch = output.match(/proj-[a-z0-9-]+/);
     const projectId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
     if (!projectId) return null;
     return { projectId };
-  }, [part.tool, part.state, input]);
+  }, [call, input]);
 
   const openProject = useCallback(() => {
     if (!projectTarget) return;
     useTabStore.getState().navigateToPage(`page:project:${projectTarget.projectId}`);
   }, [projectTarget]);
 
-  if (part.tool === 'todoread') return null;
+  if (call.name === 'todoread') return null;
 
-  if (part.state.status === 'error') {
-    const { display, server } = toolDisplayName(part.tool);
+  if (partStatus(call) === 'error') {
+    const { display, server } = toolDisplayName(call.name);
     return (
       <RowAmbient running={false} stale={false} turnLive={turnLive} outcome={outcome} durationMs={durationMs}>
           <BasicTool
@@ -195,19 +201,19 @@ function ToolPartRendererImpl({
             forceOpen={forceOpen}
             locked={forceOpen}
           >
-            <ToolError error={part.state.error} toolName={part.tool} partId={part.id} />
+            <ToolError error={partError(call) ?? ''} toolName={call.name} partId={call.id} />
           </BasicTool>
       </RowAmbient>
     );
   }
 
   // A registered renderer owns its whole row, as on web (`tool/tools/*`).
-  const Registered = ToolRegistry.get(part.tool);
+  const Registered = ToolRegistry.get(call.name);
   if (Registered) {
     return (
       <RowAmbient running={running} stale={stale} turnLive={turnLive} outcome={outcome} durationMs={durationMs} permission={permission} onPermissionReply={onPermissionReply}>
         <Registered
-          part={part}
+          call={call}
           sessionId={sessionId}
           defaultOpen={defaultOpen}
           forceOpen={forceOpen}
@@ -218,8 +224,9 @@ function ToolPartRendererImpl({
     );
   }
 
-  const body = part.state.status === 'completed' && part.state.output?.trim()
-    ? <RawOutputBlock output={stripAnsi(part.state.output).trim()} />
+  const rawOutput = partRawOutput(call);
+  const body = call.status === 'complete' && rawOutput.trim()
+    ? <RawOutputBlock output={stripAnsi(rawOutput).trim()} />
     : null;
 
   return (
@@ -239,6 +246,6 @@ function ToolPartRendererImpl({
   );
 }
 
-/** Default shallow compare: parts are replaced, not mutated, when they change. */
+/** Default shallow compare: calls are replaced, not mutated, when they change. */
 export const ToolPartRenderer = memo(ToolPartRendererImpl);
 ToolPartRenderer.displayName = 'ToolPartRenderer';

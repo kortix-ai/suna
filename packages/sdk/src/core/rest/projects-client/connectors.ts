@@ -1533,6 +1533,22 @@ export async function discoverConnectorAuth(projectId: string, draft: ConnectorD
   );
 }
 
+/** Whether an MCP server needs a sign-in, and whether Kortix can run it with
+ *  nothing but the user's consent (OAuth metadata plus client registration). */
+export interface McpServerSignInCheck {
+  requires_sign_in: boolean;
+  one_click: boolean;
+}
+
+export async function checkMcpServerSignIn(projectId: string, url: string) {
+  return unwrap(
+    await backendApi.post<McpServerSignInCheck>(
+      `/connectors/projects/${projectId}/connectors/mcp-sign-in-check`,
+      { url },
+    ),
+  );
+}
+
 export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
@@ -1565,6 +1581,8 @@ export interface PipedreamApp {
   featuredWeight: number;
   /** The same app's API/MCP catalogue id (`ConnectToolkit.directId`). */
   directId?: string | null;
+  /** The app's hosted MCP server (`ConnectToolkit.directMcpUrl`). */
+  directMcpUrl?: string | null;
 }
 
 /** A category facet: the key to filter by, and its true size in the catalogue. */
@@ -1685,6 +1703,9 @@ export interface ConnectToolkit {
   /** The same app's API/MCP catalogue id, when the project has that catalogue
    *  on and it lists the app. The app page offers both ways to connect. */
   directId?: string | null;
+  /** The app's hosted MCP server. Install offers it before the managed app
+   *  when `checkMcpServerSignIn` says the sign-in is one click. */
+  directMcpUrl?: string | null;
 }
 
 export interface ConnectToolkitsPage {
@@ -1958,6 +1979,12 @@ export async function getConnectStatus() {
   );
 }
 
+/**
+ * Store a connector's shared credential. For an MCP connector the server then
+ * re-reads the tools: `sync` is that run, and a per-slug error in it means the
+ * credential is stored but the tools still fail to load. Absent for other
+ * providers and on older servers.
+ */
 export async function setConnectorCredential(
   projectId: string,
   slug: string,
@@ -1965,7 +1992,7 @@ export async function setConnectorCredential(
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
-    await backendApi.put<{ ok: boolean }>(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
     ),

@@ -6,12 +6,12 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { accounts, notifications, projects } from '@kortix/db';
+import { notifications, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
-import { mfaGateBlocks } from '../iam/authorize';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
 import { notificationsEnabled } from './enabled';
+import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
 
@@ -39,6 +39,9 @@ export interface InboxReadContext {
   /** Background jobs (digest) skip the MFA step-up: an email is not a sign-in. */
   skipMfaGate?: boolean;
 }
+
+/** Capture fleet-health rows belong to the account, not to a project: no project flag or trigger read applies. */
+const isAccountNotification = (kind: string) => kind.startsWith('capture_device_');
 
 /** One inbox row as `GET /v1/notifications` returns it. */
 export interface InboxNotification {
@@ -81,18 +84,10 @@ const ROW = {
 };
 type StoredRow = Pick<typeof notifications.$inferSelect, keyof typeof ROW>;
 
-/** Accounts whose MFA step-up this sign-in has not passed. */
-async function mfaBlockedAccounts(accountIds: string[], ctx: InboxReadContext): Promise<Set<string>> {
-  if (ctx.skipMfaGate || accountIds.length === 0) return new Set();
-  const rows = await db
-    .select({ accountId: accounts.accountId, mfaRequired: accounts.mfaRequired })
-    .from(accounts)
-    .where(inArray(accounts.accountId, accountIds));
-  return new Set(
-    rows
-      .filter((row) => mfaGateBlocks({ accountMfaRequired: row.mfaRequired }, ctx.iamTokenId, ctx.mfaAal ?? undefined))
-      .map((row) => row.accountId),
-  );
+/** Accounts whose MFA step-up this sign-in owes: the gate `authorize` applies (super admins pass it). */
+async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: InboxReadContext): Promise<Set<string>> {
+  if (ctx.skipMfaGate) return new Set();
+  return mfaWithheldAccounts(userId, accountIds, ctx);
 }
 
 /**
@@ -122,10 +117,12 @@ async function visible<T extends InboxRowForFilter>(
   const sessions = new Map<string, SessionAccessRow>();
   if (!userId || rows.length === 0) return { rows: [], sessions, projectNames: new Map() };
   const [blocked, projectNames] = await Promise.all([
-    mfaBlockedAccounts([...new Set(rows.map((row) => row.accountId))], ctx),
+    mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
     notificationCenterProjects([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
-  const open = rows.filter((row) => !blocked.has(row.accountId) && row.projectId !== null && projectNames.has(row.projectId));
+  const open = rows.filter(
+    (row) => !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null && projectNames.has(row.projectId))),
+  );
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
   const seen = await maySeeSessions(userId, [...loaded.values()]);
@@ -144,7 +141,7 @@ async function visible<T extends InboxRowForFilter>(
   }));
 
   const kept = open.filter((row) =>
-    row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`),
+    isAccountNotification(row.kind) || (row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
 }
@@ -252,6 +249,8 @@ export async function listInbox(
         projectId: row.projectId,
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
+        kind: row.kind,
+        accountId: row.accountId,
       }),
       read: row.readAt !== null,
       created_at: row.createdAt.toISOString(),

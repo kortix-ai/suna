@@ -2,10 +2,10 @@ name: Terraform Apply
 
 # Reusable, guarded `terraform apply` for exactly ONE Terraform root.
 #
-# WHY THIS EXISTS: until now the only workflow that ran `terraform apply` was
-# deploy-prod-us-east-2-shadow.yml. Every other root — dev, staging, prod, the
-# three *-web roots, compliance-monitoring, security-baseline — was applied by
-# hand from an operator laptop. On 2026-08-10 two merged compliance PRs (#6295,
+# WHY THIS EXISTS: until then the only workflow that ran `terraform apply` was
+# the us-east-2 prod shadow deploy (removed 2026-10-12). Every other root — dev,
+# staging, prod, the three *-web roots, compliance-monitoring,
+# security-baseline — was applied by hand from an operator laptop. On 2026-08-10 two merged compliance PRs (#6295,
 # #6344) sat unapplied for hours because nobody ran the apply. Merged Terraform
 # that never reaches AWS is not a change, it is a lie in the repository.
 #
@@ -20,19 +20,19 @@ name: Terraform Apply
 #   - The guard blocks every destroy. The single exception is an immutable
 #     `aws_ecs_task_definition` replacement, which Terraform always renders as
 #     a delete+create pair and which destroys nothing that serves traffic.
-#     Logic copied from deploy-prod-us-east-2-shadow.yml, generalized from two
-#     hardcoded module addresses to the resource type.
+#     The rule matches the resource type, not hardcoded module addresses.
 #   - Terraform is pinned to the same TF_VERSION as terraform-ci.yml. State is
 #     forward-incompatible: applying with a newer Terraform than the drift job
 #     runs would break drift detection with "state snapshot was created by a
 #     newer Terraform". Bump both files together or neither.
 #
-# EVERY root under infra/terraform is now driven from here. environments/dev and
-# environments/prod were the last two manual ones: they read an operator-local,
-# gitignored terraform.tfvars, so CI planned inputs no operator ever used. Every
-# value from those files now lives in committed variable defaults, except
-# `api_image` — that one changes per deploy, so the caller passes it (see the
-# input below) and CI plans the exact image the same run ships.
+# EVERY root under infra/terraform is now driven from here. The old us-west-2
+# dev root and environments/prod were the last two manual ones: they read an
+# operator-local, gitignored terraform.tfvars, so CI planned inputs no operator
+# ever used. Every value from those files now lives in committed variable
+# defaults, except `api_image` — that one changes per deploy, so the caller
+# passes it (see the input below) and CI plans the exact image the same run
+# ships.
 # infra/terraform/README.md carries the full root-by-root table.
 
 on:
@@ -51,9 +51,9 @@ on:
         type: boolean
         default: false
       aws_region:
-        description: Region for the OIDC session and the state backend.
+        description: Region for the OIDC session. Each root's backend.tf names its state region.
         required: false
-        default: us-west-2
+        default: eu-west-2
         type: string
       role_arn:
         description: OIDC role to assume. Must trust the github_environment subject.
@@ -220,9 +220,8 @@ jobs:
             -lock-timeout=5m \
             -out=tf.plan
 
-      # Copied from deploy-prod-us-east-2-shadow.yml and generalized: block every
-      # planned delete except an immutable ECS task-definition replacement, which
-      # Terraform always renders as a delete+create pair.
+      # Block every planned delete except an immutable ECS task-definition
+      # replacement, which Terraform always renders as a delete+create pair.
       - name: Guard against destructive changes
         run: |
           set -euo pipefail

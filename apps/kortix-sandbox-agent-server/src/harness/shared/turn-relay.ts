@@ -94,7 +94,7 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
       throw new Error(`initial turn claim rejected: ${response.status} ${text.slice(0, 200)}`)
     }
     const body = (await response.json()) as {
-      initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+      initial_turn?: { prompt?: unknown; context?: unknown; turn_token?: unknown; message_id?: unknown } | null
       runtime_session_id?: unknown
     }
     const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
@@ -103,7 +103,12 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null
     }
-    claimedInitialTurn = { prompt: turn.prompt, turnToken: turn.turn_token, messageId: turn.message_id }
+    claimedInitialTurn = {
+      prompt: turn.prompt,
+      ...(typeof turn.context === 'string' && turn.context ? { context: turn.context } : {}),
+      turnToken: turn.turn_token,
+      messageId: turn.message_id,
+    }
     return claimedInitialTurn
   })().finally(() => {
     claimInFlight = null
@@ -200,6 +205,25 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
       logger.warn('[turn-relay] turn-begin relay fetch failed', { err: (err as Error).message, attempt })
     }
     if (attempt < 2) await Bun.sleep(1_000)
+  }
+}
+
+/**
+ * A turn's end waits for its begin relay, at most `waitMs`: an end that lands first lets the late
+ * begin adopt a turn that nothing ends (a refused pi `/summarize` ends within milliseconds). The
+ * bound keeps a hung begin (2 attempts of a 30 s request) from delaying the end.
+ */
+export function turnEndAfterBegin(waitMs = 5_000) {
+  const begins = new Map<string, Promise<unknown>>()
+  return {
+    begin(messageId: string, relay: Promise<unknown>): void {
+      begins.set(messageId, relay)
+    },
+    async end(messageId: string): Promise<void> {
+      const begun = begins.get(messageId)
+      begins.delete(messageId)
+      if (begun) await Promise.race([begun, Bun.sleep(waitMs)])
+    },
   }
 }
 

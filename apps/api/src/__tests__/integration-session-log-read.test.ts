@@ -15,7 +15,7 @@
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
-import { accountMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { accountMembers, projectMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -247,8 +247,60 @@ describe('GET .../log', () => {
     await setFlag(true);
   });
 
-  test('refuses the sandbox credential, a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
-    expect((await get(`${base()}/log`, sandboxToken)).status).toBe(403);
+  test('a session-bound token reads the log wherever the v1 transcript route serves it, and nowhere else', async () => {
+    const other = await seedProject('session-log-read-other', { accountId: project.account_id });
+    const otherSession = await seedSession(other, OWNER);
+    try {
+      const statuses = async (path: string) => [
+        (await get(`${path}/transcript?shape=sync`, sandboxToken)).status,
+        (await get(`${path}/log`, sandboxToken)).status,
+      ];
+      // (a) its own session, (b) a sibling session of its project, (c) a session of another project.
+      expect(await statuses(base())).toEqual([200, 200]);
+      expect(await statuses(base(nativeSession))).toEqual([200, 200]);
+      expect(await statuses(`/v1/projects/${other.project_id}/sessions/${otherSession}`)).toEqual([403, 403]);
+      const own = (await (await get(`${base()}/log?limit=500`, sandboxToken)).json()) as Page;
+      const owner = (await (await get(`${base()}/log?limit=500`)).json()) as Page;
+      expect(own).toEqual(owner);
+    } finally {
+      await db.delete(projects).where(eq(projects.projectId, other.project_id));
+    }
+  });
+
+  test('a KaaB backend-origin sibling and another user\'s private session: the log refuses them where the transcript does', async () => {
+    const MEMBER = crypto.randomUUID();
+    await insertIntoView(db, accountMembers, { userId: MEMBER, accountId: project.account_id, accountRole: 'member' });
+    await insertIntoView(db, projectMembers, { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' });
+    // Two KaaB sessions: one wrapper credential (OWNER) created both, each box acts for one end-user.
+    const [backendA, backendB, memberSession] = [await seedSession(project, OWNER), await seedSession(project, OWNER), await seedSession(project, MEMBER)];
+    await db.update(projectSessions).set({ origin: 'backend' }).where(sql`${projectSessions.sessionId} in (${backendA}, ${backendB})`);
+    for (const id of [backendA, backendB, memberSession]) await storeBothWays(id, 6);
+    // `session` is OWNER's private session (the column default): a log is stored, so a 404 below is the gate, not a missing log.
+    const [row] = await db.select({ visibility: projectSessions.visibility }).from(projectSessions).where(eq(projectSessions.sessionId, session));
+    expect(row!.visibility).toBe('private');
+    const boxToken = async (sessionId: string, userId: string) => {
+      await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
+      return (await createAccountToken({ accountId: project.account_id, userId, projectId: project.project_id, sessionId, name: `session-log-read-${sessionId}` })).secretKey;
+    };
+    const backendBox = await boxToken(backendA, OWNER);
+    const memberBox = await boxToken(memberSession, MEMBER);
+    const memberToken = (await createAccountToken({ accountId: project.account_id, userId: MEMBER, name: 'session-log-read-member' })).secretKey;
+    const statuses = async (sessionId: string, token: string) => [
+      (await get(`${base(sessionId)}/transcript?shape=sync`, token)).status,
+      (await get(`${base(sessionId)}/log`, token)).status,
+    ];
+    // The backend box reads its own session, never its sibling; the signed-in human reads both.
+    expect(await statuses(backendA, backendBox)).toEqual([200, 200]);
+    expect(await statuses(backendB, backendBox)).toEqual([404, 404]);
+    expect(await statuses(backendB, ownerToken)).toEqual([200, 200]);
+    // Another user's private session: refused to the member and to the member's box; the owner reads it.
+    expect(await statuses(session, memberToken)).toEqual([404, 404]);
+    expect(await statuses(session, memberBox)).toEqual([404, 404]);
+    expect(await statuses(memberSession, memberBox)).toEqual([200, 200]);
+    expect(await statuses(session, ownerToken)).toEqual([200, 200]);
+  });
+
+  test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
     expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);

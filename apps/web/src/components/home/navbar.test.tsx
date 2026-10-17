@@ -23,10 +23,13 @@ const globals = globalThis as Record<string, unknown>;
  */
 const lib = {
   element: (node: { innerHTML: string; outerHTML: string }) => node as unknown as HTMLElement,
-  click: (el: Element) =>
-    el.dispatchEvent(
-      new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
-    ),
+  // Returns the dispatched event so a test can assert `defaultPrevented`
+  // without re-deriving the cast outside this adapter.
+  click: (el: Element) => {
+    const event = new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event;
+    el.dispatchEvent(event);
+    return event;
+  },
 };
 globals.window = win;
 globals.document = win.document;
@@ -60,6 +63,18 @@ mock.module('@/hooks/utils/use-github-stars', () => ({
 mock.module('@/lib/analytics/gtm', () => ({ trackCtaSignup: () => undefined }));
 mock.module('@/features/contact/request-demo-provider', () => ({
   useRequestDemo: () => () => undefined,
+}));
+
+/** Renders the marker the drawer docs-row test asserts the absence of: a plain
+ * anchor (the static Astro docs) must not be a soft link (KRTX-1592). */
+mock.module('next/link', () => ({
+  default: (props: { children?: React.ReactNode } & Record<string, unknown>) => {
+    const routerOnly = ['prefetch', 'replace', 'scroll', 'shallow', 'onNavigate', 'legacyBehavior'];
+    const anchorProps = Object.fromEntries(
+      Object.entries(props).filter(([key]) => !routerOnly.includes(key)),
+    );
+    return React.createElement('a', { 'data-next-link': 'true', ...anchorProps });
+  },
 }));
 
 const { Navbar } = await import('./navbar');
@@ -245,4 +260,31 @@ test('a signed-in visitor sees the projects button; a signed-out one sees Get St
   authUser = null;
   await mountNavbar();
   expect(container!.innerHTML).toContain('href="/auth"');
+});
+
+test('the drawer docs row stays a plain anchor: the tap marks it pending and leaves the document load to the browser', async () => {
+  await openDrawer();
+  const drawer = () => container!.querySelector('.bg-background.fixed.inset-0');
+  const row = drawer()!.querySelector<HTMLAnchorElement>('a[href="/docs"]');
+  expect(row).not.toBeNull();
+  // `/docs` is the static Astro build under `public/docs` (KRTX-1592): the row
+  // renders a plain anchor — no soft-link marker, no new-tab target, nothing
+  // to hand to the router.
+  expect(row!.getAttribute('data-next-link')).toBeNull();
+  expect(row!.getAttribute('target')).toBeNull();
+  let click: Event | undefined;
+  await act(async () => {
+    click = lib.click(row!);
+  });
+  if (!click) throw new Error('the tap dispatched no click event');
+  // The handler must not hijack the tap: the anchor's default document load is
+  // what serves the docs site. A `preventDefault` here would either strand the
+  // reader (no soft nav exists into a static file) or force a doomed `RSC: 1`
+  // round trip before the same reload.
+  expect(click.defaultPrevented).toBe(false);
+  // The row still shows the pending spinner while the document loads; the
+  // reload itself is what closes the drawer.
+  expect(drawer()).not.toBeNull();
+  expect(drawer()!.innerHTML).toContain('animate-spinner');
+  expect(win.document.body.style.overflow).toBe('hidden');
 });

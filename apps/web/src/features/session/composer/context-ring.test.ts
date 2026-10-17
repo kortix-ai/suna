@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts } from '@kortix/sdk/react';
+import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
 
 import { getContextReading, getContextUsage } from './context-ring';
 import { getLastAssistantTokenBreakdown } from './token-progress';
 
-function assistantWithTokens(input: number, cache?: { read: number; write: number }, output?: number): MessageWithParts {
-  return {
-    info: { id: 'msg_1', role: 'assistant', tokens: { input, cache, output } },
-    parts: [],
-  } as unknown as MessageWithParts;
+// One assistant record, as `sessionLogOfV1Rows` reads a v1 row with these tokens.
+let seq = 0;
+function assistantWithTokens(input: number, cache?: { read: number; write: number }, output?: number): SessionLogMessage {
+  seq++;
+  const row = { info: { id: `msg_${seq}`, role: 'assistant', time: { created: seq }, tokens: { input, cache, output } }, parts: [] };
+  return sessionLogOfV1Rows('s', 'ses_root', [row] as never).threads[0]!.messages[0]!;
 }
 
 describe('getContextReading', () => {

@@ -36,6 +36,29 @@ function deps(over: Partial<ModelCatalogTurnStartDeps> = {}): ModelCatalogTurnSt
 }
 
 describe('convergeModelCatalogBeforeTurnStart', () => {
+  test('a box that cannot converge its catalog is remembered: later turns make no call at all', async () => {
+    let probes = 0;
+    let converges = 0;
+    let noted: string | null | undefined;
+    const d = deps({
+      probe: async () => {
+        probes++;
+        return { ids: null, fallbackReason: null };
+      },
+      convergeCatalog: async () => {
+        converges++;
+        return { outcome: 'unsupported' };
+      },
+      modelConfirmation: () => (noted === null ? 'legacy' : undefined),
+      noteModelConfirmation: (_sid, model) => {
+        noted = model;
+      },
+    });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'deepseek-v4.1-flash', d)).toEqual({ decision: 'skipped' });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'deepseek-v4.1-flash', d)).toEqual({ decision: 'skipped' });
+    expect({ probes, converges }).toEqual({ probes: 1, converges: 1 });
+  });
+
   test('skips instantly for no model — zero calls', async () => {
     let probed = false;
     const result = await convergeModelCatalogBeforeTurnStart(
@@ -305,6 +328,16 @@ describe('convergeSandboxModelCatalog', () => {
     );
     expect(result).toBeNull();
     expect(fetched).toBe(false);
+  });
+
+  // pi serves no catalog: `404 managed-model catalog convergence is not
+  // supported by this runtime` (2026-10-13, measured 0.67 s on every prompt).
+  test('a 404 is `unsupported`: the box cannot converge its catalog', async () => {
+    const result = await convergeSandboxModelCatalog(
+      'sess-1',
+      daemonDeps({ fetch: async () => new Response('{"error":"not supported"}', { status: 404 }) }),
+    );
+    expect(result).toEqual({ outcome: 'unsupported' });
   });
 
   test('a non-2xx response is null, not a thrown error', async () => {

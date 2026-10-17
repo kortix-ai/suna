@@ -124,22 +124,26 @@ test.describe
       if (user?.id) await deleteAuthUser(user.id, authOptions);
     });
 
-    test('the account hub opens one accessible billing dialog and stays open after Escape', async ({ page }) => {
+    test('the account hub plan pane offers one tier dropdown for the credits plan', async ({
+      page,
+    }) => {
       await installBrowserSessionDirect(
         page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
       );
-      const subscribeButton = page.getByRole('button', { name: 'Subscribe to Team', exact: true });
-      await subscribeButton.click();
-      const dialog = page.getByRole('dialog', { name: /Subscribe to Kortix/ });
-      await expect(dialog).toHaveCount(1);
-      await expect(dialog.getByRole('button', { name: /^Subscribe —/ })).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
-      await subscribeButton.click();
-      await expect(dialog).toHaveCount(1);
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-      await expect(dialog).toHaveCount(0);
+      // One tier dropdown (`CreditTierSelect`) on a fixed ladder; it opens on the $200 tier.
+      const tier = page.getByRole('combobox', { name: 'Monthly credits tier' });
+      await expect(tier).toHaveCount(1);
+      await expect(tier).toContainText('20,000 credits / month');
+      await expect(page.getByRole('button', { name: 'Subscribe for $200 / month' })).toBeVisible();
+      await tier.click();
+      await page.getByRole('option', { name: /^50,000 credits/ }).click();
+      await expect(tier).toContainText('50,000 credits / month');
+      await expect(page.getByRole('button', { name: 'Subscribe for $500 / month' })).toBeVisible();
+      await tier.click();
+      await page.getByRole('option', { name: /^10,000 credits/ }).click();
+      await expect(tier).toContainText('10,000 credits / month');
+      await expect(page.getByRole('button', { name: 'Subscribe for $100 / month' })).toBeVisible();
     });
 
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
@@ -160,28 +164,27 @@ test.describe
       // could never resolve and failed at 0 ms on every release run.
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 
-      await test.step('The owner starts Team checkout from the Billing page', async () => {
-        await page.getByRole('button', { name: 'Subscribe to Team' }).click();
-        await expect(page.getByRole('heading', { name: 'Subscribe to Kortix' })).toBeVisible();
-        const checkout = await captureJsonPost<CheckoutResult>(
-          page,
-          '**/v1/billing/create-per-seat-checkout',
-        );
-        await page.getByRole('button', { name: /^Subscribe —/ }).click();
+      await test.step('The owner starts credits-plan checkout from the Billing page', async () => {
+        const checkout = await captureJsonPost<CheckoutResult>(page, '**/v1/billing/plan');
+        const tier = page.getByRole('combobox', { name: 'Monthly credits tier' });
+        await tier.click();
+        await page.getByRole('option', { name: /^10,000 credits/ }).click();
+        await page.getByRole('button', { name: 'Subscribe for $100 / month' }).click();
         await expect.poll(() => checkout.status, { timeout: 45_000 }).toBe(200);
-        expect(checkout.requestBody).toMatchObject({ account_id: accountId });
+        expect(checkout.requestBody).toMatchObject({ account_id: accountId, monthly_usd: 100 });
+        expect(checkout.body).toMatchObject({ status: 'checkout_created', monthly_usd: 100 });
         expectStripeUrl(
           checkout.body?.checkout_url,
           STRIPE_CHECKOUT_HOSTS,
           /^\/c\/pay\/cs_(test|live)_/,
         );
-        await page.unroute('**/v1/billing/create-per-seat-checkout');
+        await page.unroute('**/v1/billing/plan');
       });
 
       await test.step('A real Stripe test subscription activates the account', async () => {
         const env = loadEnv();
         const owner = new Client(apiBase).withBearer(session.access_token, 'BROWSER_OWNER');
-        await subscribe(env, owner, accountId, 'pro');
+        await subscribe(env, owner, accountId, 100);
       });
 
       await test.step('The Billing page reads and displays the active subscription', async () => {
@@ -196,7 +199,8 @@ test.describe
         };
         expect(state.subscription?.subscription_id).toBeTruthy();
         expect(state.subscription?.status).toBe('active');
-        await expect(page.getByText('Active', { exact: true })).toBeVisible();
+        // An active plan with a real period end reads "Renews <date>" (#10007), not "Active".
+        await expect(page.getByText(/^Renews /).first()).toBeVisible();
       });
 
       await test.step('The owner starts a one-time credit purchase', async () => {
@@ -206,19 +210,19 @@ test.describe
         // role wins, so `getByRole('button', …)` can no longer see it. The
         // cell's whole accessible name is now just the amount (`:175`).
         const topup = page.getByRole('radiogroup', { name: 'Top-up amount' });
-        await topup.getByRole('radio', { name: '$10', exact: true }).click();
+        // Presets are $25, $100, $250 and $1,000 since the credits-only plan (#9814).
+        await topup.getByRole('radio', { name: '$25', exact: true }).click();
         const purchase = await captureJsonPost<CheckoutResult>(
           page,
           '**/v1/billing/purchase-credits',
         );
-        // The CTA is `actionLabel` (`credit-topup-section.tsx:82-84`): "Add $10"
-        // once an amount is chosen, "Add credits" before that. "Buy $10 in
-        // credits" is gone.
-        await page.getByRole('button', { name: 'Add $10', exact: true }).click();
+        // The CTA is `actionLabel` in `credit-topup-section.tsx`: "Add $25" once
+        // an amount is chosen, "Add credits" before that.
+        await page.getByRole('button', { name: 'Add $25', exact: true }).click();
         await expect.poll(() => purchase.status, { timeout: 45_000 }).toBe(200);
         expect(purchase.requestBody).toMatchObject({
           account_id: accountId,
-          amount: 10,
+          amount: 25,
         });
         expectStripeUrl(
           purchase.body?.checkout_url,

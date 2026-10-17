@@ -20,6 +20,21 @@
  * therefore compensates for the prepend alone: zero inserted height means
  * zero adjustment, and whatever the reader did with the scrollbar in between
  * is left untouched.
+ *
+ * WHEN to correct is the other half. A one-shot restore one animation frame
+ * after `await loadOlder()` assumed the page had rendered by then. During a
+ * live reply it has not: the transcript is paced (`usePacedStoreValue`, 50ms),
+ * the stream keeps the pacer's window open, so the older page is delivered on
+ * the trailing edge — after the restore measured a zero delta. The page then
+ * rendered above the reader uncorrected: the view jumped by its height. The
+ * "Loading older messages" row moves the reader too: it mounts above every
+ * turn after the capture, and comes down 600ms after the page lands.
+ *
+ * So the anchor is HELD (`holdTurnScrollAnchor`) from the capture until the
+ * caller releases it: every layout pass that changes the transcript's height
+ * re-applies the correction in a ResizeObserver callback, which the browser
+ * runs after layout and before paint. No frame is painted with the jump,
+ * whenever the content lands.
  */
 
 export interface TurnScrollAnchor {
@@ -47,12 +62,36 @@ export function captureTurnScrollAnchor(container: HTMLElement): TurnScrollAncho
   };
 }
 
-export function restoreTurnScrollAnchor(
+/**
+ * Keep `anchor` where the reader sees it until the returned `release` runs.
+ *
+ * Every resize of `content` re-measures the anchor in content space and moves
+ * `scrollTop` by exactly the height that appeared or disappeared above it; a
+ * change inside or below the anchor measures zero and writes nothing. `release`
+ * applies the last change first — call it in the commit that makes that change
+ * (a layout effect runs before the ResizeObserver would) — then stops. It is
+ * idempotent. An anchor that left the DOM is never written.
+ */
+export function holdTurnScrollAnchor(
   container: HTMLElement,
+  content: HTMLElement,
   anchor: TurnScrollAnchor | null,
-): boolean {
-  if (!anchor?.element.isConnected || !container.contains(anchor.element)) return false;
-  const newContentTop = contentSpaceTop(container, anchor.element);
-  container.scrollTop += newContentTop - anchor.contentTop;
-  return true;
+): () => void {
+  if (!anchor) return () => {};
+  let heldTop: number | null = anchor.contentTop;
+  const apply = () => {
+    if (heldTop === null || !anchor.element.isConnected || !container.contains(anchor.element)) return;
+    const top = contentSpaceTop(container, anchor.element);
+    const inserted = top - heldTop;
+    heldTop = top;
+    if (inserted !== 0) container.scrollTop += inserted;
+  };
+  const observer = new ResizeObserver(apply);
+  observer.observe(content);
+  return () => {
+    if (heldTop === null) return;
+    apply();
+    heldTop = null;
+    observer.disconnect();
+  };
 }

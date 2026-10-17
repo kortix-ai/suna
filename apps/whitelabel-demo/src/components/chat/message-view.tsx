@@ -1,12 +1,13 @@
 'use client';
 
 /**
- * One message from the sync store. The user turn is a right-aligned `Bubble`;
- * the assistant turn renders full-width as ordered content blocks — clean and
+ * One message of the session log (`kortix.session/2`). The user turn is a
+ * right-aligned `Bubble`; the assistant turn (and a compaction: its marker and
+ * its summary) renders full-width as ordered content blocks — clean and
  * monochrome.
  *
- * Rendering is driven by `classifyTurn`/`classifyPart` (`@kortix/sdk`):
- * every supported runtime part is classified into a typed
+ * Rendering is driven by `classifySessionLogMessage` (`@kortix/sdk`): every
+ * block of the message is classified into a typed
  * `ClassifiedPart`, and `renderParts` (`@kortix/sdk/react`) requires a
  * renderer for every kind at compile time — so a new part type (or one we
  * used to silently drop) fails the build here instead of quietly vanishing
@@ -18,8 +19,8 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
-import { type MessageWithParts, type PartRenderers, renderParts } from '@kortix/sdk/react';
-import { classifyTurn } from '@kortix/sdk';
+import { type PartRenderers, renderParts } from '@kortix/sdk/react';
+import { type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
 import {
   Brain,
   ChevronRight,
@@ -136,8 +137,8 @@ const partRenderers: PartRenderers<React.ReactNode> = {
  * message (provider auth, model unavailable, abort, context overflow, …) and
  * often produces ZERO parts. Without this block such a turn renders as
  * complete silence, which reads as "the app is broken" when it's really
- * "the model call failed" — surface the reason instead. `classifyTurn`
- * normalizes `info.error` into `{name, message}` at the SDK layer, so this
+ * "the model call failed" — surface the reason instead. `classifySessionLogMessage`
+ * normalizes the message's error into `{name, message}` at the SDK layer, so this
  * component does not inspect the runtime wire error shape.
  */
 function TurnError({ error }: { error: { name: string; message: string } }) {
@@ -151,9 +152,9 @@ function TurnError({ error }: { error: { name: string; message: string } }) {
   );
 }
 
-export function MessageView({ message }: { message: MessageWithParts }) {
-  const isUser = message.info.role === 'user';
-  const { parts, error, isEmpty } = classifyTurn(message);
+export function MessageView({ message }: { message: SessionLogMessage }) {
+  const isUser = message.role === 'user' && message.kind !== 'compaction';
+  const { parts, error, isEmpty } = classifySessionLogMessage(message);
 
   if (isUser) {
     const text = parts

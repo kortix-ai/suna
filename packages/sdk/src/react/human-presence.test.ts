@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { PRESENCE_CHECK_MS, PRESENCE_INPUT_WINDOW_MS, presenceReporter, watchHumanPresence } from './human-presence';
+import {
+  PRESENCE_CHECK_MS,
+  PRESENCE_INPUT_WINDOW_MS,
+  presenceAwakeFrom,
+  presenceReporter,
+  watchHumanPresence,
+} from './human-presence';
 
 /** A document and window stand-in: listeners by event name, one interval. */
 function fakeEnv() {
@@ -206,5 +212,49 @@ describe('presenceReporter', () => {
     expect(puts).toEqual([{ active: false, alerts: true }]);
     reporter.report(true);
     expect(puts.at(-1)).toEqual({ active: true, alerts: false });
+  });
+});
+
+// KRTX-1729: the composer shows until when the computer stays on. The stream
+// renews the lease without a response, so the view re-sends present to read
+// the window again: on a timer, and when a turn ends and moves the cap.
+describe('presenceReporter.refresh', () => {
+  test('re-sends present with the current alerts flag while present', () => {
+    const puts: Array<{ active: boolean; alerts: boolean }> = [];
+    const reporter = presenceReporter((p) => puts.push(p), true);
+    reporter.report(true);
+    reporter.refresh();
+    expect(puts).toEqual([
+      { active: true, alerts: true },
+      { active: true, alerts: true },
+    ]);
+  });
+
+  test('sends nothing while absent, so it can never recreate a dropped lease', () => {
+    const puts: Array<{ active: boolean; alerts: boolean }> = [];
+    const reporter = presenceReporter((p) => puts.push(p), false);
+    reporter.refresh();
+    reporter.report(true);
+    reporter.report(false);
+    reporter.refresh();
+    expect(puts.map((p) => p.active)).toEqual([true, false]);
+  });
+});
+
+describe('presenceAwakeFrom', () => {
+  test('reads the window as Dates', () => {
+    expect(
+      presenceAwakeFrom({
+        awake_until: '2026-10-12T10:15:00.000Z',
+        awake_cap_at: '2026-10-12T11:40:00.000Z',
+      }),
+    ).toEqual({ until: new Date('2026-10-12T10:15:00.000Z'), capAt: new Date('2026-10-12T11:40:00.000Z') });
+  });
+
+  test('no window: nulls, a missing field (an API before KRTX-1729), or a value that is not a time', () => {
+    expect(presenceAwakeFrom({ awake_until: null, awake_cap_at: null })).toBeNull();
+    expect(presenceAwakeFrom({})).toBeNull();
+    expect(presenceAwakeFrom({ awake_until: '2026-10-12T10:15:00.000Z', awake_cap_at: null })).toBeNull();
+    expect(presenceAwakeFrom({ awake_until: 'soon', awake_cap_at: '2026-10-12T11:40:00.000Z' })).toBeNull();
   });
 });

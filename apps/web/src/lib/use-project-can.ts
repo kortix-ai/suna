@@ -80,6 +80,16 @@ export const PROJECT_PAGE_ACTIONS = [
   // The Customize bar's Members launcher (`capability-tabs.tsx`). In this
   // batch so the bar never waits on a probe of its own.
   PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
+  // The Customize write leaves (`TAB_PREFERENCE`'s `manage`): a tab shows
+  // only to a caller who can change what it holds.
+  PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+  PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ] as const;
 
 export function useProjectPageCans(projectId: string | undefined): Record<string, CanResult> {

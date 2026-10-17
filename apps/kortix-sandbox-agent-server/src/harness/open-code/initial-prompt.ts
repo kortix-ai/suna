@@ -114,7 +114,11 @@ export async function reconcileInitialTurnAcceptanceToApi(
  * own impatience. The 20s outer deadline is unchanged and still bounds the whole
  * loop.
  */
-const SESSION_CREATE_ATTEMPT_TIMEOUT_MS = 10_000
+let sessionCreateAttemptTimeoutMs = 10_000
+/** Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove. */
+export function setSessionCreateAttemptTimeoutMsForTests(ms: number): void {
+  sessionCreateAttemptTimeoutMs = ms
+}
 
 export async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
   const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
@@ -122,7 +126,7 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   let lastError = 'opencode session create timed out'
   while (Date.now() < deadline) {
     // Never let one attempt outlive the outer deadline.
-    const attemptMs = Math.max(500, Math.min(SESSION_CREATE_ATTEMPT_TIMEOUT_MS, deadline - Date.now()))
+    const attemptMs = Math.max(500, Math.min(sessionCreateAttemptTimeoutMs, deadline - Date.now()))
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -167,9 +171,9 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
 }
 
 /** Build the first-turn request from the session-bound runtime environment. */
-export function buildInitialPromptBody(prompt: string, claimedMessageId?: string): {
+export function buildInitialPromptBody(prompt: string, claimedMessageId?: string, context?: string): {
   messageID?: string
-  parts: Array<{ type: 'text'; text: string }>
+  parts: Array<{ type: 'text'; text: string; synthetic?: boolean }>
   model?: { providerID: string; modelID: string }
   agent?: string
 } {
@@ -179,7 +183,14 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
   const messageID = claimedMessageId
   return {
     ...(messageID ? { messageID } : {}),
-    parts: [{ type: 'text', text: prompt }],
+    parts: [
+      { type: 'text', text: prompt },
+      // Harness context: a synthetic part the transcript never renders (see
+      // the create contract's `initial_context`).
+      // `as const` is load-bearing: contextual typing does not flow through the
+      // conditional spread, and without it `type` widens to `string` (TS2322).
+      ...(context ? [{ type: 'text', text: context, synthetic: true } as const] : []),
+    ],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),
   }

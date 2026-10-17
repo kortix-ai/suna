@@ -24,7 +24,6 @@ import { BackHandler, Pressable, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isToolPart, type ToolPart } from '@kortix/sdk';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
@@ -163,11 +162,11 @@ function TimelineEntry({
 // ─── Detail ──────────────────────────────────────────────────────────────────
 
 function EntryDetail({ entry, context }: { entry: ActivitySheetEntry; context: ActivityContextValue }) {
-  if (!isToolPart(entry.part)) return null;
+  if (entry.block.type !== 'tool_call') return null;
   return (
     <ToolDetailContext.Provider value="body">
       <ToolPartRenderer
-        part={entry.part as ToolPart}
+        call={entry.block}
         sessionId={context.sessionId}
         turnLive={context.turnLive}
         onPermissionReply={context.onPermissionReply}

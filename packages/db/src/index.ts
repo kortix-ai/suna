@@ -1,5 +1,5 @@
 // Main exports
-export { createDb, instrumentSql, type Database, type DbHooks } from './client';
+export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -45,6 +45,8 @@ export {
   projectSnapshotArchives,
   configReleases,
   configReleaseFailures,
+  configReleaseHeads,
+  baseTipChecks,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
@@ -84,6 +86,7 @@ export {
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  projectSessionUserStates,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,
@@ -98,6 +101,9 @@ export {
   sessionLogThreads,
   sessionLogMessages,
   sessionLogBlobs,
+  sessionContentPurges,
+  sessionLogBackfillState,
+  accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,
   sandboxes,
@@ -120,6 +126,7 @@ export {
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,
+  enterpriseContracts,
   creditAccounts,
   creditLedger,
   creditUsage,
@@ -263,6 +270,16 @@ export {
   connectorCalls,
   connectorAttachments,
   promptAttachments,
+  jobQueue,
+  captureDeviceGrants,
+  captureDevices,
+  captureEnrollmentTokens,
+  captureEnrollments,
+  captureWorkspaces,
+  timelineChunks,
+  timelineFrames,
+  timelineActions,
+  timelineAudio,
   promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,

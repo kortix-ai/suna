@@ -22,8 +22,7 @@
  * - The rename mutation (`GeneralWorkspaceCard` below) — same
  *   `useMutation`/`renameOnMutate`/`renameOnError`/`renameOnSettled` wiring
  *   as the old `GeneralProjectCard`, byte-identical apart from the name of
- *   the enclosing function. `general-tab.rename.test.tsx` pins this the same
- *   way `settings-view.rename.test.tsx` used to.
+ *   the enclosing function.
  * - The Danger Zone (renamed "Delete workspace" per the task brief, to match
  *   the Profile tab's own "Delete account" section naming) — same
  *   `archiveProject` mutation. The mechanism is still an archive, NOT a row
@@ -117,7 +116,7 @@
  * it, are both unchanged.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
@@ -427,6 +426,15 @@ function GeneralWorkspaceCard({
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
+  // The last name the autosave effect sent and that the input has not changed
+  // since. A failed rename leaves the server name unchanged (the optimistic
+  // write is rolled back by `renameOnError`, and the summary cache this card
+  // reads is never optimistically written), so the effect's equality guard
+  // alone would re-fire the same rename on every `isRenamePending` flip,
+  // forever. Skipping the attempted name breaks that loop: a failed save
+  // idles until the user edits again (any settled edit that differs clears
+  // it), and a successful one clears it in `onSuccess`.
+  const attemptedName = useRef<string | null>(null);
 
   useEffect(() => {
     setName(project.name);
@@ -436,6 +444,7 @@ function GeneralWorkspaceCard({
     mutationFn: (nextName: string) => updateProject(project.project_id, { name: nextName }),
     onMutate: (nextName) => renameOnMutate(queryClient, project.project_id, nextName),
     onSuccess: (updated) => {
+      attemptedName.current = null;
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
     onError: (error: Error, _nextName, context) => {
@@ -451,8 +460,11 @@ function GeneralWorkspaceCard({
     if (!canManage || isRenamePending) return;
 
     const trimmed = debouncedName.trim();
+    if (attemptedName.current === trimmed) return;
+    attemptedName.current = null;
     if (!trimmed || trimmed === project.name) return;
 
+    attemptedName.current = trimmed;
     mutateName(trimmed);
   }, [debouncedName, canManage, project.name, isRenamePending, mutateName]);
 

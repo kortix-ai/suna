@@ -3,9 +3,10 @@
  * it is unit-testable without a DOM.
  */
 
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import type { BrowserRecent } from '@/stores/browser-recents-store';
-import type { PreviewPortProbe } from '@kortix/sdk';
+import type { PreviewPortProbe, ToolCallBlock } from '@kortix/sdk';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import type { RunOutcome } from '../shared/run-outcome';
@@ -16,8 +17,8 @@ import type { RunOutcome } from '../shared/run-outcome';
  * detail". Pulled out of the effect body so it's testable without mounting
  * `EasyPanel` (see `mode-gate.test.tsx`).
  */
-export function stepForCallId(steps: Step[], callId: string): Step | undefined {
-  return steps.find((s) => s.parts.some((p) => p.callID === callId));
+export function stepForCallId(steps: Step<ToolCallBlock>[], callId: string): Step<ToolCallBlock> | undefined {
+  return steps.find((s) => s.parts.some((c) => c.call_id === callId));
 }
 
 /**
@@ -30,11 +31,11 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
  * reads as "no focus, follow live".
  */
 export function focusIndexForCall(
-  parts: ReadonlyArray<{ callID?: string }>,
+  calls: ReadonlyArray<{ call_id?: string }>,
   callId: string | null | undefined,
 ): number {
   if (!callId) return -1;
-  return parts.findIndex((p) => p.callID === callId);
+  return calls.findIndex((c) => c.call_id === callId);
 }
 
 /**
@@ -90,12 +91,13 @@ export function pathOutput(path: string): OutputItem {
 /**
  * The recents `AppPreview`'s no-app landing can actually navigate to. The
  * shared recents store also holds external browsing history (BrowserPanel's
- * web mode), but the in-panel browser is sandbox-ports-only — offering a
- * github.com row it would refuse to open is a dead affordance. Pure for the
+ * web mode), but the in-panel browser opens sandbox ports and Kortix Apps
+ * only — offering a github.com row it would refuse to open is a dead
+ * affordance. Pure for the
  * same testability reason as the rest of this file.
  */
 export function sandboxRecents(recents: BrowserRecent[]): BrowserRecent[] {
-  return recents.filter((r) => !!parseLocalhostUrl(r.url));
+  return recents.filter((r) => !!parseLocalhostUrl(r.url) || isKortixAppUrl(r.url));
 }
 
 /** Viewer padding + scrollbar allowance around a fitted preview, px — added

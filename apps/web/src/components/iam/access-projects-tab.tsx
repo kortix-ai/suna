@@ -21,8 +21,8 @@ import { useTranslations } from '@/i18n/use-translations';
  *                                         `approveProjectAccessRequest` / `rejectProjectAccessRequest`
  *
  * **Everything visual comes from the shared access primitives**
- * (`features/workspace/shared/access`): `AccessDetailShell` for the panel
- * chrome, `AccessList`/`AccessRow` for every list, and `AccessDialog` for
+ * (`features/workspace/shared/access`): `AccessRow` for every list row (flattened
+ * to a Linear list row by `FLAT_ROW_CLASS`), and `AccessDialog` for
  * every "give / edit access" interaction. This file owns NO picker, role
  * select, list row, modal, or destructive-confirm copy of its own — the
  * table, the two `DropdownMenuSub` role changers, the popover cells and the
@@ -69,15 +69,16 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
+import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
 import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
@@ -90,15 +91,14 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
-  AccessDetailShell,
   AccessDialog,
-  AccessList,
   AccessRow,
   ROLE_NONE,
   builtinRole,
   customRole,
   formatDate,
   formatExpiry,
+  pluralize,
   principalLabel,
   removeAccessCopy,
   roleValueLabel,
@@ -141,11 +141,9 @@ import {
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon,
-  ArrowSquareOutIcon,
   CheckIcon,
   ClockIcon,
   EnvelopeIcon,
-  FolderOpenIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -215,6 +213,71 @@ const IMPLICIT_HINT =
   'Owners and admins always have Manager on every project. To set this directly, change their account role to Member first.';
 const GROUP_INHERITED_HINT =
   "Inherited from a group. Change the group's project access to update this.";
+
+// ─── Linear list chrome ────────────────────────────────────────────────────
+
+/** A Linear list row: flat on the page, a hover fill, no border or card.
+ *  Overrides `AccessRow`'s card dialect through its `className`. */
+const FLAT_ROW_CLASS =
+  'hover:bg-hover min-h-11 gap-2.5 rounded-md border-0 bg-transparent px-3 py-1';
+
+/** The role column: one fixed width, right-aligned, so every row's role and
+ *  the kebab slot after it sit on the same two lanes. */
+function RoleLabel({ children, hint }: { children: ReactNode; hint?: string }) {
+  const label = <span className="inline-block w-28 truncate text-right">{children}</span>;
+  if (!hint) return label;
+  // A sentence of explanation, not a label: a hover card, not a tooltip.
+  return (
+    <HoverCard openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <span>{label}</span>
+      </HoverCardTrigger>
+      <HoverCardContent side="top" align="end" className="w-72 p-3 text-sm text-pretty">
+        {hint}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+/** The rows' list. `-mx-2` lines each row's content up with the text above,
+ *  while its hover fill bleeds into the gutter. */
+function FlatList({ children }: { children: ReactNode }) {
+  return <ul className="-mx-2 flex flex-col gap-px">{children}</ul>;
+}
+
+/** A labelled group of flat rows: a muted label, then the list. No count,
+ *  no second description: the label says it. */
+function FlatSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      {/* `px-1`: the list's `-mx-2` plus each row's `px-3` puts the avatar one
+          step in from this edge; the label sits on that same line. */}
+      <h3 className="text-muted-foreground px-1 text-xs font-medium">{title}</h3>
+      <FlatList>{children}</FlatList>
+    </section>
+  );
+}
+
+/** Which role section a row sits under. A custom role is its own section:
+ *  its capabilities are not the admin or member tier's. */
+type RoleSection = 'admins' | 'members' | 'custom' | 'none';
+
+/** Display grouping only: which heading a row reads under. No control gates
+ *  on it; every write gates on `PROJECT_MEMBERS_MANAGE`. */
+function memberSection(member: ExtendedProjectAccessMember): RoleSection {
+  if (directProjectPolicy(member.custom_role_policies)) return 'custom';
+  return sectionOfRole(member.effective_project_role);
+}
+
+function groupSection(group: GroupAccessRow): RoleSection {
+  if (directProjectPolicy(group.custom_role_policies)) return 'custom';
+  return sectionOfRole(group.built_in_role);
+}
+
+function sectionOfRole(role: ProjectRole | null | undefined): RoleSection {
+  if (!role) return 'none';
+  return role === 'manager' ? 'admins' : 'members';
+}
 
 // ─── Row derivations (one shape for members and groups) ────────────────────
 
@@ -302,6 +365,25 @@ function ExpiryMeta({ expiresAt }: { expiresAt: string | null | undefined }) {
   );
 }
 
+/**
+ * The one muted fact under a row's name, or none. In order: how the access
+ * arrives when it is inherited ("via account admin", "via Engineering"),
+ * then agents when they are narrowed ("Agents: 2 of 5"), then an expiry when
+ * there is one. "Agents: all" and "Expires never" are the defaults and say
+ * nothing.
+ */
+function oneFact(
+  via: string | null,
+  agentCount: number,
+  projectAgentCount: number | undefined,
+  expiresAt: string | null | undefined,
+): ReactNode[] {
+  if (via) return [via];
+  if (agentCount > 0) return [agentsMetaPart(agentCount, projectAgentCount)];
+  if (expiresAt) return [<ExpiryMeta key="expires" expiresAt={expiresAt} />];
+  return [];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Public component
 // ─────────────────────────────────────────────────────────────────────────
@@ -337,7 +419,6 @@ export function AccessProjectsTab({
       projectId={selectedProjectId}
       rbacEnabled={rbacEnabled}
       canManageRoles={canManageRoles}
-      onBack={() => onSelectProject(null)}
     />
   );
 }
@@ -378,28 +459,27 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">
-          {tI18nComplete.raw('text04e2a9728af7')}
-          {settled ? ` · ${total}` : ''}
-        </p>
+        <p className="text-foreground text-sm font-medium">{tI18nComplete.raw('text04e2a9728af7')}</p>
         <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
       </div>
 
-      <InputGroupSearch>
-        <InputGroupSearchIcon>
-          <MagnifyingGlassIcon />
-        </InputGroupSearchIcon>
-        <InputGroupSearchInput
-          placeholder={tI18nComplete.raw('text9e079c7df9f1')}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setVisibleCount(PROJECT_LIST_PAGE_SIZE);
-          }}
-          variant="popover"
-        />
-        {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
-      </InputGroupSearch>
+      {/* Search narrows a list. With no projects there is nothing to narrow. */}
+      {settled && total > 0 ? (
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder={tI18nComplete.raw('text9e079c7df9f1')}
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setVisibleCount(PROJECT_LIST_PAGE_SIZE);
+            }}
+          />
+          {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
+        </InputGroupSearch>
+      ) : null}
 
       {projectsQuery.isError ? (
         <ErrorState
@@ -413,14 +493,13 @@ function ProjectPicker({
           }
         />
       ) : projectsQuery.isLoading ? (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+            <Skeleton key={i} className="h-11 w-full rounded-md" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={FolderOpenIcon}
           size="sm"
           title={
             search ? tI18nComplete.raw('text2302a8311ddf') : tI18nComplete.raw('textf83c80652286')
@@ -428,7 +507,7 @@ function ProjectPicker({
         />
       ) : (
         <>
-          <AccessList>
+          <FlatList>
             {visible.map((project) => (
               <ProjectListRow
                 key={project.project_id}
@@ -436,7 +515,7 @@ function ProjectPicker({
                 onSelect={() => onSelectProject(project.project_id)}
               />
             ))}
-          </AccessList>
+          </FlatList>
           {hasMore ? (
             <div className="flex justify-center pt-1">
               <Button
@@ -457,7 +536,7 @@ function ProjectPicker({
 
 /** One project row. Fetches its own member count + pending-request dot —
  *  best-effort, never blocks the row: a slow or failed probe just shows
- *  "—"/no dot instead of an error. See header comment. */
+ *  no count and no dot instead of an error. See header comment. */
 function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelect: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `GET /projects/:id/access-requests` asserts `project.members.manage`, so ask
@@ -492,7 +571,16 @@ function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelec
 
   return (
     <AccessRow
-      leading={<EntityAvatar icon={FolderOpenIcon} size="md" />}
+      className={FLAT_ROW_CLASS}
+      // The project's own identity tile, as the project switcher draws it.
+      leading={
+        <EntityAvatar
+          label={project.name}
+          glyph={project.icon_glyph}
+          emoji={project.icon}
+          size="sm"
+        />
+      }
       title={project.name}
       badges={
         hasPendingRequests ? (
@@ -504,14 +592,12 @@ function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelec
           </Hint>
         ) : null
       }
-      meta={
-        <span className="text-muted-foreground text-xs">
-          {accessQuery.isLoading
-            ? tI18nComplete.raw('textba3bbbe10d8b')
-            : memberCount != null
-              ? `${memberCount} member${memberCount === 1 ? '' : 's'}`
-              : '—'}
-        </span>
+      // The member count is a quiet trailing fact. Unknown (loading, or a
+      // project this viewer cannot read) shows nothing, not "—".
+      trailing={
+        memberCount != null ? (
+          <span className="tabular-nums">{pluralize(memberCount, 'member')}</span>
+        ) : undefined
       }
       onClick={onSelect}
     />
@@ -535,13 +621,11 @@ function ProjectAccessPanel({
   projectId,
   rbacEnabled,
   canManageRoles,
-  onBack,
 }: {
   accountId: string;
   projectId: string;
   rbacEnabled: boolean;
   canManageRoles: boolean;
-  onBack: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
@@ -705,11 +789,9 @@ function ProjectAccessPanel({
       } else {
         warningToast(tI18nComplete.raw('text370145ffb7ba'), {
           duration: 8_000,
-          button: (
-            <Button size="sm" onClick={() => copy(result.invite_url)}>
-              {tI18nComplete.raw('text9adff6870471')}
-            </Button>
-          ),
+          actions: [
+            { label: tI18nComplete.raw('text9adff6870471'), onClick: () => copy(result.invite_url) },
+          ],
         });
       }
       queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });
@@ -770,17 +852,60 @@ function ProjectAccessPanel({
   });
 
   // ── Grant / edit dialogs ──────────────────────────────────────────────
-  const [grantOpen, setGrantOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  // Grant access opens beside the list in the hub's split sheet: the pane
+  // narrows instead of a modal covering it. The sheet draws the title; the
+  // form draws its fields and a sticky footer.
+  const sheet = useAccountHubSheet();
+  function openGrant() {
+    sheet.open({
+      title: tI18nComplete.raw('text8693768c7e08'),
+      description: projectName,
+      body: (
+        <AccessDialog
+          presentation="split-sheet"
+          open
+          onOpenChange={(next) => {
+            if (!next) sheet.close();
+          }}
+          accountId={accountId}
+          scope={{ kind: 'project', projectId, projectName }}
+          mode={{ kind: 'grant' }}
+          rbacEnabled={rbacEnabled}
+          canManageRoles={canManageRoles}
+          onDone={invalidateAccess}
+        />
+      ),
+    });
+  }
+
+  // Edit access opens in the same split sheet as Grant access, keyed by the
+  // principal so a second row's edit replaces the first instead of reusing it.
   function openEdit(target: EditTarget) {
-    setEditTarget(target);
-    setEditOpen(true);
+    sheet.open({
+      title: tI18nComplete.raw('texta514a684676a'),
+      description: target.principal.label,
+      body: (
+        <AccessDialog
+          key={`${target.principal.type}:${target.principal.id}`}
+          presentation="split-sheet"
+          open
+          onOpenChange={(next) => {
+            if (!next) sheet.close();
+          }}
+          accountId={accountId}
+          scope={{ kind: 'project', projectId, projectName }}
+          mode={{ kind: 'edit', principal: target.principal, current: target.current }}
+          rbacEnabled={rbacEnabled}
+          canManageRoles={canManageRoles}
+          inheritedFrom={target.inheritedFrom}
+          onDone={invalidateAccess}
+        />
+      ),
+    });
   }
 
   const members = accessQuery.data?.members ?? [];
   const groups = accessQuery.data?.group_access ?? [];
-  const rowCount = members.length + groups.length;
 
   const pendingInvites = pendingInvitesQuery.data?.pending ?? [];
   const accessRequests = accessRequestsQuery.data?.requests ?? [];
@@ -791,39 +916,76 @@ function ProjectAccessPanel({
 
   const settledRows = !accessQuery.isLoading && !accessQuery.isError;
 
+  // People without project access are account members the access route lists
+  // with no role. They are not "access": they get their own quiet group below,
+  // with no "—" and no "no access" meta on every row.
+  // Rows grouped by role (Paper variant 08): admins, members, custom roles,
+  // then account members with no access here. People first, then groups,
+  // inside each section.
+  const sectionRows = (section: RoleSection) => ({
+    members: members.filter((member) => memberSection(member) === section),
+    groups: groups.filter((group) => groupSection(group) === section),
+  });
+  const roleSections: { key: RoleSection; title: string }[] = [
+    { key: 'admins', title: tI18nComplete.raw('text926597a39cb3') },
+    { key: 'members', title: tI18nComplete.raw('text1044a4c056d0') },
+    { key: 'custom', title: tI18nComplete.raw('textc703c7f9cbe6') },
+  ];
+  const withoutAccess = sectionRows('none').members;
+  const hasAnyAccess = members.length - withoutAccess.length + groups.length > 0;
+
+  const grantButton = canManageMembers ? (
+    <Button type="button" size="sm" onClick={openGrant} className="gap-1.5">
+      <PlusIcon className="size-3.5" />
+      {tI18nComplete.raw('text8693768c7e08')}
+    </Button>
+  ) : null;
+
   return (
-    <AccessDetailShell
-      back={{ label: tI18nComplete.raw('text4b87271b6b81'), onClick: onBack }}
-      avatar={<EntityAvatar icon={FolderOpenIcon} size="lg" />}
-      title={project?.name ?? '…'}
-      loading={projectQuery.isLoading}
-      actions={
-        <Button asChild type="button" variant="ghost" size="sm" className="gap-1.5">
-          <Link href={`/projects/${projectId}`}>
-            {tI18nComplete.raw('text5e5eba7f41ab')}
-            <ArrowSquareOutIcon className="size-3.5" />
-          </Link>
-        </Button>
-      }
-    >
+    <div className="space-y-6 pb-10">
+      {/* No back button: the hub's breadcrumb (Settings / account / Projects /
+          this project) is the way back. */}
+      <div className="space-y-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {projectQuery.isLoading ? (
+            <Skeleton className="size-8 rounded-md" />
+          ) : (
+            <EntityAvatar
+              label={project?.name}
+              glyph={project?.icon_glyph}
+              emoji={project?.icon}
+              size="md"
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            {projectQuery.isLoading ? (
+              <Skeleton className="h-6 w-44" />
+            ) : (
+              <h2 className="text-foreground truncate text-xl font-medium">{project?.name ?? '…'}</h2>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button asChild type="button" variant="ghost" size="sm">
+              <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text5e5eba7f41ab')}</Link>
+            </Button>
+            {grantButton}
+          </div>
+        </div>
+      </div>
+
       {/* ── Asked to join ─────────────────────────────────────────────── */}
       {showAccessRequests ? (
         accessRequestsQuery.isLoading ? (
-          <Skeleton className="h-14 w-full rounded-md" />
+          <Skeleton className="h-11 w-full rounded-md" />
         ) : (
-          <AccessList
-            header={{ title: tI18nComplete.raw('textf810ceed99d6'), count: accessRequests.length }}
-          >
+          <FlatSection title={tI18nComplete.raw('textf810ceed99d6')}>
             {accessRequests.map((request) => {
               const busy = accessRequestBusyIds.has(request.request_id);
               return (
                 <AccessRow
                   key={request.request_id}
-                  leading={
-                    <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <EnvelopeIcon className="size-4" />
-                    </span>
-                  }
+                  className={FLAT_ROW_CLASS}
+                  leading={<UserAvatar email={request.requester_email} size="sm" />}
                   title={request.requester_email}
                   metaParts={[
                     <span key="requested" className="tabular-nums">
@@ -845,20 +1007,20 @@ function ProjectAccessPanel({
                       <>
                         <Button
                           type="button"
-                          size="sm"
-                          variant="ghost"
+                          size="xs"
+                          variant="secondary"
                           onClick={() => approveRequestMutation.mutate(request.request_id)}
-                          className="gap-1.5"
+                          className="gap-1"
                         >
                           <CheckIcon className="size-3.5" />
                           {tI18nComplete.raw('text6007acbe30b2')}
                         </Button>
                         <Button
                           type="button"
-                          size="sm"
+                          size="xs"
                           variant="ghost"
                           onClick={() => rejectRequestMutation.mutate(request.request_id)}
-                          className="gap-1.5"
+                          className="gap-1"
                         >
                           <XIcon className="size-3.5" />
                           {tI18nComplete.raw('texta2d285b35287')}
@@ -869,35 +1031,86 @@ function ProjectAccessPanel({
                 />
               );
             })}
-          </AccessList>
+          </FlatSection>
         )
       ) : null}
+
+      {/* ── Access ────────────────────────────────────────────────────── */}
+      {accessQuery.isLoading ? (
+        <div className="space-y-1">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-11 w-full rounded-md" />
+          ))}
+        </div>
+      ) : accessQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title={tI18nComplete.raw('textff42d4eadd12')}
+          description={(accessQuery.error as Error)?.message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => accessQuery.refetch()}>
+              {tI18nComplete.raw('text942087cc2d41')}
+            </Button>
+          }
+        />
+      ) : !hasAnyAccess ? (
+        <EmptyState
+          size="sm"
+          title={tI18nComplete.raw('text6a50fe407b62')}
+          description={tI18nComplete.raw('text14d959607774')}
+        />
+      ) : (
+        roleSections.map(({ key, title }) => {
+          const rows = sectionRows(key);
+          if (rows.members.length + rows.groups.length === 0) return null;
+          return (
+            <FlatSection key={key} title={title}>
+              {rows.members.map((member) => (
+                <MemberAccessRow
+                  key={`member:${member.user_id}`}
+                  member={member}
+                  canManageMembers={canManageMembers}
+                  busy={pendingUserIds.has(member.user_id)}
+                  projectAgentCount={projectAgentCount}
+                  onEdit={openEdit}
+                  onRequestRemove={() => setRemoveMemberTarget(member)}
+                />
+              ))}
+              {rows.groups.map((group) => (
+                <GroupAccessRowView
+                  key={`group:${group.group_id}`}
+                  group={group}
+                  canManageMembers={canManageMembers}
+                  busy={pendingGroupIds.has(group.group_id)}
+                  projectAgentCount={projectAgentCount}
+                  onEdit={openEdit}
+                  onRequestRemove={() => setRemoveGroupTarget(group)}
+                />
+              ))}
+            </FlatSection>
+          );
+        })
+      )}
 
       {/* ── Invited to this project ───────────────────────────────────── */}
       {showPendingInvites ? (
         pendingInvitesQuery.isLoading ? (
-          <Skeleton className="h-14 w-full rounded-md" />
+          <Skeleton className="h-11 w-full rounded-md" />
         ) : (
-          <AccessList
-            header={{ title: tI18nComplete.raw('texteaca91e7a784'), count: pendingInvites.length }}
-          >
+          <FlatSection title={tI18nComplete.raw('texteaca91e7a784')}>
             {pendingInvites.map((invite) => {
               const busy = pendingInviteBusyIds.has(invite.invite_id);
               return (
                 <AccessRow
                   key={invite.invite_id}
-                  dashed
+                  className={FLAT_ROW_CLASS}
+                  // Avatar v2's invited state: a dashed empty circle.
                   leading={
-                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <EnvelopeIcon className="size-4" />
+                    <span className="text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed">
+                      <EnvelopeIcon className="size-3" />
                     </span>
                   }
                   title={invite.email}
-                  badges={
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {invite.project_role}
-                    </Badge>
-                  }
                   metaParts={[
                     <span key="invited" className="tabular-nums">
                       {tI18nComplete.raw('text63b17becd812')} {formatDate(invite.created_at)}
@@ -914,97 +1127,42 @@ function ProjectAccessPanel({
                       </span>
                     ),
                   ]}
+                  trailing={
+                    <RoleLabel>
+                      <span className="capitalize">{invite.project_role}</span>
+                    </RoleLabel>
+                  }
                   pending={busy}
-                  actions={
-                    busy ? undefined : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => resendInviteMutation.mutate(invite.invite_id)}
-                          className="gap-1.5"
-                        >
-                          <ArrowClockwiseIcon className="size-3.5" />
-                          {tI18nComplete.raw('text1f94843777ae')}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setRevokeInviteTarget(invite)}
-                          className="gap-1.5"
-                        >
-                          <XIcon className="size-3.5" />
-                          {tI18nComplete.raw('text87e6d00bbf53')}
-                        </Button>
-                      </>
-                    )
+                  kebabLabel={tI18nComplete('text33da220b1a34', { value0: invite.email })}
+                  kebab={
+                    busy
+                      ? []
+                      : [
+                          {
+                            label: tI18nComplete.raw('text1f94843777ae'),
+                            icon: <ArrowClockwiseIcon className="size-3.5" />,
+                            onSelect: () => resendInviteMutation.mutate(invite.invite_id),
+                          },
+                          {
+                            label: tI18nComplete.raw('text87e6d00bbf53'),
+                            icon: <XIcon className="size-3.5" />,
+                            variant: 'destructive' as const,
+                            separated: true,
+                            onSelect: () => setRevokeInviteTarget(invite),
+                          },
+                        ]
                   }
                 />
               );
             })}
-          </AccessList>
+          </FlatSection>
         )
       ) : null}
 
-      {/* ── Access ────────────────────────────────────────────────────── */}
-      {accessQuery.isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
-          ))}
-        </div>
-      ) : accessQuery.isError ? (
-        <ErrorState
-          size="sm"
-          title={tI18nComplete.raw('textff42d4eadd12')}
-          description={(accessQuery.error as Error)?.message}
-          action={
-            <Button variant="outline" size="sm" onClick={() => accessQuery.refetch()}>
-              {tI18nComplete.raw('text942087cc2d41')}
-            </Button>
-          }
-        />
-      ) : rowCount === 0 ? (
-        <EmptyState
-          icon={UsersIcon}
-          size="sm"
-          title={tI18nComplete.raw('text6a50fe407b62')}
-          description={tI18nComplete.raw('text14d959607774')}
-          action={
-            canManageMembers ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setGrantOpen(true)}
-              >
-                <PlusIcon className="size-3.5" />
-                {tI18nComplete.raw('text8693768c7e08')}
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <AccessList
-          header={{
-            title: tI18nComplete.raw('textec5ba0abb717'),
-            count: settledRows ? rowCount : undefined,
-            actions: canManageMembers ? (
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setGrantOpen(true)}
-                className="gap-1.5"
-              >
-                <PlusIcon className="size-3.5" />
-                {tI18nComplete.raw('text8693768c7e08')}
-              </Button>
-            ) : undefined,
-          }}
-        >
-          {members.map((member) => (
+      {/* ── Account members with no access here ───────────────────────── */}
+      {settledRows && withoutAccess.length > 0 ? (
+        <FlatSection title={tI18nComplete.raw('text9b1f0823459d')}>
+          {withoutAccess.map((member) => (
             <MemberAccessRow
               key={`member:${member.user_id}`}
               member={member}
@@ -1015,19 +1173,8 @@ function ProjectAccessPanel({
               onRequestRemove={() => setRemoveMemberTarget(member)}
             />
           ))}
-          {groups.map((group) => (
-            <GroupAccessRowView
-              key={`group:${group.group_id}`}
-              group={group}
-              canManageMembers={canManageMembers}
-              busy={pendingGroupIds.has(group.group_id)}
-              projectAgentCount={projectAgentCount}
-              onEdit={openEdit}
-              onRequestRemove={() => setRemoveGroupTarget(group)}
-            />
-          ))}
-        </AccessList>
-      )}
+        </FlatSection>
+      ) : null}
 
       {/* ── Agents that hold a role here (their ceiling) ─────────────────── */}
       {canManageRoles && settledRows ? (
@@ -1036,33 +1183,6 @@ function ProjectAccessPanel({
           projectId={projectId}
           projectName={projectName}
           rbacEnabled={rbacEnabled}
-        />
-      ) : null}
-
-      {/* ── The one grant / edit modal ────────────────────────────────── */}
-      <AccessDialog
-        open={grantOpen}
-        onOpenChange={setGrantOpen}
-        accountId={accountId}
-        scope={{ kind: 'project', projectId, projectName }}
-        mode={{ kind: 'grant' }}
-        rbacEnabled={rbacEnabled}
-        canManageRoles={canManageRoles}
-        onDone={invalidateAccess}
-      />
-
-      {editTarget ? (
-        <AccessDialog
-          key={`${editTarget.principal.type}:${editTarget.principal.id}`}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          accountId={accountId}
-          scope={{ kind: 'project', projectId, projectName }}
-          mode={{ kind: 'edit', principal: editTarget.principal, current: editTarget.current }}
-          rbacEnabled={rbacEnabled}
-          canManageRoles={canManageRoles}
-          inheritedFrom={editTarget.inheritedFrom}
-          onDone={invalidateAccess}
         />
       ) : null}
 
@@ -1137,7 +1257,7 @@ function ProjectAccessPanel({
           revokeInviteMutation.mutate(target.invite_id);
         }}
       />
-    </AccessDetailShell>
+    </div>
   );
 }
 
@@ -1196,8 +1316,17 @@ function MemberAccessRow({
   const kebab: KebabItem[] = editable
     ? [
         {
-          label: tI18nComplete.raw('texta514a684676a'),
-          icon: <PencilSimpleIcon className="size-3.5" />,
+          // Someone with no access has nothing to edit: the same dialog grants.
+          label:
+            displayRole.kind === 'none'
+              ? tI18nComplete.raw('text8693768c7e08')
+              : tI18nComplete.raw('texta514a684676a'),
+          icon:
+            displayRole.kind === 'none' ? (
+              <PlusIcon className="size-3.5" />
+            ) : (
+              <PencilSimpleIcon className="size-3.5" />
+            ),
           onSelect: () =>
             onEdit({
               principal: {
@@ -1230,33 +1359,37 @@ function MemberAccessRow({
 
   return (
     <AccessRow
+      className={FLAT_ROW_CLASS}
       leading={<UserAvatar email={member.email ?? ''} size="sm" />}
       title={label}
+      // At most one short fact. A row with no access has none: "Agents: all ·
+      // Expires never" would read as "every agent, forever", the opposite of
+      // the truth, and it already sits under the "No access" heading.
       metaParts={
-        // A row with NO access has no grant to describe: "Agents: all ·
-        // Expires never" reads as "they can reach every agent forever", the
-        // exact opposite of the truth. Only "no access" belongs there.
         displayRole.kind === 'none'
-          ? [...(via ? [via] : [])]
-          : [
-              ...(via ? [via] : []),
-              agentsMetaPart(
-                agentGrants.length,
-                projectAgentCount,
-                displayRole.kind === 'builtin' && displayRole.role === 'manager',
-              ),
-              <ExpiryMeta key="expires" expiresAt={expiresAt} />,
-            ]
+          ? []
+          : oneFact(via, agentGrants.length, projectAgentCount, expiresAt)
       }
-      trailing={roleLabel}
+      // The role sits in a fixed column, and the kebab slot after it is always
+      // drawn (empty when not editable), so every row shares the same lanes.
+      // An implicit or group-inherited role says why on hover instead of a
+      // shield where the kebab would be.
+      trailing={
+        <RoleLabel
+          hint={
+            !editable && canManageMembers && (member.has_implicit_access || inheritedOnly)
+              ? member.has_implicit_access
+                ? IMPLICIT_HINT
+                : GROUP_INHERITED_HINT
+              : undefined
+          }
+        >
+          {displayRole.kind === 'none' ? null : roleLabel}
+        </RoleLabel>
+      }
       kebab={kebab}
       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}
-      notEditable={
-        !editable && canManageMembers && (member.has_implicit_access || inheritedOnly)
-          ? { hint: member.has_implicit_access ? IMPLICIT_HINT : GROUP_INHERITED_HINT }
-          : undefined
-      }
     />
   );
 }
@@ -1325,23 +1458,13 @@ function GroupAccessRowView({
     : [];
 
   return (
+    // Kind reads from the avatar (the group glyph), so no "Group" badge.
     <AccessRow
+      className={FLAT_ROW_CLASS}
       leading={<EntityAvatar icon={UsersIcon} size="sm" />}
       title={label}
-      badges={
-        <Badge variant="outline" size="sm">
-          {tI18nComplete.raw('text34ca0e766088')}
-        </Badge>
-      }
-      metaParts={[
-        agentsMetaPart(
-          agentGrants.length,
-          projectAgentCount,
-          role.kind === 'builtin' && role.role === 'manager',
-        ),
-        ...(policy ? [<ExpiryMeta key="expires" expiresAt={expiresAt} />] : []),
-      ]}
-      trailing={roleLabel}
+      metaParts={oneFact(null, agentGrants.length, projectAgentCount, expiresAt)}
+      trailing={<RoleLabel>{roleLabel}</RoleLabel>}
       kebab={kebab}
       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}

@@ -93,17 +93,24 @@ import rules, and where new code goes; `bun run lint` enforces them.
    failure except an authorization denial or a cancellation; `require-s3`
    fails closed. Nothing runs git on that boot path. Off it, the daemon
    refreshes the index and imports the tip's blob pack (`git index-pack`),
-   reported as `config_provider.hydration` (`pending` → `ok` | `failed`; a
+   reported as `workspace_provider.hydration` (`pending` → `ok` | `failed`; a
    failed import leaves lazy blob fetches through the proxy). The outcome —
    provider, expected vs actual SHA, extractor, classified S3 failure,
-   fallback, hydration — is on `GET /kortix/health` (`config_provider`) and in
-   the boot timeline marks (`config-provider:*`); both wire names predate the
-   rename to workspace-provider and stay. A prepared-S3 start defers
+   fallback, hydration, per-stage timings — is on `GET /kortix/health`
+   (`workspace_provider`). The workspace writes nothing into `boot_timeline`:
+   it is not config. The config release the runtime boots from is downloaded
+   in parallel by the config provider (`src/services/config-provider/`), from
+   the S3 project snapshot first and the API archive second, and never from
+   `/workspace`. A prepared-S3 start defers
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
 4. Inject managed system skills into the project's skills dir: root `skills/`
    (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
+   A `kortix_version: 3` session takes its agents, registered skill folders,
+   commands and extensions only from the compiled set
+   (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
+   `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
 5. Resolve `OPENCODE_CONFIG_DIR`.
 6. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).

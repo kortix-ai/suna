@@ -26,7 +26,8 @@ export function sessionNeedsInputCount(
 /**
  * The project's per-session "waiting on a human" summary. The server only lists
  * sessions the viewer may answer, so a session present here is a `needs-you`
- * session for this viewer. Polled: nothing announces a new question.
+ * session for this viewer. Polled every 30 s. An open session's stream also
+ * refetches it on each question event (`handleInteractionEvent`).
  */
 export function useSessionsNeedingInput(projectId: string, options?: { enabled?: boolean }) {
   const enabled = Boolean(projectId) && options?.enabled !== false;

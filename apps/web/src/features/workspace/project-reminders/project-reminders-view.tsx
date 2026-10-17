@@ -75,7 +75,7 @@ function useNarrowViewport(): boolean {
 function RemindersHeader({ projectId, actions }: { projectId: string; actions?: ReactNode }) {
   const t = useTranslations('reminders');
   return (
-    <ProjectPageHeader title={t('title')} href={`/projects/${projectId}/reminders`}>
+    <ProjectPageHeader title={t('title')}>
       {actions}
     </ProjectPageHeader>
   );

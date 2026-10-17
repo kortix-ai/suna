@@ -32,6 +32,7 @@ export function FilePreviewModal({
   const prevFile = useFilesStore((s) => s.prevFile);
   const filePathList = useFilesStore((s) => s.filePathList);
   const currentFileIndex = useFilesStore((s) => s.currentFileIndex);
+  const targetLine = useFilesStore((s) => s.targetLine);
 
   const explorer = useFileExplorerSource();
   const source = explorer.useFileViewerSource();
@@ -71,6 +72,7 @@ export function FilePreviewModal({
       onClose={goBackToBrowser}
       onNext={nextFile}
       onPrev={prevFile}
+      targetLine={targetLine}
       source={source}
       HistoryContent={FileHistoryPopoverContent}
       renderFileIcon={(name) =>

@@ -244,6 +244,20 @@ describe('preview origin auth gate', () => {
   });
 });
 
+describe('a claimed local preview host', () => {
+  test('is ignored, so an unsigned request to the API origin is not a preview', async () => {
+    // Pentest: a local `*.localhost` target skips the signature, so a claimed
+    // one made any caller's request "verified".
+    const [req, url] = request(
+      '/learn?token=good',
+      { headers: { 'x-kortix-preview-host': 'p8081-sbx-known.localhost' } },
+      'dev-api.kortix.com',
+    );
+    expect(await handlePreviewOriginRequest(req, url)).toBeNull();
+    expect(labelLookups).toEqual([]);
+  });
+});
+
 describe('what a browser is shown instead of JSON', () => {
   test('a person navigating with no credential gets a page they can act on', async () => {
     const [req, url] = request('/learn', { headers: { 'sec-fetch-dest': 'document' } });

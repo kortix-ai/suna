@@ -1,4 +1,5 @@
 import type { SessionPrompt } from '../../rest/projects-client/sessions';
+import type { SessionLogTurn } from '../../session-log/turns/turn';
 import { showTurnBusyIndicator } from './turn-busy-visibility';
 
 /**
@@ -45,6 +46,11 @@ interface TurnLike {
   }>;
 }
 
+/** A block turn (`sessionLogTurns`): the id and the replies are all these rules read. */
+type BlockTurnLike = Pick<SessionLogTurn, 'id' | 'assistant'>;
+const turnIdOf = (turn: TurnLike | BlockTurnLike) => ('id' in turn ? turn.id : turn.userMessage.info.id);
+const replyCountOf = (turn: TurnLike | BlockTurnLike) => ('assistant' in turn ? turn.assistant.length : turn.assistantMessages.length);
+
 const completedAt = (info: { time?: object }): number | undefined =>
   (info.time as { completed?: number } | undefined)?.completed;
 
@@ -89,12 +95,9 @@ interface DeliveringTurnInput {
 }
 
 /** The transcript's `pending` bubble rule for a turn nobody is working on. */
-function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
-  const id = turn.userMessage.info.id;
-  return (
-    input.pendingTurnIds.has(id) ||
-    (turn.assistantMessages.length === 0 && input.pendingPromptIds.has(id))
-  );
+function isQueuedTurn(turn: TurnLike | BlockTurnLike, input: QueuedTurnInput): boolean {
+  const id = turnIdOf(turn);
+  return input.pendingTurnIds.has(id) || (replyCountOf(turn) === 0 && input.pendingPromptIds.has(id));
 }
 
 /**
@@ -106,15 +109,13 @@ function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
  * transcript.
  */
 export function fallbackBusyRowAfterTurnId(
-  input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike> },
+  input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike | BlockTurnLike> },
 ): string | null {
-  const delivering = input.turns.find((turn) =>
-    input.deliveringPromptIds.has(turn.userMessage.info.id),
-  );
-  if (delivering) return delivering.userMessage.info.id;
+  const delivering = input.turns.find((turn) => input.deliveringPromptIds.has(turnIdOf(turn)));
+  if (delivering) return turnIdOf(delivering);
   const firstQueued = input.turns.findIndex((turn) => isQueuedTurn(turn, input));
   if (firstQueued <= 0) return null;
-  return input.turns[firstQueued - 1].userMessage.info.id;
+  return turnIdOf(input.turns[firstQueued - 1]);
 }
 
 /**
@@ -214,13 +215,13 @@ export function workingTurnDrawsBusyRow(input: {
  * `isSentTurn` matches the sent id OR its re-minted echo alias.
  */
 export function freshSendHint(
-  turns: ReadonlyArray<TurnLike>,
+  turns: ReadonlyArray<TurnLike | BlockTurnLike>,
   isSentTurn: (userMessageId: string) => boolean,
 ): string | null {
   for (let i = turns.length - 1; i >= 0; i--) {
-    const id = turns[i].userMessage.info.id;
+    const id = turnIdOf(turns[i]);
     if (!isSentTurn(id)) continue;
-    return turns[i].assistantMessages.length === 0 ? id : null;
+    return replyCountOf(turns[i]) === 0 ? id : null;
   }
   return null;
 }

@@ -234,11 +234,18 @@ export class AppHostingProvider {
     externalId: string,
   ): Promise<void> {
     const deadline = Date.now() + APP_PROVIDER_WAKE_TIMEOUT_MS;
+    let recovered = false;
     while (Date.now() < deadline) {
       const providerStatus = await runtimeProvider.getStatus(externalId);
       if (providerStatus === 'running') return;
       if (providerStatus === 'removed' || providerStatus === 'terminal') {
-        throw new Error(`App provider runtime ${externalId} entered ${providerStatus} while waking`);
+        // A failed start (Platinum `failed-start`) keeps its disk and takes a
+        // start again; without this the App shows "Starting" on every request.
+        // After the recovery the old state can linger: wait it out to the deadline.
+        if (!recovered && runtimeProvider.recoverInPlace) {
+          recovered = (await runtimeProvider.recoverInPlace(externalId).catch(() => 'unavailable')) === 'recovering';
+        }
+        if (!recovered) throw new Error(`App provider runtime ${externalId} entered ${providerStatus} while waking`);
       }
       await this.dependencies.sleep(APP_PROVIDER_WAKE_POLL_MS);
     }

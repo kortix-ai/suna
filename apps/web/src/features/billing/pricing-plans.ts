@@ -2,20 +2,18 @@
  * Ids for the MARKETING plan cards. DISPLAY-ONLY.
  *
  * These are React keys and copy lookups for the three cards on /pricing and the
- * two in the upgrade modal. They are NOT billing identifiers and must never be
- * compared against an API tier key, `subscription.tier_key`, `billing_model`, a
- * Stripe price/product id, or an entitlement key.
+ * cards in the upgrade modal. They are NOT billing identifiers and must never
+ * be compared against an API tier key, `subscription.tier_key`, a Stripe
+ * price/product id, or an entitlement key. To branch on what an account is
+ * actually on, use `resolvedPlan(accountState)` from `@kortix/sdk`.
  *
- * `'team_seat'` is spelled out for exactly that reason: the card it names is the
- * live $40/seat per-seat offer (`billing_model === 'per_seat'`), while the API
- * key `team` is the RETIRED $200 flat plan. The id used to be `'team'`, so the
- * same six letters meant two different products depending on which file you
- * were reading. To branch on what an account is actually on, use
- * `resolvedPlan(accountState)` from `@kortix/sdk` — not one of these ids.
+ * `PRICING_PLANS` is the English source for server-rendered surfaces that
+ * cannot call a translation hook: the JSON-LD offers in the root layout and the
+ * `/markdown/pricing.md` page. The pages themselves read the same copy from
+ * `billing.pricing.plans.*` in the translation catalogs through
+ * `usePricingPlans()`. `pricing-copy.test.ts` fails when the two differ.
  */
-export type PricingPlanId = 'free' | 'team_seat' | 'enterprise';
-
-export type UpgradeModalPlanId = Exclude<PricingPlanId, 'enterprise'>;
+export type PricingPlanId = 'free' | 'credits' | 'enterprise';
 
 export type PricingPlan = {
   id: PricingPlanId;
@@ -24,9 +22,14 @@ export type PricingPlan = {
   unit?: string;
   note: string;
   highlight?: boolean;
-  badge?: string;
   features: string[];
-  featureDetails?: Record<string, string>;
+};
+
+/** How many `f<n>` feature keys each plan has in the catalogs. */
+export const PRICING_FEATURE_COUNTS: Record<PricingPlanId, number> = {
+  free: 5,
+  credits: 6,
+  enterprise: 6,
 };
 
 export const PRICING_PLANS: PricingPlan[] = [
@@ -36,33 +39,28 @@ export const PRICING_PLANS: PricingPlan[] = [
     price: '$0',
     note: 'Start with real sandbox credits.',
     features: [
-      '200 credits / month for sandbox compute',
+      '500 credits / month, no card needed',
+      'Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference',
       '1 project',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
     ],
   },
   {
-    id: 'team_seat',
-    name: 'Team',
-    price: '$40',
-    unit: '/ seat / mo',
-    note: 'For teams running real work on agents.',
+    id: 'credits',
+    name: 'Credits',
+    price: '$50',
+    unit: '/ month and up',
+    note: 'From $50 a month. Pick the credits your team needs.',
     highlight: true,
-    badge: 'Most popular',
     features: [
       'Everything in Free',
-      '2,500 credits / month per seat, pooled',
-      'Optional managed models use pooled credits',
-      'BYOK and ChatGPT subscription still supported',
-      'Up to 200 projects, up to 100 seats',
-      'Top up credits anytime',
+      'Unlimited members, one shared credit pool',
+      'Unused credits roll over one month',
+      'Top up any time. Top-ups never expire',
+      'Up to 200 projects and higher model rate limits',
       'Support via email',
     ],
-    featureDetails: {
-      '2,500 credits / month per seat, pooled':
-        'About 125 default Agent Computer hours when used only for compute.',
-    },
   },
   {
     id: 'enterprise',
@@ -70,7 +68,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     price: 'Custom',
     note: 'Scale, security, and your deployment.',
     features: [
-      'Everything in Team',
+      'Everything in Credits',
       'SAML SSO + SCIM directory sync',
       'Advanced RBAC + audit logs',
       'Cloud, VPC, or on-prem',
@@ -79,8 +77,3 @@ export const PRICING_PLANS: PricingPlan[] = [
     ],
   },
 ];
-
-/** Plans shown in the in-app upgrade modal — action-focused, no Enterprise card. */
-export const UPGRADE_MODAL_PLANS = PRICING_PLANS.filter(
-  (plan): plan is PricingPlan & { id: UpgradeModalPlanId } => plan.id !== 'enterprise',
-);

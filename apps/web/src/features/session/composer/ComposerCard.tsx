@@ -167,6 +167,7 @@ export function ComposerCard({
   isSending = false,
   onStop,
   stopDisabled = false,
+  canStop = true,
   modelsLoading = false,
   modelRequired = false,
   onModelChange,
@@ -213,8 +214,12 @@ export function ComposerCard({
         'motion-reduce:transition-none',
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-        // A strip above (`ComposerAboveCard`) owns the top corners.
-        (notice || (onModelChange && servedModel) || questionActive) && 'rounded-t-none',
+        // A layer above (`ComposerAboveCard`) owns the top corners: a notice,
+        // or the served bar (known here), or a visible
+        // strip (known only to CSS, through `data-composer-stack`).
+        (notice || (onModelChange && servedModel) || questionActive) &&
+          'rounded-t-none',
+        '[[data-composer-stack]:has(>[data-composer-strip]:not(:empty))+&]:rounded-t-none',
         // The bottom half of the ring the docked question starts (see
         // `ComposerAboveCard`); the clip drops it along the seam.
         questionActive && 'ring-muted/15 ring-3 [clip-path:inset(0_-8px_-8px_-8px)]',
@@ -393,6 +398,7 @@ export function ComposerCard({
             isBusy={isBusy}
             onStop={onStop}
             stopDisabled={stopDisabled}
+            canStop={canStop}
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}

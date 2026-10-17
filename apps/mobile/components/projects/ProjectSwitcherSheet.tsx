@@ -23,6 +23,11 @@
  * (a root-stack replace; see the prop). The last-project store follows from
  * `ProjectScreen` as it always has.
  *
+ * Invites (KRTX-1731): the caller's pending invites show first, in an
+ * "Invites" group on both tabs, fetched only while the sheet is open. A row
+ * closes the sheet (and the drawer, `onProjectOpen`) and pushes the invite
+ * screen (`app/invites/[id].tsx`), where Accept lands in the invited project.
+ *
  * Creating happens on the web (KRTX-246). `+` and the empty state's
  * "Create project" open the "Create a project on the web" hand-off
  * (`WebHandoffSheet`), the Account tab's "New account" row the "Create an
@@ -58,6 +63,9 @@ import { useWebCreateHandoff } from '@/components/projects/useWebCreateHandoff';
 import { WebHandoffSheet } from '@/components/session/WebHandoffSheet';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { haptics } from '@/lib/haptics';
+import { useLanguage } from '@/contexts';
+import { useMyInvites } from '@/lib/invites/hooks';
+import { inviteHref } from '@/lib/invites/invite-landing';
 import { useProjects } from '@/lib/projects/hooks';
 import { filterProjectsByQuery, projectHref, shouldShowProjectSearch } from '@/lib/projects/switcher';
 import { newAccountWebUrl, newProjectWebUrl } from '@/lib/projects/web-project-links';
@@ -83,9 +91,9 @@ export interface ProjectSwitcherSheetProps {
   currentProjectId?: string | null;
   onClose: () => void;
   /**
-   * Fires once, right before an existing or freshly created project opens —
-   * so a caller with its own chrome (the project drawer) can close it too.
-   * The Projects page, which has none, omits it.
+   * Fires once, right before an existing or freshly created project (or an
+   * invite) opens — so a caller with its own chrome (the project drawer) can
+   * close it too. The Projects page, which has none, omits it.
    */
   onProjectOpen?: () => void;
   /**
@@ -205,6 +213,18 @@ export function ProjectSwitcherSheet({
     [onAccountSelect]
   );
 
+  const { t } = useLanguage();
+  const invites = useMyInvites(open).data ?? [];
+  const openInvite = useCallback(
+    (inviteId: string) => {
+      haptics.selection();
+      onProjectOpen?.();
+      sheetRef.current?.dismiss();
+      router.push(inviteHref(inviteId));
+    },
+    [onProjectOpen, router]
+  );
+
   const projectsQuery = useProjects(chipAccountId);
   const projects = projectsQuery.data ?? [];
   const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
@@ -314,6 +334,23 @@ export function ProjectSwitcherSheet({
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomInset }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
+            {invites.length > 0 ? (
+              <View style={{ marginBottom: 18 }}>
+                <SettingsGroup title={t('invites.group', 'Invites')}>
+                  {invites.map((invite) => {
+                    const name = invite.projects[0]?.name || invite.account_name || t('invites.fallbackTitle', 'Invite');
+                    return (
+                      <SettingsRow
+                        key={invite.invite_id}
+                        leading={<Avatar chalk size={28} fallbackText={name} />}
+                        label={name}
+                        onPress={() => openInvite(invite.invite_id)}
+                      />
+                    );
+                  })}
+                </SettingsGroup>
+              </View>
+            ) : null}
             {tab === 'account' ? (
               <View style={{ gap: 18 }}>
                 <SettingsGroup>

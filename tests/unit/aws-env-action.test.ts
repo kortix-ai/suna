@@ -391,7 +391,7 @@ describe('workflows read credentials from AWS, not GitHub', () => {
     .filter(({ text }) => text.includes(USES));
 
   it('finds the workflows that use aws-env (guards the checks below from passing vacuously)', () => {
-    expect(users.length).toBeGreaterThanOrEqual(20);
+    expect(users.length).toBeGreaterThanOrEqual(19);
   });
 
   it('every job that calls aws-env can mint an OIDC token', () => {
@@ -480,8 +480,6 @@ describe('workflows read credentials from AWS, not GitHub', () => {
     const allowed = new Set([
       'deploy-dev.yml', // masks every value of kortix-dev-env (job AWS_REGION us-east-2)
       'deploy-staging.yml', // read-modify-write of kortix-staging-env in eu-west-2
-      'deploy-prod-us-east-2-shadow.yml', // copies kortix-prod-env (eu-west-2) into kortix-prod-us-east-2-env
-      'finalize-prod-us-east-2-database.yml', // the same copy at the final cut
     ]);
     const raw = files.filter(
       (file) => !allowed.has(file) && readFileSync(join(workflowsDir, file), 'utf8').includes('get-secret-value'),

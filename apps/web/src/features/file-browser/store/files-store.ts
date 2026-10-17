@@ -249,6 +249,7 @@ export function createFilesStore(): FilesStoreApi {
         filePathList: fileList,
         currentFileIndex: index,
         isSearchOpen: false,
+        targetLine: null,
         // REMOVED: currentPath: parentDir - don't jump to file's folder
       });
       get().revealPath(filePath);
@@ -259,6 +260,7 @@ export function createFilesStore(): FilesStoreApi {
         view: 'browser',
         panelMode: 'welcome',
         selectedFilePath: null,
+        targetLine: null,
       });
     },
 
@@ -269,6 +271,7 @@ export function createFilesStore(): FilesStoreApi {
         set({
           currentFileIndex: nextIndex,
           selectedFilePath: filePathList[nextIndex],
+          targetLine: null,
         });
       }
     },
@@ -280,6 +283,7 @@ export function createFilesStore(): FilesStoreApi {
         set({
           currentFileIndex: prevIndex,
           selectedFilePath: filePathList[prevIndex],
+          targetLine: null,
         });
       }
     },

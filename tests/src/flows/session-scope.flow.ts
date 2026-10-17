@@ -281,11 +281,6 @@ flow(
       'repository_access',
       'sandbox_slug',
       'warmSandboxLocation',
-      // The session's state volume and boot record: the session delete
-      // removes that volume, so a client value would choose what it deletes.
-      'ephemeral_state_volume',
-      'ephemeral_generation',
-      'bootMode',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -333,7 +328,6 @@ flow(
       ['trigger_kind', 'git'],
       ['trigger_slug', 'forged-trigger'],
       ['warmSandboxLocation', 'us-east'],
-      ['ephemeral_state_volume', 'kd-00000000-0000-4000-8000-000000000000'],
     ] as const) {
       await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -827,6 +821,247 @@ flow(
           [foreignSessionId, ownerSession.id],
         ])
         .catch(() => {});
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      if (mintedTokenId) {
+        await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId: mintedTokenId } }).catch(() => {});
+      }
+      await db.end();
+    }
+  },
+);
+
+// SCOPE-10 — a plain project member reads only their own work. Every read of
+// project work (git refs, change requests, the review inbox, gateway logs and
+// spend) filters by "who can open the session"; a project manager keeps the
+// full view (apps/api/src/projects/lib/project-read-view.ts).
+flow(
+  'SCOPE-10',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/branches',
+      'GET /v1/projects/:projectId/commits',
+      'GET /v1/projects/:projectId/version-diff',
+      'GET /v1/projects/:projectId/change-requests',
+      'GET /v1/projects/:projectId/change-requests/:crId',
+      'POST /v1/projects/:projectId/review/items',
+      'GET /v1/projects/:projectId/review/items',
+      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+      'GET /v1/projects/:projectId/review/summary',
+      'GET /v1/projects/:projectId/gateway/logs',
+      'GET /v1/projects/:projectId/gateway/logs/:logId',
+      'GET /v1/projects/:projectId/gateway/sessions',
+      'GET /v1/projects/:projectId/gateway/budgets',
+      'PUT /v1/projects/:projectId/gateway/budgets',
+      'POST /v1/projects/:projectId/gateway/playground',
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+    ],
+  },
+  async (ctx) => {
+    const db = await openDb(ctx);
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const alice = await team.addMember('member');
+    const bob = await team.addMember('member');
+    await team.grantProjectRole(project.id, alice.userId!, 'member');
+    await team.grantProjectRole(project.id, bob.userId!, 'member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asAlice = ctx.client.as(alice);
+    const asBob = ctx.client.as(bob);
+    const params = { projectId: project.id };
+    const aliceSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: alice.userId!,
+    });
+    const crId = randomUUID();
+    const logId = randomUUID();
+    let reviewItemId = '';
+    let mintedTokenId: string | null = null;
+    const workDir = await mkdtemp(join(tmpdir(), 'ke2e-scope10-'));
+    // Bob's read carries no id of Alice's private work.
+    const noTrace = (r: { text(): string }, what: string) => {
+      const body = r.text();
+      for (const id of [aliceSession, crId, logId, alice.userId!, reviewItemId].filter(Boolean)) {
+        if (body.includes(id)) throw new Error(`${what} leaks ${id}: ${body.slice(0, 500)}`);
+      }
+    };
+    try {
+      await ctx.step("seed Alice's private session: its branch, a change request, a gateway log and a member budget", async () => {
+        const [row] = (
+          await db.query<{ repo_url: string }>('SELECT repo_url FROM kortix.projects WHERE project_id = $1::uuid', [
+            project.id,
+          ])
+        ).rows;
+        if (!row?.repo_url) throw new Error('project has no repository');
+        let remote = row.repo_url;
+        let gitEnv: Record<string, string> = {};
+        if (/^https?:\/\//.test(remote)) {
+          const minted = await owner.post('/v1/accounts/tokens', { name: ctx.fixtures.name('scope10-branch-writer') });
+          minted.status(201);
+          const { token_id: tokenId, secret_key: secret } = minted.json<{ token_id: string; secret_key: string }>();
+          mintedTokenId = tokenId;
+          remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+          gitEnv = {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.extraHeader',
+            GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`,
+          };
+        }
+        await git(['clone', '--quiet', remote, workDir], undefined, gitEnv);
+        await git(['push', '--quiet', 'origin', `HEAD:refs/heads/${aliceSession}`], workDir, gitEnv);
+        await db.query(
+          `INSERT INTO kortix.change_requests
+             (cr_id, account_id, project_id, number, title, base_ref, head_ref, origin_session_id, created_by)
+           VALUES ($1::uuid, $2::uuid, $3::uuid, 1, 'SCOPE-10 private change', 'main', $4, $4, $5::uuid)`,
+          [crId, team.id, project.id, aliceSession, alice.userId],
+        );
+        await db.query(
+          `INSERT INTO kortix.gateway_request_logs
+             (log_id, request_id, account_id, project_id, actor_user_id, session_id,
+              requested_model, resolved_model, provider, status, ok)
+           VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, 'scope10-model', 'scope10-model', 'scope10', 200, true)`,
+          [logId, `req-${logId}`, team.id, project.id, alice.userId, aliceSession],
+        );
+        (
+          await owner.put(
+            '/v1/projects/:projectId/gateway/budgets',
+            { scope: 'member', subject_user_id: alice.userId, limit_usd: 5, period: 'day', action: 'block' },
+            { params },
+          )
+        ).status(200);
+      });
+
+      await ctx.step("Alice raises a review item from her own session → 201; Bob cannot raise one against it → 404", async () => {
+        const created = await asAlice.post(
+          '/v1/projects/:projectId/review/items',
+          { kind: 'output', title: 'SCOPE-10 private output', session_id: aliceSession },
+          { params },
+        );
+        created.status(201).body().has('$.origin_session_id', aliceSession);
+        reviewItemId = created.json<{ review_item_id: string }>().review_item_id;
+        (
+          await asBob.post(
+            '/v1/projects/:projectId/review/items',
+            { kind: 'output', title: 'SCOPE-10 foreign output', session_id: aliceSession },
+            { params },
+          )
+        ).status(404);
+      });
+
+      await ctx.step("Bob's git reads: no branch of Alice's session; her session ref in commits and version-diff → 404", async () => {
+        const branches = await asBob.get('/v1/projects/:projectId/branches', {
+          params,
+          query: { include_session_branches: 'true' },
+        });
+        branches.status(200);
+        noTrace(branches, 'branches');
+        (await asBob.get('/v1/projects/:projectId/commits', { params, query: { ref: aliceSession } })).status(404);
+        (
+          await asBob.get('/v1/projects/:projectId/version-diff', { params, query: { from: aliceSession, into: 'main' } })
+        ).status(404);
+      });
+
+      await ctx.step("Bob's change-request reads: the list omits Alice's change request; reading it by id → 404", async () => {
+        const list = await asBob.get('/v1/projects/:projectId/change-requests', { params, query: { status: 'all' } });
+        list.status(200);
+        noTrace(list, 'change requests');
+        (await asBob.get('/v1/projects/:projectId/change-requests/:crId', { params: { ...params, crId } })).status(404);
+      });
+
+      await ctx.step("Bob's review inbox: no item of Alice's, by list, by id, or in the summary counts", async () => {
+        const items = await asBob.get('/v1/projects/:projectId/review/items', { params });
+        items.status(200);
+        noTrace(items, 'review items');
+        for (const id of [reviewItemId, `cr:${crId}`]) {
+          (await asBob.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { ...params, reviewItemId: id } }))
+            .status(404);
+        }
+        const summary = await asBob.get('/v1/projects/:projectId/review/summary', { params });
+        summary.status(200).body().has('$.needs_you_total', 0);
+        noTrace(summary, 'review summary');
+      });
+
+      await ctx.step("Bob's gateway reads: no log, session spend, member spend row or member budget of Alice's", async () => {
+        const logs = await asBob.get('/v1/projects/:projectId/gateway/logs', { params });
+        logs.status(200);
+        noTrace(logs, 'gateway logs');
+        (await asBob.get('/v1/projects/:projectId/gateway/logs/:logId', { params: { ...params, logId } })).status(404);
+        const sessions = await asBob.get('/v1/projects/:projectId/gateway/sessions', { params });
+        sessions.status(200);
+        noTrace(sessions, 'gateway sessions');
+        const budgets = await asBob.get('/v1/projects/:projectId/gateway/budgets', { params });
+        budgets.status(200);
+        noTrace(budgets, 'gateway budgets');
+      });
+
+      await ctx.step('a plain member cannot spend credits in the gateway playground → 403', async () => {
+        // A valid body: schema validation answers 400 before the leaf check.
+        // The leaf check refuses it before any model is called.
+        const body = { prompt: 'scope-10', models: ['kortix/no-such-model'] };
+        (await asBob.post('/v1/projects/:projectId/gateway/playground', body, { params })).status(403);
+      });
+
+      await ctx.step('Alice reads her own change request, review item, log and member budget', async () => {
+        (await asAlice.get('/v1/projects/:projectId/change-requests/:crId', { params: { ...params, crId } }))
+          .status(200)
+          .body()
+          .has('$.change_request.cr_id', crId);
+        (await asAlice.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { ...params, reviewItemId } }))
+          .status(200);
+        (await asAlice.get('/v1/projects/:projectId/gateway/logs/:logId', { params: { ...params, logId } })).status(200);
+        const budgets = await asAlice.get('/v1/projects/:projectId/gateway/budgets', { params });
+        budgets.status(200);
+        const body = budgets.json<{ members: Array<{ user_id: string }>; budgets: Array<{ subject_user_id: string | null }> }>();
+        if (!body.members.every((m) => m.user_id === alice.userId) || !body.members.length) {
+          throw new Error(`Alice must read exactly her own spend row: ${budgets.text()}`);
+        }
+        if (!body.budgets.some((b) => b.subject_user_id === alice.userId)) {
+          throw new Error(`Alice must read her own member budget: ${budgets.text()}`);
+        }
+      });
+
+      await ctx.step("the project owner keeps the full view: Alice's branch, change request, review item, log, spend and budget", async () => {
+        await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/branches', {
+              params,
+              query: { include_session_branches: 'true' },
+            });
+            r.status(200);
+            return r.json<{ branches: Array<{ name: string }> }>().branches;
+          },
+          {
+            until: (branches) => branches.some((b) => b.name === aliceSession),
+            timeoutMs: 60_000,
+            intervalMs: 2_000,
+            description: "the owner's branch list carries Alice's session branch",
+          },
+        );
+        (await owner.get('/v1/projects/:projectId/change-requests/:crId', { params: { ...params, crId } })).status(200);
+        (await owner.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { ...params, reviewItemId } }))
+          .status(200);
+        const summary = await owner.get('/v1/projects/:projectId/review/summary', { params });
+        summary.status(200);
+        if (!summary.json<{ needs_you_by_session: Record<string, number> }>().needs_you_by_session[aliceSession]) {
+          throw new Error(`the owner's summary must count Alice's session: ${summary.text()}`);
+        }
+        (await owner.get('/v1/projects/:projectId/gateway/logs/:logId', { params: { ...params, logId } })).status(200);
+        const sessions = await owner.get('/v1/projects/:projectId/gateway/sessions', { params });
+        sessions.status(200);
+        if (!sessions.text().includes(aliceSession)) throw new Error(`the owner's session spend must list Alice's session`);
+        const budgets = await owner.get('/v1/projects/:projectId/gateway/budgets', { params });
+        budgets.status(200);
+        if (!budgets.json<{ members: Array<{ user_id: string }> }>().members.some((m) => m.user_id === alice.userId)) {
+          throw new Error(`the owner's budgets must carry Alice's spend row: ${budgets.text()}`);
+        }
+        (await owner.post('/v1/projects/:projectId/gateway/playground', {}, { params })).status(400);
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.gateway_request_logs WHERE log_id = $1::uuid', [logId]).catch(() => {});
+      await db.query('DELETE FROM kortix.change_requests WHERE cr_id = $1::uuid', [crId]).catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
       if (mintedTokenId) {
         await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId: mintedTokenId } }).catch(() => {});

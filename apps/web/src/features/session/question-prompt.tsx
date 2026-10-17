@@ -13,7 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
-import { CaretLeftIcon, CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CaretLeftIcon, CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -101,6 +101,8 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const [tab, setTab] = useState(0);
     const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => []));
     const [replying, setReplying] = useState(false);
+    // Collapsed hides the body so the transcript gets the height back.
+    const [collapsed, setCollapsed] = useState(false);
 
     const isConfirm = tab === questions.length;
     const currentQuestion = questions[tab] as QuestionInfo | undefined;
@@ -274,20 +276,48 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const stepLabel = isConfirm
       ? tI18nComplete.raw('texteebdd24a77d9')
       : currentQuestion?.header?.trim() || '';
+    const collapsedLabel = isConfirm
+      ? stepLabel
+      : (currentQuestion?.question ?? '')
+          .replace(/[*_`#>]/g, '')
+          .split('\n')[0]
+          .trim() || stepLabel;
 
     return (
       <div className="relative isolate z-10 w-full">
-        <div className="flex w-full items-center gap-2 pt-2 pr-3 pb-1 pl-4.5">
-          {!isSingle && (
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {Math.min(tab + 1, total)} / {total}
-            </span>
-          )}
-          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-            {!isSingle && stepLabel ? <span aria-hidden="true">· </span> : null}
-            {stepLabel}
-          </span>
-          {!isSingle && (
+        <div className="flex w-full items-center gap-2 px-3 py-1 pr-1.5">
+          {/* The label is the disclosure: it toggles the body. Collapsed, it
+              shows the question itself so the pending ask stays readable. */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-controls={`${request.id}-panel`}
+            className="text-muted-foreground hover:text-foreground flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors"
+          >
+            {!isSingle && (
+              <span className="shrink-0 tabular-nums">
+                {Math.min(tab + 1, total)} / {total}
+              </span>
+            )}
+            {(collapsed ? collapsedLabel : stepLabel) && (
+              <span className={cn('min-w-0 truncate', collapsed && 'text-foreground')}>
+                {!isSingle && (
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    ·{' '}
+                  </span>
+                )}
+                {collapsed ? collapsedLabel : stepLabel}
+              </span>
+            )}
+            <CaretDownIcon
+              className={cn(
+                'duration-normal size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none',
+                collapsed && '-rotate-90',
+              )}
+            />
+          </button>
+          {!isSingle && !collapsed && (
             <div className="flex shrink-0 items-center">
               <button
                 type="button"
@@ -321,102 +351,118 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
           </button>
         </div>
 
-        {/* Body — scrollable so long option lists don't blow up the card */}
+        {/* Body — scrollable so long option lists don't blow up the card. The
+            0fr/1fr grid row animates the collapse without measuring height. */}
         <div
-          id={`${request.id}-panel`}
-          aria-label={isSingle ? undefined : tI18nComplete.raw('text9a72221a2747')}
-          className="max-h-[420px] overflow-y-auto px-1.5 pb-1.5"
+          className={cn(
+            'duration-normal grid transition-[grid-template-rows] ease-out motion-reduce:transition-none',
+            collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+          )}
         >
-          {isConfirm ? (
-            <div className="flex flex-col">
-              {questions.map((q, i) => {
-                const ans = answers[i] ?? [];
-                const done = ans.length > 0;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setTab(i)}
-                    className="hover:bg-muted/60 flex w-full cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2 text-left transition-colors"
-                  >
-                    <span className="text-muted-foreground w-28 shrink-0 truncate text-xs">
-                      {q.header || q.question}
-                    </span>
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate text-sm',
-                        done ? 'text-foreground' : 'text-muted-foreground',
-                      )}
-                    >
-                      {done ? ans.join(', ') : '—'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : currentQuestion ? (
-            <div className="flex flex-col gap-1.5">
-              <div className="text-foreground max-h-[300px] overflow-y-auto px-3 text-sm leading-relaxed font-medium">
-                <QuestionMarkdown
-                  content={
-                    currentQuestion.question +
-                    (isMulti ? tI18nComplete.raw('text79139c621384') : '')
-                  }
-                />
-              </div>
-
+          <div
+            id={`${request.id}-panel`}
+            aria-label={isSingle ? undefined : tI18nComplete.raw('text9a72221a2747')}
+            inert={collapsed}
+            className={cn(
+              'duration-normal min-h-0 overflow-y-auto px-px transition-opacity ease-out motion-reduce:transition-none',
+              collapsed ? 'pb-0 opacity-0' : 'max-h-[420px] pb-1.5',
+            )}
+          >
+            {isConfirm ? (
               <div className="flex flex-col">
-                {options.map((opt, i) => {
-                  const isPicked = currentAnswerSet.has(opt.label);
-                  // Adjacent picked rows join into one block: only the run's
-                  // outer corners stay rounded.
-                  const joinsAbove = isPicked && currentAnswerSet.has(options[i - 1]?.label ?? '');
-                  const joinsBelow = isPicked && currentAnswerSet.has(options[i + 1]?.label ?? '');
-                  const { title, recommended } = splitRecommended(opt.label);
+                {questions.map((q, i) => {
+                  const ans = answers[i] ?? [];
+                  const done = ans.length > 0;
                   return (
                     <button
-                      key={opt.label}
+                      key={i}
                       type="button"
-                      aria-pressed={isPicked}
-                      onClick={() => selectOption(i)}
-                      className={cn(
-                        'group flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors duration-normal ease-out',
-                        isPicked ? 'bg-muted' : 'hover:bg-muted/60',
-                        joinsAbove && 'rounded-t-none',
-                        joinsBelow && 'rounded-b-none',
-                      )}
+                      onClick={() => setTab(i)}
+                      className="hover:bg-muted/60 flex w-full cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2 text-left transition-colors"
                     >
+                      <span className="text-muted-foreground w-28 shrink-0 truncate text-xs">
+                        {q.header || q.question}
+                      </span>
                       <span
                         className={cn(
-                          'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
-                          isPicked
-                            ? 'bg-foreground border-foreground'
-                            : 'border-muted-foreground/40 group-hover:border-foreground/60',
+                          'min-w-0 flex-1 truncate text-sm',
+                          done ? 'text-foreground' : 'text-muted-foreground',
                         )}
                       >
-                        {isPicked && <CheckIcon weight="bold" className="text-background size-2.5" />}
-                      </span>
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="flex min-w-0 items-baseline gap-2">
-                          <span className="text-foreground text-sm font-medium">{title}</span>
-                          {recommended && (
-                            <span className="text-muted-foreground shrink-0 text-xs">
-                              {recommended}
-                            </span>
-                          )}
-                        </span>
-                        {opt.description && (
-                          <span className="text-muted-foreground text-xs leading-relaxed">
-                            {opt.description}
-                          </span>
-                        )}
+                        {done ? ans.join(', ') : '—'}
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </div>
-          ) : null}
+            ) : currentQuestion ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="text-foreground max-h-[300px] overflow-y-auto px-3 text-sm leading-relaxed font-medium">
+                  <QuestionMarkdown
+                    content={
+                      currentQuestion.question +
+                      (isMulti ? tI18nComplete.raw('text79139c621384') : '')
+                    }
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  {options.map((opt, i) => {
+                    const isPicked = currentAnswerSet.has(opt.label);
+                    // Adjacent picked rows join into one block: only the run's
+                    // outer corners stay rounded.
+                    const joinsAbove =
+                      isPicked && currentAnswerSet.has(options[i - 1]?.label ?? '');
+                    const joinsBelow =
+                      isPicked && currentAnswerSet.has(options[i + 1]?.label ?? '');
+                    const { title, recommended } = splitRecommended(opt.label);
+                    return (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        aria-pressed={isPicked}
+                        onClick={() => selectOption(i)}
+                        className={cn(
+                          'group duration-normal flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors ease-out',
+                          isPicked ? 'bg-muted' : 'hover:bg-muted/60',
+                          joinsAbove && 'rounded-t-none',
+                          joinsBelow && 'rounded-b-none',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
+                            isPicked
+                              ? 'bg-foreground border-foreground'
+                              : 'border-muted-foreground/40 group-hover:border-foreground/60',
+                          )}
+                        >
+                          {isPicked && (
+                            <CheckIcon weight="bold" className="text-background size-2.5" />
+                          )}
+                        </span>
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-baseline gap-2">
+                            <span className="text-foreground text-sm font-medium">{title}</span>
+                            {recommended && (
+                              <span className="text-muted-foreground shrink-0 text-xs">
+                                {recommended}
+                              </span>
+                            )}
+                          </span>
+                          {opt.description && (
+                            <span className="text-muted-foreground text-xs leading-relaxed">
+                              {opt.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     );

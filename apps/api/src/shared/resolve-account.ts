@@ -11,6 +11,7 @@ import {
 } from "./impersonation";
 import { getSupabase } from "./supabase";
 import { ttlMemo } from "./ttl-memo";
+import { isUuid } from "./validate";
 import { withTimeout } from "./with-timeout";
 
 // Legacy Stripe recovery sync — throttled to once per account per hour and
@@ -88,6 +89,16 @@ export async function scopedAccountIdFor(
 
   if (!requested) {
     return resolveAccountId(userId);
+  }
+
+  // A malformed account id must not reach the uuid-typed account_members
+  // column: Postgres answers 22P02 and the request dies as an opaque 500
+  // (Better Stack pattern 97669531, KRTX-211). Answer exactly like a
+  // membership miss — 403, no DB read, no hint whether the id exists.
+  if (!isUuid(requested)) {
+    throw new HTTPException(403, {
+      message: "Not a member of the requested account",
+    });
   }
 
   const [member] = await db

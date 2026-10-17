@@ -37,14 +37,14 @@ provider, so neither service imports the other.
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
 | `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/harness/README.md). |
 | `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the warm-pool seeds; `checkout.ts` is the session checkout every transport ends with. |
-| `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. |
+| `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. `compiled-agent-config.ts` reads and writes the compiled agent config in env, raw or gzip-encoded, for every harness and route. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
 | `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
 | `src/services/skills/` | services | Image-baked managed Kortix skills and their injection. |
 | `src/services/static-web/` | services | The static file server on port 3211. |
-| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. A project with a `tools` key gets only the Kortix tools it lists. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. In `kortix_version` 3 every Kortix tool loads and each agent's `tools` grant hides tools; in a v2 project a `tools` key gets only the Kortix tools it lists. |
 | `src/services/monitor/` | services | The monitor process runner for monitor boxes. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
@@ -56,6 +56,7 @@ provider, so neither service imports the other.
 | `src/lib/kortix-api/` | shared | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
 | `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
+| `src/extensions/codemode/worker.ts` | none (own lint layer) | The codemode sandbox worker: a second `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports `@earendil-works/pi-codemode/worker` only. |
 | `src/__tests__/` | none | Tests. They may import anything they exercise. |
 
 ## Import rules
@@ -64,10 +65,10 @@ provider, so neither service imports the other.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `config-provider`, `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
 | `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
-| `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
+| `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`), `@kortix/sdk/wire-message-id` (the session-log boot's restore note) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
 | anything else under `src/` | nothing: a file outside every layer fails the lint | — |

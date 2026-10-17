@@ -8,7 +8,7 @@
 
 import type { ToolPart } from '../../runtime/client';
 import { toolKind } from '../tool-kind';
-import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import { asToolPart, isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
@@ -66,8 +66,10 @@ function truncate(s: string, max = 60): string {
 /**
  * Extract the one thing that identifies a tool call in a one-liner.
  * Used for context-group item labels and any future compact views.
+ * Reads a session-log tool call block the same way as its v1 part.
  */
-export function getToolPrimaryArg(part: ToolPart): string {
+export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
+  const part = asToolPart(call);
   const state = (part.state ?? {}) as any;
   const input = (state.input ?? {}) as Record<string, any>;
   const key = normalizeName(part.tool);

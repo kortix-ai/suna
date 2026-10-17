@@ -37,7 +37,7 @@ type SyncSnapshot = ReturnType<typeof useSyncStore.getState>;
  */
 export function selectSessionRows(state: SyncSnapshot, sessionId: string): MessageWithParts[] {
   const rows = state.buildSessionMessages(sessionId, state.messages[sessionId], state.parts);
-  return sessionLogRowsFor(state.sessionLogs, sessionId, rows);
+  return sessionLogRowsFor(state.sessionLogs, sessionId, rows, (id) => state.optimisticEchoOf(sessionId, id));
 }
 
 /** Each part array's tool signature, computed once per array identity. */

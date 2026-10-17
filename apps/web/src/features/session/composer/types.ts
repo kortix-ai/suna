@@ -24,6 +24,20 @@ export type AttachedFile =
       filename: string;
       mime: string;
       isImage: boolean;
+    }
+  | {
+      /**
+       * A finished upload a stored draft brought back after a reload: the
+       * server holds the bytes, this tab has no File, so the tile shows the
+       * name only (`isImage` false). Sent by its handle, like a local upload.
+       */
+      kind: 'uploaded';
+      uploadId: string;
+      filename: string;
+      mime: string;
+      /** Bytes on the server: the tray counts them toward the message limits. */
+      size: number;
+      isImage: boolean;
     };
 
 export type MentionKind = 'file' | 'agent' | 'session';

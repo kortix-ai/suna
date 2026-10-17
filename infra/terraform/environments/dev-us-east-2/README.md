@@ -1,11 +1,8 @@
 # dev-us-east-2 — dev's API/gateway, colocated with the dev database
 
-Twin of `../dev` that stands up before `../dev` is torn down. Same module set,
-same Fargate Spot sizing, **different region (us-east-2, the dev Supabase
-database's region)** and different resource names (`kortix-dev-use2`), so it
-runs next to `../dev` (us-west-2) without a name collision. IAM roles and S3
-bucket names are global, so the two stacks cannot share names while both live.
-`../dev-web-us-east-2` is the matching web service.
+Dev's API and gateway on ECS Fargate (Spot) in us-east-2, the dev Supabase
+database's region. Resource names use `kortix-dev-use2`. `../dev-web-us-east-2`
+is the matching web service.
 
 | Surface | Where it runs | Managed by |
 |---|---|---|
@@ -14,10 +11,14 @@ bucket names are global, so the two stacks cannot share names while both live.
 | `dev-use2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | `../dev-web-us-east-2` |
 
 These are origin hostnames. `dev-api.kortix.com` and `gateway-dev.kortix.com`
-are the dev-api Worker (`infra/cloudflare/workers/api-router`). Its
-`ACTIVE_BACKEND` picks the origin: `ecs-fargate` = `../dev`, `us-east-2` = this
-root. `dev.kortix.com` is a CNAME that Deploy Dev's `publish-web-ecs-dns` job
-points at the web ALB.
+are the dev-api Worker (`infra/cloudflare/workers/api-router`), which routes
+to them (`ACTIVE_BACKEND = "us-east-2"`). `dev.kortix.com` is a CNAME that
+Deploy Dev's `publish-web-ecs-dns` job points at the web ALB.
+
+Deploy Dev applies this root (`terraform-dev-api`) and rolls the task
+definitions with `infra/scripts/ecs-deploy.sh dev-use2`. The env blob is
+`kortix-dev-env` in us-east-2. `TF_VAR_cloudflare_api_token` is
+`CLOUDFLARE_API_TOKEN` in `kortix-ci-env` (us-east-2).
 
 ## Why this exists
 
@@ -32,117 +33,44 @@ Server-side `Server-Timing`, same code, same query counts:
 us-east-2. Moving the API to us-east-2 removes the cross-continent hop; it
 does not remove the sequential-round-trip count (a separate, larger change).
 
-## Switch-over runbook
+## The move from us-west-2 (done)
 
-The dev database stays where it is. The snapshot bucket and the config-release
-archives are caches that the API rebuilds from Git
-(`apps/api/src/config-releases/store.ts`), so the new buckets start empty.
-**The audit archive is not a cache.** It is the only copy of every week that
-the archive job removed from PostgreSQL, and the account audit export reads it
-from `AUDIT_ARCHIVE_BUCKET`. Copy it before the switch (Phase 4, "Data").
-Every `terraform apply`, Worker change and delete needs an approved plan.
+Dev ran in us-west-2 (Terraform roots `dev` and `dev-web`, now deleted)
+until the move. The move had four phases: stand this root up next to the old
+stack, switch the Worker, idle the old stack, destroy it.
 
-**Background workers.** The singleton loops (cron triggers, maintenance,
-migration workers) run on the one replica that holds the lease row in
-`kortix.worker_leader_lease` (`apps/api/src/shared/leader-election.ts`). Both
-stacks share the database, so they share the lease. The new stack still starts
-with `KORTIX_WORKERS_ENABLED=false`, so an unverified stack never takes the
-lease.
+- 2026-10-06: the old `kortix-dev`, `kortix-dev-gateway` and `kortix-dev-web`
+  services were scaled to 0.
+- 2026-10-09: the audit archive was copied (see "Data" below).
+- 2026-10-12: the old roots were destroyed (dev 58, dev-web 2 resources) and
+  removed from the repository. The old snapshot cache
+  `kortix-dev-project-snapshots` was deleted. The us-west-2 copies of
+  `kortix-dev-env` and `kortix-dev-web-env` were scheduled for deletion
+  (30-day recovery window).
 
-### Phase 1 — stand up (dev keeps serving from `../dev`)
+What stays in us-west-2:
 
-1. Copy the env blobs to us-east-2. The script prints key names only.
+| Resource | Why | Delete after |
+|---|---|---|
+| `kortix-dev-audit-archive` and its KMS key `82a0423e-27d6-4887-9ad6-f242d529bb50` | Deleted on 2026-10-12 with the GOVERNANCE bypass, after the copy in `kortix-dev-use2-audit-archive` was re-verified. The key is scheduled for deletion. | done |
+| Terraform state (`kortix-terraform-state`, `kortix-terraform-locks`) | Moved to `kortix-terraform-state-us-east-2-935064898258` (`backend.tf`). | done |
 
-   ```bash
-   infra/scripts/copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --workers off
-   infra/scripts/copy-env-secret.sh kortix-dev-web-env us-west-2 us-east-2 --to-name kortix-dev-use2-web-env
-   ```
-
-   Until phase 4, an edit to `kortix-dev-env` goes to both copies. `--check`
-   names the keys that drifted.
-2. Plan this root, then `../dev-web-us-east-2` (it reads this root's VPC).
-   `TF_VAR_cloudflare_api_token` is `CLOUDFLARE_API_TOKEN` in `kortix-ci-env`.
-
-   ```bash
-   terraform init && terraform plan -out=plan.tfplan   # read it, then apply
-   ```
-
-3. Roll the real task definitions. Terraform only seeds the services; the
-   deploy script renders the env from the secret. The overrides are the
-   `deploy-api-ecs` job's, with the new bucket names and region:
-
-   ```bash
-   export KORTIX_ECS_ENV_OVERRIDES="$(grep -m1 -A1 'KORTIX_ECS_ENV_OVERRIDES: >-' .github/workflows/deploy-dev.yml | tail -1 \
-     | sed -E 's/kortix-dev-(project-snapshots|audit-archive)/kortix-dev-use2-\1/g; s/"us-west-2"/"us-east-2"/g; s/^ +//')"
-   bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-api:dev-<sha8> --wait-for serving
-   bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-gateway:dev-<sha8> --service gateway
-   KORTIX_ECS_ENV_OVERRIDES= bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-frontend:dev-<sha8> --service web
-   ```
-
-4. Verify on the origins: `https://dev-api-use2.kortix.com/v1/health`,
-   `https://gateway-dev-use2.kortix.com/health/live`, `https://dev-use2.kortix.com`,
-   and real sessions on both harnesses with the CLI pointed at
-   `https://dev-api-use2.kortix.com`.
-
-### Phase 2 — switch
-
-Before the merge:
-
-1. `copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --workers on`, then
-   `ecs-deploy.sh dev-use2 <current dev API image> --wait-for serving` so the
-   new tasks read the flag. Both stacks are now lease candidates; the lease row
-   still allows one leader.
-2. Roll the current dev images onto `dev-use2` (API, gateway, web), so the
-   switch does not change the code that answers.
-3. In the old dev-web state, drop the `dev` record so `../dev-web` can neither
-   revert nor delete it:
-   `terraform -chdir=infra/terraform/environments/dev-web state rm 'module.dns[0].cloudflare_record.this["dev"]'`.
-
-The merge is the switch. `deploy-api-router-dev.yml` deploys the dev-api
-Worker with `ACTIVE_BACKEND = "us-east-2"` within a minute. `Terraform Apply
-Global` grants the deploy role the `kortix-dev-use2-*` task roles. Then:
-
-4. `gh workflow run deploy-dev.yml -f surface=all`: it targets `dev-use2`,
-   these roots and the new buckets, and `publish-web-ecs-dns` points
-   `dev.kortix.com` at `kortix-dev-use2-web-alb`.
-5. Verify dev end to end.
-
-**Undo:** `wrangler deploy --env dev --var ACTIVE_BACKEND:ecs-fargate --var
-GATEWAY_ACTIVE_BACKEND:ecs-fargate` and `node infra/scripts/sync-web-dns.mjs dev
-<kortix-dev-web-alb DNS name>`. Both stacks use one database, so nothing
-diverges.
-
-### Phase 3 — idle the old stack
-
-After 24 hours of clean traffic, scale `kortix-dev`, `kortix-dev-gateway` and
-`kortix-dev-web` (us-west-2) to 0 tasks. Undo is then `ecs-deploy.sh dev
-<current image>` plus the steps above (~2-3 min).
-
-### Phase 4 — decommission (3-7 days after the switch)
-
-Destroy `../dev` and `../dev-web` (read the destroy plan first), delete the
-us-west-2 `kortix-dev-env` and `kortix-dev-web-env`, and add this root and
-`../dev-web-us-east-2` to the drift-plan matrix in
-`.github/workflows/terraform-ci.yml`.
-
-No workflow reads the us-west-2 blobs. `aws-env` reads each blob from its row
-in `blob_region` (`.github/actions/aws-env/fetch.sh`), and
-`tests/unit/aws-env-action.test.ts` fails on a raw `get-secret-value` in a
-workflow outside its short allow-list. The same applies to staging's us-west-2
-`kortix-staging-env` and `kortix-staging-web-env`. The only remaining reader is
-the rollback path: the `dev` and `staging` targets of `infra/scripts/ecs-deploy.sh`.
-Remove those targets with the destroy.
+### Phase 4 — decommission (done 2026-10-12)
 
 #### Data
 
-`terraform destroy` fails on every bucket here: all are versioned and none has
-`force_destroy`. Decide per bucket first.
+Before a stack moves region, classify every bucket the API reads as a cache
+(the API rebuilds it) or a record (no other copy exists). The snapshot bucket
+and the config-release archives are caches that the API rebuilds from Git
+(`apps/api/src/config-releases/store.ts`). **The audit archive is a record.**
+It is the only copy of every week that the archive job removed from
+PostgreSQL, and the account audit export reads it from `AUDIT_ARCHIVE_BUCKET`.
 
-| Old data | Action |
+| Old data | What happened |
 |---|---|
-| `kortix-dev-project-snapshots` | Cache. Destroy it with the root after it is empty (current objects expire after 30 days, old versions 7 days later). |
-| `kortix-dev-audit-archive` | Copied to `kortix-dev-use2-audit-archive` on 2026-10-09: 622 objects, and all 7 weekly manifests match `manifest_sha256` in `kortix.audit_archive_chunks`. Object Lock (GOVERNANCE) holds the old objects until 2027-07-06. `terraform state rm` the bucket before the destroy, and delete it after that date. |
-| ALB log buckets, `/ecs/kortix-dev*` log groups | Dev logs, 365-day retention. `terraform state rm` them and their KMS keys before the destroy, and let them expire. |
+| `kortix-dev-project-snapshots` | Cache. Emptied and deleted on 2026-10-12 (last write 2026-10-06). |
+| `kortix-dev-audit-archive` | Copied to `kortix-dev-use2-audit-archive` on 2026-10-09: 622 objects, and all 7 weekly manifests match `manifest_sha256` in `kortix.audit_archive_chunks`. Removed from Terraform state before the destroy. Object Lock holds the old objects until 2027-07-06. |
+| ALB log buckets, `/ecs/kortix-dev*` log groups | Deleted on 2026-10-09. |
 
 Copy an audit archive object by object, keeping its bytes, lock and checksum.
 The app writes SSE-KMS with no key id (`apps/api/src/object-store/s3.ts`), so
@@ -160,4 +88,4 @@ each week's manifest checksum equals `manifest_sha256` in the database. Skip
 `verification/lock-probe-*`; it is a manual probe, not archive data.
 
 > ⚠️ `terraform apply` here creates billable AWS resources (VPC, NAT, 2 ALBs,
-> Fargate). It does not touch anything in `../dev`.
+> Fargate).

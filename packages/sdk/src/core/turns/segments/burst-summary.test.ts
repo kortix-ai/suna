@@ -1,6 +1,6 @@
 import type { Part, ToolPart } from '../../runtime/client';
 import { describe, expect, test } from 'bun:test';
-import { burstSummary, burstSummaryLabel } from './burst-summary';
+import { burstSummary, burstSummaryLabel, burstWorkLabel } from './burst-summary';
 
 function tool(id: string, name: string, input: Record<string, unknown> = {}): ToolPart {
   return {
@@ -175,5 +175,38 @@ describe('burstSummaryLabel', () => {
 
   test('a lone train of thought is a step, because it is a row', () => {
     expect(settledLabel([reasoning('r1', 'one'), reasoning('r2', 'two')])).toBe('Completed 1 step');
+  });
+});
+
+describe('burstWorkLabel', () => {
+  test('names what the settled burst did, one clause per family in call order', () => {
+    expect(
+      burstWorkLabel([
+        tool('1', 'bash'),
+        reasoning('r1', 'checking'),
+        tool('2', 'bash'),
+        tool('3', 'read'),
+        tool('4', 'bash'),
+        tool('5', 'read'),
+      ]),
+    ).toBe('Ran 3 commands, read 2 files');
+  });
+
+  test('thinking is never a clause, so a thought between calls does not split them', () => {
+    expect(burstWorkLabel([tool('1', 'bash'), reasoning('r1', 'hmm'), tool('2', 'bash')])).toBe('Ran 2 commands');
+  });
+
+  test('failed calls are appended as a count', () => {
+    expect(burstWorkLabel([tool('1', 'bash'), failedTool('2', 'bash'), tool('3', 'read')])).toBe(
+      'Ran 2 commands, read 1 file · 1 failed',
+    );
+  });
+
+  test('plumbing never shows up in the label', () => {
+    expect(burstWorkLabel([tool('1', 'bash'), tool('p', 'dcp_compress')])).toBe('Ran a command');
+  });
+
+  test('a burst with no visible call falls back to the step count', () => {
+    expect(burstWorkLabel([reasoning('r1', 'only thinking')])).toBe('Completed 1 step');
   });
 });

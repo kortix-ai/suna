@@ -1,130 +1,102 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from '@/i18n/test-source';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TriggerPauseSwitch } from './schedule-view';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { TriggerToolbarMenu } from './schedule-view';
+import { readTriggerSheet, triggerSheetHref } from './schedule/trigger-filter';
 
 /**
- * Pins the access-control fix from Task 18's review: `TriggerActivationMenu`
- * (the pause-all-triggers kill switch, rehomed here from the deleted
- * `settings-view.tsx`, and named `TriggersActivationCard` while it was a
- * banner) must stay manager-only, the same gate the deleted
- * code used — NOT `ScheduleView`'s own `canWrite` (`project.trigger.create`,
- * a `MANAGER_EXTRAS`-tier leaf per `apps/api/src/iam/role-perms.ts`), which
- * would let editors see and toggle it too. `TriggerPauseSwitch` is the pure
- * half of that gate — see its own header comment for why the split exists
- * (no DOM testing library in this repo, so a pure `canManage` prop is the
- * only way to pin "an editor doesn't see this" under `renderToStaticMarkup`).
+ * The toolbar ⋯ menu holds the project-wide pause (`TriggerActivationMenu`).
+ * It stays gated on the update control, NOT `ScheduleView`'s own `canWrite`
+ * (`project.trigger.create`). `TriggerToolbarMenu` is the pure half of that
+ * gate. The menu content renders in a portal on open, so only its trigger is
+ * asserted here.
  */
-describe('TriggerPauseSwitch — manager-only access gate', () => {
-  test('renders for a manager', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused={false} isPending={false} onToggle={() => {}} />,
-    );
-    expect(out).toContain('Pause all triggers');
-    expect(out).toContain('role="switch"');
+function render(props: Parameters<typeof TriggerToolbarMenu>[0]) {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <TriggerToolbarMenu {...props} />
+    </TooltipProvider>,
+  );
+}
+
+const menuProps = { paused: false, isPending: false, onToggle: () => {} };
+
+describe('TriggerToolbarMenu — manager-only access gate', () => {
+  test('renders the ⋯ menu button for a manager', () => {
+    const out = render({ ...menuProps, canManage: true });
+    expect(out).toContain('aria-label="More"');
+    expect(out).toContain('aria-haspopup="menu"');
   });
 
   test('does not render for an editor (or any non-manager)', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage={false} paused={false} isPending={false} onToggle={() => {}} />,
-    );
-    expect(out).toBe('');
-    expect(out).not.toContain('Pause all triggers');
+    expect(render({ ...menuProps, canManage: false })).toBe('');
   });
 
-  test('reflects the paused state in its label', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused isPending={false} onToggle={() => {}} />,
+  test('a pending mutation disables the button', () => {
+    expect(render({ ...menuProps, canManage: true, isPending: true })).toMatch(
+      /<button[^>]*disabled/,
     );
-    expect(out).toContain('· paused');
-    expect(out).toContain('aria-checked="true"');
-  });
-
-  test('a pending mutation disables the switch', () => {
-    const out = renderToStaticMarkup(
-      <TriggerPauseSwitch canManage paused={false} isPending onToggle={() => {}} />,
-    );
-    expect(out).toMatch(/role="switch"[^>]*disabled/);
   });
 });
 
-/**
- * Page chrome. Triggers is a sibling tab of Connectors / Agents / Skills and
- * has to read as one: same `CapabilityPageShell`, same `max-w-5xl` column,
- * same heading, same header group. It brought its own `max-w-2xl` column and
- * its own `SettingsSectionHeader` before, which is what made it look like a
- * different product.
- *
- * Source-level assertions, following `connectors-page.global-rules.test.ts`:
- * apps/web has no DOM testing library, and what is pinned here is WHERE a
- * control is mounted, not what it renders.
- */
-const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(here, 'schedule-view.tsx'), 'utf8');
+/** The open trigger lives in the URL: open, switch, tab, close and a deep link. */
+describe('trigger sheet URL', () => {
+  const path = '/projects/p1/customize/triggers';
 
-/** Comments name the old layout on purpose; assert on code only. */
-const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-
-const CHILDREN_START = '<div className="space-y-4">';
-const shellStart = code.indexOf('<CapabilityPageShell');
-const childrenStart = code.indexOf(CHILDREN_START);
-/** The shell's props — `title`, `description`, `search`, `action`. */
-const shellHeader = code.slice(shellStart, childrenStart);
-/** Everything the shell renders as its content column. */
-const shellChildren = code.slice(childrenStart);
-
-describe('ScheduleView page chrome', () => {
-  test('the page is the shared capability shell, not its own column', () => {
-    expect(shellStart).toBeGreaterThan(-1);
-    expect(childrenStart).toBeGreaterThan(shellStart);
-    expect(shellHeader).toContain('title={copy.title}');
-    expect(shellHeader).toContain('description={copy.description}');
-    // The two pieces of the old narrow layout, gone for good.
-    expect(code).not.toContain('max-w-2xl');
-    expect(code).not.toContain('SettingsSectionHeader');
+  test('opening from a closed sheet pushes ?id on Runs, so Back closes it', () => {
+    expect(triggerSheetHref(path, 'type=cron', { slug: 'nightly' }, false)).toEqual({
+      href: `${path}?type=cron&id=nightly`,
+      mode: 'push',
+    });
   });
 
-  test('search and the create action are the shell’s slots, not inline', () => {
-    expect(shellHeader).toContain('InputGroupSearchInput');
-    expect(shellHeader).toContain('{copy.createLabel}');
-    expect(shellChildren).not.toContain('InputGroupSearchInput');
+  test('an unknown ?id on screen is not "open": the next open still pushes', () => {
+    expect(triggerSheetHref(path, 'id=gone', { slug: 'nightly' }, false)).toEqual({
+      href: `${path}?id=nightly`,
+      mode: 'push',
+    });
   });
 
-  const menu = code.slice(
-    code.indexOf('function TriggerActivationMenu'),
-    code.indexOf('export function ScheduleView'),
-  );
-
-  test('pause-all lives behind the header gear, not in the content flow', () => {
-    expect(shellHeader).toContain('<TriggerActivationMenu projectId={projectId} />');
-    expect(menu).toContain("raw('text17c982d8eb68')");
-    expect(menu).toContain('GearSixIcon');
-    expect(menu).toContain('<PopoverTrigger asChild>');
-    // Never back in the list column as a banner.
-    expect(shellChildren).not.toContain('TriggerActivationMenu');
-    expect(shellChildren).not.toContain('Pause all triggers');
+  test('switching to another trigger replaces, and returns to Runs', () => {
+    expect(triggerSheetHref(path, 'id=nightly&tab=settings', { slug: 'hook' }, true)).toEqual({
+      href: `${path}?id=hook`,
+      mode: 'replace',
+    });
   });
 
-  // The gear and the switch behind it gate on the SAME leaf, and it is the leaf
-  // the route asserts: `PATCH /projects/:id/triggers/activation` requires
-  // `project.trigger.update`. It used to read `effective_project_role ===
-  // 'manager'`, a role label that a custom role holding exactly that leaf could
-  // never satisfy.
-  test('the gear gates on the leaf the activation route asserts', () => {
-    expect(menu).toContain('PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE');
-    expect(menu).toContain('if (!canManage) return null;');
-    expect(menu).not.toContain("effective_project_role === 'manager'");
-    // Deliberately NOT the create gate the list's own button uses — a widening.
-    expect(menu).not.toContain('PROJECT_TRIGGER_CREATE');
+  test('switching to Settings replaces and writes tab=settings', () => {
+    expect(
+      triggerSheetHref(path, 'id=nightly', { slug: 'nightly', tab: 'settings' }, true),
+    ).toEqual({ href: `${path}?id=nightly&tab=settings`, mode: 'replace' });
+    expect(
+      triggerSheetHref(path, 'id=nightly&tab=settings', { slug: 'nightly', tab: 'runs' }, true),
+    ).toEqual({ href: `${path}?id=nightly`, mode: 'replace' });
   });
 
-  // The paused STATE is not the paused CONTROL: a project that runs nothing on
-  // its own stays announced at the top of the list.
-  test('the paused banner stays prominent in the content column', () => {
-    expect(shellChildren).toContain('Everything is paused');
-    expect(shellChildren).toContain('{paused && showContent &&');
+  test('closing pushes, removes id, tab and the older ?t, and keeps the filter', () => {
+    expect(
+      triggerSheetHref(path, 'type=webhook&id=hook&tab=settings', { slug: null }, true),
+    ).toEqual({ href: `${path}?type=webhook`, mode: 'push' });
+    expect(triggerSheetHref(path, 't=hook', { slug: null }, true)).toEqual({
+      href: path,
+      mode: 'push',
+    });
+  });
+
+  test('a deep link reads the id and the tab; Runs is the default', () => {
+    expect(readTriggerSheet(new URLSearchParams('id=nightly&tab=settings'))).toEqual({
+      slug: 'nightly',
+      tab: 'settings',
+    });
+    expect(readTriggerSheet(new URLSearchParams('id=nightly'))).toEqual({
+      slug: 'nightly',
+      tab: 'runs',
+    });
+    expect(readTriggerSheet(new URLSearchParams('t=nightly&tab=bogus'))).toEqual({
+      slug: 'nightly',
+      tab: 'runs',
+    });
+    expect(readTriggerSheet(null)).toEqual({ slug: null, tab: 'runs' });
   });
 });

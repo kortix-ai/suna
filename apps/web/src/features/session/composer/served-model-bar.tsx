@@ -14,15 +14,16 @@ import type { ServedModelNotice } from '../turn/served-model';
  * run (incident 2026-10-02). It closes when the selected model answers again
  * or the selector changes (`servedModelNotice`).
  *
- * The same chrome as the "still waking" notice in `ComposerAboveCard`. Under
- * that notice it stays square and its top border is the divider.
+ * The same chrome as the "still waking" notice in `ComposerAboveCard`, which
+ * also passes the stack position: under a full-width layer it stays square and
+ * its top border is the divider.
  */
 export function ServedModelBar({
   notice,
-  underNotice = false,
+  className,
 }: {
   notice: ServedModelNotice;
-  underNotice?: boolean;
+  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
@@ -31,8 +32,8 @@ export function ServedModelBar({
       aria-live="polite"
       data-testid="served-model-bar"
       className={cn(
-        'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1.5',
-        !underNotice && 'rounded-t-xl',
+        'bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5',
+        className,
       )}
     >
       <ArrowsSplitIcon className="text-kortix-orange size-3.5 shrink-0" aria-hidden="true" />

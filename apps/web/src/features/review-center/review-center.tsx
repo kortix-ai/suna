@@ -13,6 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -38,7 +39,7 @@ import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/compo
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat } from '@/components/ui/status';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { infoToast, successToast } from '@/components/ui/toast';
+import { infoToast, successToast, toastIcon, undoToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -169,9 +170,10 @@ function ItemRow({
    *  Omitted in the grouped view (the session already names the group). */
   sessionLabel?: string;
   onOpen: () => void;
-  /** Row menu — the mouse path to the `e` and `d` shortcuts. */
-  onAskChanges: () => void;
-  onDismiss: () => void;
+  /** Row menu — the mouse path to the `e` and `d` shortcuts. Absent when the
+   *  viewer may not give that verdict on this item. */
+  onAskChanges?: () => void;
+  onDismiss?: () => void;
   onOpenSession?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -267,18 +269,18 @@ function ItemRow({
                 {tI18nComplete.raw('textb205bb47f81a')}
               </DropdownMenuItem>
             )}
-            {pending && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onAskChanges}>
-                  {tI18nComplete.raw('text705364916412')}
-                  <DropdownMenuShortcut>e</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" onClick={onDismiss}>
-                  {tI18nComplete.raw('text48845bff334a')}
-                  <DropdownMenuShortcut>d</DropdownMenuShortcut>
-                </DropdownMenuItem>
-              </>
+            {pending && (onAskChanges || onDismiss) && <DropdownMenuSeparator />}
+            {pending && onAskChanges && (
+              <DropdownMenuItem onClick={onAskChanges}>
+                {tI18nComplete.raw('text705364916412')}
+                <DropdownMenuShortcut>e</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
+            {pending && onDismiss && (
+              <DropdownMenuItem variant="destructive" onClick={onDismiss}>
+                {tI18nComplete.raw('text48845bff334a')}
+                <DropdownMenuShortcut>d</DropdownMenuShortcut>
+              </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -326,8 +328,17 @@ function KeyboardHelp({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
+/** How long the prototype's Undo toast stays up: a display time, not motion. */
+const UNDO_TOAST_MS = 6000;
+
+/** The prototype inbox's rule: every verdict, since nothing reaches a route. */
+const EVERY_VERDICT = () => true;
+
 export function ReviewCenter({
   initialItems,
+  segment: segmentProp,
+  onSegmentChange,
+  loadMore,
   onAct,
   onBulkAct,
   onOpenSession,
@@ -339,9 +350,15 @@ export function ReviewCenter({
   isFetched,
   isError,
   sessionLabels,
+  verdictAllowed = EVERY_VERDICT,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
+  /** Connected mode: the segment is the server's filter, so the parent owns it. */
+  segment?: ReviewSegment;
+  onSegmentChange?: (segment: ReviewSegment) => void;
+  /** Connected mode: the segment has more pages than `initialItems` holds. */
+  loadMore?: { onLoadMore: () => void; isLoading: boolean; isError: boolean };
   /** Connected mode: fire the server verdict for a single item. */
   onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
   /** Connected mode: fire the server verdict for many items (multi-select). */
@@ -365,8 +382,13 @@ export function ReviewCenter({
   isError?: boolean;
   /** sessionId → human name, for the per-session filter + group headers. */
   sessionLabels?: Record<string, string>;
+  /** Connected mode: whether this viewer may give `verdict` on `item`
+   *  (`reviewVerdictAllowed`, KRTX-1720). A control or shortcut for a verdict
+   *  it refuses does nothing and does not render. Absent: every verdict. */
+  verdictAllowed?: (item: ReviewItem, verdict: ReviewVerdict) => boolean;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const segments = useMemo(
     () => localizeUiCatalog(SEGMENTS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS),
     [tI18nComplete],
@@ -380,7 +402,9 @@ export function ReviewCenter({
   const [items, setItems] = useState<ReviewItem[]>(
     initialItems ?? (connected ? [] : localizedMockItems),
   );
-  const [segment, setSegment] = useState<ReviewSegment>('needs_you');
+  const [localSegment, setLocalSegment] = useState<ReviewSegment>('needs_you');
+  const segment = segmentProp ?? localSegment;
+  const setSegment = onSegmentChange ?? setLocalSegment;
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
   const [query, setQuery] = useState('');
   // Per-session view: filter to one session, and/or group the list by session so
@@ -399,8 +423,9 @@ export function ReviewCenter({
   const [kbNav, setKbNav] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   // "Fresh" = items that arrived on a poll while the user wasn't looking. We diff
-  // incoming ids against the last-known set; any interaction clears the marks.
-  const knownIdsRef = useRef<Set<string> | null>(null);
+  // incoming ids against the last-known set of each segment (each segment is
+  // its own read); any interaction clears the marks.
+  const knownIdsRef = useRef(new Map<ReviewSegment, Set<string>>());
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const markSeen = () => setFreshIds((prev) => (prev.size ? new Set() : prev));
   // The single item id currently mid-mutation (row quick-decide or the detail
@@ -503,18 +528,19 @@ export function ReviewCenter({
   }, [initialItems]);
 
   // Detect items that arrived since the user last looked → flag them "fresh".
-  // First load seeds the known set silently (nothing is "new" on open).
+  // The first load of each segment seeds its known set silently (nothing is
+  // "new" on open, or on a first visit to a segment).
+  // Reads the server list, not the optimistic copy: the copy lags a segment
+  // switch by one commit and would seed the new segment with nothing.
   useEffect(() => {
-    if (!connected) return;
-    if (knownIdsRef.current === null) {
-      knownIdsRef.current = new Set(items.map((i) => i.id));
-      return;
-    }
-    const known = knownIdsRef.current;
-    const arrived: string[] = [];
-    for (const item of items) {
-      if (!known.has(item.id)) arrived.push(item.id);
-    }
+    if (!connected || isLoading || !initialItems) return;
+    const ids = initialItems
+      .filter((i) => segmentForStatus(i.status) === segment)
+      .map((i) => i.id);
+    const known = knownIdsRef.current.get(segment);
+    knownIdsRef.current.set(segment, new Set(ids));
+    if (!known) return;
+    const arrived = ids.filter((id) => !known.has(id));
     if (arrived.length > 0) {
       setFreshIds((prev) => {
         const n = new Set(prev);
@@ -522,31 +548,23 @@ export function ReviewCenter({
         return n;
       });
     }
-    knownIdsRef.current = new Set(items.map((i) => i.id));
-  }, [items, connected]);
+  }, [initialItems, connected, segment, isLoading]);
 
   /** Prototype mode: optimistic change with an Undo affordance in the toast. */
   function commit(next: ReviewItem[], message: string, tone: 'success' | 'info' = 'success') {
     undoRef.current = items;
     setItems(next);
-    const toastFn = tone === 'info' ? infoToast : successToast;
-    toastFn(message, {
-      duration: 6000,
-      button: (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (undoRef.current) {
-              setItems(undoRef.current);
-              undoRef.current = null;
-              infoToast(tI18nComplete.raw('text5d561a1e3f17'));
-            }
-          }}
-        >
-          {tI18nComplete.raw('texta8283ade3185')}
-        </Button>
-      ),
+    undoToast(message, {
+      duration: UNDO_TOAST_MS,
+      icon: tone === 'info' ? toastIcon('info') : toastIcon('success'),
+      undoLabel: tI18nComplete.raw('texta8283ade3185'),
+      onUndo: () => {
+        if (undoRef.current) {
+          setItems(undoRef.current);
+          undoRef.current = null;
+          infoToast(tI18nComplete.raw('text5d561a1e3f17'));
+        }
+      },
     });
   }
 
@@ -570,9 +588,16 @@ export function ReviewCenter({
     }
   }
 
+  /** Every verdict path checks here first, so a refused verdict never commits. */
+  const allowsId = (id: string, verdict: ReviewVerdict) => {
+    const item = items.find((i) => i.id === id) ?? sourceItems.find((i) => i.id === id);
+    return !!item && verdictAllowed(item, verdict);
+  };
+
   const actions: ReviewActions = {
     resolve: (id, status, message, feedback) => {
       const verdict = statusToVerdict(status);
+      if (verdict && !allowsId(id, verdict)) return;
       if (connected && (status === 'approved' || status === 'rejected')) {
         setPendingId(id);
         setPendingDecision(status === 'approved' ? 'approve' : 'deny');
@@ -589,6 +614,7 @@ export function ReviewCenter({
     openSession: onOpenSession,
     recoverChange: onRecoverChange,
     recoveringCrId,
+    allows: verdictAllowed,
     connected,
     pendingId,
     pendingDecision,
@@ -616,6 +642,7 @@ export function ReviewCenter({
       setSelectedId(item.id); // needs a choice / full context — open the detail
       return;
     }
+    if (!verdictAllowed(item, 'approve')) return;
     apply(
       setStatus(items, item.id, 'approved'),
       `${item.primaryAction} · done`,
@@ -630,6 +657,7 @@ export function ReviewCenter({
       return;
     }
     if (item.kind === 'change' || item.kind === 'output') {
+      if (!verdictAllowed(item, 'changes')) return;
       apply(
         setStatus(items, item.id, 'changes_requested'),
         'Sent back to the agent',
@@ -649,7 +677,8 @@ export function ReviewCenter({
     return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
   };
 
-  const dismissIds = (ids: string[]) => {
+  const dismissIds = (requested: string[]) => {
+    const ids = requested.filter((id) => allowsId(id, 'dismiss'));
     if (ids.length === 0) return;
     if (connected && onBulkAct) {
       const outcome = connectedBulkOutcome(ids, 'dismiss');
@@ -760,8 +789,8 @@ export function ReviewCenter({
       fresh={freshIds.has(item.id)}
       sessionLabel={!inGroup && item.sessionId ? labelFor(item.sessionId) : undefined}
       onOpen={() => setSelectedId(item.id)}
-      onAskChanges={() => quickAskChanges(item)}
-      onDismiss={() => dismissIds([item.id])}
+      onAskChanges={verdictAllowed(item, 'changes') ? () => quickAskChanges(item) : undefined}
+      onDismiss={verdictAllowed(item, 'dismiss') ? () => dismissIds([item.id]) : undefined}
       onOpenSession={
         item.sessionId && onOpenSession ? () => onOpenSession(item.sessionId!) : undefined
       }
@@ -777,6 +806,25 @@ export function ReviewCenter({
       markSeen();
     },
   };
+
+  // The Sessions page's Load more, same control and words (`sidebar.*`).
+  const loadMoreButton = loadMore ? (
+    <div className="flex justify-center pb-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loadMore.isLoading}
+        onClick={loadMore.onLoadMore}
+      >
+        {/* A failed page keeps the rows above it; the button is the retry. */}
+        {loadMore.isLoading
+          ? tSidebar('loadingMore')
+          : loadMore.isError
+            ? tSidebar('retry')
+            : tSidebar('loadMore')}
+      </Button>
+    </div>
+  ) : null;
 
   const shortcutsButton = (
     <button
@@ -812,9 +860,11 @@ export function ReviewCenter({
     <ApprovalDecisionModal
       details={approval}
       previewAuthorized={approvalCall?.previewAuthorized !== false}
+      resolvers={approvalCall?.resolvers}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
-        connected && selected
+        // Only the viewer the API lets decide this call gets the decision.
+        connected && selected && verdictAllowed(selected, 'approve')
           ? (decision, note) =>
               actions.resolve(
                 selected.id,
@@ -891,9 +941,7 @@ export function ReviewCenter({
                       <DropdownMenuRadioItem key={f.value} value={f.value} side="left">
                         {f.label}
                         {(kindCounts[f.value] ?? 0) > 0 && (
-                          <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                            {kindCounts[f.value]}
-                          </Badge>
+                          <CountBadge count={kindCounts[f.value] ?? 0} className="ml-auto" />
                         )}
                       </DropdownMenuRadioItem>
                     ))}
@@ -926,20 +974,18 @@ export function ReviewCenter({
                     <DropdownMenuRadioGroup value={sessionFilter} onValueChange={setSessionFilter}>
                       <DropdownMenuRadioItem value="all" side="left">
                         {tI18nComplete.raw('text78648d4d6649')}
-                        <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
-                          {filterItems(items, segment, kindFilter, query, 'all').length}
-                        </Badge>
+                        <CountBadge
+                          count={filterItems(items, segment, kindFilter, query, 'all').length}
+                          className="ml-auto"
+                        />
                       </DropdownMenuRadioItem>
                       {sessionOpts.map((s) => (
                         <DropdownMenuRadioItem key={s.sessionId} value={s.sessionId} side="left">
                           <span className="truncate">{s.label}</span>
-                          <Badge
-                            variant="secondary"
-                            size="xs"
-                            className="ml-auto shrink-0 tabular-nums"
-                          >
-                            {filterItems(items, segment, kindFilter, query, s.sessionId).length}
-                          </Badge>
+                          <CountBadge
+                            count={filterItems(items, segment, kindFilter, query, s.sessionId).length}
+                            className="ml-auto"
+                          />
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>
@@ -993,6 +1039,10 @@ export function ReviewCenter({
             />
           ) : isLoading && items.length === 0 ? (
             <ListSkeleton />
+          ) : visible.length === 0 && loadMore ? (
+            // Nothing on the pages read so far matches, and more pages exist:
+            // offer them, never the empty state (KRTX-1727).
+            <div className="pt-6">{loadMoreButton}</div>
           ) : visible.length === 0 ? (
             <EmptyState
               icon={CheckCircleSolid}
@@ -1046,6 +1096,7 @@ export function ReviewCenter({
               {visible.map((item, idx) => renderRow(item, idx, false))}
             </ul>
           )}
+          {visible.length > 0 && loadMore ? loadMoreButton : null}
         </div>
       </div>
 

@@ -245,3 +245,14 @@ describe('toJsonRows', () => {
     expect(JSON.parse(json)).toHaveLength(1);
   });
 });
+
+describe('branch database worktrees (--db)', () => {
+  test('use the shared Supabase ports, keep the shared footer, and name their database', () => {
+    const reg = registry(['a', 0], ['mig-fix', 1, { dbMode: 'branch' }]);
+    const rows = rowsOf(reg);
+    const row = rows.find((r) => r.name === 'mig-fix')!;
+    expect(effectivePorts(row).sbDb).toBe(SHARED_SUPABASE_PORTS.sbDb);
+    expect(plain(renderRail(rows, { probed: true })).join('\n')).toContain(`shared Supabase db :${SHARED_SUPABASE_PORTS.sbDb}`);
+    expect(plain(renderDetail(row, { probed: true }))).toContain(`    db      kortix_wt_mig_fix (:${SHARED_SUPABASE_PORTS.sbDb})`);
+  });
+});

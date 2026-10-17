@@ -430,4 +430,20 @@ describe('client surface', () => {
     await send('http://backend.test/v1/x');
     expect(seen.map((s) => s.headers.get('x-kortix-client-version'))).toEqual(['cli/0.13.42', 'caller', null, null]);
   });
+  test('credentialHeader carries the token in that header and leaves Authorization unset, replay included', async () => {
+    tokens = ['old', 'new'];
+    statuses = [401, 200];
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      credentialHeader: 'x-app-reader-token',
+      getToken: async () => tokens.length > 1 ? tokens.shift()! : tokens[0]!,
+      fetch: async (_input, init) => {
+        seen.push({ url: '', headers: new Headers(init?.headers), body: null, signal: null });
+        return new Response('{}', { status: statuses.shift() ?? 200 });
+      },
+    });
+    await send('http://backend.test/v1/x');
+    expect(seen.map((s) => s.headers.get('x-app-reader-token'))).toEqual(['old', 'new']);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual([null, null]);
+  });
 });

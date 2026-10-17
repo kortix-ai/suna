@@ -76,6 +76,7 @@ jobs:
   detect-changes:
     name: Detect changes
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     outputs:
       api: ${{ steps.outputs.outputs.api }}
       gateway: ${{ steps.outputs.outputs.gateway }}
@@ -205,10 +206,7 @@ jobs:
             apps_router:
               - 'infra/cloudflare/workers/apps-router/**'
               - '.github/workflows/deploy-dev.yml'
-            # Every dev root this pipeline applies. environments/dev used to be
-            # excluded here because it read an operator-local terraform.tfvars
-            # and was applied by hand; those inputs are committed now, so the
-            # root is applied like any other (see terraform-apply.yml).
+            # Every dev root this pipeline applies (see terraform-apply.yml).
             terraform:
               - 'infra/terraform/environments/dev-us-east-2/**'
               - 'infra/terraform/environments/dev-web-us-east-2/**'
@@ -335,6 +333,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -463,6 +462,10 @@ jobs:
           image: ${{ steps.digest.outputs.ref }}
           format: spdx-json
           output-file: sbom.spdx.json
+      # The installer expands its install dir with `envsubst`; the runner image
+      # stopped shipping it (2026-10-17: exit 127 on every API sign job).
+      - name: Ensure envsubst
+        run: command -v envsubst >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq gettext-base)
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign + attest SBOM (keyless)
@@ -483,6 +486,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 45
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -492,16 +496,6 @@ jobs:
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: latest
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
-        env:
-          npm_config_engine_strict: "false"
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -509,11 +503,10 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/prepare-migrate
         with:
-          keys: |
-            DATABASE_URL=kortix-dev-env:DATABASE_URL
+          bun-version: latest
+          database-url: DATABASE_URL=kortix-dev-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
         run: |
           set -euo pipefail
@@ -526,20 +519,20 @@ jobs:
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
-    needs: [detect-changes, build-api, migrate-db, terraform-dev-api, terraform-dev]
-    # `always()` is required because both terraform jobs are SKIPPED whenever no
+    needs: [detect-changes, build-api, migrate-db, terraform-dev-api]
+    # `always()` is required because terraform-dev-api is SKIPPED whenever no
     # dev Terraform changed — without it GitHub would skip this job too. Every
-    # other upstream is still required to have succeeded. Both roots are listed:
-    # a failed terraform-dev-api skips terraform-dev, and a skip alone must not
-    # read as a pass for the root that actually failed.
+    # other upstream is still required to have succeeded. The web root
+    # (terraform-dev) is not awaited: the API roll reads nothing it creates.
+    # deploy-web-ecs awaits it.
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.api == 'true'
         && needs.build-api.result == 'success'
         && needs.migrate-db.result == 'success'
-        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
-        && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 35
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -593,7 +586,7 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-use2-capture-store","KORTIX_CAPTURE_S3_REGION":"us-east-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-east-2.amazonaws.com/935064898258/kortix-dev-use2-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-use2-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east","SESSION_LOG_RESTORE_DEFAULT_ENABLED":"true"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
@@ -681,6 +674,7 @@ jobs:
     needs: [detect-changes, deploy-api-ecs]
     if: ${{ always() && needs.detect-changes.outputs.apps_router == 'true' && (needs.deploy-api-ecs.result == 'success' || needs.deploy-api-ecs.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -742,6 +736,7 @@ jobs:
       && needs.build-api.result == 'success'
       && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -783,6 +778,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -837,6 +833,7 @@ jobs:
     needs: [detect-changes, build-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       id-token: write
       contents: read
@@ -864,6 +861,7 @@ jobs:
     needs: [detect-changes, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
@@ -906,6 +904,7 @@ jobs:
       && needs.build-gateway.result == 'success'
       && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -948,6 +947,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1036,6 +1036,7 @@ jobs:
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     permissions:
       id-token: write
       contents: read
@@ -1091,6 +1092,7 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.deploy-web-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -1099,11 +1101,6 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1111,20 +1108,12 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/publish-web-dns
         with:
-          role-to-assume: ''
-          keys: |
-            CLOUDFLARE_API_TOKEN
-      - name: Point the canonical Dev hostname at the web ALB
-        run: |
-          set -euo pipefail
-          alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-dev-use2-web-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)"
-          node infra/scripts/sync-web-dns.mjs dev "$alb"
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          environment: dev
+          alb-name: kortix-dev-use2-web-alb
 
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
@@ -1133,6 +1122,7 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1215,6 +1205,7 @@ jobs:
       && needs.build-frontend.result == 'success'
       && needs.verify-web-dev.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
     # Job-level permissions replace that default, so the reads stay listed.
     permissions:
@@ -1266,6 +1257,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1359,6 +1351,7 @@ jobs:
     needs: [detect-changes, build-cli]
     if: needs.detect-changes.outputs.cli == 'true' && needs.build-cli.result == 'success'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

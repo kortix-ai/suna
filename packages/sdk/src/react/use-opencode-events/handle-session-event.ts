@@ -1,10 +1,12 @@
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { isAbortError } from '../../core/http/abort-error';
 import { getClient } from '../../core/runtime/client';
+import { extractGatewayErrorDetails, unwrapError } from '../../core/turns/errors';
 import { notifySessionError, notifyTaskComplete } from '../../platform/ui';
 import { type MessageWithParts, type Session, runtimeKeys } from '../use-opencode-sessions';
 import type { HandlerContext } from './handler-context';
 import {
+  notificationSessionId,
   patchKortixSessionTitleMirrors,
   readSessionInfo,
   realRuntimeTitle,
@@ -150,6 +152,11 @@ function handleSessionCompaction(event: RuntimeEvent, ctx: HandlerContext) {
       break;
   }
 }
+/** Raise a turn-end notification under the Kortix session id; a sub-agent's end raises none. */
+function notifyTurnEnd(ctx: HandlerContext, runtimeId: string, notify: (sessionId: string) => void) {
+  const id = notificationSessionId(ctx.queryClient, ctx.projectId, ctx.sessionId, runtimeId);
+  if (id) notify(id);
+}
 function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statusBeforeEvent: ReturnType<typeof useSyncStore.getState>['sessionStatus'][string] | undefined) {
   const { reconcileTail, getSessionTitle, invalidateWorkspaceFilesAfterTurn } = ctx;
   switch (event.type) {
@@ -167,7 +174,7 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
         if (status.type === 'idle') void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
-          notifyTaskComplete(sessionID, getSessionTitle(sessionID));
+          notifyTurnEnd(ctx, sessionID, (id) => notifyTaskComplete(id, getSessionTitle(sessionID)));
           invalidateWorkspaceFilesAfterTurn();
         }
       }
@@ -179,7 +186,7 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
         void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (prevStatus && prevStatus.type !== 'idle') {
-          notifyTaskComplete(sessionID, getSessionTitle(sessionID));
+          notifyTurnEnd(ctx, sessionID, (id) => notifyTaskComplete(id, getSessionTitle(sessionID)));
           invalidateWorkspaceFilesAfterTurn();
         }
       }
@@ -198,12 +205,15 @@ function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
         const sessionID = props.sessionID;
         const error = props.error;
         stopCompaction(sessionID);
-        const rawMessage = error.data.message;
-        const errorTitle =
-          error.name ||
-          (typeof rawMessage === 'string' ? rawMessage : undefined) ||
-          'An error occurred';
-        notifySessionError(sessionID, errorTitle, getSessionTitle(sessionID));
+        // The sentence the transcript row shows (`getTurnError`), never the
+        // class name ("APIError") or the HTTP status text ("Bad Request").
+        const errorTitle = extractGatewayErrorDetails(error)?.message || unwrapError(error);
+        // An abort is the effect of a Stop, not a failure: the transcript
+        // already says who stopped the run, and a "Session Error" beside it
+        // told every other viewer something broke.
+        if (!isAbortError(error)) {
+          notifyTurnEnd(ctx, sessionID, (id) => notifySessionError(id, errorTitle, getSessionTitle(sessionID)));
+        }
         const key = runtimeKeys.runtimeMessages(sessionID);
         queryClient.cancelQueries({ queryKey: key });
         queryClient.setQueryData<MessageWithParts[]>(key, (old) => {

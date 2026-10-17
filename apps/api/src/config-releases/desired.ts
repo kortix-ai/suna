@@ -13,8 +13,8 @@
  * make sessions unbootable nor read as up to date.
  */
 
-import { resolveCommitSha } from '../projects/git/commits';
-import { invalidateProjectMirror } from '../projects/git/mirror';
+import { COMPILED_AGENT_CONFIG_ENV, COMPILED_AGENT_CONFIG_GZ_CAPABILITY, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
+import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   buildConfigRelease,
@@ -46,15 +46,22 @@ export interface DesiredReleaseInput {
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
   /**
-   * Default true: drop the mirror's TTL so the base tip is fetched before it
-   * is resolved. Set false only from a caller that has JUST refreshed this
+   * Default true: the base tip is the upstream's, asked at most once per
+   * mirror refresh interval per `(project, ref)` across every API process
+   * (`base-tip.ts`). Set false only from a caller that has JUST refreshed this
    * project's mirror within the same request (`GET /config` compiles the
-   * latest etag first — its own invalidate already fetched the tip, and a
-   * second invalidation made every one of those reads pay a second sequential
-   * `git fetch`). The next request on that route invalidates again, so a push
-   * that landed after this one's fetch is caught one read later.
+   * latest etag first — its own invalidate already fetched the tip): the tip
+   * is then read from the mirror as it is.
    */
   refreshProjectMirror?: boolean;
+  /**
+   * The base tip the session was created on (`KORTIX_BASE_SHA`), as a booting
+   * box reports it. Session create resolved it from the remote seconds ago, so
+   * when the mirror already holds it as the base tip the forced fetch would
+   * only prove it again: it is skipped. It never chooses the release: any
+   * other value, or none, refreshes as before.
+   */
+  bootTip?: string | null;
   /**
    * May the session's OWNER run `agent`? Asked only when the manifest dropped
    * the session's agent and a declared default exists to move it to. Omitted ⇒
@@ -96,18 +103,23 @@ export interface DesiredReleaseDeps {
   ledger: ConfigReleaseLedger;
   build: typeof buildConfigRelease;
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
+  /** The base tip the mirror holds now, with no refresh; null when unknown. */
+  readBase: (project: GitBackedProject, ref: string) => Promise<string | null>;
+  /** The upstream's base tip, shared across requests (`sharedBaseTip`). */
+  checkBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
-  /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
-  invalidate: (projectId: string) => void;
 }
 
 const defaultDeps: DesiredReleaseDeps = {
   ledger: dbConfigReleaseLedger,
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
+  readBase: readMirrorCommitSha,
+  // Loaded on first use: base-tip reaches projects/surface, whose session code imports the
+  // sandbox proxy root, which reaches back here through turn-start (an import cycle).
+  checkBase: async (project, ref) => (await import('./base-tip')).sharedBaseTip(project, ref),
   loadRoster: loadAgentRosterAtCommit,
-  invalidate: invalidateProjectMirror,
 };
 
 /**
@@ -115,6 +127,22 @@ const defaultDeps: DesiredReleaseDeps = {
  * different release ID (governance only) than one with access, so the two
  * never share a fallback.
  */
+/**
+ * The descriptor a daemon receives. A kortixd built before the gzip form
+ * (@kortix/api-contract/compiled-agent-config-env) stores a release's
+ * governance raw in its env; over 128 KiB every exec on the box then fails
+ * with E2BIG. Such a daemon gets no governance and keeps the config it has.
+ * `capabilities` is what the daemon declared in its descriptor request.
+ */
+export function governanceForDaemon<T extends { compiled_governance: string | null; compiled_governance_etag: string | null }>(descriptor: T, capabilities: readonly string[]): T {
+  const governance = descriptor.compiled_governance;
+  if (governance === null || fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, governance)) return descriptor;
+  if (capabilities.includes(COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) return descriptor;
+  // Both fields go together: kortixd rejects a descriptor with only one of them
+  // and then boots the image default config instead of the project's.
+  return { ...descriptor, compiled_governance: null, compiled_governance_etag: null };
+}
+
 export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: boolean): string {
   return repositoryAccess ? variant : `${variant}#governance-only`;
 }
@@ -130,14 +158,20 @@ export async function resolveDesiredRelease(
   input: DesiredReleaseInput,
   deps: DesiredReleaseDeps = defaultDeps,
 ): Promise<DesiredRelease> {
-  // A push the warm mirror has not fetched must not be missed — unless the
-  // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
-  if (input.refreshProjectMirror !== false) {
-    deps.invalidate(input.project.projectId);
-  }
   let baseSha: string;
   try {
-    baseSha = await deps.resolveBase(input.project, input.baseRef);
+    // A boot whose tip the mirror already holds: the fetch would prove only
+    // what session create proved (p50 ~1 s on prod, 2026-10-13, on every boot).
+    const known = input.bootTip ? await deps.readBase(input.project, input.baseRef).catch(() => null) : null;
+    if (known && known === input.bootTip) {
+      baseSha = known;
+    } else if (input.refreshProjectMirror === false) {
+      baseSha = await deps.resolveBase(input.project, input.baseRef);
+    } else {
+      // A push the warm mirror has not fetched must not be missed: ask the
+      // upstream, or read what another request asked it moments ago.
+      baseSha = await deps.checkBase(input.project, input.baseRef);
+    }
   } catch (error) {
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);
   }

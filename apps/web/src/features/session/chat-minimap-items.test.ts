@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Turn } from '@/ui';
+import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 
 import {
   DASH_WIDTH_MAX,
@@ -17,11 +17,10 @@ import {
   type MinimapItem,
 } from './chat-minimap-items';
 
-function turnWithParts(parts: Record<string, unknown>[]): Turn {
-  return {
-    userMessage: { info: { id: 'u1' }, parts },
-    assistantMessages: [],
-  } as unknown as Turn;
+/** The turn the transcript reads for one v1 user row holding `parts` (`sessionLogOfV1Rows`, flag off). */
+function turnWithParts(parts: Record<string, unknown>[]): SessionLogTurn {
+  const row = { info: { id: 'u1', role: 'user' }, parts } as never;
+  return sessionLogTurns(sessionLogOfV1Rows('s', 'rs', [row]).threads[0]!)[0]!;
 }
 
 function makeItems(count: number): MinimapItem[] {
@@ -95,6 +94,13 @@ describe('extractMinimapItem', () => {
     expect(item!.text).toBe('summarize');
     const only = extractMinimapItem(turnWithParts([{ type: 'text', text: block }]));
     expect(only!.text).toBe('Pasted text');
+  });
+
+  test('a paste with blank-line runs (an email copy) is still a paste, not preview text', () => {
+    const body = 'Skip to content\n\n\n\nSubject';
+    const block = `<pasted_content id="abcd1234" chars="${body.length}">\n${body}\n</pasted_content>`;
+    const item = extractMinimapItem(turnWithParts([{ type: 'text', text: `${block}\n\nsummarize` }]));
+    expect(item!.text).toBe('summarize');
   });
 
   test('keeps a message that is only attachments, labelled by the first file', () => {

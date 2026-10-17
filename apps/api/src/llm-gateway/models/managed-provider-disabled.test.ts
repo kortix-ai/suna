@@ -35,7 +35,6 @@ mock.module('../../config', () => ({
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
         if (key === 'MORPH_API_KEY') { morphKeyReads += 1; return 'operator-morph-key'; }
         if (key === 'MORPH_API_URL') return 'https://api.morphllm.com/v1';
-        if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') {
           bedrockKeyReads += 1;
           return 'fake-bedrock-key-must-never-be-read';

@@ -5,7 +5,7 @@
  * REPLACES `iam/engine-v2.ts` (authorizeV2, resolveActorV2, loadProjectRoleRows,
  * deriveEffectiveProjectRole, customPolicyAllows, computeTokenScope,
  * agentGrantGates, listAccessibleProjectsV2, filterAccessibleProjectResources),
- * `projects/access.ts` (effectiveProjectRole, roleAllows,
+ * `projects/access.ts` (effectiveProjectRole, the retired roleAllows,
  * foldEffectiveProjectAccess) and `iam/resource-grants.ts`'s fold
  * (isProjectResourceUsableByMember, isResourceAccessible, …) — four independent
  * copies of the max-role fold and three parallel permission vocabularies.
@@ -46,6 +46,7 @@ import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
+import { isUuid } from '../shared/validate';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
@@ -629,6 +630,13 @@ async function resolvePrincipalUncached(
   accountId: string,
 ): Promise<PrincipalRecord | null> {
   if (!accountId) return null;
+  // A malformed account id (a slug, a stray literal segment) never matches a
+  // membership, and letting it reach the uuid-typed casts below ends the
+  // request as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern 97669531,
+  // KRTX-211). Answer the same "no membership" the engine answers for a real
+  // non-member id — every account-scoped route the engine authorizes gets its
+  // own denial shape, never a 500.
+  if (!isUuid(accountId)) return null;
   const pid = principal.id;
 
   // Group membership drives two of the four queries, so it is inlined as a

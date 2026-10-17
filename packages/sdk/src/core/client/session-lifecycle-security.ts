@@ -37,6 +37,11 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
      *  sandbox is stopped or still waking. */
     transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
       P.getSessionTranscriptSync(ctx.projectId, ctx.sessionId, options),
+    /** One page of one thread of the stored session log (`kortix.session/2`), read from the
+     *  API's Postgres, so it answers while the sandbox is stopped. Null when the session has
+     *  no stored log yet, or no such thread. Older pages: `before_seq` = the first `seq`. */
+    log: (query?: Parameters<typeof P.getSessionLogPage>[2]) =>
+      P.getSessionLogPage(ctx.projectId, ctx.sessionId, query),
     /** Which turns are running right now, and how did the last one end?
      *  Server truth from the control plane's lifecycle authority, independent
      *  of the live stream. */

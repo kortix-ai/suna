@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { opencodeConfigDirChangedBetween } from './opencode-config-dir';
+import { opencodeConfigDirChangedBetween, resolveOpencodeConfigDirAtSha } from './opencode-config-dir';
 
 let repo: string;
 const project = { manifestPath: 'kortix.yaml' };
@@ -90,6 +90,30 @@ describe('opencodeConfigDirChangedBetween', () => {
   test('a base with no project config has nothing to bring forward', async () => {
     const boot = commit({ 'app.ts': '1' }, 'boot');
     const tip = commit({ 'app.ts': '2' }, 'app');
+
+    expect(await opencodeConfigDirChangedBetween(repo, project, boot, tip)).toBe(false);
+  });
+});
+
+describe('kortix_version 3', () => {
+  const V3 = 'kortix_version: 3\ndefault_agent: a\nskills:\n  s: skills/s\nagents:\n  a:\n    prompt_file: agents/a.md\n';
+
+  test('a v3 commit has no OpenCode config dir, even when a legacy one is in the tree', async () => {
+    const sha = commit({ 'kortix.yaml': V3, 'harnesses/opencode/opencode.jsonc': '{}', 'agents/a.md': 'p' }, 'v3');
+
+    expect(await resolveOpencodeConfigDirAtSha(repo, project, sha)).toBeNull();
+  });
+
+  test('a change to a registered skill, tool or extension is a change', async () => {
+    const boot = commit({ 'kortix.yaml': V3, 'skills/s/SKILL.md': 'v1', 'agents/a.md': 'p' }, 'boot');
+    const tip = commit({ 'skills/s/SKILL.md': 'v2' }, 'skill body');
+
+    expect(await opencodeConfigDirChangedBetween(repo, project, boot, tip)).toBe(true);
+  });
+
+  test('a change outside every registered path is not', async () => {
+    const boot = commit({ 'kortix.yaml': V3, 'skills/s/SKILL.md': 'v1', 'agents/a.md': 'p' }, 'boot');
+    const tip = commit({ 'docs/readme.md': 'x' }, 'docs');
 
     expect(await opencodeConfigDirChangedBetween(repo, project, boot, tip)).toBe(false);
   });

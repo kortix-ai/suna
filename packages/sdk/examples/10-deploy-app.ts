@@ -1,5 +1,5 @@
 /**
- * 10 — Deploy a public OCI image as a serverless Kortix App.
+ * 10 — Deploy a public OCI image as a Kortix App.
  *
  * Run:
  *   KORTIX_API_URL=https://api.kortix.com/v1 KORTIX_API_KEY=kortix_pat_... \

@@ -28,6 +28,8 @@ export type RuntimeRequest =
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
   /** OpenCode's rewind: `revert` stages one, `unrevert` undoes it. */
   | { kind: 'revert' | 'unrevert'; runtimeSessionId: string; prefix: string }
+  /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
+  | { kind: 'question-answer'; requestId: string; prefix: string }
   | { kind: 'other' };
 
 const OTHER: RuntimeRequest = { kind: 'other' };
@@ -35,6 +37,7 @@ const PREFIX = /^\/proxy\/\d+(?=\/)/;
 const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
 const REWIND = /^\/session\/([^/?#]+)\/(revert|unrevert)\/?(?:$|[?#])/;
+const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
 
 /**
  * Drop the in-box dynamic-port nesting a client may address through, so one
@@ -72,6 +75,12 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
     const runtimeSessionId = decodeSegment(rewind[1]!);
     if (verb !== 'POST' || !runtimeSessionId) return OTHER;
     return { kind: rewind[2] === 'revert' ? 'revert' : 'unrevert', runtimeSessionId, prefix };
+  }
+
+  const question = QUESTION.exec(bare);
+  if (question) {
+    const requestId = decodeSegment(question[1]!);
+    return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
   }
 
   const native = NATIVE.exec(bare);

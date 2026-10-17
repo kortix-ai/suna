@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { App } from '@kortix/sdk';
 import type { UiTranslator } from '@/i18n/translator';
-import { appStatus, appTabLabel, childApps, gridApps } from './app-shared';
+import { appStatus, appTabLabel, cardPreviewApp, childApps, gridApps } from './app-shared';
 
 const t = { raw: (key: string) => key } as unknown as UiTranslator;
 const app = (overrides: Partial<App>): App => ({
@@ -45,4 +45,21 @@ test('an admins-only App (its primary service is access: admins) is no card and 
   expect(gridApps(all, false).map((row) => row.slug)).toEqual(['db']);
   expect(childApps(all, backend).map((row) => row.slug)).toEqual(['db-dashboard']);
   expect(childApps(all, backend, false)).toEqual([]);
+});
+
+test('a card shows its own preview, else its first tab the viewer may open, else an icon (null)', () => {
+  const caps = { capabilities: ['preview' as const] };
+  const service = { name: 'http', protocol: 'http' as const, access: 'admins' as const, internal_port: 6791, processes: ['app'], url: null };
+  const site = app({ app_id: 's', slug: 'site', ...caps });
+  const backend = app({ app_id: 'b', slug: 'backend', display: { preview: 'none' }, ...caps });
+  const dashboard = app({ app_id: 'd', slug: 'backend-dashboard', display: { parent: 'backend' }, services: [service], ...caps });
+  const all = [site, backend, dashboard];
+  expect(cardPreviewApp(all, site)).toBe(site);
+  expect(cardPreviewApp(all, backend)).toBe(dashboard);
+  // Not an admin: the admins-only tab is hidden, so the card keeps its icon.
+  expect(cardPreviewApp(all, backend, false)).toBeNull();
+  // A tab the viewer cannot open, or one with no preview, is no thumbnail either.
+  expect(cardPreviewApp([backend, { ...dashboard, viewer_can_access: false }], backend)).toBeNull();
+  expect(cardPreviewApp([backend, { ...dashboard, capabilities: [] }], backend)).toBeNull();
+  expect(cardPreviewApp([backend], backend)).toBeNull();
 });

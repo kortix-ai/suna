@@ -33,8 +33,7 @@ import {
  *   2. root search suppressed workspaces entirely whenever you were inside
  *      one — i.e. always — so the only surface that could answer "take me to
  *      Acme" in one keystroke was switched off exactly where it was needed;
- *   3. it said "Project", the word this product retired
- *      (`workspace-vocabulary.test.ts`);
+ *   3. it said "Project", the word this product retired;
  *   4. every row was the same grey folder glyph, in the one control whose
  *      whole job is being fast to scan.
  *

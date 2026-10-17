@@ -13,6 +13,10 @@ import { useTranslations } from '@/i18n/use-translations';
 // or Projects (project scope) exactly like a built-in role is, and shows up as
 // the row's role there. The muted note under the header points at that.
 //
+// Enterprise-gated as a pane (Jay, 2026-10-13): without the `rbac`
+// entitlement the tab is `EnterpriseUpsell` and nothing else — no read-only
+// role list, no disabled New role, no banner.
+//
 // Built-in roles are read-only; only custom (is_system === false) roles can be
 // edited or deleted, and only when canManage is true. Built-ins can be
 // duplicated into a new custom role as a starting point. The capability picker
@@ -24,7 +28,6 @@ import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   CopyIcon as Copy,
   EyeIcon as Eye,
-  LockIcon as Lock,
   PencilSimpleIcon,
   PlusIcon as Plus,
   ShieldIcon as Shield,
@@ -40,7 +43,6 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,7 +65,6 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
@@ -87,6 +88,7 @@ import {
   updateRolePermissions,
 } from '@/lib/iam-client';
 import type { AccountRole, ProjectRole } from '@kortix/sdk';
+import { EnterpriseUpsell } from './enterprise-upsell';
 import { RoleCapabilityMatrix } from './role-capability-matrix';
 
 interface RolesTabProps {
@@ -108,26 +110,9 @@ interface RolePrefill {
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const openDemo = useRequestDemo();
+  if (!rbacEnabled) return <EnterpriseUpsell feature="roles" accountId={accountId} />;
   return (
     <div className="space-y-6">
-      {canManage && !rbacEnabled && (
-        <InfoBanner
-          tone="info"
-          title={tI18nComplete.raw('text9d48410d14d3')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDemo({ source: 'accounts-roles' })}
-            >
-              {tI18nComplete.raw('text604abea32b49')}
-            </Button>
-          }
-        >
-          {RBAC_UPSELL_MESSAGE}
-        </InfoBanner>
-      )}
       {/* Where the "Custom-role assignments" table used to be. A role is
           defined here and handed out from Members or Projects — say so, so
           nobody hunts for a launcher this tab deliberately no longer has. */}
@@ -162,26 +147,14 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
     setCreateOpen(true);
   }
 
-  const newRoleButton =
-    canManage &&
-    (rbacEnabled ? (
-      <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
-        <Plus className="size-4" />
-        {tI18nComplete.raw('text500f2f9d3956')}
-      </Button>
-    ) : (
-      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
-        <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
-            <Plus className="size-4" />
-            {tI18nComplete.raw('text500f2f9d3956')}
-          </Button>
-          <Badge variant="outline" size="sm">
-            {tI18nComplete.raw('text3fbe5ed156f1')}
-          </Badge>
-        </span>
-      </Hint>
-    ));
+  // `RolesTab` renders this only with the `rbac` entitlement, so the
+  // button never needs a disabled, upsold twin.
+  const newRoleButton = canManage && (
+    <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
+      <Plus className="size-4" />
+      {tI18nComplete.raw('text500f2f9d3956')}
+    </Button>
+  );
 
   // One header — "Roles · N" + New role — in every state, so the primary
   // action never disappears while the list loads or fails. Non-row states
@@ -292,6 +265,9 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   );
 }
 
+/** Sentence-case sans text on the outline badge (the base badge is mono uppercase). */
+const ROLE_TAG = 'text-muted-foreground font-sans font-normal tracking-normal';
+
 function RoleRow({
   accountId,
   role,
@@ -355,17 +331,11 @@ function RoleRow({
   }
 
   // "What can this role do?" never requires permission to change it, so
-  // View capabilities is the one item everybody gets. Everything that writes
-  // sits behind `canManage`, and behind `rbacEnabled` on top of that when the
-  // backend would 402 (delete is never entitlement-gated — cleanup is always
-  // allowed).
-  const kebab: KebabItem[] = [
-    {
-      label: tI18nComplete.raw('text08138c207246'),
-      icon: <Eye className="size-3.5" />,
-      onSelect: onView,
-    },
-  ];
+  // View capabilities is an inline button on every row (`actions` below), not
+  // a kebab item. Everything that writes sits behind `canManage`, and behind
+  // `rbacEnabled` on top of that when the backend would 402 (delete is never
+  // entitlement-gated — cleanup is always allowed).
+  const kebab: KebabItem[] = [];
   if (canManage && isCustom) {
     kebab.push({
       label: tI18nComplete.raw('text464c4ffd019e'),
@@ -428,26 +398,32 @@ function RoleRow({
     <AccessRow
       leading={<EntityAvatar icon={Shield} label={title} size="sm" />}
       title={title}
+      // One calm tag, no lock: a built-in role says so in words (its Hint
+      // explains why it cannot be edited); a custom role says Custom.
       badges={
         role.is_system ? (
           <Hint label={tI18nComplete.raw('textc333cb48148a')} side="top">
             <span className="inline-flex">
-              <Badge variant="muted" size="sm" className="gap-1 font-normal">
-                <Lock className="size-3" />
+              <Badge variant="outline" size="sm" className={ROLE_TAG}>
                 {tI18nComplete.raw('text1f43948106d1')}
               </Badge>
             </span>
           </Hint>
         ) : (
-          <Badge variant="outline" size="sm" className="font-normal">
+          <Badge variant="outline" size="sm" className={ROLE_TAG}>
             {tI18nComplete.raw('text494ca78f7374')}
           </Badge>
         )
       }
+      actions={
+        <Button variant="ghost" size="xs" className="text-muted-foreground gap-1.5" onClick={onView}>
+          <Eye className="size-3.5" />
+          {tI18nComplete.raw('text08138c207246')}
+        </Button>
+      }
       meta={
         <div className="space-y-0.5">
           <InlineMeta>
-            <span className="font-mono">{role.key}</span>
             <span>{role.resource_type === 'account' ? 'Account' : 'Project'}</span>
             <span>{capabilityLabel}</span>
             {usageLabel ? <span>{usageLabel}</span> : null}

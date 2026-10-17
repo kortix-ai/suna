@@ -53,10 +53,17 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'workers/account-deletion-worker.ts',
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
+  'job-queue': 'workers/job-queue-worker.ts',
+  'capture-index-reader': 'workers/capture-worker.ts',
+  'capture-maintenance': 'workers/capture-worker.ts',
+  'capture-events-reader': 'workers/capture-worker.ts',
+  'capture-health': 'workers/capture-health-worker.ts',
   'drive-conflict-scan': 'workers/drive-worker.ts',
   'volume-deletions': 'workers/drive-worker.ts',
   'drive-mount-revocations': 'workers/drive-worker.ts',
   'notification-digest': 'workers/notification-worker.ts',
+  'session-log-purge': 'workers/session-log-purge-worker.ts',
+  'session-log-backfill': 'workers/session-log-backfill-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -100,7 +107,12 @@ const STARTS: Record<string, string> = {
   startAccountDeletionSchedule: 'account-deletion',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
+  startCaptureWorkers: 'capture-index-reader',
+  startCaptureHealthWorker: 'capture-health',
+  startJobWorker: 'job-queue',
   startNotificationWorker: 'notification-digest',
+  startSessionLogPurgeWorker: 'session-log-purge',
+  startSessionLogBackfillWorker: 'session-log-backfill',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
@@ -183,7 +195,7 @@ describe('background jobs run as named workers', () => {
       .filter((call) => !(call in NOT_LOOPS))
       .filter((call) => {
         const from = new RegExp(
-          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{ ${call} \\} = await import\\('([^']+)'\\)`,
+          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{[^}]*\\b${call}\\b[^}]*\\} = await import\\('([^']+)'\\)`,
         ).exec(bootstrap);
         return !(from?.[1] ?? from?.[2])?.startsWith('./workers/');
       });

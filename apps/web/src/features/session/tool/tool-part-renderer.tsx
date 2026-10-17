@@ -19,6 +19,8 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
+import { type InlinePermissionReply, replyToInlinePermission } from '@/features/session/tool/inline-permission-reply';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { partError, partStreamingInput } from '@/features/session/tool/shared/infrastructure-parts';
 import {
@@ -28,13 +30,13 @@ import {
   getChildSessionId,
   shouldShowToolPart,
 } from '@/ui';
-import { toolCallBlock, toolKind } from '@kortix/sdk';
+import { sessionLogCallStatus, sessionLogOpenCall, toolKind, type ToolCallBlock } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
-  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onReply?: (requestId: string, reply: InlinePermissionReply) => Promise<void> | void;
 }
 
 function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineProps) {
@@ -50,10 +52,14 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   const label = PERMISSION_LABELS[permission.permission] || permission.permission;
 
   const handleReply = useCallback(
-    (reply: 'once' | 'always' | 'reject') => {
+    async (reply: InlinePermissionReply) => {
       if (replying) return;
       setReplying(true);
-      onReply?.(permission.id, reply);
+      // The card disappears once the runtime accepts; a refusal re-enables it.
+      const accepted = await replyToInlinePermission(onReply, permission.id, reply, (error) =>
+        errorToast(error instanceof Error ? error.message : String(error)),
+      );
+      if (!accepted) setReplying(false);
     },
     [replying, permission.id, onReply],
   );
@@ -69,7 +75,7 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
       <div className="flex items-center gap-1.5">
         <Button
           disabled={replying}
-          onClick={() => handleReply('reject')}
+          onClick={() => void handleReply('reject')}
           variant="muted"
           size="xs"
           className="hover:text-destructive hover:bg-destructive/10"
@@ -78,13 +84,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
         </Button>
         <Button
           disabled={replying}
-          onClick={() => handleReply('always')}
+          onClick={() => void handleReply('always')}
           variant="outline"
           size="xs"
         >
           {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}
         </Button>
-        <Button disabled={replying} onClick={() => handleReply('once')} variant="default" size="xs">
+        <Button disabled={replying} onClick={() => void handleReply('once')} variant="default" size="xs">
           {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}
         </Button>
       </div>
@@ -92,18 +98,16 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   );
 }
 
-/**
- * The v1 tool part the callers still hold. This is the one choke point that
- * turns it into a session-log tool call block (`toolCallBlock`); every renderer
- * below reads the block. The callers move to blocks with the transcript (P5.2).
- */
-type CallerPart = Parameters<typeof toolCallBlock>[0];
-
 interface ToolPartRendererProps {
-  part: CallerPart;
+  /**
+   * The session-log tool call. A caller that still holds a v1 part (a child
+   * session's rows) passes `toolCallBlock(part)`. A closure-rule block is read
+   * open (`sessionLogOpenCall`), so a dead call renders the same on v1 and v2.
+   */
+  call: ToolCallBlock;
   permission?: PermissionRequest;
   question?: QuestionRequest;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (requestId: string, reply: InlinePermissionReply) => Promise<void> | void;
   onQuestionReply?: (requestId: string, answers: string[][]) => void;
   onQuestionReject?: (requestId: string) => void;
   defaultOpen?: boolean;
@@ -111,7 +115,7 @@ interface ToolPartRendererProps {
 }
 
 function ToolPartRendererImpl({
-  part,
+  call: given,
   sessionId,
   permission,
   question,
@@ -122,9 +126,9 @@ function ToolPartRendererImpl({
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One block per part object (the SDK caches it), so the memos below and the
-  // renderers' own memos hold while the part is unchanged.
-  const call = toolCallBlock(part);
+  // One open block per call object (`sessionLogOpenCall` caches it), so the memos
+  // below and the renderers' own memos hold while the call is unchanged.
+  const call = sessionLogOpenCall(given);
   const toolDurationMs = useMemo(() => {
     const s = call.started_at ? Date.parse(call.started_at) : undefined;
     const e = call.ended_at ? Date.parse(call.ended_at) : undefined;
@@ -168,8 +172,11 @@ function ToolPartRendererImpl({
   const errorStr = partError(call);
   const childBearingTaskError =
     errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
+  // A failed codemode script keeps its partial output and the calls it made before
+  // the failure: its own row draws them, with the error.
+  const drawsOwnError = childBearingTaskError || call.name === 'codemode';
 
-  if (errorStr !== undefined && !childBearingTaskError) {
+  if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {
       const slashIdx = call.name.lastIndexOf('/');
       const s = slashIdx > 0 ? call.name.slice(0, slashIdx) : null;
@@ -211,7 +218,7 @@ function ToolPartRendererImpl({
     );
   }
 
-  const RegisteredComponent = ToolRegistry.get(call.name);
+  const RegisteredComponent = ToolRegistry.get(call.name, call.kind);
   const forceOpen = !!permission || !!question;
   const isLocked = !!permission || !!question;
 
@@ -226,7 +233,9 @@ function ToolPartRendererImpl({
   // the frozen-looking row under a status line that was still saying
   // "Making changes...".
   const isStalePending =
-    !turnLive && call.status === 'pending' && Object.keys(partStreamingInput(call)).length === 0;
+    sessionLogCallStatus(call, turnLive) === 'interrupted' &&
+    call.status === 'pending' &&
+    Object.keys(partStreamingInput(call)).length === 0;
 
   const isRunning = !isStalePending && (call.status === 'running' || call.status === 'pending');
 
@@ -292,7 +301,7 @@ function ToolPartRendererImpl({
  * computed the props — so without a boundary here, a fifty-turn transcript
  * re-parses every tool's output on every SSE frame.
  *
- * The default shallow compare is right: `part` objects are replaced, not
+ * The default shallow compare is right: `call` objects are replaced, not
  * mutated, when they change; `onPermissionReply` and `onQuestionReply` are
  * `useCallback`s; `permission` is either `undefined` or a store object.
  *

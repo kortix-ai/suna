@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { chalkColors, type ChalkColors } from './chalk-colors';
+import { AVATAR_FILLS, avatarFill, chalkColors, type ChalkColors } from './chalk-colors';
 
 const HSL_PATTERN = /^hsl\((\d+) (\d+)% (\d+)%\)$/;
 
@@ -76,5 +76,25 @@ describe('chalkColors', () => {
     const bg = parseHsl(colors.background);
     const fg = parseHsl(colors.foreground);
     expect(fg.light).toBeLessThan(bg.light);
+  });
+});
+
+describe('avatarFill', () => {
+  test('returns one of the eight fills, the same for the same seed', () => {
+    expect(AVATAR_FILLS).toContain(avatarFill('dana@example.com'));
+    expect(avatarFill('dana@example.com')).toBe(avatarFill('dana@example.com'));
+  });
+
+  test('ignores case and surrounding space, so web and mobile agree', () => {
+    expect(avatarFill(' Dana@Example.com ')).toBe(avatarFill('dana@example.com'));
+  });
+
+  test('spreads seeds over more than one fill', () => {
+    const fills = new Set(['a@x.dev', 'b@x.dev', 'c@x.dev', 'd@x.dev', 'e@x.dev', 'f@x.dev'].map(avatarFill));
+    expect(fills.size).toBeGreaterThan(2);
+  });
+
+  test('handles an empty seed', () => {
+    expect(AVATAR_FILLS).toContain(avatarFill(''));
   });
 });

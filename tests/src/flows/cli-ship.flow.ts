@@ -37,6 +37,8 @@
  * are green-or-skipped locally and exercise the real path on dev-api.
  */
 import { writeFileSync } from 'node:fs';
+import { Client as PgClient } from 'pg';
+import { serveFixtureRepoLocally } from '../fixtures/local-git';
 import { join } from 'node:path';
 
 import { flow } from '../core/flow';
@@ -70,6 +72,48 @@ async function initProject(sb: CliSandbox): Promise<void> {
   if (r.exitCode !== 0) throw new Error(`init failed in ship fixture: ${r.all}`);
   sb.enter(projectName);
 }
+
+flow('SHIP-DEFAULT', {
+  domain: 'cli',
+  timeoutMs: 300_000,
+  requires: ['database'],
+  routes: ['POST /v1/accounts/tokens', 'GET /v1/accounts/me', 'GET /v1/projects/:projectId',
+    'POST /v1/connectors/projects/:projectId/connectors/sync'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project({ managedGit: true });
+  const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('ship-default') });
+  const sb = new CliSandbox('ship-default');
+  const db = new PgClient({ connectionString: ctx.env.databaseUrl ?? undefined });
+  let gitServer: Awaited<ReturnType<typeof serveFixtureRepoLocally>> = null;
+  try {
+    await db.connect();
+    gitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'SHIP-DEFAULT');
+    await initProject(sb);
+    const branch = Bun.spawnSync(['git', 'checkout', '-b', 'default-proof'], { cwd: sb.cwd });
+    check('new local branch avoids overwriting seeded remote main', branch.exitCode === 0, 0, branch.exitCode);
+    checkExit('login without linking', await sb.login(pat, { noProject: true, account: ctx.P.accountId }), 0);
+    checkExit('save default project', await sb.run(['projects', 'use', project.id]), 0);
+    check('folder remains unlinked', !sb.exists('.kortix/link.json'), true, !sb.exists('.kortix/link.json'));
+    await ctx.step('unlinked ship uses saved default and pushes twice without creating a project', async () => {
+      for (const content of ['first ship', 'second ship']) {
+        sb.writeFile('DEFAULT-PROOF.md', content);
+        const result = await sb.run(['ship', '-y', '--no-env', '--no-connect'], { timeoutMs: 120_000 });
+        checkExit(content, result, 0);
+        check('reports selected project', result.stdout.includes(project.id), project.id, result.stdout);
+      }
+      const clone = await sb.run(['projects', 'clone', project.id, 'readback']);
+      checkExit('clone pushed default project for read-back', clone, 0);
+      const checkout = Bun.spawnSync(['git', 'checkout', 'default-proof'], { cwd: join(sb.cwd, 'readback') });
+      check('checkout pushed branch', checkout.exitCode === 0, 0, checkout.exitCode);
+      check('second push persisted', sb.readFile('readback/DEFAULT-PROOF.md') === 'second ship', 'second ship', sb.readFile('readback/DEFAULT-PROOF.md'));
+    });
+  } finally {
+    const server = gitServer;
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    await db.end();
+    sb.dispose();
+  }
+});
 
 // ─────────────────────── SHIP-7 — dry-run (runnable now) ─────────────────────
 
@@ -195,6 +239,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
+    tags: ['deployed'],
     requires: ['managedGitPush'],
     // Each `ship` is allotted its own 120s CLI budget below, and a real ship
     // provisions a GitHub repo, commits, and pushes through the git proxy to a

@@ -86,6 +86,15 @@ The sandbox is ready when `/start` answers `stage: 'ready'`. The hook runs no se
 
 Saved history is the transcript copy the API writes at each turn end. The first window holds the newest 40 messages, at most 1,000,000 characters. `loadOlder()` reads older windows, also while the sandbox is off. Live messages then reconcile into it by message id.
 
+An open reads the first window once. The session-open snapshot (`GET …/snapshot`) carries it, and `useSession` waits up to 2 s for a snapshot in flight. A slower or failed snapshot leaves the read to `GET …/transcript?shape=sync&history=true`. `useSession` passes that answer to its `useSessionSync` as `mirror`. If you mount a second `useSessionSync` for the root conversation next to `useSession`, pass `mirror: null` so it does not read the window a second time. Omit `mirror` in two cases, so that the hook makes the one read itself:
+
+- Next to `useSession({ chatEngine: false })`. That `useSession` makes no saved-history read.
+- On a `savedChild` hook. It reads the sub-agent's own window, which the open does not read.
+
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws.
+
+The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the snapshot asks for no window (`?transcript=0`), and the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
+
 To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it.
 
 ### Returns
@@ -106,6 +115,8 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `status` | `SessionStatus` | The runtime status of the session. |
 | `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
 | `isBusy` | `boolean` | `working.state === 'working'`. |
+| `canStop` | `boolean` | Whether this viewer may stop the running turn. `false` only when the server's `/turn` answer says `can_stop: false`: in a shared session only the member who started the turn, the session owner or a project manager may stop it. Show no Stop then. |
+| `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
 | `isSending` | `boolean` | A `send` request is in flight. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |
 | `questions`, `permissions` | arrays | Open agent questions and tool-approval requests. A permission here is one tool approval, not an access-control permission. |
@@ -141,7 +152,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | --- | --- | --- |
 | `enabled` | `true` | `false` holds the whole hook: no `/start`, no stream. Use it until a precondition passes. |
 | `waitMs` | `15000` | The long-poll budget sent to `/start`. The server clamps it. |
-| `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, and questions and permissions stay live. |
+| `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, questions and permissions stay live, and the session log is still negotiated (`useSessionLogThread` reads it). |
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. |
 | `replayStartStash` | `true` | Sends a first prompt that a "new session" screen saved, once the session is ready and empty. |
 | `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |
@@ -208,6 +219,18 @@ Pass the id of the user message that started the turn. `hasError` is `true` when
 
 `useSessionTurnOutcome` makes no request. It reads the cache that `useSessionWorking` keeps fresh. Map each `kind` to your own copy. `null` means show what the transcript shows. `turnEndCause(outcome, messageId)` returns the raw recorded cause, or `null`.
 
+### Turn-end notifications
+
+`useSession` calls the `onNotify` you pass to `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Show it only when the person is not looking at that session.
+
+While the view is mounted, its event stream raises these. When the view unmounts with a turn still running, for example because the person opened another page, `useSession` hands the turn to a watch:
+
+- The watch listens for `kortix.control.turn` frames on the session's control stream (`GET …/events?channels=control`), so a hidden window that throttles its timers still hears the end. While that stream is down, it reads `GET …/turn` every 5 s, every 15 s after 5 minutes. It stops after 12 hours.
+- When no turn is open, it raises `task-complete`, or `session-error` with the cause the API recorded. A stop that someone asked for raises nothing.
+- These two events also carry `projectId`, and `task-complete` carries `watchedSinceMs`: when the watch started, in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that instant.
+- Mounting a view of the session again ends the watch. The view's stream announces from then on, so one end is never announced twice.
+- A host without `onNotify` gets no watch and no extra `/turn` reads.
+
 ## Build a chat UI
 
 `messages` are runtime messages. The chat kit turns each one into typed parts you can render with no knowledge of the harness.
@@ -256,7 +279,7 @@ More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#cust
 
 ### Read the session log
 
-`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. Pass the whole `useSession` result. Both start no request: `useSession` loads the log.
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log. `useSessionLog` changes with every message; to read session fields (`restore_grade`, `grade_counts`, `harness`, `ext`) use `useSessionLogRecord(session)`: the session record without threads, null while the session reads v1, unchanged through message puts and deltas, so its consumer re-renders only on a page or a session patch.
 
 ```tsx
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
@@ -269,19 +292,22 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 }
 ```
 
+On v2, `useSessionLogThread` adds the v1 rows the log does not hold yet, converted with `fromV1` and placed by time as `useSessionMessages` places them (an older page `loadOlder` read goes before the thread's messages, an optimistic send after them), until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
+
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
 1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
 2. The project flag `session_log` is `true`.
 3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
-4. The session's thread was converted from v1 (OpenCode). A pi session reads v1.
+
+Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
 
 An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
 
 - The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
-- The API does not relay `schema` yet; that is the remaining step. Until it does, the stream keeps the v1 frames, and a turn in progress streams through them as before.
+- The API relays `schema=v2`: a runtime that lists `session.log.v2` streams its own `log.*` frames, and the API converts the v1 frames of an older runtime.
 
-A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. A session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. In a thread converted from v1 (OpenCode) the rows are exact. A pi thread's rows carry what its blocks map, with a tool call's `details` as `state.metadata`; render its blocks (`sessionLogTurns`) for the full record. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 
 ## Hooks
 
@@ -300,7 +326,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |
 | `useProjectSecrets(projectId)` | Secrets, with `upsert`, `remove`, `setPersonal` and `removePersonal`. Values are never returned. |
 | `useAccountSecretResources(accountId, projectId?)`, `useSessionProviderSecretPools(projectId, sessionId)` | Account-level secret resources, and the provider-key pools one session can use. |
-| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove` and `fire`. |
+| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireProjectTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `ProjectTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. A dry run refreshes nothing. |
+| `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)`, `useProjectTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | One trigger's runs, and every run of the project, as an infinite query paged by `next_cursor`. Read `data.pages[].runs`, and call `fetchNextPage()` while `hasNextPage` is true. No polling by default; pass `refetchInterval` (ms) to poll while a run is queued or running. `limit` (1 to 100, server default 25) sets the runs per page of `useTriggerRuns`; a set limit is its own cache entry. |
 | `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useProjectReminders(projectId)`, `useSessionReminders(projectId, sessionId)` | Reminders, with `update` and `remove`. The project hook adds `updateMany` and `removeMany`. |
 | `useChangeRequests(projectId, status?)` | Change requests, with `open`, `merge`, `close` and `requestChanges`. |
@@ -326,7 +353,7 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 
 Rules that apply to several hooks:
 
-- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `project.gitops.push`, never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
 - The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/work/sessions#notifications).
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
 
@@ -385,6 +412,7 @@ export function adoptDeviceCaches(queryClient: QueryClient, userId: string) {
 - On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
 - The saved-copy store keeps only copies the server sent at a turn end, never the live transcript. A stopped turn cannot come back as a running one.
 - A full, corrupt or missing store never throws. The app then opens from the server, as without the store.
+- `isPersistableQueryKey` never keeps a permission probe (`useCan`). When a probe's answer picks a query key, read the entry the restored cache holds until the probe answers. The web Sessions page does this for its manager-only `scope: 'project'` list.
 
 ## Sign-out and identity changes
 

@@ -70,6 +70,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { isRecord } from '@kortix/shared/guards';
+import { jsonbSafeValue } from './jsonb-safe';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -252,38 +253,6 @@ function stringBudget(total: number) {
       return kept;
     },
   };
-}
-
-/**
- * Postgres jsonb cannot store a string whose text carries U+0000 or an
- * unpaired surrogate: the INSERT that carries one fails with
- * `unsupported Unicode escape sequence — \u0000 cannot be converted to text.`
- * (SQLSTATE 22P05), and the mirror write is deterministic on its content — one
- * such message retried the same doomed transaction at every turn end (568 warn
- * lines in one prod hour, KRTX-1701).
- *
- * The projection therefore makes every string it emits storable: U+0000 and a
- * lone surrogate become U+FFFD. The test is unicode-aware (`/u`), so an astral
- * character's surrogate halves never match — emoji and every BMP char pass
- * through untouched. Well-formed text pays only the scan.
- */
-const JSONB_UNSAFE = /[\0\uD800-\uDFFF]/u;
-
-const jsonbSafeText = (text: string): string =>
-  JSONB_UNSAFE.test(text) ? text.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD') : text;
-
-/** Pure: every string in a JSON value, keys included, is storable as jsonb. */
-function jsonbSafeValue(value: Record<string, unknown>): Record<string, unknown>;
-function jsonbSafeValue(value: Array<Record<string, unknown>>): Array<Record<string, unknown>>;
-function jsonbSafeValue(value: unknown): unknown {
-  if (typeof value === 'string') return jsonbSafeText(value);
-  if (Array.isArray(value)) return value.map(jsonbSafeValue);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) out[jsonbSafeText(key)] = jsonbSafeValue(item);
-    return out;
-  }
-  return value;
 }
 
 /**
@@ -619,7 +588,7 @@ export function childSessionReferences(
 }
 
 /**
- * Pure: which sub-agent transcripts one capture reads, at most `limit`.
+ * Pure: which sub-agent transcripts a capture reads.
  *
  * A sub-agent whose dispatching call ended, and whose saved transcript has no
  * open message, is final: it is never read again. One that is new, still
@@ -630,15 +599,62 @@ export function childSessionsToCapture(input: {
   references: ReadonlyArray<ChildSessionReference>;
   /** Sub-agent session id -> every stored message of it has ended. */
   stored: ReadonlyMap<string, { settled: boolean }>;
-  limit: number;
 }): string[] {
   return input.references
     .filter((reference) => {
       const saved = input.stored.get(reference.id);
       return !saved || !reference.settled || !saved.settled;
     })
-    .map((reference) => reference.id)
-    .slice(0, Math.max(0, input.limit));
+    .map((reference) => reference.id);
+}
+
+/** Only an OpenCode session id may reach a URL or a row. */
+const CHILD_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
+
+/**
+ * The sub-agent transcripts one capture saves, read through `read`, and whether
+ * another capture saves more.
+ *
+ * Breadth-first from `references`, following each read's own sub-agents. At most
+ * `cap` reads that return rows: a failed read and an empty one take no slot (the
+ * capture's deadline bounds them), so neither starves the sub-agents after it.
+ *
+ * `more`: sub-agents are left unread AND this capture read rows of one never saved
+ * before. A sub-agent that reads empty, fails, or was saved already (an unsettled
+ * one read again) is no progress, so a run of captures ends.
+ */
+export async function readChildTranscripts(input: {
+  references: ReadonlyArray<ChildSessionReference>;
+  stored: ReadonlyMap<string, { settled: boolean }>;
+  cap: number;
+  /** The root: never read as a sub-agent. */
+  root?: string;
+  read: (id: string) => Promise<{ rows: unknown[]; complete: boolean }>;
+  onError?: (id: string, error: unknown) => void;
+}): Promise<{
+  children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }>;
+  more: boolean;
+}> {
+  const children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }> = [];
+  const seen = new Set(input.root ? [input.root] : []);
+  const queue = childSessionsToCapture(input);
+  let savedNew = false;
+  while (queue.length > 0 && children.length < input.cap) {
+    const child = queue.shift()!;
+    if (seen.has(child) || !CHILD_SESSION_ID.test(child)) continue;
+    seen.add(child);
+    try {
+      const walk = await input.read(child);
+      queue.push(...childSessionsToCapture({ references: childSessionReferences(walk.rows as Array<{ parts: unknown }>), stored: input.stored }));
+      if (mirrorRowsFromOpencodePayload(walk.rows).length === 0) continue;
+      children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
+      savedNew ||= walk.complete && !input.stored.has(child);
+    } catch (error) {
+      input.onError?.(child, error);
+    }
+  }
+  const unread = queue.some((child) => !seen.has(child) && CHILD_SESSION_ID.test(child));
+  return { children, more: unread && savedNew };
 }
 
 /**

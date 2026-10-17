@@ -22,7 +22,7 @@ import {
   buildSecretCapabilities,
   serializeSecretCapabilities,
 } from './secret-capabilities';
-import { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+import { decryptNamedProjectSecret, encryptProjectSecret } from './secrets/envelope';
 import { projectSecretsRevision, resolveGrantedSecretSelection } from './secrets/grant-policy';
 import { mintSessionSecretHandle } from './secrets/handles';
 
@@ -218,7 +218,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
     if (row.scope === 'connector') continue;
     const canonical = row.identifier === row.name;
     if (row.name in env && winnerIsCanonical.has(row.name) && !canonical) continue;
-    env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    env[row.name] = decryptNamedProjectSecret(projectId, row.valueEnc, `Project secret ${row.identifier}`);
     if (canonical) winnerIsCanonical.add(row.name);
   }
   return env;
@@ -315,7 +315,14 @@ export async function listResolvedProjectSecrets(
       secretId: policyRow.secretId,
       identifier,
       key: chosen.name,
-      value: decryptProjectSecret(projectId, chosen.valueEnc),
+      // A value this server cannot decrypt fails the read with an error naming
+      // the identifier and whose value it is, so session start says which
+      // value to enter again.
+      value: decryptNamedProjectSecret(
+        projectId,
+        chosen.valueEnc,
+        chosen === slot.personal ? `Your own value of project secret ${identifier}` : `Project secret ${identifier}`,
+      ),
       strategy: policyRow.strategy ?? undefined,
       consumer: policyRow.consumer ?? undefined,
       egressPolicy: policyRow.egressPolicy ?? null,

@@ -68,6 +68,29 @@ test('listProjectDirectory at the root sends no path', async () => {
   expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1$/);
 });
 
+// A folder over 500 entries is read in pages: `limit` and `cursor` ask for
+// one, and `next_cursor` names the next.
+test('listProjectDirectory sends cursor and limit when given, and returns next_cursor', async () => {
+  nextResponse = {
+    status: 200,
+    body: { entries: [{ path: 'a/f0500.txt', type: 'file', size: 4 }], truncated: true, next_cursor: 'c2' },
+  };
+  const result = await listProjectDirectory('P1', { path: 'a', cursor: 'c1', limit: 500 });
+  expect(last().url).toMatch(/\/projects\/P1\/files\?path=a&depth=1&cursor=c1&limit=500$/);
+  expect(result).toEqual({
+    entries: [{ path: 'a/f0500.txt', type: 'file', size: 4 }],
+    truncated: true,
+    next_cursor: 'c2',
+  });
+});
+
+test('listProjectDirectory with only a limit asks for the first page', async () => {
+  nextResponse = { status: 200, body: { entries: [], truncated: false, next_cursor: null } };
+  const result = await listProjectDirectory('P1', { limit: 500 });
+  expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1&limit=500$/);
+  expect(result.next_cursor).toBeNull();
+});
+
 test('readProjectFile GETs /projects/:id/files/content with path/ref query', async () => {
   nextResponse = { status: 200, body: { path: 'a.md', ref: 'main', content: 'hi' } };
   const result = await readProjectFile('P1', 'a.md', 'main');

@@ -109,7 +109,7 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   },
   provisioning: {
     title: 'Provisioning your App',
-    message: 'Kortix is creating the serverless runtime.',
+    message: 'Kortix is creating the machine for this App.',
     code: 'app_deployment_provisioning',
     progress: true,
   },
@@ -127,7 +127,7 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   },
   starting: {
     title: 'Starting your App',
-    message: 'Kortix is resuming the serverless runtime. This page will continue automatically.',
+    message: 'The machine was asleep and wakes on the first visit. This page continues on its own.',
     code: 'app_starting',
     progress: true,
   },

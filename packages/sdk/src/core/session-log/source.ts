@@ -13,8 +13,9 @@
  * THE PAGE LOADER reads `GET /v1/projects/:p/sessions/:s/log?thread=&before_seq=&limit=`
  * (`@kortix/api-contract/session-log` `SessionLogPageSchema`). `SessionLogPage` is that
  * schema's type, written out because this package has no zod; `contract-drift.test.ts` holds
- * the two equal at typecheck. Internal: not exported from the package. A 404 (the session
- * has no stored log, or no such thread) reads as no page, and the session stays on v1.
+ * the two equal at typecheck. `SessionLogPage` and `SessionLogPageQuery` are public (the types of
+ * `getSessionLogPage`); the loader is internal. A 404 (the session has no stored log, or no such
+ * thread) reads as no page, and the session stays on v1.
  */
 import { backendApi } from '../http/api-client';
 import { isSessionLogPage } from './guard';

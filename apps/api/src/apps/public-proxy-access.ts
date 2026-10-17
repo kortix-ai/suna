@@ -54,8 +54,17 @@ async function accessTokenAuthorizesRequest(
   return Boolean(token!.userId && await verifyUserAccess(app, token!.userId));
 }
 
-function safeAppReturnTo(value: string): string {
-  return value.startsWith('/') && !value.startsWith('//') ? value : '/';
+/**
+ * A same-origin path, or `/`. Browsers read `\` as `/` and drop tab, CR and LF,
+ * so `/\evil.example` and `/\t/evil.example` leave the origin: both are refused.
+ * Same rule as `safeReturnTo` in packages/sdk/src/node/auth.ts.
+ */
+export function safeAppReturnTo(value: string): string {
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/';
+  const base = 'https://return-to.invalid';
+  const resolved = URL.parse(value, base);
+  return resolved?.origin === base ? `${resolved.pathname}${resolved.search}${resolved.hash}` : '/';
 }
 
 function appAccessResponse(
@@ -425,11 +434,14 @@ export function appNotLinkedResponse(name: string): Response {
  * viewer, from the project issuer, for `audience`: this App itself (the
  * default) or an App it uses (`app_links`). Any other audience answers 403
  * `app_not_linked`: code in an App gets no token for an App it has nothing to
- * do with. A used App also answers 403 `app_not_linked` when the viewer may
- * not open it themselves (its own access policy, as for this App), so a link
- * never lends a viewer an App they could not reach directly. The App's client
- * sends it (`kortixToken` in the App's client code), and the audience App verifies
- * it with its `auth` values. Same viewer rules as `/_kortix/viewer`.
+ * do with. Everyone this App admits gets a token for every App it uses, whether
+ * or not they may open the used App themselves: a link is a project admin
+ * delegating the used App to this App's viewers. That keeps a backend App
+ * private (unlisted, unopenable) while the Apps that use it work for their
+ * readers. The token carries `via_app_id` = this App, so the used App can serve
+ * each using App's readers only what that App is for. The App's client sends it
+ * (`kortixToken` in the App's client code), and the audience App verifies it
+ * with its `auth` values. Same viewer rules as `/_kortix/viewer`.
  */
 export async function appTokenResponse(
   request: Request,
@@ -472,13 +484,12 @@ export async function appTokenResponse(
       { status: 401, headers: noStore },
     );
   }
-  // The same answer as an unlinked audience: no oracle for an App the viewer cannot reach.
-  if (linked && !(await appAccessibleToUser(linked, viewer.userId))) return appNotLinkedResponse(audience);
   const { mintAppToken } = await import('./tokens');
   const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
   const minted = await mintAppToken(
     { appId: audienceAppId, projectId: app.projectId, accountId: app.accountId },
     { userId: viewer.userId, ...identity },
+    linked ? app.appId : undefined,
   );
   const renewed = renewedAppAccessCookie(request, url, app, viewer.userId);
   return Response.json(

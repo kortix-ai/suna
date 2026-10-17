@@ -25,11 +25,10 @@
 # (prod) resources, the staging PassRole pair, and the GATEWAY task/exec roles
 # (the prod gateway task-def that night had to be registered manually by a
 # human). This file is the system-of-record for the CORRECTED policy:
-#   - ECS resources region-wildcarded (dev/staging = us-west-2, prod = eu-west-2)
+#   - ECS resources region-wildcarded (dev = us-east-2, staging/prod = eu-west-2)
 #   - PassRole for the task+exec roles of all production release services:
-#     kortix-{dev,staging,prod} (api), kortix-{dev,staging,prod}-gateway,
-#     and kortix-{dev,staging,prod}-web
-#     plus the pre-cutover US East 2 API and gateway shadow services
+#     kortix-{dev-use2,staging-euw2,prod} (api), kortix-{…}-gateway,
+#     and kortix-{…}-web
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
 #   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
 #     wires each blob key as a container secret)
@@ -86,7 +85,7 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Sid    = "UpdateKortixServices"
         Effect = "Allow"
         Action = ["ecs:UpdateService"]
-        # Region-wildcarded: dev/staging ECS run in us-west-2, prod in eu-west-2.
+        # Region-wildcarded: dev ECS runs in us-east-2, staging and prod in eu-west-2.
         # cluster name == service name for every kortix ECS service.
         Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
       },
@@ -125,8 +124,9 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Resource = "*"
       },
       {
-        # The US shadow workflow resolves each ALB DNS name before updating its
-        # Cloudflare CNAME. DescribeLoadBalancers supports no resource ARN.
+        # Deploy Dev and Deploy Staging resolve the web ALB DNS name before
+        # updating its Cloudflare CNAME. DescribeLoadBalancers supports no
+        # resource ARN.
         Sid      = "DescribeLoadBalancers"
         Effect   = "Allow"
         Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
@@ -141,24 +141,12 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         # services (kortix-<env>-gateway) — omitting the gateway pair is exactly
         # what broke the v0.10.x prod gateway roll.
         Resource = [
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-web-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-dev-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-task",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-web-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-staging-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-gateway-task",
@@ -171,10 +159,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]
@@ -209,7 +193,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:PutSecretValue",
         ]
         Resource = [
-          "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*",
           "arn:aws:secretsmanager:eu-west-2:${local.account_id}:secret:kortix-staging-env-*",
         ]
       },
@@ -272,7 +255,7 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_prod" {
         Sid    = "ManageProdServices"
         Effect = "Allow"
         Action = ["ecs:UpdateService", "ecs:DescribeServices"]
-        # prod = eu-west-2; kortix-prod-use2* are the us-east-2 shadow services.
+        # prod runs in eu-west-2.
         Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-prod*/kortix-prod*"]
       },
       {
@@ -312,10 +295,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_prod" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]

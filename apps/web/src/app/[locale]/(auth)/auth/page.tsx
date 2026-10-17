@@ -113,6 +113,23 @@ function recoverStaleBundle(email: string): boolean {
   return true;
 }
 
+/**
+ * Whether a session is `email`'s SAML identity. Mirrors the API's
+ * `nonSsoIdentitySql` (apps/api/src/shared/auth-identity.ts): `is_sso_user`, an
+ * explicit `sso_provider_id`/`provider_id`, or an `sso:<id>` provider tag.
+ */
+function isSsoIdentityOf(
+  user: { email?: string | null; is_sso_user?: boolean; app_metadata?: Record<string, unknown> },
+  email: string,
+): boolean {
+  if ((user.email ?? '').trim().toLowerCase() !== email.trim().toLowerCase()) return false;
+  if (user.is_sso_user) return true;
+  const meta = user.app_metadata ?? {};
+  if (meta.sso_provider_id || meta.provider_id) return true;
+  const tags = [meta.provider, ...(Array.isArray(meta.providers) ? meta.providers : [])];
+  return tags.some((tag) => typeof tag === 'string' && tag.startsWith('sso:'));
+}
+
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
 function PasswordInput({
@@ -537,29 +554,19 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // Magic link is the default path: Continue emails a link and lands the
-      // user on the link step (the link signs in existing accounts and
-      // registers new ones — no mode needed). One exception: an EXISTING
-      // account opens the password form directly — the link stays one
-      // explicit choice away ("Email me a link instead") and no auth email is
-      // sent until the customer asks for it. (Whether the account's password
-      // is one the visitor still knows is not observable server-side — GoTrue
-      // stores a random hash for passwordless users too — so the existence
-      // check is the signal we act on, and the password screen itself carries
-      // both escape hatches: "Forgot your password?" and the link.) New
-      // accounts and a degraded existence check keep the magic-link default
-      // (the link action re-checks closed/SSO server-side). Password-only
-      // deployments go through the existence check below, so the password
-      // step opens already knowing whether this is a sign-in or a
-      // registration.
-      if (magicLinkEnabled && passwordEnabled) {
-        const { mode: resolved } = await resolveAuthMode(trimmed);
-        if (resolved === 'signin') {
-          setCredMode('signin');
-          setStep('credentials');
-          return;
-        }
-      }
+      // The email link is the default path: Continue emails a link and lands
+      // the user on the link step — the link signs in existing accounts and
+      // registers new ones, so no password is needed anywhere on the default
+      // path. That includes accounts created passwordless: GoTrue stores a
+      // random hash for those too (supabase/gotrue discussion #5741), so
+      // "does the visitor still know a password for this address" is not
+      // observable server-side, and a password-first default dead-ends a
+      // passwordless account on a form no password can pass. The password
+      // form stays one explicit choice away ("Use a password instead" on the
+      // link step), and the link action re-checks closed signups and SSO
+      // server-side. Password-only deployments go through the existence check
+      // below, so the password step opens already knowing whether this is a
+      // sign-in or a registration.
       if (magicLinkEnabled) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
@@ -741,6 +748,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <Button
             type="button"
@@ -801,6 +809,7 @@ function AuthCardForm({
     return (
       <EmailLinkStep
         sentEmail={sentEmail}
+        errorMessage={errorMessage}
         info={info}
         resendIn={resendIn}
         pending={pending}
@@ -833,6 +842,7 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
+          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">
@@ -1056,7 +1066,15 @@ function AuthContent() {
   const sessionExpired = isSessionExpired(session);
 
   const [forceForm, setForceForm] = useState(false);
-  const trustedUser = !!user && !sessionExpired && !forceForm;
+  // The app asked for SSO (`sso=1`), usually after the API refused its session
+  // with `sso_required` (KRTX-1716). Any session here other than this person's
+  // SSO identity is that refused one: handing it back looped the app. It is
+  // signed out on this browser, and SSO starts once that has finished — a
+  // sign-out also clears the PKCE verifier SSO stores.
+  const refusedForMobileSso = !!mobileSsoEmail && !!user && !isSsoIdentityOf(user, mobileSsoEmail);
+  const [mobileSsoCleared, setMobileSsoCleared] = useState(false);
+  const hasClearedForMobileSso = useRef(false);
+  const trustedUser = !!user && !sessionExpired && !forceForm && !refusedForMobileSso;
 
   // A failed sign-out says so, ONCE, on the document it lands on. The
   // sign-out ends on a document load to `/auth`, so `runSignOut` cannot raise
@@ -1091,6 +1109,13 @@ function AuthContent() {
       return;
     }
 
+    if (refusedForMobileSso) {
+      if (hasClearedForMobileSso.current) return;
+      hasClearedForMobileSso.current = true;
+      void supabase.auth.signOut({ scope: 'local' }).finally(() => setMobileSsoCleared(true));
+      return;
+    }
+
     if (!trustedUser) return;
 
     if (mobileCallbackState) {
@@ -1117,6 +1142,7 @@ function AuthContent() {
   }, [
     isLoading,
     mobileCallbackState,
+    refusedForMobileSso,
     returnUrl,
     router,
     session,
@@ -1165,7 +1191,9 @@ function AuthContent() {
         mobileCallbackState={mobileCallbackState}
         // Wait for the session check: an existing session goes to the app
         // through the handoff effect above, not through a fresh SSO round trip.
-        mobileSsoEmail={isLoading ? null : mobileSsoEmail}
+        mobileSsoEmail={
+          isLoading || (refusedForMobileSso && !mobileSsoCleared) ? null : mobileSsoEmail
+        }
       />
     </AuthFrame>
   );

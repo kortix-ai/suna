@@ -1,10 +1,10 @@
 # ── dev-web-us-east-2 — dev's ECS web service in us-east-2 ──────────────────
 #
-# Copy of ../dev-web in us-east-2, next to ../dev-us-east-2 and the dev
-# database. It reads that root's VPC (kortix-dev-use2-vpc) and the secret
-# kortix-dev-use2-web-env in us-east-2. Its origin hostname is
-# dev-use2.kortix.com. dev.kortix.com points at ../dev-web until the
-# switch-over in ../dev-us-east-2/README.md.
+# Runs next to ../dev-us-east-2 and the dev database. It reads that root's VPC
+# (kortix-dev-use2-vpc) and the secret kortix-dev-use2-web-env in us-east-2.
+# Its origin hostname is dev-use2.kortix.com. dev.kortix.com is a CNAME that
+# Deploy Dev's publish-web-ecs-dns job points at this root's ALB
+# (infra/scripts/sync-web-dns.mjs).
 
 terraform {
   required_version = ">= 1.5"
@@ -83,7 +83,7 @@ data "aws_wafv2_web_acl" "regional" {
 }
 
 # *.kortix.com covers both dev.kortix.com and dev-use2.kortix.com, so the same
-# certificate serves before and after the switch-over. Its validation record is
+# certificate serves both hostnames. Its validation record is
 # already in the zone (same reason as ../dev-us-east-2's module.certificate).
 module "certificate" {
   source                    = "../../modules/acm-cloudflare"

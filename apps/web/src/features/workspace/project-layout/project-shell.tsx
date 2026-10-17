@@ -42,7 +42,13 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
+import {
+  contract,
+  qk,
+  useFeatureFlag,
+  useGatewayCatalogSync,
+  useSessionsNeedingInput,
+} from '@kortix/sdk/react';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
@@ -91,6 +97,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // Fill every Customize tab's cache on the first idle slot, so opening
   // Customize renders from memory instead of waiting on the API.
   useCustomizePrefetch(projectId);
+  // The one 30 s poll of GET needs-input for this project (KRTX-1739). The
+  // sidebar and the Sessions page read its cache (`useSessionNeedsYouCounts`):
+  // a poll in each would read up to twice per 30 s.
+  useSessionsNeedingInput(projectId);
 
   // Presence: this shell is mounted for EVERY /projects/[id] route and survives
   // in-project navigation, so mounting the warm hook here means "one ensure

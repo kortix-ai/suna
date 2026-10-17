@@ -1,6 +1,6 @@
 # prod environment — `api.kortix.com` on ECS Fargate (autoscaled, HA)
 
-The **same modules as dev** (`../dev`), with prod-grade numbers. Bringing prod
+The **same modules as dev** (`../dev-us-east-2`), with prod-grade numbers. Bringing prod
 up is the same workflow as dev — only the variables differ.
 
 | Setting | dev | prod |

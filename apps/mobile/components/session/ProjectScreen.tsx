@@ -89,17 +89,14 @@ import { haptics } from '@/lib/haptics';
 import {
   useAccounts,
   useProject,
+  useProjectSession,
   useProjectSessions,
 } from '@/lib/projects/hooks';
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
-import { useReviewItems } from '@/lib/review/use-review';
+import { useReviewNeedsYou } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import {
-  countReviewItemsBySegment,
-  runtimeSessionsOf,
-  sessionParentId,
-} from '@kortix/sdk';
-import { KortixProjectProvider, useNotificationInbox } from '@kortix/sdk/react';
+import { runtimeSessionsOf, sessionParentId } from '@kortix/sdk';
+import { KortixProjectProvider, useNotificationInbox, useSessionsNeedingInput } from '@kortix/sdk/react';
 import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
@@ -259,14 +256,19 @@ export function ProjectScreen() {
   // Review items that wait for the user. The project sheet that used to show
   // this as its Review row's badge is deleted (COR-123/COR-160 Task 3); the
   // drawer's Review row carries the same count now (Task 4). Open change
-  // requests are among them (the API adapts them into the list).
-  const reviewItems = useReviewItems(projectId ?? null, { poll: isFocused });
-  const reviewNeedsYouCount = useMemo(
-    () => countReviewItemsBySegment(reviewItems.data ?? []).needs_you,
-    [reviewItems.data]
+  // requests are among them (the API adapts them into the list). The root
+  // polls the counts only (`GET /review/summary`); the items behind them load
+  // only when the counts change (KRTX-2316).
+  const reviewNeedsYou = useReviewNeedsYou(projectId ?? null, { poll: isFocused });
+  const reviewNeedsYouCount = reviewNeedsYou.total;
+  // The same items per originating session, plus the sessions whose agent
+  // waits on a question (GET needs-input, polled every 30 s while this screen
+  // is focused; KRTX-1739): the drawer's Needs you group.
+  const needsInput = useSessionsNeedingInput(projectId ?? '', { enabled: isFocused });
+  const needsYouSessions = useMemo(
+    () => needsYouBySession(reviewNeedsYou.items, needsInput.data),
+    [reviewNeedsYou.items, needsInput.data]
   );
-  // The same items per originating session: the drawer's Needs you group.
-  const needsYouSessions = useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
 
   // The caller's notifications across every project (KRTX-1742): the drawer's
   // Notifications count. The Notifications page reads the same query (same
@@ -289,22 +291,32 @@ export function ProjectScreen() {
 
   // The thread shows a sub-session of that row, not its root: the header
   // reads the sub-session's title and the title tap (rename of the project
-  // session) is off.
+  // session) is off. A pinned row decides by its pin: the by-id row is read
+  // at connect, so its `runtime_sessions` snapshot misses a sub-agent started
+  // later (KRTX-2316), and that thread then reads its runtime title. A row
+  // with no pin yet decides by the snapshot.
+  const activeRootRuntimeId = activeProjectSession
+    ? (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+    : null;
   const activeSubsession = useMemo(
     () =>
-      activeProjectSession &&
-      activeSessionId &&
-      activeSessionId !== (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+      activeProjectSession && activeSessionId && activeSessionId !== activeRootRuntimeId
         ? (runtimeSessionsOf(activeProjectSession).find((item) => item.id === activeSessionId) ?? null)
         : null,
-    [activeProjectSession, activeSessionId]
+    [activeProjectSession, activeSessionId, activeRootRuntimeId]
   );
+  const showsSubsession =
+    !!activeSubsession || (!!activeRootRuntimeId && !!activeSessionId && activeSessionId !== activeRootRuntimeId);
 
+  // The open session's parent: that parent's children start open in the drawer.
+  const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
+  // Its row, read by id (KRTX-2316): the first page does not hold an older parent.
+  const activeParentSession = useProjectSession(projectId, activeParentSessionId).data ?? null;
   // The open thread's sub-agent relation (COR-162): the same relation the
   // session list nests by (`metadata.spawned_by_session`), over the same rows.
   const activeSubAgentRelation = useMemo(
-    () => subAgentRelation(activeProjectSession, projectSessions),
-    [activeProjectSession, projectSessions]
+    () => subAgentRelation(activeProjectSession, activeParentSession, projectSessions),
+    [activeProjectSession, activeParentSession, projectSessions]
   );
   const activeSubAgents = useMemo(
     () => (activeProjectSession ? subAgentsOf(activeProjectSession.session_id, projectSessions) : EMPTY_SUB_AGENTS),
@@ -487,9 +499,6 @@ export function ProjectScreen() {
     returnHome();
   }, [projectId, returnHome]);
 
-  // The open session's parent: that parent's children start open in the drawer.
-  const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
-
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
   // The drawer's gear button is gone (COR-123/COR-160 Task 4): the project
   // Settings page is reached from Settings (drawer avatar) → project row.
@@ -606,12 +615,12 @@ export function ProjectScreen() {
           child: false,
         }
       : activeProjectSession && activeSessionId
-        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: !!activeSubsession }
+        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: showsSubsession }
         : null;
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // `empty`: the saved copy proved the root empty (`SavedSessionCopy.empty`), so
   // the view opens on its composer instead of a loader.
   const savedCopyHookTarget = useMemo(
     () =>
@@ -621,7 +630,7 @@ export function ProjectScreen() {
     [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]
   );
   const savedCopy = useSavedCopy(savedCopyHookTarget);
-  const savedCopyMessages = savedCopy.messages;
+  const savedCopyThread = savedCopy.thread;
   const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
   // The thread's and the connecting view's props, read before the memo below:
   // `openedProjectSessionIdsRef` is a ref, so the memo must depend on its value.
@@ -630,16 +639,16 @@ export function ProjectScreen() {
   const connectingViewProjectSessionId =
     activeProjectSession?.session_id ?? connectingProjectSessionId ?? openedProjectSessionId ?? undefined;
   const canOpenSessionActions = !!activeProjectSession;
-  const canRenameSession = !!activeProjectSession && !activeSubsession;
-  const threadTitle = activeSubsession
-    ? subsessionTitle(activeSubsession)
+  const canRenameSession = !!activeProjectSession && !showsSubsession;
+  const threadTitle = showsSubsession
+    ? (activeSubsession ? subsessionTitle(activeSubsession) : undefined)
     : activeProjectSession
       ? sessionDisplayTitle(activeProjectSession)
       : undefined;
   // The row's agent binds the root thread only; a sub-session runs its own.
   // `'default'` is the server's spelling of "no agent bound" (web's session page).
   const boundAgentName =
-    !activeSubsession && activeProjectSession?.agent_name !== 'default'
+    !showsSubsession && activeProjectSession?.agent_name !== 'default'
       ? activeProjectSession?.agent_name
       : null;
 
@@ -692,6 +701,7 @@ export function ProjectScreen() {
             onOpenProjectSession={handleOpenProjectSession}
             onCreateAgent={createAgent}
             boundAgentName={boundAgentName}
+            projectSession={showsSubsession ? null : activeProjectSession}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored), or
@@ -713,7 +723,7 @@ export function ProjectScreen() {
               onRestart={handleRestartSession}
               restarting={restartingSession}
               showLoader={!viewDrawerOpen}
-              messages={savedCopyMessages}
+              thread={savedCopyThread}
               statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
@@ -753,7 +763,7 @@ export function ProjectScreen() {
     handleRestartSession,
     restartingSession,
     viewDrawerOpen,
-    savedCopyMessages,
+    savedCopyThread,
     savedCopyRootId,
     connectingEmpty,
     connectingViewProjectSessionId,

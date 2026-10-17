@@ -10,23 +10,14 @@
 #   gateway-dev-use2.kortix.com → Cloudflare (proxied, Full strict) → ALB → gateway
 #
 # These are this stack's origin hostnames. The dev-api Worker
-# (infra/cloudflare/workers/api-router) picks the live origin: ../dev while its
-# ACTIVE_BACKEND is "ecs-fargate", this root once it is "us-east-2". The
-# switch and its undo are one Worker variable; no DNS record moves. Until the
-# switch, this API runs with KORTIX_WORKERS_ENABLED=false in its copy of
-# kortix-dev-env, so it never takes the background-worker lease from ../dev.
-# README.md in this directory has the apply and switch-over steps.
+# (infra/cloudflare/workers/api-router) routes dev-api.kortix.com to them
+# (ACTIVE_BACKEND "us-east-2"). README.md in this directory has the apply
+# steps and the record of the move from us-west-2.
 #
 # Naming: local.name is "kortix-dev-use2", NOT "kortix-dev". IAM roles and
-# policies are ACCOUNT-GLOBAL, not region-scoped (unlike almost everything
-# else an AWS region touches) — reusing "kortix-dev" while ../dev's
-# us-west-2 stack (which already owns IAM roles of that name) is still live
-# would collide on `terraform apply` the moment this root tried to create
-# them. The project-snapshots S3 bucket name is globally unique for the same
-# reason: "kortix-dev-project-snapshots" already exists in us-west-2 and
-# cannot be reused until that bucket is deleted. Keeping distinct names lets
-# both regions run in parallel — "stand the new region up before tearing the
-# old one down" — with zero risk of the two roots fighting over one resource.
+# policies are ACCOUNT-GLOBAL, and the old us-west-2 stack owned the
+# "kortix-dev" names while both stacks ran in parallel during the move. That
+# stack was destroyed on 2026-10-12; the names stay so nothing is replaced.
 
 terraform {
   required_version = ">= 1.5"
@@ -74,19 +65,16 @@ module "network" {
   name               = local.name
   cidr               = "10.14.0.0/16" # distinct from dev (10.10), staging (10.20), staging-euw2 (10.24)
   az_count           = 2
-  single_nat_gateway = true # dev: one NAT to save cost, matches ../dev
+  single_nat_gateway = true # dev: one NAT to save cost
   tags               = local.tags
 }
 
 # ── TLS cert (ACM, DNS-validated via Cloudflare) ───────────────────────────────
-# A *.kortix.com wildcard cert already exists in us-east-2 (created by
-# ../prod-us-east-2-shadow's module.certificate) and its validation CNAME is
-# already in the zone, so a second request for the identical domain in this
-# same region+account validates against that existing record without this
-# root creating a new one (manage_validation_records = false — same reason
-# ../prod-us-east-2-shadow/main.tf sets it). Covers both the primary API
-# hostname and the gateway hostname with one cert, so no separate
-# gateway_certificate_arn plumbing is needed the way ../dev needs it.
+# The *.kortix.com validation CNAME was already in the zone when this root was
+# created, so this request validates against that existing record without this
+# root creating one (manage_validation_records = false). Covers both the
+# primary API hostname and the gateway hostname with one cert, so no separate
+# gateway_certificate_arn plumbing is needed.
 module "certificate" {
   count                     = var.enable_https ? 1 : 0
   source                    = "../../modules/acm-cloudflare"
@@ -107,15 +95,14 @@ data "aws_secretsmanager_secret" "env" {
 }
 
 # ── Project snapshot object store (S3 config provider) ────────────────────────
-# New bucket, new region: "kortix-dev-project-snapshots" (us-west-2) already
-# exists and S3 bucket names are globally unique, so this cannot reuse that
-# name. Snapshots are DERIVED data (rebuilt from Git on a cache miss), so a
-# fresh, empty bucket here is safe by construction — nothing to migrate.
+# Snapshots are DERIVED data (rebuilt from Git on a cache miss), so this bucket
+# started empty. The old us-west-2 cache "kortix-dev-project-snapshots" was
+# deleted on 2026-10-12.
 module "project_snapshots" {
   source                = "../../modules/project-snapshots-bucket"
   name                  = "${local.name}-project-snapshots"
   tags                  = local.tags
-  transfer_acceleration = true # same rationale as ../dev: sandboxes are not colocated with this bucket either
+  transfer_acceleration = true # sandboxes are not colocated with this bucket
 }
 
 # ── Audit-event archive (WORM) ────────────────────────────────────────────────
@@ -131,6 +118,20 @@ module "audit_archive" {
   # clear test data. Prod uses COMPLIANCE (the module default).
   object_lock_mode = "GOVERNANCE"
   tags             = local.tags
+}
+
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its `*.manifest.json`
+# events, and the device role the API assumes with a per-device session policy.
+# The task names them through the non-secret KORTIX_CAPTURE_S3_BUCKET /
+# _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN overrides in the deploy workflow.
+# Nothing records until an account turns Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
 }
 
 module "api" {
@@ -160,11 +161,15 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # Same sizing as ../dev (see that file's comment history for the
-  # OOM-driven task_memory floor). Identical instance class, different region.
+  # The us-west-2 dev stack's sizing (its history has the OOM-driven
+  # task_memory floor). Identical instance class, different region.
   task_cpu                   = 1024
   task_memory                = 4096
   desired_count              = 2

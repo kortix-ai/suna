@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 const testsPackage = JSON.parse(readFileSync(resolve(root, 'tests/package.json'), 'utf8'));
+// scripts/test-guard.mjs refuses a whole package suite on a Mac.
+const guarded = (command: string) => `node ../../scripts/test-guard.mjs "${command}"`;
 
 describe('local test runner contract', () => {
   it('uses the one workspace lockfile', () => {
@@ -43,6 +45,8 @@ describe('local test runner contract', () => {
     const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
 
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
+    // No test uses the dashboard or image transforms; they were the largest pulls.
+    expect(source).toMatch(/"-x",\s+"studio,imgproxy"/);
   });
 
   it('snapshots fixture counts into results before teardown starts', () => {
@@ -69,8 +73,14 @@ describe('local test runner contract', () => {
     expect(source).not.toContain('KORTIX_API_TEST_WORKERS:');
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
     expect(source).toContain("KORTIX_ATTACHMENT_OFFLOAD: '0'");
-    expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
-    expect(source).toContain("await runWorkspaceTests(['kortixd'], 1)");
+    // The CLI and the agent server stay sequential (concurrent isolated Bun workers can spin).
+    expect(source).toContain("await when('apps/cli', () => runWorkspaceTests(['@kortix/cli'], 1))");
+    expect(source).toContain(
+      "await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1))",
+    );
+    // `when` gates a step by --package-group only: no diff scope.
+    expect(source).not.toContain('KORTIX_TEST_SCOPE');
+    expect(source).toContain("'--no-bail'");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
     expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
@@ -127,11 +137,11 @@ describe('local test runner contract', () => {
     // proven one, and the timeout contract the packages lane sets
     // (KORTIX_TEST_TIMEOUT_MS=30000; process-heavy git fixtures sit above bun's
     // 5 s default on slower boxes) lives in the execed invocation.
-    expect(cliPackage.scripts.test).toBe('pnpm lint:sdk-boundary && bash scripts/test.sh');
+    expect(cliPackage.scripts.test).toBe(guarded('pnpm lint:sdk-boundary && bash scripts/test.sh'));
     expect(readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bash scripts/test.sh');
+    expect(agentPackage.scripts.test).toBe(guarded('bash scripts/test.sh'));
     expect(readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
     );
@@ -139,7 +149,7 @@ describe('local test runner contract', () => {
       readFileSync(resolve(root, 'apps/llm-gateway/package.json'), 'utf8'),
     );
     expect(gatewayPackage.scripts.test).toBe(
-      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+      guarded('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}'),
     );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
@@ -153,8 +163,21 @@ describe('local test runner contract', () => {
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
     expect(dbPackage.scripts.test).toBe(
-      "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
+      guarded("bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
     );
+  });
+
+  it('routes every workspace package test script through the Mac guard', () => {
+    const unguarded: string[] = [];
+    for (const group of ['apps', 'packages']) {
+      for (const entry of readdirSync(resolve(root, group), { withFileTypes: true })) {
+        const manifest = resolve(root, group, entry.name, 'package.json');
+        if (!entry.isDirectory() || !existsSync(manifest)) continue;
+        const script: string | undefined = JSON.parse(readFileSync(manifest, 'utf8')).scripts?.test;
+        if (script && !script.startsWith('node ../../scripts/test-guard.mjs "')) unguarded.push(`${group}/${entry.name}`);
+      }
+    }
+    expect(unguarded).toEqual([]);
   });
 
   it('keeps bun test isolation opt-in, with a stated reason per package', () => {

@@ -55,13 +55,22 @@ import {
  * The lane runs unmemoized — the policy/share loaders read fresh on every
  * call (CONN-32 pins that a policy seeded between two calls is enforced by
  * the second one) — so this pins the per-call WORST case: every read the
- * request itself performs. 22 = token + sandbox liveness +
- * account/project/session rows, ONE git-project row + ONE manifest load for
- * the grant reconcile, connector + connection + binding + credential reads,
- * the policy reads, and the audit insert. The pre-fix request spent 24 on
- * the same fixture.
+ * request itself performs. 19 = token+account read, sandbox liveness, ONE
+ * projects row (the account check and the grant reconcile’s git columns in
+ * one read — the reconcile takes the row the principal resolver just
+ * loaded), project_sessions metadata, group membership, the token re-read
+ * by id, ONE connectors row (the connection resolution takes the row
+ * `loadConnectorBySlug` just loaded instead of re-selecting it by alias),
+ * the session⋈service_account read, the bound-connector join, the
+ * entitled-connections list, role assignments, the credential-existence
+ * check, the action lookup, the credential⋈connector read, three policy
+ * reads, and the connector_calls + audit_events inserts. The pre-fix
+ * request spent 24; KRTX-2017 brought it to 21 (2× projects, 2× connectors
+ * per call); KRTX-2050’s duplicate-read threading removes the duplicated
+ * rows — re-introducing either duplicate read alone pushes a call to 20 and
+ * trips this pin.
  */
-const CALL_STATEMENT_BUDGET = 22;
+const CALL_STATEMENT_BUDGET = 19;
 
 const AGENT = 'main';
 const CONNECTOR_SLUG = 'stub';

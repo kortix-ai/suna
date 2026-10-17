@@ -593,8 +593,8 @@ function toRecorded(drive: DriveRow, p: PlannedFolderMount, mountPath = p.mountP
  * The folders a new sandbox of this session mounts (see
  * {@link planSessionDrives}), with the volume opened, or undefined when the
  * project has no Files. Strict: a volume that does not open fails the boot
- * with a {@link DriveMountError}. `reservedSlots` are the sandbox's other
- * volumes; folders past the limit are left out by priority and returned in
+ * with a {@link DriveMountError}. Folders past the sandbox's mount limit are
+ * left out by priority and returned in
  * `skipped`, which the session shows people.
  */
 export async function sessionVolumeMounts(input: {
@@ -603,11 +603,9 @@ export async function sessionVolumeMounts(input: {
   sessionId: string;
   bootingUserId: string | null;
   agentName: string;
-  reservedSlots?: number;
 }): Promise<SessionDriveMounts | undefined> {
   if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
-  const limit = await sandboxMountLimit();
-  const slots = Math.max(0, limit - (input.reservedSlots ?? 0));
+  const slots = await sandboxMountLimit();
   const plan = await planSessionDrives({ ...input, slots });
   const skipped = plan.skipped.map((path) => ({ driveId: plan.drive.driveId, name: path }));
   if (skipped.length) {
@@ -644,7 +642,7 @@ export async function sessionVolumeMounts(input: {
   return out;
 }
 
-/** Files mount in this project's sessions: storage configured, the operator override not set, Volumes on for the organization. */
+/** Files mount in this project's sessions: storage configured, the operator override not set, the project's Volumes flag on. */
 export async function sessionDrivesEnabled(projectId: string): Promise<boolean> {
   if (!sessionDriveMountEnabled()) return false;
   return projectFeatureFlagEnabled(projectId, 'drives');
@@ -652,7 +650,7 @@ export async function sessionDrivesEnabled(projectId: string): Promise<boolean> 
 
 /**
  * Operator emergency override: KORTIX_DRIVES_SESSION_MOUNT=off boots every
- * session without files. The product switch is Volumes (Admin → Volumes).
+ * session without files. The product switch is the project's Volumes flag.
  */
 export function sessionDriveMountEnabled(): boolean {
   if (!driveStorageAvailable()) return false;

@@ -180,7 +180,7 @@ describe('deployed production validation', () => {
   it('rejects a deployed frontend that points at another backend', async () => {
     const wrongBackendScript = `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify({
       ...config,
-      BACKEND_URL: 'https://api-use2-shadow.kortix.com/v1',
+      BACKEND_URL: 'https://api-other.kortix.com/v1',
     })};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`;
 
     await assert.rejects(
@@ -220,9 +220,11 @@ describe('release wiring', () => {
       workflow,
       /needs: \[version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof\]/,
     );
+    // The banner clears after the frontend proof finishes, and on every run
+    // end: a failed deploy left it up 8 h 27 min on 2026-10-11.
     assert.match(
       workflow,
-      /maintenance-banner-off:[\s\S]*?needs: \[verify-live-version, frontend-auth-proof\]/,
+      /maintenance-banner-off:[\s\S]*?needs: \[maintenance-banner-on, deploy-ecs, verify-live-version, frontend-auth-proof\]\n {4}if: \$\{\{ always\(\) \}\}/,
     );
   });
 });

@@ -10,6 +10,7 @@ import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel } from './index';
 import { SessionPanelContext, SessionPanelProvider, useOptionalSessionPanel, type SessionPanelValue } from './session-panel-provider';
+import { useSessionStateStore } from '@kortix/sdk/react';
 
 // The cards read everything from `SessionPanelProvider`. Standing the real one
 // up here would drag in the sandbox proxy, react-query and four stores for
@@ -129,19 +130,23 @@ describe('pending panel requests', () => {
           },
         }],
       }];
+      // The provider reads the session log of the runtime session's rows (`useSessionLogThread`).
+      // Its own runtime session id: another file's test may own the rows of `s1`.
+      const runtime = `ses_mode_gate_${mode}`;
+      useSessionStateStore.getState().hydrate(runtime, messages);
       let renderer: ReturnType<typeof create>;
       await act(async () => {
         renderer = create(withQueryClient(
           <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <SessionPanelProvider sessionId="s1" messages={messages}>
+            <SessionPanelProvider sessionId={runtime}>
               <ActionPanel /><Observe />
             </SessionPanelProvider>
           </NextIntlClientProvider>,
         ));
       });
-      await act(async () => { useKortixComputerStore.getState().requestPrimaryOpen('s1'); });
+      await act(async () => { useKortixComputerStore.getState().requestPrimaryOpen(runtime); });
       expect(opened).toContain('file:/a/report.pdf');
-      await act(async () => { useKortixComputerStore.getState().requestQuickView('terminal', 's1'); });
+      await act(async () => { useKortixComputerStore.getState().requestQuickView('terminal', runtime); });
       expect(opened).toContain('terminal');
       await act(async () => { renderer!.unmount(); });
     });

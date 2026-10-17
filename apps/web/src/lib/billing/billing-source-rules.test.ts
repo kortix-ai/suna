@@ -37,8 +37,9 @@ const DISPLAY_ONLY = [
   // directly above and for the same reason: it RENDERS the wallet and decides
   // nothing with it. Its one `balance < 0` paints the figure red and appends
   // the word "owed" — a display branch, not an entitlement one. The pane's
-  // only gate, `canOfferTopup()`, reads `subscription.can_purchase_credits`
-  // and `can_manage_billing`; it never looks at the number. Listed here rather
+  // only gate, `canOfferTopup()` from `@kortix/sdk`, reads
+  // `subscription.can_purchase_credits` and `can_manage_billing`; it never
+  // looks at the number. Listed here rather
   // than dodged by renaming the variable: an exemption you can read beats a
   // tripwire quietly routed around.
   join('features', 'workspace', 'settings', 'tabs', 'credits-tab.tsx'),
@@ -116,7 +117,7 @@ describe('no component writes its own billing prose', () => {
     'Out of credits',
     'Low balance',
     'Payment issue on your plan',
-    'seats are unaffected',
+    'plan is unaffected',
   ];
 
   test('the strings billingModalCopy/walletAlertCopy own appear nowhere else', () => {
@@ -128,8 +129,8 @@ describe('no component writes its own billing prose', () => {
     }
 
     // A component that writes its own billing copy is a component that can
-    // contradict the server — which is how a modal came to say "your Team plan
-    // and seats are unaffected" to accounts with no seats, and "Out of credits"
+    // contradict the server — which is how a modal came to say "your plan is
+    // unaffected" to accounts that had none, and "Out of credits"
     // to accounts with money. Import the copy instead.
     expect(offenders).toEqual([]);
   });
@@ -144,18 +145,51 @@ describe('the wallet-floor bypass stays deleted', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the client fallback does not resurrect the per-seat exemption', () => {
-    // The removed line was:
-    //   if (accountHasLiveSubscription(state) && billing_model === 'per_seat')
-    //     return 'active';
-    // A rolling deploy is exactly when it would have mattered: an old API sends
-    // no `billing_state`, the fallback runs, and a drained Team account renders
-    // as runnable against a server that has already started 402ing it.
+  test('the client fallback does not resurrect a subscription exemption', () => {
+    // The removed line returned 'active' for a live subscription on a billing
+    // model that bypassed the wallet floor. A rolling deploy is exactly when it
+    // would have mattered: an old API sends no `billing_state`, the fallback
+    // runs, and a drained paid account renders as runnable against a server
+    // that has already started 402ing it. There is no billing model to branch
+    // on any more, and the fallback must not grow one back.
     const source = readFileSync(join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'), 'utf8');
     const fallback = source.slice(
       source.indexOf('Fallback derivation'),
       source.indexOf("return 'no_subscription';"),
     );
-    expect(fallback).not.toMatch(/billing_model\s*===\s*'per_seat'[\s\S]{0,40}return 'active'/);
+    expect(fallback).not.toMatch(/billing_model/);
+    expect(fallback).not.toMatch(/accountHasLiveSubscription\(state\)[\s\S]{0,60}return 'active'/);
+  });
+});
+
+describe('a purchase control renders only behind the shared top-up gate', () => {
+  // KRTX-1720: the out-of-credits modal rendered Add credits and Auto top-up
+  // for a member (403 on Buy), and for everyone while the account state was
+  // still loading. `TopupControls` is the one place they render, behind
+  // `canOfferTopup` from the SDK, which says no until the state has loaded.
+  const GATE = join('features', 'billing', 'topup-controls.tsx');
+  const PURCHASE_CONTROL = /<(CreditTopupSection|AutoTopupCard)\b/;
+  const sources = FILES.filter((file) => !/\.test\.tsx?$/.test(file.rel));
+
+  test('Add credits and Auto top-up render in the gate component and nowhere else', () => {
+    const renderers = sources
+      .filter((file) => PURCHASE_CONTROL.test(file.source))
+      .map((file) => file.rel);
+    expect(renderers).toEqual([GATE]);
+  });
+
+  test('the gate asks the SDK, and renders nothing it does not allow', () => {
+    const raw = readFileSync(join(WEB_SRC, GATE), 'utf8');
+    expect(raw).toMatch(/import \{[^}]*\bcanOfferTopup\b[^}]*\} from '@kortix\/sdk'/);
+    expect(executableSource(raw)).toContain('if (!canOfferTopup(state))');
+  });
+
+  test('no surface reads can_manage_billing itself, or keeps its own canOfferTopup', () => {
+    const offenders = sources
+      .filter((file) => /can_manage_billing|function canOfferTopup/.test(file.source))
+      .map((file) => file.rel);
+    // Answer through `canManageBilling` / `canOfferTopup` from `@kortix/sdk`:
+    // `!== false` on the raw field read a loading state as "owner".
+    expect(offenders).toEqual([]);
   });
 });

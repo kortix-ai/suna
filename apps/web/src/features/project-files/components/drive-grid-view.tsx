@@ -31,7 +31,7 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { type ComponentType, type ReactNode } from 'react';
+import { type ComponentType, memo, type ReactNode } from 'react';
 import { useDriveRowInteractions } from './use-drive-row-interactions';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
@@ -41,8 +41,9 @@ import { ownClicks } from './own-clicks';
 
 interface DriveGridItemProps {
   node: FileNode;
-  onClick: () => void;
-  onDoubleClick?: () => void;
+  // Take the node, so one stable handler serves every card and `memo` holds.
+  onClick: (node: FileNode) => void;
+  onDoubleClick?: (node: FileNode) => void;
   onDownload?: (node: FileNode) => void;
   onRename?: (node: FileNode, newName: string) => void;
   onDelete?: (node: FileNode) => void;
@@ -250,7 +251,7 @@ function selectFileRenameInput(el: HTMLInputElement) {
   el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
 }
 
-function FolderCard({
+const FolderCard = memo(function FolderCard({
   node,
   onClick,
   onDownload,
@@ -278,9 +279,10 @@ function FolderCard({
   const copyPathLabel = tHardcodedUi.raw(
     'featuresProjectFilesComponentsDriveGridView.line231JsxTextCopyPath',
   );
+  const open = () => onClick(node);
   const folderMenuProps = {
     node,
-    onClick,
+    onClick: open,
     onDownload,
     onCopy,
     onCut,
@@ -303,7 +305,7 @@ function FolderCard({
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={isRenaming ? undefined : ownClicks(onClick)}
+          onClick={isRenaming ? undefined : ownClicks(open)}
           className={cn(
             'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
             isCut && 'opacity-40',
@@ -371,9 +373,9 @@ function FolderCard({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
-function FileCard({
+const FileCard = memo(function FileCard({
   node,
   onClick,
   onDoubleClick,
@@ -399,9 +401,10 @@ function FileCard({
   const checkpointHistoryLabel = tHardcodedUi.raw(
     'featuresProjectFilesComponentsDriveGridView.line402JsxTextCheckpointHistory',
   );
+  const open = () => onClick(node);
   const fileMenuProps = {
     node,
-    onClick,
+    onClick: open,
     onDownload,
     onHistory,
     onCopy,
@@ -420,8 +423,8 @@ function FileCard({
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onClick={isRenaming ? undefined : ownClicks(onClick)}
-          onDoubleClick={isRenaming ? undefined : ownClicks(onDoubleClick)}
+          onClick={isRenaming ? undefined : ownClicks(open)}
+          onDoubleClick={isRenaming || !onDoubleClick ? undefined : ownClicks(() => onDoubleClick(node))}
           className={cn(
             'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border select-none',
             isCut && 'opacity-40',
@@ -489,7 +492,7 @@ function FileCard({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
 // ─── Main Grid View ─────────────────────────────────────────────────────────
 
@@ -609,7 +612,7 @@ export function DriveGridView({
               <FolderCard
                 key={node.path}
                 node={node}
-                onClick={() => onNavigateToDir(node)}
+                onClick={onNavigateToDir}
                 onDownload={onDownloadDir}
                 isDownloadingItem={isDirDownloading(node.path)}
                 onRename={onRename}
@@ -636,8 +639,8 @@ export function DriveGridView({
               <FileCard
                 key={node.path}
                 node={node}
-                onClick={() => onPreviewFile(node)}
-                onDoubleClick={() => onOpenFile(node)}
+                onClick={onPreviewFile}
+                onDoubleClick={onOpenFile}
                 onDownload={onDownload}
                 onRename={onRename}
                 onDelete={onDelete}

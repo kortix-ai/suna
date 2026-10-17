@@ -53,7 +53,7 @@ ART_RE='(/paper-wallpaper-shaders\.|/wallpaper-shaders\.|/wallpaper-background\.
 # Third-party logo files: provider colors are the escape hatch. House glyphs in the
 # same folder (kortix, home, download, solid-check-icon, sidebar-toggle, plus, close,
 # copy, email, monitor, moon, sun, schedule) are audited.
-LOGO_RE='(/features/icon/icons/(apple-cursor|chat-gpt|claude|gemini|github|gmail|linear|microsoft-teams|new-google|notion|open-ai|open-claw|open-code|slack|telegram|viktor|whats-app|zapier)\.)'
+LOGO_RE='(/features/icon/icons/(apple-cursor|chat-gpt|claude|gemini|github|gmail|linear|microsoft-teams|new-google|notion|open-ai|open-claw|open-code|playstore|slack|telegram|whats-app|zapier)\.)'
 
 # Escape hatch: a third-party brand color in a named constant next to the component.
 CONST_RE=':[0-9]+: *(export )?const [A-Z][A-Z0-9_]* ='

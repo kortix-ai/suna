@@ -54,22 +54,6 @@ export function NavPill({
   );
 }
 
-/**
- * A nav pill's trailing count (Review's pending items, Notifications' unread
- * rows) — the "needs-you" blue (`SessionStatusMark`), not web's amber.
- * Hidden at 0, "99+" above 99.
- */
-export function CountPill({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <View className="rounded-sm bg-kortix-blue/15 px-1.5 py-0.5">
-      <Text className="font-roobert-medium text-xs text-kortix-blue">
-        {count > 99 ? '99+' : String(count)}
-      </Text>
-    </View>
-  );
-}
-
 // ─── Switcher row ────────────────────────────────────────────────────────────
 
 export function SwitcherRow({

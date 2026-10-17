@@ -31,8 +31,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
 import { fileIconFor, getFilename, getFileType, getTypeLabel } from '@/lib/utils/file-utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { isToolPart, type Part, type ToolPart } from '@/ui';
-import { toolCallBlock } from '@kortix/sdk';
+import type { ToolCallBlock } from '@kortix/sdk';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { ChainStepTrigger } from './chain-step-trigger';
@@ -56,14 +55,14 @@ const FILE_CHIP_TOOLS: ReadonlyMap<string, FileVerb> = new Map([
 const PATH_KEYS = ['filePath', 'path', 'file'] as const;
 
 /**
- * True when this part is a whole-file read or write, i.e. eligible for a chip.
+ * True when this call is a whole-file read or write, i.e. eligible for a chip.
  *
  * `normalizeActivityToolName` is the same door `activity-step.tsx` and
  * `step-label.ts` go through, so an MCP id, an `oc-` alias and the bare name all
  * resolve to the one family here too.
  */
-export function isFileChipPart(part: Part): boolean {
-  return isToolPart(part) && FILE_CHIP_TOOLS.has(normalizeActivityToolName(part.tool));
+export function isFileChipCall(call: ToolCallBlock): boolean {
+  return FILE_CHIP_TOOLS.has(normalizeActivityToolName(call.name));
 }
 
 /**
@@ -74,8 +73,8 @@ export function isFileChipPart(part: Part): boolean {
  * so reading `input` alone leaves a chip pathless for the whole time it is most
  * interesting.
  */
-function chipPath(part: ToolPart): string | undefined {
-  const input = partStreamingInput(toolCallBlock(part));
+function chipPath(call: ToolCallBlock): string | undefined {
+  const input = partStreamingInput(call);
   for (const key of PATH_KEYS) {
     const value = input[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -94,14 +93,13 @@ function chipPath(part: ToolPart): string | undefined {
  * renderer instead. The slash clause carries the same call while its output is
  * still arriving, when `partOutput` is empty by construction.
  */
-function isDirectoryTarget(part: ToolPart, path: string): boolean {
+function isDirectoryTarget(call: ToolCallBlock, path: string): boolean {
   if (path.endsWith('/')) return true;
-  return parseReadOutput(partOutput(toolCallBlock(part)))?.type === 'directory';
+  return parseReadOutput(partOutput(call))?.type === 'directory';
 }
 
-function isInFlight(part: ToolPart): boolean {
-  const status = part.state.status;
-  return status === 'pending' || status === 'running';
+function isInFlight(call: ToolCallBlock): boolean {
+  return call.status === 'pending' || call.status === 'running';
 }
 
 /**
@@ -195,15 +193,12 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
  * still one click away.
  */
 function ActivityFileChipStepImpl({
-  parts,
-  running,
+  calls,
   sessionId,
   disableNavigation,
   bare,
 }: {
-  parts: ReadonlyArray<Part>;
-  /** The burst is still working — passed down to the fallback rows. */
-  running: boolean;
+  calls: ReadonlyArray<ToolCallBlock>;
   sessionId: string;
   disableNavigation?: boolean;
   /** This row is the WHOLE burst — see `ActivityBurst`. */
@@ -217,36 +212,29 @@ function ActivityFileChipStepImpl({
   // read rows that each paid for this hook individually.
   const { toDisplayPath } = useOcFileOpen();
 
-  const first = parts[0];
-  const family =
-    first && isToolPart(first)
-      ? FILE_CHIP_TOOLS.get(normalizeActivityToolName(first.tool))
-      : undefined;
+  const first = calls[0];
+  const family = first ? FILE_CHIP_TOOLS.get(normalizeActivityToolName(first.name)) : undefined;
 
   const paths: string[] = [];
   const seenPaths = new Set<string>();
-  const fallbacks: Part[] = [];
+  const fallbacks: ToolCallBlock[] = [];
   let failedCount = 0;
   let inFlight = false;
 
-  for (const part of parts) {
-    if (!isToolPart(part)) {
-      fallbacks.push(part);
-      continue;
-    }
-    if (isInFlight(part)) inFlight = true;
+  for (const call of calls) {
+    if (isInFlight(call)) inFlight = true;
     // Read the verdict with the same predicate `burstFailureCount` uses, so a
     // call that RETURNED its error ("Error: ENOENT", the `{success:false}`
     // contract) is a failure here too — `state.status === 'error'` alone would
     // hand a chip to a read that never opened anything.
-    if (partOutcome(part) !== 'ok') {
+    if (partOutcome(call) !== 'ok') {
       failedCount += 1;
-      fallbacks.push(part);
+      fallbacks.push(call);
       continue;
     }
-    const path = chipPath(part);
-    if (!path || isDirectoryTarget(part, path)) {
-      fallbacks.push(part);
+    const path = chipPath(call);
+    if (!path || isDirectoryTarget(call, path)) {
+      fallbacks.push(call);
       continue;
     }
     if (!seenPaths.has(path)) {
@@ -268,12 +256,11 @@ function ActivityFileChipStepImpl({
   if (bare && paths.length === 0) {
     return (
       <>
-        {fallbacks.map((part) => (
+        {fallbacks.map((call) => (
           <ActivityStep
-            key={part.id}
-            part={part}
+            key={call.id}
+            call={call}
             sessionId={sessionId}
-            running={running}
             disableNavigation={disableNavigation}
           />
         ))}
@@ -304,7 +291,7 @@ function ActivityFileChipStepImpl({
   const label =
     `${status === 'running' ? family.running : family.verb} ${object}` +
     (status === 'error' ? ` · ${failedCount} failed` : '');
-  const Icon = iconFor(parts[0]);
+  const Icon = iconFor(calls[0]);
 
   return (
     <>
@@ -377,12 +364,11 @@ function ActivityFileChipStepImpl({
           )}
           {fallbacks.length > 0 && (
             <div className="space-y-3">
-              {fallbacks.map((part) => (
+              {fallbacks.map((call) => (
                 <ActivityStep
-                  key={part.id}
-                  part={part}
+                  key={call.id}
+                  call={call}
                   sessionId={sessionId}
-                  running={running}
                   disableNavigation={disableNavigation}
                 />
               ))}
@@ -402,14 +388,13 @@ function ActivityFileChipStepImpl({
 const FileChip = memo(FileChipImpl);
 FileChip.displayName = 'FileChip';
 
-/** `parts` is a fresh array per merge while a turn streams — see `same-parts.ts`. */
+/** `calls` is a fresh array per merge while a turn streams — see `same-parts.ts`. */
 export const ActivityFileChipStep = memo(
   ActivityFileChipStepImpl,
   (a, b) =>
     a.sessionId === b.sessionId &&
-    a.running === b.running &&
     a.bare === b.bare &&
     a.disableNavigation === b.disableNavigation &&
-    samePartsList(a.parts, b.parts),
+    samePartsList(a.calls, b.calls),
 );
 ActivityFileChipStep.displayName = 'ActivityFileChipStep';

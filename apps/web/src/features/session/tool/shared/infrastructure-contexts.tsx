@@ -3,8 +3,7 @@
 import { createContext, useContext } from 'react';
 import { type ToolOutcome } from './tool-outcome';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
-import { type ToolPart } from '@/ui';
-import { toolKind } from '@kortix/sdk';
+import { toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export const ToolRunningContext = createContext(false);
 
@@ -93,16 +92,16 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
   'oc-mem-search',
 ]);
 
-export function shouldShowToolPartInActionsPanel(part: Pick<ToolPart, 'tool' | 'state'>): boolean {
-  if (MEMORY_LOOKUP_TOOL_NAMES.has(part.tool)) return false;
+export function shouldShowToolPartInActionsPanel(call: ToolCallBlock): boolean {
+  if (MEMORY_LOOKUP_TOOL_NAMES.has(call.name)) return false;
   // A `show` that handed nothing over renders an empty card, so its stepper row
   // would open onto blank space. Same verdict the chat transcript reaches.
-  if (isEmptyShowPart(part)) return false;
+  if (isEmptyShowPart(call)) return false;
   // A skill row opens its SKILL.md in the detail panel, so it has no Actions
   // row of its own. (It used to raise a side sheet; that sheet is gone.)
-  if (toolKind(part.tool) === 'skill') return false;
+  if (toolKind(call.name) === 'skill') return false;
   // File reads stay out of the Actions panel.
-  if (toolKind(part.tool) === 'read') return false;
+  if (toolKind(call.name) === 'read') return false;
   return true;
 }
 

@@ -126,9 +126,7 @@ describe('mirrored settings-panel constants', () => {
  * offered-but-unreachable tab is a test failure rather than a dead click.
  */
 describe('offered tabs survive the panel filter', () => {
-  // `canProject: () => true` — the palette offers the two IAM-gated Workspace
-  // rows without probing; the panel answers the probe and hides a denied row.
-  const allowedParams = (hasProject: boolean) => ({ hasProject, canProject: () => true });
+  const allowedParams = (hasProject: boolean) => ({ hasProject });
 
   test('with a project, every offered tab is allowed', () => {
     for (const tab of tabsFor(IN_A_PROJECT)) {
@@ -145,9 +143,10 @@ describe('offered tabs survive the panel filter', () => {
     }
   });
 
-  test('with NO project, every live tab is offered — all of them are personal', () => {
-    const offered: string[] = tabsFor({ hasProject: false });
-    expect([...offered].sort()).toEqual([...SETTINGS_TABS].sort());
+  test('with NO project, every live tab but Computer is offered — all of them are personal', () => {
+    const offered = tabsFor({ hasProject: false });
+    // Computer pairs a machine from a project, so it needs one open.
+    expect([...offered].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
     for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
     // The project configuration tabs specifically — these were the ones the
     // old `Customize · X` entries offered from `/accounts/**`. They are not

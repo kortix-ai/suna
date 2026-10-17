@@ -86,7 +86,10 @@ function previewDirectEdgeMode(): boolean {
  * So a claimed host counts only when the signature over it verifies.
  */
 export function resolvePreviewRequest(req: Request, url: URL): ResolvedPreviewRequest | null {
-  const claimedHost = previewDirectEdgeMode() ? null : req.headers.get(PREVIEW_EDGE_HEADERS.host);
+  const claimed = previewDirectEdgeMode() ? null : req.headers.get(PREVIEW_EDGE_HEADERS.host);
+  // A local `*.localhost` preview skips the signature below, so it is only ever
+  // the real Host: a claimed one would make any caller's request "verified".
+  const claimedHost = claimed && !resolvePreviewHost(claimed)?.local ? claimed : null;
   const publicHost = (claimedHost || req.headers.get('host') || url.hostname || '').toLowerCase();
   const target = resolvePreviewHost(publicHost);
   if (!target) return null;

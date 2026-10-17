@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { GitOperationError, isGitPathNotFoundError, runGit as realRunGit } from './mirror';
-import { isRepoFileNotFoundError, listRepoDirectory, readRepoFileBytes, RepoFileNotFoundError } from './files';
+import {
+  decodeDirectoryCursor,
+  encodeDirectoryCursor,
+  isRepoFileNotFoundError,
+  listRepoDirectory,
+  readRepoFileBytes,
+  RepoFileNotFoundError,
+} from './files';
 
 // `readRepoFile` imports `runGit` + `refreshMirror` from `./mirror`. We mock the
 // module so `runGit` is controllable per-test (returns stdout, throws a
@@ -20,11 +27,16 @@ const realRunGitFn = mirrorModule.runGit;
 type RunGitArgs = Parameters<typeof realRunGitFn>;
 let runGitImpl: (...args: RunGitArgs) => Promise<{ stdout: string; stderr: string }>;
 let repoPath = '';
+/** The `force` argument of every `refreshMirror` call. */
+let refreshes: unknown[] = [];
 
 mock.module('./mirror', () => ({
   ...mirrorModule,
   runGit: async (...args: RunGitArgs) => runGitImpl(...args),
-  refreshMirror: async () => repoPath,
+  refreshMirror: async (_project: unknown, force: unknown = false) => {
+    refreshes.push(force);
+    return repoPath;
+  },
 }));
 
 const { readRepoFile } = await import('./files');
@@ -40,6 +52,7 @@ const project = {
 beforeEach(async () => {
   repoPath = await mkdtemp(join(tmpdir(), 'kortix-readrepofile-test-'));
   runGitImpl = realRunGitFn;
+  refreshes = [];
 });
 
 afterEach(async () => {
@@ -286,7 +299,12 @@ describe('listRepoDirectory', () => {
     await commitFiles(files);
   }
 
-  test('lists one level of the root: every folder and file, with its type', async () => {
+  async function headSha() {
+    const { stdout } = await execFileAsyncBytes('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { env: BYTES_ENV });
+    return stdout.toString().trim();
+  }
+
+  test('lists one level of the root: every folder and file, with its type and the commit it read', async () => {
     await bigRepo();
     expect(await listRepoDirectory(project, 'main', null)).toEqual({
       entries: [
@@ -295,6 +313,8 @@ describe('listRepoDirectory', () => {
         { path: 'z', type: 'directory' },
       ],
       truncated: false,
+      commit: await headSha(),
+      nextKey: null,
     });
   });
 
@@ -307,11 +327,147 @@ describe('listRepoDirectory', () => {
     expect((await listRepoDirectory(project, 'main', 'z')).entries).toEqual([{ path: 'z/last.txt', type: 'file', size: 5 }]);
   });
 
-  test('a folder over the entry cap says so', async () => {
+  test('a folder over the entry cap says so, and names the key the next page starts after', async () => {
     await bigRepo();
     const listing = await listRepoDirectory(project, 'main', 'a', { limit: 500 });
     expect(listing.entries).toHaveLength(500);
     expect(listing.truncated).toBe(true);
+    expect(listing.nextKey).toBe('a/f0499.txt');
+  });
+
+  test('pages a 1,200-entry folder 500 + 500 + 200: every entry once, in order', async () => {
+    await bigRepo();
+    const whole = await listRepoDirectory(project, 'main', 'a');
+    const pages: { entries: { path: string }[]; truncated: boolean; nextKey: string | null }[] = [];
+    let after: { commit: string; key: string } | undefined;
+    do {
+      const page = await listRepoDirectory(project, 'main', 'a', { limit: 500, after });
+      pages.push(page);
+      after = page.nextKey ? { commit: page.commit!, key: page.nextKey } : undefined;
+    } while (after);
+    expect(pages.map((p) => p.entries.length)).toEqual([500, 500, 200]);
+    expect(pages.map((p) => p.truncated)).toEqual([true, true, false]);
+    expect(pages.at(-1)!.nextKey).toBeNull();
+    expect(pages.flatMap((p) => p.entries)).toEqual(whole.entries);
+  });
+
+  test('a later page reads the commit the first page read: a push between pages skips or repeats nothing', async () => {
+    await bigRepo();
+    const first = await listRepoDirectory(project, 'main', 'a', { limit: 500 });
+    // A push lands between the two pages: one entry before the key, one after, one removed.
+    await execFileAsyncBytes('git', ['-C', repoPath, 'rm', '-q', 'a/f0700.txt'], { env: BYTES_ENV });
+    await commitFiles({ 'a/f0100x.txt': 'x\n', 'a/f0600x.txt': 'x\n' });
+    const second = await listRepoDirectory(project, 'main', 'a', {
+      limit: 500,
+      after: { commit: first.commit!, key: first.nextKey! },
+    });
+    expect(second.commit).toBe(first.commit);
+    expect(second.entries.map((e) => e.path)).toEqual(
+      Array.from({ length: 500 }, (_, i) => `a/f${String(500 + i).padStart(4, '0')}.txt`),
+    );
+  });
+
+  test('keys compare in git byte order, a folder as "name/": paging by one walks every name once', async () => {
+    await initRealRepo();
+    // UTF-16 order puts '𝒜' (U+1D49C) before 'ｚ' (U+FF5A); UTF-8 byte order, which git uses, puts it after.
+    await commitFiles({ B: '', 'a.txt': '', 'a/x': '', a0: '', 'é': '', 'ｚ': '', '𝒜': '' });
+    const whole = await listRepoDirectory(project, 'main', null);
+    expect(whole.entries.map((e) => e.path)).toEqual(['B', 'a.txt', 'a', 'a0', 'é', 'ｚ', '𝒜']);
+    const walked: string[] = [];
+    const keys: string[] = [];
+    let after: { commit: string; key: string } | undefined;
+    do {
+      const page = await listRepoDirectory(project, 'main', null, { limit: 1, after });
+      walked.push(...page.entries.map((e) => e.path));
+      if (page.nextKey) keys.push(page.nextKey);
+      after = page.nextKey ? { commit: page.commit!, key: page.nextKey } : undefined;
+    } while (after);
+    expect(walked).toEqual(['B', 'a.txt', 'a', 'a0', 'é', 'ｚ', '𝒜']);
+    expect(keys).toEqual(['B', 'a.txt', 'a/', 'a0', 'é', 'ｚ']);
+  });
+
+  test('a name that is not UTF-8 never makes a later page skip an entry', async () => {
+    await initRealRepo();
+    await commitFiles({ 'README.md': 'x\n' });
+    const { stdout: blob } = await execFileAsyncBytes('git', ['-C', repoPath, 'rev-parse', 'HEAD:README.md'], { env: BYTES_ENV });
+    const sha = blob.toString().trim();
+    // `caf\xE9.txt` is Latin-1, not UTF-8: it decodes to `caf\uFFFD.txt`, whose
+    // UTF-8 bytes (EF BF BD) sort after `cafｚ.txt` (EF BC 9A). Git lists it first.
+    const input = Buffer.concat([
+      Buffer.from(`100644 blob ${sha}\tcaf`),
+      Buffer.from([0xe9]),
+      Buffer.from('.txt'),
+      Buffer.from([0]),
+      Buffer.from(`100644 blob ${sha}\tcafｚ.txt`),
+      Buffer.from([0]),
+    ]);
+    const tree = spawnSync('git', ['-C', repoPath, 'mktree', '-z'], { input, env: BYTES_ENV }).stdout.toString().trim();
+    const commit = spawnSync('git', ['-C', repoPath, 'commit-tree', tree, '-m', 'latin-1 name'], { env: BYTES_ENV })
+      .stdout.toString()
+      .trim();
+    spawnSync('git', ['-C', repoPath, 'update-ref', 'refs/heads/main', commit], { env: BYTES_ENV });
+
+    const walked: string[] = [];
+    let after: { commit: string; key: string } | undefined;
+    do {
+      const page = await listRepoDirectory(project, 'main', null, { limit: 1, after });
+      walked.push(...page.entries.map((e) => e.path));
+      after = page.nextKey ? { commit: page.commit!, key: page.nextKey } : undefined;
+    } while (after && walked.length < 5);
+    expect(walked).toEqual(['caf\uFFFD.txt', 'cafｚ.txt']);
+  });
+
+  test('the visibility filter runs before the cut: a page stays full and never ends on a hidden name', async () => {
+    await bigRepo();
+    const visible = (path: string) => !/[13579]\.txt$/.test(path);
+    const first = await listRepoDirectory(project, 'main', 'a', { limit: 500, visible });
+    expect(first.entries).toHaveLength(500);
+    expect(first.entries.every((e) => visible(e.path))).toBe(true);
+    expect(first.nextKey).toBe('a/f0998.txt');
+    const second = await listRepoDirectory(project, 'main', 'a', {
+      limit: 500,
+      visible,
+      after: { commit: first.commit!, key: first.nextKey! },
+    });
+    expect(second.entries).toHaveLength(100);
+    expect(second.truncated).toBe(false);
+    expect(second.nextKey).toBeNull();
+  });
+
+  test('a cursor commit this mirror lacks fetches once, then falls back to the ref tip with the same key', async () => {
+    await bigRepo();
+    const listing = await listRepoDirectory(project, 'main', 'a', {
+      limit: 500,
+      after: { commit: 'f'.repeat(40), key: 'a/f0499.txt' },
+    });
+    expect(refreshes).toContain(true);
+    expect(listing.commit).toBe(await headSha());
+    expect(listing.entries[0]!.path).toBe('a/f0500.txt');
+    expect(listing.entries).toHaveLength(500);
+  });
+});
+
+describe('directory cursor', () => {
+  const commit = 'a'.repeat(40);
+
+  test('round-trips the commit and key for the same folder', () => {
+    const cursor = encodeDirectoryCursor(commit, 'src/app', 'src/app/page.tsx');
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeDirectoryCursor(cursor, 'src/app')).toEqual({ commit, key: 'src/app/page.tsx' });
+    expect(decodeDirectoryCursor(cursor, 'src/app/')).toEqual({ commit, key: 'src/app/page.tsx' });
+    expect(decodeDirectoryCursor(encodeDirectoryCursor(commit, null, 'README.md'), undefined)).toEqual({ commit, key: 'README.md' });
+  });
+
+  test('refuses a cursor of another folder, garbage, an unknown version, or a commit that is not a sha', () => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    expect(decodeDirectoryCursor(encodeDirectoryCursor(commit, 'src', 'src/a'), 'lib')).toBeNull();
+    expect(decodeDirectoryCursor(encodeDirectoryCursor(commit, 'src', 'src/a'), null)).toBeNull();
+    expect(decodeDirectoryCursor('garbage', 'src')).toBeNull();
+    expect(decodeDirectoryCursor('', 'src')).toBeNull();
+    expect(decodeDirectoryCursor(encode({ v: 2, c: commit, p: 'src', k: 'src/a' }), 'src')).toBeNull();
+    expect(decodeDirectoryCursor(encode({ v: 1, c: '--output=/tmp/x', p: 'src', k: 'src/a' }), 'src')).toBeNull();
+    expect(decodeDirectoryCursor(encode({ v: 1, c: commit, p: 'src', k: '' }), 'src')).toBeNull();
+    expect(decodeDirectoryCursor(encode({ v: 1, c: commit, p: '../x', k: 'a' }), '../x')).toBeNull();
   });
 });
 

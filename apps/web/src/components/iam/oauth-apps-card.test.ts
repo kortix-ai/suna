@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SCOPE_HELP, parseRedirectUris, summarizeRedirectUris } from './oauth-apps-card';
+import {
+  SCOPE_HELP,
+  parseRedirectUris,
+  redirectHostSummary,
+  summarizeRedirectUris,
+} from './oauth-apps-card';
 
 /**
  * The register form's only real logic: turning the redirect-URI textarea into
@@ -89,5 +94,25 @@ describe('SCOPE_HELP', () => {
   test('covers every scope the server supports', () => {
     // `OAUTH_SCOPES` in `apps/api/src/oauth/access-token.ts`.
     expect(Object.keys(SCOPE_HELP).sort()).toEqual(['email', 'kortix', 'profile']);
+  });
+});
+
+/** The table's Redirect URIs cell: the first host and how many more. */
+describe('redirectHostSummary', () => {
+  test('one URI shows its host', () => {
+    expect(redirectHostSummary(['https://app.example.com/api/kortix/auth/callback'])).toBe(
+      'app.example.com',
+    );
+  });
+
+  test('more URIs add a count; the port stays in the host', () => {
+    expect(
+      redirectHostSummary(['http://localhost:3000/cb', 'https://app.example.com/cb']),
+    ).toBe('localhost:3000 +1');
+  });
+
+  test('none shows a dash; an unparsable one shows whole', () => {
+    expect(redirectHostSummary([])).toBe('—');
+    expect(redirectHostSummary(['not a url'])).toBe('not a url');
   });
 });

@@ -8,7 +8,7 @@ import {
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -72,6 +72,7 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { useSlashFocus } from '@/hooks/utils';
 import {
   connectorDisplayName,
   connectorSummary,
@@ -79,6 +80,7 @@ import {
   type ConnectorScope,
 } from './connector-filter';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
+import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
 
 /**
@@ -102,6 +104,12 @@ const CustomConnectorForm = dynamic(
       (m) => m.CustomConnectorForm,
     ),
   { ssr: false, loading: () => <ModalFormFallback /> },
+);
+
+/** New → MCP server. A closed dialog needs no code before the click either. */
+const AddMcpServerDialog = dynamic(
+  () => import('./add-mcp/add-mcp-server-dialog').then((m) => m.AddMcpServerDialog),
+  { ssr: false },
 );
 
 /** Holds the Add modal's height while its form chunk arrives. */
@@ -188,7 +196,7 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 const SCOPE_DESCRIPTION: Record<ConnectorScope, string> = {
   all: 'Give agents access to outside tools and data.',
   connected: 'Give agents access to outside tools and data.',
-  channels: 'Reach your agent from the tools your team already uses.',
+  channels: 'Talk to your agents from the apps your team uses.',
 };
 
 /** `?scope=` is user-editable text; anything that is not a scope is All. */
@@ -197,7 +205,7 @@ function parseScope(value: string | null): ConnectorScope | null {
 }
 
 /** Which page-level modal is open, if any. Only one can be at a time. */
-type Panel = 'custom';
+type Panel = 'custom' | 'mcp';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
@@ -251,8 +259,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState<Panel | null>(null);
+  // The catalogue app whose own MCP server the MCP dialog connects. Null for
+  // a server the user pastes (New → MCP server).
+  const [mcpApp, setMcpApp] = useState<McpServerApp | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const tSharing = useI18nTranslations('accessSharing');
+  const tPages = useI18nTranslations('connectorPages');
 
   const search = useSearchParams();
   const router = useRouter();
@@ -318,7 +330,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
-  const { installEntry, pendingKey } = useInstall(projectId);
+  const { installEntry, pendingKey } = useInstall(projectId, {
+    onMcpServer: (server) => {
+      setMcpApp(server);
+      setPanel('mcp');
+    },
+  });
   const catalogInstall = useMemo(
     () => ({
       // `connectors` is `[]` until the list loads, and an install run against
@@ -450,26 +467,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const openComputer = useCallback(() => setComputerOpen(true), []);
 
   // The search field is the page's main control: focused on arrival, and "/"
-  // jumps back to it from anywhere on the page except another text field.
+  // jumps back to it (`useSlashFocus`).
   const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (channelsActive || rulesOpen || typeof window === 'undefined') return;
-    // No autofocus on touch: it would open the on-screen keyboard on arrival.
-    if (window.matchMedia?.('(pointer: fine)').matches) {
-      searchRef.current?.focus({ preventScroll: true });
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      // A dialog or menu owns the keyboard while it is open.
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
-      event.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [channelsActive, rulesOpen]);
+  useSlashFocus(searchRef, !channelsActive && !rulesOpen);
 
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead
@@ -510,6 +510,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 label={tI18nComplete.raw('text18fdd549b2ed')}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('connector'))}
+                quick={{
+                  icon: PlugsConnectedIcon,
+                  label: tPages('addMcpMenu'),
+                  description: tPages('addMcpMenuHint'),
+                  onSelect: () => {
+                    setMcpApp(null);
+                    setPanel('mcp');
+                  },
+                }}
                 manual={{
                   label: tI18nComplete.raw('text90ccaee30bdc'),
                   description: tI18nComplete.raw('textb0fbe9dc1fcc'),
@@ -661,6 +670,16 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
             }}
           />
 
+          <AddMcpServerDialog
+            key={mcpApp?.url ?? 'paste'}
+            projectId={projectId}
+            app={mcpApp}
+            open={panel === 'mcp'}
+            onOpenChange={(open) => setPanel(open ? 'mcp' : null)}
+            takenSlugs={connectors.map((connector) => connector.slug)}
+            onAdded={invalidate}
+          />
+
           {/* Custom upload only. `CustomConnectorForm` prints no heading of its
           own, so unlike the `AddAppPanel` this replaced it gets a real visible
           `ModalHeader` rather than a `VisuallyHidden` title — the dialog needs
@@ -677,12 +696,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 <CustomConnectorForm
                   projectId={projectId}
                   emailChannelEnabled={emailChannelEnabled}
-                  onAdded={(slug) => {
+                  onAdded={(slug, { addAccount }) => {
                     invalidate();
-                    if (slug) {
-                      setPanel(null);
-                      router.push(connectorHref(projectId, slug));
-                    }
+                    setPanel(null);
+                    router.push(connectorHref(projectId, slug, { addAccount }));
                   }}
                 />
               </ModalBody>

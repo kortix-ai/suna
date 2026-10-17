@@ -138,7 +138,7 @@ account on their first SSO sign-in.
 | **Group claim name** | `groups` | The SAML attribute Kortix reads groups from. Okta sends group names on `groups`. Entra sends group object IDs by default. The Entra guide names the claim `memberOf`, so set **Group claim name** to `memberOf` for Entra. |
 | **Auto-create members** | On | Adds every person who signs in through the IdP as a `member`. Off: SSO adds only existing members and people your SCIM directory provisioned. |
 | **Auto-provision groups** | Off | Creates a Kortix group for every group the IdP sends, and adds the person to it. |
-| **Enforce SSO for this domain** | Off | Refuses every other way to sign in for the primary domain. |
+| **Enforce SSO for this domain** | Off | Refuses every other way to sign in for the primary domain, and ends the existing sign-ins made another way. |
 
 ### Verify the domain
 
@@ -170,15 +170,43 @@ that domain that did not come from your IdP is refused with `403`:
   headless sign-in routes (`/v1/auth/signup`, `/v1/auth/sign-in/password`,
   `/v1/auth/sign-in/magic-link`, `/v1/auth/verify-otp`). There the body is
   `error: "sso_required"`.
-- the existing sessions and keys of those identities, owners and super-admins
-  included. Their account and project requests get `code: "sso_required"`.
+- the API keys of those identities, owners and super-admins included, and every
+  sign-in they still hold or make another way: social sign-in, a direct
+  password grant against the auth server, mobile. Their account and project
+  requests get `code: "sso_required"`.
+
+When enforcement takes effect, Kortix ends every existing sign-in of those
+identities that are members of the account. Enforcement takes effect when you
+turn it on for a verified domain, or when the domain is verified while it is on.
+
+- Each ended sign-in can no longer refresh, and its access token gets `401`.
+  The person signs in again through the IdP.
+- A sign-in belongs to the person, not to one account. It ends in every account
+  they use.
+- API keys stay. They get `403` `code: "sso_required"` while enforcement is on.
+- A Kortix platform admin keeps their sign-in, so the break-glass below stays
+  possible. The account still refuses it with `403` `code: "sso_required"`.
+- A member who joins after enforcement took effect is refused at once, but keeps
+  their existing sign-ins until the next save of the SSO provider ends them.
+- The audit event of the change records the number of ended sign-ins in
+  `after.revoked_sessions`: `iam.sso.provider.update` when you turn enforcement
+  on, `iam.sso.provider.domain_verify` when DNS verification turns it on, and
+  `admin.account.sso_domain.set` when a Kortix platform admin verifies the
+  domain.
+- If ending the sign-ins fails, the change is still saved and the request
+  returns `500` `code: "sso_sign_out_failed"`. Save the SSO provider again, or
+  repeat the verification, to retry.
+- Marking the domain unverified lifts enforcement. It does not restore the
+  ended sign-ins.
 
 <Callout type="warning">
-Enforcement covers the account owner's own email too. Before you turn it on,
-sign in once through the IdP and give that SSO identity the role it needs. If
-the IdP fails, a Kortix platform admin marks the domain unverified, which lifts
-enforcement. On a self-hosted instance, your instance's platform admin does
-this.
+Enforcement covers the account owner's own email too. If you signed in without
+SSO, turning it on signs you out. Before you turn it on, sign in once through
+the IdP and give that SSO identity the role it needs. If the IdP fails, a Kortix
+platform admin marks the domain unverified, which lifts enforcement. On a
+self-hosted instance, the platform admin is an email in
+`KORTIX_PLATFORM_ADMIN_EMAILS`. If that email is in the enforced domain, keep
+its current sign-in: a new password sign-in for the domain is refused.
 </Callout>
 
 ### Groups from the IdP
@@ -248,10 +276,19 @@ working when the account loses it.
 - **New person:** a `POST /Users` for an email with no Kortix sign-in creates a
   pending invitation with the `member` role, valid for 14 days. SCIM lists it as
   an active user. A person who already has a Kortix sign-in joins as a `member`.
+  On a self-hosted instance that confirms sign-ups without an email, a password
+  sign-in that is not yet a member gets the pending invitation instead. That
+  sign-in cannot see or accept the invitation: the person joins through the
+  account's SAML provider. See
+  [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
 - **Groups:** a SCIM group is an ordinary Kortix group. Give it project roles
   like any other.
 - **Remove a person:** `active: false` or `DELETE` removes the membership, its
-  roles and groups, and revokes the person's keys and live session tokens.
+  roles and groups, and revokes the person's keys and live session tokens. It
+  also revokes the computer accounts that reach their machines and pauses their
+  reminders, the same as a removal. See
+  [When a person leaves](/docs/accounts#when-a-person-leaves). A repeated
+  `active: false` changes nothing more.
 - **Last owner:** deactivating the account's last owner returns `409`.
 
 ## API keys and tokens
@@ -362,7 +399,18 @@ request. The app must ask you again.
 ## Enterprise features
 
 An entitlement decides whether a feature exists for the account. The role still
-decides who may use it. The Enterprise plan holds all five.
+decides who may use it. Enterprise turns all five on, on any plan, in one of
+two ways:
+
+- **Enterprise demo.** An owner or admin turns it on in **Billing → Plan** or in
+  the account settings, and turns it off at any time. The account is marked
+  "Demo", and Kortix sales gets in touch.
+- **Enterprise license.** An annual license from Kortix sales. The account is
+  marked "Licensed". A license carries no credits: usage is paid from the
+  account's plan and top-ups, like any account.
+
+When a license ends, SSO and SCIM stay on for 14 days so nobody is locked out of
+sign-in.
 
 | Entitlement | Unlocks |
 |---|---|

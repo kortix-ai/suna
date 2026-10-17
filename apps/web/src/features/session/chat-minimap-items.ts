@@ -2,7 +2,7 @@ import { parseChannelMessage } from '@/features/session/turn/channel-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { splitPastedContent } from '@kortix/shared';
-import { isFilePart, isTextPart, type FilePart, type TextPart, type Turn } from '@/ui';
+import type { SessionLogBlock, SessionLogTurn } from '@kortix/sdk';
 
 import {
   parseAgentMentionReferences,
@@ -180,8 +180,15 @@ export function buildSegments(text: string, mentions: Mention[]): MinimapSegment
   return segments;
 }
 
+/** A file the prompt carries: an attachment block or a harness `file` block (a text/plain or directory mention). */
+function fileName(block: SessionLogBlock): string | undefined {
+  if (block.type === 'attachment') return block.name || 'File';
+  if (block.type === 'harness' && block.kind === 'file') return (block.data as { filename?: string }).filename || 'File';
+  return undefined;
+}
+
 function collectAttachments(
-  fileParts: FilePart[],
+  files: { id: string; name: string }[],
   uploads: { filename: string }[],
   mentioned: { name: string }[],
 ): MinimapAttachment[] {
@@ -192,7 +199,7 @@ function collectAttachments(
     seen.add(name);
     out.push({ key, name });
   };
-  fileParts.forEach((part, i) => push(part.id ?? `part:${i}`, part.filename || 'File'));
+  files.forEach((file) => push(file.id, file.name));
   uploads.forEach((file, i) => push(`upload:${i}`, file.filename));
   mentioned.forEach((file, i) => push(`ref:${i}`, file.name));
   return out;
@@ -207,23 +214,26 @@ function collectAttachments(
  *
  * Returns `null` for a turn with nothing to preview.
  */
-export function extractMinimapItem(turn: Turn): MinimapItem | null {
-  const parts = turn.userMessage.parts;
+export function extractMinimapItem(turn: SessionLogTurn): MinimapItem | null {
+  const blocks = turn.user.blocks;
 
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as { ignored?: boolean }).ignored,
-  ) as TextPart[];
-  const fileParts = parts.filter(isFilePart) as FilePart[];
+  // Ignored text is a harness block, so the text blocks the harness did not write are the prompt.
+  const texts = blocks.flatMap((b) => (b.type === 'text' && !b.synthetic ? [b.text] : []));
+  const files = blocks.flatMap((b) => {
+    const name = fileName(b);
+    return name === undefined ? [] : [{ id: b.id, name }];
+  });
 
-  const prompt = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
+  // Pastes first, as `UserMessage` does: a ref inside a paste is paste text,
+  // and `stripSystemPtyText` would collapse the body's blank lines.
+  const { text: typed, pastes } = splitPastedContent(texts.join('\n'));
+  const prompt = stripSystemPtyText(typed);
   // A Slack, Teams or Telegram turn is a scaffold around a person's words: the
   // preview is the sender and the words, as the message card shows them.
   const channel = parseChannelMessage(prompt);
-  const raw = channel
+  const afterPastes = channel
     ? [channel.userName, channel.messageText].filter(Boolean).join(': ')
     : prompt;
-  // Pastes first, as `UserMessage` does: a ref inside a paste is paste text.
-  const { text: afterPastes, pastes } = splitPastedContent(raw);
   const afterReply = stripReplyContexts(afterPastes);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
@@ -236,7 +246,7 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
     truncate(stripHtmlTags(stripKortixSystemTags(cleanText)).replace(/\s+/g, ' ').trim(), MAX_BODY_TEXT) ||
     (pastes.length > 0 ? 'Pasted text' : '');
 
-  const attachments = collectAttachments(fileParts, uploads, fileMentions);
+  const attachments = collectAttachments(files, uploads, fileMentions);
   if (!body && attachments.length === 0) return null;
 
   const mentions: Mention[] = [
@@ -246,7 +256,7 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   ];
 
   return {
-    id: turn.userMessage.info.id,
+    id: turn.id,
     text: truncate(body, MAX_ITEM_TEXT) || attachments[0].name,
     segments: buildSegments(body, mentions),
     attachments,
@@ -254,7 +264,7 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
 }
 
 /** The one-line label for a turn. Empty when the turn has nothing to preview. */
-export function extractUserText(turn: Turn): string {
+export function extractUserText(turn: SessionLogTurn): string {
   return extractMinimapItem(turn)?.text ?? '';
 }
 

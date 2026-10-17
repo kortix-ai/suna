@@ -1,19 +1,10 @@
 'use client';
 
-import {
-  WarningIcon as AlertTriangle,
-  CoinsIcon as Coins,
-  CpuIcon as Cpu,
-  CurrencyDollarIcon as DollarSign,
-  SparkleIcon as Sparkles,
-  LightningIcon as Zap,
-} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -21,19 +12,25 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
+import type { GatewayModelStat } from '@/lib/projects-gateway-client';
 import { listProjectSessions, PROJECT_SESSION_NAME_LOOKUP_LIMIT } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
+import { cn } from '@/lib/utils';
 
 import {
-  MeterRow,
+  CostPanel,
+  CostSection,
+  MetricTab,
   RangeSelector,
-  StatCard,
+  ShareBar,
   UsageChart,
   chartConfig,
   fmtCompact,
-  fmtUsd,
+  fmtCredits,
+  fmtMs,
+  weightedP50,
 } from './_metrics';
-import { Panel, displayModel, modelAccent } from './_shared';
+import { displayModel } from './_shared';
 import { GatewayBudgetSection } from './gateway-budgets';
 
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
@@ -44,7 +41,8 @@ const METRICS: {
   keys: (keyof typeof chartConfig)[];
   fmt: (v: number) => string;
 }[] = [
-  { key: 'cost', label: 'Spend', keys: ['cost'], fmt: fmtUsd },
+  // Spend reads in credits; the tooltip appends the unit in the component.
+  { key: 'cost', label: 'Spend', keys: ['cost'], fmt: (v) => fmtCredits(v) },
   {
     key: 'traffic',
     label: 'Requests',
@@ -60,17 +58,35 @@ const METRICS: {
   },
 ];
 
+/** Models that make the "Most spend" list by name; the rest fold into one row. */
+const MOST_SPEND_ROWS = 5;
+
 /**
- * The gateway dashboard — one scannable analytics surface that folds the former
- * Overview, Cost, Usage and Budgets tabs together: headline stats, the spend
- * cap that governs them, a single chart you pivot across metrics, and the
- * spend/error breakdowns underneath.
+ * Top models by spend, with everything past the first few folded into one
+ * "everything else" row so the list always adds up to the window's spend.
+ */
+export function mostSpend(models: readonly GatewayModelStat[], rows = MOST_SPEND_ROWS) {
+  const sorted = [...models].sort((a, b) => b.cost - a.cost);
+  const total = sorted.reduce((sum, m) => sum + m.cost, 0);
+  const named = sorted.slice(0, rows);
+  const rest = sorted.slice(rows).reduce((sum, m) => sum + m.cost, 0);
+  const share = (cost: number) => (total > 0 ? Math.round((cost / total) * 100) : 0);
+  return {
+    named: named.map((m) => ({ model: m, share: share(m.cost) })),
+    rest: sorted.length > rows ? { cost: rest, share: share(rest) } : null,
+  };
+}
+
+/**
+ * Costs — the gateway's analytics for the window: one card whose header IS
+ * the metric picker (Spend, Requests, Tokens, Latency — each with its window
+ * total), the chart for the picked metric under it, and plain hairline lists
+ * below: where the money went, the cap on it, the member caps, the sessions
+ * that cost most, and what failed.
  *
- * Budgets used to be the tab next door, and it opened by restating this
- * screen's "Total spend" figure in its own 2xl type. Reading a number and
- * capping it are one job; the cap now sits directly under the number
- * (`GatewayBudgetSection`), before the trend chart, because a limit is a
- * setting about the headline and not a footnote to the breakdowns.
+ * The four stat cards that used to sit above a separate chart panel restated
+ * the same totals the chart's metric tabs then switched between. They are one
+ * control now: the tab carries the total and the chart carries the shape.
  */
 export function GatewayOverview({
   projectId,
@@ -81,7 +97,11 @@ export function GatewayOverview({
   canWrite?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('gatewayCosts');
   const metrics = useLocalizedUiCatalog(METRICS);
+  const locale = useLocale();
+  const creditsUnit = tI18nComplete.raw('textbe379a30f1aa');
+  const credits = (usd: number) => fmtCredits(usd, locale);
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
@@ -125,228 +145,230 @@ export function GatewayOverview({
   const outTokens = overview?.output_tokens ?? 0;
 
   const series = seriesData?.series ?? [];
-  const sparkSeries = series.map((s) => ({ ...s, tokens: s.input_tokens + s.output_tokens }));
+  const latency = weightedP50(series);
 
-  const models = [...(breakdown?.models ?? [])].sort((a, b) => b.cost - a.cost).slice(0, 6);
-  const maxModelCost = Math.max(1e-9, ...models.map((m) => m.cost));
-  const sessions = sessionsData?.sessions ?? [];
+  const spend = mostSpend(breakdown?.models ?? []);
+  const sessions = (sessionsData?.sessions ?? []).slice(0, 6);
   const maxSessionCost = Math.max(1e-9, ...sessions.map((s) => s.total_cost));
   const errorTypes = errorData?.errors ?? [];
   const maxErrorCount = Math.max(1, ...errorTypes.map((e) => e.count));
 
   const activeMetric = metrics.find((m) => m.key === metric) ?? metrics[0];
+  const tab = (key: MetricKey) => metrics.find((m) => m.key === key)?.label ?? key;
+
+  const tabs: { key: MetricKey; value: string; unit?: string; sub: ReactNode }[] = [
+    {
+      key: 'cost',
+      value: credits(cost),
+      unit: creditsUnit,
+      sub: <SpendSplit kortixCost={kortixCost} providerCost={providerCost} days={days} />,
+    },
+    {
+      key: 'traffic',
+      value: requests.toLocaleString(),
+      sub: requests
+        ? `${t('perDay', { count: Math.round(requests / Math.max(1, days)) })} · ${t('errorsRate', {
+            count: errors,
+            rate: ((errors / requests) * 100).toFixed(1),
+          })}`
+        : tI18nComplete.raw('texte191ab529417'),
+    },
+    {
+      key: 'tokens',
+      value: fmtCompact(inTokens + outTokens),
+      sub: t('tokensSub', { in: fmtCompact(inTokens), out: fmtCompact(outTokens) }),
+    },
+    {
+      key: 'latency',
+      value: latency == null ? '—' : fmtMs(latency),
+      sub: latency == null ? tI18nComplete.raw('texte191ab529417') : t('latencySub'),
+    },
+  ];
 
   return (
     // No scroller and no padding of its own: this is a tab of
     // `/projects/[id]/models`, and `CapabilityPageShell` owns the page's one
-    // scroll container and its column. The `p-5` here indented the stat tiles
-    // 20px past the heading and the tab strip above them.
+    // scroll container and its column.
     <div className="flex flex-col">
-      <div className="w-full space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-foreground text-sm font-medium">
-            {tI18nComplete.raw('texteb970eb0951c')} {days} {tI18nComplete.raw('textab51004e9d71')}
-          </h2>
-          <RangeSelector days={days} setDays={setDays} />
-        </div>
-
-        {/* Headline stats */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard
-            label={tI18nComplete.raw('text0a5d5c335cd8')}
-            value={fmtUsd(cost)}
-            sub={<SpendSplit kortixCost={kortixCost} providerCost={providerCost} days={days} />}
-            icon={DollarSign}
-            accent="var(--kortix-blue)"
-            spark={sparkSeries}
-            sparkKey="cost"
-            index={0}
-          />
-          <StatCard
-            label={tI18nComplete.raw('textada27592c957')}
-            value={requests.toLocaleString()}
-            sub={`${(requests / Math.max(1, days)).toFixed(0)}/day avg`}
-            icon={Zap}
-            accent="var(--kortix-blue)"
-            spark={sparkSeries}
-            sparkKey="requests"
-            index={1}
-          />
-          <StatCard
-            label={tI18nComplete.raw('textcb702378f315')}
-            value={errors.toLocaleString()}
-            sub={
-              requests
-                ? `${((errors / requests) * 100).toFixed(1)}% error rate`
-                : tI18nComplete.raw('texte191ab529417')
-            }
-            icon={AlertTriangle}
-            accent="var(--destructive)"
-            spark={sparkSeries}
-            sparkKey="errors"
-            index={2}
-          />
-          <StatCard
-            label={tI18nComplete.raw('texta039dfb9628b')}
-            value={fmtCompact(inTokens + outTokens)}
-            sub={`${fmtCompact(inTokens)} in · ${fmtCompact(outTokens)} out`}
-            icon={Coins}
-            accent="var(--kortix-blue)"
-            spark={sparkSeries}
-            sparkKey="tokens"
-            index={3}
-          />
-        </div>
-
-        {/* The cap on the figure directly above it — the whole former Budgets
-            tab, as one panel. */}
-        <GatewayBudgetSection projectId={projectId} canWrite={canWrite} />
-
-        {/* One chart, pivoted across metrics */}
-        <Panel
-          title={tI18nComplete.raw('text9e217716c4e0')}
-          description={tI18nComplete.raw('text7c1885c365d9')}
-          action={
-            <FilterBar className="h-8">
-              {metrics.map((m) => (
-                <FilterBarItem
+      <div className="w-full space-y-12">
+        {/* The metric picker IS the chart's header: each tab carries its
+            window total, the chart below carries the shape. */}
+        <section className="border-border bg-surface overflow-hidden rounded-xl border">
+          <div className="border-border flex flex-col border-b sm:flex-row">
+            <div
+              role="tablist"
+              aria-label={tI18nComplete.raw('text9e217716c4e0')}
+              className="flex min-w-0 flex-1"
+            >
+              {tabs.map((m) => (
+                <MetricTab
                   key={m.key}
-                  onClick={() => setMetric(m.key)}
-                  data-state={metric === m.key ? 'active' : 'inactive'}
-                  className="text-xs"
-                >
-                  {m.label}
-                </FilterBarItem>
-              ))}
-            </FilterBar>
-          }
-        >
-          <UsageChart data={series} keys={activeMetric.keys} yFormatter={activeMetric.fmt} />
-        </Panel>
-
-        {/* Breakdowns */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Panel
-            title={tI18nComplete.raw('text79489561d9ef')}
-            count={models.length}
-            description={tI18nComplete.raw('text9cb4d9cdbd81')}
-          >
-            {models.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">
-                {tI18nComplete.raw('textea923f45a415')}
-              </p>
-            ) : (
-              <div className="space-y-0.5">
-                {models.map((m, i) => {
-                  const accent = modelAccent(`${m.provider}/${m.model}`);
-                  return (
-                    <MeterRow
-                      key={`${m.provider}/${m.model}`}
-                      rank={i + 1}
-                      accent={accent}
-                      label={displayModel(m.model) || 'unknown'}
-                      value={<span className="text-foreground font-medium">{fmtUsd(m.cost)}</span>}
-                      segments={[{ pct: (m.cost / maxModelCost) * 100, color: accent }]}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title={tI18nComplete.raw('textfec78985c8f3')}
-            count={sessions.length}
-            description={tI18nComplete.raw('textd321c227d1d9')}
-          >
-            {sessions.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">
-                {tI18nComplete.raw('text0e25da739ad6')}
-              </p>
-            ) : (
-              <div className="space-y-0.5">
-                {sessions.slice(0, 6).map((s, i) => {
-                  const name = sessionNames.get(s.session_id);
-                  return (
-                    <MeterRow
-                      key={s.session_id}
-                      rank={i + 1}
-                      accent={modelAccent(s.session_id)}
-                      label={
-                        name ? <span className="font-sans">{name}</span> : s.session_id.slice(0, 8)
-                      }
-                      value={
-                        <span className="text-foreground font-semibold">
-                          {fmtUsd(s.total_cost)}
-                        </span>
-                      }
-                      sub={
-                        <>
-                          {name && (
-                            <span className="text-muted-foreground/40 font-mono">
-                              {s.session_id.slice(0, 8)}
-                            </span>
-                          )}
-                          <span className="inline-flex items-center gap-1">
-                            <Sparkles className="text-kortix-blue size-3" />
-                            {fmtUsd(s.llm_cost)}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Cpu className="text-muted-foreground size-3" />
-                            {fmtUsd(s.compute_cost)}
-                          </span>
-                          <span className="text-muted-foreground/50">
-                            {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
-                          </span>
-                        </>
-                      }
-                      segments={[
-                        { pct: (s.llm_cost / maxSessionCost) * 100, color: 'var(--kortix-blue)' },
-                        {
-                          pct: (s.compute_cost / maxSessionCost) * 100,
-                          color: 'var(--muted-foreground)',
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        {errorTypes.length > 0 && (
-          <Panel
-            title={tI18nComplete.raw('text431a387a9976')}
-            count={errorTypes.length}
-            description={tI18nComplete.raw('text7aec2ce05cb8')}
-          >
-            <div className="space-y-0.5">
-              {errorTypes.map((e, i) => (
-                <MeterRow
-                  key={e.code}
-                  rank={i + 1}
-                  accent="var(--destructive)"
-                  label={e.code}
-                  value={e.count.toLocaleString()}
-                  segments={[{ pct: (e.count / maxErrorCount) * 100, color: 'var(--destructive)' }]}
+                  label={tab(m.key)}
+                  value={m.value}
+                  unit={m.unit}
+                  selected={metric === m.key}
+                  onSelect={() => setMetric(m.key)}
                 />
               ))}
             </div>
-          </Panel>
-        )}
+            <div className="border-border flex items-center border-t px-4 py-3 sm:border-t-0 sm:border-l sm:py-0">
+              <RangeSelector days={days} setDays={setDays} />
+            </div>
+          </div>
+          <div className="space-y-2 px-5 pt-6 pb-4">
+            {/* The picked metric's one line of context — who was paid, the
+                error rate, the in/out split — read with its chart. */}
+            <p className="text-muted-foreground text-xs tabular-nums">
+              {tabs.find((m) => m.key === metric)?.sub}
+            </p>
+            <UsageChart
+              data={series}
+              keys={activeMetric.keys}
+              yFormatter={
+                activeMetric.key === 'cost'
+                  ? (v) => `${credits(v)} ${creditsUnit}`
+                  : activeMetric.fmt
+              }
+            />
+          </div>
+        </section>
+
+        {/* The cap on the spend directly under the chart, with the member
+            caps under it — before the breakdowns. */}
+        <GatewayBudgetSection projectId={projectId} canWrite={canWrite} />
+
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <CostSection title={t('mostSpend')} description={t('mostSpendHint')}>
+            <CostPanel>
+              {spend.named.length === 0 ? (
+                <p className="text-muted-foreground flex h-10 items-center text-xs">
+                  {tI18nComplete.raw('textea923f45a415')}
+                </p>
+              ) : (
+                <>
+                  {spend.named.map(({ model, share }) => (
+                    <SpendRow
+                      key={`${model.provider}/${model.model}`}
+                      label={displayModel(model.model) || 'unknown'}
+                      value={`${credits(model.cost)} ${creditsUnit} · ${share}%`}
+                    />
+                  ))}
+                  {spend.rest ? (
+                    <SpendRow
+                      label={t('everythingElse')}
+                      value={`${credits(spend.rest.cost)} ${creditsUnit} · ${spend.rest.share}%`}
+                    />
+                  ) : null}
+                </>
+              )}
+            </CostPanel>
+          </CostSection>
+
+          <CostSection title={tI18nComplete.raw('textfec78985c8f3')} description={t('sessionsHint')}>
+            <CostPanel>
+              {sessions.length === 0 ? (
+                <p className="text-muted-foreground flex h-10 items-center text-xs">
+                  {tI18nComplete.raw('text0e25da739ad6')}
+                </p>
+              ) : (
+                sessions.map((s) => {
+                  const name = sessionNames.get(s.session_id);
+                  return (
+                    <div
+                      key={s.session_id}
+                      className="border-border flex min-h-13 items-center gap-4 border-b py-2 last:border-b-0"
+                      data-session-row=""
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span
+                          className={cn(
+                            'text-foreground truncate text-xs',
+                            !name && 'font-mono',
+                          )}
+                        >
+                          {name ?? s.session_id.slice(0, 8)}
+                        </span>
+                        <span className="text-muted-foreground truncate text-xs tabular-nums">
+                          {name ? <span className="font-mono">{s.session_id.slice(0, 8)} · </span> : null}
+                          {t('sessionModel', { cost: credits(s.llm_cost) })} ·{' '}
+                          {t('sessionSandbox', { cost: credits(s.compute_cost) })} ·{' '}
+                          {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
+                        </span>
+                      </div>
+                      <ShareBar
+                        className="w-24"
+                        segments={[
+                          { pct: (s.llm_cost / maxSessionCost) * 100, color: 'var(--kortix-blue)' },
+                          {
+                            pct: (s.compute_cost / maxSessionCost) * 100,
+                            color: 'var(--muted-foreground)',
+                          },
+                        ]}
+                      />
+                      <span className="text-foreground w-14 shrink-0 text-right text-xs font-medium tabular-nums">
+                        {credits(s.total_cost)}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </CostPanel>
+          </CostSection>
+        </div>
+
+        {errorTypes.length > 0 ? (
+          <CostSection
+            title={tI18nComplete.raw('text431a387a9976')}
+            description={t('errorsHint')}
+            action={
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {t('errorsTotal', { count: errorTypes.reduce((sum, e) => sum + e.count, 0) })}
+              </span>
+            }
+          >
+            <CostPanel>
+              {errorTypes.map((e) => (
+                <div
+                  key={e.code}
+                  className="border-border flex h-10 items-center gap-4 border-b last:border-b-0"
+                >
+                  <span className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">
+                    {e.code}
+                  </span>
+                  <ShareBar
+                    className="w-40"
+                    segments={[{ pct: (e.count / maxErrorCount) * 100, color: 'var(--destructive)' }]}
+                  />
+                  <span className="text-foreground w-8 shrink-0 text-right text-xs tabular-nums">
+                    {e.count.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </CostPanel>
+          </CostSection>
+        ) : null}
       </div>
     </div>
   );
 }
 
+/** One "Most spend" row: a model and its spend with its share of the window. */
+function SpendRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-border flex h-10 items-center justify-between gap-3 border-b last:border-b-0">
+      <span className="text-foreground min-w-0 truncate text-xs">{label}</span>
+      <span className="text-foreground shrink-0 text-xs tabular-nums">{value}</span>
+    </div>
+  );
+}
+
 /**
- * Who actually collected the money behind the Total spend headline.
+ * Who actually collected the money behind the Spend total.
  *
  * Two payees, never more: the Kortix wallet (managed inference, or the
  * platform fee on a BYOK route) and your own provider account (BYOK, billed
  * to your own key). A payee that collected nothing is left out rather than
- * printed as a `$0.0000` — on the two common deployments (all-managed and
+ * printed as a `0` — on the two common deployments (all-managed and
  * all-BYOK) exactly one side is real, and naming it is more useful than a
  * two-term sum with a zero in it.
  */
@@ -368,7 +390,7 @@ function SpendSplit({
           label={tI18nComplete.raw('textab54cf5e1d9d')}
           amount={kortixCost}
         />
-        <span className="text-muted-foreground/40">·</span>
+        <span>·</span>
         <Payee
           color="var(--muted-foreground)"
           label={tI18nComplete.raw('text1e19bab29bc6')}
@@ -386,14 +408,13 @@ function SpendSplit({
   );
 }
 
+/** Bare credits: the Spend tab above carries the unit. */
 function Payee({ color, label, amount }: { color: string; label: string; amount: number }) {
+  const locale = useLocale();
   return (
     <span className="inline-flex items-center gap-1 tabular-nums">
       <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-      {fmtUsd(amount)} {label}
+      {fmtCredits(amount, locale)} {label}
     </span>
   );
 }
-// `Panel` is not redefined here — it moved to `./_shared` (imported above)
-// so `gateway-logs.tsx` could use the identical component instead of its own
-// copy. Re-declaring it locally would shadow the import.

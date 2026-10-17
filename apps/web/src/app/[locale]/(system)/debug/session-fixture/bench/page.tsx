@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
  *
  * Seeds a synthetic transcript (`?messages=`, default 100) into the SDK session
  * store and renders it through the same pieces as the parity fixture
- * (`TurnViewport` + `FixtureTurn` → `ThrottledMarkdown` → Streamdown → Shiki),
+ * (`TurnViewport` + the production `SessionTurn` → `ThrottledMarkdown` → Streamdown → Shiki),
  * then replays `?deltas=` (default 200) `message.part.delta` events into the
  * last assistant message, one per 16 ms — the sync store's batch cadence.
  *

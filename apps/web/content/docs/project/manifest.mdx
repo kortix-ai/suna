@@ -95,7 +95,7 @@ agents:
     secrets: [HELPDESK_TOKEN]
 ```
 
-A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`, `hidden` and `options`. `prompt_file` is a repository-relative `.md` path.
+A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`, `hidden` and `options`. `prompt_file` is a repository-relative `.md` path. A v3 agent gets no project repository in `/workspace` unless it sets `workspace: { project_repository: true }`. See [Workspace](#agent-workspace).
 
 ## Top-level keys
 
@@ -112,6 +112,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
 | `tools` | map | all five Kortix tools | Tool name to `kortix:<name>` or a module path. See [Tools](/docs/project/tools). |
+| `commands` | map | none | v3 only. Slash command name to its template. See [commands (v3)](#commands-v3). |
 | `sandbox` | map | platform image | `templates`, `default`. See [sandbox](#sandbox). |
 | `triggers` | list | none | Schedules, webhooks, monitors, app events. |
 | `connectors` | list | none | Apps, APIs and MCP servers an agent can call. |
@@ -174,10 +175,11 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `secrets` | none | Grant set of secret names the agent receives in its sandbox. |
 | `skills` | the `.md` decides | Grant set of skill names. Set, it overrides `permission.skill` in the agent `.md`. Omitted, the `.md` rule applies. |
 | `apps` | none | Grant set of App slugs the agent may open when the App access is `restricted` or `private`. |
+| `commands` | none | v3 only. Grant set of command names from the top-level `commands`. The agent runs only these. |
 | `kortix_permissions` | none | Grant set of project permissions. Capped by the agent's ceiling role, never by the role of the person who starts the session. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). |
 | `tools` | all | `all`, `none`, a list of tool names, or `{ exclude: [names] }`. The map form `{ bash: false }` also works. |
 | `sandbox` | project default | A sandbox template slug, or `default`. |
-| `repository_access` | `true` | Boolean. `false`: new sessions of this agent get no project repository. |
+| `workspace.project_repository` | v2 `true`, v3 `false` | Boolean. `true`: new sessions of this agent check out the project repository. `false`: no project repository in `/workspace` and no repository access. See [Workspace](#agent-workspace). |
 | `harnesses` | none | Per-agent `pi.packages`, `pi.exclude`, `opencode.plugins`, `opencode.exclude`. |
 | `network_egress` | none | Declaration only. Accepts `{ version: 1, default: deny, rules: [] }` and warns that egress is not enforced. |
 
@@ -194,7 +196,57 @@ A grant set is `all` (or `*`), `none` (or `""`), or a list of names. A list that
 - `connectors_required`: parsed, must be a subset of `connectors`, not read at session start.
 - `connectors_personal`: alias of `connectors_required`. Warns.
 - `kortix_cli`: alias of `kortix_permissions`. Warns. A different value from `kortix_permissions` is an error.
-- `workspace`: `branch` means `repository_access: true`, and `runtime` means `false`. `read` without `repository_access` refuses session start (`409`, `WORKSPACE_MODE_UNAVAILABLE`). A value that conflicts with `repository_access` is an error.
+- `repository_access`: alias of `workspace.project_repository`. A different value is an error.
+- `workspace` as a string: `branch` means `project_repository: true`, and `runtime` means `false`. `read` without an explicit boolean refuses session start (`409`, `WORKSPACE_MODE_UNAVAILABLE`).
+
+### Agent workspace
+
+`workspace` sets what new sessions of the agent get in `/workspace`. It has one key today:
+
+```yaml
+agents:
+  engineer:
+    workspace:
+      project_repository: true   # v3 default false, v2 default true
+```
+
+- `project_repository: true`: the session checks out the project repository on its own session branch. Set it on every agent that reads or edits the repository, runs scripts from it, or opens change requests.
+- `project_repository: false`: the session gets no checkout, no git variables, and no repository API access (`403`). Its [project tools](/docs/project/tools#agents-without-the-project-repository) still load: the sandbox receives only the modules of the tools the agent may call.
+- Omitted: `false` in `kortix_version: 3`, `true` in versions 1 and 2. A v2 project keeps its behavior. The starter, `kortix init`, Create project, the agent editor and `kortix migrate` write the value explicitly, so a new or migrated agent states it.
+- A running session keeps the value it started with. A change applies to new sessions.
+- Any other key under `workspace` is an error. A typo does not fall back to the default: Kortix withholds the repository from that agent until the block is fixed.
+
+## commands (v3)
+
+In v3, a slash command is declared in `kortix.yaml`. The project registers it under `commands`, and each agent that may run it enables it by name. v3 reads no harness folder, so `harnesses/opencode/commands/` and `harnesses/pi/prompts/` are not read.
+
+```yaml
+kortix_version: 3
+default_agent: support
+commands:
+  triage:
+    description: Sort a ticket by urgency.
+    prompt: "Read ticket $1 and reply with its urgency: low, normal or high."
+  release-notes:
+    prompt_file: prompts/release-notes.md
+agents:
+  support:
+    prompt_file: prompts/support.md
+    commands: [triage, release-notes]   # or: all
+```
+
+| Key | Rule |
+| --- | --- |
+| name | Lowercase letters and digits, in words joined by `-`. At most 64 characters. |
+| `prompt` | The template, as a non-empty string. |
+| `prompt_file` | A repository path to a `.md` file. Kortix uses the whole file as the template; it does not remove a frontmatter block. |
+| `description` | Optional. Shown in the `/` menu. |
+
+- Set exactly one of `prompt` or `prompt_file`. Any other key is an error. An `agent` key points you to `agents.<name>.commands`.
+- `$ARGUMENTS` takes everything typed after the command. `$1`, `$2` and so on take the words in order, and the highest one takes the rest. A template with neither gets the arguments appended.
+- An agent runs only the commands its `commands` grant names: `all`, `none` or a list. Omitted means none. A command that no agent enables is left out.
+- Running a command on an agent that does not enable it answers `403` with `{"error": "command_not_enabled", "command": "<name>", "agent": "<agent>"}`.
+- Commands come from the manifest on the project's default branch.
 
 ## env
 
@@ -274,7 +326,7 @@ harnesses:
       - source: npm:pi-mcp-adapter@2.36.0
         extensions: ["extensions/*.ts"]   # load only these files
         skills: []                        # load none of its skills
-      - ./harnesses/pi/audit.ts           # a file in this repository
+      - ./extensions/audit.ts             # one extension file in this repository
 agents:
   reviewer:
     harnesses:
@@ -284,9 +336,35 @@ agents:
 ```
 
 - An entry is `npm:<name>@<x.y.z>` (an exact version), a `./` path that stays inside the repository, or `{ source, extensions, skills, prompts, themes }`. An omitted filter loads everything. `[]` loads nothing.
+- A `./` path to a `.ts` or `.js` file is one extension. It can live anywhere in the repository, so a project needs no `harnesses/pi/` folder. It loads from the session's config release, and a change to a file in its folder restarts the pi runtime.
+- A session reads the package list when it starts. A running session keeps its list until it restarts.
 - At most 20 entries. A range, a missing version and a git source are errors.
 - An agent loads the top-level list, minus its `exclude`, plus its own `packages`. `exclude` exists only on an agent.
 - The change request merge builds the packages. A session never runs `npm install`. A session that starts before the build exists boots without the project packages.
+
+**`harnesses.pi.codemode`** sets pi's codemode tool. The model writes one JavaScript script that calls the other tools (`await tools.bash({ command })`), and only the script's output reaches the model, so one call can batch, chain and filter several tool calls.
+
+```yaml
+harnesses:
+  pi:
+    codemode: on        # on (default) | only | off
+agents:
+  reviewer:
+    harnesses:
+      pi:
+        codemode: off   # this agent only
+```
+
+| Value | The model gets |
+| --- | --- |
+| `on` (default) | every tool, plus `codemode` |
+| `only` | `codemode` alone; every other tool runs from a script |
+| `off` | no `codemode` |
+
+- An agent's value replaces the top-level one. Read when the session starts.
+- A script's calls pass the same permission policy as direct calls: a `deny` rule blocks them, and an `ask` rule pauses the script until someone answers.
+- A script cannot start a subagent (`task`) or ask a question (`question`). The model calls those directly.
+- Scripts run in a sandboxed JavaScript VM (QuickJS) with no file system, network or timers. They reach the box only through the tools.
 
 **`harnesses.opencode.plugins`** (v2) lists the files in `<opencode config dir>/plugins/` that load, for example `audit.ts`. Without the key, every plugin file loads. An agent adds its own with `agents.<name>.harnesses.opencode.plugins` and drops top-level ones with `exclude`. A listed file that does not exist fails the config build.
 
@@ -329,7 +407,7 @@ A monitor trigger rejects `cron`, `run_at`, `timezone` and `secret_env`. An even
 
 `computer` is not a valid provider: connecting a computer creates that connector. The slugs `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors. Connecting a channel writes its `channel` connector for you: see [Slack, Teams & email](/docs/connect/channels).
 
-**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml). Apps must be on for the project: see [Turn Apps on](/docs/apps#turn-apps-on).
+**`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml).
 
 `apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy` and `labels`. Any other key is an error.
 

@@ -4,9 +4,9 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { Ports } from './ports';
+import { computePorts, type PortName, type Ports } from './ports';
 
-export type DbMode = 'shared' | 'isolated';
+export type DbMode = 'shared' | 'branch' | 'isolated';
 
 export const KORTIX_HOME = process.env.KORTIX_HOME || join(homedir(), '.kortix');
 export const WT_HOME = join(KORTIX_HOME, 'worktrees');
@@ -21,6 +21,8 @@ export interface SlotEntry {
   ports: Ports;
   /**
    * shared: use the primary checkout's standard local Supabase project.
+   * branch: own database `kortix_wt_<name>` inside the primary Supabase
+   *   (`lib/branch-db.ts`); auth, storage and studio stay shared.
    * isolated: provision this worktree's own Supabase project/containers/volumes.
    *
    * Optional for backward compatibility with registry entries created before
@@ -81,10 +83,31 @@ export function sanitizeName(name: string): string {
   return s.slice(0, 40);
 }
 
-export function lowestFreeSlot(reg: Registry): number {
+/** How many unregistered slots `create` probes before it gives up. */
+export const SLOT_SEARCH_LIMIT = 100;
+
+export interface SlotClash { slot: number; service: PortName; port: number }
+
+/**
+ * The slot a new worktree gets: the lowest slot that no registry entry holds
+ * and whose whole port block is free. Registered slots are skipped, never
+ * probed: a stopped worktree listens on nothing, yet its block is still its
+ * own. `slot` is null when `limit` unregistered slots all have a port in use.
+ */
+export function pickSlot(
+  reg: Registry,
+  inUse: (port: number) => boolean,
+  limit = SLOT_SEARCH_LIMIT,
+): { slot: number | null; clashes: SlotClash[] } {
   const used = new Set(Object.values(reg.slots).map((s) => s.slot));
-  let n = 0; while (used.has(n)) n++;
-  return n;
+  const clashes: SlotClash[] = [];
+  for (let slot = 0; clashes.length < limit; slot++) {
+    if (used.has(slot)) continue;
+    const busy = (Object.entries(computePorts(slot)) as [PortName, number][]).find(([, p]) => inUse(p));
+    if (!busy) return { slot, clashes };
+    clashes.push({ slot, service: busy[0], port: busy[1] });
+  }
+  return { slot: null, clashes };
 }
 
 export function slotDir(name: string): string { return join(WT_HOME, name); }

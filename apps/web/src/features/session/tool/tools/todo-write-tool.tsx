@@ -24,12 +24,17 @@ export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProp
   const metadata = partMetadata(call);
 
   const todos = useMemo(() => {
-    const fromInput = parseTodos(input.todos);
+    // Codex `update_plan` sends `plan: [{ step, status }]`.
+    const fromInput = parseTodos(input.todos ?? input.plan);
     if (fromInput.length) return fromInput;
     const fromMeta = parseTodos(metadata.todos);
     if (fromMeta.length) return fromMeta;
-    return parseTodos(streamingInput.todos);
-  }, [input.todos, metadata.todos, streamingInput.todos]);
+    const fromStream = parseTodos(streamingInput.todos);
+    if (fromStream.length) return fromStream;
+    // Claude Code `TaskCreate` / `TaskUpdate` carry one task: its `subject`, else its `taskId`.
+    const id = input.taskId;
+    return parseTodos([{ content: input.subject ?? (typeof id === 'string' || typeof id === 'number' ? `#${id}` : undefined), status: input.status }]);
+  }, [input.todos, input.plan, input.subject, input.taskId, input.status, metadata.todos, streamingInput.todos]);
 
   const total = todos.length;
   // Two more passes over the list per render — one of them allocating a throwaway

@@ -162,7 +162,7 @@ A new instance starts with these defaults:
 
 | Setting | Default |
 |---|---|
-| Sign-in methods | Password only. Email sign-ups confirm without an email. |
+| Sign-in methods | Password only. Email sign-ups confirm without an email, so a sign-up's address is unproven. See [Unconfirmed email addresses](#unconfirmed-email-addresses). |
 | Social sign-in | None |
 | Billing | Off |
 | Marketing pages | Off. Every marketing route opens the web app. Turn on with `KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false`. |
@@ -184,7 +184,7 @@ A new instance starts with these defaults:
 | `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
 
 <Callout type="warning">
-A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`.
+A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`. `kortix self-host init` prints the same warning on a domain or tunnel instance. `init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way: while it is off, nobody can sign up, the admin included.
 </Callout>
 
 What the stack does by itself:
@@ -194,7 +194,21 @@ What the stack does by itself:
 - [Connectors](/docs/connect/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
-Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable.
+Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
+
+### Unconfirmed email addresses
+
+`ENABLE_EMAIL_AUTOCONFIRM=true` is the default until you set `EMAIL_URL`. Auth then confirms each sign-up without an email, and the API reads the same value from `.env`. While it is `true`, the API treats the email of a password, email-code or social login as unproven, because whoever signed up first holds the address:
+
+| Path | With `ENABLE_EMAIL_AUTOCONFIRM=true` |
+|---|---|
+| Sign-in with a pending invite | Sign-in does not accept the invite. |
+| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The person joins by signing in through the account's SAML provider. |
+| **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
+| An invite a person sent (**Members** → **Invite**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
+| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
+
+A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one. Set `EMAIL_URL` before you invite people. Without it, invite a person only after that person has signed up: an address has one password login, so nobody else can take it then. A cloud instance never sets the value.
 
 ## The platform admin console
 
@@ -207,7 +221,6 @@ Platform admins open `/admin`. On a self-hosted instance, a platform admin is a 
 | Projects | `/admin/projects` | Every project across every account, most active first, with its operator-managed [feature flags](/docs/project#feature-flags). |
 | Analytics | `/admin/analytics` | Daily platform activity, by UTC day. |
 | Sandboxes | `/admin/sandboxes` | Where new sandboxes are placed, and the live fleet. |
-| Volumes | `/admin/volumes` | The Volumes switch per account. It turns on project drives and ephemeral sandboxes, and both need Platinum. |
 | Git | `/admin/git` | The instance's managed GitHub identity. When `MANAGED_GIT_*` environment variables set it, the page is read-only. |
 | Maintenance | `/admin/utils` | System-wide notices and the full-lockdown switch. |
 
@@ -227,7 +240,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
-| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project drives and ephemeral sandboxes. |
+| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
 
@@ -287,7 +300,7 @@ A manual `update` uses the same rollout as the daily run. When another update ho
 Every setting lives in the instance `.env`.
 
 - `kortix self-host env ls` lists every value by group and masks secrets. `--show` reveals them.
-- `kortix self-host env set KEY=VALUE ...` writes values and restarts the services that read them. A bare `KEY` prompts for the value.
+- `kortix self-host env set KEY=VALUE ...` writes values and restarts the services that read them. A bare `KEY` prompts for the value. A new `API_KEY_SECRET` makes every stored credential undecryptable, so `env set` warns first: at a terminal it asks you to confirm, and a script must pass `--yes` (without it the command exits `2` and writes nothing).
 - `kortix self-host env rotate <KEY>` or `--all-generated` regenerates a generated secret. Rotating `SUPABASE_JWT_SECRET` also regenerates the anon and service-role keys. The CLI refuses `API_KEY_SECRET`, `POSTGRES_PASSWORD` and `SAML_PRIVATE_KEY`, because a new value breaks stored data or connections.
 
 `env set` refuses the image and version keys (`KORTIX_VERSION`, `API_IMAGE`, `FRONTEND_IMAGE`, `GATEWAY_IMAGE`). Use `--tag` or `--channel` instead. When a change does not take effect, run `kortix self-host start`: it recreates every service whose configuration changed.
@@ -403,5 +416,6 @@ Every subcommand takes `--instance <name>` (default `default`).
 | `--admin-email <email>` | `init`, `configure` | Sets `KORTIX_PLATFORM_ADMIN_EMAILS`. |
 | `--enterprise-license` | `init`, `configure`, `update` | Sets `ENTERPRISE_LICENSE_AVAILABLE=true`. |
 | `--restrict-account-creation`, `--no-restrict-account-creation` | `init`, `configure`, `update` | Account creation for admins only, or for everyone. |
+| `--disable-signup` | `init`, `configure`, `update` | Sets `DISABLE_SIGNUP=true`. Nobody can sign up, the admin included. `env set DISABLE_SIGNUP=false` opens it again. |
 | `--yes` | any | Accept defaults. Required for `uninstall` without a terminal. |
 | `--json` | `status`, `doctor`, `plan`, `env ls` | Machine-readable output. |

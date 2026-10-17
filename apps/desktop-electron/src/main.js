@@ -16,7 +16,7 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
@@ -24,7 +24,7 @@ const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
-const { backgroundForTheme, normalizeTheme } = require('./theme-state');
+const { backgroundForTheme, normalizeChoice, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
 const { buildFrontendMenu } = require('./frontend-menu');
 const { resolveChannel } = require('./update-channel');
@@ -38,6 +38,10 @@ const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const { setAttentionBadge } = require('./attention-badge');
+const { setupQuickEntry } = require('./quick-entry');
+const { attachContextMenu } = require('./context-menu');
+const { SHORTCUTS, shortcutLabel } = require('./quick-entry-rules');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -146,24 +150,38 @@ function themePath() {
   return path.join(app.getPath('userData'), 'theme.json');
 }
 
+// Which light and which dark palette the web app's interface theme uses. Only
+// the launch background depends on it; nativeTheme needs just the mode.
+let themeChoice = normalizeChoice();
+
 function readTheme() {
   try {
-    return normalizeTheme(JSON.parse(fs.readFileSync(themePath(), 'utf8')).theme);
+    const stored = JSON.parse(fs.readFileSync(themePath(), 'utf8'));
+    themeChoice = normalizeChoice(stored.palettes);
+    return normalizeTheme(stored.theme);
   } catch {
     return 'system';
   }
 }
 
-function writeTheme(theme) {
+function writeTheme(theme, choice) {
   try {
-    fs.writeFileSync(themePath(), JSON.stringify({ theme: normalizeTheme(theme) }), 'utf8');
+    fs.writeFileSync(
+      themePath(),
+      JSON.stringify({ theme: normalizeTheme(theme), palettes: normalizeChoice(choice) }),
+      'utf8',
+    );
   } catch {
     /* best-effort */
   }
 }
 
 function currentBackgroundColor() {
-  return backgroundForTheme(nativeTheme.themeSource, nativeTheme.shouldUseDarkColors);
+  return backgroundForTheme(
+    nativeTheme.themeSource,
+    nativeTheme.shouldUseDarkColors,
+    themeChoice,
+  );
 }
 
 /* ─── Navigation gate (port of lib.rs) ───────────────────────────────────── */
@@ -244,6 +262,8 @@ let mainWindow = null;
 let splashWindow = null;
 /** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
 let computerShell = null;
+/** The global-shortcut prompt bar (quick-entry.js). Set once the app is ready. */
+let quickEntry = null;
 
 function launchSize() {
   // ~85% of the primary display, clamped to [1280,1700] × [820,1080] — same as
@@ -335,6 +355,9 @@ function createMainWindow() {
   // Keep one canonical set of controls. Web-rendered traffic lights could
   // coexist with native buttons after focus/reload transitions.
   configureNativeWindowControls(mainWindow, isMac);
+
+  // Right-click: the menu every browser and text field has (KRTX-2555).
+  attachContextMenu(mainWindow.webContents, { Menu, shell, clipboard, getWindow: () => mainWindow });
 
   const syncRendererWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -442,6 +465,8 @@ function createMainWindow() {
   // Go menu state follows every committed navigation, including the App
   // Router's same-document ones.
   mainWindow.webContents.on('did-navigate', refreshNavigationMenu);
+  // A new document starts with nothing unseen; its page re-sends the count.
+  mainWindow.webContents.on('did-navigate', clearAttentionBadge);
   mainWindow.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) refreshNavigationMenu();
   });
@@ -527,7 +552,9 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     if (persistTimer) clearTimeout(persistTimer);
+    clearAttentionBadge();
     mainWindow = null;
+    quickEntry?.close();
   });
 
   // did-fail-load reports failures; the rejected promise carries nothing more.
@@ -889,6 +916,7 @@ function buildMenu() {
     onReset: () => switchInstance({ kind: 'default' }),
     onForgetPassword: () => forgetBasicCredentialForAppHost(),
   });
+  const quickEntryShortcut = quickEntry?.shortcut() ?? { accelerator: null, registered: null };
 
   const template = [
     ...(isMac
@@ -931,6 +959,35 @@ function buildMenu() {
           enabled: false,
           click: () => sendDesktopCommand('new-session'),
         },
+        {
+          // The accelerator is the global shortcut; the menu only displays it.
+          id: 'kx-file-quick-entry',
+          label: 'Open Quick Entry',
+          ...(quickEntryShortcut.accelerator
+            ? { accelerator: quickEntryShortcut.accelerator, registerAccelerator: false }
+            : {}),
+          click: () => quickEntry?.show(),
+        },
+        {
+          label: 'Quick Entry Shortcut',
+          submenu: [
+            ...SHORTCUTS.map((accelerator) => ({
+              type: 'radio',
+              label: `${shortcutLabel(accelerator, process.platform)}${
+                accelerator === quickEntryShortcut.accelerator && quickEntryShortcut.registered === false ? ' (in use)' : ''
+              }`,
+              checked: accelerator === quickEntryShortcut.accelerator,
+              click: () => chooseQuickEntryShortcut(accelerator),
+            })),
+            {
+              type: 'radio',
+              label: 'Off',
+              checked: quickEntryShortcut.accelerator === null,
+              click: () => chooseQuickEntryShortcut(null),
+            },
+          ],
+        },
+        { type: 'separator' },
         {
           id: 'kx-file-close-tab',
           label: 'Close Tab',
@@ -1046,6 +1103,29 @@ function buildMenu() {
   refreshNavigationMenu();
 }
 
+/** Settings ▸ Preferences: the Quick Entry shortcut, its choices, and whether another app holds it. */
+function quickEntryShortcutState() {
+  const { accelerator, registered } = quickEntry?.shortcut() ?? { accelerator: null, registered: null };
+  return {
+    shortcut: accelerator,
+    inUse: Boolean(accelerator) && registered === false,
+    choices: SHORTCUTS.map((value) => ({ value, label: shortcutLabel(value, process.platform) })),
+  };
+}
+
+/** File ▸ Quick Entry Shortcut. A key another app holds stays selected, marked "(in use)". */
+function chooseQuickEntryShortcut(accelerator) {
+  if (!quickEntry) return;
+  if (!quickEntry.setShortcut(accelerator)) {
+    void dialog.showMessageBox({
+      type: 'warning',
+      message: `Could not use ${shortcutLabel(accelerator, process.platform)} for Quick Entry.`,
+      detail: 'Another app uses it. Choose another shortcut in File ▸ Quick Entry Shortcut.',
+    });
+  }
+  buildMenu();
+}
+
 /* ─── IPC: native bridge (consumed via the __TAURI__ shim in preload.js) ───*/
 
 // The preload exposes the native bridge to whatever page is loaded in the main
@@ -1062,6 +1142,14 @@ function isTrustedSender(event) {
   } catch {
     return false;
   }
+}
+
+function showAttentionBadge(count) {
+  setAttentionBadge({ app, window: mainWindow, nativeImage, platform: process.platform }, count);
+}
+
+function clearAttentionBadge() {
+  showAttentionBadge(0);
 }
 
 function registerIpc() {
@@ -1081,8 +1169,9 @@ function registerIpc() {
       }
       case 'set_native_theme': {
         const theme = normalizeTheme(args.theme);
+        themeChoice = normalizeChoice(args.palettes);
         nativeTheme.themeSource = theme;
-        writeTheme(theme);
+        writeTheme(theme, themeChoice);
         const background = currentBackgroundColor();
         mainWindow?.setBackgroundColor(background);
         splashWindow?.setBackgroundColor(background);
@@ -1119,6 +1208,27 @@ function registerIpc() {
         });
         if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
+      }
+      case 'set_badge_count':
+        // Finished turns the user has not seen yet (web TurnAttentionBadge).
+        showAttentionBadge(args.count);
+        return null;
+      case 'quick_entry_take':
+        // The prompt typed in the Quick Entry bar, once (null when none).
+        return quickEntry?.take() ?? null;
+      case 'quick_entry_set_target':
+        // `{ projectId, name } | null`: where the web app will start the session.
+        quickEntry?.setTarget(args.target);
+        return null;
+      case 'quick_entry_shortcut':
+        return quickEntryShortcutState();
+      case 'quick_entry_set_shortcut': {
+        // Settings ▸ Preferences: one of SHORTCUTS, or null for off. Same path as the File menu.
+        const next = args?.shortcut ?? null;
+        if (next !== null && !SHORTCUTS.includes(next)) throw new Error('Unknown Quick Entry shortcut.');
+        quickEntry?.setShortcut(next);
+        buildMenu();
+        return quickEntryShortcutState();
       }
       default:
         // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
@@ -1267,6 +1377,11 @@ if (!gotLock) {
       openMainWindow,
       backgroundColor: currentBackgroundColor,
     });
+    quickEntry = setupQuickEntry({
+      dir: app.getPath('userData'),
+      openMainWindow,
+      getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    });
     registerIpc();
     nativeTheme.themeSource = readTheme();
     nativeTheme.on('updated', () => {
@@ -1284,6 +1399,11 @@ if (!gotLock) {
 
     createSplash();
     createMainWindow();
+
+    // After first-launch setup: a submit opens the app window, which setup must not.
+    // The menu is rebuilt so it shows whether the shortcut registered.
+    quickEntry.start();
+    buildMenu();
 
     // Kick off the background update check (no-ops on dev/unsigned builds).
     // Getters because both windows are recreated on macOS re-activate.
@@ -1313,4 +1433,6 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin' && !computerShell?.keepRunning()) app.quit();
   });
+
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 }

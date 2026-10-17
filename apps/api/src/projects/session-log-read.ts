@@ -26,6 +26,18 @@
  * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
  * then holds the ingest time). The two agree for every row with a creation time.
  *
+ * The log also cannot answer when it is behind the mirror: the mirror's content time is more than
+ * `STALE_LOG_MS` after the log's last write (the newest message or session write). The content time
+ * is the newest `session_transcript_messages.captured_at`, which moves only when a row's info or
+ * parts change. It is not `session_transcript_mirrors.captured_at`: that moves on every capture, and
+ * the tail capture at stop changes nothing, so it would send every stopped session to the mirror.
+ * The capture keeps the mirror current without a journal, so a log that stopped (the daemon's journal
+ * off for a boot, a daemon build without one) must not freeze what a reader sees. A healthy journal
+ * writes within seconds of the capture, so the margin is far above the normal gap. Caveat: a rewind
+ * the mirror applied with no new rows deletes rows and does not move that max; the next turn's rows do.
+ * The read warns once per session per process, and never again for that session: a second stale
+ * episode in one process is silent.
+ *
  * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
 import {
@@ -36,9 +48,10 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
+import { projects, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMessages } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import {
@@ -54,6 +67,10 @@ type J = Record<string, unknown>;
 type ThreadRow = { threadId: string; parentThreadId: string | null; record: J };
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
+/** The mirror may lead the log by this long before the v1 window serves the mirror (see the module header). */
+const STALE_LOG_MS = 60_000;
+// replica-local: sessions already warned about by this process; a restart warns again.
+const warnedStale = new Set<string>();
 /** Where `fromV1` keeps a superseded row's runtime session id. */
 const RUNTIME_PATH = `$.ext.* ? (@.version == "${KORTIX_TRANSCRIPT_SCHEMA}").data.runtime_session_id`;
 
@@ -169,14 +186,24 @@ export async function readLogTranscriptWindow(input: {
       updatedAt: sessionLogs.updatedAt,
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
-      accountId: projects.accountId,
+      mirrorMs: sql<number | null>`(SELECT extract(epoch from max(${sessionTranscriptMessages.capturedAt})) * 1000 FROM ${sessionTranscriptMessages} WHERE ${sessionTranscriptMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
+      lastWriteMs: sql<number | null>`(SELECT extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000 FROM ${sessionLogMessages} WHERE ${sessionLogMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
     })
     .from(sessionLogs)
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
     .where(eq(sessionLogs.sessionId, input.sessionId))
     .limit(1);
-  if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
+  if (!log || !resolveFeatureFlag(log.metadata, 'session_log')) return null;
+  const lastWriteMs = Math.max(new Date(log.updatedAt).getTime(), log.lastWriteMs ?? 0);
+  if (log.mirrorMs !== null && log.mirrorMs - lastWriteMs > STALE_LOG_MS) {
+    if (!warnedStale.has(input.sessionId)) {
+      if (warnedStale.size > 10_000) warnedStale.clear();
+      warnedStale.add(input.sessionId);
+      logger.warn('[session-log] log is behind the mirror; serving the mirror', { sessionId: input.sessionId, behindMs: Math.round(log.mirrorMs - lastWriteMs) });
+    }
+    return null;
+  }
   const threads = log.threads ?? [];
   const root = rootOf(threads);
   const stated = v1Ext(log.record)?.data;

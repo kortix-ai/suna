@@ -3,7 +3,8 @@
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
@@ -32,7 +33,13 @@ import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useAccountState } from '@/hooks/billing';
-import { getProjectDetail, isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
+import {
+  canManageBilling,
+  getProjectDetail,
+  isAbortError,
+  turnRetryLabel,
+  type GatewayErrorDetails,
+} from '@kortix/sdk';
 import {
   contract,
   qk,
@@ -128,7 +135,8 @@ function ErrorRow({ className, children, ...props }: ComponentProps<typeof Item>
 
 // ============================================================================
 // Insufficient-credits detection — an upstream 402 from the LLM gateway
-// surfaces as "Payment Required: Insufficient credits. Balance: $-0.06". Render
+// surfaces as "Payment Required: Insufficient credits. Balance: -6 credits"
+// (older servers: "Balance: $-0.06"). Render
 // a specialized card with one-click actions instead of raw text.
 // ============================================================================
 
@@ -190,13 +198,6 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
   );
 }
 
-function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
-}
 
 function InsufficientCreditsCard({
   errorText,
@@ -206,11 +207,17 @@ function InsufficientCreditsCard({
   className?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   // KRTX-1720: a member cannot buy credits (`billing.write`), and the billing
-  // pane the buttons open is hidden from them. Say who can act instead.
-  const canManageBilling = useAccountState({ accountId }).data?.can_manage_billing !== false;
-  const balance = parseBalance(errorText);
+  // pane the buttons open is hidden from them. Say who can act instead. Until
+  // the account state loads, the card offers neither: no purchase link before
+  // the answer, and no "ask an owner" to an owner.
+  const accountState = useAccountState({ accountId }).data;
+  const mayManageBilling = canManageBilling(accountState);
+  // The balance the account holds reads in credits, from either message shape.
+  const balanceUsd = parseBalanceUsd(errorText);
   const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
   const title = tHardcodedUi.raw(
     'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
@@ -226,10 +233,12 @@ function InsufficientCreditsCard({
         {/* The balance is the one number the user needs; when the message has
             none, show the raw server text so nothing is dropped on the floor. */}
         <ItemDescription className="line-clamp-none text-xs text-pretty wrap-anywhere tabular-nums">
-          {balance ? `Balance ${balance}` : errorText}
+          {balanceUsd !== null
+            ? tI18nComplete('text03217276a5f1', { value0: formatUsdAsCredits(balanceUsd, { locale }) })
+            : errorText}
         </ItemDescription>
       </ItemContent>
-      {canManageBilling ? (
+      {mayManageBilling ? (
         <ItemActions className={ROW_ACTIONS}>
           <Button asChild size="sm" className="active:scale-[0.96]">
             <HubLink to={billingTo}>
@@ -243,7 +252,7 @@ function InsufficientCreditsCard({
             </HubLink>
           </Button>
         </ItemActions>
-      ) : (
+      ) : accountState ? (
         <>
           <ItemDescription className="text-xs">
             {tHardcodedUi.raw('componentsSessionSessionErrorBanner.askOwnerToAddCredits')}
@@ -254,7 +263,7 @@ function InsufficientCreditsCard({
             </ItemActions>
           ) : null}
         </>
-      )}
+      ) : null}
     </ErrorRow>
   );
 }
@@ -409,7 +418,7 @@ function TurnErrorCheckpoint({
   const canOpen = describeTurnErrorRow({ text, gateway, raw }).expandable;
 
   const row = (
-    <div className="flex w-full items-center gap-3 text-left text-sm leading-[1.5]">
+    <div className="flex w-full items-center gap-3 text-left text-sm">
       <WarningCircleIcon className="text-kortix-red size-4 flex-none" />
       <span className="text-foreground flex-none font-medium">
         {tI18nComplete.raw('text1a4f630ac1b6')}

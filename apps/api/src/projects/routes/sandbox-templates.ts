@@ -98,7 +98,7 @@ export function registerSandboxTemplatesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -194,7 +194,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -274,7 +274,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -324,7 +324,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: building a sandbox template provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the

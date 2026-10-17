@@ -82,6 +82,10 @@ export interface SessionTurnObservation {
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
   recent_failures?: SessionTurnFailure[];
+  /** May THIS caller stop the running turn (`SessionTurnStatus.can_stop`)?
+   *  Absent from an older server, and from a stream frame that changed the
+   *  open turns without saying. */
+  can_stop?: boolean;
   /** The server's own verdict. Present when the session stream wrote the entry. */
   working?: SessionWorkingVerdict;
   atMs: number;
@@ -224,6 +228,7 @@ export async function readSessionTurnObservation(
         turns: turn.turns,
         last_ended: turn.last_ended,
         recent_failures: turn.recent_failures,
+        ...(turn.can_stop !== undefined ? { can_stop: turn.can_stop } : {}),
         atMs: turn.atMs,
       };
     }
@@ -243,6 +248,7 @@ export async function readSessionTurnObservation(
       turns: status.turns ?? [],
       last_ended: status.last_ended,
       recent_failures: status.recent_failures,
+      ...(typeof status.can_stop === 'boolean' ? { can_stop: status.can_stop } : {}),
       atMs,
     };
   });
@@ -516,4 +522,19 @@ export function useSessionTurnOutcome(projectId: string, sessionId: string): Ses
     () => ({ last_ended: lastEnded, recent_failures: recentFailures, atMs }),
     [lastEnded, recentFailures, atMs],
   );
+}
+
+/**
+ * May this viewer stop the running turn? False only when the `/turn` entry
+ * `useSessionWorking` keeps says `can_stop: false`. A cache reader like
+ * `useSessionTurnOutcome`: no request, no timer. Unknown is allowed — the
+ * server still refuses a stop it does not permit (403 `not_turn_prompter`).
+ */
+export function useSessionCanStop(projectId: string, sessionId: string): boolean {
+  const query = useQuery<SessionTurnObservation>({
+    queryKey: qk.project.sessionTurn(projectId, sessionId),
+    queryFn: () => readSessionTurnObservation(projectId, sessionId, { bundle: false }),
+    enabled: false,
+  });
+  return query.data?.can_stop !== false;
 }

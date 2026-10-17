@@ -26,6 +26,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
+import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
 
 // ─── Stand-ins for the heavy shared render surface ───────────────────────────
 
@@ -129,8 +130,8 @@ mock.module('./tools/session-get-tool', () => ({
 // ─── The registry row under test ─────────────────────────────────────────────
 
 /** What the registry's `bash` entry renders; the marker proves the row came from the registry. */
-const RegisteredBashRow = ({ part }: { part: { callID: string } }) => (
-  <text>{`REGISTERED-BASH-ROW:${part.callID}`}</text>
+const RegisteredBashRow = ({ call }: { call: ToolCallBlock }) => (
+  <text>{`REGISTERED-BASH-ROW:${call.call_id}`}</text>
 );
 
 /** Prints what the ambient contexts hand to a row: may it animate, and is its turn live. */
@@ -161,12 +162,17 @@ afterEach(async () => {
   tree = undefined;
 });
 
-async function renderPart(part: Record<string, unknown>, props: Record<string, unknown> = {}) {
+/** The block a v1 part converts to (`toolCallBlock`: an open call stays open, as the v1 live view holds it). */
+const blockOf = (part: Record<string, unknown>) => toolCallBlock(part as unknown as ToolPart);
+
+async function renderCall(call: ToolCallBlock, props: Record<string, unknown> = {}) {
   const Renderer = ToolPartRenderer as unknown as React.ComponentType<Record<string, unknown>>;
   await act(async () => {
-    tree = create(React.createElement(Renderer, { part, ...props }));
+    tree = create(React.createElement(Renderer, { call, ...props }));
   });
 }
+
+const renderPart = (part: Record<string, unknown>, props: Record<string, unknown> = {}) => renderCall(blockOf(part), props);
 
 /** Every string the stubbed render surface put into a `text` host. */
 function texts(): string[] {
@@ -267,11 +273,26 @@ describe('ToolPartRenderer motion gate', () => {
     expect(probeText()).toBe('PROBE motion:true live:false');
   });
 
+  test('a call the closure rule closed (v2 at rest) renders as the open call it was, not as a failed row', async () => {
+    const open = blockOf(probe('running'));
+    const closed: ToolCallBlock = {
+      ...open,
+      status: 'error',
+      result: { content: [], is_error: true, synthetic: true, error: { code: 'interrupted', message: 'Interrupted' } },
+    };
+    await renderCall(closed, { turnLive: false });
+    expect(probeText()).toBe('PROBE motion:false live:false');
+    expect(texts().some((t) => t.includes('failed'))).toBe(false);
+
+    await renderCall(closed, { turnLive: true });
+    expect(probeText()).toBe('PROBE motion:true live:true');
+  });
+
   test('a nested renderer with no turnLive prop gets the liveness its parent resolved from a prop', async () => {
     const childProbe = { ...probe('running'), id: 'child', callID: 'child-call' };
     const Nest = () => {
       const Renderer = ToolPartRenderer as unknown as React.ComponentType<Record<string, unknown>>;
-      return <Renderer part={childProbe} />;
+      return <Renderer call={blockOf(childProbe)} />;
     };
     registry.register('nest', Nest);
     const nest = { ...probe('running'), id: 'nest', callID: 'nest-call', tool: 'nest' };

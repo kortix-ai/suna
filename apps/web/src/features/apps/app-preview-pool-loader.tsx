@@ -6,11 +6,11 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { CLIPBOARD_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import type { App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
 
 import { ensureFrame, frameKey, framesKeepAlive, pruneFrames } from './app-preview-pool';
-import { appCan, childApps, gridApps } from './app-shared';
+import { appCan, cardPreviewApp, gridApps } from './app-shared';
 
 /** At most this many Apps load in the background; the rest load when first shown. */
 // ponytail: a fixed cap, rank by recent use if a project outgrows it.
@@ -28,12 +28,8 @@ export function preloadApps(apps: App[], canAdmin: boolean): App[] {
     appCan(app, 'preview') && !!app.active_deployment_id && app.viewer_can_access !== false;
   const picked: App[] = [];
   for (const app of gridApps(apps, canAdmin)) {
-    if (app.display?.preview === 'none') {
-      const first = childApps(apps, app, canAdmin)[0];
-      if (first && opens(first)) picked.push(first);
-    } else if (opens(app)) {
-      picked.push(app);
-    }
+    const shown = cardPreviewApp(apps, app, canAdmin);
+    if (shown && opens(shown)) picked.push(shown);
   }
   return picked.slice(0, PRELOAD_LIMIT);
 }
@@ -44,16 +40,18 @@ export function preloadApps(apps: App[], canAdmin: boolean): App[] {
  * project shell: the frames survive every page switch inside the project.
  */
 export function AppPreviewPoolLoader({ projectId }: { projectId: string }) {
-  const gate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(gate.enabled ? projectId : null);
+  const apps = useProjectApps(projectId);
   const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
   const [idle, setIdle] = useState(false);
 
   useEffect(() => {
     if (!framesKeepAlive()) return;
-    const ric = window.requestIdleCallback;
-    const handle = ric ? ric(() => setIdle(true), { timeout: 2000 }) : window.setTimeout(() => setIdle(true), 1500);
-    return () => (ric ? window.cancelIdleCallback(handle) : window.clearTimeout(handle));
+    // Safari has no requestIdleCallback.
+    const idleCallback = 'requestIdleCallback' in window;
+    const handle = idleCallback
+      ? window.requestIdleCallback(() => setIdle(true), { timeout: 2000 })
+      : window.setTimeout(() => setIdle(true), 1500);
+    return () => (idleCallback ? window.cancelIdleCallback(handle) : window.clearTimeout(handle));
   }, []);
 
   // A new release or a deleted App drops its old frame; leaving the project drops all.

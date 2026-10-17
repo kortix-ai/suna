@@ -297,9 +297,21 @@
     ]
   },
   {
+    "id": "commandcode",
+    "env": [
+      "CMD_API_KEY"
+    ]
+  },
+  {
     "id": "lowrouter",
     "env": [
       "LOWROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "reflection",
+    "env": [
+      "REFLECTION_API_KEY"
     ]
   },
   {
@@ -573,6 +585,12 @@
     "id": "inceptron",
     "env": [
       "INCEPTRON_API_KEY"
+    ]
+  },
+  {
+    "id": "aimlapi",
+    "env": [
+      "AIMLAPI_API_KEY"
     ]
   },
   {
@@ -1082,6 +1100,12 @@
     ]
   },
   {
+    "id": "sambanova",
+    "env": [
+      "SAMBANOVA_API_KEY"
+    ]
+  },
+  {
     "id": "tempr",
     "env": [
       "TEMPR_API_KEY"
@@ -1196,6 +1220,12 @@
     "id": "vivgrid",
     "env": [
       "VIVGRID_API_KEY"
+    ]
+  },
+  {
+    "id": "prime",
+    "env": [
+      "PRIME_API_KEY"
     ]
   },
   {
@@ -1361,6 +1391,12 @@
     "id": "digitalocean",
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
+    ]
+  },
+  {
+    "id": "boundless",
+    "env": [
+      "BOUNDLESS_API_KEY"
     ]
   },
   {

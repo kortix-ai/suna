@@ -79,16 +79,18 @@ export function verifyEdgeSignedRequest(
   if (host.toLowerCase() !== publicHost.toLowerCase()) return false;
   const time = Number(timestamp);
   if (!Number.isFinite(time) || Math.abs(Date.now() - time) > EDGE_MAX_SKEW_MS) return false;
-  return safeEqual(
-    signature,
-    edgeSignature(timestamp, host, request.method, `${url.pathname}${url.search}`, secret),
+  // `secret` may be `new,old` while the Worker secret rotates (pentest M-5).
+  return secret.split(',').map((s) => s.trim()).filter(Boolean).some((s) =>
+    safeEqual(signature, edgeSignature(timestamp, host, request.method, `${url.pathname}${url.search}`, s)),
   );
 }
 
 /**
  * The secret shared with the edge Worker. `API_KEY_SECRET` is the fallback so a
  * deployment that never configured a dedicated edge secret still verifies
- * rather than silently accepting everything.
+ * rather than silently accepting everything. A dedicated secret
+ * (`KORTIX_APPS_EDGE_SECRET`, `KORTIX_PREVIEW_EDGE_SECRET`) keeps the master key
+ * out of Cloudflare; a comma-separated `new,old` value rotates it without a gap.
  */
 export function edgeSecret(override?: string): string {
   return override || config.API_KEY_SECRET;

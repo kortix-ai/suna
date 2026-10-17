@@ -55,6 +55,7 @@ jobs:
       github.event.action == 'labeled' && github.event.label.name == 'preview') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -178,6 +179,7 @@ jobs:
     name: Build preview API image
     needs: authorize
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -213,6 +215,7 @@ jobs:
     name: Build preview gateway image
     needs: authorize
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -247,6 +250,7 @@ jobs:
     name: Build preview frontend image
     needs: authorize
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:

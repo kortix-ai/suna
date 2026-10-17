@@ -199,3 +199,25 @@ describe('a readable transcript is never covered by the boot overlay', () => {
     );
   });
 });
+
+describe('a stopped session with a transcript is not a dead end', () => {
+  test('the dormant branch leaves the composer live instead of a terminal card', () => {
+    // The old card replaced the composer and made Restart the only way back.
+    // A sent message wakes the box (deliver carries the wake intent) and a
+    // human who left and returns re-opens it (useSession releases the stop
+    // hold on the next presence return), so the branch falls through to the
+    // live chat and the composer's own asleep notice.
+    expect(pageSource).toContain('A deliberate stop with a readable transcript is not a dead end');
+    expect(pageSource).not.toMatch(
+      /tSessionPage\('stopped\.message'\),\s*action: <RestartSessionButton/,
+    );
+  });
+
+  test('the connecting strip is gated off while nothing is connecting', () => {
+    // With the dormant notice gone, the banner's stage 'stopped' would spin a
+    // forever "Connecting" pill over a session nobody is waking yet.
+    expect(pageSource).toMatch(
+      /!notice &&\s*!dormantWithoutRuntime &&\s*bootPresentation === 'banner'/,
+    );
+  });
+});

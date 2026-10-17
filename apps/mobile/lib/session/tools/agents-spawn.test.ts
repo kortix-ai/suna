@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import type { ToolPart } from '@kortix/sdk';
+import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
 
 import { agentSpawnModel, sessionSpawnModel } from './agents-spawn';
 
-function step(tool: string, input: Record<string, unknown>, id: string): ToolPart {
-  return {
+function step(tool: string, input: Record<string, unknown>, id: string): ToolCallBlock {
+  return toolCallBlock({
     id,
     type: 'tool',
     tool,
     callID: id,
     state: { status: 'completed', input, output: '', metadata: {}, time: { start: 1, end: 2 } },
-  } as unknown as ToolPart;
+  } as unknown as ToolPart);
 }
 
 const STEPS = [
@@ -22,7 +22,7 @@ const STEPS = [
 
 describe('agentSpawnModel (web agent-spawn-tool.tsx)', () => {
   test('running: subtitle is the last child step', () => {
-    const model = agentSpawnModel({ status: 'running', input: { description: 'Audit' }, output: '', childToolParts: STEPS });
+    const model = agentSpawnModel({ status: 'running', input: { description: 'Audit' }, output: '', childCalls: STEPS });
     expect(model.title).toBe('Spawn agent');
     expect(model.subtitle).toBe('Glob · d');
     expect(model.badge).toBeUndefined();
@@ -34,7 +34,7 @@ describe('agentSpawnModel (web agent-spawn-tool.tsx)', () => {
       status: 'completed',
       input: { description: 'Audit', verification_condition: 'tests pass\nmore' },
       output: '## Worker Result\n**Agent:** x\nDone and dusted.',
-      childToolParts: STEPS,
+      childCalls: STEPS,
     });
     expect(model.subtitle).toBe('Audit');
     expect(model.badge).toBe('4 steps');
@@ -44,7 +44,7 @@ describe('agentSpawnModel (web agent-spawn-tool.tsx)', () => {
   });
 
   test('completed without output: the last three steps and "+N more"', () => {
-    const model = agentSpawnModel({ status: 'completed', input: {}, output: '', childToolParts: STEPS });
+    const model = agentSpawnModel({ status: 'completed', input: {}, output: '', childCalls: STEPS });
     expect(model.subtitle).toBe('Worker task');
     expect(model.body).toBe('card');
     expect(model.recentSteps).toEqual([
@@ -61,20 +61,20 @@ describe('agentSpawnModel (web agent-spawn-tool.tsx)', () => {
       status: 'completed',
       input: { description: 'Audit' },
       output: '{"success":false,"error":"no capacity"}',
-      childToolParts: [],
+      childCalls: [],
     });
     expect(model.subtitle).toBe('failed');
     expect(model.body).toBe('failure');
   });
 
   test('nothing to show → no body', () => {
-    expect(agentSpawnModel({ status: 'completed', input: {}, output: '', childToolParts: [] }).body).toBe('none');
+    expect(agentSpawnModel({ status: 'completed', input: {}, output: '', childCalls: [] }).body).toBe('none');
   });
 });
 
 describe('sessionSpawnModel (web session-spawn-tool.tsx)', () => {
   test('agent name is capitalised, label falls back description → project → prompt line', () => {
-    const base = { status: 'completed', childToolParts: [] as ToolPart[] };
+    const base = { status: 'completed', childCalls: [] as ToolCallBlock[] };
     expect(sessionSpawnModel({ ...base, input: {} }).agentName).toBe('Kortix');
     expect(sessionSpawnModel({ ...base, input: { agent: 'code-reviewer' } }).agentName).toBe('Code-Reviewer');
     expect(sessionSpawnModel({ ...base, input: { description: 'D', project: 'P' } }).label).toBe('D');
@@ -83,16 +83,16 @@ describe('sessionSpawnModel (web session-spawn-tool.tsx)', () => {
   });
 
   test('title, running subtitle, steps label, session title', () => {
-    const running = sessionSpawnModel({ status: 'running', input: { description: 'Ship it' }, childToolParts: STEPS });
+    const running = sessionSpawnModel({ status: 'running', input: { description: 'Ship it' }, childCalls: STEPS });
     expect(running.titleLabel).toBe('Worker · Kortix');
     expect(running.subtitle).toBe('Glob · d');
     expect(running.isRunning).toBe(true);
     expect(running.stepsLabel).toBeUndefined();
 
-    const done = sessionSpawnModel({ status: 'completed', input: { description: 'Ship it' }, childToolParts: STEPS });
+    const done = sessionSpawnModel({ status: 'completed', input: { description: 'Ship it' }, childCalls: STEPS });
     expect(done.subtitle).toBe('Ship it');
     expect(done.stepsLabel).toBe('4 steps');
     expect(done.sessionTitle).toBe('Worker · Kortix: Ship it');
-    expect(sessionSpawnModel({ status: 'completed', input: {}, childToolParts: [] }).sessionTitle).toBe('Worker · Kortix');
+    expect(sessionSpawnModel({ status: 'completed', input: {}, childCalls: [] }).sessionTitle).toBe('Worker · Kortix');
   });
 });

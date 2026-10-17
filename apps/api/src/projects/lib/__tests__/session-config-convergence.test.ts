@@ -225,33 +225,12 @@ describe('convergeSessionConfig with config releases', () => {
 // other.
 describe('convergeSessionConfig for a session from a previous repository generation', () => {
   test('converges like any other session — the generation decides nothing', async () => {
-    for (const schedule of ['wake', 'trigger', 'turn-start'] as const) {
+    for (const schedule of ['wake', 'trigger'] as const) {
       const d = deps([result({ config_path: 'release', release_outcome: 'applied' })]);
       expect(await convergeSessionConfig('sess-1', d.deps, { schedule })).toBe('converged');
       expect(d.reloads.length).toBe(1);
       expect(d.sleeps).toEqual([]);
     }
-  });
-});
-
-describe('convergeSessionConfig on the turn-start schedule', () => {
-  test('takes exactly one attempt and never sleeps: a prompt is waiting', async () => {
-    for (const first of [
-      result({ applied: false, agent_files: 'unknown', reason: 'no reachable sandbox' }),
-      result({ applied: false, agent_files: 'unknown', reason: 'session is mid-turn' }),
-      result({ config_path: 'legacy', agent_files: 'unknown' }),
-    ]) {
-      const d = deps([first, result({ config_path: 'release', release_outcome: 'applied' })]);
-      await convergeSessionConfig('sess-1', d.deps, { schedule: 'turn-start' });
-      expect(d.reloads.length).toBe(1);
-      expect(d.sleeps).toEqual([]);
-    }
-  });
-
-  test('a running turn is never ended: the attempt reports busy and the prompt proceeds', async () => {
-    const d = deps([result({ applied: false, agent_files: 'unknown', reason: 'session is mid-turn' })]);
-    expect(await convergeSessionConfig('sess-1', d.deps, { schedule: 'turn-start' })).toBe('busy');
-    expect(d.reloads[0]).toMatchObject({ force: false, onlyIfStale: true });
   });
 });
 
@@ -338,7 +317,7 @@ describe('combineConfigStaleness', () => {
 // box, and a value a project stored while the flag existed changes nothing.
 describe('convergeSessionConfig after config releases graduated', () => {
   test('every schedule reaches the box through the reload', async () => {
-    for (const schedule of ['wake', 'trigger', 'turn-start'] as const) {
+    for (const schedule of ['wake', 'trigger'] as const) {
       const d = deps([result()]);
       expect(await convergeSessionConfig('sess-1', d.deps, { schedule })).toBe('converged');
       expect(d.reloads.length).toBe(1);

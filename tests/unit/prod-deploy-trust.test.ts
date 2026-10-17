@@ -26,7 +26,7 @@ describe('prod deploy trust', () => {
     expect(trust).not.toContain('suna:*');
   });
 
-  it.each(['.github/workflows/deploy-prod.yml', '.github/workflows/deploy-prod-us-east-2-shadow.yml'])(
+  it.each(['.github/workflows/deploy-prod.yml'])(
     '%s: every job that uses the prod role declares `environment: prod`',
     (file) => {
       const jobs = jobsOf(read(file));

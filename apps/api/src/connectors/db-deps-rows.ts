@@ -186,6 +186,10 @@ export async function resolveActiveConnectorConnection(principal: ConnectorPrinc
     actingUserId: principal.userId,
     account: principal.requestedConnectorAccount ?? null,
     agentPrincipal: principal.agentPrincipal ?? null,
+    // The caller just loaded this row (`loadConnectorBySlug`); the
+    // project-default fallback re-selected it by alias — the duplicated
+    // connector read per /call. Thread it; the fallback skips that select.
+    connectorRow: row,
   });
   return connection?.status === 'active' ? connection : null;
 }

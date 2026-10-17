@@ -9,7 +9,7 @@ import { flow } from "../core/flow";
 
 flow(
   "FILE-1",
-  { domain: "files", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/files"] },
+  { domain: "files", tags: ["deployed", "smoke"], routes: ["GET /v1/projects/:projectId/files"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER lists repo tree → 200 array", async () => {
@@ -439,11 +439,20 @@ flow(
  * FILE-13 — the Files tree lists every folder, however many files sort before
  * it (KRTX-1723). The recursive list stops at 1,000 files, and the tree built
  * from it lost every folder past file 1,000. `depth=1` lists one level,
- * complete; the recursive list says when it is cut.
+ * complete; `limit`/`cursor` page it for "Load more"; the recursive list says
+ * when it is cut; content search names the line of every match.
  */
 flow(
   "FILE-13",
-  { domain: "files", requires: ["database"], routes: ["GET /v1/projects/:projectId/files"] },
+  {
+    domain: "files",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/:projectId/files",
+      "GET /v1/projects/:projectId/files/content",
+      "GET /v1/projects/:projectId/files/search",
+    ],
+  },
   async (ctx) => {
     if (ctx.env.target !== "local") return;
     const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
@@ -454,6 +463,23 @@ flow(
     const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id };
+    let repoUrl = "";
+    let defaultBranch = "main";
+
+    /** Clones `from`, lets `edit` change the work tree, commits, and pushes to `to`. */
+    const pushCommit = async (from: string, to: string, message: string, edit: (work: string) => Promise<void>) => {
+      const work = await mkdtemp(join(tmpdir(), "ke2e-file13-"));
+      try {
+        const git = (...args: string[]) => execFileSync("git", args, { cwd: work, stdio: "pipe" });
+        git("clone", "-q", "--branch", from, repoUrl, ".");
+        await edit(work);
+        git("add", "-A");
+        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-q", "--allow-empty", "-m", message);
+        git("push", "-q", "origin", `HEAD:refs/heads/${to}`);
+      } finally {
+        await rm(work, { recursive: true, force: true });
+      }
+    };
 
     await ctx.step("the repository holds 1,200 files under a/ and one under z/", async () => {
       const databaseUrl = ctx.env.databaseUrl!;
@@ -464,20 +490,14 @@ flow(
       await db.connect();
       const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
       await db.end();
-      const work = await mkdtemp(join(tmpdir(), "ke2e-file13-"));
-      try {
-        const git = (...args: string[]) => execFileSync("git", args, { cwd: work, stdio: "pipe" });
-        git("clone", "-q", "--branch", rows[0].default_branch || "main", rows[0].repo_url, ".");
+      repoUrl = rows[0].repo_url;
+      defaultBranch = rows[0].default_branch || "main";
+      await pushCommit(defaultBranch, defaultBranch, "1,201 files", async (work) => {
         await mkdir(join(work, "a"));
         await mkdir(join(work, "z"));
         for (let i = 0; i < 1200; i++) await writeFile(join(work, "a", `f${String(i).padStart(4, "0")}.txt`), `${i}\n`);
         await writeFile(join(work, "z", "last.txt"), "last\n");
-        git("add", "-A");
-        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "1,201 files");
-        git("push", "-q", "origin", `HEAD:refs/heads/${rows[0].default_branch || "main"}`);
-      } finally {
-        await rm(work, { recursive: true, force: true });
-      }
+      });
     });
 
     await ctx.step("depth=1 at the root lists every top-level folder and file", async () => {
@@ -490,12 +510,104 @@ flow(
       }
     });
 
-    await ctx.step("depth=1 lists a 1,200-file folder whole, and the folder that sorts after it", async () => {
+    await ctx.step("depth=1 without limit or cursor lists a 1,200-file folder whole with next_cursor null, and the folder that sorts after it", async () => {
       const a = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "a", depth: "1" } });
-      a.status(200).body().has("$.truncated", false);
+      a.status(200).body().has("$.truncated", false).has("$.next_cursor", null);
       if (a.json<{ entries: unknown[] }>().entries.length !== 1200) throw new Error("a/ is not complete");
       const z = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "z", depth: "1" } });
       z.status(200).body().has("$.entries[0].path", "z/last.txt");
+    });
+
+    let firstCursor = "";
+    await ctx.step("limit=500 walks a/ as 500 + 500 + 200 pages, every name once, and the last page has next_cursor null", async () => {
+      type Page = { entries: Array<{ path: string }>; truncated: boolean; next_cursor: string | null };
+      const sizes: number[] = [];
+      const names: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const r = await owner.get("/v1/projects/:projectId/files", {
+          params,
+          query: { path: "a", depth: "1", limit: "500", ...(cursor ? { cursor } : {}) },
+        });
+        r.status(200);
+        const page = r.json<Page>();
+        if (page.truncated !== (page.next_cursor !== null)) throw new Error("truncated disagrees with next_cursor");
+        if (!firstCursor && page.next_cursor) firstCursor = page.next_cursor;
+        sizes.push(page.entries.length);
+        names.push(...page.entries.map((e) => e.path));
+        cursor = page.next_cursor;
+      } while (cursor && sizes.length < 10);
+      if (sizes.join(",") !== "500,500,200") throw new Error(`pages of ${sizes.join(",")}, want 500,500,200`);
+      const want = Array.from({ length: 1200 }, (_, i) => `a/f${String(i).padStart(4, "0")}.txt`);
+      if (names.join("\n") !== want.join("\n")) throw new Error("the pages do not list every name of a/ once, in order");
+    });
+
+    await ctx.step("a push between pages skips or repeats nothing: the later pages read the commit the first page read", async () => {
+      type Page = { entries: Array<{ path: string }>; next_cursor: string | null };
+      // A branch of its own: a read at an explicit branch fetches a push at
+      // once (FILE-11), so the API sees the second commit before page 2.
+      const branch = "file13-pages";
+      await pushCommit(defaultBranch, branch, "the 1,200 files", async () => {});
+      const first = await owner.get("/v1/projects/:projectId/files", {
+        params,
+        query: { path: "a", depth: "1", limit: "500", ref: branch },
+      });
+      first.status(200);
+      const names = first.json<Page>().entries.map((e) => e.path);
+      let cursor = first.json<Page>().next_cursor;
+      if (!cursor) throw new Error("page 1 of a/ has no next_cursor");
+
+      // One file added before the cursor, one after it, and one removed after it.
+      await pushCommit(branch, branch, "change a/ between pages", async (work) => {
+        await rm(join(work, "a", "f0700.txt"));
+        await writeFile(join(work, "a", "f0100x.txt"), "x\n");
+        await writeFile(join(work, "a", "f0600x.txt"), "x\n");
+      });
+      // The API reads the new commit: the added file reads back at the branch.
+      (await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: "a/f0600x.txt", ref: branch } })).status(200);
+
+      for (let pages = 1; cursor && pages < 10; pages++) {
+        const r = await owner.get("/v1/projects/:projectId/files", {
+          params,
+          query: { path: "a", depth: "1", limit: "500", ref: branch, cursor },
+        });
+        r.status(200);
+        names.push(...r.json<Page>().entries.map((e) => e.path));
+        cursor = r.json<Page>().next_cursor;
+      }
+      const want = Array.from({ length: 1200 }, (_, i) => `a/f${String(i).padStart(4, "0")}.txt`);
+      if (names.join("\n") !== want.join("\n")) throw new Error("the pages after a push do not list the first page's commit exactly");
+
+      // A new walk reads the new commit.
+      const fresh = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "a", depth: "1", ref: branch } });
+      fresh.status(200);
+      const now = fresh.json<Page>().entries.map((e) => e.path);
+      if (now.length !== 1201 || !now.includes("a/f0600x.txt") || now.includes("a/f0700.txt")) {
+        throw new Error(`a new listing of ${branch} does not show the pushed commit`);
+      }
+    });
+
+    await ctx.step("limit=0, limit=2001, a garbage cursor and a cursor of another folder → 400", async () => {
+      const bad = [
+        { path: "a", depth: "1", limit: "0" },
+        { path: "a", depth: "1", limit: "2001" },
+        { path: "a", depth: "1", cursor: "garbage" },
+        { path: "z", depth: "1", cursor: firstCursor },
+      ];
+      for (const query of bad) {
+        const r = await owner.get("/v1/projects/:projectId/files", { params, query });
+        r.status(400);
+      }
+    });
+
+    await ctx.step("content search reads back the path, line number and line text of a match", async () => {
+      const r = await owner.get("/v1/projects/:projectId/files/search", { params, query: { q: "last", content: "1" } });
+      r.status(200).body().has("$.content_search", true);
+      const results = r.json<{ results: Array<{ path: string; line_number?: number; line_text?: string }> }>().results;
+      const match = results.find((m) => m.path === "z/last.txt");
+      if (match?.line_number !== 1 || match.line_text !== "last") {
+        throw new Error(`z/last.txt match is ${JSON.stringify(match)}, want line 1 "last"`);
+      }
     });
 
     await ctx.step("the recursive list is cut at 1,000 and says so", async () => {
@@ -503,6 +615,12 @@ flow(
       r.status(200);
       if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
       if (r.header("x-kortix-truncated") !== "1") throw new Error("the cut list carries no X-Kortix-Truncated");
+    });
+
+    await ctx.step("without depth, limit and cursor are ignored as before: limit=5000 and a garbage cursor → 200, 1,000 files", async () => {
+      const r = await owner.get("/v1/projects/:projectId/files", { params, query: { limit: "5000", cursor: "garbage" } });
+      r.status(200);
+      if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
     });
   },
 );

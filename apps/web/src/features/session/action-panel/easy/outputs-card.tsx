@@ -215,7 +215,7 @@ export function OutputRows({
    * trick `PanelCard`'s `defaultExpanded` uses, here so the grouped expanded
    * view is reachable from a static render. Real callers never pass this:
    * `apps/web`'s `bun test` runs with no jsdom/`@testing-library/react`
-   * harness (see `general-tab.rename.test.tsx`), so there is no click to
+   * harness, so there is no click to
    * simulate on the "N more files" row — a test that wants the expanded,
    * grouped list has to seed it instead.
    */

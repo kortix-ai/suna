@@ -37,7 +37,7 @@
  * member's keys from another's at all.
  */
 
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import {
   NEVER_EXPIRES,
@@ -51,7 +51,6 @@ import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '@/components
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,7 +78,8 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { AccessList, AccessRow, CopyRow, type KebabItem } from '@/features/workspace/shared/access';
+import { CopyRow, type KebabItem } from '@/features/workspace/shared/access';
+import { RowKebab } from '@/features/workspace/shared/access/access-row';
 import { getPatPolicy } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
 import { usePermission } from '@/lib/use-permission';
@@ -193,7 +193,16 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const [mountAt] = useState(() => Date.now());
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
+  const [detailRow, setDetailRow] = useState<ApiKeyRow | null>(null);
   const queryClient = useQueryClient();
+  const metaCopy: ApiKeyMetaCopy = {
+    neverUsed: t('neverUsed'),
+    neverExpires: t('neverExpires'),
+    lastUsed: (time) => t('lastUsed', { time }),
+    expired: (time) => t('expiredAt', { time }),
+    expires: (time) => t('expiresAt', { time }),
+    relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
+  };
 
   // Every row here is the caller's OWN hand-minted key (`mine: true`), so the
   // gates are the personal leaves every system account role holds — a plain
@@ -245,25 +254,10 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
 
   return (
     // `max-w-2xl` — the form tier every person-scoped pane in this dialog
-    // uses (`tab-content-width.test.ts`). The rows are `AccessRow`s, not a
+    // uses (`tab-content-width.test.ts`). The list is one card of flat rows, not a
     // table, so nothing here needs the wide tier.
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <SettingsTabHeader
-        tab="tokens"
-        action={
-          canCreate && rows.length > 0 ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() => setCreateOpen(true)}
-            >
-              <PlusIcon className="size-4 shrink-0" />
-              {t('newKey')}
-            </Button>
-          ) : undefined
-        }
-      />
+      <SettingsTabHeader tab="tokens" hideDescription />
 
       {!accountId ? (
         <div className="space-y-2">
@@ -325,46 +319,73 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
           }
         />
       ) : (
-        <AccessList>
-          {rows.map((row) => {
-            // A revoked or expired key has nothing left to revoke — it is a
-            // record now. There is no delete: the row is the audit trail.
-            const kebab: KebabItem[] =
-              canRevoke && row.status === 'active'
-                ? [
-                    {
-                      label: t('revokeKey'),
-                      icon: <ProhibitIcon className="size-3.5 shrink-0" />,
-                      variant: 'destructive',
-                      onSelect: () => setRevokeTarget(row),
-                    },
-                  ]
-                : [];
-            return (
-              <AccessRow
-                key={row.id}
-                leading={<EntityAvatar icon={KeyIcon} label={row.name} size="sm" />}
-                title={row.name}
-                badges={
-                  <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
-                    {t(`status.${row.status}`)}
-                  </Badge>
-                }
-                metaParts={apiKeyMetaParts(row, renderedAt, {
-                  neverUsed: t('neverUsed'),
-                  neverExpires: t('neverExpires'),
-                  lastUsed: (time) => t('lastUsed', { time }),
-                  expired: (time) => t('expiredAt', { time }),
-                  expires: (time) => t('expiresAt', { time }),
-                  relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
-                })}
-                kebab={kebab}
-                kebabLabel={t('actionsFor', { name: row.name })}
-                pending={revokeMutation.isPending && revokeTarget?.id === row.id}
-              />
-            );
-          })}
-        </AccessList>
+        // Linear's API key list: one card, a header row with the count and
+        // the create action, then flat rows separated by hairlines. A row
+        // opens the key's details; its ⋯ keeps Revoke one click away.
+        <div className="bg-surface overflow-hidden rounded-lg border">
+          <div className="flex h-12 items-center justify-between gap-3 border-b pr-2 pl-4">
+            <span className="text-foreground text-sm font-medium">
+              {t('keyCount', { count: rows.length })}
+            </span>
+            {canCreate ? (
+              <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <PlusIcon className="size-3.5 shrink-0" />
+                {t('newKey')}
+              </Button>
+            ) : null}
+          </div>
+          <ul className="divide-y">
+            {rows.map((row) => {
+              // A revoked or expired key has nothing left to revoke — it is a
+              // record now. There is no delete: the row is the audit trail.
+              const kebab: KebabItem[] =
+                canRevoke && row.status === 'active'
+                  ? [
+                      {
+                        label: t('revokeKey'),
+                        icon: <ProhibitIcon className="size-3.5 shrink-0" />,
+                        variant: 'destructive',
+                        onSelect: () => setRevokeTarget(row),
+                      },
+                    ]
+                  : [];
+              const meta = [
+                t('createdOn', { date: formatShortDate(row.createdAt, locale) }),
+                ...apiKeyMetaParts(row, renderedAt, metaCopy).slice(1),
+              ];
+              return (
+                <li key={row.id} className="hover:bg-hover relative flex items-center gap-3 px-4 py-3">
+                  {/* The whole row opens the details; the ⋯ sits above it. */}
+                  <button
+                    type="button"
+                    aria-label={row.name}
+                    className="focus-visible:ring-ring absolute inset-0 outline-none focus-visible:ring-1 focus-visible:ring-inset"
+                    onClick={() => setDetailRow(row)}
+                  />
+                  <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                    <KeyIcon className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">{row.name}</span>
+                      {row.status !== 'active' ? (
+                        <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
+                          {t(`status.${row.status}`)}
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="text-muted-foreground block truncate text-xs">{meta.join(' · ')}</span>
+                  </span>
+                  {kebab.length > 0 ? (
+                    <span className="relative z-10 shrink-0">
+                      <RowKebab items={kebab} label={t('actionsFor', { name: row.name })} />
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {/* Where the OTHER kind of key lives. One line, because a person who
@@ -397,6 +418,20 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         />
       ) : null}
 
+      <ApiKeyDetailModal
+        row={detailRow}
+        locale={locale}
+        metaCopy={metaCopy}
+        canRevoke={canRevoke}
+        onOpenChange={(open) => {
+          if (!open) setDetailRow(null);
+        }}
+        onRevoke={(row) => {
+          setDetailRow(null);
+          setRevokeTarget(row);
+        }}
+      />
+
       <ConfirmDialog
         open={!!revokeTarget}
         onOpenChange={(open) => {
@@ -412,6 +447,107 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         }}
       />
     </div>
+  );
+}
+
+export function formatShortDate(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
+
+function formatLongDate(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * One key's details, Linear's layout in a modal: the name as the title, the
+ * creation date under it, the ⋯ on the right, then one card of labelled rows.
+ * Read-only: a key's name, scope and expiry are fixed at creation.
+ */
+function ApiKeyDetailModal({
+  row,
+  locale,
+  metaCopy,
+  canRevoke,
+  onOpenChange,
+  onRevoke,
+}: {
+  row: ApiKeyRow | null;
+  locale: string;
+  metaCopy: ApiKeyMetaCopy;
+  canRevoke: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRevoke: (row: ApiKeyRow) => void;
+}) {
+  const t = useTranslations('settings.tokens');
+  const fields: Array<{ label: string; value: ReactNode }> = row
+    ? [
+        { label: t('keyName'), value: row.name },
+        { label: t('keyPrefix'), value: <span className="font-mono">{row.hint}</span> },
+        { label: t('scope'), value: row.scopeLabel ?? t('wholeWorkspace') },
+        {
+          label: t('statusLabel'),
+          value: (
+            <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
+              {t(`status.${row.status}`)}
+            </Badge>
+          ),
+        },
+        {
+          label: t('lastUsedLabel'),
+          value: row.lastUsedAt ? metaCopy.relativeTime(row.lastUsedAt) : metaCopy.neverUsed,
+        },
+        {
+          label: t('expires'),
+          value: row.expiresAt ? formatLongDate(row.expiresAt, locale) : metaCopy.neverExpires,
+        },
+      ]
+    : [];
+  return (
+    <Modal open={!!row} onOpenChange={onOpenChange}>
+      <ModalContent className="sm:max-w-lg">
+        {row ? (
+          <>
+            <ModalHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <ModalTitle className="truncate">{row.name}</ModalTitle>
+                  <ModalDescription>
+                    {t('createdOn', { date: formatLongDate(row.createdAt, locale) })}
+                  </ModalDescription>
+                </div>
+                {canRevoke && row.status === 'active' ? (
+                  <RowKebab
+                    label={t('actionsFor', { name: row.name })}
+                    items={[
+                      {
+                        label: t('revokeKey'),
+                        icon: <ProhibitIcon className="size-3.5 shrink-0" />,
+                        variant: 'destructive',
+                        onSelect: () => onRevoke(row),
+                      },
+                    ]}
+                  />
+                ) : null}
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              <dl className="divide-y rounded-lg border">
+                {fields.map((field) => (
+                  <div key={field.label} className="space-y-1 px-4 py-3">
+                    <dt className="text-foreground text-sm font-medium">{field.label}</dt>
+                    <dd className="text-muted-foreground text-sm">{field.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </ModalBody>
+          </>
+        ) : null}
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -569,7 +705,7 @@ function CreateApiKeyDialog({
                 <div className="space-y-1.5">
                   <Label htmlFor="personal-api-key-scope">{t('scope')}</Label>
                   <Select value={scope} onValueChange={setScope} disabled={mutation.isPending}>
-                    <SelectTrigger id="personal-api-key-scope" className="w-full">
+                    <SelectTrigger id="personal-api-key-scope" size="md" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -596,7 +732,7 @@ function CreateApiKeyDialog({
                     onValueChange={setExpiry}
                     disabled={mutation.isPending}
                   >
-                    <SelectTrigger id="personal-api-key-expiry" className="w-full">
+                    <SelectTrigger id="personal-api-key-expiry" size="md" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

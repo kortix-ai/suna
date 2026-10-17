@@ -25,7 +25,26 @@ import {
   sendPrompt,
   waitForAssistantText,
 } from '../fixtures/session-run';
-import { isKe2eRetryableError } from '../core/client';
+import { withTransientGitRetry } from '../fixtures/git-transient';
+import { isKe2eRetryableError, transientRetryDelayMs } from '../core/client';
+
+/**
+ * `fetch` for the idempotent reads and descriptor mints of this file. Bun
+ * reuses a keep-alive socket the edge already closed and then fails with "The
+ * socket connection was closed unexpectedly" (CFG-2, CFG-8 on deployed
+ * staging); the request never reached a handler. Only a transport failure
+ * is repeated, three times at most; any HTTP answer goes back untouched.
+ */
+async function fetchRetryingTransport(url: string, init: RequestInit & { signal?: AbortSignal } = {}): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (attempt >= 3 || init.signal?.aborted) throw error;
+      await sleep(transientRetryDelayMs(attempt));
+    }
+  }
+}
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -146,9 +165,8 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
 /**
  * `@kortix/starter`'s `base` template — the scaffold every managed project
  * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
- * default, not an opt-in") — ships the harness-agnostic layout PR #7681
- * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
- * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * default, not an opt-in") — ships the kortix_version 3 layout: root
+ * `agents/`, `skills/`, `extensions/`, `memory/`. This flow deliberately drives the
  * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
  * (`CONFIG_FILES` below), so every managed project it creates clears that
  * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
@@ -160,7 +178,7 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
  * the wrong tree. The `local` target never seeds a starter template
  * (`createLocalGitRepository`), so this is a no-op there.
  */
-const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'extensions', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
@@ -193,6 +211,11 @@ const CONFIG_FILES: Record<string, string> = {
 };
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
+  if (cmd !== 'git') return runOnce(cmd, args, cwd, input);
+  return withTransientGitRetry(args, () => runOnce(cmd, args, cwd, input));
+}
+
+async function runOnce(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -276,7 +299,14 @@ async function commitTo(
     await run('git', ['add', '-A'], work);
     await run('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], work);
     await run('git', [...repo.auth, 'push', '-q', 'origin', `HEAD:refs/heads/${repo.branch}`], work);
-    return (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    const tip = (await run('git', ['rev-parse', 'HEAD'], work)).toString().trim();
+    // A push straight to a path upstream (the local target) bypasses Kortix, as
+    // a push straight to GitHub does: the API sees it within one mirror refresh
+    // interval (apps/api/src/config-releases/base-tip.ts), which the local
+    // stack sets to 1 s (`KORTIX_GIT_REFRESH_INTERVAL_MS`). A push through the
+    // git proxy is seen at once.
+    if (repo.url.startsWith('/')) await sleep(1_100);
+    return tip;
   } finally {
     await rm(work, { recursive: true, force: true });
   }
@@ -382,7 +412,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { sessionId, secret };
     },
     async descriptor(secret, sessionId, body = {}) {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config-release`, {
         method: 'POST',
         headers: {
           ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
@@ -425,7 +455,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
     async configState(sessionId) {
       const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
-      const response = await fetch(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/sessions/${sessionId}/config`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(60_000),
       });
@@ -437,7 +467,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return { status: response.status, body: parsed };
     },
     async download(secret, treeId, query = '') {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
+      const response = await fetchRetryingTransport(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
         redirect: 'manual',
         signal: AbortSignal.timeout(60_000),
@@ -446,7 +476,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
         // The daemon follows one redirect, with no credentials, to the store.
         const location = response.headers.get('location');
         if (!location) throw new Error('302 without a Location header');
-        const stored = await fetch(location, { signal: AbortSignal.timeout(60_000) });
+        const stored = await fetchRetryingTransport(location, { signal: AbortSignal.timeout(60_000) });
         return { status: stored.status, bytes: Buffer.from(await stored.arrayBuffer()), source: 'redirect' };
       }
       return {
@@ -644,6 +674,16 @@ flow(
         if (r.body.release_id !== descriptor.release_id) throw new Error('release ID moved without a base change');
       });
 
+      await ctx.step("a booting box's base_sha never chooses the release: the tip and any other SHA both answer the base tip", async () => {
+        for (const baseSha of [descriptor.source_commit, 'f'.repeat(40)]) {
+          const r = await fixture.descriptor(own.secret, own.sessionId, { base_sha: baseSha });
+          if (r.status !== 200) throw new Error(`base_sha ${baseSha}: expected 200, got ${r.status}`);
+          if (r.body.source_commit !== descriptor.source_commit || r.body.release_id !== descriptor.release_id) {
+            throw new Error(`base_sha ${baseSha}: answered ${r.body.source_commit} / ${r.body.release_id}`);
+          }
+        }
+      });
+
       await ctx.step('the session token downloads the archive; every file matches its blob ID and nothing extra ships', async () => {
         const r = await fixture.download(own.secret, descriptor.config_tree_id!);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${r.bytes.toString().slice(0, 200)}`);
@@ -717,6 +757,37 @@ flow(
         }
         const download = await fixture.download(restricted.secret, descriptor.config_tree_id!);
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
+      });
+
+      await ctx.step('a session without repository access receives only the modules of its agent\'s project tools, and downloads no other tree', async () => {
+        const manifest = MANIFEST.replace('agents:\n', 'tools:\n  lookup_order: tools/lookup_order.ts\n  hidden_tool: tools/hidden.ts\nagents:\n')
+          .replace('  reviewer:\n', '  reviewer:\n    tools:\n      exclude: [hidden_tool]\n');
+        await fixture.commit(
+          {
+            'kortix.yaml': manifest,
+            'tools/lookup_order.ts': "import { client } from './lib/client'\nexport default { description: 'Look up an order.', parameters: { type: 'object' }, execute: () => client() }\n",
+            'tools/lib/client.ts': 'export const client = () => "order"\n',
+            'tools/hidden.ts': "export default { description: 'Hidden.', parameters: { type: 'object' }, execute: () => 'x' }\n",
+          },
+          'project tools',
+        );
+        const restricted = await fixture.mint({ repositoryAccess: false, agentName: 'reviewer' });
+        const r = await fixture.descriptor(restricted.secret, restricted.sessionId, { accept: ['config-release-v3'] });
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor & { snapshot?: unknown };
+        const paths = d.files?.map(([path]) => path).join(',');
+        if (paths !== 'tools/lib/client.ts,tools/lookup_order.ts') throw new Error(`restricted files: ${paths}`);
+        if (d.config_dir !== null || d.reason !== null) throw new Error(`config_dir ${d.config_dir}, reason ${d.reason}`);
+        if (d.snapshot) throw new Error('a tools-only release carried the whole-commit snapshot');
+        const query = d.archive!.url.slice(d.archive!.url.indexOf('?'));
+        if (query !== `?commit=${d.source_commit}&agent=reviewer`) throw new Error(`archive url ${d.archive!.url}`);
+        const download = await fixture.download(restricted.secret, d.config_tree_id!, query);
+        if (download.status !== 200) throw new Error(`tools download: expected 200, got ${download.status}`);
+        await assertArchiveMatches(d, download.bytes);
+        const whole = await fixture.download(restricted.secret, descriptor.config_tree_id!, query);
+        if (whole.status !== 403) throw new Error(`whole tree with the tools query: expected 403, got ${whole.status}`);
+        const otherAgent = await fixture.download(restricted.secret, d.config_tree_id!, `?commit=${d.source_commit}&agent=kortix`);
+        if (otherAgent.status !== 403) throw new Error(`another agent's query: expected 403, got ${otherAgent.status}`);
       });
 
       await ctx.step('the release is the base commit\'s whole tree: a root skills/ folder and a file outside every config dir ship at their repository paths', async () => {
@@ -1394,10 +1465,11 @@ flow(
   },
 );
 
-// ── CFG-9 — turn-start convergence, the API half ───────────────────────────
+// ── CFG-9 — turn-end convergence, the API half ─────────────────────────────
 //
-// C9: a prompt on a box that is behind converges first, then runs. The gate is
-// `convergeBeforeTurnStart`, inside `forwardToSandbox`. It decides by comparing
+// C9: a box that is behind converges when its turn ends, so its next turn runs
+// the new config; no prompt waits for it. The gate is `convergeConfigIfBehind`,
+// called from the turn-end relay. It decides by comparing
 // the release the API last saw the box running against the DESIRED release,
 // memoised per `(project, base ref, agent, repository access)`.
 //
@@ -1579,10 +1651,10 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
   );
   created!.status(200);
   const conversationId = String(created!.json<{ id: string }>().id);
-  // The boot prompt's turn must end first. A turn in flight blocks the
-  // turn-start convergence by design, so a prompt sent while "say hello" still
-  // runs is answered on the release the box was behind on (measured on a real
-  // box 2026-09-30: the boot turn ended 2.8 s after the flow pushed and prompted).
+  // The boot prompt's turn must end first. A turn in flight blocks a
+  // convergence by design, so a base move while "say hello" still runs lands
+  // only at that turn's end (measured on a real box 2026-09-30: the boot turn
+  // ended 2.8 s after the flow pushed and prompted).
   await waitFor(
     async () => ({
       turn: await readTurn(ctx, fixture.projectId, sessionId),
@@ -1640,11 +1712,12 @@ async function proveHarness(ctx: FlowContext, sandboxId: string, harness: Harnes
   });
 }
 
-// ── CFG-11 — a prompt on a box that is behind converges FIRST, then RUNS ───
+// ── CFG-11 — a box that is behind converges in the background, then RUNS ───
 //
-// C9's whole contract, on a real box: the two halves of DEF-FLAGON-1 (the
-// prompt survives the convergence, and a deliberate re-send is a second turn)
-// and DEF-FLAGON-2 (a healed session stops claiming a failure).
+// C9's whole contract, on a real box: a base move reaches an idle running box
+// with no prompt (no prompt waits for a convergence since 2026-10-13), the
+// two halves of DEF-FLAGON-1 (the prompt answers, and a deliberate re-send is
+// a second turn) and DEF-FLAGON-2 (a healed session stops claiming a failure).
 //
 // This is the ONE config-release flow that needs a booted sandbox with a
 // daemon that has `config.release.v1`. The local profile runs no cloud
@@ -1692,6 +1765,13 @@ const RACE_MARKER_AGENT = (round: number, marker: string): string =>
   `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n`;
 const RACE_MARKER_PROMPT = (round: number): string =>
   `Answer with the ${RACE_MARKER_KEY(round)} value from your instructions and nothing else.`;
+/**
+ * The prompt raced against the base move. It may run on either release, so it
+ * names no marker: an earlier "there is no such key" answer in the same
+ * conversation is the confound above, and the model repeats it on the next
+ * question (measured 2026-10-13, both harnesses).
+ */
+const RACE_PROMPT = (round: number): string => `Reply with the single word ok. Round ${round}.`;
 
 /**
  * DEF-DEV-2's decider — a key the conversation CANNOT supply.
@@ -1782,6 +1862,20 @@ harnessFlow(
         );
       });
 
+      await ctx.step('the idle box converges with no prompt: running == desired, and it is not the release it was behind on', async () => {
+        const after = await waitFor(releaseOf, {
+          until: (rel) =>
+            Boolean(rel) && rel.running_release_id === rel.desired_release_id && rel.running_release_id !== behindRelease,
+          timeoutMs: 120_000,
+          intervalMs: 3_000,
+          description: 'running release == desired release',
+        });
+        if (after.running_release_id === behindRelease) {
+          throw new Error(`the release never moved off ${behindRelease}`);
+        }
+        if (after.proven !== true) throw new Error('the new release is not proven');
+      });
+
       await ctx.step('the prompt is NOT lost: it answers, and the answer comes from the NEW release', async () => {
         const r = await send(MARKER_PROMPT);
         r.status(200);
@@ -1807,19 +1901,6 @@ harnessFlow(
         if (!answered.includes('marker-one')) {
           throw new Error(`the answer does not come from the new release: ${answered.slice(0, 200)}`);
         }
-      });
-
-      await ctx.step('the release moved: running == desired, and it is not the release the box was behind on', async () => {
-        const after = await waitFor(releaseOf, {
-          until: (rel) => Boolean(rel) && rel.running_release_id === rel.desired_release_id,
-          timeoutMs: 120_000,
-          intervalMs: 3_000,
-          description: 'running release == desired release',
-        });
-        if (after.running_release_id === behindRelease) {
-          throw new Error(`the release never moved off ${behindRelease}`);
-        }
-        if (after.proven !== true) throw new Error('the new release is not proven');
       });
 
       await ctx.step('DEF-FLAGON-1 — the SAME sentence sent again is a SECOND turn, not a duplicate', async () => {
@@ -1984,10 +2065,12 @@ harnessFlow(
 // Two ways to land in that window, both here:
 //
 //  1. RACED. Push a base move, send a prompt within 200 ms, N times. This is
-//     the shape a user produces (`git push` then type), and each round also
-//     proves the answer comes from the config pushed in THAT round — the
-//     cross-process invalidation, end to end, because nothing tells the pod
-//     that answers the prompt about the push except the broadcast.
+//     the shape a user produces (`git push` then type). The raced prompt may
+//     run on either release: no prompt waits for a convergence (2026-10-13).
+//     Each round then proves the box converges after that turn and the NEXT
+//     turn answers from the config pushed in THAT round — the cross-process
+//     invalidation, end to end, because nothing tells the pod that handles the
+//     turn end about the push except the broadcast.
 //  2. SCHEDULED. `?delay_before_swap_ms` parks a convergence between the gate
 //     and the swap, and the prompt is sent while it is parked. No race to win:
 //     the prompt is provably inside the window.
@@ -1996,6 +2079,9 @@ harnessFlow(
 // fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
 // timeout raised with it.
 const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Which layer said 503: kortixd's boot phase header and body, or the API's. */
+const describe503 = (r: { header(name: string): string | undefined; text(): string }) =>
+  `(phase=${r.header('x-kortix-boot-phase') ?? 'none'}): ${r.text().slice(0, 400)}`;
 /** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
 const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
@@ -2068,15 +2154,16 @@ harnessFlow(
         // round lets a model answer from its own PRIOR turn in this same
         // conversation instead of the current system prompt, which is a
         // confound this flow does not exist to measure.
-        const prompt = RACE_MARKER_PROMPT(round);
+        const prompt = RACE_PROMPT(round);
         await ctx.step(`round ${round}/${RACE_ROUNDS}: a base move and a prompt 200 ms apart`, async () => {
+          const roundStart = String((await box.releaseOf())?.running_release_id ?? '');
           await fixture.commit({ '.kortix/opencode/agents/kortix.md': RACE_MARKER_AGENT(round, marker) }, marker);
           await new Promise((resolve) => setTimeout(resolve, 200));
 
           const r = await box.send(prompt);
           // THE DEFECT: `503` here, because the swap killed the process that
           // had already accepted this prompt.
-          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
+          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503 ${describe503(r)}`);
           r.status(200);
           const body = r.json<any>();
           if (body?.deduplicated) throw new Error(`round ${round}: the prompt was swallowed as a duplicate`);
@@ -2084,12 +2171,27 @@ harnessFlow(
             throw new Error(`round ${round}: the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
           }
 
-          const answer = await answerTo(prompt);
-          if (!answer.includes(marker)) {
-            throw new Error(`round ${round}: the answer does not carry this round's marker: ${answer.slice(0, 200)}`);
-          }
           const open = await openAssistantRows();
           if (open.length > 0) throw new Error(`round ${round}: assistant rows never completed: ${open.join(', ')}`);
+
+          // The raced turn ended, so the box converges onto THIS round's
+          // release in the background, and the next turn runs it.
+          await waitFor(() => box.releaseOf(), {
+            until: (rel) =>
+              Boolean(rel) &&
+              rel.running_release_id === rel.desired_release_id &&
+              rel.running_release_id !== roundStart &&
+              rel.proven === true,
+            timeoutMs: 120_000,
+            intervalMs: 3_000,
+            description: `round ${round}: the box serves this round's release`,
+          });
+          const ask = RACE_MARKER_PROMPT(round);
+          (await box.send(ask)).status(200);
+          const answer = await answerTo(ask);
+          if (!answer.includes(marker)) {
+            throw new Error(`round ${round}: the next turn does not carry this round's marker: ${answer.slice(0, 200)}`);
+          }
         });
       }
 
@@ -2104,7 +2206,7 @@ harnessFlow(
         await new Promise((resolve) => setTimeout(resolve, 1_000));
 
         const r = await box.send(MARKER_PROMPT);
-        if (r.statusCode === 503) throw new Error('the send answered 503 while a convergence was parked');
+        if (r.statusCode === 503) throw new Error(`the send answered 503 while a convergence was parked ${describe503(r)}`);
         r.status(200);
         const body = r.json<any>();
         if (!body?.info || !Array.isArray(body?.parts)) {
@@ -2188,6 +2290,11 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
+  // Known pi defect on deployed staging: pi answers from a stale system prompt
+  // after an idle convergence (gates 37557504543 and 37933459772: DEF-DEV-2
+  // answered marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both
+  // times). Suspected: harness/pi/config-release.ts swap + reconfigure keeps
+  // the old compiled governance. A red CFG-12-pi is that bug, not this test.
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─
@@ -2516,7 +2623,7 @@ harnessFlow(
       };
 
       let first = '';
-      await ctx.step('the box runs the release over the cap, built from its own checkout with no download', async () => {
+      await ctx.step('the box runs the release over the cap, from the project snapshot or its own git fetch, never the API archive', async () => {
         const release = await waitFor(releaseOf, {
           until: (rel) => Boolean(rel) && rel.source === 'release' && rel.proven === true && rel.running_release_id === rel.desired_release_id,
           timeoutMs: 180_000,
@@ -2526,7 +2633,12 @@ harnessFlow(
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         first = String(release.running_release_id);
         const transport = await materialized(first);
-        if (transport !== 'workspace') throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the checkout`);
+        // Since #9770 the config provider never reads /workspace. A release over
+        // the archive cap comes from the S3 project snapshot when one is built,
+        // else from a depth-1 git fetch of the release commit.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of that release', async () => {
@@ -2534,7 +2646,7 @@ harnessFlow(
         if (description !== markerA) throw new Error(`the kortix agent's description is ${JSON.stringify(description)}, not the release's`);
       });
 
-      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot', async () => {
+      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot or a git fetch', async () => {
         await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerB) }, 'next release over the cap');
         // The snapshot is built in the background; the box retries once a minute until it is ready.
         const release = await waitFor(releaseOf, {
@@ -2545,7 +2657,12 @@ harnessFlow(
         });
         if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
         const transport = await materialized(String(release.running_release_id));
-        if (transport !== 'snapshot') throw new Error(`the new release was materialized from ${transport}, not the project snapshot`);
+        // #9770: the box converges as soon as the base moves. The snapshot of the
+        // new commit is built in the background, so the box takes a depth-1 git
+        // fetch when it is not ready yet. Never the API archive: it is over the cap.
+        if (transport !== 'snapshot' && transport !== 'git') {
+          throw new Error(`the new release was materialized from ${transport}, not the project snapshot or a git fetch`);
+        }
       });
 
       await ctx.step('the runtime serves the agent of the new release, and a turn runs on it', async () => {

@@ -19,16 +19,17 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, freshBase, worktreeAddArgs, removeWorktree,
+  pickSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, freshBase, worktreeAddArgs, removeWorktree,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
-  ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS, supabaseBin,
+  ensurePrimarySupabase, primaryCredsFromStatus, primarySupabaseStatusEnv, SHARED_SUPABASE_PORTS, supabaseBin,
+  branchDbName, primaryDb, branchDbExists, createBranchDb, syncBranchUsers, dropBranchDb, withDatabase,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
   listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
   parseDuration, selectForPrune, type PruneCandidate,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
-  type DbMode, type KillResult,
+  type DbMode, type KillResult, type PrimaryDb, type SlotCreds,
 } from './lib';
 import { existsSync, rmSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join as joinPath } from 'node:path';
@@ -38,6 +39,8 @@ import pc from 'picocolors';
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
 const GATEWAY_FILTER = '@kortix/llm-gateway-server';
+// Per-port clash lines `create` prints before it summarises the rest.
+const CLASH_LOG_LIMIT = 5;
 
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
@@ -126,6 +129,43 @@ function warnOnSharedDbCrosstalk(current: string, reg: Registry): void {
   sub(`run one stack at a time (${pc.cyan('pnpm worktree stop <name>')}), or recreate this worktree with ${pc.cyan('--db')} for an isolated database.`);
 }
 
+/** The primary Supabase (started if down) that branch databases live in. */
+async function primaryForBranch(): Promise<{ creds: SlotCreds; db: PrimaryDb }> {
+  const creds = primaryCredsFromStatus(await ensurePrimarySupabase(repoRoot()));
+  if (!creds.serviceRoleKey || !creds.anonKey) {
+    die('primary Supabase credentials are unavailable. Start the primary local stack once with `pnpm dev`.');
+  }
+  const db = primaryDb(creds.dbUrl);
+  if (!db) die(`no running supabase_db_* container publishes the primary database (${creds.dbUrl})`);
+  return { creds, db: db! };
+}
+
+/** Copy (first time only), migrate to this branch, and sync auth.users. Returns the DB URL. */
+async function ensureBranchDatabase(name: string, path: string, db: PrimaryDb): Promise<string> {
+  const dbName = branchDbName(name);
+  const url = withDatabase(db.url, dbName);
+  if (!branchDbExists(db, name)) {
+    step(`Copying the primary database into ${dbName}`);
+    const t0 = performance.now();
+    const err = createBranchDb(db, name);
+    if (err) die(`${dbName}: ${err}`);
+    sub(`copied in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  }
+  step(`Applying this branch's migrations to ${dbName}`);
+  if (await runMigrate(path, url) !== 0) die(`migrate failed on ${dbName}`);
+  if (!hasKortixSchema(url)) die(`${dbName} has no kortix schema after migrate`);
+  step('Syncing auth.users from the primary');
+  const err = syncBranchUsers(db, name);
+  if (err) die(`${dbName}: ${err}`);
+  return url;
+}
+
+async function removeIsolatedSupabase(name: string, pid: string): Promise<void> {
+  await spin('Stopping Supabase containers', [supabaseBin(), '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+  await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
+  await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+}
+
 async function stopStack(e: SlotEntry, opts: { quiet?: boolean } = {}): Promise<KillResult> {
   const roots = stackRoots(e.path, e.ports);
   const res = await killTree(roots);
@@ -198,7 +238,8 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
 shares the primary Supabase DB by default, and gets its own node_modules. Pass ${pc.cyan('--db')}
-to opt into a separate Supabase project. State in ${pc.dim(WT_HOME)}.
+for its own database inside the primary Supabase (a copy of the primary, migrated to the branch),
+or ${pc.cyan('--full-supabase')} for a separate Supabase project. State in ${pc.dim(WT_HOME)}.
 The primary ${pc.bold('pnpm dev')} (3000/8008) is never touched.`);
   process.exit(2);
 }
@@ -213,12 +254,15 @@ function portsLine(p: Ports): string {
     `${pc.dim('·')} db ${pc.green(String(p.sbDb))} ${pc.dim('·')} studio ${pc.green(String(p.sbStudio))} ${pc.dim('·')} inbucket ${pc.green(String(p.sbInbucket))}`;
 }
 function dbModeFromFlags(flags: Record<string, string | boolean>): DbMode {
-  if (flags.db || flags['with-db'] || flags['isolated-db']) return 'isolated';
-  if (flags['no-db'] || flags['shared-db']) return 'shared';
+  if (flags['full-supabase']) return 'isolated';
+  if (flags.db || flags['with-db'] || flags['isolated-db']) return 'branch';
   return 'shared';
 }
-function dbLabel(mode: DbMode): string {
-  return mode === 'isolated' ? 'isolated Supabase' : 'shared primary Supabase';
+const DB_MODE_FLAGS = ['db', 'with-db', 'isolated-db', 'full-supabase', 'no-db', 'shared-db'];
+function dbLabel(mode: DbMode, name?: string): string {
+  if (mode === 'isolated') return 'isolated Supabase';
+  if (mode === 'branch') return `own database${name ? ' ' + branchDbName(name) : ''} in the shared primary Supabase`;
+  return 'shared primary Supabase';
 }
 
 function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'dev'; }
@@ -279,7 +323,7 @@ async function promptCreate(): Promise<Args | null> {
   }
   const start = await clack.confirm({ message: 'Boot the dev servers when it’s ready?', initialValue: true });
   if (cancelled(start)) return null;
-  const isolatedDb = await clack.confirm({ message: 'Create a separate Supabase database for this worktree?', initialValue: false });
+  const isolatedDb = await clack.confirm({ message: 'Give this worktree its own database (a copy of the primary)?', initialValue: false });
   if (cancelled(isolatedDb)) return null;
   const stripe = start ? await confirmStripe() : false;
   const n = String(name);
@@ -356,7 +400,7 @@ async function cmdCreate(a: Args) {
   const requestedDbMode = dbModeFromFlags(a.flags);
   const startsNow = !a.flags['no-start'];
   const needsDatabaseTooling = requestedDbMode === 'isolated' || startsNow;
-  const needsIsolatedDatabaseTooling = requestedDbMode === 'isolated';
+  const needsIsolatedDatabaseTooling = requestedDbMode !== 'shared';
 
   step('Preflight: toolchain');
   if (!(await ensureDeps({ database: needsDatabaseTooling, isolatedDatabase: needsIsolatedDatabaseTooling, tunnel, install }))) {
@@ -376,26 +420,35 @@ async function cmdCreate(a: Args) {
   }
 
   let isNew = false;
+  // `--db` on an old full-stack worktree moves it onto a branch database and
+  // deletes its Supabase containers. Every other mode switch needs a recreate.
+  let converting = false;
   const entry = await withLock<SlotEntry>(() => {
     const reg = loadRegistry();
     if (reg.slots[name]) {
       const existing = reg.slots[name];
       const existingMode = dbModeOf(existing);
-      if (existingMode !== requestedDbMode && (a.flags.db || a.flags['with-db'] || a.flags['isolated-db'] || a.flags['no-db'] || a.flags['shared-db'])) {
+      const explicit = DB_MODE_FLAGS.some((f) => a.flags[f]);
+      converting = explicit && existingMode === 'isolated' && requestedDbMode === 'branch';
+      if (explicit && !converting && existingMode !== requestedDbMode) {
         throw new Error(`worktree "${name}" already uses ${dbLabel(existingMode)}; nuke/recreate it to switch database modes`);
       }
-      sub(`resuming existing worktree "${name}" (slot ${existing.slot}, ${dbLabel(existingMode)})`);
+      sub(`resuming existing worktree "${name}" (slot ${existing.slot}, ${dbLabel(existingMode, name)})`);
       return existing;
     }
     isNew = true;
-    let slot = lowestFreeSlot(reg);
-    for (let tries = 0; tries < 6; tries++) {
-      const ports = computePorts(slot);
-      const clash = (Object.entries(ports) as [string, number][]).map(([k, p]) => ({ k, p, ...portInUse(p) })).find((x) => x.inUse);
-      if (!clash) break;
-      sub(`port ${clash.p} (${clash.k}) in use by ${clash.cmd ?? '?'} (pid ${clash.pid ?? '?'}) — trying next slot`);
-      slot++;
-      if (tries === 5) die('could not find a free port block after 6 slots');
+    // One lsof scan for the whole box; a missing lsof probes as "all free", as
+    // the old per-port probe did.
+    const live = listenPorts() ?? new Set<number>();
+    const { slot, clashes } = pickSlot(reg, (p) => live.has(p));
+    for (const c of clashes.slice(0, CLASH_LOG_LIMIT)) {
+      const who = portInUse(c.port);
+      sub(`port ${c.port} (${c.service}) in use by ${who.cmd ?? '?'} (pid ${who.pid ?? '?'}) — trying next slot`);
+    }
+    if (clashes.length > CLASH_LOG_LIMIT) sub(`… and ${clashes.length - CLASH_LOG_LIMIT} more slots with a port in use`);
+    // Throw, not die(): process.exit would skip withLock's unlock.
+    if (slot === null) {
+      throw new Error(`could not find a free port block: slots ${clashes[0].slot}–${clashes.at(-1)!.slot} (${clashes.length} unregistered) each have a port in use`);
     }
     const ports = computePorts(slot);
     const e: SlotEntry = { slot, projectId: `kortix-wt-${name}`, path: wtPath, branch, ports, dbMode: requestedDbMode, createdAt: new Date().toISOString(), status: 'created' };
@@ -403,14 +456,21 @@ async function cmdCreate(a: Args) {
     return e;
   });
 
-  const dbMode = dbModeOf(entry);
-  if (dbMode === 'isolated' && !needsDatabaseTooling) {
+  const dbMode: DbMode = converting ? 'branch' : dbModeOf(entry);
+  if (converting && process.stdin.isTTY && process.stdout.isTTY && !a.flags.yes) {
+    const v = await clack.confirm({
+      message: `Move ${pc.bold(name)} to its own database in the primary Supabase? This deletes its Supabase containers and volumes (${entry.projectId}).`,
+      initialValue: false,
+    });
+    if (clack.isCancel(v) || !v) die('cancelled');
+  }
+  if (dbMode !== 'shared' && !needsDatabaseTooling) {
     step('Preflight: database tooling');
     if (!(await ensureDeps({ database: true, isolatedDatabase: true, install }))) {
       die('Missing database dependencies above. Re-run with --yes to auto-install, or install them and retry.');
     }
   }
-  step(`Slot ${entry.slot} — ${portsLine(entry.ports)} — ${dbLabel(dbMode)}`);
+  step(`Slot ${entry.slot} — ${portsLine(entry.ports)} — ${dbLabel(dbMode, name)}`);
 
   const failCreate = async (msg: string): Promise<never> => {
     if (isNew) await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
@@ -451,6 +511,14 @@ async function cmdCreate(a: Args) {
 
     step(`Starting isolated Supabase on api ${entry.ports.sbApi}`);
     if (await startSupabaseFullStack(name, entry.ports) !== 0) die('supabase start failed');
+  } else if (dbMode === 'branch') {
+    const { db } = await primaryForBranch();
+    await ensureBranchDatabase(name, wtPath, db);
+    if (converting) {
+      await removeIsolatedSupabase(name, entry.projectId);
+      await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].dbMode = 'branch'; saveRegistry(r); } });
+      entry.dbMode = 'branch';
+    }
   } else {
     sub(`database mode: shared — skips Supabase project creation; start uses the primary checkout's standard local Supabase`);
   }
@@ -467,7 +535,7 @@ async function cmdCreate(a: Args) {
     `${pc.dim('api')}     http://localhost:${entry.ports.api}\n` +
     (dbMode === 'isolated'
       ? `${pc.dim('studio')}  http://localhost:${entry.ports.sbStudio}`
-      : `${pc.dim('db')}      shared primary Supabase (${SHARED_SUPABASE_PORTS.sbApi}/${SHARED_SUPABASE_PORTS.sbDb})`),
+      : `${pc.dim('db')}      ${dbMode === 'branch' ? branchDbName(name) + ' in ' : ''}shared primary Supabase (${SHARED_SUPABASE_PORTS.sbApi}/${SHARED_SUPABASE_PORTS.sbDb})`),
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
@@ -480,7 +548,7 @@ async function cmdStart(a: Args) {
   const entry = reg.slots[name];
   if (!entry) die(`unknown worktree "${name}" — create it first`);
   if (!existsSync(entry!.path)) die(`worktree dir missing (${entry!.path}); run \`pnpm worktree nuke ${name}\` then recreate`);
-  if (!(await ensureDeps({ database: true, isolatedDatabase: dbModeOf(entry) === 'isolated', tunnel: !a.flags['no-tunnel'], install: false }))) {
+  if (!(await ensureDeps({ database: true, isolatedDatabase: dbModeOf(entry) !== 'shared', tunnel: !a.flags['no-tunnel'], install: false }))) {
     die('Missing dependencies above. Install them and retry.');
   }
   if (!sh(['docker', 'info']).ok) die('Docker daemon not running — start Docker and retry');
@@ -518,6 +586,10 @@ async function cmdStart(a: Args) {
       if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
     }
     creds = slotCredsFromStatus(e.ports, supaStatusEnv(name));
+  } else if (dbMode === 'branch') {
+    const primary = await primaryForBranch();
+    creds = { ...primary.creds, dbUrl: await ensureBranchDatabase(name, e.path, primary.db) };
+    sub(`${creds.supabaseUrl} · ${creds.dbUrl}`);
   } else {
     step('Using shared primary Supabase');
     const env = await ensurePrimarySupabase(repoRoot());
@@ -525,8 +597,7 @@ async function cmdStart(a: Args) {
     if (!creds.supabaseUrl || !creds.dbUrl || !creds.serviceRoleKey || !creds.anonKey) {
       die('primary Supabase credentials are unavailable. Start the primary local stack once with `pnpm dev`, or recreate this worktree with `--db` for an isolated database.');
     }
-    const sharedSchemaPorts = { ...e.ports, ...SHARED_SUPABASE_PORTS };
-    if (!hasKortixSchema(sharedSchemaPorts)) {
+    if (!hasKortixSchema(creds.dbUrl)) {
       die('the shared primary Supabase DB does not have the kortix schema. Run the primary stack once to initialize it, or recreate this worktree with `--db` for an isolated database.');
     }
     sub(`${creds.supabaseUrl} · ${creds.dbUrl}`);
@@ -557,7 +628,7 @@ async function cmdStart(a: Args) {
 
   await freeSlotPorts(e.ports);
 
-  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim('shared primary Supabase')}`}`);
+  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim(dbLabel(dbMode, name))}`}`);
   console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (billing) {
@@ -702,15 +773,18 @@ async function cmdStopAll() {
 async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string | boolean>): Promise<void> {
   const pid = e.projectId;
   const dbMode = dbModeOf(e);
-  step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
+  step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : `(${dbLabel(dbMode, name)})`)}`);
   const stopped = await stopStack(e);
   // A process whose cwd is still inside the checkout keeps the directory busy, so
   // an unverified kill here surfaces later as a confusing `git worktree remove` failure.
   if (stopped.survived.length) warn(`${plural(stopped.survived.length, 'process', 'processes')} survived (${stopped.survived.join(', ')}) — removal may fail`);
   if (dbMode === 'isolated') {
-    await spin('Stopping Supabase containers', [supabaseBin(), '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
-    await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
-    await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+    await removeIsolatedSupabase(name, pid);
+  } else if (dbMode === 'branch') {
+    const db = primaryDb(primaryCredsFromStatus(primarySupabaseStatusEnv(repoRoot())).dbUrl);
+    const err = db ? dropBranchDb(db, name) : 'the primary Supabase is not running';
+    if (err) warn(`${branchDbName(name)} not dropped (${err}) — drop it later: psql postgresql://postgres:postgres@127.0.0.1:${SHARED_SUPABASE_PORTS.sbDb}/postgres -c 'drop database ${branchDbName(name)} with (force)'`);
+    else sub(`dropped database ${branchDbName(name)}`);
   } else {
     sub('shared primary Supabase left untouched');
   }
@@ -880,7 +954,7 @@ function cmdStatus(a: Args) {
     console.log(`  procs  ${dot(procs > 0)} ${procs ? plural(procs, 'process', 'processes') : pc.dim('none')}`);
     console.log(`  web    ${dot(portInUse(e.ports.web).inUse)} :${e.ports.web}    api ${dot(portInUse(e.ports.api).inUse)} :${e.ports.api}`);
     if (dbMode === 'isolated') console.log(`  supa   ${dot(sb)} db :${e.ports.sbDb}  studio :${e.ports.sbStudio}  inbucket :${e.ports.sbInbucket}`);
-    else console.log(`  supa   ${dot(sb)} shared db :${SHARED_SUPABASE_PORTS.sbDb}  studio :${SHARED_SUPABASE_PORTS.sbStudio}  inbucket :${SHARED_SUPABASE_PORTS.sbInbucket}`);
+    else console.log(`  supa   ${dot(sb)} shared db :${SHARED_SUPABASE_PORTS.sbDb}${dbMode === 'branch' ? '/' + branchDbName(n) : ''}  studio :${SHARED_SUPABASE_PORTS.sbStudio}  inbucket :${SHARED_SUPABASE_PORTS.sbInbucket}`);
   }
   console.log('');
 }
@@ -901,6 +975,13 @@ async function cmdDoctor(a: Args) {
       ? sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.projectId}$" | head -1`]).stdout.trim()
       : '';
     console.log(`  ${issues.length ? pc.red('✗') : pc.green('✓')} ${n} ${pc.dim('(' + dbMode + ')')}${issues.length ? ' ' + pc.red(issues.join('; ')) : ''}${orphan ? pc.dim(' (containers present)') : ''}`);
+  }
+  // Allocators before pickSlot could hand one slot to several worktrees. They
+  // share every port, and `start` on one kills the other's servers.
+  const owners = new Map<number, string[]>();
+  for (const [n, e] of Object.entries(reg.slots)) owners.set(e.slot, [...(owners.get(e.slot) ?? []), n]);
+  for (const [slot, names] of owners) {
+    if (names.length > 1) console.log(`  ${pc.red('✗')} slot ${slot} is shared by ${names.join(', ')} ${pc.red('— nuke and recreate all but one')}`);
   }
 
   // Memory pressure is the failure mode that actually bites here, and the registry

@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
-import { Badge } from '@/components/ui/badge';
+import { CountBadge } from '@/components/ui/count-badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -320,13 +320,7 @@ function SectionTrigger({
         <Icon className="size-4 shrink-0" />
         <span className={cn(!horizontal && 'truncate')}>{section.label}</span>
         {showCount ? (
-          <Badge
-            variant="kortix"
-            size="xs"
-            className={cn('tabular-nums', !horizontal && 'ml-auto')}
-          >
-            {count}
-          </Badge>
+          <CountBadge count={count} className={cn(!horizontal && 'ml-auto')} />
         ) : attention ? (
           <span
             aria-hidden

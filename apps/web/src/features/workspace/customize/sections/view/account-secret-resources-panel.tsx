@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   ApiError, type AccountSecretResource, createAccountSecretResource, deleteAccountSecretResource,
   listAccountMembers, setAccountSecretResourceAccess, rotateAccountSecretResource,
@@ -26,6 +26,7 @@ import { PrincipalPicker, type PrincipalSelection } from '@/features/workspace/s
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { accessSummary, chatGptSharing, type ConnectionAccessChoice, keyAccessFields, labelOwnerName, needsReconnection } from './account-secret-access';
+import { UndecryptableValue } from './undecryptable-value';
 
 const NO_MEMBERS: PrincipalSelection = { memberIds: [], groupIds: [], inviteEmails: [] };
 type StartInput = NonNullable<Parameters<typeof startProjectProviderOAuth>[2]>;
@@ -124,6 +125,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   oauth?: { projectId: string; onConnected: (providerId: string) => void };
 }) {
   const t = useTranslations('pooledSecrets');
+  const tUndecryptable = useTranslations('secrets.undecryptable');
   const common = useTranslations('common');
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -279,6 +281,9 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
           const canReconnect = Boolean(oauth) && canWrite && secret.created_by === user?.id;
           const canChangeAccess = canManage && canShare;
           const stale = Boolean(oauth) && needsReconnection(secret);
+          // A value Kortix cannot decrypt is lost (KRTX-1719): the gateway skips
+          // it. A login is reconnected; a key is entered again.
+          const undecryptable = secret.status === 'undecryptable';
           return (
             <li key={secret.secret_id} className="border-border flex min-w-0 items-center gap-3 rounded-md border px-3 py-1.5">
               <span className="text-foreground min-w-0 flex-1 text-sm font-medium">
@@ -291,9 +296,15 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
                   <span className="text-muted-foreground block text-xs font-normal">{t('coolingDown')}</span>
                 )}
               </span>
-              {stale && canReconnect && (
+              {undecryptable && <UndecryptableValue hint={tUndecryptable(oauth ? 'loginHint' : 'keyHint')} />}
+              {(stale || undecryptable) && canReconnect && (
                 <Button size="sm" variant="secondary" aria-label={t('reconnectTitle', { label: secret.label })} onClick={() => openReconnect(secret)}>
                   {t('reconnectAccount')}
+                </Button>
+              )}
+              {undecryptable && canManage && !oauth && (
+                <Button size="sm" variant="secondary" onClick={() => { setValue(''); save.reset(); setRotating(secret); }}>
+                  {tUndecryptable('reenterKey')}
                 </Button>
               )}
               {(canManage || canReconnect) && <DropdownMenu>

@@ -53,6 +53,9 @@ interface SettingsPanelState {
   /** Which sub-tab the Members tab should land on. Reset to "people" on every
    *  open unless a trigger explicitly asks otherwise (e.g. Invite). */
   membersTab: MembersTab;
+  /** True when the last open named a tab. On mobile the overlay then opens on
+   *  that pane instead of the section list. */
+  paneRequested: boolean;
   /** Open the overlay. Pass a tab to jump straight to it; omit to resume
    *  wherever you left off. */
   openSettings: (tab?: SettingsTab, opts?: SettingsPanelOptions) => void;
@@ -64,11 +67,13 @@ export const useSettingsPanelStore = create<SettingsPanelState>((set) => ({
   open: false,
   tab: DEFAULT_SETTINGS_TAB,
   membersTab: 'people',
+  paneRequested: false,
   openSettings: (tab, opts) =>
     set((s) => ({
       open: true,
       tab: tab ?? s.tab,
       membersTab: opts?.membersTab ?? 'people',
+      paneRequested: tab !== undefined,
     })),
   setTab: (tab) => set({ tab }),
   close: () => set({ open: false }),

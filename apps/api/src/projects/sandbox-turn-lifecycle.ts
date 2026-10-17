@@ -264,7 +264,11 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
  *   must not resurrect a turn the reaper or a turn-end already closed;
  * - any still-open row for this sandbox means authority is already held —
  *   including the normal case where the control plane wrote the record before
- *   delivering the prompt — and nothing is written.
+ *   delivering the prompt — and nothing is written, except the message id: a
+ *   prompt delivered without a wire id (Slack, Teams, triggers) holds a
+ *   root-scoped record, and the daemon's relay is the only thing that ever
+ *   names its message. Without the id the reaper's no-messageId ceiling
+ *   settles the live turn `runtime_gone` after 30 minutes (prod 2026-10-12).
  */
 export async function adoptRuntimeSandboxTurn(
   sandboxId: string,
@@ -284,12 +288,54 @@ export async function adoptRuntimeSandboxTurn(
   const known = rows?.[0]?.known === true;
   const open = rows?.[0]?.open === true;
   if (known) return 'known_message';
-  if (open) return 'open_turn_exists';
+  if (open) return (await bindRootScopedTurn(sandboxId, identity)) ? 'identity_bound' : 'open_turn_exists';
   const token = randomUUID();
   const started = await beginSandboxTurn({ sandboxId }, { token, ...identity });
   if (started !== 'granted') return 'no_box';
   const accepted = await acceptSandboxTurn({ sandboxId }, token, identity);
   return accepted ? 'adopted' : 'no_box';
+}
+
+/**
+ * Name the message of this runtime session's one open root-scoped record.
+ * Two such records are ambiguous, and neither is bound.
+ */
+async function bindRootScopedTurn(
+  sandboxId: string,
+  identity: { runtimeSessionId: string; messageId: string },
+): Promise<boolean> {
+  const result = await execute(sql`
+    WITH target AS (
+      SELECT s.sandbox_id, ${jsonbObject(sql`s.metadata`)} AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.sandbox_id = ${sandboxId}::uuid
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), candidates AS (
+      SELECT target.sandbox_id, entry.key, entry.value
+        FROM target
+        CROSS JOIN LATERAL ${activeTurnEntries(sql`target.metadata`)}
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND entry.value->>'messageId' IS NULL
+         AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId', ${identity.runtimeSessionId})
+           = ${identity.runtimeSessionId}
+    ), bound AS (
+      UPDATE kortix.session_sandboxes s
+         SET metadata = jsonb_set(s.metadata, ARRAY['activeTurns', c.key]::text[],
+               c.value || jsonb_build_object('messageId', ${identity.messageId}::text), false),
+             updated_at = now()
+        FROM candidates c
+       WHERE s.sandbox_id = c.sandbox_id
+         AND (SELECT count(*) FROM candidates) = 1
+      RETURNING coalesce(c.value->>'token', c.key) AS token
+    )
+    UPDATE kortix.session_turns t
+       SET message_id = ${identity.messageId}, updated_at = now()
+      FROM bound
+     WHERE t.turn_token = bound.token
+       AND t.message_id IS NULL
+    RETURNING t.turn_token`);
+  return (normalizeRows(result)?.length ?? 0) > 0;
 }
 
 /** Promote only the delivery record created by this request. */

@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  acceptAccountInvite,
+  acceptAccountInviteAndLand,
   type KortixProject,
   type MyAccountInvite,
 } from '@kortix/sdk';
@@ -41,7 +41,7 @@ import {
   SEARCH_THRESHOLD,
   countProjects,
   filterSections,
-  joinDestination,
+  inviteLandingPath,
   type AccountSection,
 } from './project-selector-model';
 import { useProjectSelectorData } from './use-project-selector-data';
@@ -428,17 +428,16 @@ export function ProjectSelector() {
   const createHref = createAccount ? newWorkspacePathForAccount(createAccount.accountId) : null;
 
   const join = useMutation({
-    mutationFn: (invite: MyAccountInvite) => acceptAccountInvite(invite.invite_id),
-    onSuccess: async (_result, invite) => {
+    mutationFn: (invite: MyAccountInvite) => acceptAccountInviteAndLand(invite.invite_id, invite),
+    onSuccess: async ({ landing }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.accounts.scope() }),
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
       ]);
-      setSelectedAccountId(invite.account_id);
-      const destination = joinDestination(invite);
+      setSelectedAccountId(landing.accountId);
       // A workspace invite with no project stays here: the joined account now
       // appears in the list below with its own state.
-      if (destination) router.push(destination);
+      if (landing.kind === 'project') router.push(inviteLandingPath(landing));
     },
     onError: (error: unknown) => {
       errorToast(error instanceof Error ? error.message : t('joinError'));

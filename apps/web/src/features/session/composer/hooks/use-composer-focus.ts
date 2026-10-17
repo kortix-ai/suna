@@ -25,6 +25,31 @@ function isTextEditingElement(el: Element | null): boolean {
   );
 }
 
+/**
+ * Fields with a paste of their own. Narrower than `isTextEditingElement`: a
+ * focused button or link has no paste, so a paste there belongs to the
+ * composer. Clicking a sidebar row leaves its link focused.
+ */
+function isEditableField(el: Element | null): boolean {
+  if (!el) return false;
+  const html = el as HTMLElement;
+  if (html.isContentEditable) return true;
+  return html.tagName === 'INPUT' || html.tagName === 'TEXTAREA' || html.tagName === 'SELECT';
+}
+
+/**
+ * ⌘V or Ctrl+V, with or without Shift. A Latin `key` decides, so Dvorak's V
+ * (`code` `Period`) counts and its `KeyV` (`k`) does not. A non-Latin layout
+ * reports its own letter, so the physical key decides there. Alt is refused:
+ * AltGr is Ctrl+Alt on Windows, and AltGr+V types `@` on some layouts.
+ */
+export function isPasteShortcut(
+  e: Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey'>,
+): boolean {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return false;
+  return /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() === 'v' : e.code === 'KeyV';
+}
+
 /** Only the composer inside the visible tab should answer a global event. */
 function isVisible(el: HTMLElement | null): el is HTMLElement {
   return !!el && el.offsetParent !== null;
@@ -56,6 +81,7 @@ export interface UseComposerFocusOptions {
  *  1. focus on mount, including when revealed later inside a hidden tab
  *  2. focus on the `focus-session-textarea` window event
  *  3. typing anywhere on the page redirects into the composer
+ *  4. ⌘V / Ctrl+V anywhere outside a field pastes into the composer
  *
  * Replaces session-chat-input.tsx:398-430, :451-467 and :475-499, which each
  * registered their own listener per mounted composer.
@@ -97,7 +123,7 @@ export function useComposerFocus({
     return () => observer.disconnect();
   }, [ref, shouldAutoFocus]);
 
-  // 2 + 3 — one listener pair, both guarded on visibility.
+  // 2 + 3 + 4 — one listener pair, both guarded on visibility.
   useEffect(() => {
     // The `focus-session-textarea` event (dispatched when a session tab is
     // activated from the sidebar or dashboard) can fire before React has
@@ -134,6 +160,17 @@ export function useComposerFocus({
 
     const onGlobalKeyDown = (e: KeyboardEvent) => {
       if (disabled || e.defaultPrevented) return;
+      // Focus only, and no preventDefault: the browser runs its paste after
+      // this keydown, on the element focused by then. The paste then takes
+      // the composer's own path — a file or image becomes an attachment, a
+      // long text a tile — the same as a paste into the focused composer.
+      if (isPasteShortcut(e)) {
+        const el = ref.current;
+        if (!isVisible(el) || el.contains(document.activeElement)) return;
+        if (isEditableField(document.activeElement) || hasOpenFocusOverlay()) return;
+        el.focus();
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (typeof e.key !== 'string' || e.key.length !== 1) return;
       // Space is `length === 1` but it is not type-ahead — it is the activate

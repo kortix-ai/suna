@@ -8,16 +8,16 @@ import { errorToast } from '@/components/ui/toast';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
+import { useDebounce } from '@/hooks/use-debounce';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
+import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,7 +26,8 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appCan, appStatus, gridApps } from './app-shared';
+import { AddExternalAppDialog } from './app-add-external';
+import { appCan, appStatus, cardPreviewApp, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -36,10 +37,13 @@ function AppsHeader({
   columns,
   onColumnsChange,
   showColumns,
+  onAdd,
 }: {
   projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
+  /** Absent: the viewer may not add Apps, and the control is not shown. */
+  onAdd?: () => void;
   /**
    * The control only exists to reshape a grid, so it is absent whenever there
    * is no grid — the feature gate, the error state and the empty state each
@@ -52,7 +56,7 @@ function AppsHeader({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
+    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -68,17 +72,19 @@ function AppsHeader({
         {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
+      {onAdd ? (
+        <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
+          <PlusIcon className="size-3.5 shrink-0" aria-hidden />
+          {tI18nComplete.raw('text3dd46a7b552c')}
+        </Button>
+      ) : null}
     </ProjectPageHeader>
   );
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One gating primitive, fail-closed. Apps NEVER enables itself from here:
-  // activation lives only in Customize → Feature flags, so this page has no
-  // mutation and no self-enable button.
-  const appsGate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(appsGate.enabled ? projectId : null);
+  const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
   // shape changes and project.app.deploy for anything that changes what the
@@ -96,7 +102,19 @@ export function AppsView({ projectId }: { projectId: string }) {
   // `/backends/<id>` routes land here.
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
+  const [adding, setAdding] = useState(false);
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // Mirror the open App into `?app=` so a reload or a copied link reopens it.
+  // Debounced so a fast open/close writes one history entry, not two.
+  // `replaceState` touches only the `app` key and does not re-run the route.
+  const { debouncedValue: urlAppId } = useDebounce(openAppId, 200);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if ((url.searchParams.get('app') ?? null) === urlAppId) return;
+    if (urlAppId) url.searchParams.set('app', urlAppId);
+    else url.searchParams.delete('app');
+    window.history.replaceState(window.history.state, '', url);
+  }, [urlAppId]);
 
   useEffect(() => {
     const target = searchParams.get('open_app');
@@ -125,10 +143,10 @@ export function AppsView({ projectId }: { projectId: string }) {
         projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={
-          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
-        }
+        showColumns={apps.isLoading || !!apps.data?.length}
+        onAdd={canWrite ? () => setAdding(true) : undefined}
       />
+      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
@@ -151,15 +169,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             APP_GRID_CONTAINER,
           )}
         >
-          {appsGate.isLoading ? (
-            <AppGridSkeleton columns={gridColumns} />
-          ) : !appsGate.enabled ? (
-            <FeatureGateScreen
-              featureName="Apps"
-              internalOnly
-              description={tI18nComplete.raw('text3387c31a18b3')}
-            />
-          ) : apps.isLoading ? (
+          {apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
@@ -184,6 +194,7 @@ export function AppsView({ projectId }: { projectId: string }) {
                   key={app.app_id}
                   projectId={projectId}
                   app={app}
+                  shown={cardPreviewApp(apps.data!, app, canAdmin)}
                   onOpen={() => setOpenAppId(app.app_id)}
                 />
               ))}
@@ -202,10 +213,6 @@ export function AppsView({ projectId }: { projectId: string }) {
           canWrite={canWrite}
           canDeploy={canDeploy}
           canAdmin={canAdmin}
-          onOpenLinked={(slug) => {
-            const linked = apps.data?.find((item) => item.slug === slug);
-            if (linked) setOpenAppId(linked.app_id);
-          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);
@@ -263,19 +270,21 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
+function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // The session URL is minted only for an App with capability `preview`, and
-  // only when the card frames it (`display.preview: none` shows an icon).
-  const thumbnail = app.display?.preview !== 'none';
-  const preview = appCan(app, 'preview') && thumbnail;
-  // SESSION only, and only when the viewer may actually open this App. The
-  // access POLICY is an administrative read that 403s for an ordinary member,
-  // and the card never renders it — the detail modal asks. The SESSION 403s for
-  // any App the viewer may see but not open, which is a state the server now
-  // reports up front instead of leaving the card to discover it by failing.
-  const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess && preview });
+  // `shown` is the App whose live preview the card frames: the App itself, or
+  // the first tab of one that hides its own (a backend shows its dashboard).
+  // Null: an icon. The session URL is minted only for an App with capability
+  // `preview`.
+  const preview = !!shown && appCan(shown, 'preview');
+  // SESSION only, and only when the viewer may actually open the framed App.
+  // The access POLICY is an administrative read that 403s for an ordinary
+  // member, and the card never renders it — the detail modal asks. The SESSION
+  // 403s for any App the viewer may see but not open, which is a state the
+  // server now reports up front instead of leaving the card to discover it by
+  // failing.
+  const canAccess = shown?.viewer_can_access !== false;
+  const access = useAppAccess(projectId, shown?.app_id ?? app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
 
   return (
@@ -299,10 +308,10 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
-          {thumbnail ? (
+          {shown ? (
             <AppPreview
-              key={app.active_deployment_id ?? app.app_id}
-              app={app}
+              key={shown.active_deployment_id ?? shown.app_id}
+              app={shown}
               url={access.session.data?.url ?? null}
               accessError={!canAccess || access.session.isError}
               interactive={false}

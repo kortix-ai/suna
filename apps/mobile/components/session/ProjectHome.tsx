@@ -46,13 +46,16 @@ import {
   type PastedContent,
 } from '@kortix/shared';
 import { Keyboard, Pressable, View, type TextInput } from 'react-native';
-import { useIsFocused } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
 
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
@@ -147,6 +150,7 @@ export function ProjectHome({
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
@@ -401,7 +405,14 @@ export function ProjectHome({
       {/* Floating menu button — opens the left drawer. */}
       {/* No header controls: the agent is picked in the model sheet's Agent
           tab (Jay, 2026-09-23). */}
-      <FloatingMenuButton onPress={onOpenDrawer} />
+      <FloatingMenuButton onPress={onOpenDrawer}>
+        {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
+        {__DEV__ ? (
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
+            <Text>Debug GenUI</Text>
+          </Button>
+        ) : null}
+      </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">

@@ -60,8 +60,9 @@ To read the signed-in member in React, use a `members:me` query
 browser: send the token".
 
 The request passes the using App's own access gate first, so only people the
-App admits reach the bound App through it. The bound App still checks every
-call itself (`requireMember`, sign-in.md): its own URL is public.
+App admits reach the bound App through it. They need no access to the bound
+App itself. The bound App still checks every call itself (`requireMember`,
+sign-in.md): its own URL is public.
 
 | Answer on `/_kortix/apps/<slug>/…` | Cause | Fix |
 | --- | --- | --- |

@@ -25,11 +25,27 @@ mock.module('@/lib/supabase/client', () => ({
   createClient: () => ({ auth: { getUser, updateUser: async () => ({ error: null }) } }),
 }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => true }));
+/** The deletion-status hook's answer, mutable per test. The dialog test
+ *  mounts with the supported answer; the fail-closed test swaps in the error
+ *  shape — `data` undefined, `isError` set, the exact state a useQuery leaves
+ *  behind when the fetch rejects — and restores it afterwards. */
+let deletionStatusAnswer: {
+  data?: { has_pending_deletion: boolean; deletion_scheduled_for: string | null; supported: boolean };
+  isLoading: boolean;
+  isError: boolean;
+  fetchStatus?: 'fetching' | 'paused' | 'idle';
+  errorUpdatedAt?: number;
+  dataUpdatedAt?: number;
+  refetch: () => void;
+} = {
+  data: { has_pending_deletion: false, deletion_scheduled_for: null, supported: true },
+  isLoading: false,
+  isError: false,
+  refetch: () => {},
+};
+
 mock.module('@/hooks/account/use-account-deletion', () => ({
-  useAccountDeletionStatus: () => ({
-    data: { has_pending_deletion: false, deletion_scheduled_for: null, supported: true },
-    isLoading: false,
-  }),
+  useAccountDeletionStatus: () => deletionStatusAnswer,
   useRequestAccountDeletion: () => ({ mutateAsync: async () => ({}), isPending: false }),
   useDeleteAccountImmediately: () => ({ mutateAsync: async () => ({}), isPending: false }),
   useCancelAccountDeletion: () => ({ mutateAsync: async () => ({}), isPending: false }),
@@ -104,6 +120,142 @@ describe('ProfileTab — the delete dialog opens fresh', () => {
       await act(async () => trigger.props.onClick());
       expect(confirmInput(root).props.value).toBe('');
     } finally {
+      await act(async () => renderer.unmount());
+      client.clear();
+    }
+  });
+});
+
+/**
+ * KRTX-2177: the Delete-account gate must fail closed. A destructive-action
+ * gate that derives "supported" from "not loading" arms the dialog whenever
+ * the status check ERRORS (useQuery leaves `data` undefined and `isLoading`
+ * false on a rejected fetch), so the confirm then fires against an endpoint
+ * of unknown state. The characterization: with the query in the error state
+ * the row shows no destructive affordance at all — it says the check failed
+ * and offers Retry, and the dialog never mounts. Assertions use
+ * `toHaveLength`, never `toEqual` on ReactTestInstance arrays: their internal
+ * links are circular and hang the deep comparator.
+ */
+describe('ProfileTab — a failed deletion-status check fails closed', () => {
+  test('renders no destructive affordance and offers Retry', async () => {
+    const refetchCalls: number[] = [];
+    const success = deletionStatusAnswer;
+    deletionStatusAnswer = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: () => refetchCalls.push(1),
+    };
+    const { renderer, client } = await mountTab();
+    try {
+      const root = renderer.root;
+      // No destructive trigger anywhere in the pane, and no dialog body —
+      // `accountDeletionSupported` must not have been invented from "not
+      // loading". The class check is token-precise: every row wrapper carries
+      // the `data-[invalid=true]:text-destructive` variant, which a plain
+      // substring match would count as a hit.
+      const destructive = root.findAll((n) =>
+        /(?:^|\s)text-destructive(?:\s|$)/.test(String(n.props.className ?? '')),
+      );
+      expect(destructive).toHaveLength(0);
+      const dialogInput = root.findAll((n) => n.props.id === 'profile-delete-confirm');
+      expect(dialogInput).toHaveLength(0);
+      // The row states the check failed instead of claiming a definitive
+      // answer it does not have.
+      const failedCopy = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'deletionStatusCheckFailed',
+      );
+      expect(failedCopy).not.toHaveLength(0);
+      // Retry refetches the status — the recovery path.
+      const retry = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'retry' && n.props.onClick,
+      )[0];
+      expect(retry).toBeDefined();
+      await act(async () => retry.props.onClick());
+      expect(refetchCalls).toEqual([1]);
+    } finally {
+      deletionStatusAnswer = success;
+      await act(async () => renderer.unmount());
+      client.clear();
+    }
+  });
+
+  /** Found live on the local stack: query-core clears the error of a data-less
+   *  query the moment a retry starts (fetchState → `status: 'pending'`), so a
+   *  bare `isError` flag flips false mid-retry and the row flashes the
+   *  definitive "isn't available on this deployment" claim. While a retry is
+   *  in flight after a failure — `fetchStatus: 'fetching'` with
+   *  `errorUpdatedAt > dataUpdatedAt` — the failed row must hold. */
+  test.each(['fetching', 'paused'] as const)('keeps the failed row while a retry is %s', async (fetchStatus) => {
+    const success = deletionStatusAnswer;
+    deletionStatusAnswer = {
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      fetchStatus,
+      errorUpdatedAt: 5,
+      dataUpdatedAt: 0,
+      refetch: () => {},
+    };
+    const { renderer, client } = await mountTab();
+    try {
+      const root = renderer.root;
+      const destructive = root.findAll((n) =>
+        /(?:^|\s)text-destructive(?:\s|$)/.test(String(n.props.className ?? '')),
+      );
+      expect(destructive).toHaveLength(0);
+      const failedCopy = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'deletionStatusCheckFailed',
+      );
+      expect(failedCopy).not.toHaveLength(0);
+      const retry = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'retry' && n.props.onClick,
+      )[0];
+      expect(retry).toBeDefined();
+    } finally {
+      deletionStatusAnswer = success;
+      await act(async () => renderer.unmount());
+      client.clear();
+    }
+  });
+
+  /** A failed REFETCH on a query that still holds data must not swallow the
+   *  row's real state: query-core keeps the previous answer on a failed
+   *  refetch, so a user with a scheduled deletion would otherwise see the
+   *  failed row (and lose the schedule + cancel control) over a network
+   *  blip. The failed shape is for an UNKNOWN answer only — no data. */
+  test('a stale answer with a failed refetch keeps the armed row', async () => {
+    const success = deletionStatusAnswer;
+    deletionStatusAnswer = {
+      data: { has_pending_deletion: true, deletion_scheduled_for: '2026-11-01T00:00:00.000Z', supported: true },
+      isLoading: false,
+      isError: true,
+      fetchStatus: 'fetching',
+      errorUpdatedAt: 5,
+      dataUpdatedAt: 4,
+      refetch: () => {},
+    };
+    const { renderer, client } = await mountTab();
+    try {
+      const root = renderer.root;
+      const failedCopy = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'deletionStatusCheckFailed',
+      );
+      expect(failedCopy).toHaveLength(0);
+      const retry = root.findAll(
+        (n) => n.children.length === 1 && n.children[0] === 'retry' && n.props.onClick,
+      );
+      expect(retry).toHaveLength(0);
+      const scheduled = root.findAll(
+        (n) =>
+          n.children.length === 1 &&
+          typeof n.children[0] === 'string' &&
+          n.children[0].startsWith('scheduledForDeletionOn'),
+      );
+      expect(scheduled).not.toHaveLength(0);
+    } finally {
+      deletionStatusAnswer = success;
       await act(async () => renderer.unmount());
       client.clear();
     }

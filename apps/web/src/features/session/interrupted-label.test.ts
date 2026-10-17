@@ -33,7 +33,9 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogOfV1Rows, sessionLogTurns, type SessionLogMessage } from '@kortix/sdk';
 import { deriveTurnErrorAbortState, deriveTurnErrorPresentation } from './session-chat';
+import { strandedPromptIds } from './session-chat/transcript';
 import { TurnErrorDisplay } from './session-error-banner';
 
 // This file is `.ts`, not `.tsx` (filename is pinned — see T17), so
@@ -85,9 +87,21 @@ describe('TurnErrorDisplay — an abort renders nothing, whatever its reason', (
 // 2. deriveTurnErrorAbortState — the session-chat.tsx wiring seam.
 // ============================================================================
 
+/** A turn from v1 rows, as the transcript reads it (the `fromV1` view, grouped). */
+function turnOf(replies: Array<{ error?: unknown }>) {
+  const rows = [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [] },
+    ...replies.map((info, i) => ({
+      info: { id: `msg_a${i}`, sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2 + i, completed: 3 + i }, ...info },
+      parts: [{ id: `prt_a${i}`, sessionID: 'ses', messageID: `msg_a${i}`, type: 'text', text: 'x' }],
+    })),
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!)[0]!;
+}
+
 /** Build a minimal turn with a single assistant message carrying `error`. */
 function turnWithError(error: unknown) {
-  return { assistantMessages: [{ info: { error } }] };
+  return turnOf([{ error }]);
 }
 
 describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay', () => {
@@ -121,18 +135,16 @@ describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay',
   });
 
   test('no error on any message: not an abort', () => {
-    const turn = { assistantMessages: [{ info: {} }, { info: { error: undefined } }] };
+    const turn = turnOf([{}, { error: undefined }]);
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false });
   });
 
   test('reads the FIRST message carrying an error, matching getTurnError', () => {
-    const turn = {
-      assistantMessages: [
-        { info: {} },
-        { info: { error: { name: 'Error', data: { message: 'upstream unreachable' } } } },
-        { info: { error: { name: 'MessageAbortedError', data: { message: 'later' } } } },
-      ],
-    };
+    const turn = turnOf([
+      {},
+      { error: { name: 'Error', data: { message: 'upstream unreachable' } } },
+      { error: { name: 'MessageAbortedError', data: { message: 'later' } } },
+    ]);
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false });
   });
 
@@ -200,6 +212,16 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
     ).toEqual({ text: 'the daemon stopped this turn', isAbort: false, suggestion: undefined });
   });
 
+  test('a ledger cause that carries the gateway envelope shows its sentence and suggestion, not the JSON', () => {
+    // A failed turn whose transcript error is not on screen (its failed attempt hidden, P5.6)
+    // reads the turn ledger's text, which is the provider body as the daemon recorded it.
+    const message =
+      '400: {"message":"\\"m-x\\" is not a recognized model.","code":"model_not_found","suggestion":"Check the model id, or choose a different model."}';
+    expect(
+      deriveTurnErrorPresentation({ turnError: undefined, isAbort: false, notice: { kind: 'cause', name: 'APIError', message } }),
+    ).toEqual({ text: '"m-x" is not a recognized model.', isAbort: false, suggestion: 'Check the model id, or choose a different model.' });
+  });
+
   test('a turn that died unexplained still says it stopped', () => {
     expect(
       deriveTurnErrorPresentation({ turnError: undefined, isAbort: false, notice: { kind: 'unexplained' } }),
@@ -224,5 +246,39 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
       isAbort: false,
       suggestion: undefined,
     });
+  });
+});
+
+// ============================================================================
+// 3. strandedPromptIds — prompts a Stop left unrun ("interrupted before run").
+// ============================================================================
+
+describe('strandedPromptIds', () => {
+  let n = 0;
+  const msg = (id: string, role: 'user' | 'assistant', over: Partial<SessionLogMessage> = {}): SessionLogMessage => ({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: 't', seq: ++n, role, kind: 'turn', status: 'complete',
+    in_context: true, model: null, usage: null, finish: role === 'assistant' ? 'stop' : null, error: null,
+    created_at: new Date(1_700_000_000_000 + n * 1000).toISOString(), completed_at: null,
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+    blocks: [{ type: 'text', id: `${id}-t`, text: id }], ...over,
+  });
+  const thread = (messages: SessionLogMessage[]) => ({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages,
+  });
+  const aborted = (id: string, to: string) => msg(id, 'assistant', { reply_to: to, status: 'aborted' });
+  const failedAttempt = (id: string, to: string) =>
+    msg(id, 'assistant', { reply_to: to, status: 'error', in_context: false, error: { code: 'model_not_found', message: 'unknown model' } });
+
+  test('a prompt after a stopped turn, with no reply, is stranded', () => {
+    const messages = [msg('u1', 'user'), aborted('a1', 'u1'), msg('u2', 'user')];
+    expect([...strandedPromptIds(sessionLogTurns(thread(messages)), messages)]).toEqual(['u2']);
+  });
+
+  test('a prompt whose only reply is a hidden failed attempt ran: it is not stranded', () => {
+    const messages = [msg('u1', 'user'), aborted('a1', 'u1'), msg('u2', 'user'), failedAttempt('a2', 'u2')];
+    const hidden = sessionLogTurns(thread(messages), { hideOutOfContext: true });
+    expect(hidden.find((t) => t.id === 'u2')?.assistant).toEqual([]);
+    expect([...strandedPromptIds(hidden, messages)]).toEqual([]);
+    expect([...strandedPromptIds(sessionLogTurns(thread(messages)), messages)]).toEqual([]);
   });
 });

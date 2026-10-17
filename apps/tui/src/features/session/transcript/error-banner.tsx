@@ -8,7 +8,7 @@
  *    (402) gets the "Upgrade plan" line and the parsed detail; a gateway
  *    failure names the provider, the code and the suggestion; a connector
  *    failure names the connectors.
- *  - a per-turn `error` from `classifyTurn` (`TurnError`) — the turn ran and
+ *  - a per-message `error` from `classifySessionLogMessage` (`TurnError`) — the turn ran and
  *    failed. Same gateway fields.
  *  - `startError` / `failure` when `phase === 'error'` — the sandbox never
  *    came up.

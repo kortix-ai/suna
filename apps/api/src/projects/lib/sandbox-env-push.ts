@@ -1,5 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { accountTokens, sessionSandboxes } from '@kortix/db';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
@@ -36,7 +37,7 @@ export const FANOUT_CONCURRENCY = 6;
  *
  * INCIDENT (2026-09-27): this memo is in-PROCESS, and the API runs at more
  * than one replica (`desired_count = 2` on dev; see
- * `infra/terraform/environments/dev/main.tf`). A load balancer round-robins
+ * `infra/terraform/environments/dev-us-east-2/main.tf`). A load balancer round-robins
  * requests, so a session's consecutive turns routinely land on DIFFERENT
  * replicas — each one's memo is cold for a sandbox it has never personally
  * pushed to, so it re-posted `/kortix/env` and re-triggered a full OpenCode
@@ -56,7 +57,9 @@ export const FANOUT_CONCURRENCY = 6;
  * correctness boundary, so each replica's copy of this memo may miss what
  * another replica confirmed.
  */
-const lastPromptModelSignature = new Map<string, EnvSyncMemoryState>();
+/** `person` = the session token's `on_behalf_of` when the env was confirmed:
+ *  whose personal secrets the box holds. */
+const lastPromptModelSignature = new Map<string, EnvSyncMemoryState & { agent: string; person: string | null }>();
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
@@ -97,6 +100,13 @@ export function __pendingBackgroundEnvRefreshesForTests(): Promise<void>[] {
 }
 export function __resetBackgroundEnvRefreshForTests(): void {
   inFlightBackgroundEnvRefresh.clear();
+}
+/** The detached checks of trusted prompts (`syncSandboxEnvForPrompt`). */
+// replica-local: in-flight work of this process only.
+const inFlightEnvChecks = new Set<Promise<void>>();
+/** Test seam: let a suite wait for the background checks instead of racing them. */
+export function __pendingEnvChecksForTests(): Promise<void>[] {
+  return [...inFlightEnvChecks];
 }
 
 /**
@@ -150,13 +160,36 @@ function rememberPromptModelSignature(
   externalId: string,
   signature: string,
   appliedAtMs: number,
+  agent: string,
+  person: string | null,
 ): void {
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
-  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs });
+  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs, agent, person });
+}
+
+/**
+ * The human the session's live token acts for (`on_behalf_of`), or null. A
+ * private session's personal secrets are theirs; it changes when another person
+ * prompts (projects/lib/on-behalf-of.ts). One indexed read.
+ */
+async function sessionTokenPerson(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ onBehalfOf: accountTokens.onBehalfOfUserId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.sessionId, sessionId),
+        eq(accountTokens.status, 'active'),
+        isNull(accountTokens.revokedAt),
+        isNotNull(accountTokens.serviceAccountId),
+      ),
+    )
+    .limit(1);
+  return row?.onBehalfOf ?? null;
 }
 
 /**
@@ -190,6 +223,8 @@ function scheduleBackgroundEnvRefresh(args: {
   llmGatewayEnabled: boolean;
   llmGatewayBaseUrl?: string;
   signature: string;
+  agent: string;
+  person: string | null;
 }): void {
   if (inFlightBackgroundEnvRefresh.has(args.externalId)) return;
   const run = (async () => {
@@ -205,7 +240,7 @@ function scheduleBackgroundEnvRefresh(args: {
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
-      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs);
+      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs, args.agent, args.person);
       await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
       console.log(
         `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
@@ -225,7 +260,7 @@ function scheduleBackgroundEnvRefresh(args: {
   inFlightBackgroundEnvRefresh.set(args.externalId, run);
 }
 
-export async function syncSandboxEnvForPrompt(args: {
+interface PromptEnvSyncArgs {
   projectId: string;
   sessionId: string;
   externalId: string;
@@ -242,8 +277,59 @@ export async function syncSandboxEnvForPrompt(args: {
   requestedAgent?: string | null;
   /** Runtime env the daemon applies before the prompt reaches OpenCode. */
   opencodeEnv?: Record<string, string | null>;
-}): Promise<void> {
+}
+
+/**
+ * Bring the box's env onto what this prompt's agent may read, before the prompt
+ * is forwarded.
+ *
+ * TRUSTED FAST PATH (2026-10-13). Resolving the env costs every prompt the
+ * session, project, grant, owner and secret reads plus a manifest read: 430 ms
+ * median on prod (p90 2.3 s, 2026-10-12), and 90% of those prompts then found
+ * nothing to push. When THIS process confirmed the box's env for the same agent
+ * inside `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`, the prompt is forwarded at
+ * once and the same resolve runs detached. A change it finds drops the memo, so
+ * the NEXT prompt pushes it synchronously. So a secret, grant or gateway change
+ * the write path did not already push reaches the box one turn later. Secret
+ * writes push to running boxes themselves (`propagateProjectSecretsToActiveSandboxes`),
+ * the token's grant is still re-minted before every turn (`remintGrantForAgentSwitch`),
+ * and a broker-held secret is checked against the grant on every use.
+ *
+ * Never trusted: a different agent (its grant is resolved and pushed before it
+ * runs), a different person (the session token now acts for someone else: the
+ * box may hold the previous person's personal secrets), a caller's explicit
+ * `opencodeEnv`, and a process that has not confirmed this box itself.
+ */
+export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<void> {
   if (!args.serviceKey) return;
+  const known = lastPromptModelSignature.get(args.externalId);
+  const person = await sessionTokenPerson(args.sessionId);
+  if (
+    !args.opencodeEnv &&
+    known?.agent === (args.requestedAgent ?? '') &&
+    known.person === person &&
+    Date.now() - known.pushedAtMs < ENV_SYNC_BACKGROUND_REFRESH_STALE_MS
+  ) {
+    const check = resolveAndSyncEnv(args, 'check', person)
+      .catch((err) => {
+        lastPromptModelSignature.delete(args.externalId);
+        logger.warn('[env-sync] background check failed; the next prompt syncs synchronously', {
+          sandbox: args.externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => inFlightEnvChecks.delete(check));
+    inFlightEnvChecks.add(check);
+    logger.info('[env-sync] push=trusted', { sandbox: args.externalId });
+    return;
+  }
+  await resolveAndSyncEnv(args, 'sync', person);
+}
+
+/** `check`: resolve and compare only — a difference drops the memo, nothing is pushed. */
+async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check', person: string | null): Promise<void> {
+  if (!args.serviceKey) return;
+  const agent = args.requestedAgent ?? '';
   const t0 = performance.now();
   const timing: Record<string, number> = {};
   const lap = (label: string) => {
@@ -373,6 +459,13 @@ export async function syncSandboxEnvForPrompt(args: {
     opencodeEnv: args.opencodeEnv,
   });
   const memory = lastPromptModelSignature.get(args.externalId) ?? null;
+  if (mode === 'check') {
+    if (memory?.signature !== signature) {
+      lastPromptModelSignature.delete(args.externalId);
+      logger.info('[env-sync] background check found a change; the next prompt pushes it', { sandbox: args.externalId });
+    }
+    return;
+  }
   // Pay for the durable read only when THIS process's own memo cannot already
   // answer — memory is always at least as fresh (see the note on
   // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
@@ -392,7 +485,7 @@ export async function syncSandboxEnvForPrompt(args: {
     // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
     // Same single writer as a push, so the capacity bound holds here too and
     // the confirmed-at time stays exactly what the durable record said.
-    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs);
+    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs, agent, person);
     if (decision.scheduleBackgroundRefresh) {
       // Self-heal for drift THIS process did not cause. Detached: never
       // awaited here, and a failure inside it never touches this turn.
@@ -407,6 +500,8 @@ export async function syncSandboxEnvForPrompt(args: {
         llmGatewayEnabled,
         llmGatewayBaseUrl,
         signature,
+        agent,
+        person,
       });
     }
     // Bookkeeping, and on this path the stored flag already matches in the
@@ -436,7 +531,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // this replica or any other, retries with a real push again instead of
   // assuming the failed attempt landed.
   const appliedAtMs = Date.now();
-  rememberPromptModelSignature(args.externalId, signature, appliedAtMs);
+  rememberPromptModelSignature(args.externalId, signature, appliedAtMs, agent, person);
   await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt

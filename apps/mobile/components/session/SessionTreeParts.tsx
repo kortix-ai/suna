@@ -19,6 +19,7 @@ import { Pressable, View } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { CountBadge } from '@/components/kortix/count-badge';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { haptics } from '@/lib/haptics';
@@ -89,9 +90,7 @@ export function ExpandControl({
       accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${count} sub-agent ${count === 1 ? 'session' : 'sessions'} of ${title}`}
       accessibilityState={{ expanded }}
       className="flex-row items-center gap-1 rounded-sm px-1 py-0.5 active:bg-foreground/5">
-      <Text className="text-xs text-muted-foreground" style={{ fontVariant: ['tabular-nums'] }}>
-        {count > 99 ? '99+' : String(count)}
-      </Text>
+      <CountBadge count={count} textClassName="text-muted-foreground" />
       <Icon as={expanded ? CaretDownIcon : CaretRightIcon} size={14} className="text-muted-foreground" />
     </Pressable>
   );

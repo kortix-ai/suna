@@ -8,6 +8,7 @@ import type {
   ProjectSession,
   RemovedSessionPrompt,
   SessionConfigRelease,
+  SessionListState,
   SessionManagedCatalogState,
   SessionParticipants,
   SessionPrompt,
@@ -32,6 +33,7 @@ import {
   getProjectSessionConfigState,
   getProjectSessionScope,
   getSessionAudit,
+  getSessionLogPage,
   getSessionMessageAuthors,
   getSessionOpenBundle,
   getSessionParticipants,
@@ -50,6 +52,8 @@ import {
   reloadProjectSessionConfigStream,
   resolvePublicShareUrl,
   restartProjectSession,
+  recoverProjectSession,
+  restoreProjectSession,
   retrySessionPrompt,
   revokeSessionPublicShare,
   sessionModelPin,
@@ -57,6 +61,8 @@ import {
   setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
+  setSessionArchived,
+  setSessionPinned,
   setSessionWatch,
   stopProjectSession,
   updateProjectSession,
@@ -394,6 +400,18 @@ test('createProjectSession does NOT mark the session fresh when an initial_promp
   nextResponse = { status: 200, body: { session_id: 'NEW-2', name: null } };
   await createProjectSession('P1', { initial_prompt: 'hello' });
   expect(isSessionFresh('NEW-2')).toBe(false);
+});
+
+test('createProjectSession forwards initial_context beside initial_prompt', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-CTX', name: null } };
+  await createProjectSession('P1', {
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
+  expect(last().body).toEqual({
+    initial_prompt: 'Reply with the single word pong',
+    initial_context: '--- session contract ---',
+  });
 });
 
 test('createProjectSession defaults the body to {} when no input is given', async () => {
@@ -797,12 +815,59 @@ test("deleteProjectSession drops the session's saved copy on this device", async
   }
 });
 
+test('deleteProjectSession returns the restore window', async () => {
+  nextResponse = { status: 200, body: { ok: true, restore_until: '2026-11-12T10:00:00.000Z' } };
+  const result = await deleteProjectSession('P1', 'S1');
+  expect(result.restore_until).toBe('2026-11-12T10:00:00.000Z');
+});
+
+test('restoreProjectSession POSTs to /restore', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await restoreProjectSession('P1', 'S1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/restore');
+  expect(last().method).toBe('POST');
+});
+
+test('restoreProjectSession rejects a refused restore with the status and code', async () => {
+  nextResponse = { status: 410, body: { error: 'Its messages and files are gone.', code: 'session_purged' } };
+  await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 410, code: 'session_purged' });
+  nextResponse = { status: 409, body: { error: 'This session is not deleted', code: 'session_not_deleted' } };
+  await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 409, code: 'session_not_deleted' });
+});
+
+// KRTX-2419: a lost session (the provider removed its computer) continues on a
+// new computer, whose boot restores the saved conversation.
+test('recoverProjectSession POSTs to /recover', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await recoverProjectSession('P1', 'S1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/recover');
+  expect(last().method).toBe('POST');
+});
+
+test('recoverProjectSession rejects a refused recover with the status, code and message', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'This session has no saved conversation, so it cannot continue on a new computer. Nothing was changed.', code: 'session_transcript_missing' },
+  };
+  await expect(recoverProjectSession('P1', 'S1')).rejects.toMatchObject({
+    status: 409,
+    code: 'session_transcript_missing',
+    message: expect.stringContaining('no saved conversation'),
+  });
+});
+
 test('restartProjectSession POSTs to /restart', async () => {
   nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
   const result = await restartProjectSession('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1/restart');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('provisioning');
+});
+
+test('restartProjectSession sends no reset: persistent machines are gone, reset_machine is ignored', async () => {
+  nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
+  await restartProjectSession('P1', 'S1', { reset_machine: true, discard_state: true });
+  expect(last().body).toEqual({});
 });
 
 test('getProjectSessionConfigState GETs /config', async () => {
@@ -1879,5 +1944,78 @@ describe('session watch', () => {
   test('setSessionWatch rejects on a 403 (an agent token cannot watch)', async () => {
     nextResponse = { status: 403, body: { error: 'Human login required' } };
     await expect(setSessionWatch('P1', 'S1', true)).rejects.toBeTruthy();
+  });
+});
+
+// KRTX-2418: a person pins a session to the top of their list or archives it
+// out of the list. Per person; the list hides the caller's archived sessions.
+describe('session pin and archive', () => {
+  test('listProjectSessionsPage sends view pinned / archived as pinned=only / archived=only', async () => {
+    nextResponse = { status: 200, body: [] };
+    await listProjectSessionsPage('P1', { view: 'pinned' });
+    expect(new URL(last().url).searchParams.get('pinned')).toBe('only');
+    expect(new URL(last().url).searchParams.get('archived')).toBeNull();
+    await listProjectSessions('P1', { view: 'archived', limit: 5 });
+    expect(new URL(last().url).searchParams.get('archived')).toBe('only');
+    expect(new URL(last().url).searchParams.get('pinned')).toBeNull();
+    await listProjectSessions('P1');
+    expect(last().url).not.toContain('pinned=');
+    expect(last().url).not.toContain('archived=');
+  });
+
+  test('setSessionPinned PUTs { pinned } and returns the stored state', async () => {
+    const stored = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
+    nextResponse = { status: 200, body: stored };
+    const state: SessionListState = await setSessionPinned('P1', 'S1', true);
+    expect(state).toEqual(stored);
+    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/pin', method: 'PUT', body: { pinned: true } });
+  });
+
+  test('setSessionArchived PUTs { archived } and returns the stored state', async () => {
+    nextResponse = { status: 200, body: { pinned_at: null, archived_at: null } };
+    expect(await setSessionArchived('P1', 'S1', false)).toEqual({ pinned_at: null, archived_at: null });
+    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/archive', method: 'PUT', body: { archived: false } });
+  });
+
+  test('both reject on a 403 (an agent token has no list of its own)', async () => {
+    nextResponse = { status: 403, body: { error: 'Only a person can pin or archive a session' } };
+    await expect(setSessionPinned('P1', 'S1', true)).rejects.toBeTruthy();
+    await expect(setSessionArchived('P1', 'S1', true)).rejects.toBeTruthy();
+  });
+
+  test('a list row carries the caller`s pinned_at and archived_at', () => {
+    const row: Pick<ProjectSession, 'pinned_at' | 'archived_at'> = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
+    expect(row.pinned_at).toBeTruthy();
+  });
+});
+
+// P5.5: the stored session log, one page of one thread.
+describe('getSessionLogPage', () => {
+  const page = { session: { session_id: 'S1' }, generation: 0, threads: [], thread_id: 'ses_root', messages: [], has_more: false };
+
+  test('GETs /log with thread, before_seq and limit, and returns the page', async () => {
+    nextResponse = { status: 200, body: page };
+    expect(await getSessionLogPage('P1', 'S1', { thread: 'ses_child', before_seq: 12, limit: 500 })).toEqual(page);
+    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/log?thread=ses_child&before_seq=12&limit=500', method: 'GET' });
+  });
+
+  test('a 404 (no stored log, or no such thread) is null, without an error toast', async () => {
+    const onError = mock(() => {});
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+    try {
+      nextResponse = { status: 404, body: { error: 'No session log for this session' } };
+      expect(await getSessionLogPage('P1', 'S1')).toBeNull();
+      expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/log');
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    }
+  });
+
+  test('another failure, or a body that is not a page, rejects', async () => {
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(getSessionLogPage('P1', 'S1')).rejects.toBeTruthy();
+    nextResponse = { status: 200, body: { messages: 'no' } };
+    await expect(getSessionLogPage('P1', 'S1')).rejects.toThrow('not a session log page');
   });
 });

@@ -13,6 +13,7 @@ import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isUuid } from '../../shared/validate';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
@@ -156,7 +157,12 @@ export const MeSchema = z
   })
   .openapi('AccountMe');
 
-export const AccountIdParam = z.object({ accountId: z.string() });
+// The path param is a uuid column's value: a malformed segment (a slug, a
+// truncated id, the literal `directory` a stray client aimed at a missing
+// route) reaches the `accounts.account_id` uuid cast, dies as SQLSTATE 22P02
+// and surfaces as an opaque 500 (Better Stack pattern 97669531, KRTX-211).
+// Let the OpenAPI validation answer 400 before any handler or DB read.
+export const AccountIdParam = z.object({ accountId: z.string().uuid() });
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -195,6 +201,12 @@ export function parseRole(value: unknown, allowed: AccountRole[]): AccountRole |
 }
 
 export async function getMembership(userId: string, accountId: string) {
+  // A malformed account id (a slug, a stray literal segment) is never a
+  // membership, and letting it reach the uuid-typed casts in the read model
+  // ends the request as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern
+  // 97669531, KRTX-211). Answer the same "not a member" every caller already
+  // maps to 403/404, without a DB read.
+  if (!isUuid(accountId)) return null;
   // ACT-AS: an operator with a live grant on this account reads as its owner.
   // Only ever widens the OPERATOR's own id — `impersonatedAccountFor` compares
   // against the grant's admin_user_id, so the several call sites that pass a
@@ -295,8 +307,10 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
  *
  * The address matched is the caller's TRUSTED email (iam/email-trust.ts), not
  * the token's claim: an SSO identity whose IdP account has not verified the
- * email's domain claims nothing. `email` is the address the caller expects;
- * a mismatch with the trusted one also claims nothing.
+ * email's domain claims nothing, and neither does a password identity while
+ * Auth auto-confirms sign-ups (the invitee accepts it explicitly instead).
+ * `email` is the address the caller expects; a mismatch with the trusted one
+ * also claims nothing.
  */
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
   if (!email) return 0;

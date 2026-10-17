@@ -17,7 +17,7 @@ import {
   useFileRename,
   useFileUpload,
 } from './hooks/use-file-mutations';
-import { useFileSearch } from './hooks/use-file-search';
+import { useFileContentSearch, useFileSearch } from './hooks/use-file-search';
 import { useGitStatus } from './hooks/use-git-status';
 
 function useDownloadFile() {
@@ -39,6 +39,7 @@ export const gitRefExplorerSource: FileExplorerSource = {
   capabilities: {
     write: false,
     search: true,
+    contentSearch: true,
     hiddenToggle: false,
     gitStatusChip: false,
   },
@@ -50,6 +51,7 @@ export const gitRefExplorerSource: FileExplorerSource = {
   useGitStatus,
   useFileEventInvalidation,
   useFileSearch,
+  useFileContentSearch,
   useFileHistory,
   useFileCommitDiff,
   useFileUpload,

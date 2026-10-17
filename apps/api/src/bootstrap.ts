@@ -27,13 +27,18 @@ import {
   stopAuditReconciliationWorker,
 } from './workers/audit-reconciliation-worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
+import { startCaptureHealthWorker, stopCaptureHealthWorker } from './workers/capture-health-worker';
+import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
+import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
+import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
@@ -160,6 +165,8 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // The durable job queue (Kortix Capture ingest): every replica runs jobs.
+  startJobWorker();
   // Keep the shared Teams bot token warm so the first message after a deploy
   // does not wait on login.microsoftonline.com before its live card is posted.
   startTeamsBotTokenRefresh();
@@ -196,6 +203,9 @@ async function startReplicaServices() {
 // election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
 // The guard makes start/stop idempotent across leadership flaps.
 let singletonWorkersRunning = false;
+// The stops of the workers started from a dynamic import, so stopSingletonWorkers can call every
+// stop before its first await.
+const lazyStops: Array<() => void> = [];
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
@@ -221,17 +231,24 @@ async function startSingletonWorkers() {
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
   // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
   startProjectSnapshotWorker();
+  // Kortix Capture: index polling, maintenance, and the SQS events reader when configured.
+  startCaptureWorkers();
+  // Fleet health: tells the people with capture.manage when a computer stops recording, and when it records again.
+  startCaptureHealthWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
+  const { startGrantExpirySweeper, stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   startGrantExpirySweeper();
+  lazyStops.push(stopGrantExpirySweeper);
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
-  const { startOAuthSweeper } = await import('./workers/oauth-sweep-worker');
+  const { startOAuthSweeper, stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();
+  lazyStops.push(stopOAuthSweeper);
   // Kortix Drive: conflict-copy scanner + the volume deletion queue.
-  const { startDriveWorkers } = await import('./workers/drive-worker');
+  const { startDriveWorkers, stopDriveWorkers } = await import('./workers/drive-worker');
   startDriveWorkers();
+  lazyStops.push(stopDriveWorkers);
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
   startBillingRotation();
@@ -244,7 +261,14 @@ async function startSingletonWorkers() {
   startAccountDeletionSchedule();
   // Notification inbox: the unread-row email digest and the 90-day retention sweep.
   startNotificationWorker();
+  // Retention purge of session content: rows after the D6 windows, files 7 days later.
+  startSessionLogPurgeWorker();
+  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
+  startSessionLogBackfillWorker();
 }
+// Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
+// await left its worker "started" across that await; a re-acquire then started nothing, and the
+// stop ran after it (2026-10-16 prod: 18 workers stayed off after a lease flap).
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
@@ -254,22 +278,21 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
-  await stopAuditWebhookWorker();
-  await stopAuditReconciliationWorker();
+  const drains = [stopAuditWebhookWorker(), stopAuditReconciliationWorker()];
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
-  await stopProjectSnapshotWorker();
-  const { stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
-  stopGrantExpirySweeper();
-  const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
-  stopOAuthSweeper();
-  const { stopDriveWorkers } = await import('./workers/drive-worker');
-  stopDriveWorkers();
+  drains.push(stopProjectSnapshotWorker());
+  stopCaptureWorkers();
+  stopCaptureHealthWorker();
+  for (const stop of lazyStops.splice(0)) stop();
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
-  await stopAccountDeletionSchedule();
+  drains.push(stopAccountDeletionSchedule());
   stopNotificationWorker();
+  stopSessionLogPurgeWorker();
+  stopSessionLogBackfillWorker();
+  await Promise.all(drains);
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
@@ -379,6 +402,7 @@ async function runShutdown(signal: string): Promise<void> {
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();
+  stopJobWorker();
   await handBack;
   // A build claim this task holds would block peers until its lease lapses.
   await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');

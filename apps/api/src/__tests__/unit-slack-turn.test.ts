@@ -443,7 +443,7 @@ describe('relayTurnEnd', () => {
     const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
     const section = blocks.find((b) => b.type === 'section');
     expect(section?.text?.text.toLowerCase()).toContain('out of credits');
-    expect(section?.text?.text).toContain('$-0.06');
+    expect(section?.text?.text).toContain('-6 credits');
     expect(calls('addReaction').length).toBe(0); // ✅ is reserved for real answers
   });
 

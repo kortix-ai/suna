@@ -21,7 +21,7 @@ variable "cloudflare_api_token" {
 }
 
 variable "manage_dns" {
-  description = "Manage the staging-fe-ecs-euw2.kortix.com origin record. staging-fe-ecs.kortix.com stays with ../staging-web until the switch-over."
+  description = "Manage the staging-fe-ecs-euw2.kortix.com origin record. Deploy Staging's publish-web-ecs-dns job owns staging-fe-ecs.kortix.com."
   type        = bool
   default     = true
 }

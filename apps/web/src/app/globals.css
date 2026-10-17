@@ -3,6 +3,10 @@
 /* Cmd+P — the session transcript as a document. Kept in its own file because
    it is one self-contained media block and reads as a unit. */
 @import './print.css';
+/* Kortix themes (generated from terminalcolors.com palettes by
+   scripts/kortix-themes; see lib/interface-themes.ts). One block per theme,
+   all 39 tokens. */
+@import './kortix-themes.generated.css';
 @plugin 'tailwind-scrollbar';
 @plugin 'tailwind-scrollbar-hide';
 
@@ -589,15 +593,222 @@
 }
 /* @generated kortix-brand:end */
 
+/*
+ * Interface themes — the neutral ramp of each palette in the theme picker.
+ *
+ * <html> carries `data-light-theme` / `data-dark-theme` (lib/interface-themes.ts),
+ * only on the themed product routes — /new, /projects/**, /settings — where
+ * INTERFACE_THEME_INIT_SCRIPT sets them before paint and ThemeChoiceSync keeps
+ * them in sync on navigation (see "Themed routes" in that file). Every other page (auth,
+ * marketing, pricing, SEO, checkout, invites, system pages) has no attribute,
+ * matches none of these blocks, and keeps the generated kortix-brand palette
+ * above. `next-themes` still owns the `.dark` class everywhere.
+ * `[data-theme-preview]` scopes the same palettes onto the picker's swatches.
+ *
+ * Every palette is derived from two base colours (canvas + ink) by one rule,
+ * the way Linear's theme generator derives borders and elevated boxes:
+ *   - Pure: one flat surface (sidebar == canvas), full-contrast ink.
+ *   - Light (dim): the canvas steps off white, the sidebar sits one step
+ *     recessed, and ink is softened.
+ *   - Dark is not derived: it is exactly the dark palette prod shipped before
+ *     interface themes (canvas #090909, sidebar #141414).
+ *   - Raised surfaces (popover) are lighter than the canvas in both modes;
+ *     cards and hovers step toward the ink, input wells one step further.
+ * Measured (WCAG): muted text is at least 5.0:1 on canvas, sidebar and wells.
+ * Mirrored in the Paper file "Kortix" › Appearances.
+ *
+ * Specificity: light blocks are (0,2,0) and come first; dark blocks are
+ * `:root.dark…` (0,2,0)–(0,3,0) and come later, so `.dark` always wins.
+ */
+
+:root[data-light-theme='pure-light'],
+[data-theme-preview='pure-light'] {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #000000;
+  --pane: #ffffff;
+  --surface: #ffffff;
+  --card: #f5f5f5;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --secondary: #ededed;
+  --secondary-foreground: #000000;
+  --muted: #ededed;
+  --muted-foreground: #636363;
+  --accent: #f5f5f5;
+  --accent-foreground: #000000;
+  --destructive: #e7000b;
+  --destructive-foreground: #fbfbfb;
+  --border: #e3e3e3;
+  --input: #ededed;
+  --ring: #0099ff;
+  --hover: rgba(0, 0, 0, 0.045);
+  --active: rgba(0, 0, 0, 0.075);
+  --selection: rgba(0, 0, 0, 0.08);
+  --selection-foreground: #000000;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #0099ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ededed;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #e3e3e3;
+  --sidebar-ring: #0099ff;
+  --kortix-blue: #2b91f7;
+  --kortix-green: #199338;
+  --kortix-red: #f14b4c;
+  --kortix-yellow: #cca300;
+  --kortix-orange: #d18b19;
+  --kortix-purple: #ab80d6;
+}
+
+:root[data-light-theme='light'],
+[data-theme-preview='light'] {
+  color-scheme: light;
+  --background: #f0f0f0;
+  --foreground: #1b1b1b;
+  --pane: #f0f0f0;
+  --surface: #fafafa;
+  --card: #e6e6e6;
+  --card-foreground: #1b1b1b;
+  --popover: #fafafa;
+  --popover-foreground: #1b1b1b;
+  --primary: #1b1b1b;
+  --primary-foreground: #f0f0f0;
+  --secondary: #dedede;
+  --secondary-foreground: #1b1b1b;
+  --muted: #dedede;
+  --muted-foreground: #5c5c5c;
+  --accent: #e6e6e6;
+  --accent-foreground: #1b1b1b;
+  --destructive: #e7000b;
+  --destructive-foreground: #fbfbfb;
+  --border: #d4d4d4;
+  --input: #dedede;
+  --ring: #0099ff;
+  --hover: rgba(27, 27, 27, 0.045);
+  --active: rgba(27, 27, 27, 0.075);
+  --selection: rgba(0, 0, 0, 0.08);
+  --selection-foreground: #1b1b1b;
+  --sidebar: #e9e9e9;
+  --sidebar-foreground: #1b1b1b;
+  --sidebar-primary: #0099ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dedede;
+  --sidebar-accent-foreground: #1b1b1b;
+  --sidebar-border: #d4d4d4;
+  --sidebar-ring: #0099ff;
+  --kortix-blue: #2b91f7;
+  --kortix-green: #199338;
+  --kortix-red: #f14b4c;
+  --kortix-yellow: #cca300;
+  --kortix-orange: #d18b19;
+  --kortix-purple: #ab80d6;
+}
+:root.dark[data-dark-theme='pure-dark'],
+[data-theme-preview='pure-dark'] {
+  color-scheme: dark;
+  /* Inputs and hover fills sit above every raised surface: the settings panel
+     paints on --surface, and a well that matches it makes selects vanish. */
+  --background: #0a0a0a;
+  --foreground: #ffffff;
+  --pane: #0a0a0a;
+  --surface: #141414;
+  --card: #121212;
+  --card-foreground: #ffffff;
+  --popover: #141414;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #0a0a0a;
+  --secondary: #212121;
+  --secondary-foreground: #ffffff;
+  --muted: #212121;
+  --muted-foreground: #9e9e9e;
+  --accent: #1c1c1c;
+  --accent-foreground: #ffffff;
+  --destructive: #ff6467;
+  --destructive-foreground: #fbfbfb;
+  --border: #262626;
+  --input: #212121;
+  --ring: #0099ff;
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.1);
+  --selection: rgba(255, 255, 255, 0.1);
+  --selection-foreground: #ffffff;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0099ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #212121;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #262626;
+  --sidebar-ring: #0099ff;
+  --kortix-blue: #2b91f7;
+  --kortix-green: #199338;
+  --kortix-red: #f14b4c;
+  --kortix-yellow: #cca300;
+  --kortix-orange: #d18b19;
+  --kortix-purple: #ab80d6;
+}
+
+:root.dark[data-dark-theme='dark'],
+[data-theme-preview='dark'] {
+  color-scheme: dark;
+  /* Exactly the dark palette live in prod before interface themes. */
+  --background: #090909;
+  --foreground: #ffffff;
+  --pane: #0c0c0c;
+  --surface: #141414;
+  --card: #141414;
+  --card-foreground: #ffffff;
+  --popover: #141414;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #090909;
+  --secondary: #1c1c1c;
+  --secondary-foreground: #ffffff;
+  --muted: #1c1c1c;
+  --muted-foreground: #999999;
+  --accent: #141414;
+  --accent-foreground: #ffffff;
+  --destructive: #ff6467;
+  --destructive-foreground: #fbfbfb;
+  --border: #262626;
+  --input: #1c1c1c;
+  --ring: #0099ff;
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.1);
+  --selection: rgba(255, 255, 255, 0.1);
+  --selection-foreground: #ffffff;
+  --sidebar: #141414;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0099ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c1c1c;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #0099ff;
+  --kortix-blue: #2b91f7;
+  --kortix-green: #199338;
+  --kortix-red: #f14b4c;
+  --kortix-yellow: #cca300;
+  --kortix-orange: #d18b19;
+  --kortix-purple: #ab80d6;
+}
 @layer base {
+  /* Themed routes set --selection per palette; unthemed pages keep the
+     original inverted selection. */
   ::selection {
-    background: color-mix(in oklch, var(--primary) 72%, transparent);
-    color: var(--primary-foreground);
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
   }
 
   ::-moz-selection {
-    background: color-mix(in oklch, var(--primary) 72%, transparent);
-    color: var(--primary-foreground);
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
   }
 
   * {
@@ -1580,30 +1791,8 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
   .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
-/* The narrow Settings rail is a horizontal tab strip. Its default 36px list,
-   32px tabs, and 8px vertical padding exceed the 40px physical band at zoom. */
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-scroll {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-/* TabsList wraps its Radix list in the sliding-indicator container. Size both
-   boxes; sizing only the inner list leaves the 36px wrapper clipped at zoom. */
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-tabs {
-  height: var(--kx-titlebar-control-size);
-}
-/* The wrapper is the segmented track (with its own padding); the inner list and
-   the triggers fill it, so only the outer box takes the control size. */
-html[data-desktop-platform='macos']
-  .kx-settings-mobile-titlebar
-  [data-slot='tabs-list'].kx-settings-mobile-tabs {
-  height: 100%;
-}
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar [data-slot='tabs-trigger'] {
-  height: 100%;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-org-link,
+/* The mobile Settings headers (list and pane) share the native titlebar band:
+   the close control takes the band's control size. */
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   height: var(--kx-titlebar-control-size);
 }
@@ -1645,6 +1834,19 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
     0 5.25px 7px oklch(0 0 0 / 0.02),
     0 2.79px 3.72px -2px oklch(0 0 0 / 0.01),
     0 1.16px 1.5px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+/* The lighter `ring-sm` preset of the same plugin (shadow.floriankiem.com):
+   wider, fainter layers. Toasts use it. */
+@utility smooth-shadow-ring-sm {
+  box-shadow:
+    0 18px 47px oklch(0 0 0 / 0.03),
+    0 7.5px 19px oklch(0 0 0 / 0.02),
+    0 4px 10.5px oklch(0 0 0 / 0.02),
+    0 2.3px 5.8px oklch(0 0 0 / 0.01),
+    0 1.2px 3.1px oklch(0 0 0 / 0.01),
+    0 0.5px 1.3px oklch(0 0 0 / 0.01),
     0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
 }
 

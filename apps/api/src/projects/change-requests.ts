@@ -13,16 +13,16 @@
  * what.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
-/** No caller passes a value above this — a safety ceiling, not a default
- *  (the list route stays unbounded when `limit` is omitted, matching every
- *  existing caller's current behavior). */
+/** The list route's page size: the default, and the ceiling above which it
+ *  answers 400. The unbounded list measured 565 KB on prod (KRTX-1727). */
+export const CHANGE_REQUEST_LIST_DEFAULT_LIMIT = 50;
 export const CHANGE_REQUEST_LIST_MAX_LIMIT = 500;
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
@@ -63,20 +63,30 @@ export interface ListChangeRequestsForProjectOptions {
    * source instead.
    */
   originSessionId?: string;
-  /**
-   * Capped at CHANGE_REQUEST_LIST_MAX_LIMIT. Omitted keeps the historical
-   * unbounded response every existing caller (the panel, the open-CR badge,
-   * `kortix cr list`) already depends on.
-   */
+  /** Default CHANGE_REQUEST_LIST_DEFAULT_LIMIT. The route refuses a value
+   *  above CHANGE_REQUEST_LIST_MAX_LIMIT; this clamps as a second line. */
   limit?: number;
+  /** A previous page's `next_cursor`: the rows numbered below it. */
+  cursor?: number;
+  /** The caller's read filter (`ProjectReadView.where`); absent reads every row. */
+  visibleTo?: SQL;
+}
+
+/** A list cursor is the number of the last row of the page (rows are unique by
+ *  (project_id, number), newest first). Null for anything else. */
+export function decodeChangeRequestCursor(raw: string): number | null {
+  if (!/^[1-9]\d{0,9}$/.test(raw)) return null;
+  const number = Number(raw);
+  return number <= 2_147_483_647 ? number : null;
 }
 
 /** The `GET /:projectId/change-requests` list query, extracted so it is
- *  unit-testable against a real Postgres without going through HTTP/auth. */
+ *  unit-testable against a real Postgres without going through HTTP/auth.
+ *  One keyset page by `number`, newest first. */
 export async function listChangeRequestsForProject(
   projectId: string,
   options: ListChangeRequestsForProjectOptions = {},
-) {
+): Promise<{ change_requests: ChangeRequest[]; next_cursor: string | null }> {
   const whereClauses = [eq(changeRequests.projectId, projectId)];
   if (options.status && options.status !== 'all') {
     whereClauses.push(eq(changeRequests.status, options.status));
@@ -84,15 +94,25 @@ export async function listChangeRequestsForProject(
   if (options.originSessionId) {
     whereClauses.push(eq(changeRequests.originSessionId, options.originSessionId));
   }
-  const baseQuery = db
+  if (options.cursor != null) {
+    whereClauses.push(lt(changeRequests.number, options.cursor));
+  }
+  if (options.visibleTo) whereClauses.push(options.visibleTo);
+  const limit = Math.min(
+    options.limit ?? CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
+    CHANGE_REQUEST_LIST_MAX_LIMIT,
+  );
+  const rows = await db
     .select()
     .from(changeRequests)
     .where(and(...whereClauses))
-    .orderBy(desc(changeRequests.number));
-  const limit =
-    options.limit != null ? Math.min(options.limit, CHANGE_REQUEST_LIST_MAX_LIMIT) : undefined;
-  const rows = limit !== undefined ? await baseQuery.limit(limit) : await baseQuery;
-  return rows.map(serializeChangeRequest);
+    .orderBy(desc(changeRequests.number))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  return {
+    change_requests: page.map(serializeChangeRequest),
+    next_cursor: rows.length > limit ? String(page[page.length - 1].number) : null,
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 ---
 name: sdk
-description: "The hard rules for editing `@kortix/sdk` (packages/sdk) — a PUBLISHED npm package with constraints no other package in this repo has: TDD is mandatory (failing test first, gates run and pasted every turn, explicit shippable YES/NO/NOT YET); exported names INCLUDING types are a public API contract and renaming one is a breaking change; the `version` field is inert and must never be hand-bumped; adding an export requires three synchronized edits; and a static import-graph tripwire enforces the framework-free core. Load WHENEVER you add, edit, rename, move, export, test, or delete anything under packages/sdk, or touch its streaming/transport layer."
+description: "The hard rules for editing `@kortix/sdk` (packages/sdk) — a PUBLISHED npm package with constraints no other package in this repo has: TDD is mandatory for the public surface and the stream/transport behavior (failing test first, gates run and pasted every turn, explicit shippable YES/NO/NOT YET); exported names INCLUDING types are a public API contract and renaming one is a breaking change; the `version` field is inert and must never be hand-bumped; adding an export requires three synchronized edits; and a static import-graph tripwire enforces the framework-free core. Load WHENEVER you add, edit, rename, move, export, test, or delete anything under packages/sdk, or touch its streaming/transport layer."
 ---
 
 # `@kortix/sdk`
@@ -12,9 +12,13 @@ the repo.
 
 > ### Three rules before you touch anything
 >
-> 1. **Write the failing test first**, before any implementation code.
->    RED → GREEN → REFACTOR, no exceptions. *A test you have never seen fail is
->    not a test.* The full loop is in **Test-driven, always** below.
+> 1. **Write the failing test first** for every change to an exported name, a
+>    public behavior, or the stream/transport layer. RED → GREEN → REFACTOR.
+>    *A test you have never seen fail is not a test.* An internal refactor with
+>    no behavior change adds no test: typecheck plus the existing tests prove it.
+>    A test that pins an internal detail and goes red on such a refactor is
+>    deleted (the repo testing philosophy, 2026-10-16). The full loop is in
+>    **Test-driven, always** below.
 > 2. **Never hand back a red suite.** Loop — run, read, fix, re-run — until every
 >    test passes. **Loop on the code, never on the test.** Deleting, skipping,
 >    weakening, or filtering a test to reach green is forbidden. If the test
@@ -669,7 +673,7 @@ burns budget while hiding a design problem.
 
 **Never report a subset as the whole.** `bun test src/foo.test.ts` passing tells
 you nothing about the suite. And the exit code is not a safety net — verified
-against `bun 1.3.14`:
+against `bun 1.4.3`:
 
 | Command | Exit | Trap? |
 |---|---|---|

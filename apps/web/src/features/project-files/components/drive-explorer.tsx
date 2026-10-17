@@ -57,6 +57,7 @@ import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } fro
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
+import { isPartialListing, LoadMoreRow } from './load-more-row';
 
 /** System directories always pinned at the top of the listing. */
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -145,13 +146,9 @@ export function DriveExplorer({
 
   source.useFileEventInvalidation();
 
-  const {
-    data: files,
-    isLoading,
-    isFetching,
-    error,
-    refetch: refetchFiles,
-  } = source.useFileList(currentPath);
+  const listing = source.useFileList(currentPath);
+  const { data: files, isLoading, isFetching, error, refetch: refetchFiles } = listing;
+  const partial = isPartialListing(listing);
 
   // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
   // own, so keep polling. A parked box never reaches here: `parked` switches
@@ -294,14 +291,17 @@ export function DriveExplorer({
       return sortOrder === 'desc' ? -cmp : cmp;
     };
 
+    // A partial folder keeps the server's name order: a sorted subset would
+    // put a later page's rows above the ones shown (KRTX-1723).
+    const sorted = (nodes: FileNode[]) => (partial ? nodes : nodes.sort(sortFn));
     const allDirs = files.filter((f) => f.type === 'directory');
     const elevatedDirs = allDirs
       .filter((f) => ELEVATED_DIRS.has(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const dirs = allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)).sort(sortFn);
-    const fileItems = files.filter((f) => f.type === 'file').sort(sortFn);
+    const dirs = sorted(allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)));
+    const fileItems = sorted(files.filter((f) => f.type === 'file'));
     return { elevatedDirs, dirs, fileItems };
-  }, [files, sortBy, sortOrder]);
+  }, [files, sortBy, sortOrder, partial]);
 
   // ── Handlers ──────────────────────────────────────────────────
 
@@ -753,6 +753,7 @@ export function DriveExplorer({
     !isLoading &&
     !error &&
     Boolean(files) &&
+    !listing.hasNextPage &&
     elevatedDirs.length === 0 &&
     dirs.length === 0 &&
     fileItems.length === 0;
@@ -789,6 +790,7 @@ export function DriveExplorer({
               downloadDir(dirPath, dirName);
             }}
             isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+            sortDisabled={partial}
           />
         </div>
       </div>
@@ -1043,6 +1045,7 @@ export function DriveExplorer({
                   elevatedDirs={elevatedDirs}
                   dirs={dirs}
                   files={fileItems}
+                  sortDisabled={partial}
                   onNavigateToDir={handleNavigateToDir}
                   onOpenFile={handleOpenFile}
                   onPreviewFile={handlePreviewFile}
@@ -1062,6 +1065,7 @@ export function DriveExplorer({
                   readOnly={!canWrite}
                 />
               )}
+              <LoadMoreRow listing={listing} />
             </>
           )}
         </div>

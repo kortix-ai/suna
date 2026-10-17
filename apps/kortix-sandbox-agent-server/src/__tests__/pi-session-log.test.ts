@@ -22,8 +22,13 @@ import {
   type SessionLogJournalRequest,
   type SessionLogMessage,
 } from '@kortix/api-contract/session-log'
-import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, type PiSessionSnapshot } from '@/harness/pi/session-log'
-import { resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { createPiSessionLogPort, piSessionLog, PI_CAPABILITIES, PI_VERSION, type PiSessionSnapshot } from '@/harness/pi/session-log'
+import { readPiSnapshot, restorePiSessionLog } from '@/harness/pi/session-log-restore'
+import { mintRootId } from '@/harness/pi/message-id'
+import { SessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { TranscriptStore } from '@/harness/pi/transcript'
+import { PiTurnEvents } from '@/harness/pi/turn-events'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
 
 const ROOT = 'ses_piroot000000000000000001'
@@ -32,7 +37,7 @@ const PNG = Buffer.from('synthetic-png-bytes').toString('base64')
 const PDF = `data:application/pdf;base64,${Buffer.from('synthetic-pdf').toString('base64')}`
 const ts = (n: number) => 1_760_000_000_000 + n * 1000
 const at = (n: number) => new Date(ts(n)).toISOString()
-const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, reasoning: 19, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
 
 let n = 0
 let leaf: string | null = null
@@ -99,7 +104,7 @@ function fixture(): PiSessionSnapshot {
     entryMessageIds: ids,
     transcript: [
       v1('msg_a', 'user', [{ type: 'text', text: 'Describe the image.' }, { type: 'file', mime: 'image/png', url: `data:image/png;base64,${PNG}`, filename: 'shot.png' }, { type: 'file', mime: 'application/pdf', url: PDF, filename: 'notes.pdf' }]),
-      v1('msg_b', 'assistant', [{ type: 'reasoning', text: 'I should list files.' }, { type: 'text', text: 'Listing.' }, { type: 'tool', tool: 'bash', callID: 'msg_b-p2', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt', time: { start: ts(3), end: ts(4) } } }], { parentID: 'msg_a' }),
+      v1('msg_b', 'assistant', [{ type: 'reasoning', text: 'I should list files.' }, { type: 'text', text: 'Listing.' }, { type: 'tool', tool: 'bash', callID: 'msg_b-p2', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt', title: 'bash', time: { start: ts(3), end: ts(4) } } }], { parentID: 'msg_a' }),
       v1('msg_c', 'assistant', [{ type: 'text', text: 'One file.' }]),
       v1('msg_d', 'user', [{ type: 'text', text: 'Run sleep.' }]),
       v1('msg_e', 'assistant', [{ type: 'tool', tool: 'bash', callID: 'msg_e-p0', state: { status: 'running', input: { command: 'sleep 60' }, time: { start: ts(9) } } }]),
@@ -128,7 +133,7 @@ describe('pi session-log export', () => {
     expect(log.threads.map((t) => [t.thread_id, t.messages.length])).toEqual([[ROOT, 12], [CHILD, 3]])
     expect(log).toMatchObject({ restore_grade: 'native', harness: { current: 'pi' }, session_id: 'session-pi-log' })
     expect(AdapterCapabilitiesSchema.parse(PI_CAPABILITIES)).toBeTruthy()
-    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: '1.0.3', adapter_version: '1.0.0' })
+    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: PI_VERSION, adapter_version: '1.1.0' })
   })
 
   test('block ids are the pi part ids; a block with no part gets a position id', () => {
@@ -173,6 +178,24 @@ describe('pi session-log export', () => {
     expect(byId(messages, 'msg_h')).toMatchObject({ status: 'error', in_context: false, hidden_reason: 'failed_attempt' })
   })
 
+  test('P2.10: usage carries pi\'s reasoning tokens; a call keeps the v1 title', () => {
+    const b = byId(root(fixture()), 'msg_b')
+    expect(b.usage).toEqual({ input: 10, output: 5, cache_read: 0, cache_write: 0, reasoning: 19 })
+    expect(b.blocks[2]).toMatchObject({ type: 'tool_call', name: 'bash', title: 'bash' })
+    // A v1 call with no title (the task call) has none in the log.
+    expect(byId(root(fixture()), 'msg_k').blocks[0]).not.toHaveProperty('title')
+  })
+
+  test('P2.10: a child\'s context message pi-ai stamps 0 is timed at the child\'s creation', () => {
+    const s = fixture()
+    const child = s.children[0]!
+    child.agentMessages = [{ role: 'system', content: 'You are a helper.', timestamp: 0 }, ...child.agentMessages] as never
+    child.messageIds = [null, ...child.messageIds]
+    child.seqs = [5, ...child.seqs]
+    const context = piSessionLog(s).log.threads[1]!.messages.find((m) => m.kind === 'context')!
+    expect(context).toMatchObject({ role: 'system', created_at: at(50), completed_at: at(50) })
+  })
+
   test('a compaction keeps pi shape: summary, first kept message, trigger', () => {
     const c = byId(root(fixture()), 'msg_i')
     expect(c).toMatchObject({ role: 'user', kind: 'compaction', in_context: true })
@@ -187,6 +210,16 @@ describe('pi session-log export', () => {
     expect(image).toEqual({ type: 'attachment', id: 'msg_a-p1', ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, mime: 'image/png', name: 'shot.png' })
     expect(pdf).toMatchObject({ type: 'harness', id: 'msg_a-p2', kind: 'undelivered_file', model_visible: false, data: { mime: 'application/pdf', filename: 'notes.pdf' } })
     expect(JSON.stringify(pdf)).not.toContain('base64')
+  })
+
+  test('P2.13: blob() gives the bytes behind each blob: ref the last changes() exported', async () => {
+    const bytes = Buffer.from(PNG, 'base64')
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const port = createPiSessionLogPort(fixture)
+    expect(port.blob!(digest)).toBeNull()
+    await port.changes([])
+    expect(port.blob!(digest)).toEqual(bytes)
+    expect(port.blob!('0'.repeat(64))).toBeNull()
   })
 
   test('a sub-agent child is a thread spawned by the task call', () => {
@@ -284,6 +317,60 @@ describe('the seq rule: monotonic per thread, never reused', () => {
   })
 })
 
+describe('pi session-log restore (P6.2)', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+  const image = Buffer.from(PNG, 'base64')
+  const imageRef = `blob:${createHash('sha256').update(image).digest('hex')}`
+  /** The fixture as a box of session `session-pi-log` exports it: pi's root id is minted from the session id. */
+  const exported = () => {
+    const s = fixture()
+    s.rootId = mintRootId(s.sessionId)
+    return piSessionLog(s)
+  }
+  const restore = async (log: ReturnType<typeof exported>['log'], readAttachment = async (ref: string) => (ref === imageRef ? image : null)) => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-restore-'))
+    dirs.push(dir)
+    const result = await restorePiSessionLog(log, { stateDir: dir, sessionId: 'session-pi-log', cwd: '/workspace', readAttachment })
+    return { result, again: piSessionLog(readPiSnapshot(dir, 'session-pi-log', log.selection)!) }
+  }
+
+  test('round trip: export, restore into a fresh state dir, export again: the same records', async () => {
+    const { log } = exported()
+    const { result, again } = await restore(log)
+    const expected = structuredClone(log)
+    // The one difference: pi never received the PDF, so the log has its size, not its bytes; the restored v1 part has no url.
+    const pdf = expected.threads[0]!.messages[0]!.blocks[2] as { data: Record<string, unknown> }
+    pdf.data = { mime: 'application/pdf', filename: 'notes.pdf', url: '' }
+    expect(again.log).toEqual(expected)
+    expect(result.dropped).toEqual({})
+  })
+
+  test('the cursors restore returns hold the hash of every restored message: the next export sends nothing (C13)', async () => {
+    const { log } = exported()
+    const { result, again } = await restore(log)
+    expect(result.cursors.map((c) => c.thread_id)).toEqual(log.threads.map((t) => t.thread_id))
+    for (const c of result.cursors) {
+      const thread = again.log.threads.find((t) => t.thread_id === c.thread_id)!
+      expect(c.native_hashes).toEqual(Object.fromEntries(thread.messages.map((m) => [m.message_id, again.hashes.get(m.message_id)!])))
+      expect(c.last_seq).toBe(Math.max(...thread.messages.map((m) => m.seq)))
+    }
+  })
+
+  test('an image whose bytes cannot be read is dropped, and counted when the model would see it', async () => {
+    const { log } = exported()
+    // msg_a is before the compaction's cut point: the model does not see it, so nothing it sees is lost.
+    expect((await restore(log, async () => null)).result.dropped).toEqual({})
+    byId(log.threads[0]!.messages, 'msg_i').in_context = false
+    const { result, again } = await restore(log, async () => null)
+    expect(result.dropped).toEqual({ attachment: 1 })
+    // The store says what pi holds: the image is a file pi never received.
+    expect(again.log.threads[0]!.messages[0]!.blocks.map((b) => (b.type === 'harness' ? `${b.kind}:${(b.data as { mime: string }).mime}` : b.type))).toEqual(['text', 'undelivered_file:image/png', 'undelivered_file:application/pdf'])
+  })
+})
+
 describe('pi session-log adapter through the journal', () => {
   const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_SESSION_LOG_DUMP_DIR'] as const
   let saved: Record<string, string | undefined> = {}
@@ -313,16 +400,21 @@ describe('pi session-log adapter through the journal', () => {
       port: 0,
       hostname: '127.0.0.1',
       async fetch(request) {
+        // P2.13: the image's bytes are asked for, then uploaded, before its record goes out.
+        if (new URL(request.url).pathname.includes('/log/blobs/')) return Response.json({ ref: request.method === 'PUT' ? STORED : null })
         const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
         bodies.push(body)
         return Response.json({ acked: [...body.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })), ...body.tombstones] })
       },
     })
+    const STORED = 'kortix-attachment://project-1/session-pi-log/00000000-0000-4000-8000-000000000001'
     servers.push(server)
     process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
     const journal = startSessionLogJournal(createPiSessionLogPort(fixture), { generation: 0 })!
     expect(await journal.flush()).toBe(true)
     expect(bodies.length).toBeGreaterThan(0)
+    const image = bodies.flatMap((b) => b.puts.flatMap((p) => p.message.blocks)).find((b) => b.type === 'attachment')
+    expect([image?.ref, typeof image?.sha256, typeof image?.bytes]).toEqual([STORED, 'string', 'number'])
     for (const body of bodies) expect(SessionLogJournalRequestSchema.safeParse(body).success).toBe(true)
     expect(bodies.flatMap((b) => b.puts)).toHaveLength(15)
     expect(bodies[0]!.threads.map((t) => t.thread_id)).toEqual([ROOT, CHILD])
@@ -348,5 +440,78 @@ describe('pi session-log adapter through the journal', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  test('live turn (P4.8): the live puts, the deltas and the turn end\'s put name each block and each call alike', async () => {
+    resetKortixEventBusForTests()
+    n = 0
+    leaf = null
+    const prompt = user('List files.')
+    const entries: Array<Record<string, unknown>> = [prompt]
+    const entryMessageIds: Record<string, string> = { [prompt.id]: 'msg_u' }
+    const store = new TranscriptStore()
+    let busy = true
+    const snapshot = (): PiSessionSnapshot => ({
+      sessionId: 'session-pi-live', rootId: ROOT, title: 'List files.', header: null, entries: entries as never, leafId: leaf, entryMessageIds,
+      transcript: store.all(), children: [], busy, reply: busy ? { id: 'msg_r', timestamp: ts(2) } : null, agent: 'build', model: { provider: 'kortix', model: 'answer-model' },
+    })
+    let clock = ts(2)
+    const turn = new PiTurnEvents({
+      sessionID: ROOT, mintMessageId: () => 'msg_r', parentMessageId: () => 'msg_u', model: () => ({ providerID: 'kortix', modelID: 'answer-model' }),
+      agent: () => 'build', workspace: '/workspace', now: () => ++clock,
+    })
+    // As PiRuntime.publish: every frame into the transcript, all but the full-text twins onto the v1 bus.
+    const emit = (event: unknown) => {
+      for (const frame of turn.translate(event as never)) {
+        store.apply(frame as never)
+        if (!frame.transcriptOnly) kortixEventBus().publish(frame.type, frame.properties, ROOT)
+      }
+    }
+    store.apply({ type: 'message.updated', properties: { sessionID: ROOT, info: { id: 'msg_u', sessionID: ROOT, role: 'user', time: { created: ts(1) } } } } as never)
+    store.apply({ type: 'message.part.updated', properties: { sessionID: ROOT, part: { id: 'msg_u-p0', messageID: 'msg_u', sessionID: ROOT, type: 'text', text: 'List files.' } } } as never)
+    const journal = new SessionLogJournal(createPiSessionLogPort(snapshot), { generation: 1 })
+    await journal.collect()
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+
+    const final = { role: 'assistant', api: 'openai-completions', provider: 'kortix', model: 'answer-model', usage, stopReason: 'toolUse', timestamp: ts(2), content: [
+      { type: 'thinking', thinking: 'List them.' },
+      { type: 'text', text: 'Listing.' },
+      { type: 'toolCall', id: 'call-7201ad64fe82', name: 'bash', arguments: { command: 'ls' } },
+    ] }
+    const update = (assistantMessageEvent: Record<string, unknown>) => emit({ type: 'message_update', message: final, assistantMessageEvent })
+    emit({ type: 'agent_start' })
+    emit({ type: 'message_start', message: { ...final, content: [] } })
+    update({ type: 'thinking_start', contentIndex: 0 })
+    update({ type: 'thinking_delta', contentIndex: 0, delta: 'List them.' })
+    update({ type: 'thinking_end', contentIndex: 0, content: 'List them.' })
+    update({ type: 'text_start', contentIndex: 1 })
+    update({ type: 'text_delta', contentIndex: 1, delta: 'Listing.' })
+    update({ type: 'text_end', contentIndex: 1, content: 'Listing.' })
+    emit({ type: 'message_end', message: final })
+    entries.push(assistant(final.content, { stopReason: 'toolUse' }))
+    entryMessageIds[leaf!] = 'msg_r'
+    emit({ type: 'tool_execution_start', toolCallId: 'call-7201ad64fe82', toolName: 'bash', args: { command: 'ls' } })
+    // A permission or question on this call names it as the block does.
+    const ref = turn.toolRef('call-7201ad64fe82')
+    emit({ type: 'tool_execution_end', toolCallId: 'call-7201ad64fe82', toolName: 'bash', result: { content: [{ type: 'text', text: 'a.txt' }] }, isError: false })
+    entries.push(toolResult('call-7201ad64fe82', 'bash', 'a.txt'))
+    busy = false
+    emit({ type: 'agent_end', messages: [] })
+    const livePuts = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === 'msg_r').map((f) => f.payload.message)
+    const deltas = frames.filter((f) => f.type === 'log.block.delta').map((f) => f.payload.block_id)
+    await journal.collect()
+    const turnEnd = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === 'msg_r').at(-1)!.payload.message
+    await journal.stop(0)
+
+    expect(turnEnd.status).toBe('complete')
+    const shape = (m: SessionLogMessage) => m.blocks.map((b) => (b.type === 'tool_call' ? [b.type, b.id, b.call_id] : [b.type, b.id]))
+    expect(shape(turnEnd)).toEqual([['reasoning', 'msg_r-p0'], ['text', 'msg_r-p1'], ['tool_call', 'msg_r-p2', 'call-7201ad64fe82']])
+    expect(livePuts.length).toBeGreaterThan(2)
+    // Each live put names its blocks (and calls) as the turn end's put does.
+    for (const put of livePuts) expect(shape(turnEnd).slice(0, put.blocks.length)).toEqual(shape(put))
+    expect(shape(livePuts.at(-1)!)).toEqual(shape(turnEnd))
+    expect(deltas).toEqual(['msg_r-p0', 'msg_r-p1'])
+    expect(ref).toEqual({ messageID: 'msg_r', callID: 'call-7201ad64fe82' })
   })
 })

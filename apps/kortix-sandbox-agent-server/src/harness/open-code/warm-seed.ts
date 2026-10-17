@@ -107,7 +107,6 @@ export async function runWarmSeedMode(
   const materialized = projectSeed
     ? await materializeProjectSeed(cfg)
     : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
-  bootMark(projectSeed ? 'seed-project-materialized' : 'seed-scaffold-materialized')
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
   // snapshots only — cold + Daytona never run it).
@@ -278,7 +277,6 @@ export async function runWarmSeedMode(
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo materialization failed', err)
         })
-        bootMark('adopt-repo-materialized')
         if (!bootState.repoMaterializationError) {
           scheduleHistoryBackfill(cfg2, cfg2.projectTarget)
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
@@ -405,7 +403,6 @@ export function armSeedAdoption(
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo adoption failed', err)
         })
-        bootMark('seed-repo-adopted')
         if (!bootState.repoMaterializationError) {
           scheduleHistoryBackfill(cfg2, cfg2.projectTarget)
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})

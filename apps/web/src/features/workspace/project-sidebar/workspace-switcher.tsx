@@ -61,22 +61,15 @@ import {
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
-import {
-  COMPUTER_SETUP_EVENT,
-  ComputerConnectModal,
-  ComputerStateDot,
-  useOwnsPairedComputer,
-  useThisComputerState,
-  yourComputerMenu,
-} from '@/features/tunnel/computer-connect';
-import { LocalComputerModal, YourComputersModal } from '@/features/tunnel/local-computer-modal';
+import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
+import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
+import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
@@ -90,7 +83,6 @@ import {
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
-  MonitorIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -99,7 +91,6 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
-import { Mcp } from '@/features/icon/icons/mcp';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -124,11 +115,11 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
-  const [connectMcpOpen, setConnectMcpOpen] = useState(false);
-  const [computerDialog, setComputerDialog] = useState<ComputerDialog | null>(null);
+  const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
+  // The sidebar's computer row and the Connectors pages open the other dialogs.
   useEffect(() => {
-    const openSetup = () => setComputerDialog('this');
+    const openSetup = () => setComputerSetupOpen(true);
     window.addEventListener(COMPUTER_SETUP_EVENT, openSetup);
     return () => window.removeEventListener(COMPUTER_SETUP_EVENT, openSetup);
   }, []);
@@ -139,6 +130,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // (`account_creation_restricted`) is the authoritative gate; this only avoids
   // offering an affordance the person cannot use.
   const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
+  // "New workspace" opens `/new`, which offers only the accounts where the
+  // caller holds `project.create`. With none, the row leads nowhere.
+  const canCreateWorkspace = useCreatableAccounts(useAccountsList().data ?? []).length > 0;
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an
@@ -241,7 +235,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
                     <WorkspaceMenuSection />
 
-                    <DropdownMenuSeparator />
+                    {(canCreateWorkspace || canCreateAccount) && <DropdownMenuSeparator />}
 
                     {/* An anchor, not a handler. `router.push` from a menu row
                         runs the RSC fetch cold at click time, and that fetch
@@ -250,12 +244,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                         network blip. `onSelect` keeps the explicit close and
                         must not call `preventDefault`: that cancels the
                         anchor. */}
-                    <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                      <Link href="/new" prefetch>
-                        <PlusIcon />
-                        {t('workspace.create')}
-                      </Link>
-                    </DropdownMenuItem>
+                    {canCreateWorkspace && (
+                      <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                        <Link href="/new" prefetch>
+                          <PlusIcon />
+                          {t('workspace.create')}
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
 
                     {/* The account-level sibling of the row above, in the one
                         menu already grouped BY account. A handler rather than
@@ -322,18 +318,6 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </Link>
               </DropdownMenuItem>
 
-              <DropdownMenuItem
-                onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
-                size="sm"
-              >
-                <Mcp />
-                {t('workspace.connectMcp')}
-              </DropdownMenuItem>
-
-              <YourComputerMenuItem
-                onSelect={(dialog) => deferAfterClose(() => setComputerDialog(dialog))}
-              />
-
               <ThemeSubmenu />
 
               <HelpSubmenu onClose={() => setMenuOpen(false)} />
@@ -355,22 +339,10 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
 
-      <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
       <LocalComputerModal
         projectId={projectId}
-        open={computerDialog === 'this'}
-        onOpenChange={(open) => setComputerDialog(open ? 'this' : null)}
-      />
-      <YourComputersModal
-        projectId={projectId}
-        open={computerDialog === 'mine'}
-        onOpenChange={(open) => setComputerDialog(open ? 'mine' : null)}
-        onConnectAnother={() => setComputerDialog('connect')}
-      />
-      <ComputerConnectModal
-        projectId={projectId}
-        open={computerDialog === 'connect'}
-        onOpenChange={(open) => setComputerDialog(open ? 'connect' : null)}
+        open={computerSetupOpen}
+        onOpenChange={setComputerSetupOpen}
       />
 
       <CreateAccountModal
@@ -404,31 +376,5 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
         }}
       />
     </>
-  );
-}
-
-type ComputerDialog = ReturnType<typeof yourComputerMenu>['dialog'];
-
-/**
- * "Your computer", on the web and in the desktop app. Hidden on a deployment
- * with computers disabled, like the promo.
- */
-function YourComputerMenuItem({ onSelect }: { onSelect: (dialog: ComputerDialog) => void }) {
-  const t = useI18nTranslations('sidebar');
-  const { status, tunnelId, state, computersEnabled } = useThisComputerState();
-  const { owned } = useOwnsPairedComputer();
-  if (!computersEnabled) return null;
-  const { dialog, dot } = yourComputerMenu({
-    tunnelId,
-    state,
-    oneClickHere: Boolean(status?.available),
-    owned,
-  });
-  return (
-    <DropdownMenuItem onSelect={() => onSelect(dialog)} size="sm">
-      <MonitorIcon />
-      {t('workspace.localComputer')}
-      {dot ? <ComputerStateDot state={dot} className="ml-auto" /> : null}
-    </DropdownMenuItem>
   );
 }

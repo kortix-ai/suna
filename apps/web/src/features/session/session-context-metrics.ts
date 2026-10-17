@@ -1,6 +1,5 @@
-import type { MessageWithParts } from '@/ui/types';
 import { PROVIDER_LABELS } from '@kortix/llm-catalog';
-import { getSessionCost, type AssistantMessage, type ModelPricingLookup } from '@kortix/sdk';
+import { sessionLogThreadMetrics, type ModelPricingLookup, type SessionLogMessage, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 
 // ============================================================================
@@ -8,7 +7,8 @@ import type { ProviderListResponse } from '@kortix/sdk/react';
 // ============================================================================
 
 interface ContextMetrics {
-  message: AssistantMessage;
+  /** The reply the numbers come from: the last one with usage. */
+  message: SessionLogMessage;
   providerLabel: string;
   modelLabel: string;
   limit: number | undefined;
@@ -23,47 +23,30 @@ interface ContextMetrics {
 
 interface Metrics {
   totalCost: number;
+  messages: SessionLogThreadMetrics['messages'];
   context: ContextMetrics | undefined;
-}
-
-function tokenTotal(msg: AssistantMessage) {
-  if (!msg.tokens) return 0;
-  const t = msg.tokens;
-  return (
-    (t.input ?? 0) +
-    (t.output ?? 0) +
-    (t.reasoning ?? 0) +
-    ((t.cache?.read ?? 0) + (t.cache?.write ?? 0))
-  );
 }
 
 /** Pure token math for the modal — exported for characterization tests. */
 export function getSessionContextMetrics(
-  messages: MessageWithParts[],
+  thread: SessionLogThread | null,
   providers: ProviderListResponse | undefined,
   pricingLookup: ModelPricingLookup,
 ): Metrics {
-  const totalCost = getSessionCost(messages, pricingLookup);
-  const rawMessages = messages.map((m) => m.info);
+  if (!thread) return { totalCost: 0, messages: { all: 0, user: 0, assistant: 0 }, context: undefined };
+  const { cost: totalCost, messages, context: last } = sessionLogThreadMetrics(thread, { pricing: pricingLookup });
+  if (!last?.usage) return { totalCost, messages, context: undefined };
+  const u = last.usage;
 
-  // Find last assistant with tokens
-  let last: AssistantMessage | undefined;
-  for (let i = rawMessages.length - 1; i >= 0; i--) {
-    const msg = rawMessages[i];
-    if (msg.role !== 'assistant') continue;
-    if (tokenTotal(msg) <= 0) continue;
-    last = msg;
-    break;
-  }
-  if (!last) return { totalCost, context: undefined };
-
-  const provider = providers?.all?.find((p) => p.id === last.providerID);
-  const model = provider?.models?.[last.modelID];
+  const providerID = last.model?.provider ?? '';
+  const modelID = last.model?.model ?? '';
+  const provider = providers?.all?.find((p) => p.id === providerID);
+  const model = provider?.models?.[modelID];
   const modelProvider = model && 'provider' in model && typeof model.provider === 'string'
     ? model.provider
     : undefined;
   const limit = model?.limit?.context;
-  const total = tokenTotal(last);
+  const total = u.input + u.output + (u.reasoning ?? 0) + u.cache_read + u.cache_write;
 
   // The gateway registers every model under the single synthetic `kortix`
   // opencode provider, so `provider.name` is always "Kortix" — even for a
@@ -71,22 +54,21 @@ export function getSessionContextMetrics(
   // REAL upstream provider on the model itself (`model.provider`, e.g.
   // "anthropic"); prefer that for display, same fallback order as
   // `pickerGroupId`/`pickerGroupLabel` in ./model-grouping.ts.
-  const upstreamProviderId =
-    last.providerID === 'kortix' && modelProvider ? modelProvider : last.providerID;
+  const upstreamProviderId = providerID === 'kortix' && modelProvider ? modelProvider : providerID;
 
   return {
     totalCost,
+    messages,
     context: {
       message: last,
-      providerLabel:
-        PROVIDER_LABELS[upstreamProviderId] ?? provider?.name ?? last.providerID,
-      modelLabel: model?.name ?? last.modelID,
+      providerLabel: PROVIDER_LABELS[upstreamProviderId] ?? provider?.name ?? providerID,
+      modelLabel: model?.name ?? modelID,
       limit,
-      input: last.tokens?.input ?? 0,
-      output: last.tokens?.output ?? 0,
-      reasoning: last.tokens?.reasoning ?? 0,
-      cacheRead: last.tokens?.cache?.read ?? 0,
-      cacheWrite: last.tokens?.cache?.write ?? 0,
+      input: u.input,
+      output: u.output,
+      reasoning: u.reasoning ?? 0,
+      cacheRead: u.cache_read,
+      cacheWrite: u.cache_write,
       total,
       usage: limit ? Math.round((total / limit) * 100) : null,
     },

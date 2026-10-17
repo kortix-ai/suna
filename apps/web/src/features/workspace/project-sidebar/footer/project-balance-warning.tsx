@@ -1,5 +1,7 @@
 'use client';
 
+import { canManageBilling } from '@kortix/sdk';
+
 import {
   SidebarAlertRow,
   type SidebarAlertTone,
@@ -22,10 +24,13 @@ function useBalanceWarning(accountId: string | undefined, tI18nComplete: UiTrans
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const isPerSeat = accountState?.billing_model === 'per_seat';
-  // Only accounts that can actually top up (Team / paid) get this warning —
+  // Only accounts that can actually top up (paid) get this warning —
   // a free account can't buy credits, so it keeps the "Upgrade Plan" button.
-  const canTopUp = (accountState?.tier?.can_purchase_credits ?? false) || isPerSeat;
+  // A caller without `billing.write` cannot top up either: the row is a door
+  // into the top-up dialog, so it is not theirs. The session error banner
+  // tells them to ask an owner when the wallet actually blocks a run.
+  const canTopUp =
+    (accountState?.tier?.can_purchase_credits ?? false) && canManageBilling(accountState);
 
   const handleClick = useCallback(
     () =>

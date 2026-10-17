@@ -20,7 +20,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { Button } from '@/components/ui/button';
 import { NativeSlider } from '@/components/ui/slider-native';
 import { cn } from '@/lib/utils';
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -35,13 +35,13 @@ import {
 } from './action-navigator-logic';
 
 export function ActionNavigator({
-  parts,
+  calls,
   index,
   onIndexChange,
   isLive,
   className,
 }: {
-  parts: ToolPart[];
+  calls: ToolCallBlock[];
   index: number;
   /** Reports both the new index and what it implies for live-follow, so the
    *  host never has to re-derive the mode rule and get it subtly different. */
@@ -50,12 +50,12 @@ export function ActionNavigator({
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const count = parts.length;
+  const count = calls.length;
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const timeLabel = useMemo(() => actionTimeLabel(parts[index], new Date()), [parts, index]);
+  const timeLabel = useMemo(() => actionTimeLabel(calls[index], new Date()), [calls, index]);
 
   const goPrev = useCallback(() => {
     const { index: i, mode } = prevIndex(index);

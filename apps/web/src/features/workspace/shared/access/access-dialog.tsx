@@ -32,7 +32,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { triggerVariants } from '@/components/ui/trigger-variants';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -49,6 +51,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 import {
   addGroupMembers,
   attachGroupToProject,
@@ -73,6 +76,7 @@ import {
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
+  CalendarBlankIcon,
   ArrowElbowDownRightIcon,
   KeyIcon,
   PlugIcon,
@@ -82,7 +86,7 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 import { ShareAccessBody, type ShareableObject } from './access-dialog-share';
 import { endOfLocalDayIso, isoToDateInputValue, removeAccessCopy } from './access-shared';
@@ -200,6 +204,12 @@ export interface AccessDialogProps {
    * Ignored in every other mode, which seeds from `current`.
    */
   initialAgentIds?: string[];
+  /**
+   * `split-sheet`: render as the body of the account hub's sheet
+   * (`useAccountHubSheet`, which draws the title) instead of a modal: fields
+   * plus a sticky footer. Principal modes only; `share` is always a modal.
+   */
+  presentation?: 'modal' | 'split-sheet';
   onDone?: (result: AccessDialogResult) => void;
 }
 
@@ -291,6 +301,45 @@ export function diffAccessDraft(current: AccessDialogCurrent, next: AccessDraft)
     agentsChanged,
     dirty: roleChanged || expiryChanged || agentsChanged,
   };
+}
+
+/**
+ * The writers an account-scope edit runs. Injected so the write plan is
+ * assertable without React — the same seam `diffAccessDraft` uses for the
+ * diff.
+ */
+export interface AccountEditWriters {
+  /** Revoke the principal's existing custom-role assignment, if any. */
+  revokeCustomRole: () => Promise<unknown>;
+  /** Move the built-in baseline on the account member row. */
+  setBuiltinRole: (role: AccountRole) => Promise<unknown>;
+  /** Bind the custom role: ONE assignment row carrying the expiry. */
+  assignCustomRole: (roleId: string, expiresIso: string | undefined) => Promise<unknown>;
+}
+
+/**
+ * The account-edit write plan, isolated from React so it can be asserted
+ * directly. Order matters: the old custom row is revoked before the new one
+ * lands (delete-then-create, like the project path), and the built-in
+ * baseline moves only when the role itself changed — an expiry-only edit
+ * re-assigns the custom row and leaves the member row alone.
+ */
+export async function writeAccountEdit(
+  diff: AccessDraftDiff,
+  current: AccessDialogCurrent,
+  role: RoleValue,
+  expiresIso: string | undefined,
+  writers: AccountEditWriters,
+): Promise<void> {
+  // An expiry-only edit must reach the assignment writer too: the expiry is
+  // written on the custom role's assignment row, not on the member row.
+  if (!diff.roleChanged && !diff.expiryChanged) return;
+  if (current.role.kind === 'custom') await writers.revokeCustomRole();
+  if (diff.roleChanged) {
+    await writers.setBuiltinRole((baselineBuiltinRole('account', role) ?? 'member') as AccountRole);
+  }
+  const roleId = role.kind === 'custom' ? role.roleId : null;
+  if (roleId) await writers.assignCustomRole(roleId, expiresIso);
 }
 
 export interface AccessDialogCopy {
@@ -477,8 +526,10 @@ function PrincipalAccessDialog({
   excludeUserIds,
   inheritedFrom,
   initialAgentIds,
+  presentation = 'modal',
   onDone,
 }: AccessDialogProps & { mode: PrincipalAccessMode }) {
+  const chrome = presentation === 'split-sheet' ? SHEET_CHROME : MODAL_CHROME;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tCommon = useI18nTranslations('common');
   const tSharing = useI18nTranslations('accessSharing');
@@ -889,17 +940,14 @@ function PrincipalAccessDialog({
         {
           principalId: principal.id,
           kind: 'other',
-          run: async () => {
-            if (!diff.roleChanged) return;
-            if (current.role.kind === 'custom') {
-              await revokeCustomRole('member', principal.id, null, current.assignmentId);
-            }
-            const next = (baselineBuiltinRole('account', role) ?? 'member') as AccountRole;
-            await updateAccountMemberRole(accountId, principal.id, next);
-            if (roleId) {
-              await assignCustomRole('member', principal.id, roleId, null, expiresIso);
-            }
-          },
+          run: () =>
+            writeAccountEdit(diff, current, role, expiresIso, {
+              revokeCustomRole: () =>
+                revokeCustomRole('member', principal.id, null, current.assignmentId),
+              setBuiltinRole: (next) => updateAccountMemberRole(accountId, principal.id, next),
+              assignCustomRole: (customRoleId, customExpiresIso) =>
+                assignCustomRole('member', principal.id, customRoleId, null, customExpiresIso),
+            }),
         },
       ];
     }
@@ -1060,11 +1108,12 @@ function PrincipalAccessDialog({
         const url = (undeliveredInvite.value as { invite_url?: string }).invite_url ?? '';
         warningToast(tI18nComplete.raw('textc32c6c7ee51b'), {
           duration: 10_000,
-          button: (
-            <Button size="sm" onClick={() => void navigator.clipboard.writeText(url)}>
-              {tI18nComplete.raw('text6aaa89b8157c')}
-            </Button>
-          ),
+          actions: [
+            {
+              label: tI18nComplete.raw('text6aaa89b8157c'),
+              onClick: () => void navigator.clipboard.writeText(url),
+            },
+          ],
         });
       } else if (failedIndexes.length > 0 && ok > 0) {
         errorToast(tI18nComplete('textb0cdf63b8387', { value0: ok, value1: total }));
@@ -1164,21 +1213,21 @@ function PrincipalAccessDialog({
 
   return (
     <>
-      <Modal
+      <chrome.Root
         open={open}
-        onOpenChange={(next) => {
+        onOpenChange={(next: boolean) => {
           // Closing while a mutation is in flight is a no-op.
           if (pending) return;
           onOpenChange(next);
         }}
       >
-        <ModalContent className="sm:max-w-md">
-          <ModalHeader>
-            <ModalTitle>{copy.title}</ModalTitle>
-            <ModalDescription>{copy.description}</ModalDescription>
-          </ModalHeader>
+        <chrome.Content>
+          <chrome.Header>
+            <chrome.Title>{copy.title}</chrome.Title>
+            <chrome.Description>{copy.description}</chrome.Description>
+          </chrome.Header>
 
-          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+          <chrome.Body>
             {/* 1. Who */}
             {mode.kind === 'grant' ? (
               <Field className="gap-1.5">
@@ -1274,6 +1323,7 @@ function PrincipalAccessDialog({
                 </FieldLabel>
                 <RoleSelect
                   id="access-role"
+                  size="md"
                   scope={roleScope}
                   accountId={accountId}
                   value={role}
@@ -1404,49 +1454,53 @@ function PrincipalAccessDialog({
             {/* 6. Expires */}
             {expirySupported ? (
               <Field className="gap-1.5">
-                <FieldLabel htmlFor="access-expires">
-                  {tI18nComplete.raw('textf6725f3af08a')}
-                  <span className="text-muted-foreground ml-2 text-xs font-normal">
+                {/* "Optional" sits at the label row's far end, muted, so the
+                    label itself reads as one word. */}
+                <div className="flex items-baseline justify-between gap-2">
+                  <FieldLabel htmlFor="access-expires">
+                    {tI18nComplete.raw('textf6725f3af08a')}
+                  </FieldLabel>
+                  <span className="text-muted-foreground text-xs capitalize">
                     {tI18nComplete.raw('textec91fdd9256c')}
                   </span>
-                </FieldLabel>
-                <Input
+                </div>
+                <ExpiryPicker
                   id="access-expires"
-                  type="date"
                   value={expires}
-                  onChange={(event) => setExpires(event.target.value)}
+                  onChange={setExpires}
                   disabled={pending}
-                  className="max-w-xs"
                 />
                 <FieldDescription>{tI18nComplete.raw('text18038f7fc7e0')}</FieldDescription>
               </Field>
             ) : null}
-          </ModalBody>
-
-          <ModalFooter className="sm:justify-between">
-            <div className="flex items-center gap-2">
-              {mode.kind === 'edit' ? (
+            {/* Remove access is not a peer of Save: it sits under the fields,
+                apart from the footer's Cancel / Save pair. */}
+            {mode.kind === 'edit' ? (
+              <div className="border-t pt-4">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="text-destructive hover:text-destructive"
+                  className="text-destructive hover:text-destructive -ml-2"
                   disabled={pending}
                   onClick={() => setRemoveOpen(true)}
                 >
                   {tI18nComplete.raw('textbb349bfe6750')}
                 </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline-ghost"
-                size="sm"
-                disabled={pending}
-                onClick={() => onOpenChange(false)}
-              >
-                {tI18nComplete.raw('text19766ed6ccb2')}
-              </Button>
-            </div>
+              </div>
+            ) : null}
+          </chrome.Body>
+
+          <chrome.Footer>
+            <Button
+              type="button"
+              variant="outline-ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => onOpenChange(false)}
+            >
+              {tI18nComplete.raw('text19766ed6ccb2')}
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -1457,9 +1511,9 @@ function PrincipalAccessDialog({
               {saveMutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
               {copy.submitLabel}
             </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </chrome.Footer>
+        </chrome.Content>
+      </chrome.Root>
 
       {mode.kind === 'edit' ? (
         <ConfirmDialog
@@ -1709,3 +1763,131 @@ function ProjectAccessRows({
     </Field>
   );
 }
+
+/**
+ * The two shells `PrincipalAccessDialog` renders its one body in. The modal
+ * blocks a close while a save is in flight; the sheet is the body of the
+ * account hub's `useAccountHubSheet`, which owns open and close.
+ */
+/** `YYYY-MM-DD` (the draft's storage) → a local Date, or undefined. */
+function parseDateValue(value: string): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+/** The expiry field: the Kortix `Calendar` in a popover, not the browser's
+ *  native date input. Empty reads "Never"; past days can't be picked. */
+function ExpiryPicker({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const [open, setOpen] = useState(false);
+  const selected = parseDateValue(value);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          id={id}
+          type="button"
+          disabled={disabled}
+          className={cn(
+            triggerVariants({ size: 'md' }),
+            'w-full justify-start gap-2 font-normal',
+            !selected && 'text-muted-foreground',
+          )}
+        >
+          <CalendarBlankIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+          {selected ? format(selected, 'PPP') : tI18nComplete.raw('text6300ef800bb8')}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-0">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected}
+          disabled={{ before: today }}
+          onSelect={(date) => {
+            onChange(date ? format(date, 'yyyy-MM-dd') : '');
+            setOpen(false);
+          }}
+        />
+        {selected ? (
+          <div className="border-t p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                onChange('');
+                setOpen(false);
+              }}
+            >
+              {tI18nComplete.raw('text83b12c2216ef')}
+            </Button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+interface AccessChrome {
+  Root: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void; children?: ReactNode }>;
+  Content: ComponentType<{ children?: ReactNode }>;
+  Header: ComponentType<{ children?: ReactNode }>;
+  Title: ComponentType<{ children?: ReactNode }>;
+  Description: ComponentType<{ children?: ReactNode }>;
+  Body: ComponentType<{ children?: ReactNode }>;
+  Footer: ComponentType<{ children?: ReactNode }>;
+}
+
+const MODAL_CHROME: AccessChrome = {
+  Root: Modal,
+  Content: ({ children }: { children?: ReactNode }) => (
+    <ModalContent className="sm:max-w-md">{children}</ModalContent>
+  ),
+  Header: ModalHeader,
+  Title: ModalTitle,
+  Description: ModalDescription,
+  Body: ({ children }: { children?: ReactNode }) => (
+    <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">{children}</ModalBody>
+  ),
+  Footer: ({ children }: { children?: ReactNode }) => (
+    <ModalFooter className="sm:justify-between">{children}</ModalFooter>
+  ),
+};
+
+const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+
+/** Inside the account hub's sheet: the host draws the title row and the
+ *  scrolling body, so this draws only the fields and a footer that sticks to
+ *  the bottom of that scroll. */
+const SHEET_CHROME: AccessChrome = {
+  Root: Passthrough,
+  // Fills the sheet body's height so `mt-auto` can push the footer to the
+  // bottom edge even when the form is short.
+  Content: ({ children }: { children?: ReactNode }) => (
+    <div className="flex min-h-full flex-col">{children}</div>
+  ),
+  Header: () => null,
+  Title: Passthrough,
+  Description: Passthrough,
+  Body: ({ children }: { children?: ReactNode }) => <div className="space-y-4">{children}</div>,
+  Footer: ({ children }: { children?: ReactNode }) => (
+    <div className="bg-surface sticky -bottom-5 -mx-4 -mb-5 mt-auto flex items-center justify-between gap-2 border-t px-4 py-3">
+      {children}
+    </div>
+  ),
+};

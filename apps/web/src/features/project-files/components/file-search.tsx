@@ -3,6 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
 import {
@@ -11,8 +12,25 @@ import {
   MagnifyingGlassIcon as Search,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFileExplorerSource } from '../explorer-source';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFileExplorerSource, type FileExplorerSource } from '../explorer-source';
+
+const NAME_LIMIT = 30;
+const CONTENT_LIMIT = 50;
+
+/** A filename hit, or a content hit with the line it matched. */
+interface SearchItem {
+  key: string;
+  path: string;
+  line?: { number: number; text: string };
+}
+
+/** Stand-in for a source without content search: a hook that never fetches. */
+const useNoContentSearch: NonNullable<FileExplorerSource['useFileContentSearch']> = () => ({
+  data: undefined,
+  isLoading: false,
+  error: null,
+});
 
 export function FileSearch() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -20,6 +38,8 @@ export function FileSearch() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // Search file contents (`git grep`) instead of names, where the source can.
+  const [contentMode, setContentMode] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const closeSearch = useFilesStore((s) => s.closeSearch);
@@ -37,11 +57,31 @@ export function FileSearch() {
     inputRef.current?.focus();
   }, []);
 
-  const { useFileSearch } = useFileExplorerSource();
-  const { data: results, isLoading } = useFileSearch(debouncedQuery, {
-    limit: 30,
-    enabled: debouncedQuery.length > 0,
+  const source = useFileExplorerSource();
+  const canSearchContents = !!source.capabilities.contentSearch;
+  const searchContents = canSearchContents && contentMode;
+  const useFileContentSearch = source.useFileContentSearch ?? useNoContentSearch;
+  const nameSearch = source.useFileSearch(debouncedQuery, {
+    limit: NAME_LIMIT,
+    enabled: debouncedQuery.length > 0 && !searchContents,
   });
+  const contentSearch = useFileContentSearch(debouncedQuery, {
+    limit: CONTENT_LIMIT,
+    enabled: debouncedQuery.length > 0 && searchContents,
+  });
+  const { isLoading } = searchContents ? contentSearch : nameSearch;
+  const limit = searchContents ? CONTENT_LIMIT : NAME_LIMIT;
+
+  const results = useMemo<SearchItem[] | undefined>(() => {
+    if (searchContents) {
+      return contentSearch.data?.map((match) => ({
+        key: `${match.path}:${match.lineNumber}`,
+        path: match.path,
+        line: { number: match.lineNumber, text: match.lineText },
+      }));
+    }
+    return nameSearch.data?.map((path) => ({ key: path, path }));
+  }, [searchContents, contentSearch.data, nameSearch.data]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -49,11 +89,11 @@ export function FileSearch() {
   }, [results]);
 
   const handleSelect = useCallback(
-    (path: string) => {
-      if (path.endsWith('/')) {
-        navigateToPath(path.slice(0, -1));
+    (item: SearchItem) => {
+      if (item.path.endsWith('/')) {
+        navigateToPath(item.path.slice(0, -1));
       } else {
-        openFile(path);
+        openFile(item.path, item.line?.number);
       }
       closeSearch();
     },
@@ -114,7 +154,9 @@ export function FileSearch() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleInputKeyDown}
               placeholder={tHardcodedUi.raw(
-                'featuresProjectFilesComponentsFileSearch.line109JsxAttrPlaceholderSearchFiles',
+                searchContents
+                  ? 'featuresProjectFilesComponentsFileSearch.searchContentsPlaceholder'
+                  : 'featuresProjectFilesComponentsFileSearch.line109JsxAttrPlaceholderSearchFiles',
               )}
               className="h-10 border-0 px-0 shadow-none focus-visible:ring-0"
             />
@@ -129,12 +171,30 @@ export function FileSearch() {
             </button>
           </div>
 
+          {canSearchContents && (
+            <div className="flex items-center border-b">
+              <Switch
+                label={tHardcodedUi.raw('featuresProjectFilesComponentsFileSearch.searchContents')}
+                aria-label={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileSearch.searchContents',
+                )}
+                checked={contentMode}
+                onCheckedChange={(checked) => {
+                  setContentMode(checked);
+                  inputRef.current?.focus();
+                }}
+              />
+            </div>
+          )}
+
           {/* Results */}
           <div ref={listRef} className="max-h-[300px] overflow-y-auto">
             {debouncedQuery.length === 0 && (
               <div className="text-muted-foreground px-4 py-6 text-center text-sm">
                 {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileSearch.line124JsxTextTypeToSearchFiles',
+                  searchContents
+                    ? 'featuresProjectFilesComponentsFileSearch.typeToSearchContents'
+                    : 'featuresProjectFilesComponentsFileSearch.line124JsxTextTypeToSearchFiles',
                 )}
               </div>
             )}
@@ -148,13 +208,16 @@ export function FileSearch() {
             {results && results.length === 0 && debouncedQuery.length > 0 && (
               <div className="text-muted-foreground px-4 py-6 text-center text-sm">
                 {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileSearch.line136JsxTextNoFilesFound',
+                  searchContents
+                    ? 'featuresProjectFilesComponentsFileSearch.noMatchingLines'
+                    : 'featuresProjectFilesComponentsFileSearch.line136JsxTextNoFilesFound',
                 )}
               </div>
             )}
 
             {results &&
-              results.map((filePath, index) => {
+              results.map((item, index) => {
+                const filePath = item.path;
                 const isDir = filePath.endsWith('/');
                 const name = isDir
                   ? filePath.slice(0, -1).split('/').pop()
@@ -162,9 +225,9 @@ export function FileSearch() {
 
                 return (
                   <button
-                    key={filePath}
+                    key={item.key}
                     data-search-item
-                    onClick={() => handleSelect(filePath)}
+                    onClick={() => handleSelect(item)}
                     onMouseEnter={() => setSelectedIndex(index)}
                     className={cn(
                       'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
@@ -177,13 +240,31 @@ export function FileSearch() {
                     ) : (
                       <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
                     )}
-                    <span className="flex-1 truncate font-medium">{name}</span>
-                    <span className="text-muted-foreground max-w-[200px] truncate text-xs">
-                      {filePath}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="flex-1 truncate font-medium">{name}</span>
+                        <span className="text-muted-foreground max-w-[200px] truncate text-xs">
+                          {filePath}
+                        </span>
+                      </span>
+                      {item.line && (
+                        <span className="text-muted-foreground flex min-w-0 gap-2 font-mono text-xs">
+                          <span className="shrink-0 tabular-nums">{item.line.number}</span>
+                          <span className="truncate">{item.line.text}</span>
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
               })}
+
+            {results && results.length >= limit && (
+              <div className="text-muted-foreground px-3 py-2 text-xs">
+                {tHardcodedUi('featuresProjectFilesComponentsFileSearch.firstMatches', {
+                  value0: limit,
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

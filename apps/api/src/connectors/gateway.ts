@@ -48,6 +48,7 @@ import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 
 export interface GatewayConnector {
   connectorId: string;
@@ -808,6 +809,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     if (error instanceof CredentialNotSharedError) {
       await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
       return { status: 'denied', reason: error.reason, message: error.message };
+    }
+    if (error instanceof SecretUndecryptableError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: 'credential_undecryptable' });
+      return { status: 'denied', reason: 'credential_undecryptable', message: error.message };
     }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {

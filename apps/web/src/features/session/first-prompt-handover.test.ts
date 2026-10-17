@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
 
 import { resolveFirstPromptHandover, transcriptCarriesFirstPrompt } from './first-prompt-handover';
 
@@ -6,11 +7,17 @@ const text = (t: string) => ({ type: 'text', text: t });
 const file = (name: string) => ({ type: 'file', mime: 'image/png', filename: name, url: 'data:x' });
 const ref = (name: string) =>
   text(`<file path="/workspace/uploads/x/${name}" mime="application/zip" filename="${name}">u</file>`);
-type Part = { type: string; text?: string; synthetic?: boolean };
-const turn = (parts: Part[], answered = false) => ({
-  userMessage: { parts },
-  assistantMessages: answered ? [{ parts: [text('hi')] }] : [],
-});
+type V1Part = { type: string; text?: string; synthetic?: boolean; ignored?: boolean; mime?: string };
+/** The turn the transcript reads for a v1 user row holding `parts`, answered by one reply when `answered`. */
+const turn = (parts: V1Part[], answered = false) => {
+  const rows = [
+    { info: { id: 'u1', role: 'user', time: { created: 1 } }, parts: parts.map((p, i) => ({ id: `p${i}`, ...p })) },
+    ...(answered
+      ? [{ info: { id: 'a1', role: 'assistant', parentID: 'u1', time: { created: 2, completed: 3 } }, parts: [{ id: 'a-text', ...text('hi') }] }]
+      : []),
+  ] as never;
+  return sessionLogTurns(sessionLogOfV1Rows('s', 'rs', rows).threads[0]!)[0]!;
+};
 
 describe('transcriptCarriesFirstPrompt', () => {
   test('a <file> ref inside a pasted block is not a delivered attachment', () => {
@@ -53,6 +60,17 @@ describe('transcriptCarriesFirstPrompt', () => {
   // stale bubble over a finished turn.
   test('releases once the turn is answered, even short of the promise', () => {
     expect(transcriptCarriesFirstPrompt([turn([text('x'), file('a.png')], true)], 3)).toBe(true);
+  });
+
+  // The v1 rule counted every `text` and `file` part. An ignored text part and a
+  // text/plain mention become harness blocks; both still count.
+  test('ignored text and text/plain mentions count as they did as v1 parts', () => {
+    const ignored = { ...ref('bundle.zip'), ignored: true };
+    expect(transcriptCarriesFirstPrompt([turn([{ ...text('only'), ignored: true }])], 0)).toBe(true);
+    expect(transcriptCarriesFirstPrompt([turn([{ ...text('only'), synthetic: true }])], 0)).toBe(false);
+    const mention = { type: 'file', mime: 'text/plain', filename: 'notes.txt', url: 'file:///workspace/notes.txt' };
+    expect(transcriptCarriesFirstPrompt([turn([text('look'), ignored, mention])], 2)).toBe(true);
+    expect(transcriptCarriesFirstPrompt([turn([text('look'), ignored, mention])], 3)).toBe(false);
   });
 });
 

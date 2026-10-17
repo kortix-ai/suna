@@ -24,6 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = MONO_FONT_FAMILY;
+import { CountBadge } from '@/components/kortix/count-badge';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Input } from '@/components/ui/input';
@@ -92,7 +93,8 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
-import { formatCost, formatTokens } from '@kortix/sdk';
+import { formatTokens } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
@@ -704,30 +706,10 @@ export function ProjectDetailPage({
                 }}>
                 {t.label}
               </RNText>
-              {t.count > 0 && (
-                <View
-                  style={{
-                    backgroundColor: active
-                      ? isDark
-                        ? withAlpha(THEME.dark.foreground, 0.1)
-                        : withAlpha(THEME.light.foreground, 0.06)
-                      : isDark
-                        ? withAlpha(THEME.dark.foreground, 0.05)
-                        : withAlpha(THEME.light.foreground, 0.03),
-                    borderRadius: 10,
-                    paddingHorizontal: 6,
-                    paddingVertical: 1,
-                  }}>
-                  <RNText
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'Roobert',
-                      color: active ? fg : mutedStrong,
-                    }}>
-                    {t.count}
-                  </RNText>
-                </View>
-              )}
+              <CountBadge
+                count={t.count}
+                textClassName={active ? 'text-primary' : 'text-muted-foreground'}
+              />
             </Pressable>
           );
         })}
@@ -2376,7 +2358,7 @@ function ProjectTotalsCard({
     { label: 'Sessions', value: String(totalSessions), dim: false },
     { label: 'Messages', value: String(messageCount), dim: loading },
     { label: 'Tokens', value: formatTokens(tokens), dim: loading },
-    { label: 'Cost', value: formatCost(cost), dim: loading },
+    { label: 'Cost', value: `${formatUsdAsCredits(cost)} credits`, dim: loading },
   ];
   return (
     <View

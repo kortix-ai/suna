@@ -255,6 +255,19 @@ Agents → `<your agent>` → Secrets → enable the secret** (or, from their ow
 to this session when it is saved. Run `kortix secrets sync` to pull it into
 this session right away, then continue.
 
+### "Set, but it fails" — the stored value cannot be decrypted
+
+A value Kortix can no longer decrypt (the server's encryption key changed, or
+the stored row is damaged) is stored and lost. `kortix secrets ls` shows it as
+**`undecryptable`**; `--json` reports `status: "undecryptable"` and
+`available: false`. A session start or connector call that needs it fails with
+`… cannot be decrypted with this server's encryption key` or
+`credential_undecryptable`. Never tell the human it is unset or that it is
+set and fine. Ask them to enter it again: mint a setup link
+(`kortix secrets request`), or point them to **Customize → Secrets → Re-enter
+value**. When the broken value is their own override, the fix is **Delete my
+value** on the same row.
+
 ### A person's own credential — who can use it
 
 Every secret value has an audience, the same **Who can use it** choice as a

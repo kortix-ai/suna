@@ -5,7 +5,25 @@ description: Use for every Kortix test task, behavior change, bug fix, refactor,
 
 # Testing
 
-Use one repository-level command: `pnpm test`.
+**During development, never run a full suite or a whole package's tests.**
+Run T0 (`tsc`, lint) for the packages you touched, the test files that cover
+your change named one by one (`pnpm --filter <pkg> test <file>`, or one flow
+with `pnpm test -- --id <ID>`), and the change itself through its real
+surface. Seconds, not minutes. Running a whole package's suite to check one
+file is the anti-pattern, and on a Mac every package `test` script refuses it
+(exit `2`, `scripts/test-guard.mjs`) unless you name files or pass
+`-- -t <name>`. The full
+suite runs once, at Promote to Production, on the release pull request into
+`prod`: it is the only gate (`AGENTS.md`, "Testing philosophy").
+
+**Keep tests small and isolated.** Every test file runs standalone in seconds.
+When the test that covers your change takes more than ~10 s, or needs setup
+unrelated to it, split it into a smaller isolated test in the same change. Fake
+the clock; never wait on real time. A test that breaks on a refactor with no
+bug is deleted, not updated.
+
+The repository-level command is `pnpm test`; on a Mac only its targeted modes
+run (`--id`, `--domain`, `--db-only <filter>`, `--sdk-only`).
 
 Read `tests/README.md` before changing the runner or adding a product flow. Read
 the **sdk** skill before editing the SDK.
@@ -30,6 +48,29 @@ the **sdk** skill before editing the SDK.
 - Add Playwright only when the assertion requires a browser.
 - Do not create another cross-cutting harness or ad hoc smoke script.
 
+## Keep unit tests fast
+
+A unit test file is a millisecond test. On 2026-10-16, 89 % of the API tests
+ran under 10 ms, and 33 files of 1,188 took 262 of 388 s. Every one of the
+33 waited on a real clock or did real process work.
+
+- **Never wait on the real clock.** Inject the delay (a parameter, a field, a
+  `set…ForTests` setter next to the constant) and pass 1–10 ms. Or cap
+  `Bun.sleep` with `spyOn(Bun, 'sleep')` and restore it in `afterEach`/`afterAll`.
+  Or use `jest.useFakeTimers()` + `jest.advanceTimersByTime` (Bun 1.4.3 fakes
+  `setTimeout` and `Bun.sleep`) with `jest.useRealTimers()` in `afterEach`. A
+  deadline test starts near its deadline; it does not wait it out.
+- **Keep each file short.** `bun test --parallel=N` hands out whole files, so
+  the slowest file is the floor of the suite. Split a file over ~10 s by
+  `describe` (the kortixd OpenCode restore file was 130 s on one worker).
+- **Start no process, server, clone or `tsc` in a unit test** unless that
+  process is the contract. A real binary (OpenCode, the CLI) belongs in a few
+  contract tests, not in every case.
+- **List a file of 1 s or more** in `apps/api/scripts/slow-tests.txt`: the API
+  suite runs those first, so no 80-file batch waits on one slow file.
+- **Measure a file** with `bun test --isolate <file>` and read `Ran … [x s]`.
+  Per-file times for a suite: `--reporter=junit --reporter-outfile=<f>`.
+
 ## Write product flows
 
 1. Assign or reuse one stable flow ID.
@@ -48,7 +89,7 @@ resource isolation.
 ## Run tests
 
 ```bash
-pnpm test                       # Local REST/CLI flows + SDK + runner units + coverage
+pnpm test                       # Whole core suite; refused on a Mac (CI and Linux only)
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
@@ -62,6 +103,11 @@ pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
 
+Plain `pnpm test` runs the whole core suite: flows, DB suites, runner units,
+route coverage, worktree units, the SDK, and package quality. It runs in CI
+and on Linux. On a Mac it exits `2` (below). A box without Docker drops the
+two DB lanes and logs them as skipped, never as a pass.
+
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
 
@@ -73,44 +119,19 @@ Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
 
-A green `pnpm test` writes `tests/attestations/<branch>.json` (`/` and every char
-outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
-`detached-<short-sha>.json`) and deletes every other file in `tests/attestations/`
-plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
-One file per branch keeps PRs from conflicting on it; deleting a merged PR's
-file is conflict-free because no branch edits it again. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
-`diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
-minus every attestation file) and `diff_hash` their sha256; both are recomputed from
-the verified rev, so committing the attestation does not change them. Verify
-stays green after a merge of `origin/dev` that touches other files, and goes
-stale only when a file the PR changed is edited after the run. `source_hash`
-(the sha256 of every file the commit would contain except attestation files) is
-the full-tree fallback used on a direct main push, where there is no diverging
-merge-base. Lanes: `core` (sdk, runner units, route coverage, worktree units), `packages`
-(package quality), `db-suites` (API/CLI flows + DB suites; both need Docker:
-local Supabase, GoTrue, per-suite Postgres containers), and `browser` when
-run. Plain `pnpm test` runs all but `browser`. A lane is written only when all
-its runner lanes ran in that run or one failed. A filtered or sharded run
-(`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
-lane-only mode updates only the lanes it fully covers, on unchanged source.
-`pnpm test:verify [--rev <sha>] [--branch <name>]` (`tests/verify-attestation.mjs`)
-reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
-several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
-rev (`--branch`, else the checked-out branch), else the legacy file. It
-recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. One skip exists, not a pass: `db-suites`
-`skipped-no-db` (no Docker). The `packages` lane has no skip — it runs on a
-laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
-the skip. No in-sandbox
-Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
-records the skip and the merge gate holds DB PRs.
-The `.githooks/pre-push` hook enforces this on every branch push except
-`scratch/*`. Never push with `--no-verify`.
+No hook or `dev` merge gate requires a test run, and nothing records one: the
+attestation system was removed on 2026-10-16. Write in the PR body what you
+ran and why.
 
-Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
-`pnpm test -- --full` for testing infrastructure, broad refactors, and release
-work.
+Run the narrowest relevant command. A diff that no test reads (docs, a skill,
+a standalone script) needs no run.
+
+**A Mac runs targeted tests only.** On macOS the runner refuses a suite-wide run
+(plain `pnpm test`, `--full`, `--packages-only`, `--browser-only`, `--db-only`
+with no path filter) and exits `2`. 2026-10-16: five agent sessions ran the
+suite at once on one laptop (load average 112, swap full). Run one flow, one
+DB suite path, the SDK, or one package's test file. The whole suite runs in CI:
+add the `test` label once, or set `KORTIX_FULL_TEST=1` when a person asks.
 
 ## Prove the result
 
@@ -129,26 +150,31 @@ An API performance change reports a measured before/after from
 `apps/api/scripts/prompt-latency-bench.ts`. The runbook and the baseline are
 in `references/api-latency-baseline.md`.
 
-## Your machine is the pre-merge gate
+## Where tests run: one tree, one run
 
-A pull request into `main` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. CI runs on a
-schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
-them) and on release pull requests into `staging`
-and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the lanes once (~20 min), `preview` deploys once (~7 min) with no tests. A push
-re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
-fails when a workflow other than the label-gated `tests.yml` and
-`deploy-preview.yml` triggers on a pull request into `main`: put a new check on
-`push: main` or on the release pull requests.
+The philosophy is in `AGENTS.md` ("Testing philosophy"). A pull request into
+`dev` runs **no** GitHub Actions job by itself, and a push to `dev` runs no
+`Tests` lane. Before the merge you run T0 and the tests that cover your change,
+and you use the change for real. The contract lanes run nightly on `dev` (no
+browser); a red night comments the failing lanes and suspect commits once per
+new set of failing lanes. `CI` and `CodeQL` run weekly on `dev`. The pull
+request into `staging` runs nothing. The release PR into `prod` runs the
+release suite once — contract lanes, deployed smoke, browser journeys against
+staging, CI, CodeQL, scanners — and it is the only gate. In the rare case
+you want CI before a `dev` merge, add a label: `test` runs the lanes once
+(~20 min), `preview` deploys once (~7 min) with no tests. A push re-runs
+neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts` fails
+when a workflow other than the label-gated `tests.yml` and `deploy-preview.yml`
+triggers on a pull request into `dev`: put a new check on `push: dev` or on the
+release pull requests.
 
-Before a `main` merge, run the narrowest relevant command first, then
-`pnpm test`. Add the local equivalent of every CI job your change touches:
+Before a `dev` merge, run the narrowest relevant command first. Add the local
+equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| anything | `pnpm test:verify` (merge gate); `Tests` lanes on `staging`/`prod` PRs | `pnpm test` (core) and `pnpm test -- --packages-only` |
-| browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
+| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on the `staging` PR and nightly on `dev` | the package's test file, `pnpm test -- --id <ID>` |
+| browser-visible behavior | `Tests` browser lanes | drive the page with agent-browser; the `test` label for the browser lanes |
 | `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
 | `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |
@@ -168,13 +194,25 @@ The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
 
+## No quarantine
+
+No quarantine exists for any test: browser journey, API flow, or DB suite
+(testing reset, 2026-10-16; the mechanism is deleted). A test that fails
+twice without a bug is fixed at its root or deleted the same day. A test that
+fails because of a Kortix defect stays red until the defect is fixed. A test that
+depends on a third party (OAuth pages, a real model reply) asserts only what
+Kortix controls, or it goes.
+
 ## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
-in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs seven
+lanes in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
 `ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
-browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
+The core lane runs `pnpm test -- --no-packages`. Four package lanes run
+`pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`, one slice
+of package quality each; `rest` holds the repo-wide checks. Two browser lanes
+run shards `1/2` and `2/2` over the money-path specs (list in
+`tests/README.md`), one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
 
@@ -183,11 +221,12 @@ requested SHA.
 - Run `pnpm install --frozen-lockfile`.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
   (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
-  `pnpm exec supabase start --ignore-health-check` before the root command, and
+  `pnpm exec supabase start --ignore-health-check -x studio,imgproxy` before the
+  root command (no test uses the dashboard or image transforms), and
   `supabase stop --no-backup` in an `always()` step after it.
 - Use one Playwright worker for each local-stack browser shard in CI. Keep two
   workers for deployed staging runs, which set `E2E_BROWSER_WORKERS` explicitly.
-- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the packages lane; the SDK tests
+- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the `packages-*` lanes; the SDK tests
   run in the core lane.
 - Keep the guard step and the artifact upload `if: always()`.
 - Do not reintroduce a cloud-sandbox worker for these lanes. The

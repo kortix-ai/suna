@@ -40,6 +40,7 @@ type FromBuildPayload = {
   name: string;
   size_mb: number;
   default_disk_gb: number;
+  region?: string;
 };
 
 /** Registered under this name, the `/v1/templates/from-build` stub throws
@@ -48,6 +49,7 @@ type FromBuildPayload = {
 const OVERSIZE_TEMPLATE_NAME = 'kortix-oversize-template';
 
 let fromBuildPayloads: FromBuildPayload[] = [];
+let presignBodies: unknown[] = [];
 let registeredTemplateName = '';
 let registeredTemplateId = '';
 let lifecycleEvents: string[] = [];
@@ -62,6 +64,7 @@ mock.module('../shared/platinum', () => ({
   },
   platinumJson: async (path: string, init: RequestInit = {}) => {
     if (path === '/v1/templates/from-build/presign') {
+      presignBodies.push(JSON.parse(String(init.body ?? '')));
       return { upload_url: 'https://upload.test/context.tar.gz', context_s3_key: 'ctx-key' };
     }
     if (path === '/v1/templates/from-build') {
@@ -118,6 +121,7 @@ const {
 
 beforeEach(() => {
   fromBuildPayloads = [];
+  presignBodies = [];
   registeredTemplateName = '';
   registeredTemplateId = '';
   lifecycleEvents = [];
@@ -184,6 +188,39 @@ describe('platinumBuildSizeMb (lazy PLATINUM_BUILD_SIZE_MB env knob)', () => {
   ])('treats a %s value as unset (falls back to the default)', (_label, raw) => {
     process.env.PLATINUM_BUILD_SIZE_MB = raw;
     expect(platinumBuildSizeMb()).toBe(20480);
+  });
+});
+
+describe('Platinum build region', () => {
+  test('a regional image names its region on the presign and on from-build', async () => {
+    await platinumProvider.buildSnapshot({
+      snapshotName: 'kortix-tpl-us-east',
+      image: 'ubuntu:24.04',
+      spec: { diskGb: 10 },
+      slug: 'us',
+      region: 'us-east',
+    });
+
+    expect(presignBodies).toEqual([{ region: 'us-east' }]);
+    expect(fromBuildPayloads[0]?.region).toBe('us-east');
+  });
+
+  test('a home-region image sends the bodies it always sent', async () => {
+    await platinumProvider.buildSnapshot({
+      snapshotName: 'kortix-tpl-home',
+      image: 'ubuntu:24.04',
+      spec: { diskGb: 10 },
+      slug: 'home',
+    });
+
+    expect(presignBodies).toEqual([{}]);
+    expect(fromBuildPayloads[0]).not.toHaveProperty('region');
+  });
+
+  test('an agent swap uploads the patch file to its source region', async () => {
+    await platinumProvider.swapAgent('kortix-tpl-us-next', 'kortix-tpl-us', { region: 'us-east' });
+
+    expect(presignBodies).toEqual([{ region: 'us-east' }]);
   });
 });
 

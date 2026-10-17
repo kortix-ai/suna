@@ -4,8 +4,6 @@ const CLOUD_ORIGINS = [
   'https://www.kortix.com',
   'https://kortix.com',
   'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
-  'https://dev-new.kortix.com',
   'https://staging.kortix.com',
   'https://kortix.cloud',
   'https://www.kortix.cloud',

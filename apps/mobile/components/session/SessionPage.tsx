@@ -61,6 +61,7 @@ import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
+import { stopRefusalMessage, turnStoppedBy, viewerMayStop } from '@/lib/session/turn-stop';
 import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
@@ -83,7 +84,6 @@ import {
   removeOptimisticMessage,
   removeSessionMessage,
   sessionMessageIds,
-  sessionRows,
   sessionStatus as readSessionStatus,
   setLocalSessionStatus,
   usePendingPermissions,
@@ -107,25 +107,29 @@ import {
   useRuntimeConfig,
   useRuntimeSession,
   useRuntimeSessions,
+  useSessionLogThread,
   useSessionMessages,
   useSessionSync,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
 import {
-  compactionTurnInfo,
   createSessionPrompt,
   deleteSessionPrompt,
-  groupMessagesIntoTurns,
+  latestPromptModel,
   listSessionPrompts,
   retrySessionPrompt,
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  sessionLogTurns,
   sessionPromptActions,
+  type SessionLogThread,
+  type SessionLogTurn,
   type SessionPrompt,
   type SessionPromptDelivery,
-  resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
-import type { Turn, QuestionRequest, MessageWithParts, Session } from '@/lib/session/types';
+import type { QuestionRequest, Session } from '@/lib/session/types';
 import {
   reuseStableTurns,
   shouldFollowNewTurn,
@@ -150,7 +154,8 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { failedSendRows, sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
+import { recordTimeMs } from '@/lib/session/turn-meta';
+import { failedSendMessages, sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
 import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
@@ -162,12 +167,10 @@ import {
   type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
-  hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
   lastCompactionTurnIndex as findLastCompactionTurnIndex,
   suppressWorkingTurnBusy as findSuppressWorkingTurnBusy,
   transcriptBusyRowVisible,
-  type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import { unsupportedFeatureMessage, useRuntimeSupports } from '@/lib/session/runtime-capabilities';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -177,6 +180,8 @@ import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { queueHeaderLabel, queueRowCaption, queueRowText } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import type { Command } from '@/lib/session/runtime-data';
 import { useResolvedConfig } from '@/lib/session/local-config';
 import { log } from '@/lib/logger';
@@ -242,6 +247,8 @@ interface SessionPageProps {
   onCreateAgent?: () => void;
   /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model the composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
 }
@@ -252,12 +259,23 @@ function frozenEmpty<T>(): T[] {
   return Object.freeze([]) as unknown as T[];
 }
 const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
-const EMPTY_TURNS = frozenEmpty<Turn>();
+const EMPTY_TURNS = frozenEmpty<SessionLogTurn>();
+const EMPTY_MESSAGES = frozenEmpty<SessionLogThread['messages'][number]>();
 const EMPTY_SESSIONS = frozenEmpty<Session>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
 const EMPTY_IDS = frozenEmpty<string>();
 const EMPTY_PROJECT_SESSIONS = frozenEmpty<ProjectSession>();
 const EMPTY_PROMPTS = frozenEmpty<SessionPrompt>();
+/** No runtime session: `useSessionMessages` reads nothing and never re-renders. */
+const DETACHED_ROWS = { projectId: '', sessionId: '', runtimeSessionId: null };
+
+/** A thread with no message yet: failed sends of a session whose transcript is empty still need one. */
+function emptyThread(threadId: string): SessionLogThread {
+  return {
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: threadId, parent_thread_id: null, spawned_by: null,
+    agent: null, title: null, created_at: '', messages: [],
+  };
+}
 
 /** Returns the previous array while its elements are reference-equal to `next`. */
 function useShallowStableArray<T>(next: T[]): T[] {
@@ -274,6 +292,8 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // of the list (VirtualizedList keeps its initial region), so that count stays
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
+/** One page of a session's change requests: the server's ceiling. */
+const SESSION_CHANGES_LIMIT = 200;
 
 /** The transcript re-renders at most once per this interval while a reply streams. */
 const TRANSCRIPT_RENDER_INTERVAL_MS = 64;
@@ -301,7 +321,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -386,6 +406,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
+  const { t } = useTranslation();
   const flatListRef = useRef<FlatList>(null);
   // Saved scroll offset: read once per session, not subscribed. Subscribing
   // re-rendered the whole thread on every persisted offset write.
@@ -422,7 +443,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   // The transcript, from the SDK: the saved copy first, one tail read once the
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
-  // pulls the next older page (COR-144).
+  // pulls the next older page (COR-144). No `mirror`: the SDK reads the saved
+  // copy with the web's one saved-history read. After the connecting view
+  // (`readSavedSessionCopy`) it answers from the copy that view read, and the
+  // snapshot `useSession` starts asks for no window: one download per open.
+  // A sub-agent reads its own window.
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls
   // stand down — the box's ring replays what a reconnect missed.
@@ -461,20 +486,30 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [],
   );
 
-  // The rows, at most once per 64 ms: applying every 16 ms stream batch
-  // saturated the JS thread and blocked tab switches and drawer opens while
-  // the assistant was streaming.
-  const storeMessages = useSessionMessages(
-    { projectId: projectId ?? '', sessionId: projectSessionId ?? '', runtimeSessionId: sessionId },
-    { throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS },
+  // The thread, from the session log: the root thread, or a sub-agent's by
+  // its runtime id. With the project flag `session_log` on it holds the API's
+  // v2 records, else the `fromV1` view of the v1 rows. At most once per 64 ms:
+  // applying every 16 ms stream batch saturated the JS thread and blocked tab
+  // switches and drawer opens while the assistant was streaming.
+  const threadSource = useMemo(
+    () => ({ projectId: projectId ?? '', sessionId: projectSessionId ?? '', runtimeSessionId: sessionId }),
+    [projectId, projectSessionId, sessionId],
   );
+  const storeThread = useSessionLogThread(threadSource, isSubThread ? sessionId : undefined, {
+    throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS,
+  });
   // A failed send is not in the transcript (the server never had it): it
   // stays in the thread from its own store, with "Not sent · Try again".
   const failedSends = useFailedSends(sessionId);
-  const safeMessages = useMemo(() => {
-    const failed = failedSendRows(sessionId, failedSends);
-    return failed.length > 0 ? [...storeMessages, ...failed] : storeMessages;
-  }, [sessionId, storeMessages, failedSends]);
+  const thread = useMemo(() => {
+    const failed = failedSendMessages(storeThread?.thread_id ?? sessionId, failedSends);
+    if (failed.length === 0) return storeThread;
+    const base = storeThread ?? emptyThread(sessionId);
+    return { ...base, messages: [...base.messages, ...failed] };
+  }, [sessionId, storeThread, failedSends]);
+  // Handlers read the thread at call time (an edit's rewind).
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
   const sessionStatus = useSessionStatus(sessionId);
   const pendingQuestions = usePendingQuestions(sessionId);
   const pendingPermissions = usePendingPermissions(sessionId);
@@ -486,6 +521,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // it does before the runtime is bound.
   const streamBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
   const isBusy = runtime && !isSubThread ? runtime.isBusy : streamBusy;
+  // In a shared session only the member who prompted the running turn, the
+  // owner or a project manager may stop it (`useSession().canStop`). Anyone
+  // else gets no Stop; a send while the turn runs still queues.
+  const canStop = viewerMayStop(runtime);
   // The SDK tracks compaction for the session's root (a compaction this device
   // started, or one the runtime reports).
   const isCompacting = !isSubThread && !!runtime?.isCompacting;
@@ -495,8 +534,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // is lost, and the agent then waits on a blocked tool call with nothing
   // above the composer. The SDK re-reads the runtime's pending lists while a
   // question tool (or a gated tool) runs with nothing pending in the store.
-  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
-  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
+  // The SDK's self-heal reads the runtime's rows; they are read only while the
+  // stream is down (the only time the self-heal runs), so they cost no render otherwise.
+  const healRows = useSessionMessages(streamConnected ? DETACHED_ROWS : threadSource, {
+    throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS,
+  });
+  useQuestionSelfHeal(sessionId, healRows, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, healRows, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
@@ -671,7 +715,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       addOptimisticMessage(sessionId, {
         info: { id: messageId, role: 'user', sessionID: sessionId, time: { created: sentAtMs } },
         parts: optimisticUserParts(finalText, attachments?.files ?? [], sentAtMs),
-      } as unknown as MessageWithParts);
+      });
       setLocalSessionStatus(sessionId, { type: 'busy' });
       // The receipt holds the session's thread on "working" from this instant
       // until the server's turn answers for the send (`useSession().isBusy`).
@@ -801,7 +845,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const failed = (reason: unknown) => {
       log.error('[SessionPage] Abort failed:', reason instanceof Error ? reason.message : reason);
       if (previousStatus) setLocalSessionStatus(sessionId, previousStatus);
-      toast.error("Couldn't stop. Kortix is still working.");
+      // A refused stop (403 `not_turn_prompter`) says who may stop the run.
+      toast.error(stopRefusalMessage(reason, t('sessions.stopNotAllowed')) ?? "Couldn't stop. Kortix is still working.");
     };
     try {
       const current = runtimeRef.current;
@@ -817,7 +862,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     } catch (err) {
       failed(err);
     }
-  }, [runtimeReady, isSubThread, sessionId, toast]);
+  }, [runtimeReady, isSubThread, sessionId, toast, t]);
 
   const handleQueueSendNow = useCallback(async (promptId: string) => {
     if (!projectId || !projectSessionId) return;
@@ -843,7 +888,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // No roster yet (the project config or the sandbox still loading).
   const agentsLoading = !rawAgents;
   // Web defaults the picker to the agent of the latest assistant turn.
-  const latestAgent = useMemo(() => latestAssistantAgent(storeMessages), [storeMessages]);
+  const latestAgent = useMemo(() => latestAssistantAgent(storeThread?.messages ?? EMPTY_MESSAGES), [storeThread]);
+  // The model the session last ran on. With the session's pin it keeps a
+  // session set from the CLI, the SDK or Slack on its model (`useResolvedConfig`).
+  const lastPromptModel = useMemo(() => latestPromptModel(storeThread?.messages), [storeThread]);
   // Models: the project's list (`useComposerModels`), the same one project home
   // and web show; the sandbox's `/provider` joins it off-gateway.
   const {
@@ -899,7 +947,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     providers,
     modelDefaults,
     configModel: config?.model,
+    sessionKey: projectSessionId ?? sessionId,
+    session: projectSession,
+    lastPromptModel,
+    gatewayEnabled,
   });
+
+  // The composer lists only the commands the selected agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentRuntimeCommands = EMPTY_COMMANDS } = useRuntimeCommands({ agent: resolved.agent?.name });
+  const composerCommands = canRunCommands ? agentRuntimeCommands : EMPTY_COMMANDS;
 
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
@@ -1008,7 +1065,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       }
       // Hide the abandoned messages now; the resend below commits the revert
       // server-side.
-      for (const id of rewindHiddenMessageIds(sessionRows(sessionId), messageId)) {
+      for (const id of rewindHiddenMessageIds(threadRef.current?.messages ?? EMPTY_MESSAGES, messageId)) {
         removeSessionMessage(sessionId, id);
       }
       editPendingRef.current = false;
@@ -1026,21 +1083,27 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [runtimeReady, sessionId, handleSend, toast],
   );
 
-  // Group messages into turns. Turns whose messages did not change keep their
-  // previous object, so memoized SessionTurn rows skip stream renders.
-  const prevTurnsRef = useRef<Turn[]>(EMPTY_TURNS);
+  // The thread's turns (`sessionLogTurns`): `live` marks the working turn
+  // (web `resolveWorkingTurn`), `queued` the prompts the agent has not reached.
+  // A turn whose messages did not change keeps its object, so memoized
+  // SessionTurn rows skip stream renders; an unchanged list keeps its array.
+  const prevTurnsRef = useRef<SessionLogTurn[]>(EMPTY_TURNS);
   const turns = useMemo(
-    () => reuseStableTurns(prevTurnsRef.current, groupMessagesIntoTurns(safeMessages)),
-    [safeMessages],
+    () => reuseStableTurns(prevTurnsRef.current, thread ? sessionLogTurns(thread, { busy: isBusy }) : EMPTY_TURNS),
+    [thread, isBusy],
   );
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
 
   // The change requests this session opened, each at the end of the turn that
-  // opened it (web `anchorOutcomes`; KRTX-1678). Reads the Review list
-  // `ProjectScreen` already polls, so it adds no request of its own.
-  const { data: reviewItems } = useReviewItems(projectId ?? null, { poll: false });
+  // opened it (web `anchorOutcomes`; KRTX-1678). The server filters the Review
+  // list to this session's changes (KRTX-2316); the 8 s poll shows a change
+  // the agent opens mid-session.
+  const { data: reviewItems } = useReviewItems(projectId ?? null, {
+    query: { sessionId: projectSessionId, kind: 'change', limit: SESSION_CHANGES_LIMIT },
+    enabled: Boolean(projectSessionId),
+  });
   const sessionChanges = useMemo(
     () => sessionChangeRequests(reviewItems, projectSessionId),
     [reviewItems, projectSessionId],
@@ -1048,7 +1111,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Keyed by content: `turns` changes on every stream delta, the starts only
   // when a turn is added, so each turn keeps one change request array.
   const turnStartsKey = useMemo(
-    () => turns.map((turn) => `${turn.userMessage.info.id}@${turn.userMessage.info.time?.created ?? ''}`).join(' '),
+    () => turns.map((turn) => `${turn.id}@${recordTimeMs(turn.user.created_at) ?? ''}`).join(' '),
     [turns],
   );
   const changesByTurn = useMemo(() => {
@@ -1079,13 +1142,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Every user message and queued prompt on screen wants an author.
   const wantedAuthorIds = useMemo(
     () => [
-      ...turns.map((turn) => turn.userMessage.info.id),
+      ...turns.map((turn) => turn.id),
       ...queuedMessages.flatMap((prompt) => [prompt.message_id, ...(prompt.wire_message_id ? [prompt.wire_message_id] : [])]),
     ],
     [turns, queuedMessages],
   );
-  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds).data;
+  // `isBusy`: a turn's end reads the authors again, for who stopped it.
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds, isBusy).data;
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // The signed-in user: the participants list holds at most 20 people.
+  const signedInUserId = useAuthContext().user?.id;
   // The sender of a message, built once per message while the authors and the
   // participants stay the same: the same object each render keeps the memoized
   // rows from rendering again.
@@ -1102,7 +1168,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // memo rule as `senderOf`.
   // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
   // with the same ids, and a new array here would remake `renderItem` per delta.
-  const userMessageIdsKey = turns.map((turn) => turn.userMessage.info.id).join('\n');
+  const userMessageIdsKey = turns.map((turn) => turn.id).join('\n');
   const userMessageIds = useMemo(
     () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
     [userMessageIdsKey],
@@ -1114,6 +1180,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       return cache.get(messageId) ?? null;
     };
   }, [messageAuthors, userMessageIds]);
+  // The member who stopped a turn, when not the viewer: "Stopped by {name}".
+  const stoppedByOf = useCallback(
+    (messageId: string) => turnStoppedBy(messageAuthors, signedInUserId, messageId),
+    [messageAuthors, signedInUserId],
+  );
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
@@ -1132,7 +1203,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
-  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
+  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].id : undefined;
   const isFreshSession = turns.length === 0;
   // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
   // Stable by content: `turns` changes on every stream delta, and a new Set
@@ -1237,22 +1308,18 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
 
-  // The working turn and the prompts the agent has not reached yet (web
-  // `resolveWorkingTurn`). Only the working turn reads the session status.
-  const workingTurn = useMemo(
-    () => (isBusy ? resolveWorkingTurn({ turns, hintMessageId: null }) : null),
-    [isBusy, turns],
-  );
-  const workingTurnId = workingTurn?.workingTurnId ?? null;
+  // The working turn (`live`) and the prompts the agent has not reached yet
+  // (`queued`), while the session works. Only the working turn reads the
+  // session status.
+  const workingTurnId = turns.find((turn) => turn.live)?.id ?? null;
   // Stable by content, so rows do not re-render on every stream delta.
-  const pendingTurnIdList = useShallowStableArray(workingTurn?.pendingTurnIds ?? EMPTY_IDS);
+  const pendingTurnIdList = useShallowStableArray(
+    useMemo(() => (isBusy ? turns.filter((turn) => turn.queued).map((turn) => turn.id) : EMPTY_IDS), [isBusy, turns]),
+  );
   const pendingTurnIds = useMemo(() => new Set(pendingTurnIdList), [pendingTurnIdList]);
   // Web `suppressWorkingTurnBusy` / `someTurnDrawsBusyRow`: when no turn draws
   // the busy row, the transcript end draws it.
-  const suppressWorkingBusy = useMemo(
-    () => (workingTurn ? findSuppressWorkingTurnBusy(turns as unknown as TurnBodyTurn[], workingTurn) : false),
-    [turns, workingTurn],
-  );
+  const suppressWorkingBusy = useMemo(() => findSuppressWorkingTurnBusy(turns), [turns]);
   const showTranscriptBusyRow = transcriptBusyRowVisible({
     isBusy,
     workingTurnId,
@@ -1275,18 +1342,18 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Web `hasCompactionTurn` / `lastCompactionTurnIndex`: a real compaction turn
   // replaces the optimistic marker; failed attempts before the last compaction
   // turn render nothing.
-  const hasCompactionTurn = useMemo(() => findCompactionTurn(turns as unknown as TurnBodyTurn[]), [turns]);
-  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns as unknown as TurnBodyTurn[]), [turns]);
+  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns), [turns]);
+  const hasCompactionTurn = lastCompactionTurnIndex >= 0;
 
   // Web `TurnViewport` spacing: mt-12 between turns, mt-3 between back-to-back
   // pending turns while the session works.
   const turnGapAt = useCallback(
-    (list: readonly Turn[], index: number) =>
+    (list: readonly SessionLogTurn[], index: number) =>
       turnTopGap({
         index,
         working: isBusy,
-        pending: pendingTurnIds.has(list[index].userMessage.info.id),
-        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].userMessage.info.id),
+        pending: pendingTurnIds.has(list[index].id),
+        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].id),
       }),
     [isBusy, pendingTurnIds],
   );
@@ -1317,7 +1384,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     if (list.length > 0) {
       // Web marks a queued or never-run prompt `data-turn-pending`; the anchor skips those.
       const isPending = (i: number) => {
-        const id = list[i].userMessage.info.id;
+        const id = list[i].id;
         return (busy && pending.has(id)) || interrupted.has(id);
       };
       const previous = lastAnchorRef.current;
@@ -1325,13 +1392,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         list.length,
         isPending,
         previous
-          ? { index: list.findIndex((t) => t.userMessage.info.id === previous.id), reached: previous.reached }
+          ? { index: list.findIndex((t) => t.id === previous.id), reached: previous.reached }
           : null,
       );
       const span = anchorSpan({
         anchorIndex: index,
         count: list.length,
-        heightAt: (i) => turnHeightsRef.current.get(list[i].userMessage.info.id),
+        heightAt: (i) => turnHeightsRef.current.get(list[i].id),
         gapAt: (i) => gapAt(list, i),
         footerHeight: footerContentHeightRef.current,
       });
@@ -1340,7 +1407,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       // The composer covers the end of the list: the room is sized in the
       // part above it.
       next = Math.round(roomUnderNewestTurn(viewportHeight - endPaddingNow(), span, topOffset));
-      const anchorId = list[index].userMessage.info.id;
+      const anchorId = list[index].id;
       anchorChanged = previous !== null && previous.id !== anchorId;
       lastAnchorRef.current = {
         id: anchorId,
@@ -1837,9 +1904,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     async (requestId: string) => {
       if (!runtimeReady) throw new Error('Runtime not ready');
       await rejectQuestion(requestId);
-      handleStop();
+      // A member who may not stop the run only dismisses the question.
+      if (canStop) handleStop();
     },
-    [runtimeReady, handleStop],
+    [runtimeReady, canStop, handleStop],
   );
 
   // Command handler — executes a slash command via the server
@@ -1871,7 +1939,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [runtimeReady, sessionId, stickToEnd, toast],
   );
 
-  // Only the working turn (web `resolveWorkingTurn`) receives status and busy;
+  // Only the working turn (`SessionLogTurn.live`) receives the status;
   // other turns get stable values, so their memoized rows skip stream renders.
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
@@ -1902,15 +1970,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }).current;
 
   const renderTurn = useCallback(
-    ({ item, index }: { item: Turn; index: number }) => {
-      const id = item.userMessage.info.id;
-      const isWorkingTurn = id === workingTurnId;
+    ({ item, index }: { item: SessionLogTurn; index: number }) => {
+      const id = item.id;
+      const isWorkingTurn = item.live;
       // Web: a failed compaction attempt with a later compaction turn is
       // history — it keeps its row (stable keys, layout) but renders nothing.
       const suppressed =
         lastCompactionTurnIndex > index &&
         isSuppressedFailedCompaction({
-          info: compactionTurnInfo(item as never),
+          compaction: item.compaction,
           isTurnWorking: isWorkingTurn,
           turnIndex: index,
           lastCompactionTurnIndex,
@@ -1925,9 +1993,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           {suppressed ? null : (
           <SessionTurn
             turn={item}
-            isWorkingTurn={isWorkingTurn}
             sessionStatus={isWorkingTurn ? sessionStatus : undefined}
-            isBusy={isWorkingTurn ? isBusy : false}
             suppressBusyIndicator={isWorkingTurn && suppressWorkingBusy}
             sessionId={sessionId}
             permissions={pendingPermissions}
@@ -1947,6 +2013,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
             sessionAuthor={sessionAuthorOf(id)}
+            stoppedBy={stoppedByOf(id)}
             onScreen={isWorkingTurn ? workingTurnOnScreen : true}
             changeRequests={changesByTurn.get(id)}
             onOpenChangeRequest={openChangeRequest}
@@ -1955,10 +2022,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf],
+    [lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf, stoppedByOf],
   );
 
-  const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
+  const keyExtractor = useCallback((item: SessionLogTurn) => item.id, []);
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
   const handleRemoveQueued = useCallback(async (promptId: string) => {
@@ -1969,6 +2036,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       toast.info('Removed from queue', {
         action: {
           label: 'Undo',
+          kind: 'undo',
           onPress: () => void createSessionPrompt(projectId, projectSessionId, {
             clientMessageId: removed.client_message_id,
             messageId: removed.message_id,
@@ -2265,7 +2333,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             autoFocus={bottomSwap.keepKeyboard}
             inputNativeID={composerInputNativeID}
             onSend={handleSend}
-            onStop={handleStop}
+            onStop={canStop ? handleStop : undefined}
             isBusy={isBusy}
             initialText={savedInputText}
             onTextChange={handleTextChange}
@@ -2295,7 +2363,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             disabled={subThreadReadOnly}
             placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
-            commands={commands}
+            commands={composerCommands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />

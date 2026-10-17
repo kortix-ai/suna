@@ -11,7 +11,7 @@ import {
   appSiteFiles,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -27,7 +27,7 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
-import { appVolumesSupported, destroyAppVolumes, listAppVolumes } from './volumes';
+import { chooseReleaseProvider, destroyAppVolumes, listAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -53,6 +53,7 @@ import {
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
@@ -99,6 +100,21 @@ const DisplaySchema = z.object({
   preview: z.enum(['live', 'none']).optional(),
   parent: z.string().regex(APP_SLUG, 'an App slug').optional(),
 }).strict();
+/** An external App's site: https only, no credentials in the URL. */
+const ExternalUrlSchema = z.string().url().max(2048).refine((value) => {
+  const url = new URL(value);
+  return url.protocol === 'https:' && !url.username && !url.password;
+}, 'an https URL without credentials');
+
+/** The create/PATCH warning for a site that refuses to be framed. */
+function framingWarnings(url: string, frameable: boolean): Array<{ code: string; message: string }> {
+  if (frameable) return [];
+  return [{
+    code: 'app_external_not_frameable',
+    message: `${new URL(url).host} does not allow other sites to frame it. Kortix opens it in a new tab.`,
+  }];
+}
+
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -302,7 +318,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
@@ -417,10 +433,16 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, 'preview');
+      // An external App opens in a new tab when its site refuses a frame, so
+      // its URL is handed out whether or not it can be previewed.
+      const refusal = row.externalUrl ? null : capabilityRefusal(c, 'preview');
       if (refusal) return refusal;
       if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
         return c.json({ error: 'App access denied' }, 403);
+      }
+      // Hosted elsewhere: its own site signs people in. Kortix only decides who sees it.
+      if (row.externalUrl) {
+        return c.json({ url: row.externalUrl, expires_at: new Date(Date.now() + 24 * 3_600_000).toISOString() });
       }
       // A PASSWORD App gets the bare URL: the door is the password prompt, and a
       // Kortix session cannot stand in for knowing the secret.
@@ -443,7 +465,10 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
-      description: 'Account credits pay for App compute: there is no per-App budget.',
+      description: 'Account credits pay for App compute: there is no per-App budget. `external_url` (https) creates an ' +
+        'external App: Kortix lists and frames that site and never deploys it. It runs no compute and does not count ' +
+        'toward the App limit. A site that refuses framing (X-Frame-Options, CSP frame-ancestors) gets ' +
+        '`capabilities: []` and a warning: Kortix opens it in a new tab.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -454,6 +479,7 @@ export function registerAppsRoutes(): void {
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
           uses: UsesSchema.default([]),
+          external_url: ExternalUrlSchema.optional(),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -466,14 +492,18 @@ export function registerAppsRoutes(): void {
       const slug = body.slug.toLowerCase();
       if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
       const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
-      try {
-        assertAppMachineWithinLimits(machine);
-        await assertAppQuotaAvailable(loaded.row.accountId);
-      } catch (error) {
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        throw error;
+      const externalUrl: string | null = body.external_url ?? null;
+      if (!externalUrl) {
+        try {
+          assertAppMachineWithinLimits(machine);
+          await assertAppQuotaAvailable(loaded.row.accountId);
+        } catch (error) {
+          const refusal = appLimitResponse(c, error);
+          if (refusal) return refusal;
+          throw error;
+        }
       }
+      const externalFrameable = externalUrl ? await probeFrameable(externalUrl, config.FRONTEND_URL) : false;
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
@@ -483,6 +513,8 @@ export function registerAppsRoutes(): void {
           cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
           alwaysOn,
+          externalUrl,
+          externalFrameable,
         }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
@@ -498,7 +530,8 @@ export function registerAppsRoutes(): void {
         await db.delete(apps).where(eq(apps.appId, row.appId));
         return linked;
       }
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] }, 201);
+      const warnings = externalUrl ? framingWarnings(externalUrl, externalFrameable) : [];
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings }, 201);
     },
   );
 
@@ -590,7 +623,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
+        '`external_url` moves an external App to another https URL (409 for an App Kortix runs). `display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -600,6 +633,7 @@ export function registerAppsRoutes(): void {
           uses: UsesSchema.optional(),
           labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/)).max(10).optional(),
           display: DisplaySchema.optional(),
+          external_url: ExternalUrlSchema.optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
@@ -613,6 +647,12 @@ export function registerAppsRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
+      if (body.external_url !== undefined && !current.externalUrl) {
+        return c.json({ error: 'Only an external App has an external_url. Create a new App with external_url instead.', code: 'app_not_external' }, 409);
+      }
+      const externalFrameable = body.external_url !== undefined
+        ? await probeFrameable(body.external_url, config.FRONTEND_URL)
+        : undefined;
       const nextMachine = {
         cpuCores: body.cpu ?? current.cpuCores,
         memoryGb: body.memory_gb ?? current.memoryGb,
@@ -644,11 +684,13 @@ export function registerAppsRoutes(): void {
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
           ...(body.labels !== undefined ? { labels: [...new Set(body.labels as string[])] } : {}),
           ...(body.display !== undefined ? { display: body.display } : {}),
+          ...(body.external_url !== undefined ? { externalUrl: body.external_url, externalFrameable } : {}),
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });
       if (!row) return c.json({ error: 'Not found' }, 404);
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] });
+      const warnings = body.external_url !== undefined ? framingWarnings(body.external_url, externalFrameable!) : [];
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings });
     },
   );
 
@@ -757,6 +799,8 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, 'deployments', null, app);
+      if (refusal) return refusal;
       const body = c.req.valid('json');
       if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
@@ -769,16 +813,27 @@ export function registerAppsRoutes(): void {
       const source = sourceFromWire(body.source);
       // A static site runs no machine: it has no release config.
       let releaseConfig = null;
+      let hostingProvider: string | null = body.provider ?? null;
       if (source.kind !== 'static') {
         const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
         if ('issues' in resolved) {
           return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
         }
         releaseConfig = resolved.config;
-        const provider = body.provider ?? config.getDefaultProvider();
-        if (releaseConfig.mounts.length > 0 && !appVolumesSupported(provider)) {
-          return c.json({ error: `Volumes need the platinum provider, not ${provider}.`, code: 'app_volumes_unsupported' }, 400);
+        const [latest] = await db.select({ provider: appDeployments.hostingProvider }).from(appDeployments)
+          .where(and(eq(appDeployments.appId, appId), isNotNull(appDeployments.hostingProvider)))
+          .orderBy(desc(appDeployments.version)).limit(1);
+        const choice = chooseReleaseProvider({
+          requested: body.provider,
+          hasMounts: releaseConfig.mounts.length > 0,
+          previous: config.ALLOWED_SANDBOX_PROVIDERS.find((name) => name === latest?.provider),
+          platinumEnabled: config.isPlatinumEnabled(),
+          platformDefault: config.getDefaultProvider(),
+        });
+        if (!choice.ok) {
+          return c.json({ error: `Volumes need the platinum provider, not ${choice.provider}.`, code: 'app_volumes_unsupported' }, 400);
         }
+        hostingProvider = choice.provider;
       }
       const deployment = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
@@ -787,7 +842,7 @@ export function registerAppsRoutes(): void {
         const version = Number(versionRow?.value ?? 0) + 1;
         const [row] = await tx.insert(appDeployments).values({
           appId, artifactId: artifact.artifactId, version, status: 'queued',
-          sourceKind: source.kind, hostingProvider: body.provider ?? null,
+          sourceKind: source.kind, hostingProvider,
           createdBy: loaded.userId,
           sourceSessionId: callerKortixSessionId(c),
           actorType: appDeploymentActorType(c),
@@ -816,7 +871,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -836,7 +891,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -863,7 +918,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -1081,7 +1136,7 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, 'rollback');
+      const refusal = capabilityRefusal(c, 'rollback', null, app);
       if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [target] = await db.select().from(appDeployments).where(and(

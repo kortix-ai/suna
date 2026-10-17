@@ -182,11 +182,15 @@ function shardTheRealRegistry(shards: number): RegistryShardReport {
   return JSON.parse(out.trim().split('\n').at(-1) as string) as RegistryShardReport;
 }
 
-/** The shard count `tests-release.yml` actually runs. Keep the two in step. */
-const RELEASE_GATE_API_SHARDS = 6;
+/**
+ * The widest split the planner is proven against. The release gate runs its
+ * `deployed` set in one job today (`tests-release.yml`), but `--api-shard`
+ * still partitions the whole registry for any caller that needs it.
+ */
+const WIDE_SHARDS = 6;
 
 describe('the real flow registry', () => {
-  const shardCounts = [2, 4, RELEASE_GATE_API_SHARDS];
+  const shardCounts = [2, 4, WIDE_SHARDS];
   const reports = new Map<number, RegistryShardReport>();
 
   beforeAll(() => {
@@ -194,7 +198,7 @@ describe('the real flow registry', () => {
   }, 180_000);
 
   it('discovers the whole suite', () => {
-    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    const report = reports.get(WIDE_SHARDS)!;
     expect(report.total).toBeGreaterThan(400);
     expect(report.pinned.length).toBeGreaterThan(0);
   });
@@ -222,13 +226,13 @@ describe('the real flow registry', () => {
     });
   }
 
-  it(`splits the parallel flows evenly across shards 2-${RELEASE_GATE_API_SHARDS}`, () => {
+  it(`splits the parallel flows evenly across shards 2-${WIDE_SHARDS}`, () => {
     // The reason to shard at all. On run 32240074477 every 137-flow shard was
     // killed by its cap ~60% through; the packer must not leave one shard
     // carrying materially more than its peers.
-    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    const report = reports.get(WIDE_SHARDS)!;
     const packed = report.perShard.slice(1);
-    expect(packed).toHaveLength(RELEASE_GATE_API_SHARDS - 1);
+    expect(packed).toHaveLength(WIDE_SHARDS - 1);
     expect(Math.max(...packed) - Math.min(...packed)).toBeLessThanOrEqual(10);
 
     const packedLoads = report.loadsMs.slice(1);
@@ -238,7 +242,7 @@ describe('the real flow registry', () => {
 
   it('cuts the per-shard parallel load by going from 4 shards to 6', () => {
     const four = Math.max(...reports.get(4)!.loadsMs.slice(1));
-    const six = Math.max(...reports.get(RELEASE_GATE_API_SHARDS)!.loadsMs.slice(1));
+    const six = Math.max(...reports.get(WIDE_SHARDS)!.loadsMs.slice(1));
     expect(six).toBeLessThan(four * 0.7);
   });
 });

@@ -40,13 +40,14 @@
  * ACCURACY GATE — every figure and claim below was read out of code on
  * 2026-07-31. Do not soften, inflate, or "restore" any of it.
  * ==========================================================================
- *  - PRICE. Managed cloud is $40 / seat / mo — `apps/web/src/features/billing/
- *    pricing-plans.ts`, the `team_seat` entry of `PRICING_PLANS` (`price: '$40'`,
- *    `unit: '/ seat / mo'`). Its `free` entry is $0 with "200 credits / month for
- *    sandbox compute" and "1 project". `team_seat` carries "2,500 credits /
- *    month per seat, pooled". (Cited by plan id, not line number — the ids are
- *    stable, the line numbers were not.) Quote no other figure, and never invent
- *    a discount, a trial length or a usage rate.
+ *  - PRICE. Managed cloud is credits: one paid plan sold in tiers from $50 a month,
+ *    1 credit = $0.01, unlimited members sharing one pool —
+ *    `apps/web/src/features/billing/pricing-plans.ts`, the `credits` entry of
+ *    `PRICING_PLANS`. Its `free` entry is $0 with "500 credits / month, no card
+ *    needed", managed models and "1 project". This FAQ names no dollar plan: amounts live on
+ *    /pricing and in the plan picker. (Cited by plan id, not line number — the
+ *    ids are stable, the line numbers were not.) Never write "seat" or "per
+ *    seat", and never invent a discount, a trial length or a usage rate.
  *  - MODELS. The ChatGPT subscription path is REAL — Codex device-grant OAuth,
  *    `apps/api/src/projects/codex-device-auth.ts`. There is NO Cursor auth path
  *    and no Claude-subscription auth path anywhere in the codebase, however
@@ -137,7 +138,7 @@ export const faq = {
       id: 'price',
       question: 'What does it cost?',
       answer:
-        'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Team is $40 per seat per month and pools 2,500 credits a seat. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
+        'Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
     },
   ] satisfies readonly FaqItem[],
 } as const;
