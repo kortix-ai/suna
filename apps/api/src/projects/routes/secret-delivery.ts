@@ -59,7 +59,7 @@ export function registerSecretDeliveryRoutes(): void {
         return c.json({ error: 'strategy must be runtime, egress, broker, or denied' }, 400);
       }
 
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,

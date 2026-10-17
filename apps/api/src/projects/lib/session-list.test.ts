@@ -61,7 +61,7 @@ function gate(): { held: Promise<void>; release: () => void } {
 /** Let every already-runnable continuation run; a held gate stays held. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-const inventoryOf = (over: {
+const inventoryOf = ({ scope, effectiveRole }: {
   scope: 'visible' | 'project';
   effectiveRole: 'manager' | 'member';
 }) =>
@@ -70,8 +70,8 @@ const inventoryOf = (over: {
     accountId: '00000000-0000-4000-a000-000000000101',
     userId: '00000000-0000-4000-a000-000000000001',
     boundCredentialSessionId: null,
-    probeManageCapability: async () => false,
-    ...over,
+    probeManageCapability: async () => effectiveRole === 'manager',
+    scope,
   });
 
 beforeEach(() => {

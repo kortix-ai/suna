@@ -65,10 +65,11 @@ import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user
 import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
+import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
@@ -129,6 +130,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // (`account_creation_restricted`) is the authoritative gate; this only avoids
   // offering an affordance the person cannot use.
   const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
+  // "New workspace" opens `/new`, which offers only the accounts where the
+  // caller holds `project.create`. With none, the row leads nowhere.
+  const canCreateWorkspace = useCreatableAccounts(useAccountsList().data ?? []).length > 0;
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an
@@ -231,7 +235,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
                     <WorkspaceMenuSection />
 
-                    <DropdownMenuSeparator />
+                    {(canCreateWorkspace || canCreateAccount) && <DropdownMenuSeparator />}
 
                     {/* An anchor, not a handler. `router.push` from a menu row
                         runs the RSC fetch cold at click time, and that fetch
@@ -240,12 +244,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                         network blip. `onSelect` keeps the explicit close and
                         must not call `preventDefault`: that cancels the
                         anchor. */}
-                    <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                      <Link href="/new" prefetch>
-                        <PlusIcon />
-                        {t('workspace.create')}
-                      </Link>
-                    </DropdownMenuItem>
+                    {canCreateWorkspace && (
+                      <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                        <Link href="/new" prefetch>
+                          <PlusIcon />
+                          {t('workspace.create')}
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
 
                     {/* The account-level sibling of the row above, in the one
                         menu already grouped BY account. A handler rather than
