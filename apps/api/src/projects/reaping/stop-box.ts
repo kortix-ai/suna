@@ -54,9 +54,10 @@ const ABORT_TIMEOUT_MS = 4_000;
  *     abort, or 404 for a box already gone. Daytona's SDK shapes (throttler
  *     429, gateway 502/503/504, connection/timeout) are the same class.
  * Every one of those is a normal miss, not a fault: log it at info, SAMPLED
- * (see ABORT_MISS_LOG_INTERVAL_MS). Only an unexpected failure — a code bug,
- * a 400/401/500 the provider should never answer the expose with — stays a
- * per-occurrence warn.
+ * (see ABORT_MISS_LOG_INTERVAL_MS). A refusal of the dial itself is a miss at
+ * any status (the abort never gates the stop); on the ingress resolve, only
+ * an unexpected failure — a code bug, or a 400/401/500 the provider should
+ * never answer the expose with — stays a per-occurrence warn.
  */
 function isExpectedAbortMiss(err: unknown): boolean {
   // Already stopped/gone is the designed idle-stop state — the reaper's own
