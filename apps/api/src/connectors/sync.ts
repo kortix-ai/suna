@@ -1084,11 +1084,13 @@ async function upsertConnector(
 
 /**
  * connectors_v2: an account is personal unless someone shares it, so sync seeds
- * no empty "Everyone in project" account (KRTX-2317). A channel connector keeps
- * its project account: the install token is the project's own identity.
+ * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
+ * project account, because it is not empty: a channel connector (the install
+ * token is the project's own identity) and a server with no auth (a public
+ * MCP server such as DeepWiki: the account is the whole connection).
  */
 export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
-  if (spec.provider === 'channel') return false;
+  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
   const [row] = await db
     .select({ metadata: projects.metadata })
     .from(projects)

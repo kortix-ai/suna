@@ -15,7 +15,7 @@ const ACCOUNT = crypto.randomUUID();
 const ON = crypto.randomUUID();
 const OFF = crypto.randomUUID();
 
-const spec = (provider: ConnectorSpec['provider']) => ({ provider }) as ConnectorSpec;
+const spec = (provider: ConnectorSpec['provider'], auth?: ConnectorSpec['auth']) => ({ provider, auth }) as ConnectorSpec;
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'empty-account-test' });
@@ -32,6 +32,8 @@ afterAll(async () => {
 
 test('only an ordinary connector of a connectors_v2 project skips the empty project account', async () => {
   expect(await skipsEmptyProjectAccount(ON, spec('mcp'))).toBe(true);
+  // A public server needs no credential: its project account is the connection.
+  expect(await skipsEmptyProjectAccount(ON, spec('mcp', { type: 'none' } as ConnectorSpec['auth']))).toBe(false);
   expect(await skipsEmptyProjectAccount(ON, spec('composio'))).toBe(true);
   expect(await skipsEmptyProjectAccount(ON, spec('channel'))).toBe(false);
   expect(await skipsEmptyProjectAccount(OFF, spec('mcp'))).toBe(false);
