@@ -11,6 +11,7 @@
  *                  its own OAuth client, configured once per deployment in
  *                  `KORTIX_OAUTH_CLIENTS`. The app is listed only when that
  *                  client is configured.
+ *   none           A public server: no sign-in.
  *
  * This list is the trust anchor for `kortix_client`. Kortix's client, and the
  * endpoints it is sent to, are used only for a connector whose URL is exactly
@@ -57,10 +58,11 @@ export interface McpApp {
   url: string;
   /** `apps/web/public/connector-icons/<slug>.svg` exists. */
   icon: boolean;
-  auth: { kind: 'dcr' } | KortixClientAuth;
+  auth: { kind: 'dcr' } | { kind: 'none' } | KortixClientAuth;
 }
 
 const DCR = { kind: 'dcr' } as const;
+const NONE = { kind: 'none' } as const;
 
 const GOOGLE = {
   kind: 'kortix_client',
@@ -106,6 +108,8 @@ export const MCP_APPS: readonly McpApp[] = [
   { slug: 'supabase', name: 'Supabase', description: 'Projects, databases and edge functions.', domain: 'supabase.com', categories: ['developer-tools', 'database'], url: 'https://mcp.supabase.com/mcp', icon: true, auth: DCR },
   { slug: 'neon', name: 'Neon', description: 'Serverless Postgres projects and branches.', domain: 'neon.tech', categories: ['developer-tools', 'database'], url: 'https://mcp.neon.tech/mcp', icon: false, auth: DCR },
   { slug: 'vercel', name: 'Vercel', description: 'Projects, deployments and logs.', domain: 'vercel.com', categories: ['developer-tools', 'hosting'], url: 'https://mcp.vercel.com', icon: true, auth: DCR },
+  { slug: 'deepwiki', name: 'DeepWiki', description: 'Ask about any public GitHub repository.', domain: 'deepwiki.com', categories: ['developer-tools'], url: 'https://mcp.deepwiki.com/mcp', icon: false, auth: NONE },
+  { slug: 'context7', name: 'Context7', description: 'Up-to-date docs for libraries and frameworks.', domain: 'context7.com', categories: ['developer-tools'], url: 'https://mcp.context7.com/mcp', icon: false, auth: NONE },
   { slug: 'cloudflare', name: 'Cloudflare', description: 'Accounts, Workers and DNS.', domain: 'cloudflare.com', categories: ['developer-tools', 'hosting'], url: 'https://mcp.cloudflare.com/mcp', icon: true, auth: DCR },
   {
     slug: 'gmail', name: 'Gmail', description: 'Read, search and draft email.', domain: 'gmail.com', categories: ['email'], url: 'https://gmailmcp.googleapis.com/mcp/v1', icon: true,
@@ -178,7 +182,7 @@ export function kortixOAuthClients(raw: string = config.KORTIX_OAUTH_CLIENTS ?? 
 
 /** An app is usable when it needs no client of Kortix's, or that client is configured. */
 export function mcpAppAvailable(app: McpApp, clients = kortixOAuthClients()): boolean {
-  return app.auth.kind === 'dcr' || clients.has(app.auth.client);
+  return app.auth.kind !== 'kortix_client' || clients.has(app.auth.client);
 }
 
 export function availableMcpApps(clients = kortixOAuthClients()): McpApp[] {

@@ -90,7 +90,7 @@ describe('sign-in for an app on a Kortix client', () => {
     try {
       const discovery = await discoverProtectedResourceOAuth2(
         { resourceUrl: 'https://calendarmcp.googleapis.com/mcp/v1', provider: 'mcp' },
-        { fetch: (() => { throw new Error('the server must not be probed'); }) as unknown as typeof fetch },
+        { fetchImpl: async () => { throw new Error('the server must not be probed'); } },
       );
       expect(discovery).toMatchObject({ requires_authorization: true, kortix_client: true, authorization_server: 'https://accounts.google.com' });
       expect(JSON.stringify(discovery)).not.toContain('kortix-google');
