@@ -110,6 +110,8 @@ export async function checkWorkdirPermission(workdir: string): Promise<void> {
   }
 
   if (extDirPerm === 'ask') {
-    // TODO: Implement user prompt for external directory access
+    await denyWithToast(
+      `PTY workdir denied: "${workdir}" requires user permission which is not supported by this plugin. Configure explicit "allow" or "deny" in your opencode.json permission.external_directory settings.`
+    )
   }
 }
