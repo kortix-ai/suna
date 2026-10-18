@@ -1033,8 +1033,6 @@ function scanFile(file) {
           node.text === 'bun test apps/api/src/billing') ||
         (file === path.join(srcDir, 'features/session/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||
-        (file === path.join(srcDir, 'features/session/session-history.tsx') &&
-          catalogRoot === 'MISSING_KEY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/preferences-tab.tsx') &&
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
