@@ -10,9 +10,33 @@ import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './provider-sele
  * union covers both without lying about the shape via `any`; every field
  * access below is narrowed via `hasCapabilities` rather than cast.
  */
+/** The gateway-served fields (`provider`, `reasoning_options`, `description`,
+ *  `open_weights`, `last_updated`, `free`, ...) exist only on the
+ *  loose/synthetic branch of `LooseModel`, never on opencode's own canonical
+ *  `Model` type — read them via this narrow shape rather than widening
+ *  `LooseModel`'s member access rules or reaching for `any`.
+ */
+type GatewayModelFields = {
+  // The REAL upstream provider this model resolves against — see
+  // `FlatModel.provider` below. Absent on plain opencode `Model` values
+  // (which don't carry it); present on every gateway-served model.
+  provider?: string;
+  // The real provider's display name ("OpenCode Go"), served per model.
+  provider_name?: string;
+  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  description?: string;
+  open_weights?: boolean;
+  last_updated?: string;
+  enabled?: boolean;
+  free?: boolean;
+  /** opencode's per-model attachment flag (`Model.attachment`): whether the
+   *  model can read image attachments. */
+  attachment?: boolean;
+};
+
 type LooseModel =
   | Model
-  | {
+  | ({
       id?: string;
       name?: string;
       variants?: Record<string, Record<string, unknown>>;
@@ -23,19 +47,7 @@ type LooseModel =
       release_date?: string;
       family?: string;
       cost?: { input?: number; output?: number };
-      // The REAL upstream provider this model resolves against — see
-      // `FlatModel.provider` below. Absent on plain opencode `Model` values
-      // (which don't carry it); present on every gateway-served model.
-      provider?: string;
-      // The real provider's display name ("OpenCode Go"), served per model.
-      provider_name?: string;
-      reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
-      description?: string;
-      open_weights?: boolean;
-      last_updated?: string;
-      enabled?: boolean;
-      free?: boolean;
-    };
+    } & GatewayModelFields);
 
 function hasCapabilities(model: LooseModel): model is Model {
   return 'capabilities' in model && model.capabilities != null;
@@ -124,22 +136,69 @@ export function isOfferedModel(
   return !!model && model.enabled !== false;
 }
 
-// The gateway-specific fields (`provider`, `reasoning_options`,
-// `description`, `open_weights`, `last_updated`) exist only on the
-// loose/synthetic branch of `LooseModel`, never on opencode's own canonical
-// `Model` type — read them via this narrow shape rather than widening
-// `LooseModel`'s member access rules or reaching for `any`.
-type WithGatewayFields = {
-  provider?: string;
-  provider_name?: string;
-  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
-  description?: string;
-  open_weights?: boolean;
-  last_updated?: string;
-  enabled?: boolean;
-  free?: boolean;
-  attachment?: boolean;
-};
+
+/** Read the gateway-specific fields off a `LooseModel` — the one cast in the
+ *  module, at the one place the union's loose branch is entered. */
+type WithGatewayFields = GatewayModelFields;
+
+function capabilitiesOf(model: LooseModel): FlatModel['capabilities'] {
+  // `vision` gates whether the composer refuses an attached image, so a
+  // catalog that says NOTHING about modalities must stay `undefined`. A
+  // custom or self-hosted provider carries no signal, and reading that
+  // silence as `false` would block images on a model that can read them.
+  if (hasCapabilities(model)) {
+    const caps = model.capabilities;
+    return {
+      reasoning: caps.reasoning ?? false,
+      vision: caps.input ? (caps.input.image ?? false) : undefined,
+      toolcall: caps.toolcall ?? false,
+    };
+  }
+  // Narrow `model` itself (not a copy) so the loose-shape-only fields
+  // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
+  const modalityInput = model.modalities?.input;
+  return {
+    reasoning: model.reasoning ?? false,
+    vision: modalityInput ? modalityInput.includes('image') : (model as WithGatewayFields).attachment,
+    toolcall: model.tool_call ?? false,
+  };
+}
+
+function toModelOption(
+  p: { id: string; name: string; source?: string },
+  modelID: string,
+  model: LooseModel,
+): ModelOption {
+  const gw = model as WithGatewayFields;
+  return {
+    id: modelKeyToWire({ providerID: p.id, modelID }),
+    providerID: p.id,
+    // The gateway lists every model under one synthetic `kortix` provider;
+    // a BYOK model names its real provider instead.
+    providerName: gw.provider_name ?? p.name,
+    modelID,
+    modelName: (model.name || modelID).replace('(latest)', '').trim(),
+    variants: model.variants,
+    capabilities: capabilitiesOf(model),
+    contextWindow: model.limit?.context,
+    releaseDate: model.release_date,
+    family: model.family,
+    cost: model.cost
+      ? {
+          input: model.cost.input ?? 0,
+          output: model.cost.output ?? 0,
+        }
+      : undefined,
+    providerSource: p.source,
+    provider: gw.provider,
+    reasoningOptions: gw.reasoning_options,
+    description: gw.description,
+    openWeights: gw.open_weights,
+    lastUpdated: gw.last_updated,
+    enabled: gw.enabled,
+    free: gw.free === true,
+  };
+}
 
 export function flattenModels(
   providers: ProviderListResponse | undefined,
@@ -171,58 +230,7 @@ export function flattenModels(
       // Old sandboxes can carry a baked catalog from before the synthetic model
       // was removed. Never expose or send those stale entries.
       if (modelID === 'auto' || modelID === 'kortix/auto') continue;
-      // Narrow `model` itself (not a copy) so the loose-shape-only fields
-      // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
-      let capabilities: FlatModel['capabilities'];
-      // `vision` gates whether the composer refuses an attached image, so a
-      // catalog that says NOTHING about modalities must stay `undefined`. A
-      // custom or self-hosted provider carries no signal, and reading that
-      // silence as `false` would block images on a model that can read them.
-      if (hasCapabilities(model)) {
-        const caps = model.capabilities;
-        capabilities = {
-          reasoning: caps.reasoning ?? false,
-          vision: caps.input ? (caps.input.image ?? false) : undefined,
-          toolcall: caps.toolcall ?? false,
-        };
-      } else {
-        const modalityInput = model.modalities?.input;
-        capabilities = {
-          reasoning: model.reasoning ?? false,
-          vision: modalityInput
-            ? modalityInput.includes('image')
-            : (model as WithGatewayFields).attachment,
-          toolcall: model.tool_call ?? false,
-        };
-      }
-      result.push({
-        id: modelKeyToWire({ providerID: p.id, modelID }),
-        providerID: p.id,
-        // The gateway lists every model under one synthetic `kortix` provider;
-        // a BYOK model names its real provider instead.
-        providerName: (model as WithGatewayFields).provider_name ?? p.name,
-        modelID,
-        modelName: (model.name || modelID).replace('(latest)', '').trim(),
-        variants: model.variants,
-        capabilities,
-        contextWindow: model.limit?.context,
-        releaseDate: model.release_date,
-        family: model.family,
-        cost: model.cost
-          ? {
-              input: model.cost.input ?? 0,
-              output: model.cost.output ?? 0,
-            }
-          : undefined,
-        providerSource: p.source,
-        provider: (model as WithGatewayFields).provider,
-        reasoningOptions: (model as WithGatewayFields).reasoning_options,
-        description: (model as WithGatewayFields).description,
-        openWeights: (model as WithGatewayFields).open_weights,
-        lastUpdated: (model as WithGatewayFields).last_updated,
-        enabled: (model as WithGatewayFields).enabled,
-        free: (model as WithGatewayFields).free === true,
-      });
+      result.push(toModelOption(p, modelID, model));
     }
   }
   return result;
