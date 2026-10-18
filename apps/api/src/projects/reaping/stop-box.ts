@@ -14,7 +14,10 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
+import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import { PlatinumHttpError } from '../../shared/platinum';
 import type { StopReason } from '../stop-reason';
 import {
   type ReapCandidate,
@@ -35,6 +38,64 @@ const DAEMON_PORT = 8000;
  * a gate on the stop itself.
  */
 const ABORT_TIMEOUT_MS = 4_000;
+
+/**
+ * The abort is best-effort and never gates the stop, so most of its failures
+ * are the system working as designed (KRTX-2126, KRTX-2297):
+ *   - the daemon or platform edge ANSWERS with a refusal — the prod storm was
+ *     502 from the edge, plus 401/409/404/503, and every observed decline rode
+ *     a stop that completed 200;
+ *   - the dial cannot reach the daemon at all — a timeout (KRTX-619) or a
+ *     network-level `fetch failed` on a box already going down;
+ *   - the provider throttles or refuses the ingress write the daemon URL
+ *     needs: Platinum answers its `POST /v1/sandboxes/:id/expose` with 429
+ *     `rate_limited` (the org's 20/s write budget under a stop burst), the
+ *     typed 409 `sandbox_not_running` for a box auto-stopped before the
+ *     abort, or 404 for a box already gone. Daytona's SDK shapes (throttler
+ *     429, gateway 502/503/504, connection/timeout) are the same class.
+ * Every one of those is a normal miss, not a fault: log it at info, SAMPLED
+ * (see ABORT_MISS_LOG_INTERVAL_MS). Only an unexpected failure — a code bug,
+ * a 400/401/500 the provider should never answer the expose with — stays a
+ * per-occurrence warn.
+ */
+function isExpectedAbortMiss(err: unknown): boolean {
+  // Already stopped/gone is the designed idle-stop state — the reaper's own
+  // classifier for the stop itself (404 gone, Daytona "not started",
+  // Platinum's typed or textual not-running 409).
+  if (isAlreadyNotRunning(err)) return true;
+  if (isDaytonaRateLimitError(err)) return true;
+  if (isDaytonaTransientProviderError(err)) return true;
+  return err instanceof PlatinumHttpError && (err.status === 429 || err.status >= 502);
+}
+
+/**
+ * One line per interval for the expected abort misses: the FIRST miss is
+ * always reported, then at most one line per interval — the same rate-limit
+ * the transcript mirror and the audit queue already ship (KRTX-614, learnings:
+ * "Rate-limit the warning for expected backpressure"). A decline storm of
+ * ~7,000 lines in one day (KRTX-2126) or a provider-throttle burst (KRTX-2297)
+ * must not become the next log spike just because the level moved to info.
+ */
+const ABORT_MISS_LOG_INTERVAL_MS = 60_000;
+let lastAbortMissLogAt = 0;
+
+/** Seam for tests: the sampler is module state and a fresh test must start fresh. */
+export function __resetAbortMissSamplerForTests(): void {
+  lastAbortMissLogAt = 0;
+}
+
+function logAbortMiss(
+  sandboxId: string,
+  kind: 'declined' | 'unreachable' | 'provider',
+  detail: string,
+): void {
+  const now = Date.now();
+  if (now - lastAbortMissLogAt < ABORT_MISS_LOG_INTERVAL_MS) return;
+  lastAbortMissLogAt = now;
+  logger.info(`[stop] pre-stop abort missed for sandbox ${sandboxId}: ${kind} ${detail}`, {
+    sandboxId,
+  });
+}
 
 /**
  * Best-effort: end the live opencode turn on a box BEFORE `provider.stop()`
@@ -101,21 +162,28 @@ export async function abortLiveTurnBeforeStop(input: {
       signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
     });
     if (!res.ok) {
-      console.warn(`[stop] pre-stop abort declined for sandbox ${sandboxId}: ${res.status}`);
+      // The daemon or the edge answered with a refusal (the prod decline storm
+      // was 502, plus 401/409/404/503 — KRTX-2126). The abort never gates the
+      // stop, so a refusal is a normal miss, not a warn.
+      logAbortMiss(sandboxId, 'declined', String(res.status));
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : err;
+    const message = err instanceof Error ? err.message : String(err);
     // An unreachable daemon is the expected state of a box that is being
-    // powered off: the abort is best-effort and never gates the stop, so this
-    // is a normal miss (one warn per box spiked to 43/h — KRTX-619). Ship it
-    // at info; a daemon that answered and refused, or any other error, stays a
-    // warning above.
+    // powered off: the abort is best-effort and never gates the stop. A
+    // timeout is the classic shape (KRTX-619); a network-level `fetch failed`
+    // (edge up, daemon already gone) is the same class.
     const unreachable =
-      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) ||
+      (err instanceof TypeError && message.includes('fetch failed'));
     if (unreachable) {
-      logger.info(`[stop] pre-stop abort unreachable for sandbox ${sandboxId}: ${message}`, {
-        sandboxId,
-      });
+      logAbortMiss(sandboxId, 'unreachable', message);
+    } else if (isExpectedAbortMiss(err)) {
+      // A provider-expected refusal of the abort's ingress resolve — the
+      // throttled expose 429 under a stop burst (KRTX-2297), the typed
+      // not-running 409, the gone-box 404, a transient gateway 5xx — is the
+      // provider working as designed, not a fault.
+      logAbortMiss(sandboxId, 'provider', message);
     } else {
       console.warn(`[stop] pre-stop abort failed for sandbox ${sandboxId}:`, message);
     }
