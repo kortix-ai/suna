@@ -207,6 +207,32 @@ describe('PUT /model-defaults?scope=agent — an undeclared agentName is refused
   });
 });
 
+describe('a malformed agent entry is manifest_malformed, not agent_not_found (PUT mirrors the GET)', () => {
+  test('an entry that exists but is not a table answers 400 on both gates', async () => {
+    await seed('kortix.yaml', `${V2_MANIFEST}\n  broken: not-a-table\n`);
+    const secret = await ownerToken();
+    const res = await app.request(
+      `/v1/projects/${ctx!.projectId}/model-defaults?scope=agent&agentName=${encodeURIComponent('broken')}`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'agent', agentName: 'broken', model: 'deepseek-v4.1-flash' }),
+      },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('manifest_malformed');
+    expect(await agentPinRows(ctx!.accountId)).toEqual([]);
+    // The config GET answers the same manifest state with the same code —
+    // the two gates must not disagree about what "malformed" means.
+    const get = await app.request(`/v1/projects/${ctx!.projectId}/agents/broken/config`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    expect(get.status).toBe(400);
+    expect((await get.json()).code).toBe('manifest_malformed');
+  });
+});
+
 describe('v1 manifests — `[[agents]]` array is the roster', () => {
   test('a declared v1 agent still reads back schema_version 1 (unchanged)', async () => {
     await seed('kortix.toml', V1_MANIFEST);

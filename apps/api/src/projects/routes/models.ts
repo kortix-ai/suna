@@ -33,6 +33,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import { agentNotDeclaredError } from '../agents';
+import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
 
@@ -489,6 +490,10 @@ export function registerModelsRoutes(): void {
             { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
             400,
           );
+        }
+        const read = readAgentBlockV2(manifest, agentName!);
+        if (!read.ok) {
+          return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
         }
         const notDeclared = agentNotDeclaredError(manifest, agentName!);
         if (notDeclared) return c.json(notDeclared, 409);
