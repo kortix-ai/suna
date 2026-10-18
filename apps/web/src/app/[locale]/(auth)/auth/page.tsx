@@ -116,7 +116,7 @@ import {
   seedPkceVerifierForResume,
   stashBrowserPkceVerifier,
 } from '@/lib/auth/pkce-resume';
-import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { resolveNewAccountReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
@@ -275,7 +275,9 @@ function AuthCardForm({
   returnUrl,
   mobileCallbackState,
   mobileSsoEmail,
+  callbackError,
 }: {
+  callbackError: boolean;
   returnUrl: string;
   mobileCallbackState: string | null;
   /** Address the mobile app sent with `sso=1`: SSO starts for it on mount. */
@@ -307,7 +309,9 @@ function AuthCardForm({
   // Ref, not state: the double-submit guard must hold even for the click that
   // races the re-render (state alone still reads stale `pending`).
   const submitInFlight = useRef(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(callbackError ? tI18nComplete.raw('text301fe0058472') : null);
+  const [code, setCode] = useState('');
+  const [emailCodeReturnUrl, setEmailCodeReturnUrl] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
@@ -399,6 +403,7 @@ function AuthCardForm({
   const goToEntry = () => {
     clearNotices();
     setSentEmail(null);
+    setCode('');
     setSsoUrl(null);
     setSsoFallbackMode('unknown');
     setStep('entry');
@@ -484,11 +489,18 @@ function AuthCardForm({
       }
       const result = outcome.result as {
         success?: boolean;
+        redirectTo?: string;
         email?: string;
         message?: string;
       };
 
       if (result.success) {
+        setCode('');
+        setEmailCodeReturnUrl(
+          result.redirectTo
+            ? sanitizeAuthReturnUrl(result.redirectTo)
+            : resolveNewAccountReturnUrl(returnUrl),
+        );
         setSentEmail(result.email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
@@ -871,6 +883,44 @@ function AuthCardForm({
     }
   };
 
+  const handleVerifyCode = async () => {
+    if (submitInFlight.current || !sentEmail || !/^\d{6}$/.test(code)) return;
+    submitInFlight.current = true;
+    clearNotices();
+    setPendingAction('continue');
+    try {
+      const { data, error } = await createBrowserSupabaseClient().auth.verifyOtp({
+        email: sentEmail,
+        token: code,
+        type: 'email',
+      });
+      if (error || !data.session?.access_token || !data.session.refresh_token) {
+        failWith(t('errors.invalidCode'));
+        return;
+      }
+      // The send action resolves the httpOnly bounce owner before sending.
+      // Never reconstruct that policy from the raw query in the browser.
+      await establishSessionAndRedirect({
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        redirectTo: emailCodeReturnUrl ?? resolveNewAccountReturnUrl(returnUrl),
+        mobileHandoffUrl: mobileCallbackState
+          ? buildMobileSessionHandoffUrl({
+              origin: window.location.origin,
+              state: mobileCallbackState,
+              accessToken: data.session.access_token,
+              refreshToken: data.session.refresh_token,
+            })
+          : null,
+      });
+    } catch {
+      failWith(t('errors.networkFailed'));
+    } finally {
+      submitInFlight.current = false;
+      setPendingAction(null);
+    }
+  };
+
   const handleResend = async () => {
     if (!sentEmail || pending || resendIn > 0) return;
     await sendMagic(sentEmail, 'resend');
@@ -968,6 +1018,9 @@ function AuthCardForm({
   if (step === 'link') {
     return (
       <EmailLinkStep
+        code={code}
+        onCodeChange={setCode}
+        onVerify={() => void handleVerifyCode()}
         sentEmail={sentEmail}
         errorMessage={errorMessage}
         info={info}
@@ -1357,6 +1410,7 @@ function AuthContent() {
   return (
     <AuthFrame footerVariant="continue">
       <AuthCardForm
+        callbackError={searchParams.get('expired') === 'true' || searchParams.has('error') || searchParams.has('error_code')}
         returnUrl={returnUrl}
         mobileCallbackState={mobileCallbackState}
         // Wait for the session check: an existing session goes to the app

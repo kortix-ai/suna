@@ -1,5 +1,7 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { CodeInput } from '@/features/auth/auth-primitives';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
@@ -18,6 +20,9 @@ export function EmailLinkStep({
   onResend,
   onChangeEmail,
   onPassword,
+  code,
+  onCodeChange,
+  onVerify,
 }: {
   sentEmail: string | null;
   errorMessage: string | null;
@@ -29,6 +34,9 @@ export function EmailLinkStep({
   onResend: () => void;
   onChangeEmail: () => void;
   onPassword: () => void;
+  code?: string;
+  onCodeChange?: (value: string) => void;
+  onVerify?: () => void;
 }) {
   const t = useTranslations('auth.unified');
   const prefersReducedMotion = useReducedMotion();
@@ -55,6 +63,21 @@ export function EmailLinkStep({
         {info && <InfoStrip message={info} />}
         {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
+        {onCodeChange && onVerify && (
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onVerify();
+            }}
+          >
+            <CodeInput value={code ?? ''} onChange={onCodeChange} disabled={pending} invalid={!!errorMessage} />
+            <Button type="submit" size="lg" className="w-full" disabled={pending || !/^\d{6}$/.test(code ?? '')}>
+              {pendingAction === 'continue' ? t('oneMoment') : t('continue')}
+            </Button>
+          </form>
+        )}
+
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">
           <p>
             {t('link.notReceived')}{' '}
@@ -75,6 +98,7 @@ export function EmailLinkStep({
             <button
               type="button"
               onClick={onChangeEmail}
+              disabled={pending}
               className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
             >
               {t('useDifferentEmail')}
