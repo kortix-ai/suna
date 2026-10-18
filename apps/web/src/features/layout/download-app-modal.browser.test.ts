@@ -22,6 +22,7 @@ test.skipIf(!origin)('workspace menu opens the download modal without navigation
     expect(await page.getByRole('link', { name: 'Open Google Play', exact: true }).getAttribute('href')).toBe('https://play.google.com/store/apps/details?id=com.kortix.application');
     expect(await page.getByRole('img', { name: 'QR code to open', exact: false }).count()).toBe(2);
     await page.getByRole('menu').waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'Close', exact: true }).focus();
     await page.keyboard.press('Escape');
     await page.getByRole('heading', { name: 'Download Kortix', exact: true }).waitFor({ state: 'hidden' });
     await open();
