@@ -1232,6 +1232,49 @@ describe('JSON Schema vs. imperative validator — accept/reject conformance', (
   }
 });
 
+describe('normalized enum conformance (KRTX-2538)', () => {
+  const cases = [
+    ['provider', 'connectors: [{slug: sample, provider: " MCP ", url: "https://example.test/mcp"}]'],
+    ['transport', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", transport: " SSE "}]'],
+    ['platform', 'connectors: [{slug: sample, provider: channel, platform: " Slack "}]'],
+    ['credential', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", credential: " Shared "}]'],
+    ['authorization_strategy', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", authorization_strategy: " User "}]'],
+    ['auth.type', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", auth: {type: " None "}}]'],
+    ['policy action', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", policies: [{match: "*", action: " Block "}]}]'],
+    ['session_mode', 'triggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, session_mode: " Reuse "}]'],
+    ['sessionMode', 'triggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, sessionMode: " Reuse "}]'],
+    ['grant', 'agents: {assistant: {connectors: ""}}'],
+  ];
+  for (const [name, section] of cases) {
+    test(`${name} accepts normalized values`, () => {
+      const input = `kortix_version: 2\ndefault_agent: assistant\n${section.startsWith('agents:') ? section : `agents: {assistant: {}}\n${section}`}\n`;
+      expect(validateManifest(input, 'yaml').valid).toBe(true);
+      expect(validateCombined(parseYaml(input))).toBe(true);
+    });
+  }
+});
+
+describe('normalized enums retain their boundaries', () => {
+  for (const provider of ['computer', 'mcp-extra', '', 'mcp\nextra']) {
+    test(`rejects provider ${JSON.stringify(provider)}`, () => {
+      const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+        connectors: [{ slug: 'sample', provider, url: 'https://example.test/mcp' }] };
+      expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+      expect(validateCombined(input)).toBe(false);
+    });
+  }
+  test('normalized provider still requires its endpoint', () => {
+    const input = 'kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: sample, provider: " MCP "}]';
+    expect(validateManifest(input, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(input))).toBe(false);
+  });
+  test('reserved channel provider and auth accept normalized values', () => {
+    const input = 'kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: kortix_slack, provider: " Channel ", platform: " Slack ", auth: {type: " None "}}]';
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+});
+
 describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles them)', () => {
   test('kortix.v1.schema.json compiles', () => {
     expect(() =>
@@ -1278,7 +1321,10 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
     expect(connectorProperties.name).toEqual({ type: 'string', minLength: 1 });
     expect(connectorProperties.authorization_strategy).toEqual({
       type: 'string',
-      enum: ['project', 'user'],
+      anyOf: [
+        { enum: ['project', 'user'] },
+        { pattern: expect.any(String) },
+      ],
       default: 'project',
     });
   });

@@ -159,7 +159,7 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): Json
     description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', '*', 'none'] },
+      normalizedEnumSchema(['all', '*', 'none', '']),
     ],
   };
 }
@@ -284,6 +284,17 @@ const PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN = String.raw`^/|(^|/)\.\.($|/)`;
  *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`. */
 function caseInsensitiveLiteral(word: string): string {
   return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+}
+
+/** Preserve editor suggestions while matching the validator's trim/lowercase. */
+function normalizedEnumSchema(values: readonly string[]): JsonSchemaFragment {
+  return {
+    type: 'string',
+    anyOf: [
+      { enum: [...values] },
+      { pattern: `^\\s*(?:${values.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` },
+    ],
+  };
 }
 
 const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'] as const;
@@ -414,11 +425,11 @@ function triggerSchema(): JsonSchemaFragment {
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      session_mode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
       filter: { type: 'object', additionalProperties: { type: 'string' } },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_id: { type: 'string', minLength: 1 },
       sessionId: { type: 'string', minLength: 1 },
       prompt: NON_EMPTY_STRING,
@@ -537,7 +548,7 @@ function triggerSchema(): JsonSchemaFragment {
 const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED_SLUG_PROVIDERS).map(
   ([slug, provider]) => ({
     if: { properties: { slug: { const: slug } } },
-    then: { properties: { provider: { const: provider } } },
+    then: { properties: { provider: normalizedEnumSchema([provider]) } },
   }),
 );
 
@@ -555,7 +566,7 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
 function connectorSchema(version: 1 | 2): JsonSchemaFragment {
-  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
+  const credentialSchema: JsonSchemaFragment = version === 2 ? normalizedEnumSchema(['shared']) : {};
   const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
   return {
     type: 'object',
@@ -564,19 +575,18 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       slug: SLUG_SCHEMA,
       name: NON_EMPTY_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
-      provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
+      provider: normalizedEnumSchema(CONNECTOR_PROVIDERS),
       app: { type: 'string' },
       url: { type: 'string' },
       endpoint: { type: 'string' },
       base_url: { type: 'string' },
       baseUrl: { type: 'string' },
-      transport: { type: 'string', enum: ['http', 'sse'] },
+      transport: normalizedEnumSchema(['http', 'sse']),
       spec: { type: 'string' },
-      platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
+      platform: normalizedEnumSchema(CHANNEL_PLATFORMS),
       credential: credentialSchema,
       authorization_strategy: {
-        type: 'string',
-        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        ...normalizedEnumSchema(CONNECTOR_AUTHORIZATION_STRATEGIES),
         default: 'project',
       },
       agent_scope: agentScopeSchema,
@@ -584,7 +594,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
         type: 'object',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: [...CONNECTOR_AUTH_TYPES] },
+          type: normalizedEnumSchema(CONNECTOR_AUTH_TYPES),
           secret: false,
         },
         additionalProperties: true,
@@ -615,7 +625,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           required: ['match', 'action'],
           properties: {
             match: NON_EMPTY_STRING,
-            action: { type: 'string', enum: [...CONNECTOR_POLICY_ACTIONS] },
+            action: normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS),
           },
         },
       },
@@ -623,21 +633,21 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     additionalProperties: true,
     allOf: [
       ...RESERVED_SLUG_CONST_CHECKS,
-      { if: { properties: { provider: { const: 'pipedream' } } }, then: { required: ['app'] } },
-      { if: { properties: { provider: { const: 'mcp' } } }, then: { required: ['url'] } },
-      { if: { properties: { provider: { const: 'graphql' } } }, then: { required: ['endpoint'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['pipedream']) } }, then: { required: ['app'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['mcp']) } }, then: { required: ['url'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['graphql']) } }, then: { required: ['endpoint'] } },
       {
-        if: { properties: { provider: { const: 'http' } } },
+        if: { properties: { provider: normalizedEnumSchema(['http']) } },
         then: { anyOf: [{ required: ['base_url'] }, { required: ['baseUrl'] }] },
       },
-      { if: { properties: { provider: { const: 'channel' } } }, then: { required: ['platform'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['channel']) } }, then: { required: ['platform'] } },
       // channel connectors authenticate via the platform install token.
       {
         if: {
-          properties: { provider: { const: 'channel' } },
+          properties: { provider: normalizedEnumSchema(['channel']) },
           required: ['auth'],
         },
-        then: { properties: { auth: { properties: { type: { const: 'none' } } } } },
+        then: { properties: { auth: { properties: { type: normalizedEnumSchema(['none']) } } } },
       },
     ],
   };
