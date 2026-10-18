@@ -53,6 +53,19 @@ function subProviderOf(modelID: string, explicitProvider?: string): string {
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
+/** Whether a non-managed gateway model's real provider is connected right now
+ *  (live, from project secrets). Codex (ChatGPT subscription) is baked
+ *  unconditionally like BYOK, so its display gates on the subscription being
+ *  connected. The one connection rule for both the usable check and the
+ *  visibility predicate.
+ */
+function isGatewayModelConnected(model: ModelKey, connectedProviderIds?: Set<string>): boolean {
+  const sub = subProviderOf(model.modelID, model.provider);
+  return sub === SUBSCRIPTION_PROVIDER_ID
+    ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
+    : (connectedProviderIds?.has(sub) ?? false);
+}
+
 /**
  * True when at least one model in `allModels` is actually usable right now —
  * i.e. would work if sent, not merely present in the catalog. The gateway
@@ -83,10 +96,7 @@ export function hasUsableModel(
       // (KRTX-1067) — the gateway serves it to free tier, so it is usable.
       return !freeTier || m.modelID === PLATFORM_DEFAULT_MODEL_ID;
     }
-    const sub = subProviderOf(m.modelID, m.provider);
-    return sub === SUBSCRIPTION_PROVIDER_ID
-      ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
-      : (connectedProviderIds?.has(sub) ?? false);
+    return isGatewayModelConnected(m, connectedProviderIds);
   });
 }
 
@@ -153,6 +163,22 @@ export function createModelVisibility(input: {
     visibilityMap.set(`${item.providerID}:${item.modelID}`, item.visibility);
   }
 
+  // The curation tail every usable model falls through to: the user's `show`
+  // pin, newest per family within the window, or the undated fallback.
+  // No (or invalid) release metadata — the managed Kortix gateway case.
+  // Default to showing only the flagship; every other model is opt-in via
+  // "Manage models". Providers that DO carry release dates keep the
+  // newest-per-family "latest" behaviour handled above.
+  const curatedOrPinned = (model: ModelKey, key: string, state: 'show' | 'hide' | undefined): boolean => {
+    if (state === 'show') return true;
+    if (latestSet.has(key)) return true;
+    const m = modelByKey.get(key);
+    if (!m?.releaseDate) return isDefaultVisible(model);
+    const d = new Date(m.releaseDate);
+    if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
+    return false;
+  };
+
   return (model: ModelKey): boolean => {
     const key = `${model.providerID}:${model.modelID}`;
     const state = visibilityMap.get(key);
@@ -165,45 +191,14 @@ export function createModelVisibility(input: {
     // connected), a platform-managed default, or the BYOK provider is
     // connected. Everything else is search-only so the catalog can't flood.
     if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
-      const sub = subProviderOf(model.modelID, model.provider);
-      // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
-      // gate its display on the subscription being connected.
-      const connected =
-        sub === SUBSCRIPTION_PROVIDER_ID
-          ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
-          : (connectedProviderIds?.has(sub) ?? false);
       if (MANAGED_MODEL_IDS.has(model.modelID)) {
-        // Same rule as `hasUsableModel` above (KRTX-1067).
+        // Same rule as `hasUsableModel` above (KRTX-1067). Terminal: a
+        // managed model never falls through to the curation tail.
         return !freeTier || model.modelID === PLATFORM_DEFAULT_MODEL_ID;
       }
-      if (!connected) return false;
-      if (state === 'show') return true;
-      if (latestSet.has(key)) return true;
-      const m = modelByKey.get(key);
-      if (!m?.releaseDate) return isDefaultVisible(model);
-      try {
-        const d = new Date(m.releaseDate);
-        if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
-      } catch {
-        return isDefaultVisible(model);
-      }
-      return false;
+      if (!isGatewayModelConnected(model, connectedProviderIds)) return false;
     }
-    if (state === 'show') return true;
-    if (latestSet.has(key)) return true;
-    const m = modelByKey.get(key);
-    // No (or invalid) release metadata — the managed Kortix gateway case.
-    // Default to showing only the flagship; every other model is opt-in via
-    // "Manage models". Providers that DO carry release dates keep the
-    // newest-per-family "latest" behaviour handled above.
-    if (!m?.releaseDate) return isDefaultVisible(model);
-    try {
-      const d = new Date(m.releaseDate);
-      if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
-    } catch {
-      return isDefaultVisible(model);
-    }
-    return false;
+    return curatedOrPinned(model, key, state);
   };
 }
 
