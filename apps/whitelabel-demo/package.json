@@ -36,6 +36,7 @@
     "@types/react": "^19.1.17",
     "@types/react-dom": "^19.1.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "happy-dom": "^20.14.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

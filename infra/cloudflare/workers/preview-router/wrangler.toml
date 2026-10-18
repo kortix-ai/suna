@@ -10,7 +10,7 @@ routes = [
 
 [vars]
 DEV_API_ORIGIN = "https://dev-api.kortix.com"
-STAGING_API_ORIGIN = "https://staging-api.kortix.com"
+STAGING_API_ORIGIN = "https://staging-api-euw2.kortix.com"
 PROD_API_ORIGIN = "https://api.kortix.com"
 PREVIEW_API_ORIGIN = "https://dev-api.kortix.com"
 
