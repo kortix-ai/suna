@@ -20,6 +20,11 @@ It manages:
 - CPU-utilization CloudWatch alarms for every running EC2 instance in
   eu-west-2, discovered on every plan so replacement workers remain covered
   (Drata DCF-86).
+- Message-age CloudWatch alarms for both manifest queues of the dev-us-east-2
+  capture-store module (Drata test 115 / DCF-86). The AWS provider has no SQS
+  discovery data source, so the two queue names are repeated literally;
+  `scripts/test_sqs_message_age_alarms.py` keeps them in agreement with the
+  module and the environment root.
 - Regional Lambda reconcilers triggered by EC2 running-state events, plus a
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.

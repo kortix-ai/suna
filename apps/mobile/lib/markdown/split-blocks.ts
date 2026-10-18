@@ -20,6 +20,7 @@
  * nests quantifiers.
  */
 
+import { hasReferenceDefinitionOutsideFences } from '@kortix/shared';
 import { PrefixCache } from './prefix-cache';
 
 const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
@@ -38,7 +39,9 @@ const SEPARATOR_LINE = /^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/;
 // indentation, blockquote markers, and list markers before the label, and a
 // label of up to 999 characters that may contain escapes and line breaks.
 // Each prefix repetition starts with a non-space token and the label
-// alternatives are disjoint, so matching stays linear.
+// alternatives are disjoint, so matching stays linear. A definition inside a
+// fence or display math is code the message shows, not a target, so the guard
+// below tests fence-free runs only (`hasReferenceDefinitionOutsideFences`).
 const REFERENCE_DEFINITION =
   /^[ \t]*(?:(?:>|[*+-]|\d{1,9}[.)])[ \t]*)*\[(?:[^\]\\]|\\[\s\S]){1,999}\]:/m;
 
@@ -210,7 +213,11 @@ export function splitMarkdown(text: string, cache: PrefixCache<ScanState> | null
   const scanned = scanBlocks(text, cache);
   // Intentional: a message with a reference definition is one block, so it
   // also renders its rule lines with the markdown hr style, not as separators.
-  if (REFERENCE_DEFINITION.test(text)) return { blocks: [text], endsInOpenFence: scanned.endsInOpenFence };
+  // A definition inside a fence or display math is code the message shows, not
+  // a target, so it does not keep the text whole.
+  if (hasReferenceDefinitionOutsideFences(text, REFERENCE_DEFINITION)) {
+    return { blocks: [text], endsInOpenFence: scanned.endsInOpenFence };
+  }
   return scanned;
 }
 
