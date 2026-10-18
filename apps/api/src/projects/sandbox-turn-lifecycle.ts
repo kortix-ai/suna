@@ -452,7 +452,7 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
     RETURNING target.sandbox_id, target.session_id, target.project_id, target.account_id,
               target.turn, true AS abandoned`);
   const rows = normalizeRows(result);
-  const abandoned = rows === null || rows.length > 0;
+  const abandoned = (rows?.length ?? 0) > 0;
   if (!abandoned) return false;
 
   // A delivery that never reached OpenCode still happened. Without this the row
