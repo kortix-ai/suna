@@ -11,9 +11,28 @@
  * route and return that raw url, silently dropping `expiresInMinutes` because
  * that route has no such parameter.
  */
-import { expect, mock, test } from 'bun:test';
+import { afterAll, expect, mock, test } from 'bun:test';
 
 import { stringValue } from './io.ts';
+
+// `resolveProjectId` is NOT mock.module'd here: a bun module mock is
+// process-wide and poisons every later test file that imports the real
+// project-link module (a suite-order-dependent failure). gateway.ts calls the
+// ambient resolution, so pinning $KORTIX_PROJECT_ID gives the same observable
+// value through the real code path. Restored in afterAll so the env does not
+// leak into later files either.
+const SAVED_ENV: Record<string, string | undefined> = {};
+for (const key of ['KORTIX_PROJECT_ID', 'KORTIX_DISABLE_SANDBOX_ENV_FILE']) {
+  SAVED_ENV[key] = process.env[key];
+}
+process.env.KORTIX_PROJECT_ID = 'proj-1';
+process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+afterAll(() => {
+  for (const [key, value] of Object.entries(SAVED_ENV)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
 const setupLinkResponse: unknown = { url: 'https://dev.kortix.com/connect/ksl_abc', app: 'gmail' };
@@ -24,7 +43,6 @@ mock.module('../api/auth.ts', () => ({
   loadAuth: () => ({ token: 't' }),
   loadEnvAuth: () => null,
 }));
-mock.module('../project-link.ts', () => ({ resolveProjectId: () => 'proj-1' }));
 mock.module('../api/sdk.ts', () => ({ kortixFromAuth: () => ({}) }));
 mock.module('../api/client.ts', () => ({
   clientFromAuth: () => ({

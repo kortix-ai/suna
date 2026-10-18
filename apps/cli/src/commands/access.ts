@@ -146,7 +146,7 @@ async function resolveScope(
 
   // No --host given: the credential is the stored active host, so the
   // ambient project chain must not pair with it under a selection (KRTX-1705).
-  const projectId = f.project ?? resolveProjectId(undefined, { hostScoped: !f.host });
+  const projectId = f.project ?? resolveProjectId(undefined, { hostScoped: !f.host, hostName: f.host });
   if (!projectId) {
     process.stderr.write(
       `${status.err('No project linked.')} Pass ${C.cyan}--project <id>${C.reset} for one project, ` +
