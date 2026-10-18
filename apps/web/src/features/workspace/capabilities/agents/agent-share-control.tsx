@@ -1,4 +1,5 @@
 'use client';
+import { useAgentGrants } from './use-agent-grants';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
@@ -26,10 +27,8 @@ import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { getProjectDetail, listProjectResourceGrants } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { useProjectAccountId, useProjectName } from '@kortix/sdk/react';
 import { ShareNetworkIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -72,19 +71,8 @@ export function AgentShareControl({
   const [stackOpen, setStackOpen] = useState(false);
   const tParticipants = useI18nTranslations('sessionParticipants');
 
-  const grantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId),
-    queryFn: () => listProjectResourceGrants(projectId),
-    enabled: canManage,
-    retry: false,
-    ...contract('inventory'),
-  });
-  const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const projectName = detailQuery.data?.project?.name ?? '';
+  const grantsQuery = useAgentGrants(projectId, canManage);
+  const projectName = useProjectName(projectId) ?? '';
 
   const assigned = useMemo(
     () => grantsForAgent(grantsQuery.data?.grants ?? [], agentName),

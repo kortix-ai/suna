@@ -4792,6 +4792,175 @@ test('does NOT match the userscript-manager prefix against a first-party _next b
   );
 });
 
+// Reproduces Better Stack error
+// 2e256e5f05cfde3531e693c0f2b9d3449cf95d468eb845b73f2b5add250f5865
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-10-18 01:52:32 UTC. An anonymous visitor on the marketing
+// homepage (`https://kortix.com/`, Chrome 148 / Generic Linux) loaded the
+// CookieYes cookie-consent SDK (loaded via GTM; the web app's own
+// `ConsentGate` only toggles the banner's CSS classes, and the CSP
+// allowlists `cdn-cookieyes.com`). CookieYes serves its runtime from its own
+// CDN workspace directory — `https://cdn-cookieyes.com/client_data/<workspace-id>/…`
+// (the event's config-fetch breadcrumbs all sit in the SAME
+// `client_data/5b1102243ea0c0e5d64998452cb87826/` directory: the config,
+// translations and audit-table JSONs). When the visitor clicked CookieYes'
+// own "Accept All" button (`button.cky-btn.cky-btn-accept`), the banner's
+// revisit-consent focus-retry loop — CookieYes' OWN minified code in
+// `banner.js`, fn `t`:
+//   `"visible"===window.getComputedStyle(o).visibility?(o.focus(),o=null):e<100&&(e++,requestAnimationFrame(t))`
+// where `o` is the revisit-consent element's `firstChild` — called
+// `window.getComputedStyle()` on that `firstChild`. `firstChild` can be a
+// whitespace TEXT node (not an Element), and `getComputedStyle` throws the
+// canonical DOM wording `TypeError: Failed to execute 'getComputedStyle' on
+// 'Window': parameter 1 is not of type 'Element'.` for non-Element nodes.
+// Sentry's `BrowserApiErrors` integration auto-wraps `requestAnimationFrame`
+// and captured the throw UNCAUGHT (`handled:false`, mechanism
+// `auto.browser.browserapierrors.requestAnimationFrame`). The frames
+// (oldest-first → last is the throwing frame):
+//   app:///_next/static/immutable/chunks/159tn3qpi9s08.js  fn `r`
+//     (the rAF scheduling wrapper — NOT the throw site)
+//   app:///client_data/5b1102243ea0c0e5d64998452cb87826/banner.js  fn `t`
+//     line 1 col 6777  (THROW SITE — CookieYes' own revisit-consent loop)
+// The throw is in the THIRD-PARTY cookie SDK's own code, never in first-party
+// app code: `banner.js` is CookieYes' consent-banner bundle served from its
+// CDN workspace directory, and no first-party bundle or resolved source ever
+// carries that path. The `app:///client_data/<workspace-id>/` directory is
+// already classified third-party injected source (`script.js`, the SDK's
+// main runtime, is anchored in the same list); `banner.js` is its sibling UI
+// bundle, so the same anchor extends to it. A real first-party
+// `getComputedStyle` TypeError throws inside an `app:///_next/…` chunk (or a
+// de-minified `apps/web/src/…` frame) and is never matched.
+const COOKIEYES_WORKSPACE_ID = '5b1102243ea0c0e5d64998452cb87826';
+const COOKIEYES_BANNER_FRAME = `app:///client_data/${COOKIEYES_WORKSPACE_ID}/banner.js`;
+
+// The exact production event: the rAF scheduling wrapper frame first
+// (oldest), CookieYes' banner.js as the throwing frame (last).
+const COOKIEYES_BANNER_SENTRY_EVENT = {
+  request: { url: 'https://kortix.com/' },
+  exception: {
+    values: [
+      {
+        type: 'TypeError',
+        value: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+        mechanism: {
+          type: 'auto.browser.browserapierrors.requestAnimationFrame',
+          handled: false,
+        },
+        stacktrace: {
+          frames: [
+            { filename: 'app:///_next/static/immutable/chunks/159tn3qpi9s08.js', function: 'r' },
+            { filename: COOKIEYES_BANNER_FRAME, function: 't' },
+          ],
+        },
+      },
+    ],
+  },
+};
+
+test('classifies the CookieYes banner.js getComputedStyle TypeError as noise (real Sentry event)', () => {
+  assert.equal(shouldIgnoreSentryBrowserNoise(COOKIEYES_BANNER_SENTRY_EVENT), true);
+});
+
+test('classifies the CookieYes banner.js throw from the filename alone (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+      filename: COOKIEYES_BANNER_FRAME,
+    }),
+    true,
+  );
+});
+
+test('still classifies the CookieYes script.js sibling in the same workspace directory', () => {
+  // `script.js` (the SDK's main runtime) was anchored before `banner.js`
+  // existed as an anchor; the regex extension must keep matching it.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'anything',
+      filename: `app:///client_data/${COOKIEYES_WORKSPACE_ID}/script.js`,
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a real first-party getComputedStyle TypeError from app code', () => {
+  // Our own code (or a UI library we control) calling `getComputedStyle` on a
+  // non-Element throws the SAME canonical wording inside a first-party
+  // `app:///_next/…` bundle frame — that is actionable and must keep
+  // reporting.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+            mechanism: { type: 'auto.browser.browserapierrors.requestAnimationFrame', handled: false },
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'app:///_next/static/immutable/chunks/159tn3qpi9s08.js',
+                  function: 'r',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+      filename: 'app:///_next/static/chunks/159tn3qpi9s08.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT match unknown files under the CookieYes client_data workspace directory', () => {
+  // The anchor stays tight to the two CookieYes runtime files we observed
+  // (`script.js`, `banner.js`); any other file name in the directory keeps
+  // reporting.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+            stacktrace: {
+              frames: [{ filename: `app:///client_data/${COOKIEYES_WORKSPACE_ID}/widget.js` }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT match the CookieYes loader URL (cookieyes.js) as the banner source', () => {
+  // The GTM loader frame (`https://cdn.cookieyes.com/cookieyes.js`) is a
+  // different file from the workspace-directory runtime bundles; the loader
+  // case is classified elsewhere and must stay un-matched by this anchor.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.",
+            stacktrace: {
+              frames: [{ filename: 'https://cdn.cookieyes.com/cookieyes.js' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
 // Reproduces Better Stack error e6a45fe4999b5a60f5cd64fd4153b18c2beebfc4409a3d54da456a4bbc24e5d2
 // (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
 // users, 2026-07-12 19:31:47 UTC. A Threads (Barcelona) in-app Android WebView

@@ -8,6 +8,7 @@ import {
   createGatewayKey,
   deleteGatewayKey,
   listGatewayKeys,
+  revokeGatewayKey,
   validateGatewayKey,
 } from '../llm-gateway/gateway-keys';
 
@@ -128,6 +129,27 @@ describe('validateGatewayKey', () => {
     expect(await validateGatewayKey(created.secret_key)).toBeNull();
     expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(created.key_id);
     expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(false);
+  });
+
+  test('the key list offers only keys that still authenticate — a revoked key leaves it', async () => {
+    // The dogfood cleanup (KRTX-2560): `gateway keys rm` then `gateway keys ls`
+    // still listed the dead key. The list is the surface that names live
+    // credentials; the CLI reads it with that meaning for PATs already
+    // (`tokens ls --mine` = "keys that still authenticate"). The revoked row
+    // stays in the table so a refused request keeps its identity
+    // (`validateGatewayKey`), it just stops being listed.
+    const { keyId, secretKey } = await seedKey({ status: 'active' });
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).toContain(keyId);
+
+    expect(await revokeGatewayKey(PROJECT, keyId)).toBe(true);
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId,
+      refused: 'revoked',
+    });
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(keyId);
   });
 
   test('deleteGatewayKey is scoped to the owning project', async () => {

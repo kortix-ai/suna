@@ -1,3 +1,6 @@
+/** The long-form options every build/audit "age" stamp shares. */
+export const LONG_AGO = { style: 'long', empty: '—', zero: 'minute' } as const;
+
 /**
  * Short "how long ago" label — `just now`, `12m ago`, `3h ago`, `11d ago`, then
  * an absolute date past a month. A future timestamp (a key expiry, a scheduled
@@ -11,29 +14,36 @@
 export function relativeTime(
   t?: string | number | null,
   locale = 'en',
-  now: number = Date.now(),
+  now = Date.now(),
+  options: {
+    style?: Intl.RelativeTimeFormatStyle;
+    empty?: string;
+    zero?: 'second' | 'minute';
+  } = {},
 ): string {
-  if (!t) return '';
+  if (!t) return options.empty ?? '';
   const then = typeof t === 'string' ? +new Date(t) : t;
-  if (!Number.isFinite(then)) return '';
+  if (!Number.isFinite(then)) return options.empty ?? '';
   const m = ((now - then) / 60000) | 0;
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' });
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: options.style ?? 'narrow' });
   if (m === 0) {
     // Within a minute of `now`. A fresh past stamp reads "just now"; an
     // imminent expiry still counts down — "in 1m" — because a key that stops
     // working in thirty seconds is not "just now" anything.
     if (then > now) {
-      const countdown = new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'narrow' });
+      const countdown = new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: options.style ?? 'narrow' });
       return countdown.format(1, 'minute');
     }
-    return locale.toLowerCase().startsWith('en') ? 'just now' : formatter.format(0, 'second');
+    return !options.zero && locale.toLowerCase().startsWith('en')
+      ? 'just now'
+      : formatter.format(0, options.zero ?? 'second');
   }
   // `numeric: 'auto'` for the past ("yesterday", "5m ago"); `always` for the
   // future so a one-day-out expiry reads "in 1d", not Intl's "tomorrow" —
   // an expiry is a countdown the same way an age is an age.
   const rtf =
     m < 0
-      ? new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'narrow' })
+      ? new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: options.style ?? 'narrow' })
       : formatter;
   if (Math.abs(m) < 60) return rtf.format(-m, 'minute');
   const h = (m / 60) | 0;

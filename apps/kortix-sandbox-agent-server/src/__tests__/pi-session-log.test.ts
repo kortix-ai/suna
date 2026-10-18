@@ -144,6 +144,21 @@ describe('pi session-log export', () => {
     expect(byId(messages, 'msg_g').blocks.map((b) => b.id)).toEqual(['msg_g-n0'])
   })
 
+  test('a synthetic prompt part stays synthetic through the projection (KRTX-2597)', () => {
+    // The continuation prompt the harness re-prompts an interrupted turn with
+    // arrives marked `synthetic` on the wire. The projection must keep the
+    // flag on the exported text block, or the turn model reads the prompt as
+    // a person's words and the transcript renders it as a user bubble again.
+    const s = fixture()
+    s.transcript = s.transcript.map((row) => row.info.id === 'msg_d'
+      ? { ...row, parts: (row.parts as Array<Record<string, unknown>>).map((p) => ({ ...p, synthetic: true })) }
+      : row) as never
+    const messages = root(s)
+    expect(byId(messages, 'msg_d').blocks[0]).toMatchObject({ type: 'text', text: 'Run sleep.', synthetic: true })
+    // A person's prompt carries no flag.
+    expect(byId(messages, 'msg_a').blocks[0]).not.toMatchObject({ synthetic: true })
+  })
+
   test('the model comes from the pi message, not the model the v1 row recorded', () => {
     const messages = root(fixture())
     expect(byId(messages, 'msg_b').model).toEqual({ provider: 'kortix', model: 'answer-model', api: 'openai-chat' })

@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import { configureKortix } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
-import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/sandbox-health';
 
 import { prefetchProjectShellReads } from './project-shell-prefetch';
 

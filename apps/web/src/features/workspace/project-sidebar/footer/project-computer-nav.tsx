@@ -1,16 +1,12 @@
 'use client';
 
-import { LaptopIcon, XIcon } from '@phosphor-icons/react';
+import { PromoNavRow } from './promo-nav-row';
+
+import { LaptopIcon } from '@phosphor-icons/react';
 import { useCallback, useState } from 'react';
 
 import Loading from '@/components/ui/loading';
-import {
-  SidebarMenuAction,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import {
   useConnectDesktopComputer,
   useOwnsPairedComputer,
@@ -89,37 +85,27 @@ function ComputerPromo({
   const title = oneClick ? t('connectThisComputer') : t('connectYourComputer');
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        className="text-sidebar-foreground bg-hover group-has-data-[sidebar=menu-action]/menu-item:pr-12"
-        disabled={connectDesktop.isPending}
-        aria-busy={connectDesktop.isPending}
-        onClick={() => {
-          if (oneClick) {
-            connectDesktop.mutate({ reauth: stale });
-            return;
-          }
-          onOpenConnect();
-          if (isMobile) setOpenMobile(false);
-        }}
-      >
-        {connectDesktop.isPending ? (
+    <PromoNavRow
+      icon={
+        connectDesktop.isPending ? (
           <Loading className="size-4 shrink-0" />
         ) : (
           <LaptopIcon className="text-muted-foreground size-4 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {connectDesktop.isPending ? t('connecting') : title}
-        </span>
-      </SidebarMenuButton>
-      {/* Same slot as the dismiss action: the badge gives way to it on hover
-          and focus, and on a phone, where the action is always shown. */}
-      <SidebarMenuBadge className="bg-kortix-blue/15 text-kortix-blue rounded-sm px-1.5 mr-1 group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0 max-md:hidden">
-        {tSidebar('new')}
-      </SidebarMenuBadge>
-      <SidebarMenuAction onClick={onDismiss} aria-label={t('dismissPromo')} showOnHover className="mr-1">
-        <XIcon />
-      </SidebarMenuAction>
-    </SidebarMenuItem>
+        )
+      }
+      label={connectDesktop.isPending ? t('connecting') : title}
+      badge={tSidebar('new')}
+      dismissLabel={t('dismissPromo')}
+      onDismiss={onDismiss}
+      pending={connectDesktop.isPending}
+      onClick={() => {
+        if (oneClick) {
+          connectDesktop.mutate({ reauth: stale });
+          return;
+        }
+        onOpenConnect();
+        if (isMobile) setOpenMobile(false);
+      }}
+    />
   );
 }

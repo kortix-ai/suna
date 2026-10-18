@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 
 import { resolveExpiry } from '../commands/tokens.ts';
 import {
@@ -86,6 +87,9 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   }
   if (p === '/v1/accounts/tokens/tok_a' && req.method === 'DELETE') {
     return Response.json({ ok: true });
+  }
+  if (p === '/v1/accounts/tokens/tok_b' && req.method === 'DELETE') {
+    return Response.json({ ok: true, deleted: true });
   }
   if (p === '/v1/accounts/tokens/tok_missing' && req.method === 'DELETE') {
     return Response.json({ error: 'token not found or already revoked' }, { status: 404 });
@@ -335,15 +339,64 @@ describe('kortix tokens', () => {
     expect(api!.requests).toHaveLength(0);
   });
 
+  test.each(['active', 'revoked'])('rm preserves %s operation across lost responses', async (initial) => {
+    let revoked = initial === 'revoked';
+    let deleted = false;
+    let attempts = 0;
+    const deletions: string[] = [];
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'GET') {
+        res.end(JSON.stringify(deleted ? [] : [{ token_id: 'retry_key', status: revoked ? 'revoked' : 'active' }]));
+        return;
+      }
+      attempts++;
+      deletions.push(url.search);
+      if (url.searchParams.get('delete_revoked') === 'true' && revoked && !deleted) {
+        deleted = true;
+        req.socket.destroy();
+      } else if (!revoked) {
+        revoked = true;
+        req.socket.destroy();
+      } else {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: 'token not found or already revoked' }));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('missing TCP address');
+      const config = writeConfig(tmp, `http://127.0.0.1:${address.port}`, ACCOUNT);
+      const result = await runCommand(runner, ['rm', 'retry_key', '-y'], { cwd: tmp, configFile: config });
+      expect(attempts).toBe(2);
+      expect(revoked).toBe(true);
+      expect(deletions.every((query) => query.includes('delete_revoked=true') === (initial === 'revoked'))).toBe(true);
+      expect(deleted).toBe(initial === 'revoked');
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(initial === 'revoked' ? 'Deleted' : 'Revoked');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   test('rm -y DELETEs with account_id; a 404 surfaces and exits 1', async () => {
     const config = boot();
     const ok = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
     expect(ok.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api!.requests[1]).toMatchObject({
       method: 'DELETE',
       path: '/v1/accounts/tokens/tok_a',
     });
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
+    expect(api!.requests[1]!.query).not.toContain('delete_revoked=true');
+
+    expect(ok.stdout).toContain('Revoked');
+    const deleted = await runCommand(runner, ['rm', 'tok_b', '-y'], { cwd: tmp, configFile: config });
+    expect(deleted.code).toBe(0);
+    expect(deleted.stdout).toContain('Deleted');
 
     const miss = await runCommand(runner, ['rm', 'tok_missing', '-y'], {
       cwd: tmp,

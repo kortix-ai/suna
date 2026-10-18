@@ -34,10 +34,12 @@ import {
 import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
+import { logger } from '../../lib/logger';
 import { writeSessionLogFromMirror } from '../session-log-capture';
 import {
   MIRROR_CAPTURE_LIMIT,
   capturedMessageIndex,
+  childReadFailureLog,
   childSessionReferences,
   capturedPageGate,
   headCompleteAfterCapture,
@@ -45,6 +47,7 @@ import {
   mirrorRowsFromOpencodePayload,
   readChildTranscripts,
 } from './session-transcript-mirror';
+import { isRuntimeUnavailableError } from './runtime-read-failure';
 
 const CAPTURE_TIMEOUT_MS = 8_000;
 
@@ -231,8 +234,7 @@ const liveCaptureDeps: CaptureDeps = {
       entry.settled &&= row.role !== 'assistant' || row.messageCompletedAt !== null;
       savedChildren.set(row.opencodeSessionId, entry);
     }
-    const failed: { count: number; first?: string } = { count: 0 };
-    const { children, more } = await readChildTranscripts({
+    const { children, more, failures } = await readChildTranscripts({
       references: childSessionReferences([...result.rows, ...previous]),
       stored: savedChildren,
       cap: MAX_CHILD_READS_PER_CAPTURE,
@@ -243,15 +245,14 @@ const liveCaptureDeps: CaptureDeps = {
           true,
           recoveryFor(partsById(stored.filter((row) => row.opencodeSessionId === child))),
         ),
-      // One unreadable sub-agent never costs the conversation its capture.
-      onError: (_child, err) => {
-        failed.count += 1;
-        failed.first ??= err instanceof Error ? err.message : String(err);
-      },
     });
-    // One line per capture: past the deadline every remaining read fails the same way.
-    if (failed.count > 0) {
-      console.warn('[transcript-mirror] sub-agent reads failed', { sessionId, ...failed });
+    // One line per capture. Expected states — a stopped box, gone transcripts —
+    // log info; only an unexpected failure warns. See `childReadFailureLog`.
+    const failureLine = childReadFailureLog(failures);
+    if (failureLine) {
+      const context = { sessionId, ...failureLine.context };
+      if (failureLine.level === 'warn') console.warn(failureLine.message, context);
+      else logger.info(failureLine.message, context);
     }
 
     return {
@@ -435,10 +436,25 @@ async function captureSessionTranscript(
     }
     return result;
   } catch (err) {
-    console.warn(
-      `[transcript-mirror] capture failed for session ${sessionId}:`,
-      `sqlstate=${errorSqlstate(err) ?? 'unknown'}`,
-    );
+    // A stopped, gone, or cold box is the expected state of an idle session;
+    // the capture fail-opens on it (returns null, the mirror stays as it is).
+    // That degrade is info. Anything else keeps the warn, and every line now
+    // names the real error — the old line carried only `sqlstate=unknown`, so
+    // it diagnosed nothing.
+    const detail = err instanceof Error ? err.message : String(err);
+    if (isRuntimeUnavailableError(err)) {
+      logger.info(`[transcript-mirror] capture deferred for session ${sessionId}`, {
+        sessionId,
+        error: detail,
+        sqlstate: errorSqlstate(err) ?? 'unknown',
+      });
+    } else {
+      console.warn(`[transcript-mirror] capture failed for session ${sessionId}`, {
+        sessionId,
+        error: detail,
+        sqlstate: errorSqlstate(err) ?? 'unknown',
+      });
+    }
     return null;
   }
 }

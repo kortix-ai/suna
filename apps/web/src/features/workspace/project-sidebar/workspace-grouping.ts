@@ -30,9 +30,14 @@ const FALLBACK_ACCOUNT_NAME = 'Account';
  * literally named "'s Account" would strip to nothing, and a blank heading is
  * worse than a redundant one.
  */
-export function workspaceAccountLabel(name: string | null | undefined): string {
+export function workspaceAccountLabel(
+  name: string | null | undefined,
+  fallback = FALLBACK_ACCOUNT_NAME,
+  stripSuffix = true,
+): string {
   const trimmed = (name ?? '').trim();
-  if (!trimmed) return FALLBACK_ACCOUNT_NAME;
+  if (!trimmed) return fallback;
+  if (!stripSuffix) return trimmed;
   const stripped = trimmed.replace(/[\u2019']s Account$/u, '').trim();
   return stripped || trimmed;
 }
@@ -60,7 +65,10 @@ export function groupWorkspacesByAccount({
   activeWorkspaceId,
 }: GroupWorkspacesInput): WorkspaceGroup[] {
   const nameByAccountId = new Map(
-    accounts.map((account) => [account.account_id, account.name?.trim() || FALLBACK_ACCOUNT_NAME]),
+    accounts.map((account) => [
+      account.account_id,
+      workspaceAccountLabel(account.name, FALLBACK_ACCOUNT_NAME, false),
+    ]),
   );
 
   const byAccountId = new Map<string, KortixProject[]>();
