@@ -425,7 +425,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={toggleDrawer}
               variant="ghost"
               size="icon-sm"
-              className="size-11 md:hidden"
+              className="size-12 md:hidden"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="size-5" />
@@ -454,7 +454,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={toggleDrawer}
               variant="ghost"
               size="icon"
-              className="size-11 rounded-full"
+              className="size-12 rounded-full"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
             >
               <X className="size-5" />

@@ -267,7 +267,7 @@ test('mobile tap targets: the brand links span the 64px bar and the menu toggles
   // (KRTX-2110, KRTX-1790): the brand link is a 75x15 glyph box, the menu
   // toggles 28-33px. The fix makes the boxes themselves carry the target:
   // the brand links stretch the full h-16 bar (the glyph stays 15px), and
-  // the ghost toggles grow to size-11 — invisible at rest, 44px to the
+  // the ghost toggles grow to size-12 — invisible at rest, 44px to the
   // pointer, measurable by the journey.
   await mountNavbar();
   const brand = header()!.querySelector<HTMLAnchorElement>('a[href="/"]');
@@ -276,7 +276,7 @@ test('mobile tap targets: the brand links span the 64px bar and the menu toggles
   const open = container!.querySelector(
     '[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]',
   );
-  expect(open!.className).toContain('size-11');
+  expect(open!.className).toContain('size-12');
   await act(async () => {
     lib.click(open!);
   });
@@ -287,7 +287,7 @@ test('mobile tap targets: the brand links span the 64px bar and the menu toggles
   const close = drawerEl!.querySelector(
     '[aria-label="componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu"]',
   );
-  expect(close!.className).toContain('size-11');
+  expect(close!.className).toContain('size-12');
 });
 
 test('mobile tap targets: the Get started CTA extends its hit area to the 44px floor without growing the filled button', async () => {

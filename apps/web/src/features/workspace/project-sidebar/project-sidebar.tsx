@@ -190,7 +190,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
-                className="shrink-0"
+                // The palette's only pointer-reachable entry: the ≈26px ghost
+                // box clears the 44px floor with the vertical-only extension —
+                // vertical-only because this titlebar row packs several
+                // controls side by side (KRTX-2004).
+                className="shrink-0 hit-area-y-3"
               >
                 <MagnifyingGlassIcon className="size-4" />
               </Button>

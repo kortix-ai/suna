@@ -11,7 +11,7 @@ import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-3 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-(--duration-normal) duration-(--duration-slow) ease-out';
+  'shrink-0 rounded-full p-0 hit-area-3 z-20 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-(--duration-normal) duration-(--duration-slow) ease-out';
 
 /**
  * Send ⇄ stop ⇄ pending cross-fade. The three states used to be three separate

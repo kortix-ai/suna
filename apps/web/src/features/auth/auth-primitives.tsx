@@ -21,6 +21,7 @@ import {
   CODE_LENGTH,
   insertDigits,
 } from '@/features/auth/code-input-logic';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -66,11 +67,13 @@ export function Rise({
  * traffic lights and the frame's Back control.
  */
 export function AuthMobileLogo() {
+  // Same key the marketing navbar's brand link uses.
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="kx-auth-mobile-logo absolute top-6 left-6 z-10 md:hidden">
       <Link
         href="/"
-        aria-label="Kortix home"
+        aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
         className="hit-area-3 inline-flex"
       >
         <KortixLogo variant="icon" size={22} className="text-foreground" />
