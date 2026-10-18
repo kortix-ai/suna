@@ -707,35 +707,17 @@ async function waitForTemplate(
   );
 }
 
-export async function ensureTemplate(
+/**
+ * The ceremony both template kinds repeat: list by name, reuse a matching
+ * built template when one is reusable, else create (direct or derived) under
+ * an idempotency key and wait the build out.
+ */
+async function ensurePlatinumTemplate(
   api: PlatinumApi,
-  spec: PlatinumTemplateSpec,
+  name: string,
+  create: (templates: PlatinumTemplate[]) => Promise<PlatinumTemplate>,
+  missLog = '',
 ): Promise<PlatinumTemplate> {
-  const templates = await api.json<PlatinumTemplate[]>(
-    `/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`,
-    {},
-    { attempts: 20 },
-  );
-  const existing = selectReusablePlatinumTemplate(templates, spec.name);
-  if (existing) {
-    console.log(`[platinum-ci] template=${spec.name} cache=hit id=${existing.id}`);
-    return waitForTemplate(api, existing);
-  }
-  console.log(`[platinum-ci] template=${spec.name} cache=miss`);
-  const queued = await api.json<PlatinumTemplate>('/v1/templates/from-spec', {
-    method: 'POST',
-    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(spec.name, templates) },
-    body: JSON.stringify(spec),
-  });
-  return waitForTemplate(api, queued);
-}
-
-export async function ensureWarmTemplate(
-  api: PlatinumApi,
-  base: PlatinumTemplate,
-  lockHash: string,
-): Promise<PlatinumTemplate> {
-  const name = platinumTemplateName(lockHash);
   const templates = await api.json<PlatinumTemplate[]>(
     `/v1/templates?name=${encodeURIComponent(name)}&limit=20`,
     {},
@@ -746,13 +728,41 @@ export async function ensureWarmTemplate(
     console.log(`[platinum-ci] template=${name} cache=hit id=${existing.id}`);
     return waitForTemplate(api, existing);
   }
-  console.log(`[platinum-ci] template=${name} cache=miss parent=${base.id}`);
-  const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
-    method: 'POST',
-    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(name, templates) },
-    body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
-  });
-  return waitForTemplate(api, derived);
+  console.log(`[platinum-ci] template=${name} cache=miss${missLog}`);
+  const queued = await create(templates);
+  return waitForTemplate(api, queued);
+}
+
+export async function ensureTemplate(
+  api: PlatinumApi,
+  spec: PlatinumTemplateSpec,
+): Promise<PlatinumTemplate> {
+  return ensurePlatinumTemplate(api, spec.name, (templates) =>
+    api.json<PlatinumTemplate>('/v1/templates/from-spec', {
+      method: 'POST',
+      headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(spec.name, templates) },
+      body: JSON.stringify(spec),
+    }),
+  );
+}
+
+export async function ensureWarmTemplate(
+  api: PlatinumApi,
+  base: PlatinumTemplate,
+  lockHash: string,
+): Promise<PlatinumTemplate> {
+  const name = platinumTemplateName(lockHash);
+  return ensurePlatinumTemplate(
+    api,
+    name,
+    (templates) =>
+      api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
+        method: 'POST',
+        headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(name, templates) },
+        body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
+      }),
+    ` parent=${base.id}`,
+  );
 }
 
 export async function observePlatinumSandboxStart(input: {

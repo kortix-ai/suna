@@ -217,10 +217,12 @@ type ReadAgentBlockResult =
 /**
  * Read one agent's raw block out of an already-loaded v2 or v3 manifest. Never
  * throws. A v3 block also carries behavior and the prompt; the route splits it
- * with `agentConfigViewV3`. `block` is `null` for a v1 manifest or when
- * the named agent isn't declared yet (a brand-new agent the editor is about
- * to create) — both are valid, non-error states the caller (the GET route)
- * surfaces distinctly via `schemaVersion`/`ok`.
+ * with `agentConfigViewV3`. `block` is `null` for a v1 manifest with a
+ * DECLARED agent (valid — the route answers 200 with `schema_version: 1` so
+ * the editor can offer the upgrade; an undeclared v1 name hits the same
+ * 404 gate), or when the named agent isn't declared in a v2+ manifest (the
+ * GET route turns that into 404 `agent_not_found`, which names the declared
+ * agents — see `agentNotDeclaredError` in `agents/parse.ts`).
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
   if (manifest.schemaVersion < 2) {
