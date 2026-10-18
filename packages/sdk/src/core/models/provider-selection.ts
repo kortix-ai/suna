@@ -86,28 +86,26 @@ export function normalizeProviderList(providers: ProviderListResponse): Provider
 export function providerListHasModels(providers: ProviderListResponse | undefined): boolean {
   if (!providers) return false;
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
-  if (connected.length === 0) return false;
+  if (normalized.connected.length === 0) return false;
+  const all = normalized.all;
+  const connected = normalized.connected;
   return all.some((p) => connected.includes(p.id) && p.models && Object.keys(p.models).length > 0);
 }
 
 export function providerListHasGateway(providers: ProviderListResponse | undefined): boolean {
   if (!providers) return false;
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
-  return connected.includes('kortix') || all.some((p) => p.id === 'kortix');
+  return (
+    normalized.connected.includes('kortix') || normalized.all.some((p) => p.id === 'kortix')
+  );
 }
 
 export function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
-    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
+    all: normalized.all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
+    connected: normalized.connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
   };
 }
 
@@ -118,15 +116,15 @@ export function mergeProviderLists(
   const first = normalizeProviderList(primary);
   const second = normalizeProviderList(secondary);
   const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
-  for (const provider of Array.isArray(first.all) ? first.all : []) {
+  for (const provider of first.all) {
     all.set(provider.id, provider);
   }
-  for (const provider of Array.isArray(second.all) ? second.all : []) {
+  for (const provider of second.all) {
     all.set(provider.id, provider);
   }
   const connected = new Set<string>();
-  for (const id of Array.isArray(first.connected) ? first.connected : []) connected.add(id);
-  for (const id of Array.isArray(second.connected) ? second.connected : []) connected.add(id);
+  for (const id of first.connected) connected.add(id);
+  for (const id of second.connected) connected.add(id);
   return {
     ...first,
     all: [...all.values()],
@@ -137,12 +135,10 @@ export function mergeProviderLists(
 
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
-    all: all.filter((p) => !NATIVE_EXCLUDED_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => !NATIVE_EXCLUDED_PROVIDER_IDS.has(id)),
+    all: normalized.all.filter((p) => !NATIVE_EXCLUDED_PROVIDER_IDS.has(p.id)),
+    connected: normalized.connected.filter((id) => !NATIVE_EXCLUDED_PROVIDER_IDS.has(id)),
   };
 }
 
@@ -152,24 +148,13 @@ export function mergeProjectSecretConnectedProviders(
   providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
 ): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const allIds = new Set(all.map((provider) => provider.id));
-  const connected = new Set(Array.isArray(normalized.connected) ? normalized.connected : []);
-
-  for (const provider of providerCredentials) {
-    if (
-      allIds.has(provider.id) &&
-      isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))
-    ) {
-      connected.add(provider.id);
-    }
-  }
-
-  if (
-    allIds.has('codex') &&
-    (secretNames.has('CODEX_AUTH_JSON') || secretNames.has('OPENCODE_AUTH_JSON'))
-  ) {
-    connected.add('codex');
+  // The connection policy is the shared one (below): satisfied credentials
+  // plus the codex auth-json exception, here intersected with the ids the
+  // provider list actually carries.
+  const satisfied = connectedGatewayProviderIdsFromSecretNames(secretNames, providerCredentials);
+  const connected = new Set(normalized.connected);
+  for (const id of satisfied) {
+    if (normalized.all.some((provider) => provider.id === id)) connected.add(id);
   }
 
   return { ...normalized, connected: [...connected] };
@@ -398,16 +383,16 @@ export function mergeNativeProviderLists(
   const second = normalizeProviderList(runtime);
   type Provider = NonNullable<ProviderListResponse['all']>[number];
   const runtimeById = new Map<string, Provider>();
-  for (const provider of Array.isArray(second.all) ? second.all : []) {
+  for (const provider of second.all) {
     runtimeById.set(provider.id, provider);
   }
   const all: Provider[] = [];
   const seen = new Set<string>();
-  for (const provider of Array.isArray(first.all) ? first.all : []) {
+  for (const provider of first.all) {
     all.push(runtimeById.get(provider.id) ?? provider);
     seen.add(provider.id);
   }
-  for (const provider of Array.isArray(second.all) ? second.all : []) {
+  for (const provider of second.all) {
     if (!seen.has(provider.id)) {
       all.push(provider);
       seen.add(provider.id);
@@ -415,10 +400,7 @@ export function mergeNativeProviderLists(
   }
   const connected: string[] = [];
   const connectedSeen = new Set<string>();
-  for (const id of [
-    ...(Array.isArray(first.connected) ? first.connected : []),
-    ...(Array.isArray(second.connected) ? second.connected : []),
-  ]) {
+  for (const id of [...first.connected, ...second.connected]) {
     if (!connectedSeen.has(id)) {
       connected.push(id);
       connectedSeen.add(id);
@@ -434,9 +416,12 @@ export function mergeNativeProviderLists(
   return { ...second, all, connected, default: defaults };
 }
 
-export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
+export function connectedGatewayProviderIdsFromSecretNames(
+  secretNames: Set<string>,
+  credentials = LLM_PROVIDER_CREDENTIALS,
+): Set<string> {
   const ids = new Set<string>();
-  for (const provider of LLM_PROVIDER_CREDENTIALS) {
+  for (const provider of credentials) {
     if (isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))) {
       ids.add(provider.id);
     }
