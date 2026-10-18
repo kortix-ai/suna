@@ -24,14 +24,25 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useTranslations } from '@/i18n/use-translations';
+import { useTranslations, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 
 /**
  * The agent name's slug rule — the manifest validator's (`SLUG_RE`), so a name
  * the form accepts is a name `applyAgentBlockV2` accepts. The API is the
  * authority; this only keeps impossible names off the wire.
  */
-const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+/** Why the create form refuses a candidate name: empty, not a slug, or
+ *  already declared. Null = the API would accept it. Exported pure so the
+ *  form's one rule is testable without a DOM. */
+export type AgentNameIssue = 'empty' | 'invalid' | 'taken';
+export function agentNameIssue(candidate: string, takenNames: readonly string[]): AgentNameIssue | null {
+  if (!candidate) return 'empty';
+  if (!AGENT_NAME_RE.test(candidate)) return 'invalid';
+  if (takenNames.includes(candidate)) return 'taken';
+  return null;
+}
 
 /**
  * New → Set up manually (KRTX-1934, KRTX-2086): a minimal name + description +
@@ -56,6 +67,7 @@ export function NewAgentDialog({
   takenNames: readonly string[];
 }) {
   const t = useTranslations('agentsPages');
+  const tShared = useI18nTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -96,11 +108,16 @@ export function NewAgentDialog({
 
   const submit = () => {
     const candidate = name.trim();
-    if (!AGENT_NAME_RE.test(candidate)) {
-      setNameError(candidate ? t('nameInvalid') : t('nameHint'));
+    const issue = agentNameIssue(candidate, takenNames);
+    if (issue === 'empty') {
+      setNameError(t('nameHint'));
       return;
     }
-    if (takenNames.includes(candidate)) {
+    if (issue === 'invalid') {
+      setNameError(t('nameInvalid'));
+      return;
+    }
+    if (issue === 'taken') {
       setNameError(t('nameTaken', { name: candidate }));
       return;
     }
@@ -183,7 +200,7 @@ export function NewAgentDialog({
               reset();
             }}
           >
-            {t('cancel')}
+            {tShared.raw('text19766ed6ccb2')}
           </Button>
           <Button
             size="sm"

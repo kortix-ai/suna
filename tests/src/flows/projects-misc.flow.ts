@@ -489,6 +489,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'DELETE /v1/projects/:projectId/agents/:agentName/config',
       'GET /v1/projects/:projectId/files/content',
     ],
   },
@@ -619,6 +620,61 @@ flow(
         r.status(403);
       },
     );
+
+    // Removal (KRTX-2085): the same PUT route that creates an agent through
+    // the editor also lets the owner remove it. The block leaves kortix.yaml
+    // in one commit; a second DELETE reports the agent as gone (404); the
+    // last declared agent is refused (400) so the manifest keeps >= 1 agent;
+    // the boundary holds for anonymous and grantless callers.
+    const removePath = '/v1/projects/:projectId/agents/:agentName/config';
+    const removeParams = (agentName: string) => ({ params: { projectId: project.id, agentName } });
+    await ctx.step('ANON cannot remove an agent config → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).del(removePath, removeParams('kortix'));
+      r.status(401);
+    });
+    await ctx.step(
+      'an agent created through PUT is removed through DELETE (200); the block leaves kortix.yaml and re-DELETE → 404',
+      async () => {
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const put = await owner.put(
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { behavior: { prompt: 'A throwaway agent created only to be removed.' } },
+          removeParams('temporary'),
+        );
+        put.status(200);
+        const removed = await owner.del(removePath, removeParams('temporary'));
+        removed.status(200).body().has('$.ok', true).has('$.agent', 'temporary').has('$.default_agent', 'kortix');
+        // The read route answers a v2 manifest with 200 and a behavior-only
+        // block for an agent it no longer declares (the editor's degrade
+        // signal is `block: null`, which only v1/empty manifests get); the
+        // route's own "not declared" answer is the re-DELETE 404.
+        const gone = await owner.del(removePath, removeParams('temporary'));
+        gone.status(404).body().has('$.error', 'Agent "temporary" is not declared in this project.');
+        const read = await owner.get('/v1/projects/:projectId/agents/:agentName/config', removeParams('temporary'));
+        read.status(200);
+        if (read.json<any>().block?.connectors !== undefined || read.json<any>().block?.secrets !== undefined) {
+          throw new Error(`the removed agent still carries governance: ${read.text().slice(0, 300)}`);
+        }
+        if ((await kortixBlock()).includes('temporary:')) {
+          throw new Error('kortix.yaml still declares the removed agent');
+        }
+      },
+    );
+    await ctx.step('removing the last declared agent → 400; the agent survives', async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      const r = await owner.del(removePath, removeParams('kortix'));
+      r.status(400);
+      if (!/last declared agent/.test(r.text())) {
+        throw new Error(`expected the last-declared-agent refusal, got: ${r.text().slice(0, 400)}`);
+      }
+      const read = await owner.get('/v1/projects/:projectId/agents/:agentName/config', removeParams('kortix'));
+      read.status(200);
+    });
+    await ctx.step('a member with no project grant cannot remove an agent → 403', async () => {
+      const bare = await team.addMember('remover');
+      const r = await ctx.client.as(bare).del(removePath, removeParams('kortix'));
+      r.status(403);
+    });
   },
 );
 

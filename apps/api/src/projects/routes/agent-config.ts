@@ -646,7 +646,7 @@ export function registerAgentConfigRoutes(): void {
         ...errors(400, 403, 404, 409, 502),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const agentName = c.req.param('agentName');
       const loaded = await loadProjectForUser(c, projectId, 'read');

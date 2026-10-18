@@ -21702,7 +21702,6 @@
     "removeConfirm": "Remove",
     "removed": "Agent \"{name}\" removed",
     "removeFailed": "Could not remove the agent",
-    "removeLastAgent": "This is the project's last declared agent, so it cannot be removed.",
-    "cancel": "Cancel"
+    "removeLastAgent": "This is the project's last declared agent, so it cannot be removed."
   }
 }
