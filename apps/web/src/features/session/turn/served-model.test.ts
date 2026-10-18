@@ -8,7 +8,7 @@ const models = [
   { providerID: 'anthropic', providerName: 'Anthropic', modelID: 'claude-sonnet-5-5', modelName: 'Claude Sonnet 5.5' },
 ];
 const fallback: SessionModelUsage = {
-  latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
   billed_cost: 0.875,
   turns: {
     msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
@@ -16,7 +16,7 @@ const fallback: SessionModelUsage = {
   },
 };
 const direct: SessionModelUsage = {
-  latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: '2026-10-02T15:02:50.697Z' },
+  latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
   billed_cost: 0,
   turns: { msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 } },
 };
@@ -45,10 +45,44 @@ describe('servedModelNotice', () => {
     });
   });
 
+  test('an older API response without an outcome still reports a fallback answer', () => {
+    expect(servedModelNotice({ ...fallback, latest: {
+      served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z',
+    } }, models)).toEqual({ served: 'GLM 5.3 Flash', fallbackFrom: 'GPT-6.1 Sol (ChatGPT)' });
+  });
+
   test('no notice when the session asked for the model that answered, or before any answer', () => {
     expect(servedModelNotice(direct, models)).toBeNull();
     expect(servedModelNotice({ latest: null, billed_cost: 0, turns: {} }, models)).toBeNull();
     expect(servedModelNotice(undefined, models)).toBeNull();
+  });
+
+  // KRTX-2572: the user cancels a running turn and the strip tells them the
+  // selected model "did not answer the last request" — an intentional cancel
+  // presented as a model failure. The newest request ended because the user
+  // stopped it; that is not a fallback to report.
+  test('no notice when the newest request ended in a client abort (intentional cancel)', () => {
+    const canceled: SessionModelUsage = {
+      latest: {
+        served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-17T01:44:33.035Z',
+        outcome: 'client_aborted',
+      },
+      billed_cost: 0.875,
+      turns: { msg_c: { served_models: [], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.875 } },
+    };
+    expect(servedModelNotice(canceled, models)).toBeNull();
+  });
+
+  test('no notice when the newest request failed outright; the notice returns once a model answers again', () => {
+    const failed: SessionModelUsage = {
+      latest: {
+        served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-17T01:44:33.035Z',
+        outcome: 'error',
+      },
+      billed_cost: 0,
+      turns: {},
+    };
+    expect(servedModelNotice(failed, models)).toBeNull();
   });
 });
 
