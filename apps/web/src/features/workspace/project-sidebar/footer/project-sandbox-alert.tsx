@@ -1,21 +1,31 @@
 'use client';
 
-import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import {
+  CATEGORY_CAUSE,
+  CATEGORY_CAUSE_FALLBACK,
+  CATEGORY_LABEL,
+  CATEGORY_TEXT,
+  MEMBER_LABEL,
+  MEMBER_TEXT,
+  MEMBER_TONE,
+  SEVERITY_LABEL,
+  SEVERITY_TONE,
+  describeSandboxSeverity,
+} from './sandbox-health';
 
-import { useCallback, useState } from 'react';
+import { useSandboxHealth, useSandboxRecovery } from './sandbox-health';
+
+import { useTranslations } from '@/i18n/use-translations';
+import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
+import Link from 'next/link';
+
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type SandboxAlertSeverity,
-  formatSandboxProviders,
   resolveSandboxAlertSeverity,
-  sandboxHealthRefetchInterval,
   selectCurrentSandboxFailure,
   selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
@@ -24,26 +34,16 @@ import {
   SidebarAlertActions,
   SidebarAlertBody,
   SidebarAlertText,
-  type SidebarAlertTone,
 } from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  type ProjectSandboxHealth,
-  type SandboxRuntimeStatus,
-  fixSandboxWithAgent,
-  getProjectSandboxHealth,
-  rebuildProjectSnapshot,
-} from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { type ProjectSandboxHealth } from '@kortix/sdk';
 import {
   WarningIcon as DangerTriangleSolid,
   SparkleIcon as SparklesSolid,
 } from '@phosphor-icons/react';
-
-export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
 /**
  * Severity picks a tone from the shared footer palette — it no longer carries
@@ -52,112 +52,14 @@ export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health'
  * rail, which no longer exists, and `text` was one hand-copy of what every
  * other footer alert already declares.
  */
-const SEVERITY_TONE: Record<SandboxAlertSeverity, SidebarAlertTone> = {
-  critical: 'critical',
-  warning: 'warning',
-  building: 'neutral',
-};
 
-const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
-  critical: 'Sandbox build failing',
-  warning: 'Sandbox partly unavailable',
-  building: 'Sandbox build running…',
-};
-
-/**
- * The member view: what a viewer who can neither open the sandbox settings
- * (`project.settings.write`) nor rebuild (`project.sandbox.write`) is told.
- *
- * The operator card names the build category, its age and its cause
- * ("Runtime artifact missing · 1m ago"). None of that is actionable for a
- * member, and a red "Sandbox build failing" in their sidebar reads as
- * something THEY broke. They get the one fact that matters to them: whether
- * sessions can start, and who can fix it. A partial outage (`warning`) still
- * routes sessions, so it is not shown to them at all.
- */
-const MEMBER_LABEL: Partial<Record<SandboxAlertSeverity, string>> = {
-  critical: 'Sessions unavailable',
-  building: 'Preparing sandbox…',
-};
-
-const MEMBER_TEXT: Partial<Record<SandboxAlertSeverity, string>> = {
-  critical: 'New sessions can’t start right now. An owner or admin of this project can fix it.',
-  building: 'Sessions can start once it’s ready.',
-};
-
-const MEMBER_TONE: Partial<Record<SandboxAlertSeverity, SidebarAlertTone>> = {
-  critical: 'warning',
-  building: 'neutral',
-};
-
-const CATEGORY_LABEL: Record<string, string> = {
-  quota: 'Snapshot quota reached',
-  dockerfile: 'Dockerfile build failed',
-  git: 'Repository access failed',
-  tunnel: 'Sandbox callback unreachable',
-  provider: 'Sandbox provider error',
-  timeout: 'Build timed out',
-  runtime: 'Runtime artifact missing',
-  unknown: 'Build failed',
-};
-
-/**
- * "Details" is ONE control, in ONE place, and it looks like a control.
- *
- * Two defects, same line of code. It rendered up to three times in a single
- * card — under the message, in the failure row, and again in the tray — so a
- * failing card showed the same word twice pointing at the same route. And it
- * was styled `text-muted-foreground text-xs p-0`: character for character the
- * body copy beside it. Sitting directly above the title row it read as a
- * stranded caption, not something you could click.
- *
- * It is now an outline `Button` in the action tray, the only slot, alongside
- * whatever recovery the viewer is allowed. One `<Link>` in the whole file.
- */
-
-/**
- * What went wrong, in the reader's words — never the build's.
- *
- * The card used to render `failure.error` verbatim in a scrolling monospace
- * block. On a real failure that is an absolute path from the build machine
- * ("/Users/jay/root/kortix/suna-show-response-metadata/apps/kortix-sandbox-
- * agent-server/dist/kortix-agent") wrapped across four lines and cut mid-word.
- * It was the largest object on the card, it named a directory on somebody
- * else's computer, and nobody reading the sidebar can act on it.
- *
- * Every product that does this well makes the same split — Mintlify shows
- * "Update failed / An unknown error occurred" and keeps the deployment log in
- * a separate pane; Railway puts a plain-English "Diagnosis" above the trace;
- * Buffer and Family show one sentence and a retry. The trace still exists, one
- * click away in Details, next to the whole build log rather than a 70px window
- * onto the middle of it.
- *
- * So each category gets one sentence: what happened, and what it means for
- * you. No paths, no variable names, no "artifact".
- */
 /**
  * Severity on the category line. Colour only — the leading dot it replaced put
  * the label on a 20px left edge while every other line started at 8px, and the
  * trigger row below already states the severity in the same tone.
  */
-const CATEGORY_TEXT: Record<'critical' | 'warning', string> = {
-  critical: 'text-destructive',
-  warning: 'text-kortix-orange',
-};
-
-const CATEGORY_CAUSE: Record<string, string> = {
-  quota: 'This project has no room for another sandbox image. Removing an old one frees space.',
-  dockerfile: 'A step in the project’s Dockerfile did not finish.',
-  git: 'The build could not read the project’s repository. Its access may have expired.',
-  tunnel: 'The sandbox could not reach Kortix while it was being built.',
-  provider: 'The sandbox provider refused the build. This is usually temporary.',
-  timeout: 'The build ran past its time limit and was stopped.',
-  runtime: 'The build finished, but without the agent it needs to run.',
-  unknown: 'The build stopped before it finished.',
-};
 
 /** Fallback for a category the server knows and this build does not. */
-const CATEGORY_CAUSE_FALLBACK = CATEGORY_CAUSE.unknown;
 
 const ACTION_BUTTON = 'w-full active:scale-[0.96]';
 
@@ -166,64 +68,6 @@ const ACTION_BUTTON = 'w-full active:scale-[0.96]';
  * a failure that no longer applies, and never imply sessions are down when only
  * one of several routable providers is.
  */
-function describeSandboxSeverity(
-  severity: SandboxAlertSeverity,
-  status: SandboxRuntimeStatus | null,
-): string {
-  if (severity === 'building') {
-    return 'A new sandbox image is building. Sessions can start once it’s ready.';
-  }
-  if (severity === 'warning') {
-    const ready = formatSandboxProviders(status?.ready_providers ?? []);
-    const failed = formatSandboxProviders(status?.failed_providers ?? []);
-    return failed && ready
-      ? `The image is ready on ${ready} but failing on ${failed}, so some new sessions won’t start.`
-      : 'The sandbox image is unavailable on some providers, so some new sessions won’t start.';
-  }
-  return 'New sessions can’t start until this image builds.';
-}
-
-export function useSandboxHealth(projectId: string) {
-  return useQuery<ProjectSandboxHealth>({
-    queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
-    queryFn: () => getProjectSandboxHealth(projectId),
-    staleTime: 30_000,
-    refetchInterval: (query) => sandboxHealthRefetchInterval(query.state.data),
-    refetchOnWindowFocus: true,
-  });
-}
-
-export function useSandboxRecovery(projectId: string) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId) });
-    queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
-  }, [queryClient, projectId]);
-
-  const retry = useMutation({
-    mutationFn: (slug?: string) => rebuildProjectSnapshot(projectId, slug),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text92a4120f7589'));
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text34c50a6ee575')),
-  });
-
-  const fixWithAgent = useMutation({
-    mutationFn: () => fixSandboxWithAgent(projectId),
-    onSuccess: ({ session_id }) => {
-      successToast(tI18nComplete.raw('text4b303ca7f76c'));
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text02d6613cab50')),
-  });
-
-  return { retry, fixWithAgent };
-}
 
 function SandboxAlertContent({
   projectId,

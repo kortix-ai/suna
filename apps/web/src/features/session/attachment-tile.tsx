@@ -54,7 +54,10 @@ export function isPreviewableImage(filename: string, mime?: string): boolean {
 export function attachmentExtension(filename: string, mime?: string): string {
   const dot = filename.lastIndexOf('.');
   if (dot > 0 && dot < filename.length - 1) {
-    const ext = filename.slice(dot + 1).trim().toLowerCase();
+    const ext = filename
+      .slice(dot + 1)
+      .trim()
+      .toLowerCase();
     if (ext.length > 0 && ext.length <= 8 && !/\s/.test(ext)) return ext;
   }
   const subtype = (mime ?? '').split('/')[1]?.split(';')[0]?.trim().toLowerCase() ?? '';
@@ -181,7 +184,7 @@ export function AttachmentTile({
             as the page's title; no count here, the side panel carries it. */}
         {/* The `before:` float is the fold's footprint inside this box, so a long
             first line wraps short of the dog-ear instead of running under it. */}
-        <span className="text-muted-foreground first-line:text-foreground min-h-0 min-w-0 flex-1 overflow-hidden text-[11px] leading-tight break-words whitespace-pre-wrap mask-b-from-60% mask-b-to-88% before:float-right before:h-3 before:w-3.5 first-line:font-medium">
+        <span className="text-muted-foreground first-line:text-foreground min-h-0 min-w-0 flex-1 overflow-hidden mask-b-from-60% mask-b-to-88% text-[11px] leading-tight break-words whitespace-pre-wrap first-line:font-medium before:float-right before:h-3 before:w-3.5">
           {preview}
         </span>
         <span className="flex items-end justify-between gap-1">
@@ -197,7 +200,7 @@ export function AttachmentTile({
         aria-hidden
         className={cn(
           'bg-muted border-border absolute -top-px -right-px size-5 rounded-bl-sm border-b border-l',
-          onOpen && 'group-hover/paste:bg-popover transition-colors duration-fast',
+          onOpen && 'group-hover/paste:bg-popover duration-fast transition-colors',
         )}
       />
     </>
@@ -212,7 +215,7 @@ export function AttachmentTile({
             <span className="block truncate">{split.tail}</span>
           </span>
         ) : (
-          <span className="text-foreground min-w-0 line-clamp-2 text-xs leading-tight font-medium break-all">
+          <span className="text-foreground line-clamp-2 min-w-0 text-xs leading-tight font-medium break-all">
             {filename}
           </span>
         )}
@@ -274,8 +277,8 @@ export function AttachmentRemoveButton({
         // Hidden at rest, revealed by hovering the tile (Jay, 2026-09-06). It
         // stays reachable where hover does not exist: keyboard focus, and
         // touch — a coarse pointer shows it always.
-        'opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100',
-        '[@media(pointer:coarse)]:opacity-100',
+        'duration-fast opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+        'pointer-coarse:opacity-100',
       )}
     >
       <Close className="size-3" />

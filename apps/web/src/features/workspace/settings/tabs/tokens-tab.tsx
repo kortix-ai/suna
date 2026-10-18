@@ -45,8 +45,6 @@ import {
   expiresAtIso,
   expiryOptions,
 } from '@/components/iam/api-key-expiry';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
 import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '@/components/iam/api-key-rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,14 +73,17 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CopyRow, type KebabItem } from '@/features/workspace/shared/access';
 import { RowKebab } from '@/features/workspace/shared/access/access-row';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { getPatPolicy } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
 import { usePermission } from '@/lib/use-permission';
+import { hubTarget } from '@/stores/account-panel-store';
 import {
   createAccountToken,
   listAccountTokens,
@@ -92,8 +93,6 @@ import {
 import { contract, qk } from '@kortix/sdk/react';
 import { KeyIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
 
 import { SettingsTabHeader } from '../settings-tab-header';
 import { ConnectedApps } from './connected-apps';
@@ -168,22 +167,12 @@ export function apiKeyMetaParts(
   return parts;
 }
 
-/**
- * The pane's relative-time voice: the shared helper's ladder, but a stamp
- * younger than a minute reads "this minute" ("Last used this minute") rather
- * than the helper's "just now", and `now` is fixed per render so a list does
- * not re-render with drifting labels.
- */
-export function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
-  const then = typeof input === 'string' ? new Date(input).getTime() : input;
-  if (!Number.isFinite(then)) return '';
-  if (then <= now && now - then < 60_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' }).format(
-      0,
-      'minute',
-    );
-  }
-  return relativeTime(input, locale, now);
+export function localizedRelativeTime(
+  input: string | number,
+  locale: string,
+  now = Date.now(),
+): string {
+  return relativeTime(input, locale, now, { zero: 'minute' });
 }
 
 export function TokensTab({ accountId }: { accountId: string | undefined }) {
@@ -348,7 +337,12 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
               {t('keyCount', { count: rows.length })}
             </span>
             {canCreate ? (
-              <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
                 <PlusIcon className="size-3.5 shrink-0" />
                 {t('newKey')}
               </Button>
@@ -388,7 +382,10 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
                 ...apiKeyMetaParts(row, renderedAt, metaCopy).slice(1),
               ];
               return (
-                <li key={row.id} className="hover:bg-hover relative flex items-center gap-3 px-4 py-3">
+                <li
+                  key={row.id}
+                  className="hover:bg-hover relative flex items-center gap-3 px-4 py-3"
+                >
                   {/* The whole row opens the details; the ⋯ sits above it. */}
                   <button
                     type="button"
@@ -401,14 +398,18 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="text-foreground truncate text-sm font-medium">{row.name}</span>
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {row.name}
+                      </span>
                       {row.status !== 'active' ? (
                         <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
                           {t(`status.${row.status}`)}
                         </Badge>
                       ) : null}
                     </span>
-                    <span className="text-muted-foreground block truncate text-xs">{meta.join(' · ')}</span>
+                    <span className="text-muted-foreground block truncate text-xs">
+                      {meta.join(' · ')}
+                    </span>
                   </span>
                   {kebab.length > 0 ? (
                     <span className="relative z-10 shrink-0">

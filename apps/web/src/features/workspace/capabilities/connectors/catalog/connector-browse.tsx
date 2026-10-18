@@ -330,10 +330,8 @@ export function ConnectorBrowse({
   }
 
   const summary = catalogFootSummary({
-    shown: entries.length,
     loaded: entries.length,
     total,
-    categoryLabel: null,
     searching,
     hasMore,
     isLoadingMore: state.isLoadingMore,

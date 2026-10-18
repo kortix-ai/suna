@@ -68,7 +68,7 @@ import {
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
-import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/sandbox-health';
 
 /**
  * Same rule as `projectDetailLlmGatewayEnabled` (`packages/sdk/src/react/use-

@@ -1,12 +1,12 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CheckIcon,
   ChatIcon as MessageSquare,
   MonitorIcon as Monitor,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 import { useState } from 'react';
 
@@ -28,10 +28,6 @@ import { cn } from '@/lib/utils';
  *
  * The tile-size helper came along because nothing else in the old file used it.
  */
-
-function appIconTileClass(size: 'sm' | 'lg'): string {
-  return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
-}
 
 export function ConnectorAppIcon({
   connector,

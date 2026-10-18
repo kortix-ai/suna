@@ -1,4 +1,5 @@
 'use client';
+import { useAgentGrants } from './use-agent-grants';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
@@ -48,15 +49,18 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   deleteProjectResourceGrant,
-  getProjectDetail,
   listProjectAccess,
-  listProjectResourceGrants,
   type ProjectAccessMember,
   type ProjectAccessResponse,
   type ProjectResourceGrant,
-  type ProjectRole,
 } from '@kortix/sdk';
-import { contract, invalidatePermissionProbes, qk, useProjectAccountId } from '@kortix/sdk/react';
+import {
+  contract,
+  invalidatePermissionProbes,
+  qk,
+  useProjectAccountId,
+  useProjectName,
+} from '@kortix/sdk/react';
 import { PencilSimpleIcon, PlusIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -71,7 +75,7 @@ export function grantsForAgent(
 }
 
 /** Every agent a principal holds — the edit dialog's `agentIds` seed. */
-export function agentIdsHeldBy(
+function agentIdsHeldBy(
   grants: readonly ProjectResourceGrant[],
   principalType: 'member' | 'group',
   principalId: string,
@@ -90,31 +94,8 @@ export function agentIdsHeldBy(
   ];
 }
 
-// The live `/access` contract carries a custom-role binding per member and a
-// `group_access` array the SDK type does not yet declare — the same gap
-// `components/iam/access-projects-tab.tsx` bridges with its own local types.
-interface CustomRolePolicyEntry {
-  role_id: string;
-  role_name: string;
-  expires_at: string | null;
-  scope_type?: 'account' | 'project';
-}
-interface ExtendedAccessMember extends ProjectAccessMember {
-  custom_role_policies?: CustomRolePolicyEntry[];
-}
-interface GroupAccessRow {
-  group_id: string;
-  group_name: string | null;
-  built_in_role: ProjectRole | null;
-  custom_role_policies?: CustomRolePolicyEntry[];
-}
-interface ExtendedAccessResponse extends ProjectAccessResponse {
-  members: ExtendedAccessMember[];
-  group_access?: GroupAccessRow[];
-}
-
 /** The project-scoped custom-role binding, if the principal has one. */
-function projectPolicy(policies: CustomRolePolicyEntry[] | undefined) {
+function projectPolicy(policies: ProjectAccessMember['custom_role_policies'] | NonNullable<ProjectAccessResponse['group_access']>[number]['custom_role_policies'] | undefined) {
   return policies?.find((p) => p.scope_type !== 'account') ?? null;
 }
 
@@ -141,28 +122,16 @@ export function AgentPeopleSection({
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
-  const grantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId),
-    queryFn: () => listProjectResourceGrants(projectId),
-    enabled: canManage,
-    retry: false,
-    ...contract('inventory'),
-  });
-  // The roster, for each row's current role — what the edit dialog seeds
+  const grantsQuery = useAgentGrants(projectId, canManage); // The roster, for each row's current role — what the edit dialog seeds
   // from. Same key as everywhere else the roster is read, so a save in the
   // dialog refreshes it here through the dialog's own invalidation.
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId) as Promise<ExtendedAccessResponse>,
+    queryFn: () => listProjectAccess(projectId),
     enabled: canManage,
     ...contract('inventory'),
   });
-  const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const projectName = detailQuery.data?.project?.name ?? '';
+  const projectName = useProjectName(projectId) ?? '';
 
   const grants = useMemo(() => grantsQuery.data?.grants ?? [], [grantsQuery.data]);
   const assigned = useMemo(() => grantsForAgent(grants, agentName), [grants, agentName]);
@@ -186,48 +155,38 @@ export function AgentPeopleSection({
   const openEdit = (grant: ProjectResourceGrant) => {
     if (grant.principal_type === 'project') return;
     const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id);
-    if (grant.principal_type === 'member') {
-      const member = accessQuery.data?.members.find((m) => m.user_id === grant.principal_id);
-      const policy = projectPolicy(member?.custom_role_policies);
-      setEditTarget({
-        principal: {
-          type: 'member',
-          id: grant.principal_id,
-          label: grant.principal_label,
-          avatar: <UserAvatar email={member?.email ?? grant.principal_label} size="sm" />,
-        },
-        current: {
-          role: policy
-            ? customRole(policy.role_id)
-            : member?.project_role
-              ? builtinRole(member.project_role)
-              : ROLE_NONE,
-          agentIds: agentIds.length > 0 ? agentIds : 'all',
-          expiresAt: policy ? policy.expires_at : (member?.expires_at ?? null),
-        },
-        inheritedFrom: (member?.group_sources ?? []).map((g) => g.group_name),
-      });
-    } else {
-      const group = accessQuery.data?.group_access?.find((g) => g.group_id === grant.principal_id);
-      const policy = projectPolicy(group?.custom_role_policies);
-      setEditTarget({
-        principal: {
-          type: 'group',
-          id: grant.principal_id,
-          label: grant.principal_label,
-          avatar: <EntityAvatar icon={UsersIcon} size="sm" />,
-        },
-        current: {
-          role: policy
-            ? customRole(policy.role_id)
-            : group?.built_in_role
-              ? builtinRole(group.built_in_role)
-              : ROLE_NONE,
-          agentIds: agentIds.length > 0 ? agentIds : 'all',
-          expiresAt: policy ? policy.expires_at : null,
-        },
-      });
-    }
+    const member =
+      grant.principal_type === 'member'
+        ? accessQuery.data?.members.find((m) => m.user_id === grant.principal_id)
+        : undefined;
+    const group =
+      grant.principal_type === 'group'
+        ? accessQuery.data?.group_access?.find((g) => g.group_id === grant.principal_id)
+        : undefined;
+    const policy = projectPolicy(member?.custom_role_policies ?? group?.custom_role_policies);
+    const role = member?.project_role ?? group?.built_in_role;
+    setEditTarget({
+      principal: {
+        type: grant.principal_type,
+        id: grant.principal_id,
+        label: grant.principal_label,
+        avatar:
+          member || grant.principal_type === 'member' ? (
+            <UserAvatar email={member?.email ?? grant.principal_label} size="sm" />
+          ) : (
+            <EntityAvatar icon={UsersIcon} size="sm" />
+          ),
+      },
+      current: {
+        role: policy ? customRole(policy.role_id) : role === 'manager' || role === 'member' ? builtinRole(role) : ROLE_NONE,
+        agentIds: agentIds.length > 0 ? agentIds : 'all',
+        expiresAt: policy ? policy.expires_at : (member?.expires_at ?? null),
+      },
+      inheritedFrom:
+        grant.principal_type === 'member'
+          ? (member?.group_sources ?? []).map((g) => g.group_name)
+          : undefined,
+    });
     setEditOpen(true);
   };
 
