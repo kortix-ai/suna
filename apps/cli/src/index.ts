@@ -283,9 +283,6 @@ async function main(rawArgv: string[]): Promise<number> {
     ];
   }
   if (process.env.KORTIX_DEBUG === '1') loadAuth();
-  // Trade-off (accepted): a `--debug` sitting in a value slot (e.g.
-  // `kortix whoami --host --debug x`) is stripped here rather than surfacing
-  // as a usage error. takeFlagValue rejects `-`-prefixed values anyway.
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
   // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host

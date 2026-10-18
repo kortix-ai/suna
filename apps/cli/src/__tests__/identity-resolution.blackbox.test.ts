@@ -25,7 +25,26 @@ const server = Bun.serve({
 });
 const url = `http://127.0.0.1:${server.port}/v1`;
 
-async function cli(args: string[], delegated = false, aliases = false) {
+// A stored host row as `login` writes it: real token, no default project yet.
+const storedHost = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  url,
+  token,
+  user_id: 'fixture-user',
+  user_email: '',
+  account_id: account,
+  logged_in_at: '',
+  ...overrides,
+});
+
+async function cli(
+  args: string[],
+  delegated = false,
+  aliases = false,
+  overrides?: {
+    config?: Record<string, unknown>;
+    env?: Record<string, string | undefined>;
+  },
+) {
   const dir = mkdtempSync(join(tmpdir(), 'kortix-identity-'));
   dirs.push(dir);
   const config = join(dir, 'config.json');
@@ -44,6 +63,7 @@ async function cli(args: string[], delegated = false, aliases = false) {
       active: 'stored',
       ...(aliases ? { sandbox_selected: 'stored' } : {}),
       hosts: { stored: host, ...(aliases ? { second: { ...host, token } } : {}) },
+      ...overrides?.config,
     }),
   );
   const env: Record<string, string | undefined> = {
@@ -63,6 +83,7 @@ async function cli(args: string[], delegated = false, aliases = false) {
   ])
     delete env[key];
   if (delegated) Object.assign(env, { KORTIX_TOKEN: token, KORTIX_API_URL: url });
+  if (overrides?.env) Object.assign(env, overrides.env);
   const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, '../index.ts'), ...args], {
     cwd: dir,
     env,
@@ -132,44 +153,11 @@ test('debug covers local commands and explicit aliases without guessing from cre
 });
 
 test('hosts ls marks the in-sandbox selected stored host as the effective identity', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'kortix-identity-'));
-  dirs.push(dir);
-  const config = join(dir, 'config.json');
-  writeFileSync(
-    config,
-    JSON.stringify({
-      active: 'stored',
-      sandbox_selected: 'stored',
-      hosts: {
-        stored: {
-          url,
-          token,
-          user_id: 'fixture-user',
-          user_email: '',
-          account_id: account,
-          logged_in_at: '',
-        },
-      },
-    }),
-  );
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    HOME: dir,
-    KORTIX_CONFIG_FILE: config,
-    KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
-    KORTIX_NO_UPDATE_CHECK: '1',
-    NO_COLOR: '1',
-    KORTIX_TOKEN: token,
-    KORTIX_API_URL: url,
-  };
-  for (const key of ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'BASH_ENV']) delete env[key];
-  const proc = Bun.spawn(
-    [process.execPath, resolve(import.meta.dir, '../index.ts'), 'hosts', 'ls', '--json'],
-    { cwd: dir, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-  );
-  const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-  expect(code).toBe(0);
-  const rows = JSON.parse(stdout);
+  const result = await cli(['hosts', 'ls', '--json'], true, false, {
+    config: { sandbox_selected: 'stored', hosts: { stored: storedHost() } },
+  });
+  expect(result.code).toBe(0);
+  const rows = JSON.parse(result.stdout);
   expect(rows.find((row: { active: boolean }) => row.active)).toMatchObject({
     name: 'stored',
     url,
@@ -181,43 +169,12 @@ test('hosts ls marks the in-sandbox selected stored host as the effective identi
 });
 
 test('hosts ls reports a url-only environment override as a synthetic env row', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'kortix-identity-'));
-  dirs.push(dir);
-  const config = join(dir, 'config.json');
-  writeFileSync(
-    config,
-    JSON.stringify({
-      active: 'stored',
-      hosts: {
-        stored: {
-          url,
-          token,
-          user_id: 'fixture-user',
-          user_email: '',
-          account_id: account,
-          logged_in_at: '',
-        },
-      },
-    }),
-  );
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    HOME: dir,
-    KORTIX_CONFIG_FILE: config,
-    KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
-    KORTIX_NO_UPDATE_CHECK: '1',
-    NO_COLOR: '1',
-    KORTIX_API_URL: 'http://127.0.0.1:9/v1',
-  };
-  for (const key of ['KORTIX_TOKEN', 'KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'BASH_ENV'])
-    delete env[key];
-  const proc = Bun.spawn(
-    [process.execPath, resolve(import.meta.dir, '../index.ts'), 'hosts', 'ls', '--json'],
-    { cwd: dir, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-  );
-  const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-  expect(code).toBe(0);
-  const rows = JSON.parse(stdout);
+  const result = await cli(['hosts', 'ls', '--json'], false, false, {
+    config: { hosts: { stored: storedHost() } },
+    env: { KORTIX_API_URL: 'http://127.0.0.1:9/v1' },
+  });
+  expect(result.code).toBe(0);
+  const rows = JSON.parse(result.stdout);
   expect(rows.find((row: { active: boolean }) => row.active)).toMatchObject({
     name: 'env',
     url: 'http://127.0.0.1:9/v1',
@@ -235,53 +192,12 @@ test('a leading --debug is intercepted and sets the debug trace', async () => {
 });
 
 test('an unparseable stored url degrades the debug trace instead of killing the command', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'kortix-identity-'));
-  dirs.push(dir);
-  const config = join(dir, 'config.json');
-  writeFileSync(
-    config,
-    JSON.stringify({
-      active: 'broken',
-      hosts: {
-        broken: {
-          url: 'not-a-url',
-          token,
-          user_id: 'fixture-user',
-          user_email: '',
-          account_id: account,
-          logged_in_at: '',
-        },
-      },
-    }),
-  );
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    HOME: dir,
-    KORTIX_CONFIG_FILE: config,
-    KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
-    KORTIX_NO_UPDATE_CHECK: '1',
-    NO_COLOR: '1',
-    KORTIX_DEBUG: '1',
-  };
-  for (const key of [
-    'KORTIX_TOKEN',
-    'KORTIX_API_URL',
-    'KORTIX_PROJECT_ID',
-    'KORTIX_SESSION_ID',
-    'BASH_ENV',
-  ])
-    delete env[key];
-  const proc = Bun.spawn(
-    [process.execPath, resolve(import.meta.dir, '../index.ts'), 'hosts', 'current'],
-    { cwd: dir, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-  );
-  const [code, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  expect(code).toBe(0);
-  expect(stdout).toContain('broken');
-  expect(stderr).toContain('[kortix-debug]');
-  expect(stderr).toContain('not-a-url');
+  const result = await cli(['hosts', 'current'], false, false, {
+    config: { active: 'broken', hosts: { broken: storedHost({ url: 'not-a-url' }) } },
+    env: { KORTIX_DEBUG: '1' },
+  });
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain('broken');
+  expect(result.stderr).toContain('[kortix-debug]');
+  expect(result.stderr).toContain('not-a-url');
 });
