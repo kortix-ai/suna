@@ -763,8 +763,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|suna-migration|eligibility",
   "POST|v1|projects|suna-migration|start",
   "GET|v1|projects|suna-migration|status",
-  "GET|v1|public|session-shares|:shareId",
-  "GET|v1|public|session-shares|:shareId|messages",
   "POST|v1|router|chat|completions",
   "ALL|v1|router|context7",
   "ALL|v1|router|context7|*",
