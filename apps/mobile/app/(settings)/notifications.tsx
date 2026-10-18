@@ -227,7 +227,6 @@ function NotificationCenterPage() {
   );
 }
 
-
 /** Both notifications pages' General group: this phone's off switch and its
  * sound (the sound rides under the master switch: the only per-device
  * behavior). The write goes through the page's own store handle. */

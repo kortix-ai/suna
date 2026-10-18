@@ -318,8 +318,6 @@ export default function StartScreen() {
     };
   }, [authLoading, isAuthenticated, mfaRequired, userId, attempt, queryClient, router]);
 
-
-
   const copy = failure ? startFailureCopy(failure) : null;
   const sessionEnded = failure === 'session';
 

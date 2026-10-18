@@ -37,7 +37,6 @@ import { useWebCreateHandoff } from '@/components/projects/useWebCreateHandoff';
 import { ProjectHero } from '@/components/session/ProjectHero';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { useAuthContext } from '@/contexts';
 import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import { haptics } from '@/lib/haptics';
 import { ArrowUpRightIcon, FolderIcon } from '@/lib/icons';
