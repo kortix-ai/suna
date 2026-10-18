@@ -43,6 +43,7 @@ export {
 } from './template-runtime-fingerprint';
 import { getSandboxProvider } from './providers';
 import { BoundedMap } from '../shared/bounded-map';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
@@ -375,9 +376,35 @@ export async function refreshTemplateState(
  * snapshot name from (Dockerfile bytes or FROM image, runtime fingerprint,
  * spec). Used by builder.ts to know what to ask the provider for.
  */
+/**
+ * The region a project's own image is built in: the region its sessions boot
+ * in (`us_region`, see platform/services/sandbox-region.ts), or undefined for
+ * the provider's home region. The shared default is never regional. One image
+ * serves every project, so it is built at home and copied where it is needed.
+ *
+ * The region is part of the image identity, not only a build parameter.
+ * Platinum boots an image only from its own region's object store, and the
+ * copy runs one way: the home control plane holds no credentials for a
+ * regional bucket (prod, 2026-10-17), so an image built in us-east can never
+ * boot in eu-west. With the region in the name, two projects with the same
+ * Dockerfile in different regions get different images (a content-addressed
+ * name would make the second adopt the first's), and a project that changes
+ * region rebuilds there instead of booting an image its new region cannot read.
+ */
+export async function projectImageRegion(projectId: string): Promise<string | undefined> {
+  if (!projectId) return undefined;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveSessionSandboxRegion(row?.metadata ?? null);
+}
+
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  deps: { imageRegion?: (projectId: string) => Promise<string | undefined> } = {},
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -386,6 +413,8 @@ export async function computeTemplateIdentity(
   userDockerfile: string;
   /** Commit the Dockerfile was read from; null for default/image templates. */
   builtFromCommit: string | null;
+  /** Provider region the image is built in; undefined for the home region. */
+  region?: string;
   /**
    * Identity of everything the agent-swap does NOT touch: user image + spec +
    * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
@@ -397,11 +426,17 @@ export async function computeTemplateIdentity(
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
+  const region = template.isShared
+    ? undefined
+    : await (deps.imageRegion ?? projectImageRegion)(project.projectId);
   const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
     containerRuntime: template.containerRuntime,
+    // In swapKey too: an agent swap patches its predecessor in the
+    // predecessor's region, so a region change must rebuild instead.
+    region,
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
@@ -421,6 +456,7 @@ export async function computeTemplateIdentity(
     runtimeFingerprint,
     userDockerfile,
     builtFromCommit: commit,
+    region,
     swapKey,
   };
 }

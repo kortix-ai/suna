@@ -40,7 +40,7 @@ const PNG_LIKE_BYTES = new Uint8Array([
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0xff, 0xfe, 0xfa, 0xde,
 ]);
 
-function stubRaw(suffix: string, bytes: Uint8Array) {
+function stubRaw(suffix: string, bytes: Uint8Array<ArrayBuffer>) {
   routes[suffix] = { status: 200, body: bytes, contentType: 'application/octet-stream' };
 }
 

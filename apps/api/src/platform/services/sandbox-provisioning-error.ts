@@ -20,10 +20,6 @@ export interface SandboxProvisioningFailure {
   transient: boolean;
 }
 
-/** A /workspace volume that did not open because storage did not answer: the next `/start` retries it. */
-export const WORKSPACE_VOLUME_UNREACHABLE_MESSAGE =
-  '[workspace] This session’s workspace volume is not reachable right now, so the session did not start. Try again in a minute.';
-
 export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
   'The sandbox provider is at capacity right now. Try again in a minute.';
 
@@ -105,17 +101,14 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
   const rawMessage = error instanceof Error ? error.message : String(error);
 
   // Kortix Drive: the session's drives did not mount, so it did not start.
-  // The message already says which drives and why (drives/service.ts). A
-  // /workspace volume that did not open is the same class: storage the box
-  // mounts (platform/services/workspace-volume.ts).
-  const storagePrefix = ['[drives] ', '[workspace] '].find((p) => rawMessage.startsWith(p));
-  if (storagePrefix) {
+  // The message already says which drives and why (drives/service.ts).
+  if (rawMessage.startsWith('[drives] ')) {
     return {
       category: 'drives-unavailable',
-      userMessage: rawMessage.slice(storagePrefix.length),
+      userMessage: rawMessage.slice('[drives] '.length),
       isCapacity: false,
       isGitAuth: false,
-      transient: rawMessage === WORKSPACE_VOLUME_UNREACHABLE_MESSAGE,
+      transient: false,
     };
   }
   const isStorageFull = STORAGE_FULL_PATTERN.test(rawMessage);

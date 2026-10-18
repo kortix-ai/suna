@@ -254,10 +254,9 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (session_log, session_log_restore, workspace_volume) are
-listed only while they are on, with origin "kortix". Only Kortix changes them:
-enable, disable and reset answer feature_operator_only. Contact Kortix to
-change one.
+Internal-only flags (session_log, session_log_restore) are listed only while
+they are on, with origin "kortix". Only Kortix changes them: enable, disable
+and reset answer feature_operator_only. Contact Kortix to change one.
 `;
 
 interface FeatureFlagRow {

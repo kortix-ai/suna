@@ -86,9 +86,24 @@ export async function revokeGatewayKey(projectId: string, keyId: string): Promis
   return rows.length > 0;
 }
 
+/** Why a hash-matched key is refused. The identity is still real, so it rides
+ *  on the refusal and the gateway can log the request against its account
+ *  (KRTX-1749). */
+export type GatewayKeyRefusalReason = 'revoked' | 'expired' | 'project_archived';
+
+export interface GatewayKeyResolution {
+  accountId: string;
+  projectId: string;
+  userId: string;
+  keyId: string;
+  /** Set when the presented secret hash-matches a stored row that is refused
+   *  (revoked, expired, or its workspace archived). Absent = the key is valid. */
+  refused?: GatewayKeyRefusalReason;
+}
+
 export async function validateGatewayKey(
   secretKey: string,
-): Promise<{ accountId: string; projectId: string; userId: string; keyId: string } | null> {
+): Promise<GatewayKeyResolution | null> {
   const hash = await hashSecretKeyAsync(secretKey);
   const [row] = await db
     .select({
@@ -106,8 +121,54 @@ export async function validateGatewayKey(
     .where(eq(gatewayApiKeys.secretKeyHash, hash))
     .limit(1);
 
-  if (!row || row.status !== 'active') return null;
-  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
+  if (!row) {
+    // The join above also drops the row of an archived project, so a refused
+    // key of a deleted workspace would look identical to a garbage token.
+    // One indexed re-read without the project filter names it: the refusal
+    // keeps refusing (KRTX-1714 unchanged), only the observability gains an
+    // owner. A secret matching NO row at all stays unattributed — garbage
+    // traffic writes nothing.
+    //
+    // This read runs on every unknown token, so it is attacker-controllable:
+    // a transient failure here must keep the plain 401, never turn it into a
+    // 500. Losing the attribution is free; losing the refusal is not.
+    try {
+      const [dead] = await db
+        .select({
+          keyId: gatewayApiKeys.keyId,
+          accountId: gatewayApiKeys.accountId,
+          projectId: gatewayApiKeys.projectId,
+          createdBy: gatewayApiKeys.createdBy,
+          status: gatewayApiKeys.status,
+          expiresAt: gatewayApiKeys.expiresAt,
+          projectStatus: projects.status,
+        })
+        .from(gatewayApiKeys)
+        .leftJoin(projects, eq(projects.projectId, gatewayApiKeys.projectId))
+        .where(eq(gatewayApiKeys.secretKeyHash, hash))
+        .limit(1);
+      if (!dead) return null;
+      const identity = {
+        accountId: dead.accountId,
+        projectId: dead.projectId,
+        userId: dead.createdBy ?? dead.accountId,
+        keyId: dead.keyId,
+      };
+      if (dead.status !== 'active') return { ...identity, refused: 'revoked' };
+      if (dead.expiresAt && dead.expiresAt.getTime() < Date.now()) return { ...identity, refused: 'expired' };
+      return { ...identity, refused: 'project_archived' };
+    } catch {
+      return null;
+    }
+  }
+  const identity = {
+    accountId: row.accountId,
+    projectId: row.projectId,
+    userId: row.createdBy ?? row.accountId,
+    keyId: row.keyId,
+  };
+  if (row.status !== 'active') return { ...identity, refused: 'revoked' };
+  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return { ...identity, refused: 'expired' };
   markTokenValidated(secretKey);
 
   void db
@@ -116,10 +177,5 @@ export async function validateGatewayKey(
     .where(eq(gatewayApiKeys.keyId, row.keyId))
     .catch(() => {});
 
-  return {
-    accountId: row.accountId,
-    projectId: row.projectId,
-    userId: row.createdBy ?? row.accountId,
-    keyId: row.keyId,
-  };
+  return identity;
 }

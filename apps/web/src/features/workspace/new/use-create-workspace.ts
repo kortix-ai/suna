@@ -32,6 +32,7 @@ import {
   storeGitHubUserToken,
   linkRepository,
   PROVISION_IN_FLIGHT_CODE,
+  PROVISION_STREAM_UNTERMINATED_CODE,
   provisionProject,
   provisionProjectStream,
   setProjectOnboardingComplete,
@@ -219,6 +220,28 @@ export function buildManagedImportRequest(
 }
 
 /**
+ * Matches the two placeholder sentences the SDK writes onto a failed create
+ * when the error response carried NO JSON body — the one case where the
+ * server's reason is genuinely lost and the generic retry line is the only
+ * honest wording:
+ *
+ * - `Provision failed: HTTP <status>` — `provisionProjectStream`'s
+ *   pre-stream branch (a non-2xx response with an unparseable body, e.g. a
+ *   proxy's HTML error page);
+ * - `HTTP <status>: <statusText>` — the plain path's `readErrorBody`
+ *   fallback (same shape, same cause).
+ *
+ * Both literals are SDK-owned (`packages/sdk/src/core/rest/projects-client/
+ * projects.ts`, `packages/sdk/src/core/http/api/client.ts`), so this sniff
+ * is pinned by tests in both directions: a placeholder gets the generic
+ * line, and a real server sentence — which never begins with `HTTP <n>` —
+ * passes through. The match is anchored at the string start and only
+ * affects WORDING in `messageFor`, never control flow, so the worst case of
+ * a false negative is today's generic wording, not a wrong outcome.
+ */
+const LOST_PROVISION_REASON_RE = /^(?:Provision failed: )?HTTP \d{3}(?::|$)/;
+
+/**
  * A user-facing message for a failed create.
  *
  * `ApiError` field names verified at
@@ -235,11 +258,24 @@ export function buildManagedImportRequest(
  * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
  * unconfigured is a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
- * until an operator configures it. Any other 502 or 503 (an upstream/gateway
- * fault) keeps the retryable generic message, matching every OTHER call site that reuses
+ * until an operator configures it.
+ *
+ * Any OTHER 502 or 503 shows the server's own reason when one arrived
+ * (KRTX-1754), not a bare retry hint: both transports preserve it — the API's
+ * edge middleware rewrites 502→503 but keeps the JSON body, and the stream
+ * route carries the reason in-band — so the sentence the backend reported
+ * ("GitHub /user/repos failed (403): …", "You have exceeded a secondary rate
+ * limit…", the seed failure's detail) reaches this function intact. The
+ * dogfood evidence that filed the issue is a user told to "try again" with no
+ * signal of what actually failed. The generic retry line is kept ONLY for the
+ * reason-less shapes: the two placeholder sentences the SDK writes when the
+ * response had no JSON body at all (a proxy's HTML error page — the reason is
+ * genuinely lost, `LOST_PROVISION_REASON_RE` below) and an empty message.
+ * This deliberately diverges from the other call sites that reuse
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
- * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
- * between the toast those use and the inline message here.
+ * `add-to-project-modal.tsx:188`) for their 502/503s: they toast a title with
+ * no body, where a raw upstream sentence has nowhere readable to go; the
+ * inline alert on `/new` is the one surface built to carry a full sentence.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
@@ -294,8 +330,14 @@ export function messageFor(error: unknown): string {
     return message || 'Could not create the workspace. Try again.';
   }
   // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/index.ts`,
-  // EDGE_REWRITTEN_STATUSES): an upstream failure, with the upstream's raw text.
-  if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
+  // EDGE_REWRITTEN_STATUSES): an upstream failure. See the doc comment above:
+  // the server's reason is shown when it arrived; the generic line is for the
+  // shapes where it did not.
+  if (status === 502 || status === 503) {
+    return message && !LOST_PROVISION_REASON_RE.test(message)
+      ? message
+      : 'Could not create the workspace. Try again.';
+  }
   return message || 'Could not create the workspace. Try again.';
 }
 
@@ -469,18 +511,58 @@ export async function runCreateAttempt(
 /**
  * One provisioning attempt, preferring the live-progress
  * `provisionProjectStream` and falling back to the plain `runCreateAttempt`
- * (the 409-retrying `provisionProject` above) exactly once — and only when
- * the fallback is provably safe.
+ * (the 409-retrying `provisionProject` above) in exactly the cases where the
+ * fallback is provably safe.
  *
- * The gate is **whether `onEvent` fired at all**, not the shape of the error
- * that follows. If the stream delivered even ONE event — a phase, or even
- * the terminal `error` event itself — it reached the server and did real
- * work, so ANY failure after that is a genuine provisioning failure and MUST
- * rethrow. Retrying it as a fresh `runCreateAttempt` call would be a SECOND
- * create for the same user intent — the exact "two upstream repos" failure
- * this function exists to prevent. Only when NOTHING was ever received AND
- * the failure is transport-shaped (`isTransportFailure`) is it safe to
- * conclude the stream never reached the server, and the fallback runs.
+ * THREE failure shapes reach the catch, and they get three different
+ * treatments:
+ *
+ * 1. **A real provisioning failure** — an in-stream `error` frame, a
+ *    pre-stream denial that carried the API's body, a malformed frame — is
+ *    rethrown unchanged for `messageFor` to name. The gate is **whether
+ *    `onEvent` fired at all**, not the shape of the error: if the stream
+ *    delivered even ONE event it reached the server and did real work, so
+ *    any failure after that is genuine. Retrying it as a fresh
+ *    `runCreateAttempt` call would be a SECOND create for the same user
+ *    intent — the exact "two upstream repos" failure this function exists
+ *    to prevent. Only when NOTHING was ever received AND the failure is
+ *    transport-shaped (`isTransportFailure`) is it safe to conclude the
+ *    stream never reached the server, and the fallback runs.
+ *
+ * 2. **A 409 `provision_in_flight`** (final-review FIX 1, consequence 3) —
+ *    reaches the fallback regardless of `eventsReceived`.
+ *    `emit('validating')` is the first statement of `runProvision`
+ *    (`apps/api/src/projects/provision-core.ts`), so by the time this
+ *    failure can arrive at all, `eventsReceived > 0` is already guaranteed
+ *    — under the plain "any event blocks fallback" rule, that made
+ *    `runCreateAttempt`'s own 409 backoff loop unreachable from the
+ *    streaming path. It is deliberately narrower than the
+ *    transport-failure gate, not a loosening of it: by construction another
+ *    call carrying this SAME `idempotency_key` is already mid-provision, so
+ *    handing it to `runCreateAttempt` (identical key, unchanged payload) is
+ *    exactly correct — either the server returns the SAME project once the
+ *    in-flight attempt commits, or it 409s again and the loop keeps waiting
+ *    — never a second upstream repo, and never a second create for this
+ *    user intent.
+ *
+ * 3. **An unterminated stream** (KRTX-1754 — the code
+ *    `PROVISION_STREAM_UNTERMINATED_CODE`, thrown when the socket closes
+ *    before the route's promised terminal `done`/`error` frame) — also
+ *    reaches the fallback, regardless of `eventsReceived`. The close is NOT
+ *    a provisioning failure; it is an UNKNOWN result. The route's handler
+ *    outlives a lost reader (`write()` swallows the disconnect on purpose,
+ *    so it cannot cancel live work), so by the time the client sees the
+ *    close the create may already have committed upstream. The recovery is
+ *    the SAME key replayed through `runCreateAttempt`: the server's
+ *    idempotency machinery (the partial unique index, the 120s in-flight
+ *    window, the replay response) answers with the true outcome — `201`
+ *    with the same project once the first attempt commits, `409
+ *    provision_in_flight` while it is still running (the loop above keeps
+ *    waiting), or the first attempt's real failure after its rollback. This
+ *    is what makes the second symptom impossible: a submit whose stream
+ *    died mid-provision resolves to the real outcome instead of a jargon
+ *    error or, worse, silence. Like the 409 case, this can never mint a
+ *    second upstream repo — the key dedupes it server-side.
  *
  * The fallback reuses `payload` UNCHANGED — same `idempotency_key` the
  * streaming attempt just sent. It is the SAME logical attempt continuing on
@@ -494,24 +576,6 @@ export async function runCreateAttempt(
  * `onPhase(null)` fires once, right before the fallback runs — there is no
  * real phase information once the plain POST takes over, and freezing the UI
  * on the last streamed phase would show progress that stopped being true.
- *
- * **DECISION (final-review FIX 1, consequence 3): a 409 `provision_in_flight`
- * error ALSO reaches the fallback, regardless of `eventsReceived`.**
- * `emit('validating')` is the first statement of `runProvision`
- * (`apps/api/src/projects/provision-core.ts`), so by the time this failure
- * can arrive at all, `eventsReceived > 0` is already guaranteed — under the
- * plain "any event blocks fallback" rule, that made `runCreateAttempt`'s own
- * 409 backoff loop unreachable from the streaming path, the exact "409
- * backoff is dead on the primary path" finding from the final review. This
- * is deliberately narrower than the transport-failure gate above it, not a
- * loosening of it: a `provision_in_flight` failure is not "a genuine
- * provisioning failure that must never be retried as a second create" the
- * way a 502/503/plain error is. By construction it means another call
- * carrying this SAME `idempotency_key` is already mid-provision, so handing
- * it to `runCreateAttempt` (identical key, unchanged payload) is exactly
- * correct: either the server returns the SAME project once the in-flight
- * attempt commits, or it 409s again and the loop keeps waiting — never a
- * second upstream repo, and never a second create for this user intent.
  */
 export async function runProvisionAttempt(
   payload: ProvisionProjectInput,
@@ -527,7 +591,12 @@ export async function runProvisionAttempt(
   } catch (streamFailure) {
     const code = (streamFailure as { code?: string } | null | undefined)?.code;
     const isProvisionInFlight = code === PROVISION_IN_FLIGHT_CODE;
-    if (!isProvisionInFlight && (eventsReceived > 0 || !isTransportFailure(streamFailure))) {
+    const isStreamUnterminated = code === PROVISION_STREAM_UNTERMINATED_CODE;
+    if (
+      !isProvisionInFlight &&
+      !isStreamUnterminated &&
+      (eventsReceived > 0 || !isTransportFailure(streamFailure))
+    ) {
       throw streamFailure;
     }
     onPhase(null);

@@ -14,6 +14,7 @@ import type {
   RuntimeQuestionRequest,
   RuntimeToolRef,
 } from '@kortix/api-contract/transcript'
+import { comparePatterns } from '@kortix/api-contract/permission-rules'
 import type { RuntimeFrame } from './transcript'
 
 export type PermissionReply = RuntimePermissionReply
@@ -60,7 +61,7 @@ export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
  * dot-all. A pattern ending in ` *` also matches the bare command, so `ls *`
  * covers a plain `ls`.
  */
-function wildcardMatch(value: string, pattern: string): boolean {
+export function wildcardMatch(value: string, pattern: string): boolean {
   let escaped = pattern
     .replaceAll('\\', '/')
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -71,13 +72,13 @@ function wildcardMatch(value: string, pattern: string): boolean {
 }
 
 /**
- * OpenCode's `Wildcard.all`: patterns are sorted by length then name and the
- * LAST match wins, so the most specific pattern decides and the one-character
- * `*` is the weakest entry in the map.
+ * The Kortix precedence (`@kortix/api-contract/permission-rules`): the most
+ * specific matching pattern wins, whatever the authored order, so the
+ * one-character `*` is the weakest entry in the map.
  */
 function matchPatterns(subject: string, patterns: Record<string, PermissionRule>): PermissionRule | undefined {
   let matched: PermissionRule | undefined
-  const sorted = Object.entries(patterns).sort(([a], [b]) => a.length - b.length || a.localeCompare(b))
+  const sorted = Object.entries(patterns).sort(([a], [b]) => comparePatterns(a, b))
   for (const [pattern, rule] of sorted) {
     if (wildcardMatch(subject, pattern)) matched = rule
   }
@@ -124,9 +125,22 @@ export function toolCapability(tool: string, args?: unknown): string {
   return TOOL_CAPABILITY[tool] ?? tool
 }
 
-/** One call's rule under `policy`: the tool's entry, else its capability's, else `*`. `undefined` means the policy says nothing. */
+/**
+ * One call's rule under `policy`. Every key that names the tool or its
+ * capability (`*` and `pty_*` are patterns too) is tried most specific first;
+ * the first that has a rule for this call decides, as OpenCode's last match
+ * does over an ordered block. `undefined` means the policy says nothing.
+ */
 export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
-  return resolveRule(policy[tool] ?? policy[toolCapability(tool, args)] ?? policy['*'], tool, args)
+  const names = [tool, toolCapability(tool, args)]
+  const keys = Object.keys(policy)
+    .filter((key) => names.some((name) => wildcardMatch(name, key)))
+    .sort((a, b) => comparePatterns(b, a))
+  for (const key of keys) {
+    const rule = resolveRule(policy[key], tool, args)
+    if (rule !== undefined) return rule
+  }
+  return undefined
 }
 
 /**

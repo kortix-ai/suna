@@ -1,5 +1,4 @@
 import { expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import messages from '../../../../../translations/en.json';
@@ -73,7 +72,7 @@ const EMAIL = encodeURIComponent('user@example.test');
 async function render() {
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
-    root = create(createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)));
+    root = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
   });
   if (!root) throw new Error('Auth page did not render');
   return root;
@@ -149,7 +148,7 @@ test('an existing non-SSO web session is signed out here, not handed to the app,
     expect(signOuts).toEqual([{ scope: 'local' }]);
     expect(assigned.some((url) => url.startsWith('kortix://') || url.includes('/auth/mobile/'))).toBe(false);
     // SSO waits for the sign-out: it would otherwise clear SSO's PKCE verifier.
-    await act(async () => root.update(createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage))));
+    await act(async () => root.update(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>));
     expect(ssoCalls).toHaveLength(1);
     expect(ssoCalls[0].domain).toBe('example.test');
   } finally {

@@ -43,6 +43,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
+import type { McpServerApp } from '../install/mcp-first';
 import { addMcpServer, mcpServerIdentity } from './add-mcp-server';
 
 type Audience = Pick<NewAccountDraft, 'audience' | 'picked'>;
@@ -62,8 +63,12 @@ export function AddMcpServerDialog({
   onOpenChange,
   takenSlugs,
   onAdded,
+  app = null,
 }: {
   projectId: string;
+  /** A catalogue app's own MCP server: the URL is filled in and the dialog
+   *  is titled for the app. Null for a server the user pastes. */
+  app?: McpServerApp | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Slugs of the project's connectors: a new server never reuses one. */
@@ -90,7 +95,7 @@ export function AddMcpServerDialog({
     ? tSharing('everyone', { project: projectName })
     : tSharing('visibilityEveryone');
 
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(app?.url ?? '');
   const [audience, setAudience] = useState<Audience>({ audience: 'private', picked: NO_PICKS });
   const identity = url.trim() ? mcpServerIdentity(url, takenSlugs) : null;
   const urlInvalid = url.trim() !== '' && identity === null;
@@ -174,7 +179,7 @@ export function AddMcpServerDialog({
     if (add.isPending) return;
     onOpenChange(next);
     if (!next) {
-      setUrl('');
+      setUrl(app?.url ?? '');
       setAudience({ audience: 'private', picked: NO_PICKS });
     }
   };
@@ -183,8 +188,12 @@ export function AddMcpServerDialog({
     <Modal open={open} onOpenChange={close}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>{t('addMcpTitle')}</ModalTitle>
-          <ModalDescription>{t('addMcpDescription')}</ModalDescription>
+          <ModalTitle>
+            {app ? t('addMcpAppTitle', { name: app.name }) : t('addMcpTitle')}
+          </ModalTitle>
+          <ModalDescription>
+            {app ? t('addMcpAppDescription', { name: app.name }) : t('addMcpDescription')}
+          </ModalDescription>
         </ModalHeader>
         <form
           onSubmit={(event) => {
@@ -206,7 +215,7 @@ export function AddMcpServerDialog({
                 placeholder="https://mcp.example.com/mcp"
                 aria-invalid={urlInvalid || undefined}
                 disabled={add.isPending}
-                autoFocus
+                autoFocus={!app}
               />
               {urlInvalid ? (
                 <FieldDescription className="text-destructive" role="alert">

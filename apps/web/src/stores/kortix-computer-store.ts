@@ -2,6 +2,7 @@
 // runtime file API (and its hooks) into every route that reads this store.
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useSessionPanelMemoryStore } from '@/stores/session-panel-memory-store';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
@@ -321,6 +322,15 @@ function clearSessionChip(
   if (chip?.sessionId === sessionId) update.readyChip = null;
 }
 
+/** The person closed the active session's panel: forget it (`session-panel-memory-store.ts`).
+ *  Keyed like the provider keys it: the Kortix session, else the layout id. */
+function forgetActivePanel(
+  state: Pick<KortixComputerState, '_activeProjectSessionId' | '_activeSessionId'>,
+) {
+  const key = state._activeProjectSessionId ?? state._activeSessionId;
+  if (key) useSessionPanelMemoryStore.getState().remember(key, null);
+}
+
 const CLOSED_PANEL_PATCH = Object.freeze({
   isSidePanelOpen: false,
   isExpanded: false,
@@ -393,6 +403,8 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // clean state. `closeSidePanel`/`handleSidePanelClose` stay harmless
         // and idempotent on top of this.
         if (!open) {
+          // The person closed it: coming back must not reopen it.
+          forgetActivePanel(get());
           update.panelSplit = null;
           update.panelAspect = null;
           update.isExpanded = false;
@@ -443,6 +455,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
             isActionPanelOpen: false,
             skipNextExpandAnimation: true,
           });
+          forgetActivePanel(get());
           return;
         }
 

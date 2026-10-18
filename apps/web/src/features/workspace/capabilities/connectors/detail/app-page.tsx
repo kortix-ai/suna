@@ -10,6 +10,7 @@ import {
   PlugIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -48,6 +49,7 @@ import {
   installableVariants,
   surfaceInstallName,
 } from '@/features/workspace/capabilities/connectors/install/pick-surface';
+import { mcpServerFor, type McpServerApp } from '@/features/workspace/capabilities/connectors/install/mcp-first';
 import { useInstall } from '@/features/workspace/capabilities/connectors/install/use-install';
 import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
 import { useTranslations } from '@/i18n/use-translations';
@@ -90,6 +92,14 @@ interface ResolvedApp {
  * It replaces the surface-picker modal. A non-default surface is chosen only
  * here, under "Ways to connect".
  */
+
+const AddMcpServerDialog = dynamic(
+  () =>
+    import('@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server-dialog').then(
+      (m) => m.AddMcpServerDialog,
+    ),
+  { ssr: false },
+);
 export function AppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -164,7 +174,10 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     staleTime: 5 * 60_000,
   });
 
-  const { install, pendingKey } = useInstall(projectId);
+  const { install, pendingKey, setPendingKey } = useInstall(projectId);
+  // The app's own MCP server, when Install connects through it (one-click
+  // sign-in): the MCP dialog opens for it instead of the managed app.
+  const [mcpApp, setMcpApp] = useState<McpServerApp | null>(null);
   // Which of this page's Install controls started the running install, so only
   // that one shows progress; the others are disabled until it ends.
   const [pendingControl, setPendingControl] = useState<string | null>(null);
@@ -308,7 +321,17 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
         variant={variant}
         onInstall={() => {
           setPendingControl(key);
-          install(target, { connectors, app });
+          const mcpUrl = target.managed ? managed?.directMcpUrl : null;
+          if (!mcpUrl) {
+            install(target, { connectors, app });
+            return;
+          }
+          setPendingKey(app.slug);
+          void mcpServerFor(projectId, { name: name, directMcpUrl: mcpUrl }).then((server) => {
+            setPendingKey(null);
+            if (server) setMcpApp(server);
+            else install(target, { connectors, app });
+          });
         }}
         pending={installing && pendingControl === key}
         disabled={installing}
@@ -511,6 +534,17 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
           </section>
         ) : null}
       </div>
+      {mcpApp ? (
+        <AddMcpServerDialog
+          key={mcpApp.url}
+          projectId={projectId}
+          app={mcpApp}
+          open
+          onOpenChange={(open) => !open && setMcpApp(null)}
+          takenSlugs={connectors.map((connector) => connector.slug)}
+          onAdded={() => void connectorsQuery.refetch()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -309,6 +309,33 @@ describe('MfaGate', () => {
     expect(serialize(root)).toContain('APP CONTENT');
   });
 
+  // 2026-10-17: a user had to enter the code twice. A correct code showed
+  // "Verified" but left the prompt up, emptied: the gate waited for a fresh
+  // AAL read (a getUser network call), and a read that failed kept the old
+  // aal1 answer. A correct code is the aal2 answer; the gate leaves at once.
+  test('a correct code releases the gate at once, while the AAL re-read is still in flight', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    aalHang = new Promise(() => {});
+    await enterAndVerify(root, '654321');
+
+    expect(toasts).toContain('success:Verified');
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
+  });
+
+  test('a failed AAL re-read after a correct code does not bring the prompt back', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    // The next getAAL throws ("User not found"), as a failed getUser does.
+    user = null;
+    await enterAndVerify(root, '654321');
+    await settle();
+
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
+  });
+
   test('Verify shows the session dot matrix while the code is checked', async () => {
     verifiedTotpAal();
     verifyHang = new Promise(() => {});

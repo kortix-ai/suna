@@ -59,6 +59,7 @@ export function ComposerChatInput({
   cardClassName,
   parentClassName,
   boundAgentName,
+  projectSession,
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
@@ -117,6 +118,8 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model this composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
@@ -142,6 +145,7 @@ export function ComposerChatInput({
     sessionId,
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    projectSession,
   });
   const setAgent = local.agent.set;
   const setModel = local.model.set;

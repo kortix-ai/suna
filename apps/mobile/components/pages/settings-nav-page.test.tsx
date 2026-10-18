@@ -80,7 +80,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/logger': { log: { error() {} } },
   '@/lib/utils/open-link': { openLink: async () => {} },
 };
-const real = new Set(['react', '@kortix/sdk', '@/lib/session/dock-menu', '@/lib/session/project-stack']);
+const real = new Set(['react', '@kortix/sdk', '@/lib/session/dock-menu', '@/lib/session/nav-access', '@/lib/session/project-stack']);
 const stubs: Record<string, Record<string, unknown>> = {};
 for (const [, names, name] of source.matchAll(/import\s+(?:type\s+)?(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gs)) {
   if (real.has(name)) continue;
@@ -127,10 +127,11 @@ const MANAGER = {
 describe('project Settings controls', () => {
   test('one probe: the leaves the edit, collaborator and delete routes assert, with the account passed along', () => {
     renderAs(MANAGER);
-    expect(probes.at(-1)).toEqual({
-      target: { projectId: 'proj-1', accountId: 'acc-1' },
-      actions: ['project.write', 'project.settings.write', 'project.members.manage', 'project.delete'],
-    });
+    const probe = probes.at(-1)!;
+    expect(probe.target).toEqual({ projectId: 'proj-1', accountId: 'acc-1' });
+    expect(probe.actions.slice(0, 4)).toEqual(['project.write', 'project.settings.write', 'project.members.manage', 'project.delete']);
+    expect(probe.actions).toContain('project.secret.read');
+    expect(new Set(probe.actions).size).toBe(probe.actions.length);
   });
 
   test('a manager edits every field, adds a collaborator and deletes the project', () => {
@@ -167,5 +168,28 @@ describe('project Settings controls', () => {
     for (const label of EDIT_ROWS) expect(editable(label)).toBe(false);
     expect(row('Add collaborator')).toBeUndefined();
     expect(row('Delete project')).toBeUndefined();
+  });
+});
+
+describe('Customize group follows the read leaf and a write leaf', () => {
+  const CUSTOMIZE = ['Schedules', 'Secrets', 'Members', 'Connectors', 'More on kortix.com'];
+  test('a plain member sees no Customize row and no hand-off', () => {
+    renderAs({
+      'project.trigger.read': can(true),
+      'project.secret.read': can(true),
+      'project.members.read': can(false),
+      'project.connector.read': can(true),
+    });
+    for (const label of CUSTOMIZE) expect(row(label)).toBeUndefined();
+  });
+  test('nothing shows while the probe is unresolved', () => {
+    renderAs({});
+    for (const label of CUSTOMIZE) expect(row(label)).toBeUndefined();
+  });
+  test('secret read + write shows Secrets only, with the web hand-off', () => {
+    renderAs({ 'project.secret.read': can(true), 'project.secret.write': can(true) });
+    expect(row('Secrets')).toBeTruthy();
+    expect(row('Schedules')).toBeUndefined();
+    expect(row('More on kortix.com')).toBeTruthy();
   });
 });

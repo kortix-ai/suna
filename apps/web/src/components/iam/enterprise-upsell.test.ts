@@ -146,7 +146,7 @@ describe('account page rail groups every access surface under Access', () => {
    * reason (a policy form is not what someone opening "Tokens" came for).
    */
   test('tokens section carries the keys list and then the key rules', () => {
-    expect(pageSource).toMatch(/activeSection === 'tokens' && canWriteAccount/);
+    expect(pageSource).toMatch(/activeSection === 'tokens' && sectionVisible.tokens/);
     expect(pageSource).toMatch(
       /activeSection === 'tokens'[\s\S]*?<ApiKeysSection[\s\S]*?<KeyRulesCard/,
     );

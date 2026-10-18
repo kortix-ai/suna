@@ -7,7 +7,7 @@ const label = (k: string) => k;
 
 describe('credentialVia', () => {
   test('keys are the SHA-256 keys of the English labels', () => {
-    expect(CREDENTIAL_LABEL_KEYS).toEqual({
+    expect<Record<string, string>>(CREDENTIAL_LABEL_KEYS).toEqual({
       browser_session: key('Browser'),
       personal_access_token: key('Personal access token'),
       oauth_app: key('Connected app'),

@@ -610,7 +610,9 @@ export {
   type PickerProviderListInput,
 } from './core/models/provider-selection';
 export {
+  latestPromptModel,
   resolveComposerModel,
   resolveModelDefault,
+  sessionModelCandidates,
   type ComposerModelResolution,
 } from './core/models/composer-model';

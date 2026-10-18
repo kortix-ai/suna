@@ -63,9 +63,11 @@ export function GenerationControlsPanel({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `GatewayCatalogModel` is keyed by wire id and carries no `id` field of its
-  // own; `CatalogModel` wants one — stamp the wire id on.
+  // own; `CatalogModel` wants one — stamp the wire id on. Its `provider` is a
+  // plain string here but a `{ npm, api }` transport override there; the
+  // capability derivation never reads it, so drop it.
   const caps = useMemo(
-    () => generationControlCapabilities(catalogModel ? { id: model, ...catalogModel } : undefined),
+    () => generationControlCapabilities(catalogModel ? { ...catalogModel, id: model, provider: undefined } : undefined),
     [catalogModel, model],
   );
   const config = value ?? EMPTY_CONFIG;

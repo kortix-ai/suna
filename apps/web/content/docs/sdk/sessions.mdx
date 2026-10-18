@@ -145,6 +145,8 @@ const { applied_live } = await s.changeModel('kimi-k3');
 
 The same model-id rule applies as for `model` at create. `changeModel()` restarts the runtime when the model changes on a running session, so a running turn ends. `applied_live` is `true` when a running session took the model now, and `false` when it applies at the next start. `push_failed: true` means the model is stored, but the running runtime still uses the old one. On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it. Anyone else gets `403`.
 
+The Kortix web and mobile apps open a session on its saved model. A model set at create or with `changeModel()` is the model their next message uses, unless the person picks another model in that session. The same ranking is `sessionModelCandidates()` in the root barrel.
+
 ### Steer, queue or interrupt
 
 `send()` queues: the prompt waits for the running turn to end. To choose how a prompt reaches a running turn, write it with `s.prompts.create()`:

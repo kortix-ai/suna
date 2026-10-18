@@ -26,6 +26,7 @@ import {
   serializeManifestObject,
   validateManifest,
   type ManifestIssue,
+  resolveProjectRepository,
 } from '@kortix/manifest-schema';
 import { agentFileCandidates, opencodeConfigDirCandidates, skillDirs } from '@kortix/manifest-schema/layout';
 
@@ -322,7 +323,9 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     if (frontmatter.disable === true || block.disable === true) next.enabled = false;
     if (block.kortix_cli !== undefined && next.kortix_permissions === undefined) next.kortix_permissions = block.kortix_cli;
     if (block.connectors_personal !== undefined && next.connectors_required === undefined) next.connectors_required = block.connectors_personal;
-    if (typeof block.repository_access === 'boolean' && next.workspace === undefined) next.workspace = { project_repository: block.repository_access };
+    // v2 clones the repository when the key is omitted and v3 does not: pin the v2 value.
+    const repository = resolveProjectRepository(block);
+    if (repository.ok && !repository.legacyRead) next.workspace = { project_repository: repository.value };
     const skillGrant = block.skills;
     next.skills = Array.isArray(skillGrant) ? skillGrant.filter((skill) => typeof skill === 'string' && (skill.startsWith('kortix-') || skills[skill] !== undefined)) : skillGrant;
     if (Array.isArray(skillGrant) && (next.skills as unknown[]).length !== skillGrant.length) {

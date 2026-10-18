@@ -232,7 +232,7 @@ export function registerProjectDetailRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Editing project config (name / default_branch / manifest_path) is a
       // customize-write capability. manifest_path is especially sensitive: it

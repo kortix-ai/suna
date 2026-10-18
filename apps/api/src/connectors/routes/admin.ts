@@ -6,6 +6,7 @@ import { INVALID_SOURCE_ADDRESS_CODE, isAllowedSourceValidationError } from '../
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { UnsafeEgressError } from '../../shared/ssrf-guard';
 import type { ConnectorAuthDiscovery } from '../auth-discovery';
+import { discoverProtectedResourceOAuth2, mcpSignInCheck } from '../oauth2-resource-discovery';
 import type { ConnectorRouterDeps, CrudOutcome } from '../router';
 import {
   AdminConnectorsResponseSchema,
@@ -100,6 +101,58 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
           ? connectors
           : connectors.map((connector) => ({ ...connector, secretIdentifier: null })),
       });
+    },
+  );
+
+  // ── Admin: can an MCP server be signed in to in one click ───────────────
+  // Install asks this before it offers an app's MCP server instead of its
+  // managed app: OAuth metadata plus dynamic client registration is one click.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/connectors/mcp-sign-in-check',
+      tags: ['connector'],
+      summary: 'Check whether an MCP server supports one-click OAuth sign-in',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        body: {
+          content: {
+            'application/json': { schema: z.object({ url: z.string().url() }) },
+          },
+        },
+      },
+      responses: {
+        200: json(
+          z.object({ requires_sign_in: z.boolean(), one_click: z.boolean() }),
+          'Whether the server needs a sign-in, and whether Kortix can run it in one click',
+        ),
+        ...errors(400, 403),
+      },
+    }),
+    async (c) => {
+      const { projectId } = c.req.valid('param');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      const { url } = c.req.valid('json');
+      try {
+        return c.json(
+          mcpSignInCheck(await discoverProtectedResourceOAuth2({ resourceUrl: url, provider: 'mcp' })),
+          200,
+        );
+      } catch (err) {
+        // The egress guard refused the URL (private, local, non-https): the
+        // user's input, never a server defect.
+        if (!(err instanceof UnsafeEgressError)) throw err;
+        return c.json(
+          {
+            error: INVALID_SOURCE_ADDRESS_CODE,
+            code: INVALID_SOURCE_ADDRESS_CODE,
+            message: `MCP server rejected: ${err.message}`,
+          },
+          400,
+        );
+      }
     },
   );
 
@@ -343,7 +396,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         },
       },
       responses: {
-        200: json(OkSchema, 'Binding updated'),
+        200: json(CrudOkSchema, 'Binding updated, with the MCP re-sync it ran'),
         ...errors(400, 403, 404, 409, 501),
       },
     }),
@@ -373,7 +426,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         parsed.data.secret_identifier,
       );
       return result.ok
-        ? c.json({ ok: true })
+        ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 404 | 409);
     },
   );

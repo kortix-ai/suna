@@ -11,7 +11,7 @@ flow(
   'BILL-1',
   {
     domain: 'billing',
-    tags: ['smoke'],
+    tags: ['deployed', 'smoke'],
     routes: ['GET /v1/billing/account-state', 'GET /v1/billing/account-state/minimal'],
   },
   async (ctx) => {
@@ -104,6 +104,7 @@ flow(
   'BILL-13',
   {
     domain: 'billing',
+    tags: ['deployed'],
     serial: true,
     global: true,
     requires: ['internalCron'],
@@ -154,6 +155,7 @@ flow(
   'BILL-3',
   {
     domain: 'billing',
+    tags: ['deployed'],
     requires: ['funded'],
     serial: true,
     timeoutMs: 120_000,
@@ -497,6 +499,7 @@ flow(
   'BILL-8',
   {
     domain: 'billing',
+    tags: ['deployed'],
     routes: [
       'POST /v1/billing/webhooks/stripe',
       'POST /v1/billing/webhook/stripe',
@@ -553,6 +556,7 @@ flow(
   'BILL-18',
   {
     domain: 'billing',
+    tags: ['deployed'],
     routes: [
       'POST /v1/billing/webhooks/stripe',
       'GET /v1/billing/account-state',

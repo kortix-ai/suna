@@ -391,7 +391,7 @@ the first system prompt pi rebuilds takes that id, so the record is replaced, no
 added. Three restores of one session keep one context record per thread (the
 same ids); before, each restore added one per thread pi prompted.
 
-Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
+Proved in the `opencode-session-log-restore-*.test.ts` files (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
 golden fixtures, converted and partial logs, an OpenCode session and a pi
 session recorded in the test, a second restore after a journaled turn, the seq
@@ -449,6 +449,7 @@ reads them and fails when a pin leaves them:
   `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
+  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it; `opencode-db.test.ts` also gates its minor line).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -858,8 +859,19 @@ hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
-line or a workspace tool's path, with the longest matching pattern winning and
-`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+line or a workspace tool's path. A pattern map is never collapsed to its `*` entry.
+
+**Precedence, both harnesses:** the most specific matching rule wins, whatever
+order the keys are written in (`@kortix/api-contract/permission-rules`). The
+longest pattern is the most specific; equal lengths compare by code unit, the
+later one winning. Keys follow the same order (`bash` outranks `*`), and a key
+whose map matches nothing falls back to a less specific key. pi resolves this
+in `pi/interactions.ts` `resolvePolicyRule`. OpenCode applies the LAST match in
+key order, so kortixd writes every block it composes least specific first
+(`buildOpencodeConfigContent` step 9), and the `open-code/permission-order.ts`
+plugin's `config` hook orders the blocks it did not compose (the project's
+`opencode.json[c]`, a config dir's `agents/*.md`). An agent block still
+outranks the global block on OpenCode. pi's
 request names the capability and the call's subject (`patterns`); an "always"
 reply allows the capability for the session, and a `deny` still outranks it.
 The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).
@@ -953,6 +965,35 @@ calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
+
+### Images
+
+- **Prompt images.** apps/api writes every prompt attachment to
+  `/workspace/uploads/.kortix-inbox/<command>/` and puts a `<file path="…" mime="…">` tag
+  in the prompt text; nothing rides inline in the body (`prompt-attachment-materializer.ts`).
+  When the selected model reads images (catalog `attachment: true`), the runtime also hands pi
+  each PNG, JPEG, GIF or WebP a tag names inside the inbox, resized by pi
+  (`promptImages`, `pi/images.ts`): on a prompt, a steer and a `noReply` message. The tag stays,
+  so the agent still has the path. A model without image input gets the tag alone.
+  Each path is read once, at most 20 images per prompt, one at a time. A file is read only when
+  its real path stays in the inbox (no symlink out), it is a regular file and it is at most
+  50 MiB. Steers run on one chain, so they reach pi in arrival order; a retract while a steer
+  loads its images cancels it (`retracted`; the steer answers `duplicate`).
+- **Session log.** pi records each image as an attachment (P2.13). An image from a tag carries
+  `source_path` (the tag's path, matched by order: when pi left out a tag image, none is set).
+  A restore writes no v1 file part for it, and the web draws it once, through its tag
+  (`normalizeAttachments`).
+- **Resize.** pi resizes every image (`read` and prompt images) with photon
+  (`@silvia-odwyer/photon-node`), which reads `photon_rs_bg.wasm` from its own `__dirname`.
+  A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
+  loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
+  inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
+  one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
+  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
+  20 per prompt). Follow-up: build the worker path pi's `resizeImage` asks for in a binary as a
+  second entrypoint, as codemode's worker (`scripts/build.sh`); it must install the wasm redirect itself.
+  `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
+  pi's `read` and `promptImages` in it.
 
 ### The conversation, compaction and slash commands
 

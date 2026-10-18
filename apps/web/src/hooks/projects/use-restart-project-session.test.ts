@@ -48,9 +48,9 @@ describe('restartPendingStartSeed — the optimistic /start payload', () => {
 
   test('is writable and readable under the real /start cache key', () => {
     const qc = client();
-    const key = sessionStartKey(PROJECT, SESSION);
+    const key: readonly unknown[] = sessionStartKey(PROJECT, SESSION);
     qc.setQueryData(key, restartPendingStartSeed());
-    expect(qc.getQueryData(key)).toEqual(restartPendingStartSeed());
+    expect(qc.getQueryData<ReturnType<typeof restartPendingStartSeed>>(key)).toEqual(restartPendingStartSeed());
   });
 });
 

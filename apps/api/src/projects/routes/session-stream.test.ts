@@ -853,7 +853,8 @@ describe('R5.3: the stream carries the runtime health, so clients stop probing i
         : { ok: true, health: { status: 'ok', runtimeReady: true, harness: { id: 'opencode', ready: true, state: 'ok' } } };
     };
     daemonAttach = async () => ({ ok: true, epoch: 'ep-s', body: daemonStream([], 3_000) });
-    const frames = await readFrames(await openStream(), 8, 2_500);
+    // hello, status, the 'starting' push, the ready push: an unchanged read pushed again would take the 4th slot.
+    const frames = await readFrames(await openStream(), 4, 2_500);
     const pushed = frames.filter((frame) => frame.event === 'kortix.runtime.health');
     expect(pushed.at(-1)?.data).toMatchObject({ health: { harness: { ready: true } } });
     // Unchanged reads are not pushed twice.
@@ -949,7 +950,7 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
 // ─── P4.4: `?schema=v2`, the session log on the stream ───────────────────────
 
 /** Read the raw stream bytes for `ms`, then hang up. */
-async function readRaw(response: Response, ms = 400): Promise<string> {
+async function readRaw(response: Response, ms = 400, until?: string): Promise<string> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let text = '';
@@ -962,6 +963,7 @@ async function readRaw(response: Response, ms = 400): Promise<string> {
       ]);
       if (chunk.done) break;
       text += decoder.decode(chunk.value, { stream: true });
+      if (until && text.includes(until) && text.endsWith('\n\n')) break;
     }
   } finally {
     await reader.cancel().catch(() => {});
@@ -997,7 +999,8 @@ describe('P4.4: schema — the v1 stream is unchanged', () => {
     const outputs: string[][] = [];
     for (const query of ['', '?schema=v1', '?schema=']) {
       daemonAttach = async () => ({ ok: true, epoch: 'ep1', body: daemonStream(V1_TURN, 500) });
-      outputs.push(runtimeBlocks(await readRaw(await openStream(query))));
+      // V1_TURN ends with the heartbeat: every daemon frame is in once it arrives.
+      outputs.push(runtimeBlocks(await readRaw(await openStream(query), 400, 'event: kortix.heartbeat')));
     }
     expect(outputs[1]).toEqual(outputs[0]!);
     expect(outputs[2]).toEqual(outputs[0]!);
@@ -1040,7 +1043,8 @@ describe('P4.4: schema=v2 on a daemon that serves the session log', () => {
       sse('log.message', { seq: 7, at: 8, payload: { message_id: 'msg_u1', rev: 1_791_700_000_000_001 }, session: ROOT }),
     ];
     daemonAttach = async () => ({ ok: true, epoch: 'lg1', body: daemonStream(V2, 500) });
-    const frames = (await readFrames(await openStream('?schema=v2'), 12)).filter((f) => f.data.channel === 'runtime');
+    // 10 = every frame up to the daemon's close; the reattach's status frames come 1 s later and are not asserted.
+    const frames = (await readFrames(await openStream('?schema=v2'), 10)).filter((f) => f.data.channel === 'runtime');
     expect(attachCalls[0]).toEqual({ since: null, epoch: null, schema: 'v2' });
     expect(frames.map((f) => f.event)).toEqual(['kortix.hello', 'log.state', 'log.thread', 'log.message', 'log.block.delta', 'session.status', 'log.message']);
     expectValidLog(frames);
@@ -1055,7 +1059,7 @@ describe('P4.4: schema=v2 on an older daemon — the API converts', () => {
   test('attaches on v1 and serves log.* in place of every transcript frame; every other frame is unchanged', async () => {
     mirrorRows = [{ runtime_session_id: ROOT, info: userInfo('msg_u0', 1_791_600_000_000) as never, parts: [] }];
     daemonAttach = async () => ({ ok: true, epoch: 'ep1', body: daemonStream(V1_TURN, 500) });
-    const frames = (await readFrames(await openStream('?schema=v2'), 16)).filter((f) => f.data.channel === 'runtime');
+    const frames = (await readFrames(await openStream('?schema=v2'), 14)).filter((f) => f.data.channel === 'runtime');
     expect(attachCalls[0]).toEqual({ since: null, epoch: null });
     expect(frames.map((f) => [f.event, f.data.seq])).toEqual([
       ['kortix.hello', undefined],

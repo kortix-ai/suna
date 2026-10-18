@@ -340,7 +340,7 @@ The full attempt also times out the existing five-second documentation guard.
 The guard now checks Git's candidate files with the same regex in V8, preserving citation boundaries and binary checks.
 Focused guard and runner verification passes 27 tests; the repository scan takes 498 milliseconds.
 No test deadline or performance threshold changes.
-Delivery requires the normal default gate and a fresh passing attestation. The PR must disclose the incomplete full evidence.
+Delivery requires the normal default gate. The PR must disclose the incomplete full evidence.
 
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
 The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.

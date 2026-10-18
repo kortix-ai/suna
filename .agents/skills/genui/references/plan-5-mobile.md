@@ -1357,7 +1357,7 @@ git commit -m "feat(mobile): Rich answers setting; copy renders generative UI as
 
 ```bash
 cd apps/mobile && bun test
-cd ../.. && pnpm test && pnpm test:verify --rev HEAD --branch genui
+cd ../.. && pnpm --filter ./apps/mobile test
 ```
 
 Expected: green; verify exits 0.

@@ -13,8 +13,8 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "test": "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
-    "typecheck": "tsc --noEmit",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'\"",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "db:generate": "bunx drizzle-kit generate",
     "db:check": "bunx drizzle-kit check",
     "db:studio": "bunx drizzle-kit studio",
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.12",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "bun-types": "^1.3.12",
     "typescript": "^5.4.0"
   },
