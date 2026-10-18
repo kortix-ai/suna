@@ -4017,13 +4017,14 @@ describe('kortix.yaml v3 on pi', () => {
     expect(names).not.toContain('review')
     // The harness's prompt templates stay first, and the project's own skills
     // follow as `source: 'skill'` rows — the KRTX-2543 fix: a v2 session can
-    // pick the skills it already had listed in `/skill`.
-    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual([
-      'folder-prompt',
-      'deploy',
-      'unregistered',
-      'folder-harnessespi',
-    ])
+    // pick the skills it already had listed in `/skill`. The directory order
+    // is the guaranteed part (`resolvePiSkillDirectories` reads the project's
+    // `skills/` before the pi config dir); within one directory pi's loader
+    // keeps readdir order, so the two `skills/` rows compare as a set.
+    const commandNames = ((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)
+    expect(commandNames[0]).toBe('folder-prompt')
+    expect(commandNames.slice(1, -1).sort()).toEqual(['deploy', 'unregistered'])
+    expect(commandNames.at(-1)).toBe('folder-harnessespi')
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {
