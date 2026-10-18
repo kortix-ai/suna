@@ -422,7 +422,7 @@ function queryString(route: Route, params: Record<string, unknown>): string {
 }
 
 /** The request a route sends for `params`. */
-export function buildRuntimeRequest(
+function buildRuntimeRequest(
   baseUrl: string,
   name: RouteName,
   params: Record<string, unknown> = {},

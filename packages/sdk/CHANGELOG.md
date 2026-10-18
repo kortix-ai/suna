@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Removed (dead exports; internal restructure, KRTX-2729)
+- `hasLocalhostUrls` (`@kortix/sdk`): no consumer anywhere — the URL rewriting
+  path calls `detectLocalhostUrls` directly.
+- `__getConfigResolver` (`@kortix/sdk/config`): test-only introspection with no
+  test left using it; `__setConfigResolver` is unchanged.
+
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
   restore of a session log could not bring back, from the session record

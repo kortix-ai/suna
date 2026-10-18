@@ -8,6 +8,3 @@ export interface ServerStore {
   /** Resolve the active OpenCode proxy URL (current runtime + local-dev fallback). */
   getActiveServerUrl: () => string;
 }
-
-export const PATH_PROXY_URL_REGEX =
-  /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
