@@ -86,6 +86,8 @@ export function clearLink(cwd = process.cwd()): void {
  *   4. the active host's global default project (`kortix projects use`)
  * Returns null if none of those are set.
  *
+ * An explicit `hostArg` uses only that named host's link or default.
+ *
  * `hostScoped` marks callers that pair the result with the stored active
  * host's credential (no `--host` given): when an explicit in-sandbox
  * `hosts use` selection owns plain resolution (markerActive, KRTX-1705), the
@@ -97,7 +99,7 @@ export function clearLink(cwd = process.cwd()): void {
  * resolveProjectContext applies. The connector data plane (pinned to the
  * injected identity) must keep the ambient chain and omits the flag.
  *
- * `hostName` (an explicit `--host`) scopes the same way (KRTX-1936): the
+ * `hostArg` (an explicit `--host`) scopes the same way (KRTX-1936): the
  * named host owns the chain — a link bound to it, else its stored default —
  * and the ambient ids (the injected KORTIX_PROJECT_ID, another host's
  * default) must not leak into it: they live on the caller's own host and
@@ -105,16 +107,16 @@ export function clearLink(cwd = process.cwd()): void {
  * resolveProjectContext applies to `--host`. */
 export function resolveProjectId(
   projectArg?: string,
-  opts?: { hostScoped?: boolean; hostName?: string },
+  opts?: { hostScoped?: boolean; hostArg?: string },
 ): string | null {
   if (projectArg) return projectArg;
-  const hostName =
-    opts?.hostName ??
-    (opts?.hostScoped && markerActive() ? (activeHostName() ?? undefined) : undefined);
-  if (hostName) {
+  if (opts?.hostArg || (opts?.hostScoped && markerActive())) {
+    const hostName = opts.hostArg ?? activeHostName();
     const link = loadLink();
     if (link?.host && link.host === hostName && link.project_id) return link.project_id;
-    return getHost(hostName)?.default_project?.project_id ?? null;
+    return (
+      (opts.hostArg ? getHost(opts.hostArg)?.default_project : defaultProject())?.project_id ?? null
+    );
   }
   const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   if (envProjectId) return envProjectId;
