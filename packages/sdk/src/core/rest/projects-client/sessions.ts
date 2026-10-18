@@ -2293,12 +2293,13 @@ export async function getSessionMessageAuthors(
   );
 }
 
-/** The model that answered a request, read from the gateway's request record. */
+/** The model each request ended up on, read from the gateway's request record. */
 export interface SessionServedModel {
-  /** Route id of the model that answered, as the model picker names it. */
+  /** Route id recorded for the request — the model that answered it, or on an
+   *  unanswered request the model it was being served by. */
   served_model: string;
-  /** The model the request was routed to, when a fallback model answered in
-   *  its place. Null when the routed model answered. */
+  /** The model the request was rerouted to after a failed attempt, whether or
+   *  not the fallback answered. Null when no attempt failed. */
   fallback_from: string | null;
   at: string;
   /** How the request ended: `answered` (a model answered it), `client_aborted`

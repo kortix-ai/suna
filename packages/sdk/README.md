@@ -499,8 +499,9 @@ send queue. Any other stop answers 403 with `code: 'not_turn_prompter'`.
 `{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
 `{ served_model, fallback_from, at, outcome }` for the newest request, whatever its outcome:
 `outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a
-model failure. `served_model` is the model that answered, and `fallback_from` is the routed model
-when a fallback model answered in its place.
+model failure. `served_model` is the route id recorded for the request — the model that answered
+it, or on an unanswered request the model it was being served by. `fallback_from` is the routed
+model when the gateway rerouted after a failed attempt, whether or not the fallback answered.
 `turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
 A transcript message carries only the model its turn asked for. In React,
 `useSessionModelUsage(projectId, sessionId)` reads the same record.

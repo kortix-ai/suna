@@ -11,9 +11,11 @@ import { db } from '../../shared/db';
 import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from '../../shared/llm-spend';
 
 export interface ServedModel {
-  /** Route id of the model that answered, as the model picker names it. */
+  /** Route id recorded for the request — the model that answered it, or on an
+   *  unanswered request the model it was being served by. */
   served_model: string;
-  /** The model the request was routed to, when a fallback model answered in its place. */
+  /** The model the request was rerouted to after a failed attempt, whether or
+   *  not the fallback answered. */
   fallback_from: string | null;
   at: string;
   /** How the request ended: `answered` (a model answered it), `client_aborted`
