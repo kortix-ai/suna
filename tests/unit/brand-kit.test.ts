@@ -1,3 +1,4 @@
+import { gitOrEmpty } from '../src/fixtures/git-or-empty';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -142,22 +143,12 @@ describe('deleted skill names', () => {
     '\\b(kortix-brand-guidelines|brand-guidelines|product-marketing)\\b|`comms`|the comms skill|comms §';
 
   it('are cited by no tracked file and no kit file except decisions.md', () => {
-    let output = '';
-    try {
-      output = execFileSync(
-        'git',
-        [
-          'grep', '-n', '-I', '-E', '--untracked', '-e', pattern, '--', '.',
-          ':!pnpm-lock.yaml', ':!skills-lock.json', ':!tests/unit/brand-kit.test.ts',
-          ':!.agents/skills/kortix-brand/references/decisions.md', ':!apps/mobile/assets',
-        ],
-        { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
-      );
-    } catch (error) {
-      // git grep exits 1 when nothing matches.
-      if ((error as { status?: number }).status !== 1) throw error;
-    }
-    expect(output.split('\n').filter(Boolean).map((l) => l.slice(0, 140))).toEqual([]);
+    const output = gitOrEmpty([
+      'grep', '-n', '-I', '-E', '--untracked', '-e', pattern, '--', '.',
+      ':!pnpm-lock.yaml', ':!skills-lock.json', ':!tests/unit/brand-kit.test.ts',
+      ':!.agents/skills/kortix-brand/references/decisions.md', ':!apps/mobile/assets',
+    ], { maxBuffer: 64 * 1024 * 1024 });
+    expect(output.map((l) => l.slice(0, 140))).toEqual([]);
   }, 30_000);
 });
 

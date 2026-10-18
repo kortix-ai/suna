@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -95,7 +96,7 @@ Personal API keys — act as YOU, and die with your membership:
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
-  rm <token-id> [-y]                Revoke a key immediately.
+  rm <token-id> [-y]                Revoke a key; delete it if already revoked.
 
 Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
@@ -300,7 +301,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   }
 }
 
-/** `kortix tokens rm` — revoke one of the account's personal API keys. */
+/** `kortix tokens rm` — revoke a key, or delete an already-revoked personal key. */
 async function revokeToken(
   client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
   positional: string[],
@@ -310,7 +311,7 @@ async function revokeToken(
   if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
   if (!opts.yes) {
     const ok = await confirm(
-      `Revoke API key ${C.bold}${tokenId}${C.reset}? Anything using it stops working immediately.`,
+      `Revoke API key ${C.bold}${tokenId}${C.reset}, or permanently delete it if already revoked?`,
       false,
       { onEndOfInput: false },
     );
@@ -319,8 +320,25 @@ async function revokeToken(
       return 0;
     }
   }
-  await client.delete(`/accounts/tokens/${encodeURIComponent(tokenId)}`);
-  process.stdout.write(`${status.ok(`Revoked ${C.bold}${tokenId}${C.reset}`)}\n`);
+  const tokens = await client.get<AccountToken[]>('/accounts/tokens?mine=true');
+  const token = tokens.find((row) => row.token_id === tokenId);
+  const query = token?.status === 'revoked' ? '?delete_revoked=true' : '';
+  let deleted = false;
+  try {
+    const result = await client.delete<{ deleted?: boolean }>(
+      `/accounts/tokens/${encodeURIComponent(tokenId)}${query}`,
+    );
+    deleted = result.deleted === true;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404 || !token) throw error;
+    // A lost response can replay a completed operation. Verify its intended
+    // result without issuing a second, different mutation.
+    const remaining = await client.get<AccountToken[]>('/accounts/tokens?mine=true');
+    const current = remaining.find((row) => row.token_id === tokenId);
+    deleted = token.status === 'revoked';
+    if (deleted ? current !== undefined : current?.status !== 'revoked') throw error;
+  }
+  process.stdout.write(`${status.ok(`${deleted ? 'Deleted' : 'Revoked'} ${C.bold}${tokenId}${C.reset}`)}\n`);
   return 0;
 }
 
