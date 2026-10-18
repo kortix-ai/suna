@@ -157,10 +157,12 @@ flow(
 );
 
 // PSKILL-1 — POST /v1/projects/:projectId/skills commits skills/<slug>/SKILL.md
-// onto the default branch: the model-free form path behind Customize → Skills →
-// New ("Create with a form"). The chat path needs a model — on a fresh free
-// account it was a dead end ("requires a paid plan", no model to pick) — so
-// this route must not need one. Maps to spec §26 (PSKILL-1).
+// onto the default branch, and DELETE /v1/projects/:projectId/skills/:slug
+// removes the folder and unregisters the slug: the model-free form path behind
+// Customize → Skills → New and its delete affordance. The chat path needs a
+// model — on a fresh free account it was a dead end ("requires a paid plan", no
+// model to pick) — so these routes must not need one. Maps to spec §26
+// (PSKILL-1).
 // Mutating + git commit → serial.
 flow(
   'PSKILL-1',
@@ -169,6 +171,7 @@ flow(
     serial: true,
     routes: [
       'POST /v1/projects/:projectId/skills',
+      'DELETE /v1/projects/:projectId/skills/:slug',
       'GET /v1/projects/:projectId/detail',
       'GET /v1/projects/:projectId/files/content',
     ],
@@ -256,6 +259,53 @@ flow(
         .as(ctx.P.OWNER)
         .post('/v1/projects/:projectId/skills', { name: '   ' }, { params: { projectId: p.id } });
       r.status(400);
+    });
+
+    await ctx.step('ANON cannot delete a skill', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .del('/v1/projects/:projectId/skills/:slug', { params: { projectId: p.id, slug } });
+      r.status(401);
+    });
+
+    await ctx.step('a non-member cannot delete a skill', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del('/v1/projects/:projectId/skills/:slug', { params: { projectId: p.id, slug } });
+      r.status([403, 404]);
+    });
+
+    await ctx.step('delete → 200 unregisters the slug', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/skills/:slug', { params: { projectId: p.id, slug } });
+      if (r.statusCode !== 200) {
+        throw new Error(`delete → ${r.statusCode}: ${r.text().slice(0, 400)}`);
+      }
+      r.status(200).body().has('$.ok', true).has('$.slug', slug);
+    });
+
+    await ctx.step('the deleted skill is gone from the catalog and the repo', async () => {
+      const detail = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', {
+        params: { projectId: p.id },
+      });
+      detail.status(200);
+      const skills = (detail.json<any>().config?.skills ?? []) as Array<{ path: string }>;
+      if (skills.some((s) => s.path === `skills/${slug}/SKILL.md`)) {
+        throw new Error(`the deleted skill is still in the catalog: ${JSON.stringify(skills.map((s) => s.path))}`);
+      }
+      const file = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+        params: { projectId: p.id },
+        query: { path: `skills/${slug}/SKILL.md` },
+      });
+      file.status(404);
+    });
+
+    await ctx.step('deleting it again → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/skills/:slug', { params: { projectId: p.id, slug } });
+      r.status(404);
     });
   },
 );
