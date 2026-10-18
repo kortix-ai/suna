@@ -14,12 +14,7 @@
  * connection listeners.
  */
 import type { RuntimeEvent } from '../stream/event-stream';
-import type {
-  SessionControlFrame,
-  SessionControlQueue,
-  SessionControlStreamOptions,
-  SessionRuntimeStatus,
-} from './control-stream';
+import type { SessionControlFrame, SessionControlQueue, SessionControlStreamOptions, SessionRuntimeStatus } from './control-stream';
 
 /** The stream cursors (`since`+`epoch` for the runtime log, `since_control`+
  *  `cepoch` for the control channel), carried across reconnects by the owner. */
@@ -65,19 +60,12 @@ export function safely(fn: () => void): void {
   }
 }
 
-export function each(
-  shared: SharedStream,
-  fn: (subscriber: SessionControlStreamOptions) => void,
-): void {
+export function each(shared: SharedStream, fn: (subscriber: SessionControlStreamOptions) => void): void {
   for (const subscriber of [...shared.subscribers]) safely(() => fn(subscriber));
 }
 
 /** The runtime-callback fan-out: a subscriber without `runtime: true` never sees runtime frames. */
-function eachRuntime<T>(
-  shared: SharedStream,
-  fn: (subscriber: SessionControlStreamOptions, value: T) => void,
-  value: T,
-): void {
+function eachRuntime<T>(shared: SharedStream, fn: (subscriber: SessionControlStreamOptions, value: T) => void, value: T): void {
   each(shared, (subscriber) => {
     if (subscriber.runtime) fn(subscriber, value);
   });
@@ -125,13 +113,9 @@ export function dispatchFrame(
       type,
       properties: frame.payload,
     } as unknown as RuntimeEvent;
-    eachRuntime(
-      shared,
-      (subscriber, event: RuntimeEvent) => {
-        subscriber.onRuntimeEvent?.(event);
-      },
-      event,
-    );
+    eachRuntime(shared, (subscriber, event: RuntimeEvent) => {
+      subscriber.onRuntimeEvent?.(event);
+    }, event);
     return;
   }
 
@@ -145,26 +129,18 @@ export function dispatchFrame(
       reason: typeof frame.reason === 'string' ? frame.reason : null,
     };
     shared.lastStatus = status;
-    eachRuntime(
-      shared,
-      (subscriber, status: SessionRuntimeStatus) => {
-        subscriber.onRuntimeStatus?.(status);
-      },
-      status,
-    );
+    eachRuntime(shared, (subscriber, status: SessionRuntimeStatus) => {
+      subscriber.onRuntimeStatus?.(status);
+    }, status);
     return;
   }
   if (type === 'kortix.runtime.health') {
     const health = (frame.health ?? null) as Record<string, unknown> | null;
     if (!health) return;
     shared.lastHealth = health;
-    eachRuntime(
-      shared,
-      (subscriber, health: Record<string, unknown>) => {
-        subscriber.onRuntimeHealth?.(health);
-      },
-      health,
-    );
+    eachRuntime(shared, (subscriber, health: Record<string, unknown>) => {
+      subscriber.onRuntimeHealth?.(health);
+    }, health);
     return;
   }
   if (type === 'kortix.control.resync') {

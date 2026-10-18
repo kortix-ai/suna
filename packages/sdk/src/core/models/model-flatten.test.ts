@@ -1,14 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ProviderListResponse } from '../runtime/runtime-types';
-import { flattenModels, type ModelOption } from './model-flatten';
-
-/** The exactly-one-entry read the assertions below assume (no non-null assertions). */
-function one(list: ModelOption[], at = 0): ModelOption {
-  const entry = list[at];
-  if (!entry) throw new Error(`expected a flattened model at ${at}, got ${list.length}`);
-  return entry;
-}
+import { flattenModels } from './model-flatten';
 
 /** A gateway `/model-picker` list: the synthetic `kortix` provider whose models
  *  carry the loose models.dev-ish shape (no `capabilities`). */
@@ -49,7 +42,7 @@ describe('flattenModels · the gateway loose-shape projection', () => {
     });
     const flat = flattenModels(list);
     expect(flat).toHaveLength(1);
-    const model = one(flat);
+    const model = flat[0]!;
     // A gateway model's wire id is the bare modelID (the kortix provider is implied).
     expect(model.id).toBe('anthropic/claude-opus-4-8');
     expect(model.providerID).toBe('kortix');
@@ -84,11 +77,10 @@ describe('flattenModels · the gateway loose-shape projection', () => {
     const flat = flattenModels(list);
     // Stale baked `auto` entries never surface.
     expect(flat).toHaveLength(1);
-    const grok = one(flat);
-    expect(grok.modelID).toBe('x-ai/grok-5');
-    expect(grok.capabilities).toEqual({ reasoning: true, vision: true, toolcall: true });
-    expect(grok.providerName).toBe('Kortix');
-    expect(grok.provider).toBeUndefined();
+    expect(flat[0]!.modelID).toBe('x-ai/grok-5');
+    expect(flat[0]!.capabilities).toEqual({ reasoning: true, vision: true, toolcall: true });
+    expect(flat[0]!.providerName).toBe('Kortix');
+    expect(flat[0]!.provider).toBeUndefined();
   });
 
   test('a catalog silent about modalities keeps vision undefined, and free is exact', () => {
@@ -97,8 +89,8 @@ describe('flattenModels · the gateway loose-shape projection', () => {
       'a/two': { name: 'Two', free: 'yes' },
     });
     const flat = flattenModels(list);
-    expect(one(flat).capabilities?.vision).toBeUndefined();
-    expect(one(flat, 1).free).toBe(false);
+    expect(flat[0]!.capabilities!.vision).toBeUndefined();
+    expect(flat[1]!.free).toBe(false);
   });
 
   test('native mode drops a stale gateway entry; gateway mode drops a native one', () => {
@@ -106,9 +98,7 @@ describe('flattenModels · the gateway loose-shape projection', () => {
     expect(flattenModels(staleKortix, { providerMode: 'native' })).toHaveLength(0);
     expect(flattenModels(staleKortix, { providerMode: 'gateway' })).toHaveLength(1);
     const native = gatewayList({ 'a/one': { name: 'One' } });
-    const nativeProvider = native.all[0];
-    if (!nativeProvider) throw new Error('fixture lost its provider');
-    nativeProvider.id = 'openrouter';
+    native.all[0]!.id = 'openrouter';
     native.connected = ['openrouter'];
     expect(flattenModels(native, { providerMode: 'native' })).toHaveLength(1);
     expect(flattenModels(native, { providerMode: 'gateway' })).toHaveLength(0);

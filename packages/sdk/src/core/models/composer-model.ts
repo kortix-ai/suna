@@ -1,11 +1,11 @@
-import { autoSeedableModels } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse } from '../runtime/runtime-types';
+import { autoSeedableModels } from "@kortix/llm-catalog/lite";
+import type { ProviderListResponse } from "../runtime/runtime-types";
 
-import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
-import { sessionModelPin } from '../rest/projects-client/sessions';
-import { healBedrockModelKey } from './bedrock-invokable';
-import { type FlatModel, isOfferedModel } from './model-flatten';
-import { type ModelKey, modelRefToKey, wireToModelKey } from './model-key';
+import type { ModelDefaultsResponse } from "../rest/projects-client/model-defaults";
+import { sessionModelPin } from "../rest/projects-client/sessions";
+import { healBedrockModelKey } from "./bedrock-invokable";
+import { isOfferedModel, type FlatModel } from "./model-flatten";
+import { type ModelKey, modelRefToKey, wireToModelKey } from "./model-key";
 
 /**
  * Which model the session composer runs — framework-free, so every host
@@ -47,7 +47,7 @@ export function latestPromptModel(
   for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
     const message = messages![i]!;
     const { provider, model } = message.model ?? {};
-    if (message.role === 'user' && provider && model)
+    if (message.role === "user" && provider && model)
       return { providerID: provider, modelID: model };
   }
   return undefined;
@@ -55,7 +55,7 @@ export function latestPromptModel(
 
 /** Pin sources that record a choice: a person's (CLI, SDK, Slack, `PUT /model`),
  *  or the platform's when it moved that choice off a retired model. */
-const CHOSEN_PIN_SOURCES = new Set(['explicit', 'repointed']);
+const CHOSEN_PIN_SOURCES = new Set(["explicit", "repointed"]);
 
 /**
  * The models a session already runs on, as the server records them, most
@@ -81,8 +81,12 @@ export function sessionModelCandidates(input: {
 }): ModelKey[] {
   const pin = input.session ? sessionModelPin(input.session) : null;
   const pinKey = pin ? modelRefToKey(pin, input.gatewayEnabled) : undefined;
-  const chosen = CHOSEN_PIN_SOURCES.has(String(input.session?.metadata?.opencode_model_source));
-  const ordered = chosen ? [pinKey, input.lastPromptModel] : [input.lastPromptModel, pinKey];
+  const chosen = CHOSEN_PIN_SOURCES.has(
+    String(input.session?.metadata?.opencode_model_source),
+  );
+  const ordered = chosen
+    ? [pinKey, input.lastPromptModel]
+    : [input.lastPromptModel, pinKey];
   return ordered.filter((model): model is ModelKey => !!model);
 }
 
@@ -107,14 +111,15 @@ function resolveFallbackModel(input: {
   recent?: ReadonlyArray<ModelKey>;
   providers?: ProviderListResponse;
 }): ModelKey | undefined {
-  const isValid = (model: ModelKey): boolean => isOfferedModel(input.models, model);
+  const isValid = (model: ModelKey): boolean =>
+    isOfferedModel(input.models, model);
 
   // Priority 1: Config model (from opencode.json)
   if (input.configModel) {
-    const parts = input.configModel.split('/');
+    const parts = input.configModel.split("/");
     if (parts.length >= 2) {
       const [providerID, ...rest] = parts;
-      const modelID = rest.join('/');
+      const modelID = rest.join("/");
       if (isValid({ providerID, modelID })) {
         return { providerID, modelID };
       }
@@ -132,7 +137,9 @@ function resolveFallbackModel(input: {
   if (input.providers) {
     const defaults = input.providers.default || {};
     const all = Array.isArray(input.providers.all) ? input.providers.all : [];
-    const connectedIds = Array.isArray(input.providers.connected) ? input.providers.connected : [];
+    const connectedIds = Array.isArray(input.providers.connected)
+      ? input.providers.connected
+      : [];
     const connected = all.filter((p) => connectedIds.includes(p.id));
     for (const p of connected) {
       const configured = defaults[p.id];
@@ -184,13 +191,21 @@ export function resolveComposerModel(input: {
 }): ComposerModelResolution {
   const { models, providers } = input;
   const isValid = (model: ModelKey): boolean => isOfferedModel(models, model);
-  const firstValid = (candidates: ReadonlyArray<ModelKey | undefined>): ModelKey | undefined =>
+  const firstValid = (
+    candidates: ReadonlyArray<ModelKey | undefined>,
+  ): ModelKey | undefined =>
     candidates.find((model): model is ModelKey => !!model && isValid(model));
 
   const explicit = firstValid(input.picks ?? []);
   const fallback = resolveFallbackModel(input);
   const resolved =
-    explicit ?? firstValid([input.serverDefault, input.globalDefault, input.agentModel, fallback]);
+    explicit ??
+    firstValid([
+      input.serverDefault,
+      input.globalDefault,
+      input.agentModel,
+      fallback,
+    ]);
   // EVERY source above can hand back a bare Bedrock in-region id — the
   // explicit slot most of all. Bedrock answers a hard 400 for those and
   // OpenCode retries forever, so heal here, at the single seam every source

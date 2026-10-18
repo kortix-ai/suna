@@ -16,11 +16,7 @@ async function parse(raw: string): Promise<Array<{ id?: string; retry?: number; 
   const stubFetch = (() => Promise.resolve(new Response(body))) as unknown as typeof fetch;
   const transport = fetchEventTransport(stubFetch);
   const messages = [];
-  for await (const message of transport({
-    url: 'http://x',
-    headers: new Headers(),
-    signal: new AbortController().signal,
-  })) {
+  for await (const message of transport({ url: 'http://x', headers: new Headers(), signal: new AbortController().signal })) {
     messages.push(message);
   }
   return messages;

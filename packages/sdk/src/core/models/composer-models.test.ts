@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type {
   ProjectLlmCatalogProvidersResponse,
   ProjectLlmCatalogResponse,
@@ -16,6 +15,7 @@ import {
 } from './composer-model';
 import type { FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
+import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
 import {
   LLM_PROVIDER_CREDENTIALS,
   filterToNativeProviders,
@@ -205,7 +205,10 @@ describe('createModelVisibility', () => {
   });
 
   test('a hide pin still hides a platform-managed model (the pin outranks the managed rule)', () => {
-    const gateway = [flat('kortix', 'glm-5.3-flash'), flat('kortix', PLATFORM_DEFAULT_MODEL_ID)];
+    const gateway = [
+      flat('kortix', 'glm-5.3-flash'),
+      flat('kortix', PLATFORM_DEFAULT_MODEL_ID),
+    ];
     const isVisible = createModelVisibility({
       catalogModels: gateway,
       pins: [
@@ -228,9 +231,9 @@ describe('createModelVisibility', () => {
   });
 
   test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
-    expect(hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true })).toBe(
-      true,
-    );
+    expect(
+      hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
+    ).toBe(true);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
 });

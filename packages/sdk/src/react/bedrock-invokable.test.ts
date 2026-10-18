@@ -2,13 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CATALOG, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
-import { healBedrockModelKey } from './bedrock-invokable';
 import { type FlatModel, flattenModels, isOfferedModel } from './model-flatten';
-import {
-  nativeProviderListFromCatalog,
-  projectLlmCatalogToProviderList,
-} from './provider-selection';
+import { nativeProviderListFromCatalog, projectLlmCatalogToProviderList } from './provider-selection';
 import { modelProviderMode } from './use-opencode-local';
+import { healBedrockModelKey } from './bedrock-invokable';
 
 // ── Why this exists ─────────────────────────────────────────────────────────
 //
@@ -54,9 +51,7 @@ const BEDROCK = flat('amazon-bedrock', [
 
 describe('healBedrockModelKey', () => {
   test('THE REGRESSION: a pinned bare id with no twin resolves to the auto-seed profile', () => {
-    expect(
-      healBedrockModelKey({ providerID: 'amazon-bedrock', modelID: 'xai.grok-4.6' }, BEDROCK),
-    ).toEqual({
+    expect(healBedrockModelKey({ providerID: 'amazon-bedrock', modelID: 'xai.grok-4.6' }, BEDROCK)).toEqual({
       providerID: 'amazon-bedrock',
       modelID: 'global.anthropic.claude-opus-5',
     });
@@ -64,10 +59,7 @@ describe('healBedrockModelKey', () => {
 
   test('a bare id WITH a global. twin is upgraded to that twin — same model, invokable id', () => {
     expect(
-      healBedrockModelKey(
-        { providerID: 'amazon-bedrock', modelID: 'openai.gpt-5.6-luna' },
-        BEDROCK,
-      ),
+      healBedrockModelKey({ providerID: 'amazon-bedrock', modelID: 'openai.gpt-5.6-luna' }, BEDROCK),
     ).toEqual({ providerID: 'amazon-bedrock', modelID: 'global.openai.gpt-5.6-luna' });
   });
 
@@ -83,15 +75,9 @@ describe('healBedrockModelKey', () => {
   });
 
   test('a bare id with only a REGIONAL twin is upgraded to the regional profile', () => {
-    const models = flat('amazon-bedrock', [
-      'anthropic.claude-fable-5',
-      'us.anthropic.claude-fable-5',
-    ]);
+    const models = flat('amazon-bedrock', ['anthropic.claude-fable-5', 'us.anthropic.claude-fable-5']);
     expect(
-      healBedrockModelKey(
-        { providerID: 'amazon-bedrock', modelID: 'anthropic.claude-fable-5' },
-        models,
-      ),
+      healBedrockModelKey({ providerID: 'amazon-bedrock', modelID: 'anthropic.claude-fable-5' }, models),
     ).toEqual({ providerID: 'amazon-bedrock', modelID: 'us.anthropic.claude-fable-5' });
   });
 
@@ -169,8 +155,7 @@ describe('the SampleCo repro, against the real catalog', () => {
     const twin =
       ids.find((id) => id === `global.${pinned.modelID}`) ??
       ids.find(
-        (id) =>
-          bedrockInferenceProfileRank(id) === 1 && id.slice(id.indexOf('.') + 1) === pinned.modelID,
+        (id) => bedrockInferenceProfileRank(id) === 1 && id.slice(id.indexOf('.') + 1) === pinned.modelID,
       );
     const seeded = (list as { default?: Record<string, string> }).default!['amazon-bedrock'];
     expect(healed!.modelID).toBe(twin ?? seeded);
@@ -224,7 +209,7 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
     expect(block).toContain('healBedrockModelKey');
   });
 
-  test('the fallback\'s "first model of provider" loop uses the auto-seedable set', () => {
+  test("the fallback's \"first model of provider\" loop uses the auto-seedable set", () => {
     expect(source).toContain('const fallbackModel = modelResolution.fallback;');
     // The fallback chain lives in `resolveFallbackModel` (same file, extracted
     // from the old IIFE verbatim) — assert on the helper that owns the loop.

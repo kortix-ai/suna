@@ -136,6 +136,7 @@ export function isOfferedModel(
   return !!model && model.enabled !== false;
 }
 
+
 /** Read the gateway-specific fields off a `LooseModel` — the one cast in the
  *  module, at the one place the union's loose branch is entered. */
 type WithGatewayFields = GatewayModelFields;
@@ -158,9 +159,7 @@ function capabilitiesOf(model: LooseModel): FlatModel['capabilities'] {
   const modalityInput = model.modalities?.input;
   return {
     reasoning: model.reasoning ?? false,
-    vision: modalityInput
-      ? modalityInput.includes('image')
-      : (model as WithGatewayFields).attachment,
+    vision: modalityInput ? modalityInput.includes('image') : (model as WithGatewayFields).attachment,
     toolcall: model.tool_call ?? false,
   };
 }
@@ -225,9 +224,7 @@ export function flattenModels(
   const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    if (
-      providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id)
-    )
+    if (providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id))
       continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       // Old sandboxes can carry a baked catalog from before the synthetic model
