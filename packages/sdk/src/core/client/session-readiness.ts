@@ -10,7 +10,8 @@ import {
   getSessionRuntime,
   setSessionRuntime,
 } from '../session/session-runtime-registry';
-import { SessionNotReadyError, inFlightSessionStarts } from './session-shared';
+import { SessionNotReadyError } from './session-shared';
+import { inFlightSessionStarts } from './session-start';
 import { bindSessionStart } from './session-start';
 export function bindSessionReadiness(
   projectId: string,

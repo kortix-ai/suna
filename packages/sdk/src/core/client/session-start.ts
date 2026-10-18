@@ -3,7 +3,22 @@ import * as P from '../rest/projects-client';
 import { setCurrentRuntime } from '../session/current-runtime';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import type { SessionRuntimeEntry } from '../session/session-runtime-registry';
+/** The `/start` side of the client, shared by the single-flight map below. */
 import { runtimeNotReadyMessage } from './session-shared';
+
+/**
+ * Dedupes concurrent `ensureReady()` calls that would otherwise both drive a
+ * `/start` long-poll for the SAME (projectId, sessionId) — e.g. two session
+ * handles for the same session (or the facade racing the React `useSession`
+ * hook) both calling `ensureReady()`/`start()` before either has resolved a
+ * runtime. Keyed by `${projectId}\n${sessionId}` (not the process-global
+ * "active runtime" — every other handle for a DIFFERENT session gets its own
+ * entry and is unaffected). Cleared on settle (success or failure) so a
+ * transient failure doesn't wedge the key — the next call issues a fresh
+ * `/start` instead of replaying a stale rejected promise forever.
+ */
+export const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
+
 export function bindSessionStart(projectId: string, sessionId: string) {
   async function startRuntime(readyTimeoutMs: number): Promise<SessionRuntimeEntry> {
     // Poll /start (each call long-polls up to 30s) until the runtime is
