@@ -95,11 +95,44 @@ describe('parse + validate', () => {
     expect(parseGenui('a = Series("x", [1])').issues.map((i) => i.code)).toContain('no-root');
   });
 
-  test('a block entry that is not a Stack is wrapped in one', () => {
+  test('a block entry that is not a Stack is wrapped in one, with no issue', () => {
     const { root, issues } = parseGenui('a = Badge("x")');
     expect(root?.type).toBe('Stack');
     expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);
-    expect(issues.map((i) => i.code)).toEqual(['wrong-child']);
+    expect(issues).toEqual([]);
+  });
+
+  test('root may be any block: root = Table(...) renders as a Stack of that Table', () => {
+    const { root, issues } = parseGenui('root = Table(["a"], [["1"]])');
+    expect(issues).toEqual([]);
+    expect(root?.type).toBe('Stack');
+    expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Table']);
+  });
+
+  test('a root that is not a block (root = Step) has no root', () => {
+    const { root, issues } = parseGenui('root = Step("x")');
+    expect(root).toBeNull();
+    expect(issues.map((i) => i.code)).toEqual(['wrong-child', 'no-root']);
+  });
+
+  test('Steps takes up to 12 Steps; a 13th fails the schema', () => {
+    const steps = Array.from({ length: 13 }, (_, i) => `s${i} = Step("Step ${i}")`);
+    const twelve = parseGenui(`root = Steps([${steps.slice(0, 12).map((_, i) => `s${i}`).join(', ')}])\n${steps.slice(0, 12).join('\n')}`);
+    expect(twelve.issues).toEqual([]);
+    expect((twelve.root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Steps']);
+    const thirteen = parseGenui(`root = Steps([${steps.map((_, i) => `s${i}`).join(', ')}])\n${steps.join('\n')}`);
+    expect(thirteen.issues.map((i) => `${i.code}:${i.component}`)).toContain('schema:Steps');
+  });
+
+  test('Checklist takes up to 20 items; a 21st fails the schema', () => {
+    const items = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => `Item ${i}`));
+    expect(parseGenui(`root = Checklist("Pack", ${items(20)})`).issues).toEqual([]);
+    expect(parseGenui(`root = Checklist("Pack", ${items(21)})`).issues.map((i) => `${i.code}:${i.component ?? ''}`)).toEqual(['schema:Checklist', 'no-root:']);
+  });
+
+  test('a Checklist item over 120 characters fails the schema and drops the Checklist', () => {
+    expect(parseGenui(`root = Checklist("Pack", ["Valid passport", "${'x'.repeat(120)}"])`).issues).toEqual([]);
+    expect(parseGenui(`root = Checklist("Pack", ["Valid passport", "${'x'.repeat(121)}"])`).issues.map((i) => `${i.code}:${i.component ?? ''}`)).toEqual(['schema:Checklist', 'no-root:']);
   });
 
   test('after the stream ends, an unfinished statement is dropped as cut-off; siblings stay', () => {

@@ -145,6 +145,8 @@ const { applied_live } = await s.changeModel('kimi-k3');
 
 The same model-id rule applies as for `model` at create. `changeModel()` restarts the runtime when the model changes on a running session, so a running turn ends. `applied_live` is `true` when a running session took the model now, and `false` when it applies at the next start. `push_failed: true` means the model is stored, but the running runtime still uses the old one. On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it. Anyone else gets `403`.
 
+The Kortix web and mobile apps open a session on its saved model. A model set at create or with `changeModel()` is the model their next message uses, unless the person picks another model in that session. The same ranking is `sessionModelCandidates()` in the root barrel.
+
 ### Steer, queue or interrupt
 
 `send()` queues: the prompt waits for the running turn to end. To choose how a prompt reaches a running turn, write it with `s.prompts.create()`:
@@ -184,7 +186,7 @@ The inbox lists only prompts not yet delivered:
 | `s.prompts.retry(promptId)` | Retries a `failed` prompt |
 | `s.prompts.remove(promptId)` | Removes a prompt and returns it. `409` when the agent already reads it |
 | `s.prompts.hold(true \| false)` | Holds or releases the whole queue |
-| `s.turn()` | Running turns (`turns`, empty when idle), how the last turn ended (`last_ended`), and recent failures (`recent_failures`) |
+| `s.turn()` | Running turns (`turns`, empty when idle), how the last turn ended (`last_ended`), recent failures (`recent_failures`), and whether the caller may stop the running turn (`can_stop`) |
 
 ### Attach files
 
@@ -275,7 +277,7 @@ A React app uses `useSession` instead of `stream()`. See [React](/docs/sdk/react
 | `s.log({ thread?, before_seq?, limit? })` | One page of the stored session log (`kortix.session/2`, `SessionLogPage`): the session record, every thread head, and the thread's newest `limit` messages (default 40, at most 500) by `seq`. `thread` defaults to the root thread; pass the first message's `seq` as `before_seq` for older ones. `null` when the session has no stored log yet (it is journaled at each turn end), or no such thread. | No |
 | `s.transcript({ limit?, chars? })` | A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
 | `s.get()` | The session record: status, agent, model, labels, metadata. | No |
-| `s.messageAuthors()` | The member or session that sent each message, keyed by message id. | No |
+| `s.messageAuthors()` | The member or session that sent each message, keyed by message id, and the member who stopped each stopped turn (`stops`). | No |
 | `s.modelUsage()` | The model that answered each turn, and `fallback_from` when a fallback model answered. | No |
 
 A `transcriptSync` window also stops at 1,000,000 characters of JSON. It keeps its newest messages, and `next_cursor` then names the oldest one it kept.
@@ -299,6 +301,7 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
 | `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days), and its branch is kept. |
 | `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/work/sessions#restore-a-deleted-session). |
+| `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs/work/sessions#continue-a-lost-session). |
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
 | `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/work/sessions#who-can-open-a-session). |
 | `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/work/sessions#public-links). |

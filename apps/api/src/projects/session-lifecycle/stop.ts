@@ -9,6 +9,7 @@ import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
 import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop } from '../reaping/stop-box';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { holdInboxPrompts } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
@@ -55,6 +56,8 @@ export async function stopSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
+  /** The person recorded on the stopped turn; null for an agent credential. Default `userId`. */
+  stoppedBy?: string | null;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { projectId, sessionId, accountId, userId } = input;
   const budgetEndsAt = Date.now() + stopSyncBudgetMs();
@@ -142,6 +145,14 @@ export async function stopSession(input: {
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
   if (!cancellingWake) {
+    // Stopping the computer stops its turn too, and that is a stop this person
+    // asked for. Stamp it on the open turns BEFORE the abort, as the turn's own
+    // Stop does: otherwise the abort's end frame, or the `runtime_gone` settle
+    // when the box dies first, reads as a failure nobody explained, and nobody
+    // sees who stopped it. Recovery is unchanged: a manual stop never resumes
+    // its turns (`sandbox-state-sync.ts` resumes provider stops only). The
+    // route already allowed only the owner or a manager. Never throws.
+    await markTurnStopRequested(sessionId, 'UserStop', {}, input.stoppedBy === undefined ? userId : input.stoppedBy);
     await abortLiveTurnBeforeStop({
       sandboxId: sandbox.sandboxId,
       externalId: sandbox.externalId,

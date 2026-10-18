@@ -1,6 +1,6 @@
 /**
- * SessionActionsSheet — the shared "session ···" sheet: Rename, Share,
- * Restart sandbox, Stop (running only), and Delete for one session.
+ * SessionActionsSheet — the shared "session ···" sheet: Rename, Share, Pin,
+ * Archive, Restart sandbox, Stop (running only), and Delete for one session.
  *
  * Extracted from the Sessions page's long-press sheet (COR-140 Task 5) so the
  * thread header's `···` (`ProjectHeaderActions`, via `SessionPage`) and the
@@ -9,8 +9,9 @@
  *
  * Layout (board 11b): the `KortixBottomSheetModal` title row, titled with
  * the session, close at the far left (Back while Rename or Share shows); one untitled
- * group of Rename · Share (when `can_manage_sharing !== false`) · Restart
- * sandbox · Stop (running only, both need `can_manage_lifecycle !== false`);
+ * group of Rename · Share (when `can_manage_sharing !== false`) · Pin or
+ * Unpin · Archive or Unarchive · Restart sandbox · Stop (running only, both
+ * need `can_manage_lifecycle !== false`);
  * then Delete session alone in its own group, destructive. Rename and Share
  * push in place of the options (`sheet-push`), one sheet for the whole flow.
  * Delete confirms in an `AlertDialog` that opens only after the sheet has
@@ -34,8 +35,16 @@
  * `session.compact` (pi). View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
  * another session shows none of the four. Rules:
- * `lib/session/session-actions.ts`. Export transcript and Archive are not on
- * mobile.
+ * `lib/session/session-actions.ts`. Export transcript is not on mobile.
+ *
+ * Pin and Archive (KRTX-2418) change only the viewer's own list, so every
+ * viewer who can open the session gets them, whatever its lifecycle
+ * permission; a row without `pinned_at` (no list state for this caller)
+ * shows neither. Each closes the sheet and runs at once: every cached list
+ * shows the change (`writeListState`), the server answers, then the lists
+ * refetch, so the drawer's Pinned section and the Sessions page's Archived
+ * view follow. Archived offers Undo in its toast. A failure puts the rows
+ * back and toasts, like Rename.
  *
  * Controlled by an imperative ref (`present(session)`), so a caller needs no
  * state of its own: mount one instance and call `ref.current?.present(session)`
@@ -47,11 +56,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import {
+  ArchiveIcon,
   FolderOpenIcon,
   GitDiffIcon,
   GitPullRequestIcon,
   PencilIcon as Pencil,
+  PushPinIcon,
+  PushPinSlashIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareNetworkIcon,
   SquareIcon as Square,
@@ -86,7 +99,8 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
+import { useCans, useSummarizeRuntimeSession } from '@kortix/sdk/react';
 import { useRuntimeSupports } from '@/lib/session/runtime-capabilities';
 import { useSessionChanges } from '@/hooks/useSessionChanges';
 import { sessionStatus as readSessionStatus, useSessionStatus } from '@/lib/session/session-store';
@@ -96,19 +110,27 @@ import {
   changeRequestBaseRef,
   openChangeRequestPrompt,
   sessionActionRows,
+  sessionListActions,
+  sessionListChange,
   type ChangedFile,
+  type SessionListAction,
 } from '@/lib/session/session-actions';
 import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
   deleteProjectSession,
   restartProjectSession,
+  setSessionArchived,
+  setSessionPinned,
   stopProjectSession,
   type ProjectSession,
+  type SessionListState,
 } from '@/lib/projects/projects-client';
 import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session-list';
 import {
   applyToSessionCache,
+  listStateAfter,
   withoutSession,
+  writeListState,
   writeSessionLists,
 } from '@/lib/session/session-cache-write';
 import { useTabStore } from '@/stores/tab-store';
@@ -165,6 +187,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const insets = useSafeAreaInsets();
     const toast = useToast();
     const queryClient = useQueryClient();
+    const { t } = useTranslation();
+    const cans = useCans({ projectId }, REVIEW_CONTROL_ACTIONS);
 
     // The freshest copy of the session: a caller may have long-pressed a row
     // from a list that has since refetched, and Rename/Share should never
@@ -391,6 +415,66 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       });
     }, [menuSession, runLifecycle]);
 
+    // ── Pin and archive (KRTX-2418): the viewer's own list only ──
+    const writeListStateEverywhere = React.useCallback(
+      (sessionId: string, state: SessionListState) =>
+        writeSessionLists(queryClient, sessionListKeys(queryClient, projectId), (cached, key) =>
+          writeListState(cached, key, sessionId, state)
+        ),
+      [queryClient, projectId]
+    );
+    const listState = useMutation({
+      mutationFn: ({ sessionId, action }: { sessionId: string; action: SessionListAction }) => {
+        const change = sessionListChange(action);
+        return 'pinned' in change
+          ? setSessionPinned(projectId, sessionId, change.pinned)
+          : setSessionArchived(projectId, sessionId, change.archived);
+      },
+      onMutate: async ({ sessionId, action }) => {
+        // A refetch in flight would land the old state over the new one.
+        await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
+        const row = cachedSessionRow(queryClient, projectId, sessionId) ?? {};
+        const state = listStateAfter(row, sessionListChange(action), new Date().toISOString());
+        return { undo: writeListStateEverywhere(sessionId, state) };
+      },
+      onSuccess: (state, { sessionId, action }) => {
+        writeListStateEverywhere(sessionId, state);
+        haptics.success();
+        // An archived session leaves the list: Undo brings it back.
+        toast.success(
+          t(`sessions.${action}Done`),
+          action === 'archive'
+            ? {
+                action: {
+                  label: t('sessions.undo'),
+                  kind: 'undo',
+                  onPress: () => {
+                    listState.mutate({ sessionId, action: 'unarchive' });
+                  },
+                },
+              }
+            : undefined
+        );
+      },
+      onError: (_error, { action }, context) => {
+        context?.undo();
+        haptics.warning();
+        toast.error(t(`sessions.${action}Failed`));
+      },
+      // The server stays the source: the list drops an archived row, and the
+      // Pinned and Archived views take theirs in the server's order. Not
+      // awaited, like Rename.
+      onSettled: () => {
+        void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      },
+    });
+    const runListAction = (action: SessionListAction) => {
+      if (!menuSession) return;
+      haptics.tap();
+      actionSheetRef.current?.dismiss();
+      listState.mutate({ sessionId: menuSession.session_id, action });
+    };
+
     // ── Delete ──
     const deleteSession = useMutation({
       mutationFn: (session: ProjectSession) => deleteProjectSession(projectId, session.session_id),
@@ -446,11 +530,14 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
 
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
+    const canOpenChangeRequest = changeRequestControlsFrom(cans).canOpen;
     const canManageSharing = menuSession?.can_manage_sharing !== false;
+    const listActions = menuSession ? sessionListActions(liveRow(menuSession)) : null;
     const topRows = sessionActionRows({
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
+      canOpenChangeRequest,
       canCompact,
       changes: {
         pending: changesQuery.isPending,
@@ -497,7 +584,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
             contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
             {!menuSession ? null : sheetView === 'options' ? (
               <Animated.View key="options" entering={returning ? POP_IN : undefined}>
-                {/* Board 11b: one group of Rename/Share/Restart/Stop, then
+                {/* Board 11b: one group of Rename/Share/Pin/Archive/Restart/Stop, then
                     Delete alone in its own group, destructive. The 16pt
                     project edge matches the title row's inset; 18pt between
                     the two groups, the settings screens' gap. */}
@@ -558,6 +645,23 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                     <SettingsRow icon={Pencil} label="Rename" onPress={() => pushView('rename')} />
                     {canManageSharing ? (
                       <SettingsRow icon={ShareNetworkIcon} label="Share" onPress={() => pushView('share')} />
+                    ) : null}
+                    {/* KRTX-2418: the viewer's own list, so no permission gate. */}
+                    {listActions ? (
+                      <SettingsRow
+                        icon={listActions.pin === 'pin' ? PushPinIcon : PushPinSlashIcon}
+                        label={t(`sessions.${listActions.pin}`)}
+                        right={null}
+                        onPress={() => runListAction(listActions.pin)}
+                      />
+                    ) : null}
+                    {listActions ? (
+                      <SettingsRow
+                        icon={ArchiveIcon}
+                        label={t(`sessions.${listActions.archive}`)}
+                        right={null}
+                        onPress={() => runListAction(listActions.archive)}
+                      />
                     ) : null}
                     {canManageLifecycle ? (
                       <SettingsRow

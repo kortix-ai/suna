@@ -1,9 +1,11 @@
 'use client';
 
 import { MinusIcon, TrendDownIcon, TrendUpIcon } from '@phosphor-icons/react';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
 
 import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTranslations } from '@/i18n/use-translations';
@@ -190,21 +192,107 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
               </span>
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className={cn('text-foreground min-w-0 font-medium text-balance', first ? 'text-base leading-6' : 'text-sm leading-5')}>
-                  {item.props.href ? <MarkdownLink href={String(item.props.href)}>{title}</MarkdownLink> : title}
-                </span>
-                {item.props.meta ? (
-                  <span className={cn('max-w-32 shrink-0 text-right text-sm tabular-nums', first ? 'text-foreground font-medium' : 'text-muted-foreground')}>
-                    {String(item.props.meta)}
-                  </span>
-                ) : null}
-              </div>
+              <span className={cn('text-foreground min-w-0 font-medium text-balance', first ? 'text-base leading-6' : 'text-sm leading-5')}>
+                {item.props.href ? <MarkdownLink href={String(item.props.href)}>{title}</MarkdownLink> : title}
+              </span>
+              {/* The meta is its own line under the title, as a price or spec line: a side column squeezes a sentence. */}
+              {item.props.meta ? <span className="text-foreground text-sm font-medium tabular-nums">{String(item.props.meta)}</span> : null}
               <span className="text-muted-foreground text-sm text-pretty">{String(item.props.reason)}</span>
             </div>
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * A journey or a process (ChatGPT's "journey at a glance"): each row is a cropped photo on a rail, the title with
+ * its meta on the right, and the text lines. A hairline under each photo joins it to the next row. A row with no
+ * photo, a photo that fails to load, or a step still streaming shows its number in a dot on the same rail, so the
+ * order still reads and a half-written URL never loads.
+ */
+export function GenuiSteps({ props }: GenuiComponentProps) {
+  const steps = kids(props.steps);
+  // Keyed by URL, not by step: a step whose URL changes gets a fresh try.
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
+  // A list whose every photo failed goes back to the narrow numbered rail.
+  const photos = steps.some((step) => step.props.image && !failed.has(String(step.props.image)));
+  return (
+    <ol className="flex flex-col">
+      {steps.map((step, index) => {
+        const last = index === steps.length - 1;
+        const src = step.partial || !step.props.image ? null : String(step.props.image);
+        const image = src && !failed.has(src) ? src : null;
+        return (
+          <li key={step.id} className="flex gap-4">
+            <div className={cn('flex shrink-0 flex-col items-center', photos ? 'w-26' : 'w-7')}>
+              {image ? (
+                <span className="bg-muted size-26 shrink-0 overflow-hidden rounded-lg [&>span]:size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover [&_img]:outline-0">
+                  <MarkdownImage src={image} alt="" flush compact onError={() => setFailed((known) => new Set(known).add(image))} />
+                </span>
+              ) : photos ? (
+                // In a list with photos, a row without one keeps the same thumbnail size: its number on the well.
+                <span aria-hidden className="bg-muted text-muted-foreground flex size-26 shrink-0 items-center justify-center rounded-lg font-mono text-sm tabular-nums">
+                  {index + 1}
+                </span>
+              ) : (
+                <span aria-hidden className="bg-muted text-foreground flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-xs tabular-nums">
+                  {index + 1}
+                </span>
+              )}
+              {last ? null : <span className="bg-border my-1.5 min-h-5 w-px flex-1" aria-hidden />}
+            </div>
+            <div className={cn('flex min-w-0 flex-1 flex-col gap-0.5', !last && 'pb-5', !photos && 'pt-1')}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-foreground min-w-0 text-sm font-medium text-balance">{String(step.props.title ?? '')}</span>
+                {step.props.meta ? (
+                  <span className="text-muted-foreground max-w-32 shrink-0 text-right text-xs tabular-nums">{String(step.props.meta)}</span>
+                ) : null}
+              </div>
+              {step.props.text ? <p className="text-foreground text-sm text-pretty whitespace-pre-line">{String(step.props.text)}</p> : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Things to tick off, with a "3/9 ready" count and a bar. Ticks live in this component only: no store, no request. */
+export function GenuiChecklist({ props }: GenuiComponentProps) {
+  const t = useTranslations('genui');
+  const items = strings(props.items);
+  const [done, setDone] = useState<ReadonlySet<number>>(new Set());
+  const toggle = (index: number, on: boolean) =>
+    setDone((known) => {
+      const next = new Set(known);
+      if (on) next.add(index);
+      else next.delete(index);
+      return next;
+    });
+  return (
+    <div className="border-border flex flex-col gap-3 rounded-xl border px-4 py-3.5">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-foreground min-w-0 text-sm font-medium text-balance">{String(props.title)}</span>
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('checklistReady', { done: done.size, total: items.length })}</span>
+        </div>
+        <Progress aria-hidden value={items.length === 0 ? 0 : (done.size / items.length) * 100} className="bg-muted h-1" indicatorClassName="bg-foreground" />
+      </div>
+      <ul className="flex flex-col">
+        {items.map((item, index) => (
+          <li key={index}>
+            {/* -mx-3 w-auto: the box lines up with the title, and the row tint spans the card's padding on both sides. */}
+            <Checkbox
+              checked={done.has(index)}
+              onCheckedChange={(value) => toggle(index, value === true)}
+              className="-mx-3 w-auto"
+              label={<span className={cn('text-foreground', done.has(index) && 'text-muted-foreground font-normal line-through')}>{item}</span>}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

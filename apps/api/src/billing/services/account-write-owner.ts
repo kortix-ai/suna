@@ -52,6 +52,7 @@ export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 export const STRIPE_OWNED_FIELDS = [
   'tier',
   'planMonthlyUsd',
+  'scheduledMonthlyUsd',
   'stripeSubscriptionId',
   'stripeSubscriptionStatus',
   'billingCycleAnchor',
@@ -89,6 +90,10 @@ export const ADMIN_OWNED_FIELDS = [
   // A provider webhook has no business expressing operator intent, and a
   // whole-column write from one would erase every override at once.
   'entitlementOverrides',
+  // The Enterprise layer: licensed (written by a license contract) and demo
+  // (written by the account's own toggle). Never by a provider sync.
+  'enterpriseEntitled',
+  'demoEnterprise',
   'trialStatus',
   'trialTier',
   'trialMonthlyUsd',

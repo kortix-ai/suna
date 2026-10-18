@@ -24,13 +24,14 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams` and
- * `config_releases` are deprecated. `agent_tunnel` graduated like
+ * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
+ * `config_releases` and `apps` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
- * runs its base branch's config release.
+ * runs its base branch's config release. And `apps`: Apps is generally
+ * available — every project can create and deploy Apps.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -51,6 +52,7 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
+  /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
   | 'monitors'
   | 'reminders'
@@ -91,6 +93,7 @@ type GraduatedFeatureFlagKey =
   | 'human_messaging'
   | 'pi_worker'
   | 'config_releases'
+  | 'apps'
   | 'stateless_sessions'
   | 'ephemeral_sandboxes';
 /** The keys `KortixProject.experimental` carries on every response. */
@@ -107,7 +110,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'llm_gateway',
   'meta_agent',
-  'apps',
   'monitors',
   'reminders',
   'warm_sessions',
@@ -144,10 +146,10 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`apps`). The catalog lists one
-   * only while it is on, so agents and people can see it. Only a Kortix
-   * platform operator can change it: `PATCH /features` answers `403` with
-   * `feature_operator_only`. Absent on servers older than this field.
+   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * catalog lists one only while it is on, so agents and people can see it.
+   * Only a Kortix platform operator can change it: `PATCH /features` answers
+   * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
   /**
@@ -692,6 +694,24 @@ export async function provisionProject(
 export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
 
 /**
+ * Stable error code `provisionProjectStream` (below) puts on the error it
+ * throws when the stream closes WITHOUT a terminal `done`/`error` frame
+ * (`/provision-stream`'s contract is "always a terminal frame", so this
+ * shape means the connection died mid-provision — a proxy idle timeout, a
+ * dropped socket).
+ *
+ * The close is an UNKNOWN result, deliberately NOT classed as a transport
+ * failure: the request demonstrably reached the server (the 200 headers
+ * arrived) and may still commit or roll back — only the response was lost.
+ * The host recovers it by replaying the SAME `idempotency_key` over the
+ * plain `POST /projects/provision` (the key exists for exactly that), which
+ * answers `409 provision_in_flight` until the first attempt commits, then
+ * `201` with the same project. Client-side only: the server never emits
+ * this string.
+ */
+export const PROVISION_STREAM_UNTERMINATED_CODE = 'provision_stream_unterminated';
+
+/**
  * One frame of `POST /projects/provision-stream`'s SSE body.
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
@@ -864,7 +884,20 @@ export async function provisionProjectStream(
   // A stream that closes without a terminal event is a failure, not a
   // success. Resolving here would hand the caller an undefined project id
   // and route a user to `/projects/undefined`.
-  if (!settled) throw new Error('Provision stream ended without a result');
+  //
+  // `ApiError` with a stable code, not a bare `Error`: the close means the
+  // create's result is UNKNOWN — the route's handler outlives a lost reader
+  // and may still commit or roll back — so a host cannot tell this apart
+  // from a real failure without sniffing the message. The code is what lets
+  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
+  // idempotency key over the plain route and recover the true outcome
+  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
+  // every existing reader.
+  if (!settled) {
+    throw new ApiError('Provision stream ended without a result', {
+      code: PROVISION_STREAM_UNTERMINATED_CODE,
+    });
+  }
   return settled;
 }
 

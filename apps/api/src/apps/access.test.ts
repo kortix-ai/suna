@@ -73,6 +73,87 @@ describe('Kortix App access', () => {
     expect(appTeamScope('password')).toBe('team');
   });
 
+  test('restricted access accepts membership in ANY one of several allowed groups', () => {
+    // 2026-10-14, #kortix-triage: with two allowed groups configured, a member
+    // of BOTH could not open the App, while the same App with one allowed group
+    // loaded — read as AND semantics. An OR decision cannot produce that
+    // signature (adding a grant can never lock a member out), so this pins the
+    // multi-group verdict at every subject surface: each single group admits,
+    // both together admit, only neither denies.
+    const QR = '44444444-4444-4444-8444-444444444441';
+    const ABS = '44444444-4444-4444-8444-444444444442';
+    const OTHER = '44444444-4444-4444-8444-444444444443';
+    const grants = [
+      { principalType: 'group' as const, principalId: QR },
+      { principalType: 'group' as const, principalId: ABS },
+    ];
+    const inQrOnly = { userId: MEMBER_ID, groupIds: [QR] };
+    const inAbsOnly = { userId: MEMBER_ID, groupIds: [ABS] };
+    const inBoth = { userId: MEMBER_ID, groupIds: [QR, ABS, OTHER] };
+    const inNeither = { userId: MEMBER_ID, groupIds: [OTHER] };
+
+    for (const [name, subject] of [['first group only', inQrOnly], ['second group only', inAbsOnly], ['both groups', inBoth]] as const) {
+      const input = { mode: 'restricted' as const, ownerId: null, grants, subject };
+      expect(appAccessDecision(input), `decision admits ${name}`).toBe(true);
+      expect(appOpenableToSubject({ ...input, isProjectManager: false }), `openable admits ${name}`).toBe(true);
+      expect(appVisibleToSubject({ ...input, isProjectManager: false }), `visible admits ${name}`).toBe(true);
+    }
+    const refused = { mode: 'restricted' as const, ownerId: null, grants, subject: inNeither };
+    expect(appAccessDecision(refused)).toBe(false);
+    expect(appOpenableToSubject({ ...refused, isProjectManager: false })).toBe(false);
+    expect(appVisibleToSubject({ ...refused, isProjectManager: false })).toBe(false);
+  });
+
+  test('restricted access mixes member and group grants as one OR allow-list', () => {
+    const GROUP_ID = '44444444-4444-4444-8444-444444444444';
+    const OTHER_MEMBER = '55555555-5555-4555-8555-555555555555';
+    const grants = [
+      { principalType: 'member' as const, principalId: OTHER_MEMBER },
+      { principalType: 'group' as const, principalId: GROUP_ID },
+    ];
+    const viaMember = { userId: OTHER_MEMBER, groupIds: [] as string[] };
+    const viaGroup = { userId: MEMBER_ID, groupIds: [GROUP_ID] };
+    const viaNeither = { userId: MEMBER_ID, groupIds: [] as string[] };
+    for (const subject of [viaMember, viaGroup]) {
+      expect(appAccessDecision({ mode: 'restricted', ownerId: null, grants, subject })).toBe(true);
+    }
+    expect(appAccessDecision({ mode: 'restricted', ownerId: null, grants, subject: viaNeither })).toBe(false);
+  });
+
+  test('widening the allow-list never locks an admitted member out', () => {
+    // The property behind the report: under OR, adding an allowed group to the
+    // policy must keep every already-admitted subject admitted. The reporter's
+    // toggle (two groups fail, one group loads) is impossible while this holds.
+    const A = '44444444-4444-4444-8444-444444444444';
+    const B = '44444444-4444-4444-8444-444444444445';
+    const C = '44444444-4444-4444-8444-444444444446';
+    const subjects: Array<{ userId: string; groupIds: string[] }> = [
+      { userId: MEMBER_ID, groupIds: [A] },
+      { userId: MEMBER_ID, groupIds: [B] },
+      { userId: MEMBER_ID, groupIds: [A, B] },
+    ];
+    const steps: Array<Array<{ principalType: 'member' | 'group'; principalId: string }>> = [
+      [{ principalType: 'group', principalId: B }],
+      [{ principalType: 'group', principalId: B }, { principalType: 'group', principalId: A }],
+      [{ principalType: 'group', principalId: B }, { principalType: 'group', principalId: A }, { principalType: 'group', principalId: C }],
+    ];
+    for (const subject of subjects) {
+      let everAllowed = false;
+      for (const grants of steps) {
+        const allowed = appAccessDecision({ mode: 'restricted', ownerId: null, grants, subject });
+        if (everAllowed) {
+          expect(allowed, `${JSON.stringify(subject.groupIds)} stayed admitted through ${JSON.stringify(grants)}`).toBe(true);
+        }
+        everAllowed = everAllowed || allowed;
+      }
+    }
+    // The two-group subject is admitted from the first step on and never loses it.
+    const inBoth = subjects[2] ?? { userId: MEMBER_ID, groupIds: [] as string[] };
+    for (const grants of steps) {
+      expect(appAccessDecision({ mode: 'restricted', ownerId: null, grants, subject: inBoth })).toBe(true);
+    }
+  });
+
   test('never lists an App it will then refuse to open', () => {
     // The defect this holds shut: a card that is shown but not openable mints
     // an access session on mount, gets a 403, and renders a broken tile with a

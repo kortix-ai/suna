@@ -795,6 +795,9 @@ pub(crate) fn capture_request(
         "own_bundle_ids": s.own_bundle_ids,
         "exclude_domains": s.effective_excluded_domains(),
         "exclude_private": s.exclude_private_browsing,
+        "only_included": s.record_only_included,
+        "include_bundle_ids": s.included_bundle_ids,
+        "include_domains": s.effective_included_domains(),
         "record_unknown": s.record_unknown_bundle_ids,
         "inactive_after_seconds": s.inactivity_seconds as f64,
         "ax": s.ax_enabled,
@@ -1923,6 +1926,7 @@ fn fetch_favicons(
     }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .user_agent(super::sync::user_agent())
         .build()?;
     for (id, domain) in domains {
         let fetched = favicon_candidate(&domain)
@@ -3080,6 +3084,46 @@ mod tests {
             "hidden windows never name a display"
         );
         assert_eq!(d(2)["top"]["title"], "general");
+
+        // Record only included: Slack (an app) and github.com (a website, in any browser).
+        let plan = engine
+            .request(
+                json!({
+                    "cmd": "_plan_displays",
+                    "exclude_private": true,
+                    "only_included": true,
+                    "include_bundle_ids": ["com.tinyspeck.slackmacgap"],
+                    "include_domains": ["github.com"],
+                    "displays": [{"id": 1, "x": 0, "y": 0, "w": 1728, "h": 1117}, {"id": 2, "x": 1728, "y": 0, "w": 3440, "h": 1440}],
+                    "windows": [
+                        w(10, "com.spotify.client", "Spotify", None, 0, 1728, 1117),
+                        w(30, "com.tinyspeck.slackmacgap", "general", None, 2000, 1600, 1400),
+                        w(40, "com.google.Chrome", "PR", Some("https://github.com/kortix-ai/suna"), 1728, 3440, 1440),
+                        w(50, "com.google.Chrome", "Video", Some("https://youtube.com/watch"), 1728, 800, 600),
+                    ],
+                }),
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        let mut hidden: Vec<i64> = plan["hidden"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        hidden.sort();
+        assert_eq!(hidden, [10, 50], "not included: hidden");
+        let d = |id: i64| {
+            plan["displays"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["id"] == id)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(d(1)["covered"], true, "no included window: no frame");
+        assert_eq!(d(2)["covered"], false);
     }
 
     #[test]

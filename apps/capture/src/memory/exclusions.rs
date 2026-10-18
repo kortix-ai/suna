@@ -51,10 +51,31 @@ pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
         || contains_ci(own, &b)
 }
 
+/// With `record_only_included` on: the app is included, or the page's website is.
+/// With it off, everything is included.
+pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
+    if !s.record_only_included {
+        return true;
+    }
+    contains_ci(&s.included_bundle_ids, bundle_id)
+        || url.and_then(super::store::normalize_domain).is_some_and(|host| {
+            s.effective_included_domains()
+                .iter()
+                .any(|d| domain_covers(d, &host))
+        })
+}
+
 /// Why nothing in front of `front` may be recorded under the effective
-/// settings `s`: `own_app` (Kortix itself), `excluded_app`, `private_browsing`
-/// or `excluded_domain` (the screen recorder's skip reasons, in its order).
+/// settings `s`: `own_app` (Kortix itself), `excluded_app`, `private_browsing`,
+/// `excluded_domain` (the screen recorder's skip reasons, in its order) or
+/// `not_included` (record only included apps and websites is on).
 pub fn excluded_reason(s: &Settings, front: &Front) -> Option<&'static str> {
+    excluded_by_list(s, front).or_else(|| {
+        (!included(s, &front.bundle_id, front.url.as_deref())).then_some("not_included")
+    })
+}
+
+fn excluded_by_list(s: &Settings, front: &Front) -> Option<&'static str> {
     if is_own_app(&front.bundle_id, &s.own_bundle_ids) {
         return Some("own_app");
     }
@@ -313,6 +334,58 @@ pub fn report_from(
         })).collect::<Vec<_>>(),
         "frontmost": frontmost.map(|(bundle_id, name)| json!({"bundle_id": bundle_id, "name": name})),
     })
+}
+
+/// Apps installed on this Mac, `(bundle id, name)`, sorted by name: the suggestions where a
+/// person includes or excludes an app it has not recorded yet. Empty on other platforms.
+pub fn installed_apps() -> Vec<(String, String)> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let roots = [
+            "/Applications".to_string(),
+            "/Applications/Utilities".to_string(),
+            "/System/Applications".to_string(),
+            "/System/Applications/Utilities".to_string(),
+            format!("{home}/Applications"),
+        ];
+        let mut out: Vec<(String, String)> = Vec::new();
+        for root in roots {
+            let Ok(dir) = std::fs::read_dir(&root) else { continue };
+            for e in dir.flatten() {
+                let path = e.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("app") {
+                    continue;
+                }
+                let plist = path.join("Contents/Info.plist");
+                let Ok(o) = std::process::Command::new("/usr/bin/plutil")
+                    .args(["-convert", "json", "-o", "-"])
+                    .arg(&plist)
+                    .output()
+                else {
+                    continue;
+                };
+                let Ok(v) = serde_json::from_slice::<Value>(&o.stdout) else { continue };
+                let Some(id) = v["CFBundleIdentifier"].as_str() else { continue };
+                let name = v["CFBundleDisplayName"]
+                    .as_str()
+                    .or(v["CFBundleName"].as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+                    });
+                if !out.iter().any(|(b, _)| b.eq_ignore_ascii_case(id)) {
+                    out.push((id.to_string(), name));
+                }
+            }
+        }
+        out.sort_by_key(|(_, n)| n.to_lowercase());
+        out
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
 }
 
 /// At most this many recent apps and websites in the report.
@@ -820,5 +893,46 @@ mod tests {
             report_from(&member, &member, &[], &[], None)["frontmost"],
             Value::Null
         );
+    }
+
+    #[test]
+    fn record_only_included_records_included_apps_and_sites_and_exclusions_win() {
+        let mut s = Settings::default();
+        let front = |b: &str, url: Option<&str>| Front {
+            bundle_id: b.into(),
+            url: url.map(str::to_string),
+            title: String::new(),
+        };
+        assert_eq!(excluded_reason(&s, &front("com.spotify.client", None)), None, "off: everything");
+        s.record_only_included = true;
+        s.included_bundle_ids = vec!["com.tinyspeck.slackmacgap".into()];
+        s.included_domains = vec!["https://www.GitHub.com/x".into()];
+        assert_eq!(excluded_reason(&s, &front("com.spotify.client", None)), Some("not_included"));
+        assert_eq!(excluded_reason(&s, &front("com.tinyspeck.slackmacgap", None)), None);
+        assert_eq!(excluded_reason(&s, &front("com.google.chrome", Some("https://docs.github.com/a"))), None);
+        assert_eq!(
+            excluded_reason(&s, &front("com.google.chrome", Some("https://youtube.com/watch"))),
+            Some("not_included")
+        );
+        s.excluded_bundle_ids = vec!["com.tinyspeck.slackmacgap".into()];
+        assert_eq!(
+            excluded_reason(&s, &front("com.tinyspeck.slackmacgap", None)),
+            Some("excluded_app"),
+            "an exclusion wins"
+        );
+    }
+
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn installed_apps_lists_safari_by_bundle_id_and_name_quickly() {
+        let t = std::time::Instant::now();
+        let apps = installed_apps();
+        assert!(
+            apps.iter().any(|(b, n)| b == "com.apple.Safari" && n == "Safari"),
+            "{:?}",
+            &apps[..apps.len().min(5)]
+        );
+        assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
     }
 }

@@ -71,9 +71,11 @@ const SRC_DIR = join(import.meta.dir, '..', '..', '..');
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
   'appearance-tab.tsx',
+  'computer-tab.tsx',
   'connected-tab.tsx',
   'experimental-tab.tsx',
   'general-tab.tsx',
+  'mcp-tab.tsx',
   // Plan: `BillingTab`'s cards and rows, not a `<Table>` — the ledger with
   // the wide table is the account page's Usage tab, which is not mounted here.
   'credits-tab.tsx',
@@ -219,7 +221,7 @@ describe('settings tab content width', () => {
   // reason that has nothing to do with a tab picking its own width.
   test('no third width is in use across the whole panel', () => {
     const widths = new Set(
-      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter(Boolean),
+      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter((width): width is string => width !== null),
     );
     for (const width of widths) {
       expect(['max-w-2xl', 'max-w-4xl']).toContain(width);

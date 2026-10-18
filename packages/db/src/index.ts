@@ -1,5 +1,5 @@
 // Main exports
-export { createDb, instrumentSql, type Database, type DbHooks } from './client';
+export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -86,6 +86,7 @@ export {
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  projectSessionUserStates,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,
@@ -101,6 +102,7 @@ export {
   sessionLogMessages,
   sessionLogBlobs,
   sessionContentPurges,
+  sessionLogBackfillState,
   accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,

@@ -37,6 +37,15 @@ export function resolveBrowserWorkers(value: string | undefined): number {
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS);
 
+/**
+ * CI (every GitHub Actions job sets `CI`) records every journey, passed or
+ * failed, so the HTML report in each `tests-release-browser-shard-N` artifact
+ * replays the whole shard. A local run keeps a video only for a failure.
+ */
+export function resolveVideoMode(env: NodeJS.ProcessEnv): 'on' | 'retain-on-failure' {
+  return env.CI ? 'on' : 'retain-on-failure';
+}
+
 export interface GrepFilters {
   grep?: RegExp;
   grepInvert?: RegExp;
@@ -59,13 +68,6 @@ function union(sources: string[]): RegExp | undefined {
 }
 
 /**
- * The tag a journey carries when it cannot be made deterministic. It is escaped
- * on the way in like any other entry, and `@quarantine` has no regex
- * metacharacters, so the literal and its escaped form are identical.
- */
-const QUARANTINE_TAG = '@quarantine';
-
-/**
  * The tag a journey carries when it needs the local stack: it pushes into a
  * local bare repository or writes rows straight into the database. A deployed
  * lane (KE2E_TARGET set) leaves it out at collection, so the strict release
@@ -75,16 +77,12 @@ const LOCAL_ONLY_TAG = '@local-only';
 
 /**
  * Tag and title filters for the browser lane, read from the environment.
- *
- * A journey that cannot be made deterministic against a deployed target is
- * tagged `@quarantine` at its `test.describe`. The blocking release gate
- * excludes that tag; `tests-browser-nightly.yml` runs exactly that tag and
- * nothing else. Both directions come from here so neither lane needs a custom
- * command line.
+ * There is no quarantine tag: a journey that cannot be made deterministic is
+ * fixed or deleted (testing reset, 2026-10-16).
  *
  * - `E2E_EXCLUDE_TAGS` / `E2E_INCLUDE_TAGS` — comma-separated tag or title
- *   fragments. Each entry is escaped, so `@quarantine` matches literally and
- *   cannot be read as a regex by accident.
+ *   fragments. Each entry is escaped, so `@slow(deployed)` matches literally
+ *   and cannot be read as a regex by accident.
  * - `E2E_GREP_INVERT` / `E2E_GREP` — raw regex escape hatches, unioned with the
  *   tag lists in the same direction.
  *
@@ -104,19 +102,6 @@ export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFi
     ...splitList(env.E2E_EXCLUDE_TAGS).map(escapeForRegExp),
     ...splitList(env.E2E_GREP_INVERT),
   ];
-  // Quarantine excludes BY DEFAULT. `tests-release.yml` named the tag itself,
-  // but `tests.yml` — the PR gate — names no filter at all, so every
-  // quarantined journey ran there and blocked the build: the exact outcome the
-  // tag exists to prevent. Defaulting here fixes every gate at once and keeps
-  // the promise the tag makes, rather than repeating the tag in each workflow
-  // and waiting for the next one to forget it.
-  //
-  // An explicit include wins: `tests-browser-nightly.yml` sets
-  // `E2E_INCLUDE_TAGS=@quarantine` precisely to run these, and injecting the
-  // exclusion there would select and reject the same journeys, running nothing.
-  if (includes.length === 0 && !excludes.includes(QUARANTINE_TAG)) {
-    excludes.unshift(QUARANTINE_TAG);
-  }
   if (env.KE2E_TARGET && !excludes.includes(LOCAL_ONLY_TAG)) excludes.push(LOCAL_ONLY_TAG);
   const filters: GrepFilters = {};
   const grep = union(includes);
@@ -179,7 +164,7 @@ export default defineConfig({
     storageState: vercelBypass ? DEPLOYMENT_BYPASS_STATE_PATH : undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: resolveVideoMode(process.env),
     actionTimeout: deployedTarget ? 30_000 : 20_000,
     navigationTimeout: 60_000,
   },

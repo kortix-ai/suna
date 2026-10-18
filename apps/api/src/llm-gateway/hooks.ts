@@ -7,6 +7,8 @@ import type {
 } from '@kortix/llm-gateway';
 import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
+import { resolveAccountBilling } from '../billing/services/billing-cache';
+import { byokFeeUsd, byokMonthToDateUsd, noteByokUsage } from '../billing/services/byok-fee';
 import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { wallet } from '../billing/wallet';
@@ -47,9 +49,32 @@ export async function authenticatePrincipal(token: string): Promise<AuthedPrinci
 
 async function resolvePrincipalWithReason(
   token: string,
-): Promise<{ principal: AuthedPrincipal | null; reason: string | null }> {
+): Promise<{
+  principal: AuthedPrincipal | null;
+  reason: string | null;
+  /** Set when the presented secret hash-matches a stored credential that is
+   *  refused (revoked/expired/dead/lease-closed). The gateway refusal stays
+   *  401 but now carries its real identity so the trace lands on the owning
+   *  account (KRTX-1749). Absent when no row matches: garbage stays
+   *  unattributed. */
+  refusedPrincipal?: AuthedPrincipal;
+}> {
   if (isGatewayKey(token)) {
-    return { principal: await validateGatewayKey(token), reason: null };
+    const gw = await validateGatewayKey(token);
+    if (!gw) return { principal: null, reason: null };
+    if (gw.refused) {
+      return {
+        principal: null,
+        reason: null,
+        refusedPrincipal: {
+          userId: gw.userId,
+          accountId: gw.accountId,
+          projectId: gw.projectId,
+          keyId: gw.keyId,
+        },
+      };
+    }
+    return { principal: gw, reason: null };
   }
   const yolo = await attributeYoloToken(token);
   if (yolo) return { principal: yolo, reason: null };
@@ -82,7 +107,23 @@ async function resolvePrincipalWithReason(
       reason: null,
     };
   }
-  return { principal: null, reason: tokenRefusalReason(account.error) };
+  // The token refused but hash-matched a real row (revoked, expired, dead,
+  // lease closed): keep refusing, but attribute the refusal (KRTX-1749).
+  const refused = account.refusedIdentity;
+  const refusedPrincipal =
+    refused && refused.accountId && refused.userId
+      ? {
+          userId: refused.userId,
+          accountId: refused.accountId,
+          ...(refused.projectId ? { projectId: refused.projectId } : {}),
+          ...(refused.sessionId ? { sessionId: refused.sessionId } : {}),
+        }
+      : undefined;
+  return {
+    principal: null,
+    reason: tokenRefusalReason(account.error),
+    ...(refusedPrincipal ? { refusedPrincipal } : {}),
+  };
 }
 
 /**
@@ -179,11 +220,36 @@ export async function authorizeRequest(
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
     // a valid, unexpired token whose session was parked is a wrong answer, and
     // it costs whoever reads it a search through the wrong system.
+    //
+    // A refusal whose secret still hash-matches a stored credential (revoked
+    // key, dead PAT, parked session) carries that credential's identity: the
+    // gateway pipeline emits one attributed trace for it, so the refusal is
+    // visible in usage and logs (KRTX-1749). A token matching no row has no
+    // identity — the denial stays principal-less and unrecorded, so garbage
+    // traffic cannot flood the log store.
     return {
       ok: false,
       status: 401,
       errorCode: resolved.reason ? 'session_not_running' : 'invalid_token',
       message: resolved.reason ?? 'Invalid token',
+      ...(resolved.refusedPrincipal ? { principal: resolved.refusedPrincipal } : {}),
+    };
+  }
+  // A full-account PAT resolves with no projectId. Budgets are project-scoped
+  // (gateway_budgets.projectId NOT NULL — checkBudget would return
+  // { exceeded: false }) and metered usage is attributed to a project, so a
+  // project-less principal would bypass every budget gate and settle usage
+  // with projectId NULL (KRTX-2295). Refuse inference for it, before the
+  // billing gate so no admission hold is taken for a request we deny.
+  // /v1/llm/models still authenticates account PATs (authenticatePrincipal —
+  // listModels uses authenticate directly, never this gate).
+  if (!principal.projectId) {
+    return {
+      ok: false,
+      status: 403,
+      errorCode: 'project_required',
+      message:
+        'LLM inference requires a project context. Create a project gateway key (POST /v1/projects/{projectId}/gateway/keys) or use a project-scoped token.',
     };
   }
   // Old gateway processes omit deferBilling and still expect this RPC to take
@@ -291,6 +357,38 @@ function extendDeadlineForLlmActivity(sessionId: string | null | undefined): voi
   );
 }
 
+/**
+ * The BYOK platform fee this request owes (billing/services/byok-fee.ts), or 0.
+ * A failed lookup charges nothing: it must never fail the settlement.
+ */
+async function byokFeeFor(event: UsageEvent): Promise<number> {
+  if (event.billingMode !== 'none' || !config.KORTIX_BILLING_INTERNAL_ENABLED) return 0;
+  const cost = event.upstreamCost ?? 0;
+  if (cost <= 0) return 0;
+  try {
+    const [monthToDateUsd, billing] = await Promise.all([
+      byokMonthToDateUsd(event.accountId),
+      resolveAccountBilling(event.accountId),
+    ]);
+    const fee = byokFeeUsd({
+      provider: event.provider,
+      upstreamCostUsd: cost,
+      monthToDateUsd,
+      // An entitlement, on by default: Enterprise turns it off, and an
+      // operator override turns it off (or on) for one account.
+      feeApplies: billing.entitlements.byokFee,
+    });
+    noteByokUsage(event.accountId, event.provider, cost);
+    return fee;
+  } catch (err) {
+    logger.warn('[byok-fee] lookup failed; no fee charged', {
+      accountId: event.accountId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+}
+
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   // The request is over: its cost is in the logged spend (or it cost nothing),
   // so its in-flight budget reservation must stop counting.
@@ -298,6 +396,8 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
+  // On a customer's own key the only Kortix charge is the BYOK fee.
+  const byokFee = pureHoldRefund ? 0 : await byokFeeFor(event);
 
   const usageEventId = pureHoldRefund
     ? null
@@ -313,7 +413,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         outputTokens: event.completionTokens,
         cachedTokens: event.cachedTokens,
         cacheWriteTokens: event.cacheWriteTokens,
-        costUsd: event.finalCost,
+        costUsd: byokFee > 0 ? byokFee : event.finalCost,
         streaming: event.streaming,
         // One row per gateway request: a retried settlement finds this row,
         // and the debit keyed on its id (`llm:<event id>`) runs once.
@@ -323,6 +423,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          ...(byokFee > 0 ? { byokFeeUsd: byokFee } : {}),
           // The stream ended before the provider reported usage; the token
           // counts are the gateway's estimate (see usage/estimate.ts).
           ...(event.usageEstimated ? { usageEstimated: true } : {}),
@@ -356,7 +457,10 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     return;
   }
 
-  if (event.billingMode === 'none') return;
+  if (event.billingMode === 'none') {
+    if (byokFee > 0) await settleLlmUsage(event, byokFee, usageEventId, 'BYOK fee');
+    return;
+  }
   await settleLlmUsage(event, event.finalCost, usageEventId);
 }
 
@@ -366,14 +470,19 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
  * drained wallet and the spend would disappear from the ledger — which is
  * exactly what happened for a full billing period.
  */
-async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: string | null): Promise<void> {
+async function settleLlmUsage(
+  event: UsageEvent,
+  costUsd: number,
+  usageEventId: string | null,
+  label = 'LLM',
+): Promise<void> {
   if (costUsd <= 0) return;
   const markup = llmPriceMarkup();
   const hasAudit = Boolean(usageEventId) || event.upstreamCost != null;
   await settleAndCheckAutoTopup({
     accountId: event.accountId,
     amount: costUsd,
-    description: `LLM · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
+    description: `${label} · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
     kind: 'llm_debit',
     key: usageEventId ? { request: `llm:${usageEventId}` } : null,
     audit: hasAudit
@@ -465,8 +574,12 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
 
 /** Persist a request trace to gateway_request_logs (skips unauthenticated traces). */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
-  // Pre-auth failures (401) carry no accountId — nothing useful to attribute.
+  // Unknown credentials carry no accountId — nothing useful to attribute.
   if (!trace.accountId) return;
+  // KRTX-2631: account-only refusals intentionally remain DB-forensics-only.
+  // Persist their real accountId with projectId = null; do not infer a project.
+  // Product list/detail readers stay project-scoped. An account-scoped reader
+  // needs a separate account-membership authorization contract.
   await recordGatewayTrace({
     requestId: trace.requestId,
     accountId: trace.accountId,
@@ -497,8 +610,8 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     metadata: {
       ...trace.metadata,
       ...(trace.attemptFailures?.length ? { attemptFailures: trace.attemptFailures } : {}),
-      // Read by `sessionModelUsage`: the session screen names the model that
-      // answered, and the model it stood in for.
+      // Read by `sessionModelUsage`: the session screen names the model each
+      // request ended up on, and the model it stood in for.
       ...(trace.servedModel ? { servedModel: trace.servedModel } : {}),
       ...(trace.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
     },

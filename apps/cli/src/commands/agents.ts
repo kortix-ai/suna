@@ -62,7 +62,7 @@ Scope options (all replace, none merge):
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
                                   also needs project.app.read in its Kortix
-                                  permissions. Needs a v2 kortix.yaml manifest.
+                                  permissions. Needs kortix.yaml (kortix_version 2 or 3).
   --require-connector <slug>      Repeatable. Deprecated and no longer enforced:
                                   a session is never refused for an unconnected
                                   connector. A call picks its account instead —
@@ -462,6 +462,13 @@ async function agentsScope(
 
 // ── config ──────────────────────────────────────────────────────────────────
 
+/** The other file a saved config commits: v2 the agent's `.md`, v3 its `prompt_file` (an inline prompt stays in kortix.yaml). */
+function savedPromptFile(resp: { schema_version?: number; block: AgentConfigBlock }, sent: AgentConfigBlock): string {
+  if (!(sent.behavior ?? sent.opencode)) return '';
+  if ((resp.schema_version ?? 2) >= 3) return resp.block?.file ? ` + ${resp.block.file}` : '';
+  return ' + the agent .md';
+}
+
 /** `a.b.c=value` → set `a.b.c`. The value is JSON when it parses, else a
  *  string, so `enabled=false` and `sandbox=node22` both do the obvious thing. */
 function applySet(block: Record<string, unknown>, assignment: string): string | null {
@@ -505,7 +512,7 @@ async function agentsConfig(
     }
     if (!cfg.editable) {
       process.stdout.write(
-        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Upgrade to kortix.yaml v2 to edit it.${C.reset}\n`,
+        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Run \`kortix projects upgrade\` to move it to kortix.yaml.${C.reset}\n`,
       );
     }
     process.stdout.write(`${JSON.stringify(cfg.block ?? {}, null, 2)}\n`);
@@ -538,7 +545,7 @@ async function agentsConfig(
     }
   }
 
-  const resp = await ctx.client.put<{ ok: boolean; agent: string; block: AgentConfigBlock }>(
+  const resp = await ctx.client.put<{ ok: boolean; agent: string; schema_version?: number; block: AgentConfigBlock }>(
     path,
     block,
   );
@@ -547,7 +554,7 @@ async function agentsConfig(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${(block.behavior ?? block.opencode) ? ' + the agent .md' : ''})${C.reset}\n`,
+    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${savedPromptFile(resp, block)})${C.reset}\n`,
   );
   return 0;
 }

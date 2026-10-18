@@ -20,4 +20,10 @@ describe('kortix-genui system skill', () => {
     expect(GENUI_SKILL_DESCRIPTION).not.toContain('"');
     for (const word of ['cards', 'chart', 'table', 'map']) expect(GENUI_SKILL_DESCRIPTION).toContain(word);
   });
+  test('the description triggers on guides and checklists, and names what stays prose', () => {
+    expect(GENUI_SKILL_DESCRIPTION).toContain('step rows with photos');
+    expect(GENUI_SKILL_DESCRIPTION).toContain('a guide, how-to or first-time process done in the real world');
+    expect(GENUI_SKILL_DESCRIPTION).toContain('things to bring or prepare');
+    expect(GENUI_SKILL_DESCRIPTION).toContain('Not for chat, short facts, explaining a concept, code or terminal steps');
+  });
 });

@@ -82,6 +82,8 @@ async function enqueue(
     placement?: 'transcript' | 'composer';
     delivery?: 'steer' | 'queue' | 'interrupt';
     actorUserId?: string;
+    /** Sent by the session owner or a manager: may end any running turn. */
+    mayStopAnyTurn?: boolean;
   } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
@@ -97,6 +99,7 @@ async function enqueue(
     clientSentAtMs: overrides.clientSentAtMs,
     ...(overrides.placement ? { placement: overrides.placement } : {}),
     ...(overrides.delivery ? { delivery: overrides.delivery } : {}),
+    ...(overrides.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -405,10 +408,13 @@ describe('admitInboxPrompt against real rows', () => {
       placement: 'composer',
       wireMessageId: 'msg_000000000001QueueListEntryW',
     });
+    // An owner's send: only a sender who may stop the running turn arms its
+    // interrupt (`inbox-admission.test.ts` covers the prompter and the refusal).
     const quickQueue = await enqueue('q_quick', {
       clientSentAtMs: sentAt + 1_000,
       placement: 'transcript',
       wireMessageId: 'msg_000000000002QuickQueueEntry',
+      mayStopAnyTurn: true,
     });
     await setBox('active', turn);
 
@@ -433,6 +439,7 @@ describe('admitInboxPrompt against real rows', () => {
       clientSentAtMs: sentAt + 2_000,
       placement: 'transcript',
       wireMessageId: 'msg_000000000003QuickQueueLater',
+      mayStopAnyTurn: true,
     });
     expect(await admitInboxPrompt(quickQueueBehind)).not.toHaveProperty('interruptAtBoundary');
     await db.execute(sql`
@@ -452,7 +459,7 @@ describe('admitInboxPrompt against real rows', () => {
     // behind WHICH turn. The marker rides `requeueForAdmission`'s result
     // merge, so the refusal counter it shares that column with must keep
     // growing, and a later refusal without a patch must keep the window.
-    const row = await enqueue('q_boundary', { placement: 'transcript' });
+    const row = await enqueue('q_boundary', { placement: 'transcript', mayStopAnyTurn: true });
     const lease = await hold(row);
     await setBox('active', turn);
     expect(await admitInboxPrompt(row)).toEqual({

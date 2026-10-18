@@ -13,11 +13,61 @@ const EXTENSION_PROTOCOL_PREFIXES = [
   'safari-extension://',
   'safari-web-extension://',
   'extension://',
+  // Safari (WebKit) masks the script URLs of browser extensions in `Error.stack`
+  // as `webkit-masked-url://hidden/` (WebKit Bug 246010, a WebKit engineer:
+  // "if this is from a Safari Extension, Error.stack will mask the URLs"), so
+  // no extension frame ever carries a resolvable URL on Safari. A frame with
+  // this synthetic scheme is extension code — never a first-party origin: the
+  // masking exists precisely to hide extension URLs from the page, and
+  // first-party same-origin scripts are never masked. Better Stack pattern
+  // `dec0801de…` (KRTX-1828): `Error: No Listener: tabs:outgoing.message.ready`,
+  // 2 occurrences / 0 users, thrown inside an extension's injected script
+  // (`g`, masked frame) and captured by Sentry's `onunhandledrejection`; the
+  // same masked call site carried the Eagle helper's
+  // `eagle.i18n.words["dragSaver.drag"]` error — one scheme, many extension
+  // messages. The existing `extension-frame` (Sentry) and
+  // `extension-rejected-value` (runtime) rules then drop the class, exactly
+  // like the unmasked extension schemes above.
+  'webkit-masked-url://',
 ] as const;
 
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
-  /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
+  // CookieYes (https://www.cookieyes.com) cookie-consent SDK runtime, served
+  // from its own CDN workspace directory
+  // `https://cdn-cookieyes.com/client_data/<workspace-id>/…`: `script.js` is
+  // the SDK's main runtime, `banner.js` its consent-banner UI bundle (the
+  // same directory also holds the SDK's config/translation/audit-table
+  // JSONs). The marketing site loads the SDK via GTM (the app's own
+  // `ConsentGate` only toggles the banner's CSS classes, and the CSP
+  // allowlists `cdn-cookieyes.com`). Errors thrown inside these files are the
+  // third-party SDK's own bugs — e.g. Better Stack pattern
+  // `2e256e5f05cfde3531e693c0f2b9d3449cf95d468eb845b73f2b5add250f5865`
+  // (KRTX-2739, Kortix Frontend prod, application_id 2346967): 1 occurrence,
+  // 0 identified users, 2026-10-18 01:52:32 UTC. After the visitor clicked
+  // CookieYes' own "Accept All" button (`button.cky-btn.cky-btn-accept`),
+  // banner.js's revisit-consent focus-retry loop — CookieYes' minified fn
+  // `t`: `"visible"===window.getComputedStyle(o).visibility?(o.focus(),o=null):e<100&&(e++,requestAnimationFrame(t))`
+  // where `o` is the revisit-consent element's `firstChild` — called
+  // `window.getComputedStyle()` on that `firstChild`, which can be a
+  // whitespace TEXT node (not an Element), throwing the canonical DOM
+  // wording `TypeError: Failed to execute 'getComputedStyle' on 'Window':
+  // parameter 1 is not of type 'Element'.` UNCAUGHT (Sentry mechanism
+  // `auto.browser.browserapierrors.requestAnimationFrame`, `handled:false`).
+  // Frames (oldest-first → last is the throw site):
+  // `app:///_next/static/immutable/chunks/159tn3qpi9s08.js` fn `r` (the rAF
+  // scheduling wrapper, NOT the throw site) +
+  // `app:///client_data/5b1102243ea0c0e5d64998452cb87826/banner.js` fn `t`
+  // line 1 col 6777. Sentry normalizes the cross-origin CDN script origin to
+  // the same `app:///` empty-host shape as the other injected sources above,
+  // and no first-party `app:///_next/…` bundle frame or de-minified
+  // `apps/web/src/…` source path ever carries a `client_data/<id>/` path, so
+  // anchoring on it is conservative: a real first-party `getComputedStyle`
+  // TypeError throws inside an app chunk (or a de-minified `apps/web/src/…`
+  // frame) and is never matched. The anchor stays tight to the two runtime
+  // file names observed in the directory (`script.js`, `banner.js`); any
+  // other file name there keeps reporting.
+  /^app:\/\/\/client_data\/[^/]+\/(?:script|banner)\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
   /^app:\/\/\/injectedScript\.bundle\.js$/,
   // CAPTCHA / anti-bot browser-extension (DataDome, Cloudflare, or similar
@@ -648,6 +698,46 @@ function isWalletInternalRpcRejectionNoise(input: {
   return !sourcesOf(input).some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source));
 }
 
+// An injected wallet provider rejecting a pending request with the EIP-1193
+// provider-disconnected error, `{ code: 4900, message: 'The provider is
+// disconnected from all chains.' }`, as a plain object with NO `stack` — the
+// stack-less variant of the `keys: code, message, stack` wallet-disconnect
+// class (`isExtensionRejectedObjectNoise`, PR #4720, pattern `0f78b2f8…`)
+// and the EIP-1193 sibling of `isWalletInternalRpcRejectionNoise` (the same
+// two-key frameless shape with the EIP-1474 internal error). When a wallet
+// extension loses its background connection (MetaMask's inpage breadcrumbs:
+// "Error restoring session … Failed to connect to MetaMask") it rejects ALL
+// its pending requests with this exact object; because the rejected value is
+// a plain object with no `stack`, Sentry reports a frameless synthetic
+// "Object captured as promise rejection with keys: code, message" and the
+// extension-stack anchor cannot see it (there is no serialized `stack`).
+// Better Stack pattern
+// `59d4a56669e7b9026bb46b8a4df4448db65e277319b88ae8746ec721afa885da`
+// (Kortix Frontend prod, application_id 2346967, release a41f91833475):
+// `UnhandledRejection`, synthetic, 0 stack frames, 0 identified users,
+// occurrences 2026-08-24 06:54 UTC (`/auth`) and 2026-10-11 22:36/22:48 UTC
+// (`/`). Kortix rejects with Error instances only, and no first-party code
+// produces a 4900 provider-disconnected outcome (the wording is the
+// EIP-1193 provider's own). Anchored on the exact two-key object with the
+// same negative guard as `isWalletInternalRpcRejectionNoise` — a bundle or
+// first-party frame keeps reporting. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — the frame-aware
+// `beforeSend` hook is the only safe gate (same rationale as the sibling
+// rules above).
+function isWalletProviderDisconnectedRejectionNoise(input: {
+  message?: unknown;
+  extra?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!SYNTHETIC_OBJECT_REJECTION_PATTERN.test(normalizeString(input.message))) return false;
+  const serialized = (input.extra as { __serialized__?: unknown } | undefined)?.__serialized__;
+  if (!serialized || typeof serialized !== 'object') return false;
+  const value = serialized as Record<string, unknown>;
+  if (Object.keys(value).sort().join(',') !== 'code,message') return false;
+  if (value.code !== 4900 || value.message !== 'The provider is disconnected from all chains.') return false;
+  return !sourcesOf(input).some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source));
+}
+
 export const EXTENSION_RULES: readonly NoiseRule[] = [
   {
     id: 'injected-app-source',
@@ -666,6 +756,7 @@ export const EXTENSION_RULES: readonly NoiseRule[] = [
   { id: 'inpage-wallet-no-message', appliesTo: 'sentry', match: isInpageJsNoErrorMessageNoise },
   { id: 'extension-rejected-object', appliesTo: 'sentry', match: isExtensionRejectedObjectNoise },
   { id: 'wallet-internal-rpc-rejection', appliesTo: 'sentry', match: isWalletInternalRpcRejectionNoise },
+  { id: 'wallet-provider-disconnected-rejection', appliesTo: 'sentry', match: isWalletProviderDisconnectedRejectionNoise },
   {
     // The runtime gate receives the raw rejected object as `reason`/`error`
     // (whose `message` is the provider's own, NOT Sentry's synthetic "Object

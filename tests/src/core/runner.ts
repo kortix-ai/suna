@@ -129,13 +129,6 @@ async function runOneFlow(
   const declaredAttempts = f.meta.retry?.attempts;
   const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
-  // Quarantine → reported, never run, exempt from --require-all (see
-  // FlowMeta.quarantine and runExitCode).
-  if (f.meta.quarantine) {
-    return mkResult(f, "skip", `quarantined: ${f.meta.quarantine}`, [], performance.now() - flowStart, 0, {
-      quarantined: true,
-    });
-  }
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
   if (missing.length) {
@@ -252,7 +245,6 @@ function mkResult(
   steps: StepResult[],
   durationMs: number,
   attempts: number,
-  extra: { quarantined?: boolean } = {},
 ): FlowResult {
   return {
     id: f.id,
@@ -263,7 +255,6 @@ function mkResult(
     durationMs,
     attempts,
     steps: [...steps],
-    quarantined: extra.quarantined,
     // A skip that already PASSED at least one step asserted the reachable
     // contract on this target (see FlowResult.asserted / runExitCode).
     // Asserted = the flow proved SOMETHING before skipping: a fully passed
@@ -313,7 +304,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
     // Cold provider images can take longer than a flow's runtime deadline. Build
     // one through the real session route before measuring concurrent user flows.
     if (env.capabilities.daytona && flows.some((f) =>
-      !f.meta.quarantine && f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
+      f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
       const stack = world.newStack();
       try {
         const fixtures = world.makeFixtures(stack);
@@ -342,11 +333,11 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         // for the boot. The gate reported the product broken four releases
         // running while nothing about the product was wrong.
         //
-        // Budget arithmetic against the shard's own 60-minute cap
+        // Budget arithmetic against the API job's 30-minute cap
         // (`tests-release.yml`): 15 min image + 10 min runtime = 25 min worst
-        // case, leaving 35 min for the flows, which run in 19-25 min. Both
-        // phases are fast whenever the image is already baked, which is the
-        // normal case; these ceilings only cover a cold deploy.
+        // case, leaving 5 min for the `deployed` flows, which run in ~3 min.
+        // Both phases are fast whenever the image is already baked, which is
+        // the normal case; these ceilings only cover a cold deploy.
         const IMAGE_READY_TIMEOUT_MS = 900_000;
         const RUNTIME_READY_TIMEOUT_MS = 600_000;
         log.info('sandbox setup: waiting for the current default image (up to 15 minutes), then its runtime (up to 10 minutes)');

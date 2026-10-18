@@ -147,6 +147,7 @@ export const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+          { name: 'migrate', args: '[--write]', blurb: 'Convert kortix.yaml from kortix_version 2 to 3' },
           {
             name: 'doctor',
             args: '[--no-session]',
@@ -154,7 +155,7 @@ export const TIERS: readonly CommandTier[] = [
           },
           {
             name: 'schema',
-            args: '[--version 1|2]',
+            args: '[--version 1|2|3]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
           },
         ],
@@ -215,7 +216,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'apps',
             args: '<subcommand>',
-            blurb: 'Experimental: deploy Apps (sites and servers) with stable Kortix URLs',
+            blurb: 'Deploy Apps (sites and servers) with stable Kortix URLs',
           },
           {
             name: 'marketplace',

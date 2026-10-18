@@ -1171,8 +1171,8 @@
     "contactSales": "Contact sales",
     "upgradeTo": "Upgrade to {{plan}}",
     "switchTo": "Switch to {{plan}}",
-    "trialLabel_one": "{{plan}} trial · {{count}} day left",
-    "trialLabel_other": "{{plan}} trial · {{count}} days left"
+    "enterpriseDemoLabel": "{{plan}} · Enterprise demo",
+    "enterpriseLabel": "{{plan}} · Enterprise"
   },
   "upgrade": {
     "creditsPlan": "Kortix Credits",
@@ -1184,10 +1184,29 @@
     "showMoreSubsessions_one": "Show {{count}} more",
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
-    "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+    "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "pinDone": "Session pinned",
+    "unpinDone": "Session unpinned",
+    "archiveDone": "Session archived",
+    "unarchiveDone": "Session unarchived",
+    "pinFailed": "Could not pin the session. Try again.",
+    "unpinFailed": "Could not unpin the session. Try again.",
+    "archiveFailed": "Could not archive the session. Try again.",
+    "unarchiveFailed": "Could not unarchive the session. Try again.",
+    "undo": "Undo",
+    "pinnedSection": "Pinned",
+    "archivedView": "Archived",
+    "archivedEmpty": "Sessions you archive will show up here.",
+    "stoppedBy": "Stopped by {{name}}",
+    "stopNotAllowed": "Only the member who started this run, the session owner or a project manager can stop it."
   },
   "genui": {
     "chartTapHint": "Tap to read a value",
+    "checklistReady": "{{done}}/{{total}} ready",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",

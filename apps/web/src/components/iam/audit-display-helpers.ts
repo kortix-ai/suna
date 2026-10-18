@@ -616,7 +616,16 @@ export function describeAuditAction(
       };
     }
     if (pattern) {
-      return { ...pattern, mapped: true, method, route: null, area: routeArea(path) };
+      // A pattern's own title can be an English literal: translate it like the
+      // catalog's (KRTX-2400). A title that is already translated passes through.
+      return {
+        ...pattern,
+        title: translateAuditTitle(pattern.title, tI18nComplete),
+        mapped: true,
+        method,
+        route: null,
+        area: routeArea(path),
+      };
     }
     return {
       title: compactHttpAction(method, path),

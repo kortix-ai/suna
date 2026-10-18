@@ -77,7 +77,7 @@ import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
 import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
-import { PI_NO_RESULT, piSessionLog, type PiSessionSnapshot } from './session-log'
+import { PI_NO_RESULT, piNestedCalls, piSessionLog, type CodemodeCall, type PiSessionSnapshot } from './session-log'
 
 export interface PiRestoreTarget {
   /** `cfg.piStateDir`: where the runtime reads its dump. */
@@ -202,7 +202,13 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
       const at = b.ended_at ?? m.completed_at ?? m.created_at
       results.push({
         type: 'message', id: rid, timestamp: at,
-        message: { role: 'toolResult', toolCallId: b.call_id, toolName: b.name, content: resultContent(r.content, ctx, !r.model_content), ...(data.details !== undefined ? { details: data.details } : {}), isError: r.is_error, timestamp: ms(at) },
+        message: {
+          role: 'toolResult', toolCallId: b.call_id, toolName: b.name, content: resultContent(r.content, ctx, !r.model_content),
+          ...(data.details !== undefined ? { details: data.details } : {}),
+          // A codemode script's calls (session-log.ts `codemodeDetails`), back in pi's shape.
+          ...(b.kind === 'code' && Array.isArray((r.details as { calls?: unknown } | undefined)?.calls) ? { nestedCalls: piNestedCalls(r.details as { calls: CodemodeCall[]; complete: boolean }) } : {}),
+          isError: r.is_error, timestamp: ms(at),
+        },
       })
       if (r.model_content) edits.push({ type: 'context_edit', id: `${rid}.edit`, timestamp: r.cleared_at ?? at, targetId: rid, replacement: { content: resultContent(r.model_content, ctx, true) } })
     }
@@ -323,7 +329,9 @@ function transcripts(log: SessionLog): Map<string, KortixMessage[]> {
     if (!sessionID) continue
     info.sessionID = sessionID
     if (info.agent === '') delete info.agent
-    const parts: J[] = (row.parts as J[]).map((p) => ({ ...p, sessionID }))
+    // An image a `<file>` tag names (`source_path`, session-log.ts) shows through its tag, as it did live: no file part.
+    const tagged = new Set((blocks.get(String(info.id)) ?? []).flatMap((b) => (b.type === 'attachment' && b.source_path ? [b.id] : [])))
+    const parts: J[] = (row.parts as J[]).filter((p) => !tagged.has(String(p.id))).map((p) => ({ ...p, sessionID }))
     // A file pi never received (session-log.ts): its v1 part, so the next export finds it again.
     for (const b of blocks.get(String(info.id)) ?? []) {
       if (b.type === 'harness' && b.harness === PI && b.kind === 'undelivered_file') {
@@ -362,6 +370,10 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     main.seqs['kortix-seq-floor'] = main.floor
   }
   const rootData = piData(root)
+  // The codemode store as one write: a script's `load()` folds every write on the branch.
+  if (rootData.codemode_store && Object.keys(rootData.codemode_store).length) {
+    main.push({ type: 'custom', id: 'kortix-codemode-store', customType: 'codemode-store', timestamp: log.created_at, data: { set: rootData.codemode_store, delete: [] } })
+  }
   const header = { type: 'session', version: rootData.header_version ?? 3, id: (root.ext?.[PI]?.native_id as string | undefined) ?? rootId, timestamp: log.created_at, cwd: rootData.cwd ?? target.cwd }
   const children = log.threads.filter((t) => t !== root).map((t): PiChildDump => {
     const chain = writeThread(t, images, drop, seqMax[t.thread_id] ?? 0)

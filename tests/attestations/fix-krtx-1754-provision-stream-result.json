@@ -1,0 +1,22 @@
+{
+  "source_hash": "cd54404c9beaff946e20e1f993fa5d120279ab795227418ef4c0791045dba366",
+  "diff_files": [
+    "apps/web/scripts/audit-i18n.mjs",
+    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
+    "apps/web/src/features/workspace/new/use-create-workspace.test.ts",
+    "apps/web/src/features/workspace/new/use-create-workspace.ts",
+    "packages/sdk/src/core/rest/projects-client/projects.test.ts",
+    "packages/sdk/src/core/rest/projects-client/projects.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "f757a1c4b5513d52778e34f51b5a17238c4e09297cfe3c3af5f85d52942adfab",
+  "head": "a2f486b1558f6947a74ed77924f128a7ccfc2a9b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-14T03:05:50.150Z"
+}

@@ -1,10 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
-import { Apple } from '@/features/icon/icons/apple';
-import { PlayStore } from '@/features/icon/icons/playstore';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/features/marketing/download/mobile-store-urls';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMobileAppPromoStore } from '@/stores/mobile-app-promo-store';
@@ -36,13 +33,18 @@ const SMOOTH_SHADOW_LG = '0 25px 50px 0 rgba(0, 0, 0, 0.05), 0 12px 24px 0 rgba(
 // prettier-ignore
 const MOBILE_PROMO_GRADIENT = 'linear-gradient(170deg in oklab, #DAD9D5 0%, #DAD9D5 34%, #943637 50%, #1D1F2C 60%, #000 82%)';
 
+/** The official store badges, unmodified (Apple and Google forbid edits). Both are 3.375:1, so one height gives one width. */
+/** Laid over the whole art panel: fades the card, border included, into the black floor. */
+// prettier-ignore
+const SCREEN_FADE = 'linear-gradient(to bottom in oklab, transparent 45%, #000 95%)';
+
 const STORES = [
-  { key: 'appStore', icon: Apple, href: APP_STORE_URL },
-  { key: 'googlePlay', icon: PlayStore, href: GOOGLE_PLAY_URL },
+  { key: 'appStore', badge: '/images/store-badges/app-store.svg', href: APP_STORE_URL },
+  { key: 'googlePlay', badge: '/images/store-badges/google-play.svg', href: GOOGLE_PLAY_URL },
 ] as const;
 
 /** Nothing to subscribe to: false on the server, true once mounted. */
-const subscribeToNothing = () => () => {};
+const subscribeToNothing = () => () => { };
 
 /**
  * Introduces the Kortix mobile app on the project page, once per browser.
@@ -78,8 +80,7 @@ export function MobileAppPromo() {
       >
         {/* 55 / 45: copy first, the art on the trailing side. From `sm` up
             only: on a phone the copy and the store buttons stand alone. The
-            art is the download page's mobile poster
-            (`marketing/download/card-images.tsx`) on the orb gradient. It
+            art is the first App Store screenshot on the orb gradient. It
             rounds its own outer corners: the modal is a scroll container and
             its clip does not reach it. */}
         <div className="grid sm:grid-cols-[11fr_9fr] lg:min-h-128">
@@ -87,7 +88,7 @@ export function MobileAppPromo() {
             style={{ backgroundImage: MOBILE_PROMO_GRADIENT }}
             className="relative hidden overflow-hidden rounded-tr-xl border-l sm:order-last sm:block lg:rounded-br-xl"
           >
-            {/* The download page's mobile poster as a card: centered, its top
+            {/* The App Store screenshot as a card: centered, its top
                 corners rounded, its bottom edge flush with the panel's, so it
                 reads as rising out of the panel. Anchored to the top, so the
                 headline always shows whole. */}
@@ -99,13 +100,16 @@ export function MobileAppPromo() {
               className="border-border absolute inset-x-0 top-16 bottom-0 mx-auto w-[68%] overflow-hidden rounded-t-xl border-x-[3px] border-t-[3px]"
             >
               <Image
-                src="/images/mobile-app/app-1.png"
+                src="/images/mobile-app/store-01.webp"
                 alt={t('pill')}
                 fill
                 sizes="(min-width: 640px) 250px, 68vw"
                 className="object-cover object-top"
               />
             </div>
+            {/* Above the card, not inside it, so the fade covers the card's
+                border too and the whole phone sinks into the black floor. */}
+            <div aria-hidden style={{ backgroundImage: SCREEN_FADE }} className="pointer-events-none absolute inset-0" />
           </div>
           <div className="flex min-w-0 flex-col gap-4 p-5 sm:gap-5 lg:p-8">
             <header className="space-y-1.5 pr-10 sm:pr-0">
@@ -133,15 +137,19 @@ export function MobileAppPromo() {
             </ul>
 
             {/* Actions sit on the bottom edge, level with the foot of the art.
-                Two equal choices, so one weight for both. */}
-            <div className="mt-auto grid grid-cols-2 gap-2">
-              {STORES.map(({ key, icon: StoreIcon, href }) => (
-                <Button key={key} size="lg" className="w-full text-sm" asChild>
-                  <Link href={href} target="_blank" rel="noopener noreferrer" onClick={close}>
-                    <StoreIcon />
-                    {t(key)}
-                  </Link>
-                </Button>
+                Two equal choices, so one size for both. */}
+            <div className="mt-auto flex flex-wrap gap-2">
+              {STORES.map(({ key, badge, href }) => (
+                <Link
+                  key={key}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={close}
+                  className="focus-visible:ring-ring rounded-md transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <Image src={badge} alt={t(key)} width={135} height={40} className="h-11 w-auto" />
+                </Link>
               ))}
             </div>
           </div>

@@ -40,7 +40,10 @@ import {
   type DiffLayout,
 } from '@/features/changes';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import {
+  manifestFilename,
+  useProjectManifestVersion,
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -94,7 +97,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const projectId = projectContext?.projectId ?? '';
   const defaultBranch = projectContext?.defaultBranch ?? 'main';
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  const manifestFilename = manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml';
+  const manifestFile = manifestFilename(manifestVersion);
 
   // Each decision shows only for a viewer who holds the leaves its route
   // asserts (KRTX-1720), the same mapping as the Review Center: Apply changes
@@ -148,7 +151,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
   const recoveryBlocker: ChangeRequestRecoveryBlocker | null =
     manifestIssues !== null
-      ? { kind: 'manifest_invalid', issues: manifestIssues, manifestFilename }
+      ? { kind: 'manifest_invalid', issues: manifestIssues, manifestFilename: manifestFile }
       : conflictPaths !== null
         ? {
             kind: 'merge_conflict',
@@ -280,7 +283,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               <InfoBanner
                 tone="destructive"
                 icon={WarningIcon}
-                title={tI18nComplete('text8e5d6f03865c', { value0: manifestFilename })}
+                title={tI18nComplete('text8e5d6f03865c', { value0: manifestFile })}
               >
                 {manifestIssues.length > 0 ? (
                   <ul className="mt-1 space-y-1">

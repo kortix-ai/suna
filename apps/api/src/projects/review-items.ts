@@ -13,6 +13,7 @@ import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql 
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import type { ProjectReadView } from './lib/project-read-view';
 import {
   CR_REVIEW_STATUS,
   adapterSourceForId,
@@ -97,7 +98,15 @@ export function serializeReviewItem(row: ReviewItemRow) {
   };
 }
 
+/**
+ * One native review item by id, scoped to its project. A non-uuid id can never
+ * match the uuid column — Postgres would answer 22P02 and the request would
+ * die as a 500 (KRTX-2442: a client sent `nonexistent-item` to the act and
+ * bulk endpoints). Answer like a miss instead, the same contract `getInboxItem`
+ * keeps for an id that is not a uuid.
+ */
 export async function getReviewItemById(reviewItemId: string, projectId: string) {
+  if (!isUuid(reviewItemId)) return null;
   const [row] = await db
     .select()
     .from(reviewItems)
@@ -356,6 +365,7 @@ export async function collectInboxItems(
  */
 async function pendingConnectorCalls(
   projectId: string,
+  view: ReadView,
   sessionId?: string,
 ): Promise<PendingConnectorCall[]> {
   const rows = await db
@@ -378,6 +388,7 @@ async function pendingConnectorCalls(
         eq(connectorCalls.projectId, projectId),
         eq(connectorCalls.status, 'pending_approval'),
         sessionId ? sql`${connectorCalls.sessionId}::text = ${sessionId}` : undefined,
+        view.where(sql`${connectorCalls.sessionId}::text`, connectorCalls.actingUserId),
       ),
     );
   return rows.map((row) => ({
@@ -416,14 +427,21 @@ async function connectorCallVerdicts(
   };
 }
 
+/**
+ * The caller's read filter (`projectReadView`): a non-manager reads only the
+ * items they created or whose origin session they may open.
+ */
+type ReadView = Pick<ProjectReadView, 'where' | 'allows'>;
+
 /** One page of the project's inbox for the caller (`GET /review/items`). */
 export async function listInboxItems(
   projectId: string,
   query: InboxQuery,
   resolveCaller: () => Promise<ApprovalCaller>,
+  view: ReadView,
 ) {
   const calls = await safeSource('connector_calls', () =>
-    pendingConnectorCalls(projectId, query.sessionId),
+    pendingConnectorCalls(projectId, view, query.sessionId),
   );
   const nativeRank = rankSql(reviewItems.status, statusesForSegment);
   const crRank = rankSql(changeRequests.status, changeRequestStatusesForSegment);
@@ -439,6 +457,7 @@ export async function listInboxItems(
               q.segment ? inArray(reviewItems.status, statusesForSegment(q.segment)) : undefined,
               q.kind ? eq(reviewItems.kind, q.kind) : undefined,
               q.sessionId ? eq(reviewItems.originSessionId, q.sessionId) : undefined,
+              view.where(reviewItems.originSessionId, reviewItems.createdBy),
               afterCursorSql(
                 q.after,
                 SOURCE_RANK.native,
@@ -462,6 +481,7 @@ export async function listInboxItems(
               eq(changeRequests.projectId, projectId),
               statuses ? inArray(changeRequests.status, statuses) : undefined,
               q.sessionId ? eq(changeRequests.originSessionId, q.sessionId) : undefined,
+              view.where(changeRequests.originSessionId, changeRequests.createdBy),
               afterCursorSql(
                 q.after,
                 SOURCE_RANK.change_request,
@@ -492,6 +512,7 @@ export async function getInboxItem(
   projectId: string,
   id: string,
   resolveCaller: () => Promise<ApprovalCaller>,
+  view: ReadView,
 ): Promise<InboxItem | null> {
   const source = adapterSourceForId(id);
   const rawId = source ? id.slice(id.indexOf(':') + 1) : id;
@@ -502,16 +523,18 @@ export async function getInboxItem(
       .from(changeRequests)
       .where(and(eq(changeRequests.crId, rawId), eq(changeRequests.projectId, projectId)))
       .limit(1);
-    return row ? changeRequestToReviewItem(row) : null;
+    if (!row || !(await view.allows({ sessionId: row.originSessionId, createdBy: row.createdBy }))) return null;
+    return changeRequestToReviewItem(row);
   }
   if (source === 'call') {
-    const call = (await pendingConnectorCalls(projectId)).find((row) => row.executionId === rawId);
+    const call = (await pendingConnectorCalls(projectId, view)).find((row) => row.executionId === rawId);
     if (!call) return null;
     const verdict = await connectorCallVerdicts([call], resolveCaller);
     return connectorCallToReviewItem(call, verdict(call));
   }
   const row = await getReviewItemById(rawId, projectId);
-  return row ? serializeReviewItem(row) : null;
+  if (!row || !(await view.allows({ sessionId: row.originSessionId, createdBy: row.createdBy }))) return null;
+  return serializeReviewItem(row);
 }
 
 /**
@@ -526,6 +549,7 @@ export async function getInboxItem(
 export async function reviewSummary(
   projectId: string,
   resolveCaller: () => Promise<ApprovalCaller>,
+  view: ReadView,
 ): Promise<{ needs_you_total: number; needs_you_by_session: Record<string, number> }> {
   const [nativeCounts, crCounts, calls] = await Promise.all([
     safeSource('native', () =>
@@ -536,6 +560,7 @@ export async function reviewSummary(
           and(
             eq(reviewItems.projectId, projectId),
             inArray(reviewItems.status, statusesForSegment('needs_you')),
+            view.where(reviewItems.originSessionId, reviewItems.createdBy),
           ),
         )
         .groupBy(reviewItems.originSessionId),
@@ -548,11 +573,12 @@ export async function reviewSummary(
           and(
             eq(changeRequests.projectId, projectId),
             inArray(changeRequests.status, changeRequestStatusesForSegment('needs_you')),
+            view.where(changeRequests.originSessionId, changeRequests.createdBy),
           ),
         )
         .groupBy(changeRequests.originSessionId),
     ),
-    safeSource('connector_calls', () => pendingConnectorCalls(projectId)),
+    safeSource('connector_calls', () => pendingConnectorCalls(projectId, view)),
   ]);
   const verdict = await connectorCallVerdicts(calls, resolveCaller);
   const callCounts = calls
@@ -608,6 +634,8 @@ export async function applyVerdict(
   projectId: string,
   opts: { verdict: ReviewVerdict; feedback?: string | null; actingUserId: string },
 ) {
+  // Same 22P02 contract as `getReviewItemById`: a non-uuid id is a miss (KRTX-2442).
+  if (!isUuid(reviewItemId)) return null;
   const [row] = await db
     .update(reviewItems)
     .set({
@@ -628,7 +656,10 @@ export async function bulkApplyVerdict(
   projectId: string,
   opts: { verdict: ReviewVerdict; actingUserId: string },
 ) {
-  if (reviewItemIds.length === 0) return [];
+  // An id that is not a uuid would make the whole batch die on the uuid cast
+  // (22P02, KRTX-2442): drop it and apply the verdict to the rest.
+  const ids = reviewItemIds.filter((id) => isUuid(id));
+  if (ids.length === 0) return [];
   return db
     .update(reviewItems)
     .set({
@@ -638,7 +669,7 @@ export async function bulkApplyVerdict(
       updatedAt: new Date(),
     })
     .where(
-      and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, reviewItemIds)),
+      and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
     )
     .returning();
 }

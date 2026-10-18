@@ -615,7 +615,74 @@ describe('a public share on its own origin', () => {
   test('a revoked share stops working on the next request, cookie or not', async () => {
     shares = {};
     const [req, url] = request('/', { headers: { cookie: shareCookie('s-revoked') } });
-    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(410);
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(404);
+    expect(forwarded).toBe(0);
+  });
+
+  // The share link lives on after the share dies: a person who reloads it is
+  // reading a PAGE, not debugging an API. The page says why, with the real
+  // status, and offers no sign-in — no credential can revive a revoked link.
+  test('a revoked share is a page a person can read, not bare JSON', async () => {
+    shares = {};
+    const [req, url] = request('/', {
+      headers: { cookie: shareCookie('s-revoked'), 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(404);
+    expect(res?.headers.get('content-type')).toContain('text/html');
+    expect(res?.headers.get('x-kortix-preview-state')).toBe('unavailable');
+    const html = await res!.text();
+    expect(html).toContain('This share link is no longer available');
+    // Nothing to sign in for: no credential revives a revoked link.
+    expect(html).not.toContain('/preview/authorize');
+    expect(forwarded).toBe(0);
+  });
+
+  test('a machine fetch of a revoked share still gets JSON with the real status', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request('/', { headers: { cookie: shareCookie('s-dead') } });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(410);
+    expect(res?.headers.get('content-type')).toContain('application/json');
+    expect(await res!.text()).toContain('no longer available');
+    expect(forwarded).toBe(0);
+  });
+
+  // Same dead link, first visit: the URL still carries the one-shot share
+  // token. The visitor must read "revoked", not a sign-in wall that implies
+  // signing in would open the share.
+  test('a dead share token in the URL gets the unavailable page, not the sign-in page', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request(`/?public_share=${publicShareToken('s-dead')}`, {
+      headers: { 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(410);
+    expect(res?.headers.get('content-type')).toContain('text/html');
+    expect(res?.headers.get('x-kortix-preview-state')).toBe('unavailable');
+    const html = await res!.text();
+    expect(html).toContain('This share link is no longer available');
+    expect(html).not.toContain('/preview/authorize');
+  });
+
+  // A dead share param must not lock the owner out of their own preview: the
+  // share grants nothing the owner's own credential does not, so the owner
+  // rides past it, and the dead one-shot param is bounced out of the URL.
+  test('a dead share token does not lock out the owner riding their own credential', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request(`/page?public_share=${publicShareToken('s-dead')}&token=good`, {
+      headers: { 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(302);
+    expect(res?.headers.get('set-cookie')).toContain('__kortix_preview=');
+    expect(res?.headers.get('location')).toBe('/page');
     expect(forwarded).toBe(0);
   });
 });

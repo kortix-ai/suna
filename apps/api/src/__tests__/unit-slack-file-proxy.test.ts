@@ -1,5 +1,11 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import type { ChannelOwnership } from '../connectors/channel-read-scope';
+
+// The proxy's retry pauses (400 ms, Retry-After seconds) are real `Bun.sleep`
+// calls; which fetches the retries make is under test, not how long they wait.
+const realSleep = Bun.sleep;
+const shortSleep = spyOn(Bun, 'sleep').mockImplementation(((ms: number) => realSleep(Math.min(Number(ms), 10))) as typeof Bun.sleep);
+afterAll(() => shortSleep.mockRestore());
 
 mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',

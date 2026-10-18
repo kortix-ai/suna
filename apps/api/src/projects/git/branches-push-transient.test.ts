@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -13,6 +13,11 @@ import {
   refreshMirror,
 } from './mirror';
 import type { GitBackedProject } from './types';
+
+// The mirror's 500 ms retry pause is a real `Bun.sleep`; the retry, not its pause, is under test.
+const realSleep = Bun.sleep;
+const shortSleep = spyOn(Bun, 'sleep').mockImplementation(((ms: number) => realSleep(Math.min(Number(ms), 10))) as typeof Bun.sleep);
+afterAll(() => shortSleep.mockRestore());
 
 // Regression for KRTX-238 (Better Stack FE pattern `0cb9ab43…`, project
 // Creating a connector during onboarding commits kortix.yaml through

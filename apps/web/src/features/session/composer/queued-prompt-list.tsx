@@ -4,8 +4,24 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { CaretUpIcon, PencilSimpleIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
-import { Fragment, useId, useState } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  ArrowClockwiseIcon,
+  ArrowUpIcon,
+  CaretUpIcon,
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  StopIcon,
+  TrashIcon,
+  XIcon,
+} from '@phosphor-icons/react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
 import type { QueueRow } from '../queue-projection';
 
 const STEER_FALLBACK_KEY = {
@@ -13,6 +29,52 @@ const STEER_FALLBACK_KEY = {
   not_prompter: 'steerFallbackNotPrompter',
   turn_ended: 'steerFallbackTurnEnded',
 } as const;
+
+export type QueuedRowActionKey = 'edit' | 'retry' | 'sendNow' | 'stopAndSend' | 'remove';
+
+const ACTION_ICON: Record<QueuedRowActionKey, ReactNode> = {
+  edit: <PencilSimpleIcon className="size-4" />,
+  retry: <ArrowClockwiseIcon className="size-4" />,
+  sendNow: <ArrowUpIcon className="size-4" />,
+  stopAndSend: <StopIcon className="size-4" />,
+  remove: <TrashIcon className="size-4" />,
+};
+
+/** The actions a row's menu offers, in menu order, each bound to the row. */
+export function queuedRowActions(
+  row: QueueRow,
+  handlers: {
+    onEdit?: (promptId: string) => void;
+    onRetry?: (promptId: string) => void;
+    onStopAndSend?: (promptId: string) => void;
+    onRemove?: (promptId: string) => void;
+  },
+): { key: QueuedRowActionKey; run: () => void }[] {
+  const { onEdit, onRetry, onStopAndSend, onRemove } = handlers;
+  const actions: { key: QueuedRowActionKey; run: () => void }[] = [];
+  if (row.takeBackEligible && onEdit) actions.push({ key: 'edit', run: () => onEdit(row.id) });
+  // Send now / Retry: one primitive, two labels. The inbox's one retry
+  // primitive answers a failed row's "Retry" and a queued row's "Send now" —
+  // and the queued call doubles as the gentler twin of "Stop and send": the
+  // live turn keeps running, and this row is answered first at the next
+  // drain. Another member's row runs as them, so only they may hurry it (the
+  // projection already scopes `retryable` to the viewer's own row). A row
+  // already handed to the running turn (`steer` with no fallback) has nothing
+  // to hurry — the turn reads it at its next step — so it keeps only Remove.
+  if (
+    onRetry &&
+    !row.command &&
+    !row.fromAnotherMember &&
+    (row.retryable || (row.state === 'queued' && !(row.steer && !row.steerFallback)))
+  ) {
+    actions.push({ key: row.state === 'failed' ? 'retry' : 'sendNow', run: () => onRetry(row.id) });
+  }
+  if (row.interruptible && onStopAndSend) {
+    actions.push({ key: 'stopAndSend', run: () => onStopAndSend(row.id) });
+  }
+  if (row.removable && onRemove) actions.push({ key: 'remove', run: () => onRemove(row.id) });
+  return actions;
+}
 
 export interface QueuedPromptListProps {
   rows: readonly QueueRow[];
@@ -58,6 +120,13 @@ export function QueuedPromptList({
   if (listed === 0 && heldCount === 0) return null;
   // One edit at a time: the composer holds a single draft.
   const editRow = editing ? undefined : onEdit;
+  const actionLabel: Record<QueuedRowActionKey, string> = {
+    edit: common('edit'),
+    retry: copy.raw('text942087cc2d41'),
+    sendNow: copy.raw('text588032878324'),
+    stopAndSend: t('stopAndSend'),
+    remove: copy.raw('textc0b9d9e9ac1d'),
+  };
 
   const editingRow = (text: string) => (
     <li
@@ -142,6 +211,12 @@ export function QueuedPromptList({
           {rows.map((row, index) => {
             const failed = row.state === 'failed';
             const long = row.text.length > 240 || row.text.split('\n').length > 4;
+            const actions = queuedRowActions(row, {
+              onEdit: editRow,
+              onRetry,
+              onStopAndSend,
+              onRemove,
+            });
             return (
               <Fragment key={row.id}>
                 {row.id === editing?.promptId ? (
@@ -175,6 +250,11 @@ export function QueuedPromptList({
                           {t('queuedByAnotherMember')}
                         </p>
                       )}
+                      {row.command && (
+                        <p className="text-muted-foreground text-xs" data-queued-command>
+                          {t('commandRunsWhenDone')}
+                        </p>
+                      )}
                       {!failed && (row.steer || row.steerFallback) && (
                         <p className="text-muted-foreground text-xs" data-queued-delivery>
                           {row.steerFallback
@@ -189,74 +269,43 @@ export function QueuedPromptList({
                         </p>
                       )}
                     </div>
-                    <div
-                      className={cn(
-                        'text-muted-foreground flex shrink-0 items-center gap-0.5',
-                        !failed &&
-                          'opacity-0 group-focus-within/queued:opacity-100 group-hover/queued:opacity-100 pointer-coarse:opacity-100',
-                      )}
-                    >
-                      {row.takeBackEligible && editRow && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          aria-label={common('edit')}
-                          onClick={() => editRow(row.id)}
-                        >
-                          <PencilSimpleIcon className="size-3.5" />
-                        </Button>
-                      )}
-                      {/* Send now / Retry: one primitive, two labels. The
-                          inbox's one retry primitive answers a failed row's
-                          "Retry" and a queued row's "Send now" — and the
-                          queued call doubles as the gentler twin of "Stop and
-                          send": the live turn keeps running, and this row is
-                          answered first at the next drain. Another member's
-                          row runs as them, so only they may hurry it (the
-                          projection already scopes `retryable` to the viewer's
-                          own row). A row already handed to the running turn
-                          (`steer` with no fallback) has nothing to hurry — the
-                          turn reads it at its next step — so it keeps only its
-                          Remove. */}
-                      {onRetry &&
-                        !row.fromAnotherMember &&
-                        (row.retryable ||
-                          (row.state === 'queued' && !(row.steer && !row.steerFallback))) && (
+                    {actions.length > 0 && (
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
                           <Button
                             type="button"
                             variant="ghost"
-                            size="xs"
-                            aria-label={
-                              failed ? copy.raw('text942087cc2d41') : copy.raw('text588032878324')
-                            }
-                            onClick={() => onRetry(row.id)}
+                            size="icon-xs"
+                            data-queued-actions
+                            aria-label={t('queuedActions')}
+                            className={cn(
+                              'text-muted-foreground hover:text-foreground shrink-0',
+                              !failed &&
+                                'opacity-0 group-focus-within/queued:opacity-100 group-hover/queued:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
+                            )}
                           >
-                            {failed ? copy.raw('text942087cc2d41') : copy.raw('text588032878324')}
+                            <DotsThreeIcon className="size-3.5" />
                           </Button>
-                        )}
-                      {row.interruptible && onStopAndSend && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => onStopAndSend(row.id)}
-                        >
-                          {t('stopAndSend')}
-                        </Button>
-                      )}
-                      {row.removable && onRemove && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          aria-label={copy.raw('textc0b9d9e9ac1d')}
-                          onClick={() => onRemove(row.id)}
-                        >
-                          <TrashIcon className="size-3.5" />
-                        </Button>
-                      )}
-                    </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          {actions.map((action) => (
+                            <Fragment key={action.key}>
+                              {action.key === 'remove' && actions.length > 1 && (
+                                <DropdownMenuSeparator />
+                              )}
+                              <DropdownMenuItem
+                                variant={action.key === 'remove' ? 'destructive' : 'default'}
+                                onSelect={action.run}
+                                className="gap-2"
+                              >
+                                {ACTION_ICON[action.key]}
+                                {actionLabel[action.key]}
+                              </DropdownMenuItem>
+                            </Fragment>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </li>
                 )}
               </Fragment>

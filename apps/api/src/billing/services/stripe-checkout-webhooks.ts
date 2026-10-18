@@ -2,7 +2,6 @@ import Stripe from 'stripe';
 import { wallet } from '../wallet';
 import { applyStripeSync } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
-import { markTrialConverted } from './trial-admin';
 import { upsertCustomer } from '../repositories/customers';
 import { getTier, paidMonthlyUsd } from './tiers';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
@@ -101,14 +100,6 @@ export async function activateSubscriptionForAccount(params: {
     },
     { account: existingAccount, reason: 'subscription.activated' },
   );
-
-  // A real subscription ends an admin-issued trial: mark it converted so the
-  // trial overlay (resolve-billing.ts) stops masking the purchased plan.
-  // `trial_status` is admin-owned, so it cannot ride along in the patch above —
-  // it goes through the narrow cross-domain helper in trial-admin.ts.
-  if (existingAccount?.trialStatus === 'active') {
-    await markTrialConverted(accountId);
-  }
 
   if (monthlyUsd > 0) {
     await wallet.grant({

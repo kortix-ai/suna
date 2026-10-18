@@ -6,6 +6,7 @@ import { formatWholeUsd } from '@/features/billing/compute-pricing';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { type AccountState, canOfferTopup } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
@@ -39,7 +40,9 @@ export function TopupControls({
   const status = auto?.enabled
     ? t('autoTopupOn', {
         amount: formatWholeUsd(auto.amount, locale),
-        threshold: formatWholeUsd(auto.threshold, locale),
+        // The threshold is an amount the account holds: credits. The amount
+        // is a purchase: dollars.
+        threshold: formatUsdAsCredits(auto.threshold, { locale }),
       })
     : t('autoTopupOff');
   return (

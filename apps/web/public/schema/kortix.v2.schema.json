@@ -33,7 +33,7 @@
     },
     "default_agent": {
       "type": "string",
-      "minLength": 1
+      "pattern": "\\S"
     },
     "runtime": {
       "type": "string",
@@ -123,6 +123,15 @@
                   }
                 ]
               }
+            },
+            "codemode": {
+              "type": "string",
+              "enum": [
+                "off",
+                "on",
+                "only"
+              ],
+              "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
             }
           },
           "additionalProperties": false
@@ -237,7 +246,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -250,7 +259,7 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "minLength": 1
+                      "pattern": "\\S"
                     }
                   }
                 },
@@ -302,7 +311,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -319,7 +328,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
+              "pattern": "\\S"
             },
             "description": "Connector slugs that must resolve before the session starts."
           },
@@ -327,7 +336,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
+              "pattern": "\\S"
             },
             "deprecated": true,
             "description": "Deprecated input alias for connectors_required."
@@ -339,7 +348,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -359,7 +368,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -556,6 +565,7 @@
                 "properties": {
                   "project_repository": {
                     "type": "boolean",
+                    "default": true,
                     "description": "Check out the project repository and allow repository access. Defaults to true."
                   }
                 },
@@ -660,6 +670,15 @@
                         }
                       ]
                     }
+                  },
+                  "codemode": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "on",
+                      "only"
+                    ],
+                    "description": "pi's codemode tool: the model writes a script that calls the other tools. on (default) keeps the other tools declared, only gives the model codemode alone, off removes it. An agent's value replaces the top-level one."
                   },
                   "exclude": {
                     "type": "array",
@@ -819,7 +838,7 @@
       "properties": {
         "config_dir": {
           "type": "string",
-          "minLength": 1,
+          "pattern": "\\S",
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
           },
@@ -868,17 +887,8 @@
               "entrypoint": {
                 "type": "string"
               },
-              "image": {
-                "type": "string",
-                "minLength": 1
-              },
-              "dockerfile": {
-                "type": "string",
-                "minLength": 1,
-                "not": {
-                  "pattern": "^/|(^|/)\\.\\.($|/)"
-                }
-              },
+              "image": {},
+              "dockerfile": {},
               "cpu": {
                 "type": "integer",
                 "minimum": 1
@@ -900,20 +910,47 @@
                 "required": [
                   "image"
                 ],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
                 "not": {
                   "required": [
                     "dockerfile"
-                  ]
+                  ],
+                  "properties": {
+                    "dockerfile": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               },
               {
                 "required": [
                   "dockerfile"
                 ],
+                "properties": {
+                  "dockerfile": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  }
+                },
                 "not": {
                   "required": [
                     "image"
-                  ]
+                  ],
+                  "properties": {
+                    "image": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               }
             ]
@@ -921,7 +958,7 @@
         },
         "default": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S"
         }
       },
       "additionalProperties": true
@@ -954,11 +991,10 @@
           },
           "agent": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "agent_name": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "enabled": {
             "oneOf": [
@@ -1005,20 +1041,16 @@
             ]
           },
           "session_id": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "sessionId": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt_template": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "cron": {
             "type": "string",
@@ -1039,6 +1071,10 @@
           "timezone": {
             "type": "string"
           },
+          "max_lateness": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+          },
           "secret_env": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -1049,7 +1085,6 @@
           },
           "run": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 1024
           },
           "mode": {
@@ -1069,19 +1104,19 @@
           },
           "connector": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "account": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "source": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "event": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "config": {
             "type": "object"
@@ -1090,18 +1125,87 @@
         "additionalProperties": true,
         "allOf": [
           {
-            "anyOf": [
-              {
+            "if": {
+              "anyOf": [
+                {
+                  "required": [
+                    "session_mode"
+                  ],
+                  "properties": {
+                    "session_mode": {
+                      "const": "pinned"
+                    }
+                  }
+                },
+                {
+                  "not": {
+                    "required": [
+                      "session_mode"
+                    ]
+                  },
+                  "required": [
+                    "sessionMode"
+                  ],
+                  "properties": {
+                    "sessionMode": {
+                      "const": "pinned"
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "if": {
                 "required": [
-                  "prompt"
+                  "session_id"
                 ]
               },
-              {
+              "then": {
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              },
+              "else": {
                 "required": [
-                  "prompt_template"
-                ]
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
               }
-            ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "prompt"
+              ]
+            },
+            "then": {
+              "properties": {
+                "prompt": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "prompt_template"
+              ],
+              "properties": {
+                "prompt_template": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
+            }
           },
           {
             "if": {
@@ -1173,6 +1277,10 @@
                 "mode"
               ],
               "properties": {
+                "run": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
                 "cron": false,
                 "schedule": false,
                 "run_at": false,
@@ -1240,6 +1348,27 @@
             "if": {
               "properties": {
                 "type": {
+                  "enum": [
+                    "webhook",
+                    "monitor",
+                    "event"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "max_lateness": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
                   "const": "monitor"
                 },
                 "mode": {
@@ -1294,7 +1423,7 @@
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "provider": {
             "type": "string",
@@ -1402,7 +1531,7 @@
               "properties": {
                 "match": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 },
                 "action": {
                   "type": "string",
@@ -1597,7 +1726,7 @@
         "properties": {
           "path": {
             "type": "string",
-            "minLength": 1,
+            "pattern": "\\S",
             "not": {
               "pattern": "^/|(^|/)\\.\\.($|/)"
             }
@@ -1617,7 +1746,7 @@
           },
           "dockerfile": {
             "type": "string",
-            "minLength": 1,
+            "pattern": "\\S",
             "not": {
               "pattern": "^/|(^|/)\\.\\.($|/)"
             }
@@ -1643,14 +1772,14 @@
           },
           "root": {
             "type": "string",
-            "minLength": 1,
+            "pattern": "\\S",
             "not": {
               "pattern": "^/|(^|/)\\.\\.($|/)"
             }
           },
           "output_dir": {
             "type": "string",
-            "minLength": 1,
+            "pattern": "\\S",
             "not": {
               "pattern": "^/|(^|/)\\.\\.($|/)"
             }
@@ -1713,7 +1842,7 @@
             },
             "additionalProperties": {
               "type": "string",
-              "minLength": 1
+              "pattern": "\\S"
             }
           },
           "secrets": {
@@ -1723,7 +1852,7 @@
             },
             "additionalProperties": {
               "type": "string",
-              "minLength": 1
+              "pattern": "\\S"
             }
           },
           "processes": {
@@ -2112,7 +2241,13 @@
             "then": {
               "required": [
                 "image"
-              ]
+              ],
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
             }
           }
         ]
@@ -2123,7 +2258,7 @@
       "properties": {
         "config_dir": {
           "type": "string",
-          "minLength": 1,
+          "pattern": "\\S",
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
           },

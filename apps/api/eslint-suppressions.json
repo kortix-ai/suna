@@ -164,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 24
+      "count": 22
     }
   },
   "src/admin/queries.ts": {
@@ -1974,7 +1974,7 @@
   },
   "src/projects/reaping/stop-box.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/reaping/stuck-provisioning.ts": {
@@ -2314,9 +2314,6 @@
     }
   },
   "src/projects/routes/review-items.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 5
     }
@@ -2832,11 +2829,6 @@
       "count": 1
     }
   },
-  "src/sandbox-proxy/index.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
       "count": 6
@@ -2860,6 +2852,11 @@
   },
   "src/sandbox-proxy/prompt-wire-id-repair.ts": {
     "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
+  "src/sandbox-proxy/provider.ts": {
+    "no-console": {
       "count": 1
     }
   },

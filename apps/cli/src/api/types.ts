@@ -179,6 +179,10 @@ export interface ProjectSession {
   child_count?: number;
   /** Present only with `q` + `parent=root`. */
   search_match?: 'self' | 'child';
+  /** When you pinned / archived the session in your own list; null when not.
+   *  Absent for an agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
 }
 
 export interface ProjectSessionInitiator {
@@ -322,6 +326,44 @@ export interface TriggerFireResponse {
   status: 'queued' | 'fired' | 'deduped';
   reason?: string | null;
   session_id?: string | null;
+  /** The run this fire recorded (null only when the run write failed). */
+  run_id?: string | null;
+}
+
+/** `POST …/triggers/:slug/fire` with `dry_run: true` (200). Nothing is written. */
+export interface TriggerDryRunResponse {
+  dry_run: true;
+  rendered_prompt: string;
+  filter_matches: boolean;
+  session_key: string | null;
+  payload: Record<string, unknown>;
+}
+
+/** One run: one row of project_trigger_executions (api-contract `TriggerRun`). */
+export interface TriggerRun {
+  run_id: string;
+  slug: string;
+  source: string;
+  status: 'queued' | 'running' | 'fired' | 'failed' | 'skipped' | 'rejected';
+  run_status: 'running' | 'succeeded' | 'failed' | null;
+  error: string | null;
+  run_error: string | null;
+  session_id: string | null;
+  command_id: string | null;
+  replay_of: string | null;
+  payload_verified: boolean;
+  payload: unknown;
+  scheduled_for: string | null;
+  created_at: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  cost_usd: number | null;
+}
+
+export interface TriggerRunList {
+  runs: TriggerRun[];
+  next_cursor: string | null;
 }
 
 // ── Change Requests ───────────────────────────────────────────────────────

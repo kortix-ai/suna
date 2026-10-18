@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
- * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
+ * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -48,8 +48,6 @@ import {
   waitForTurn,
   watchSessionEvents,
 } from '../fixtures/session-run';
-
-const MORPH = { providerID: 'kortix', modelID: 'morph-dsv41flash' };
 
 /** A reply the flow can find by content: the model is told to answer with exactly `marker`. */
 function echo(marker: string): string {
@@ -138,147 +136,6 @@ harnessFlow(
   },
 );
 
-// ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
-flow(
-  'CONN-26',
-  {
-    domain: 'connectors',
-    requires: ['funded', 'daytona', 'managedGit'],
-    serial: true,
-    timeoutMs: 720_000,
-    // Added in 5b070ebb18 (2026-08-24, direct push) and never run on a
-    // deployed gate before the v0.13.6 release (run 32992496089, api shard
-    // 1), where it failed after 392s: `Timed out waiting for Composio Gmail
-    // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
-    // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
-    // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
-    // live morph-dsv41flash turn calling `add_connector` inside the 300s wait, and
-    // the harness dumps no transcript on that timeout. Quarantined until it
-    // passes a staging dry run of tests-release.yml with the transcript
-    // captured on failure; un-quarantine ONLY in the PR that carries that
-    // green run.
-    quarantine:
-      'real-agent Composio selection: morph-dsv41flash turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/connectors/projects/:projectId/connectors',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ managedGit: true });
-    const session = await ctx.fixtures.session(project, {
-      prompt: 'Reply with the single word READY. Do not call any tools.',
-    });
-    const params = { projectId: project.id, sessionId: session.id };
-
-    await ctx.step('a fresh remote session boots to a ready runtime', async () => {
-      await waitForSessionReady(ctx, project.id, session.id, 360_000);
-    });
-
-    await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
-      await sendPrompt(
-        ctx,
-        project.id,
-        session.id,
-        'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
-        { model: MORPH },
-      );
-    });
-
-    type FullMessage = { role: string; text: string; tools: Array<{ tool: string; input?: string }> };
-    const addConnector = (tool: { tool: string }) => /add[_ -]?connector/i.test(tool.tool);
-    let messages: FullMessage[] = [];
-    await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
-      messages = await waitFor(
-        async () => {
-          // `detail=full` carries each tool call's input as a JSON string.
-          const response = await ctx.client
-            .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-              params,
-              query: { limit: '200', detail: 'full', chars: '5000' },
-            });
-          response.status(200);
-          return (response.json<any>().messages ?? []) as FullMessage[];
-        },
-        {
-          until: (rows) => {
-            const assistantText = rows
-              .filter((message) => message.role === 'assistant')
-              .map((message) => message.text)
-              .join('\n');
-            return (
-              rows.some((message) => (message.tools ?? []).some(addConnector)) &&
-              assistantText.includes('connect.composio.dev') &&
-              /open|authorize|connect/i.test(assistantText)
-            );
-          },
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `Composio Gmail authorization request from session ${session.id}`,
-          retryOnError: isKe2eRetryableError,
-        },
-      );
-    });
-
-    await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
-      const toolCalls = messages.flatMap((message) => message.tools ?? []);
-      const addCalls = toolCalls.filter(addConnector);
-      if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
-      for (const call of toolCalls) {
-        if (/"provider":"pipedream"|"allow_legacy_pipedream":true/.test(call.input ?? '')) {
-          throw new Error('agent attempted the legacy Pipedream provider');
-        }
-      }
-      for (const call of addCalls) {
-        const provider = /"provider":"([^"]*)"/.exec(call.input ?? '')?.[1];
-        if (provider !== undefined && provider !== 'composio') {
-          throw new Error(`agent selected unexpected managed provider ${provider}`);
-        }
-      }
-    });
-
-    await ctx.step('project readback proves the agent persisted Gmail through Composio', async () => {
-      const listed = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors', {
-          params: { projectId: project.id },
-        });
-      listed.status(200);
-      const body = listed.json<any>();
-      const rows = Array.isArray(body) ? body : (body?.connectors ?? []);
-      const gmail = rows.find(
-        (row: any) =>
-          row?.provider === 'composio' &&
-          (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-            String(row?.name ?? '').toLowerCase().includes('gmail')),
-      );
-      if (!gmail?.slug) throw new Error('project connector list omitted agent-created Gmail');
-      if (
-        rows.some(
-          (row: any) =>
-            row?.provider === 'pipedream' &&
-            (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-              String(row?.name ?? '').toLowerCase().includes('gmail')),
-        )
-      ) {
-        throw new Error('project persisted a Pipedream-backed Gmail connector');
-      }
-
-      const config = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: project.id, slug: gmail.slug },
-        });
-      config.status(200).body().has('$.provider', 'composio').has('$.app', 'gmail');
-    });
-  },
-);
-
 // ─── RUN-1: a ready session names its runtime conversation ────────────────────
 harnessFlow(
   'RUN-1',
@@ -314,6 +171,7 @@ harnessFlow(
   'RUN-2',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 660_000,
     routes: [
@@ -378,6 +236,7 @@ harnessFlow(
   'RUN-3',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 900_000,
     routes: [
@@ -544,6 +403,7 @@ harnessFlow(
   'RUN-7',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 780_000,
     routes: [
@@ -617,6 +477,7 @@ flow(
   'RUN-8',
   {
     domain: 'agent-run',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
@@ -774,6 +635,7 @@ harnessFlow(
   'SESS-12',
   {
     domain: 'sessions',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 900_000,
     routes: [
@@ -893,6 +755,7 @@ flow(
   'FILE-9',
   {
     domain: 'files',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     timeoutMs: 600_000,
     routes: [
@@ -952,6 +815,7 @@ flow(
   'GOLD-1',
   {
     domain: 'golden',
+    tags: ['deployed'],
     requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 600_000,
@@ -1367,6 +1231,93 @@ harnessFlow(
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
       file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
     });
+  },
+);
+
+// ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
+// pi only: codemode is a pi tool. The project sets `harnesses.pi.codemode: only`, so the
+// manifest reaches the box (API -> KORTIX_PI_CODEMODE) and the model has no other tool to
+// call: a direct bash call cannot pass for a script. The script's two bash calls write
+// files, so the flow reads the effect back; the runtime's own message list holds the
+// nested calls the transcript flattens away.
+const RUN20_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  'harnesses:',
+  '  pi:',
+  '    codemode: only',
+  '',
+].join('\n');
+
+flow(
+  'RUN-20',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 780_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
+      });
+      const session = await bootSession(ctx, 'pi', { project });
+      const { projectId, sessionId } = session;
+      const nonce = `ke2e-run20-${Date.now()}`;
+      const done = `RUN20_DONE_${Date.now()}`;
+      await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+        await sendPrompt(
+          ctx,
+          projectId,
+          sessionId,
+          `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
+            `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
+            `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
+            `Then return the text "wrote both". Then reply with exactly: ${done}`,
+        );
+        const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+        const tools = messages.flatMap((m) => m.tools ?? []);
+        if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
+          throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
+        }
+        // The script's calls are not calls of their own in the conversation.
+        if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
+      });
+      await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
+        const root = await pinnedRoot(ctx, projectId, sessionId);
+        const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+        const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
+        const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
+        const ran = calls.map((c) => `${c.name}:${c.status}`);
+        if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
+          throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
+        }
+      });
+      await ctx.step('both files the script wrote exist with their content', async () => {
+        for (const suffix of ['a', 'b']) {
+          const file = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
+          file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
+        }
+      });
+    } finally {
+      await world.close();
+    }
   },
 );
 

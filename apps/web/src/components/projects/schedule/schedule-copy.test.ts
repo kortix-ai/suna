@@ -4,21 +4,22 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
-  describeNextRun,
   CUSTOM_TIMING_LABEL,
   describeCadence,
   describeConditions,
   describeLastRun,
+  describeNextRun,
   describeOneOff,
   describeRunLocation,
   describeSecurity,
   describeWhen,
-  matchesQuery,
   isCustomerTrigger,
   isTriggerKind,
+  matchesQuery,
   triggerBadgeState,
   triggerName,
   triggerStatus,
+  triggerSubtitle,
 } from './schedule-copy';
 
 // `test.each` is deliberately avoided throughout: the repo's `@types/bun`
@@ -98,9 +99,9 @@ describe('app event triggers in the copy layer', () => {
   test('reads as the app event, in the list sentence and as the fallback name', () => {
     expect(describeWhen(event)).toBe('Pull Request');
     expect(triggerName(event)).toBe('Pull Request');
-    expect(describeWhen(event, new Map([['GITHUB_PULL_REQUEST_EVENT', 'Pull Request Opened']]))).toBe(
-      'Pull Request Opened',
-    );
+    expect(
+      describeWhen(event, new Map([['GITHUB_PULL_REQUEST_EVENT', 'Pull Request Opened']])),
+    ).toBe('Pull Request Opened');
   });
 });
 
@@ -332,14 +333,22 @@ describe('matchesQuery — searches what is on screen', () => {
 // start up to 30 minutes after its slot (jitter).
 describe('describeNextRun', () => {
   test('an enabled cron trigger names its next run', () => {
-    const text = describeNextRun(trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z' }));
+    const text = describeNextRun(
+      trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z' }),
+    );
     expect(text).toStartWith('Next run ');
     expect(text).toContain('Oct');
   });
 
   test('no next run: a webhook, a paused trigger, or an older API', () => {
-    expect(describeNextRun(trigger({ type: 'webhook', enabled: true, next_fire_at: null }))).toBeNull();
-    expect(describeNextRun(trigger({ type: 'cron', enabled: false, next_fire_at: '2026-10-08T09:12:00.000Z' }))).toBeNull();
+    expect(
+      describeNextRun(trigger({ type: 'webhook', enabled: true, next_fire_at: null })),
+    ).toBeNull();
+    expect(
+      describeNextRun(
+        trigger({ type: 'cron', enabled: false, next_fire_at: '2026-10-08T09:12:00.000Z' }),
+      ),
+    ).toBeNull();
     expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
   });
 });
@@ -363,7 +372,9 @@ describe('triggerBadgeState: the one status every surface shows', () => {
   });
   test('paused outranks every other state, even an event in error', () => {
     expect(triggerBadgeState(trigger({ enabled: false }))).toBe('paused');
-    expect(triggerBadgeState(trigger({ type: 'event', enabled: false, event: ev('error') }))).toBe('paused');
+    expect(triggerBadgeState(trigger({ type: 'event', enabled: false, event: ev('error') }))).toBe(
+      'paused',
+    );
   });
   test('an event trigger shows its subscription state', () => {
     for (const status of ['needs_connection', 'error', 'pending'] as const) {
@@ -373,6 +384,25 @@ describe('triggerBadgeState: the one status every surface shows', () => {
   });
   test('a failed last run is an error, whatever the kind', () => {
     expect(triggerBadgeState(trigger({ last_status: 'failed' }))).toBe('error');
-    expect(triggerBadgeState(trigger({ type: 'event', event: ev('active'), last_status: 'failed' }))).toBe('error');
+    expect(
+      triggerBadgeState(trigger({ type: 'event', event: ev('active'), last_status: 'failed' })),
+    ).toBe('error');
+  });
+});
+
+describe('triggerSubtitle', () => {
+  test('the schedule when it differs from the name', () => {
+    expect(triggerSubtitle('Weekly churn report', 'Mondays at 09:00', 'x')).toBe(
+      'Mondays at 09:00',
+    );
+  });
+  test('a trigger named after its schedule falls back to the first prompt line', () => {
+    expect(triggerSubtitle('Every minute', ' every minute ', '\n  make jay.md\nsecond')).toBe(
+      'make jay.md',
+    );
+  });
+  test('no schedule line and no prompt: the name stands alone', () => {
+    expect(triggerSubtitle('Every minute', 'Every minute', null)).toBeNull();
+    expect(triggerSubtitle('Every minute', 'Every minute', '  \n ')).toBeNull();
   });
 });

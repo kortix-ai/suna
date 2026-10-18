@@ -206,3 +206,28 @@ describe('kortix tools eject', () => {
     expect(existsSync(join(cwd, 'tools/lookup_order.ts'))).toBe(false);
   }, SPAWN_TEST_MS);
 });
+
+describe('kortix_version 3', () => {
+  const V3 = 'kortix_version: 3\ndefault_agent: kortix\nagents:\n  kortix:\n    mode: primary\n';
+
+  test('tools ls lists every Kortix tool as registered and removes none', () => {
+    const cwd = project({ 'kortix.yaml': `${V3}tools:\n  lookup_order: tools/lookup_order.ts\n  memory: tools/memory.ts\n`, 'tools/lookup_order.ts': 'export default {}\n', 'tools/memory.ts': 'export default {}\n' });
+    const listed = JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout) as { tools: Array<{ name: string; kind: string }>; removed: string[] };
+
+    expect(listed.removed).toEqual([]);
+    expect(listed.tools.find((tool) => tool.name === 'web_search')?.kind).toBe('kortix');
+    expect(listed.tools.find((tool) => tool.name === 'memory')?.kind).toBe('kortix (overridden)');
+    expect(listed.tools.find((tool) => tool.name === 'lookup_order')?.kind).toBe('project');
+    expect(kortix(cwd, 'tools', 'ls').stdout).not.toContain('Removed');
+  });
+
+  test('eject writes only the module entry, and the result validates', () => {
+    const cwd = project({ 'kortix.yaml': V3 });
+
+    expect(kortix(cwd, 'tools', 'eject', 'web_search', '--json').code).toBe(0);
+    const manifest = read(cwd, 'kortix.yaml');
+    expect(manifest).toContain('web_search: tools/web_search.ts');
+    expect(manifest).not.toMatch(/:[ \t]+kortix:\w/);
+    expect(issues(cwd).filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+});

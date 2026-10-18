@@ -34,8 +34,12 @@ export function openGenuiFence(text: string): OpenGenuiFence | null {
     const indent = /^ */.exec(opener)![0];
     const marker = /`{3,}|~{3,}/.exec(opener)?.[0] ?? '```';
     // CommonMark removes up to the opener's indentation from each content line (a fence in a list item).
-    const strip = new RegExp(`^ {0,${indent.length}}`);
-    const code = indent ? last.code.split('\n').map((line) => line.replace(strip, '')).join('\n') : last.code;
+    const strip = (line: string) => {
+      let cut = 0;
+      while (cut < indent.length && line[cut] === ' ') cut++;
+      return line.slice(cut);
+    };
+    const code = indent ? last.code.split('\n').map(strip).join('\n') : last.code;
     return { code, closer: `\n${indent}${marker}` };
   }
   return openNestedFence(text);
@@ -72,7 +76,11 @@ export type GenuiOpenState = keyof typeof OPEN_MARK;
  * a block must read its state from its own text: a value beside the text would be a tick ahead.
  */
 export function closeOpenGenuiFence(text: string, fence: OpenGenuiFence, state: GenuiOpenState): string {
-  const prefix = fence.closer.slice(1).replace(/[`~]+$/, '');
+  // The closer without its marker. A loop, not /[`~]+$/: that regex backtracks quadratically on a long run of backticks.
+  const line = fence.closer.slice(1);
+  let end = line.length;
+  while (end > 0 && (line[end - 1] === '`' || line[end - 1] === '~')) end--;
+  const prefix = line.slice(0, end);
   return `${text}\n${prefix}${OPEN_MARK[state]}${fence.closer}`;
 }
 

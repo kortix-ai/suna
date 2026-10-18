@@ -302,3 +302,19 @@ export async function discoverProtectedResourceOAuth2(
     warnings,
   };
 }
+
+/**
+ * Whether Kortix can sign in to a server with nothing but the user's consent:
+ * it publishes OAuth endpoints and lets Kortix register itself (RFC 7591).
+ * The same test as the web's `autoConnectPlan` 'register' plan.
+ */
+export function mcpSignInCheck(discovery: ProtectedResourceOAuth2Discovery): {
+  requires_sign_in: boolean;
+  one_click: boolean;
+} {
+  const endpoints = !!(discovery.metadata?.authorization_url || discovery.metadata?.token_url);
+  return {
+    requires_sign_in: discovery.requires_authorization,
+    one_click: discovery.requires_authorization && endpoints && !!discovery.registration_endpoint,
+  };
+}

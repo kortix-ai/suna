@@ -6,11 +6,14 @@ import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   applyToSessionCache,
   createdSessionListRow,
+  listStateAfter,
   mergeRenamed,
   renameInRows,
+  sessionListView,
   sessionRowsOf,
   upsertIntoSessionCache,
   withoutSession,
+  writeListState,
   writeSessionLists,
 } from './session-cache-write';
 
@@ -233,6 +236,104 @@ describe('writeSessionLists over the real query client', () => {
 
     expect(client.getQueryData(PAGED) as unknown).toBe(cached);
     expect(client.getQueryState(PAGED)?.dataUpdatedAt).toBe(1);
+    client.clear();
+  });
+});
+
+// KRTX-2418: a person pins a session to the top of their own list, or archives
+// it out of the list. The cached lists show it at once.
+describe('pin and archive', () => {
+  const NOW = '2026-10-15T12:00:00.000Z';
+  const EARLIER = '2026-10-14T09:00:00.000Z';
+  const KEYS = {
+    flat: ['project-sessions', 'p-1'],
+    list: ['project-sessions', 'p-1', 'paged', { parent: 'root', startedBy: 'me' }],
+    legacyList: ['project-sessions', 'p-1', 'paged'],
+    pinned: ['project-sessions', 'p-1', 'paged', { view: 'pinned' }],
+    archived: ['project-sessions', 'p-1', 'paged', { view: 'archived', startedBy: 'me' }],
+    children: ['project-sessions', 'p-1', 'children', 'parent-1', null],
+    byId: ['project-sessions', 'p-1', 'session', 'a'],
+    participants: ['project-sessions', 'p-1', 'participants', 'a'],
+  } as const;
+
+  test('the state a change leaves: archiving unpins, pinning unarchives, a repeat keeps the first time', () => {
+    const plain = { pinned_at: null, archived_at: null };
+    expect(listStateAfter(plain, { pinned: true }, NOW)).toEqual({ pinned_at: NOW, archived_at: null });
+    expect(listStateAfter({ pinned_at: EARLIER, archived_at: null }, { pinned: true }, NOW)).toEqual({ pinned_at: EARLIER, archived_at: null });
+    expect(listStateAfter({ pinned_at: EARLIER, archived_at: null }, { archived: true }, NOW)).toEqual({ pinned_at: null, archived_at: NOW });
+    expect(listStateAfter({ pinned_at: null, archived_at: EARLIER }, { pinned: true }, NOW)).toEqual({ pinned_at: NOW, archived_at: null });
+    expect(listStateAfter({ pinned_at: EARLIER, archived_at: null }, { pinned: false }, NOW)).toEqual(plain);
+    expect(listStateAfter({ pinned_at: null, archived_at: EARLIER }, { archived: false }, NOW)).toEqual(plain);
+    // A row without the fields (a server without the feature) reads as neither.
+    expect(listStateAfter({}, { archived: true }, NOW)).toEqual({ pinned_at: null, archived_at: NOW });
+  });
+
+  test('what each cached entry lists', () => {
+    expect(sessionListView(KEYS.list)).toBeNull();
+    expect(sessionListView(KEYS.legacyList)).toBeNull();
+    expect(sessionListView(KEYS.children)).toBeNull();
+    expect(sessionListView(KEYS.pinned)).toBe('pinned');
+    expect(sessionListView(KEYS.archived)).toBe('archived');
+    expect(sessionListView(KEYS.flat)).toBeUndefined();
+    expect(sessionListView(KEYS.byId)).toBeUndefined();
+    expect(sessionListView(KEYS.participants)).toBeUndefined();
+  });
+
+  const archivedState = { pinned_at: null, archived_at: NOW };
+  const pinnedState = { pinned_at: NOW, archived_at: null };
+  const clearState = { pinned_at: null, archived_at: null };
+
+  test('an archived row leaves the list, the children and the pinned view; it stays in lookups with its new state', () => {
+    const list = paged([row('a', clearState), row('b', clearState)]);
+    expect(ids(writeListState(list, KEYS.list, 'a', archivedState))).toEqual([['b']]);
+    expect(ids(writeListState(list, KEYS.children, 'a', archivedState))).toEqual([['b']]);
+    expect(ids(writeListState(paged([row('a', pinnedState)]), KEYS.pinned, 'a', archivedState))).toEqual([[]]);
+    const flat = writeListState([row('a', clearState)], KEYS.flat, 'a', archivedState) as ProjectSession[];
+    expect(flat.map((r) => [r.session_id, r.archived_at])).toEqual([['a', NOW]]);
+    const byId = writeListState(row('a', clearState), KEYS.byId, 'a', archivedState) as ProjectSession;
+    expect(byId.archived_at).toBe(NOW);
+  });
+
+  test('a pinned row stays in the list with its pin; it joins the pinned view on the refetch', () => {
+    const list = writeListState(paged([row('a', clearState)]), KEYS.list, 'a', pinnedState) as Paged;
+    expect(list.pages[0].items[0].pinned_at).toBe(NOW);
+    const pinnedView = paged([row('x', pinnedState)]);
+    expect(writeListState(pinnedView, KEYS.pinned, 'a', pinnedState)).toBe(pinnedView);
+  });
+
+  test('an unpinned row leaves the pinned view; an unarchived row leaves the archived view', () => {
+    expect(ids(writeListState(paged([row('a', pinnedState), row('x', pinnedState)]), KEYS.pinned, 'a', clearState))).toEqual([['x']]);
+    expect(ids(writeListState(paged([row('a', archivedState)]), KEYS.archived, 'a', clearState))).toEqual([[]]);
+  });
+
+  test('a cache without the session, or one with the same state, is returned by reference', () => {
+    const list = paged([row('b', clearState)]);
+    expect(writeListState(list, KEYS.list, 'a', archivedState)).toBe(list);
+    const same = paged([row('a', pinnedState)]);
+    expect(writeListState(same, KEYS.list, 'a', pinnedState)).toBe(same);
+  });
+
+  test('over the real query client: every cached entry at once, and the undo restores every one', () => {
+    const client = new QueryClient();
+    const list = paged([row('a', clearState), row('b', clearState)]);
+    const pinnedView = paged([row('a', pinnedState)]);
+    client.setQueryData(KEYS.list, list);
+    client.setQueryData(KEYS.pinned, pinnedView);
+    client.setQueryData(KEYS.byId, row('a', pinnedState));
+
+    const undo = writeSessionLists(client, [KEYS.list, KEYS.pinned, KEYS.archived, KEYS.byId], (cached, key) =>
+      writeListState(cached, key, 'a', archivedState)
+    );
+    expect(ids(client.getQueryData(KEYS.list))).toEqual([['b']]);
+    expect(ids(client.getQueryData(KEYS.pinned))).toEqual([[]]);
+    expect((client.getQueryData(KEYS.byId) as ProjectSession).archived_at).toBe(NOW);
+    // Not cached: not created.
+    expect(client.getQueryData(KEYS.archived) as unknown).toBeUndefined();
+
+    undo();
+    expect(client.getQueryData(KEYS.list) as unknown).toEqual(list);
+    expect(client.getQueryData(KEYS.pinned) as unknown).toEqual(pinnedView);
+    expect((client.getQueryData(KEYS.byId) as ProjectSession).pinned_at).toBe(NOW);
     client.clear();
   });
 });

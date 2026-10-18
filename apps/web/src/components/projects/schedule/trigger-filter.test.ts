@@ -6,9 +6,8 @@ import {
   eventAppStrip,
   filterTriggers,
   groupTriggersByApp,
-  TRIGGER_FILTERS,
   parseTriggerFilter,
-  triggerCounts,
+  TRIGGER_FILTERS,
 } from './trigger-filter';
 
 const trigger = (slug: string, type: string, app?: string, connector = app): ProjectTrigger =>
@@ -39,7 +38,7 @@ const app = (slug: string, over: Partial<EventApp> = {}): EventApp => ({
 
 describe('parseTriggerFilter', () => {
   test('accepts the four kinds', () => {
-    for (const v of ['all', 'cron', 'event', 'webhook']) expect(parseTriggerFilter(v)).toBe(v);
+    for (const v of ['all', 'cron', 'event', 'webhook'] as const) expect(parseTriggerFilter(v)).toBe(v);
   });
   test('falls back to all', () => {
     expect(parseTriggerFilter(null)).toBe('all');
@@ -52,10 +51,7 @@ describe('parseTriggerFilter', () => {
   });
 });
 
-describe('counts and filter', () => {
-  test('counts every kind', () => {
-    expect(triggerCounts(list)).toEqual({ all: 5, cron: 1, event: 3, webhook: 1 });
-  });
+describe('filter', () => {
   test('filters by kind', () => {
     expect(filterTriggers(list, 'event').map((t) => t.slug)).toEqual(['c', 'd', 'e']);
     expect(filterTriggers(list, 'all')).toHaveLength(5);
@@ -80,7 +76,11 @@ describe('groupTriggersByApp', () => {
 
 describe('eventAppStrip', () => {
   test('apps the project has come first', () => {
-    const strip = eventAppStrip([app('asana'), app('github', { connector: 'github' }), app('gmail')]);
+    const strip = eventAppStrip([
+      app('asana'),
+      app('github', { connector: 'github' }),
+      app('gmail'),
+    ]);
     expect(strip.map((a) => a.app)).toEqual(['github', 'gmail', 'asana']);
   });
 });

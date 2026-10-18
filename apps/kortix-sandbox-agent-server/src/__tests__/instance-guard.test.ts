@@ -567,6 +567,29 @@ describe('proxy', () => {
     await stopDuringTurn(mock, 'ses_a', 5)
     expect(mock.registry()).toBe('ready')
   })
+
+  test('a prompt that waits out the warm-up goes to the port that is live after the wait (CFG-12)', async () => {
+    // A config convergence promotes its candidate while the prompt waits: the
+    // live port moves and the old process is killed. Port 1 refuses, like it.
+    let live = 'http://127.0.0.1:1'
+    const { proxy, instanceGuard } = composeOpenCodeHarnessService(testOpenCodeConfig(), {
+      getInternalUrl: () => live,
+      getState: () => 'ok',
+      getPid: () => null,
+    } as unknown as Opencode)
+    const warming = instanceGuard.warm('boot').then(() => {})
+    const sent = proxy.forward({
+      method: 'POST',
+      path: '/session/ses_a/prompt_async',
+      search: '?directory=%2Fworkspace',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: new Response(JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] })).body,
+    })
+    live = mock.base
+    expect((await sent).status).toBe(204)
+    await warming
+    await until(() => !mock.busy('ses_a'))
+  })
 })
 
 describe('unrequestedAbortCause', () => {

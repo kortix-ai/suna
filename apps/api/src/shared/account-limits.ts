@@ -49,7 +49,7 @@ async function resolveAccountLimitInfo(
       // has always treated an unprovisioned account as free rather than
       // fail-closing it out of its one project. Entitlement gates fail closed
       // to 'none' instead — a different question, deliberately.
-      tier: resolved.source === 'no_account' ? 'free' : resolved.plan.key,
+      tier: resolved.source === 'no_account' ? 'free' : resolved.features.key,
     };
   } catch {
     return { tier: 'free' };

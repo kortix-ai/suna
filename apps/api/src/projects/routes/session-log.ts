@@ -20,12 +20,19 @@
  * read's gate and changes nothing: the loss report of the stored log on another harness
  * (`switchPreflight`, `@kortix/api-contract/session-log` `capabilities.ts`).
  *
+ * The attachment bytes, `GET` and `PUT /:projectId/sessions/:sessionId/log/blobs/:sha256` (P2.13), take
+ * the journal's credential and switch. The journal asks for the object of an attachment it writes as
+ * `blob:<sha256>`, uploads the bytes when there is none, and writes the `kortix-attachment://` ref both
+ * answer into the record (`../session-log-blobs.ts`).
+ *
  * The journal body is gzipped JSON. It is not declared as a validated request schema: the
  * OpenAPI validator would call `req.json()` on gzip bytes (same reason as
  * `platform/routes/runtime-projection.ts`). The handler gunzips, caps and validates it.
  */
 import { gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
+import { MAX_SESSION_ATTACHMENT_BYTES } from '@kortix/shared';
 import {
   SessionLogJournalConflictSchema,
   SessionLogJournalRequestSchema,
@@ -34,6 +41,7 @@ import {
   SessionLogManifestSchema,
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
+  SessionLogRestoreTooLargeSchema,
   SessionLogRestoreSchema,
   SessionLogSwitchPreflightRequestSchema,
   SessionLogSwitchPreflightSchema,
@@ -49,7 +57,8 @@ import type { AppEnv } from '../../types';
 import { assertProjectCapability, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
-import { ingestSessionLogJournal, readSessionLogManifest, type SessionLogScope } from '../session-log-ingest';
+import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
+import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -59,6 +68,51 @@ const MAX_GZIP_BYTES = 2 * 1024 * 1024;
 const MAX_RAW_BYTES = 16 * 1024 * 1024;
 
 const params = z.object({ projectId: z.string(), sessionId: z.string() });
+const blobParams = params.extend({ sha256: z.string().regex(/^[0-9a-f]{64}$/) });
+const BlobRefSchema = z.object({ ref: z.string().nullable() });
+const TOO_LARGE = 'Session-log attachments must be 50 MiB or smaller';
+/**
+ * Uploads one replica buffers at once. Each holds its body (up to 50 MiB) and Storage's copy, so 4 bound
+ * a replica at about 400 MiB of a 4 GiB task, when every box of a fleet sends its history at the first boot
+ * on a new daemon. One per session, so one box never holds more than one slot. Above either: 429, and the
+ * daemon tries the attachment again at its next collection. A body not read within
+ * `SESSION_LOG_BLOB_READ_MS` is cancelled (408), so a stalled client frees its slot.
+ */
+const MAX_BLOB_UPLOADS = 4;
+// replica-local: the sessions with an upload in flight on this replica.
+const blobUploads = new Set<string>();
+
+/**
+ * The request body, read here and not by `bodyLimit` (which buffers a chunked body before the handler,
+ * with no deadline). 'late' when it was not read within `ms`, 'large' above 50 MiB; both cancel the read.
+ */
+async function readBlobBody(request: Request, ms: number): Promise<Buffer | 'late' | 'large'> {
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_SESSION_ATTACHMENT_BYTES) return 'large';
+  const reader = request.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    void reader.cancel().catch(() => {});
+  }, ms);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (let r = await reader.read(); !r.done; r = await reader.read()) {
+      size += r.value.byteLength;
+      if (size > MAX_SESSION_ATTACHMENT_BYTES) {
+        void reader.cancel().catch(() => {});
+        return 'large';
+      }
+      chunks.push(r.value);
+    }
+  } catch {
+    return 'late';
+  } finally {
+    clearTimeout(timer);
+  }
+  return late ? 'late' : Buffer.concat(chunks);
+}
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
 function sandboxScope(c: Context<AppEnv>): SessionLogScope | null {
@@ -114,6 +168,66 @@ async function sessionReadGate(
 export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      tags: ['projects'],
+      summary: 'Find the stored object of a session-log attachment by its sha256',
+      description: 'Session sandbox credential only. `{ ref }`: the `kortix-attachment://` ref of the object, or null when the session has none.',
+      ...auth,
+      request: { params: blobParams },
+      responses: { 200: json(BlobRefSchema, 'The object ref, or null'), ...errors(400, 403, 404, 503) },
+    }),
+    async (c) => {
+      const scope = sandboxScope(c);
+      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
+      if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
+      return c.json({ ref: await findSessionLogBlob(scope, c.req.valid('param').sha256) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      tags: ['projects'],
+      summary: 'Store the bytes of a session-log attachment',
+      description:
+        'Body: the raw bytes, `Content-Type` = their MIME type, at most 50 MiB. Session sandbox credential only. ' +
+        'The body sha256 must equal the path sha256 (else 400). Stored once per session and sha256; answers the object `{ ref }`. ' +
+        '429 when 4 uploads, or one of this session, are already in flight on this replica. 408 when the body is not received ' +
+        'within 60 s (`SESSION_LOG_BLOB_READ_MS`). Request deadline 95 s.',
+      ...auth,
+      request: { params: blobParams },
+      responses: { 200: json(BlobRefSchema.extend({ ref: z.string() }), 'The object ref'), ...errors(400, 403, 404, 408, 413, 429, 503) },
+    }),
+    async (c) => {
+      const scope = sandboxScope(c);
+      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
+      const { sha256 } = c.req.valid('param');
+      const mime = (c.req.header('content-type') || 'application/octet-stream').split(';')[0]!.trim().toLowerCase();
+      if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mime)) return c.json({ error: 'Invalid Content-Type' }, 400);
+      if (blobUploads.size >= MAX_BLOB_UPLOADS || blobUploads.has(scope.sessionId)) {
+        c.header('Retry-After', '5');
+        return c.json({ error: 'Too many session-log uploads in flight' }, 429);
+      }
+      blobUploads.add(scope.sessionId);
+      try {
+        const bytes = await readBlobBody(c.req.raw, config.SESSION_LOG_BLOB_READ_MS);
+        if (bytes === 'large') return c.json({ error: TOO_LARGE }, 413);
+        if (bytes === 'late') return c.json({ error: 'The body was not received in time' }, 408);
+        if (createHash('sha256').update(bytes).digest('hex') !== sha256) return c.json({ error: 'The body sha256 does not match the path' }, 400);
+        if (!(await sessionExists(scope))) return c.json({ error: 'Session not found' }, 404);
+        return c.json({ ref: await storeSessionLogBlob(scope, sha256, mime, bytes) }, 200);
+      } finally {
+        blobUploads.delete(scope.sessionId);
+      }
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
       method: 'post',
       path: '/{projectId}/sessions/{sessionId}/log/journal',
       tags: ['projects'],
@@ -146,8 +260,11 @@ export function registerSessionLogRoutes(): void {
       if (outcome.status === 409) return c.json(outcome.body, 409);
       if (outcome.status === 422) return c.json(outcome.body, 422);
       if (outcome.status === 429) {
-        c.header('Retry-After', '2');
-        return c.json(outcome.body, 429);
+        // Header inline, never `c.header(...)` first: the request deadline may
+        // have answered this request already, and Context#header on the
+        // finalized context re-wraps its consumed body stream (KRTX-2737;
+        // mechanism and precedent: the audit-ingest contended 503, KRTX-2600).
+        return c.json(outcome.body, 429, { 'Retry-After': '2' });
       }
       return c.json(outcome.body, 404);
     },
@@ -186,12 +303,15 @@ export function registerSessionLogRoutes(): void {
         'Session sandbox credential only, no body. Raises the session generation by 1 and answers `SessionLogRestore` ' +
         'at that generation: every thread with its live messages in seq order, the rev of every message (tombstones ' +
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
-        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed.',
+        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed. ' +
+        '413 `session_log_too_large`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES`; the claim stands and the answer ' +
+        'carries every thread, rev and seq but no message.',
       ...auth,
       request: { params },
       responses: {
         200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
         404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
+        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered without messages'),
         ...errors(403, 503),
       },
     }),
@@ -201,6 +321,7 @@ export function registerSessionLogRoutes(): void {
       if (!config.SESSION_LOG_RESTORE_ENABLED) return c.json({ error: 'Session log restore is off' }, 503);
       const restored = await claimSessionLog(scope);
       if (!restored) return c.json({ error: 'no_session_log' as const }, 404);
+      if ('error' in restored) return c.json(restored, 413);
       return c.json(restored, 200);
     },
   );

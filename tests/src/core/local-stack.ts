@@ -276,10 +276,16 @@ export async function ensureLocalSupabase(
     if (!options.autoStart) throw error;
   }
 
+  // `studio` (the dashboard) and `imgproxy` (storage image transforms): no
+  // test uses either, and they were the largest pulls of a CI lane's
+  // 108 s `supabase start` (browser-1, run 38777589705). scripts/dev-local.sh
+  // excludes the same two.
   const command = [
     ...localSupabaseCommand(topology),
     "start",
     "--ignore-health-check",
+    "-x",
+    "studio,imgproxy",
   ];
   const started = Bun.spawn(command, {
     cwd: topology.root,
@@ -527,7 +533,7 @@ export async function ensureLocalWeb(
   if (!API_URL || !ANON_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
-  const web = Bun.spawn(
+  const spawnWeb = () => Bun.spawn(
     ["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"],
     {
       cwd: topology.root,
@@ -548,42 +554,74 @@ export async function ensureLocalWeb(
     },
   );
 
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (await localWebHealthy(webUrl)) {
-      // Nothing watches the dev server once it is ready, so a mid-run death
-      // used to reach the report as N unrelated spec failures — each one
-      // blaming itself for an ERR_CONNECTION_REFUSED against a dead port, the
-      // real cause hundreds of lines earlier in a shared stdout. Say it once,
-      // loudly, at the moment it happens.
-      let stopping = false;
-      void web.exited.then((code) => {
-        if (stopping) return;
-        console.error(
-          `[local-stack] the local web server exited with code ${code} while ` +
-            `tests were still running. Every browser spec from this point on ` +
-            `will fail against ${webUrl} with a connection error, whatever ` +
-            `each one reports. Look above this line for the cause.`,
-        );
-      });
-      return {
-        started: true,
-        stop: async () => {
-          stopping = true;
-          await stopOwnedStack(web);
-        },
-      };
-    }
-    if (web.exitCode !== null) {
-      throw new Error(
-        `local web exited with code ${web.exitCode} before readiness`,
-      );
-    }
-    await Bun.sleep(250);
-  }
+  let web = spawnWeb();
+  let stopping = false;
+  let recovery: Promise<void> = Promise.resolve();
+  let restarts = 0;
 
-  await stopOwnedStack(web);
-  throw new Error(`local web did not become ready at ${webUrl} within 180s`);
+  const waitUntilReady = async () => {
+    const deadline = Date.now() + 180_000;
+    while (!stopping && Date.now() < deadline) {
+      if (web.exitCode !== null) {
+        throw new Error(`local web exited with code ${web.exitCode} before readiness`);
+      }
+      if (await localWebHealthy(webUrl)) return;
+      await Bun.sleep(250);
+    }
+    if (!stopping) {
+      throw new Error(`local web did not become ready at ${webUrl} within 180s`);
+    }
+  };
+
+  const watchExit = () => {
+    void web.exited.then((code) => {
+      if (stopping) return;
+      console.error(
+        `[local-stack] the local web server exited with code ${code} during tests at ${webUrl}.`,
+      );
+      try { process.kill(-web.pid, "SIGKILL"); } catch {}
+      if (restarts >= 3) {
+        console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
+        return;
+      }
+      recovery = (async () => {
+        while (!stopping && restarts < 3) {
+          restarts++;
+          console.error(`[local-stack] restarting local web (${restarts}/3).`);
+          try {
+            web = spawnWeb();
+            await waitUntilReady();
+            if (stopping) return;
+            console.error(`[local-stack] local web recovered at ${webUrl}.`);
+            watchExit();
+            return;
+          } catch (error) {
+            console.error("[local-stack] local web recovery failed; browser failures remain failures:", error);
+            await stopOwnedStack(web);
+          }
+        }
+        if (!stopping) {
+          console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
+        }
+      })();
+    });
+  };
+
+  try {
+    await waitUntilReady();
+  } catch (error) {
+    await stopOwnedStack(web);
+    throw error;
+  }
+  watchExit();
+  return {
+    started: true,
+    stop: async () => {
+      stopping = true;
+      await stopOwnedStack(web);
+      await recovery;
+    },
+  };
 }
 
 export async function ensureLocalStack(
@@ -795,13 +833,17 @@ export async function ensureLocalStack(
 }
 
 async function stopOwnedStack(stack: Bun.Subprocess): Promise<void> {
-  if (stack.exitCode !== null) return;
+  if (stack.exitCode !== null) {
+    try { process.kill(-stack.pid, "SIGKILL"); } catch {}
+    return;
+  }
   signalOwnedProcessGroup(stack, "SIGTERM");
   await Promise.race([stack.exited, Bun.sleep(15_000)]);
   if (stack.exitCode === null) {
     signalOwnedProcessGroup(stack, "SIGKILL");
     await stack.exited;
   }
+  try { process.kill(-stack.pid, "SIGKILL"); } catch {}
 }
 
 function signalOwnedProcessGroup(

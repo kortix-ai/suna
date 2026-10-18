@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 // Mirrors the sanctioned internal import in reset-client-state.ts (see the
 // comment there). `mock.module` is keyed by the specifier STRING, so this
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
+import * as deviceCaches from '@/lib/device-caches';
 import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -28,16 +29,33 @@ import * as idb from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-li
  *   - `AuthProvider.adoptUser` awaits it before `setIsLoading(false)` — the
  *     whole app parks on its loading frame at SIGN-IN.
  *
- * A hanging promise, not a rejecting one: a rejection is what a `try`/`catch`
- * already handled, and it is not the failure that was shipped.
+ * A hanging promise, not a rejecting one, is the failure that was shipped. A
+ * REJECTING purge is its own case, tested below: the `try`/`catch` around step
+ * 0 guards only `clearDeviceCaches`' SYNCHRONOUS prefix, so a purge rejection
+ * arrives in the discarded promise, and the `.catch` attached at the call site
+ * — not that `try`/`catch` — is what handles it.
  *
  * `mock.module` is process-wide, which is safe here because `apps/web` runs
  * `bun test --isolate` (package.json) — one process per file. This file mocks
- * exactly one export and spreads the rest of the real module.
+ * one export per mocked module and spreads the rest of each real module.
  */
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
   ...idb,
   clearSessionIDBCache: () => new Promise<void>(() => {}),
+}));
+
+/**
+ * Step 0 fires `clearDeviceCaches()` fire-and-forget: the `try`/`catch` around
+ * the call guards only its SYNCHRONOUS prefix (the detach + store swap), while
+ * the actual purge runs in the discarded promise. A rejection there would
+ * otherwise escape as an unhandled promise rejection during sign-out — in the
+ * exact path whose own contract is to settle. This mock makes that purge
+ * rejectable on demand; every other export of the real module stays live.
+ */
+let deviceCachePurge: () => Promise<void> = () => Promise.resolve();
+mock.module('@/lib/device-caches', () => ({
+  ...deviceCaches,
+  clearDeviceCaches: () => deviceCachePurge(),
 }));
 
 /**
@@ -182,6 +200,30 @@ describe('resetClientState with an IndexedDB purge that never settles', () => {
 
     expect(firstElapsed).toBeLessThan(500);
     expect(secondElapsed).toBeLessThan(500);
+  });
+});
+
+describe('resetClientState when the device-cache purge rejects', () => {
+  test('still settles, reports the rejection, and the later steps still ran', async () => {
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+    const identityBefore = sdkIdentityResets;
+    const rejecting = new Error('the device-cache purge failed');
+    deviceCachePurge = () => Promise.reject(rejecting);
+    try {
+      await resetClientState({ idbTimeoutMs: 5 });
+
+      // `resetClientState()` settled (a) and sign-out proceeded: the steps
+      // below step 0 still ran (c), counted here by the SDK identity reset.
+      expect(sdkIdentityResets).toBe(identityBefore + 1);
+      // The rejection was HANDLED, not discarded (b): it reached the same
+      // console.error channel as every other step. Without the promise
+      // handler this assertion fails AND Bun fails the test outright with the
+      // unhandled rejection, so red here means the rejection truly escaped.
+      expect(consoleError).toHaveBeenCalledWith('Failed to clear the device caches:', rejecting);
+    } finally {
+      deviceCachePurge = () => Promise.resolve();
+      consoleError.mockRestore();
+    }
   });
 });
 

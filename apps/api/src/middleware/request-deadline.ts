@@ -163,22 +163,59 @@ export function isExempt(c: Context): boolean {
 // Cloudflare's 100 s proxy timeout: a 524 would make the SDK retry and download
 // the object again. The SDK's 120 s completion timeout is longer still.
 // Begin, chunk, and delete answer fast and keep the general deadline.
+// The session-log attachment upload (P2.13, `PUT …/log/blobs/<sha256>`) gets the
+// same deadline for the same reason: it reads up to 50 MiB from the box, hashes
+// it and writes it to Storage, and a 503 makes the daemon send it again.
 const ATTACHMENT_COMPLETE = /^\/v1\/projects\/[^/]+\/attachments\/[^/]+\/complete$/;
+const LOG_BLOB_UPLOAD = /^\/v1\/projects\/[^/]+\/sessions\/[^/]+\/log\/blobs\/[0-9a-f]{64}$/;
 const ATTACHMENT_COMPLETE_DEADLINE_MS = 95_000;
 
 /** This request's wall-clock deadline, or null when it is exempt or the guard is off. */
 export function requestDeadlineMs(c: Context): number | null {
   if (!ENABLED || isExempt(c)) return null;
-  if (c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path))
+  if ((c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path)) || (c.req.method === 'PUT' && LOG_BLOB_UPLOAD.test(c.req.path)))
     return Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS);
   return DEADLINE_MS;
 }
 
+// ─── Deadline orphan classification (KRTX-2583) ────────────────────────────
+//
+// Hono's `timeout` races the handler against a timer; when the timer wins the
+// exception reaches onError, the 503 is served, and the handler CONTINUES
+// running with no owner. When that orphan later resumes — prod 2026-10-16
+// 22:43:05, request mvbjzd4t-a8d: GET /v1/runtime-assets/manifest spent
+// 31.9s waiting out a stalled DB pool — its first context touch
+// (`c.header('Cache-Control', 'no-cache')` in the manifest handler) makes
+// Hono recreate the already sent Response from its consumed body stream,
+// which Bun rejects with `TypeError: Body object should not be disturbed or
+// locked`. compose catches at every dispatch level and calls onError a second
+// time, which captured that TypeError to Sentry (Better Stack pattern
+// 235fd74b…) although the client already had the designed, retryable 503.
+//
+// The deadline therefore marks the context the moment it fires — the
+// exception factory runs inside the timer callback, before anything unwinds —
+// and `isDeadlineOrphan` classifies any LATER error from the same context as
+// an orphan: its response was already served, so the error can no longer
+// reach a client. http-errors.ts logs orphans at warn and skips
+// captureException. The deadline exception itself is not an orphan — it IS
+// the response.
+export const DEADLINE_SERVED_VAR = 'requestDeadlineServed' as const;
+
+export const markDeadlineServed = (c: Context): RequestDeadlineHTTPException => {
+  c.set(DEADLINE_SERVED_VAR, true);
+  return new RequestDeadlineHTTPException();
+};
+
+export const markAttachmentDeadlineServed = (c: Context): RequestDeadlineHTTPException => {
+  c.set(DEADLINE_SERVED_VAR, true);
+  return new RequestDeadlineHTTPException(Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS));
+};
+
 // Built once — each duration is constant for the process lifetime.
-const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPException());
+const bounded = timeout(Math.max(DEADLINE_MS, 1), markDeadlineServed);
 const completionBounded = timeout(
   Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS),
-  () => new RequestDeadlineHTTPException(Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS)),
+  markAttachmentDeadlineServed,
 );
 
 /**
@@ -208,6 +245,17 @@ export class RequestDeadlineHTTPException extends HTTPException {
 
 export function isRequestDeadlineHTTPException(err: unknown): err is RequestDeadlineHTTPException {
   return err instanceof RequestDeadlineHTTPException;
+}
+
+/**
+ * True when this request's response was already served by the deadline guard
+ * (the timer fired, the 503 went out) and `err` therefore belongs to an
+ * ORPHANED handler continuation — see the block comment above
+ * `DEADLINE_SERVED_VAR`. The deadline exception itself is not an orphan: it
+ * is the response.
+ */
+export function isDeadlineOrphan(c: Context, err: unknown): boolean {
+  return c.get(DEADLINE_SERVED_VAR) === true && !isRequestDeadlineHTTPException(err);
 }
 
 export async function requestDeadline(c: Context, next: Next): Promise<void | Response> {

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 833,
+  "count": 844,
   "routes": [
     {
       "method": "GET",
@@ -1044,7 +1044,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/billing/enterprise/contact"
+    },
+    {
+      "method": "POST",
       "path": "/v1/billing/plan"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/plan/preview"
     },
     {
       "method": "GET",
@@ -1281,6 +1289,10 @@
     {
       "method": "POST",
       "path": "/v1/connectors/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check"
     },
     {
       "method": "POST",
@@ -2591,6 +2603,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/archive"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
     },
@@ -2675,6 +2691,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/blobs/:sha256"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log/journal"
     },
@@ -2709,6 +2733,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/pin"
     },
     {
       "method": "PUT",
@@ -2773,6 +2801,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/recover"
     },
     {
       "method": "POST",
@@ -2872,6 +2904,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/trigger-runs"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers"
     },
     {
@@ -2889,6 +2925,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay"
     },
     {
       "method": "PATCH",

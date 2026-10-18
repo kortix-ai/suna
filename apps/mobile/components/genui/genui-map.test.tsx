@@ -44,6 +44,7 @@ mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/badge', () => ({ Badge: host('badge') }));
 mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/separator', () => ({ Separator: host('separator') }));
+mock.module('@/components/ui/progress', () => ({ Progress: host('progress') }));
 mock.module('@/components/ui/button', () => ({ Button: host('button') }));
 mock.module('@/components/ui/tabs', () => ({
   Tabs: host('tabs'),
@@ -69,6 +70,7 @@ mock.module('@/lib/icons', () => ({
   InfoIcon: 'info',
   WarningIcon: 'warning',
   CheckCircleIcon: 'check-circle',
+  CircleIcon: 'circle',
   CaretDownIcon: 'caret-down',
   CaretRightIcon: 'caret-right',
   MapPinIcon: 'map-pin',

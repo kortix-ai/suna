@@ -270,69 +270,40 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
  *   subscription.tier_key  → STORED. What Stripe sold. Wire-compatible.
  *   plan.* / tier.*        → RESOLVED. What the account behaves as.
  */
-describe('buildMinimalAccountState — trialing account reports the trial plan', () => {
-  const TRIAL_TIER = 'credits';
-
-  function trialing(overrides: Record<string, unknown> = {}) {
-    return creditAccount({
-      tier: 'free',
-      trialStatus: 'active',
-      trialTier: TRIAL_TIER,
-      trialEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-      ...overrides,
-    });
-  }
-
-  test('tier.* and plan.* describe the TRIAL plan while subscription.tier_key keeps the stored one', async () => {
-    account = trialing();
-
+describe('buildMinimalAccountState — the Enterprise feature layer', () => {
+  test('off by default; trial is always null', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200' });
     const state = await buildMinimalAccountState('acct-1');
-
-    // Stored — unchanged wire value.
-    expect(state.subscription.tier_key).toBe('free');
-    expect(state.subscription.tier_display_name).toBe('Free');
-
-    // Resolved — what the gates enforce.
-    expect(state.tier.name).toBe(TRIAL_TIER);
-    expect(state.tier.display_name).toBe('Credits');
-    expect(state.plan?.key).toBe(TRIAL_TIER);
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
     expect(state.plan?.family).toBe('credits');
-    expect(state.plan?.label).toBe('Credits');
-    expect(state.plan?.status).toBe('current');
-    expect(state.plan?.shape).toBe('credits');
-    expect(state.plan?.sublabel).toBeNull();
-    // A trial carries no self-serve monthly amount.
-    expect(state.plan?.monthly_usd).toBeNull();
   });
 
-  test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
-    account = trialing();
-
+  test('demo: Enterprise features on, the billing plan and its amount unchanged, plan limits', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200', demoEnterprise: true });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.can_purchase_credits).toBe(true);
-    expect(state.subscription.can_purchase_credits).toBe(true);
+    expect(state.enterprise).toEqual({ state: 'demo' });
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(200);
+    expect(state.subscription.monthly_usd).toBe(200);
+    expect(state.tier.name).toBe('credits');
+    expect(state.tier.entitlements?.sso).toBe(true);
   });
 
-  test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
-    account = trialing();
-
+  test('licensed: Enterprise limits at the gates, the billing plan unchanged', async () => {
+    account = creditAccount({ tier: 'free', enterpriseEntitled: true });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
+    expect(state.enterprise).toEqual({ state: 'licensed' });
+    expect(state.plan?.family).toBe('free');
+    expect(state.tier.name).toBe('enterprise');
   });
 
-  test('trial dates are ISO 8601, not the Postgres text form Safari cannot parse', async () => {
-    const ends = new Date(Date.now() + 9 * 86_400_000);
-    // What the driver returns for a timestamptz column: "2026-10-24 02:01:50.962+00".
-    const pgText = `${ends.toISOString().replace('T', ' ').replace('Z', '')}+00`;
-    account = trialing({ trialEndsAt: pgText, trialStartedAt: pgText });
-
+  test('a stale active trial on the row grants nothing', async () => {
+    account = creditAccount({ tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.trial?.ends_at).toBe(ends.toISOString());
-    expect(state.trial?.started_at).toBe(ends.toISOString());
-    expect(state.trial?.days_left).toBe(9);
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
+    expect(state.tier.entitlements?.sso).toBe(false);
   });
 });
 
@@ -373,5 +344,45 @@ describe('buildMinimalAccountState — reports a pending cancellation from payme
     const state = await buildMinimalAccountState('acct-1');
 
     expect(state.subscription.cancel_at_period_end).toBe(false);
+  });
+});
+
+describe('buildMinimalAccountState — plan changes', () => {
+  test('a scheduled cut: this period keeps its amount; scheduled_change names the new one and the renewal date', async () => {
+    account = creditAccount({
+      tier: 'credits',
+      planMonthlyUsd: '5000',
+      scheduledMonthlyUsd: '3000',
+      // Postgres hands back its own text form; the wire carries ISO 8601.
+      scheduledTierChangeDate: '2026-11-14 00:00:00+00',
+      stripeSubscriptionId: 'sub_live',
+      billingCycleAnchor: '2026-09-14T00:00:00.000Z',
+    });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.plan?.monthly_usd).toBe(5000);
+    expect(state.subscription.has_scheduled_change).toBe(true);
+    expect(state.subscription.scheduled_change).toEqual({
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 500_000, monthly_usd: 5000 },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 300_000, monthly_usd: 3000 },
+      effective_date: '2026-11-14T00:00:00.000Z',
+    });
+  });
+
+  test('current_period_end is the next anchor-aligned renewal for a live credits subscription', async () => {
+    const anchor = new Date(Date.UTC(2026, 0, 14));
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '100', stripeSubscriptionId: 'sub_live', billingCycleAnchor: anchor.toISOString() });
+    const state = await buildMinimalAccountState('acct-1');
+    const end = new Date((state.subscription.current_period_end ?? 0) * 1000);
+    expect(end.getUTCDate()).toBe(14);
+    expect(end.getTime()).toBeGreaterThan(Date.now());
+    expect(end.getTime() - Date.now()).toBeLessThanOrEqual(31 * 86_400_000);
+  });
+
+  test('no live subscription: no period end, no scheduled change', async () => {
+    account = creditAccount({ tier: 'free' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.subscription.current_period_end).toBeNull();
+    expect(state.subscription.scheduled_change).toBeNull();
   });
 });

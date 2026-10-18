@@ -6,6 +6,7 @@ import {
   toastDuration,
   toastErrorMessage,
   toastHaptic,
+  toastDescription,
   toastKeepsCloseButton,
 } from './toast-model';
 
@@ -62,5 +63,20 @@ describe('toastKeepsCloseButton', () => {
   test('a timed toast has none — the countdown and the swipe dismiss it', () => {
     expect(toastKeepsCloseButton(toastDuration('success'))).toBe(false);
     expect(toastKeepsCloseButton(toastDuration('error', 10_000))).toBe(false);
+  });
+});
+
+describe('toastDescription', () => {
+  const entity = { icon: (() => null) as never, label: 'Weekly revenue digest' };
+
+  test('an entity name is the second line, ahead of the description', () => {
+    expect(toastDescription({ entity, description: 'Busy right now' })).toBe('Weekly revenue digest\nBusy right now');
+  });
+
+  test('either alone is the whole second line; neither is none', () => {
+    expect(toastDescription({ entity })).toBe('Weekly revenue digest');
+    expect(toastDescription({ description: 'Try again.' })).toBe('Try again.');
+    expect(toastDescription({})).toBeUndefined();
+    expect(toastDescription()).toBeUndefined();
   });
 });

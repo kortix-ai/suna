@@ -5,7 +5,8 @@
  * bounded: one read-only snapshot, and Postgres projects each block to the few fields
  * `switchPreflight` (`@kortix/api-contract/session-log`, `capabilities.ts`) reads. Text, tool input
  * and output and attachment bytes never leave the database; a reasoning text leaves as `x` or `''`
- * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob row is read. The projection is cast to
+ * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob is read, only the blob
+ * sizes for the restore cap (`sessionLogRestoreFits`). The projection is cast to
  * `SessionLog`: only the fields `switchPreflight` reads are real.
  */
 import {
@@ -23,6 +24,7 @@ import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
+import { sessionLogRestoreFits } from './session-log-restore';
 
 type Thread = SessionLog['threads'][number];
 
@@ -105,7 +107,11 @@ export async function sessionLogSwitchPreflight(input: {
       } as unknown as SessionLog;
       return switchPreflight(slim, input.to, {
         llmGateway: projectLlmGatewayEnabled(input.projectMetadata),
-        restore: config.SESSION_LOG_RESTORE_ENABLED && resolveFeatureFlag(input.projectMetadata, 'session_log_restore'),
+        // Over the restore cap the new box gets the note alone (413): the history does not restore.
+        restore:
+          config.SESSION_LOG_RESTORE_ENABLED &&
+          resolveFeatureFlag(input.projectMetadata, 'session_log_restore') &&
+          (await sessionLogRestoreFits(tx, input.sessionId)),
         deletedMessages: deleted,
       });
     },

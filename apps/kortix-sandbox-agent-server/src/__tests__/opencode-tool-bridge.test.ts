@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { openCodeAction } from './helpers/opencode-permission'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -199,7 +200,8 @@ describe('the composed OpenCode config', () => {
     expect(config.agent.researcher.permission).toMatchObject({ '*': 'deny', read: 'allow', web_search: 'allow' })
     expect(config.agent.researcher.permission.bash).toBeUndefined()
     expect(config.agent.builder.permission).toMatchObject({ bash: 'deny', 'pty_*': 'deny' })
-    expect(Object.keys(config.agent.builder.permission).slice(-2)).toEqual(['bash', 'pty_*'])
+    // `capabilityToolRules` gave each pty tool `bash: allow`; removing `bash` takes those rules too.
+    for (const tool of ['bash', 'pty_spawn', 'pty_write']) expect(openCodeAction([config.agent.builder.permission], tool, 'x')).toBe('deny')
     expect(config.agent.open.permission).toBeUndefined()
   })
 })

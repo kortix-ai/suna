@@ -16,8 +16,8 @@
  *
  * The second arm opens a stopped session that has no computer. It used to be a
  * full-screen "This session is stopped" card over a conversation the user
- * could read; now the conversation shows, under a banner that says the same
- * thing and offers the same Restart.
+ * could read. Since #9682 the conversation shows with a live composer, whose
+ * notice says the next message wakes the computer. No Restart is needed.
  *
  * The third arm saves a turn with a tool call and opens it while the computer
  * never answers, then reloads with every read held. Saved history used to drop
@@ -344,7 +344,7 @@ test('34 — a reload with every read held shows the project, its session list a
   }
 });
 
-test('34 — a stopped session with no computer shows its conversation under a banner, not a card', async ({
+test('34 — a stopped session with no computer shows its conversation and a live composer, not a card', async ({
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
@@ -370,14 +370,17 @@ test('34 — a stopped session with no computer shows its conversation under a b
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
 
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
-    const banner = page.locator('[data-session-notice-banner]');
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText('This session is stopped');
-    await expect(banner.getByRole('button', { name: /restart/i })).toBeVisible();
-    // Nothing can be sent until the Restart: no composer promises otherwise.
-    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
-    await expect(page.getByRole('textbox', { name: 'Message input' })).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('stopped-banner.png') });
+    // The SDK's `SESSION_NOTICE.idle`: a sent message wakes the computer and
+    // is delivered, so the composer stays and no terminal banner replaces it.
+    await expect(
+      page.getByText("This session's computer is asleep. Your next message wakes it up and is delivered.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+    await expect(page.locator('[data-session-notice-banner]')).toHaveCount(0);
+    await expect(page.getByText('This session is stopped', { exact: false })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('stopped-composer.png') });
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await project?.dispose?.();
@@ -958,6 +961,128 @@ test('34 — an open reads the saved copy once: the session-open snapshot carrie
     await page.screenshot({ path: testInfo.outputPath('one-saved-history-read.png') });
   } finally {
     release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+/** `count` saved turns: a one-line prompt and a three-line reply each, a second apart. */
+const savedTurns =
+  (count: number): SavedMessages =>
+  (root) => {
+    const created = Date.now() - 600_000;
+    const id = (n: number) => `msg_${String(n).padStart(24, '0')}`;
+    return Array.from({ length: count }, (_, k) => {
+      const i = k + 1;
+      const at = created + i * 1000;
+      return [
+        {
+          info: { id: id(2 * i - 1), sessionID: root, role: 'user', time: { created: at }, agent: 'kortix' },
+          parts: [
+            {
+              id: `prt_older_prompt_${i}`,
+              sessionID: root,
+              messageID: id(2 * i - 1),
+              type: 'text',
+              text: `Question ${i}: what is special about the number ${i}?`,
+            },
+          ],
+        },
+        {
+          info: {
+            id: id(2 * i),
+            sessionID: root,
+            parentID: id(2 * i - 1),
+            role: 'assistant',
+            time: { created: at + 1, completed: at + 2 },
+            agent: 'kortix',
+            mode: 'build',
+            providerID: 'kortix',
+            modelID: 'openai/gpt-5.6-sol',
+            path: { cwd: '/workspace', root: '/workspace' },
+            cost: 0,
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+            finish: 'stop',
+          },
+          parts: [
+            {
+              id: `prt_older_reply_${i}`,
+              sessionID: root,
+              messageID: id(2 * i),
+              type: 'text',
+              text: `Answer ${i}.\n\n- ${i} is a whole number.\n- ${i} comes after ${i - 1}.\n- ${i} comes before ${i + 1}.`,
+            },
+          ],
+        },
+      ];
+    }).flat();
+  };
+
+test('34 — loading older messages leaves the turn the reader is reading where it is on screen', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60), 'mirror');
+  try {
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, opencode_session_id: root, failure: null },
+      });
+    });
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText('Answer 60.', { exact: true })).toBeVisible({ timeout: 120_000 });
+    // The newest page only: the first turn is older history, not drawn yet.
+    await expect(page.getByText('Question 1: what is special about the number 1?', { exact: true })).toHaveCount(0);
+
+    // The reader scrolls up into the history sentinel and stops. Their turn is pinned, and its
+    // on-screen top is read in every layout pass from the moment the pull starts. The observer is
+    // created once the loading row is up — after the page's own observers — so it reads what the
+    // browser paints. A read of 0 is the contract: nothing above the reader moves them.
+    const result = await page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>('[data-follow]')!;
+      const content = el.firstElementChild!;
+      const turns = () => el.querySelectorAll<HTMLElement>('[data-turn-id]');
+      const before = turns().length;
+      const rowUp = () => Array.from(el.querySelectorAll('[role="status"]')).some((n) => /older/i.test(n.textContent ?? ''));
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true }));
+      el.scrollTop = 150;
+      const top = el.getBoundingClientRect().top;
+      const anchor = Array.from(turns()).find((t) => t.getBoundingClientRect().bottom >= top)!;
+      const seen = () => anchor.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      const start = seen();
+      const shifts: number[] = [];
+      let ro: ResizeObserver | null = null;
+      let sawRow = false;
+      const mo = new MutationObserver(() => {
+        if (!rowUp()) return;
+        sawRow = true;
+        ro ??= new ResizeObserver(() => shifts.push(seen() - start));
+        ro.observe(content);
+      });
+      mo.observe(content, { childList: true, subtree: true });
+      const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const t0 = performance.now();
+      while (performance.now() - t0 < 30_000 && !(turns().length > before && sawRow && !rowUp())) await wait(50);
+      await wait(1000); // the new turns are contained 500ms after they render
+      mo.disconnect();
+      ro?.disconnect();
+      return {
+        turnsBefore: before,
+        turnsAfter: turns().length,
+        sawRow,
+        layoutPasses: shifts.length,
+        maxShiftPx: Math.max(0, ...shifts.map((s) => Math.abs(s))),
+        finalShiftPx: seen() - start,
+      };
+    });
+    await page.screenshot({ path: testInfo.outputPath('older-history.png') });
+    expect(result.sawRow, 'the pull ran and showed its loading row').toBe(true);
+    expect(result.turnsAfter, 'the older page rendered above the reader').toBeGreaterThan(result.turnsBefore);
+    expect(result.maxShiftPx, `the reader's turn never moved on screen (${JSON.stringify(result)})`).toBeLessThanOrEqual(1);
+    expect(Math.abs(result.finalShiftPx), 'and ends where it started').toBeLessThanOrEqual(1);
+  } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await project?.dispose?.();
   }

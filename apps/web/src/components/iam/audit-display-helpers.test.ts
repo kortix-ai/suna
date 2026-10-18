@@ -11,6 +11,7 @@ import {
 
 const UID = '8fb490fe-4765-480e-9e83-08b4b41a3f06';
 const UID2 = '47dd83e0-c532-4643-a0c1-112abab26d5e';
+const SHA256 = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
 const deUiTranslator = createTranslator({
   locale: 'de',
   messages: deMessages,
@@ -121,6 +122,18 @@ describe('audit HTTP route registry', () => {
     expect(
       describeAuditAction(`DELETE /v1/projects/${UID}/attachments/${UID2}`, testUiTranslator).title,
     ).toBe('Removed attachment upload');
+    expect(
+      describeAuditAction(
+        `GET /v1/projects/${UID}/sessions/${UID2}/log/blobs/${SHA256}`,
+        testUiTranslator,
+      ).title,
+    ).toBe('Looked up a session log attachment');
+    expect(
+      describeAuditAction(
+        `PUT /v1/projects/${UID}/sessions/${UID2}/log/blobs/${SHA256}`,
+        testUiTranslator,
+      ).title,
+    ).toBe('Stored a session log attachment');
     expect(
       describeAuditAction(
         `GET /v1/projects/${UID}/runtime/prompt-attachments/${UID2}`,
@@ -262,6 +275,18 @@ describe('describeAuditAction — HTTP routes', () => {
     expect(r.title).toBe('Set personal secret');
     expect(r.detail).toBe('TEST');
     expect(r.kind).toBe('update');
+  });
+
+  // KRTX-2400: these titles came back as English literals in every locale.
+  test('the four secret titles render in German', () => {
+    for (const [action, title] of [
+      [`PUT /v1/projects/${UID}/secrets/X`, 'Gemeinsames Secret gesetzt'],
+      [`PUT /v1/projects/${UID}/secrets/X/personal`, 'Persönliches Secret gesetzt'],
+      [`DELETE /v1/projects/${UID}/secrets/X`, 'Gemeinsames Secret entfernt'],
+      [`DELETE /v1/projects/${UID}/secrets/X/personal`, 'Persönliches Secret entfernt'],
+    ] as const) {
+      expect(describeAuditAction(action, deUiTranslator).title).toBe(title);
+    }
   });
 
   test('DELETE personal secret', () => {

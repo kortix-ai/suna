@@ -26,7 +26,6 @@ export interface PricingPlan {
   unit?: string;
   note: string;
   highlight?: boolean;
-  badge?: string;
   features: string[];
   icon?: any; // mobile-only: React component for the card icon
 }
@@ -39,7 +38,8 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Start with real sandbox credits.',
     icon: Sparkles,
     features: [
-      '200 credits / month, no card needed',
+      '500 credits / month, no card needed',
+      'Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference',
       '1 project',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
@@ -52,14 +52,13 @@ export const PRICING_PLANS: PricingPlan[] = [
     unit: '/ month and up',
     note: 'From $50 a month. Pick the credits your team needs.',
     highlight: true,
-    badge: 'Most popular',
     icon: Users,
     features: [
       'Everything in Free',
       'Unlimited members, one shared credit pool',
       'Unused credits roll over one month',
       'Top up any time. Top-ups never expire',
-      'Managed models and every feature',
+      'Up to 200 projects and higher model rate limits',
       'Support via email',
     ],
   },
