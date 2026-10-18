@@ -6,7 +6,8 @@
  * backs off and dead-letters after `maxAttempts`.
  *
  * A consumer registers for a type prefix (`telegram.`) and must be idempotent:
- * an event runs at least once.
+ * an event runs at least once. A throw retries the event; on `finalAttempt` a
+ * throw dead-letters it, so a consumer tells its user there instead.
  */
 import { enqueueJob, registerJobHandler } from '../shared/job-queue';
 
@@ -27,7 +28,7 @@ export interface IntegrationEvent {
   data: Record<string, unknown>;
 }
 
-export type EventConsumer = (event: IntegrationEvent) => Promise<void>;
+export type EventConsumer = (event: IntegrationEvent, run: { finalAttempt: boolean }) => Promise<void>;
 
 // replica-local: consumers are code, registered at import on every replica.
 const consumers = new Map<string, EventConsumer>();
@@ -53,15 +54,21 @@ export function emitIntegrationEvent(
   );
 }
 
-export async function dispatchIntegrationEvent(event: IntegrationEvent): Promise<void> {
+export async function dispatchIntegrationEvent(
+  event: IntegrationEvent,
+  run: { finalAttempt: boolean } = { finalAttempt: false },
+): Promise<void> {
   for (const [prefix, consumer] of consumers) {
-    if (event.type.startsWith(prefix)) return consumer(event);
+    if (event.type.startsWith(prefix)) return consumer(event, run);
   }
   throw new Error(`no consumer for integration event type ${event.type}`);
 }
 
 registerJobHandler(
   INTEGRATION_EVENTS_QUEUE,
-  (job) => dispatchIntegrationEvent(job.payload as unknown as IntegrationEvent),
+  (job) =>
+    dispatchIntegrationEvent(job.payload as unknown as IntegrationEvent, {
+      finalAttempt: job.attempts >= job.maxAttempts,
+    }),
   2 * 60_000,
 );

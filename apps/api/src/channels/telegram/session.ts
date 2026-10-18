@@ -85,7 +85,10 @@ export function telegramMessageEvent(
   };
 }
 
-export async function handleTelegramEvent(event: IntegrationEvent): Promise<void> {
+export async function handleTelegramEvent(
+  event: IntegrationEvent,
+  run: { finalAttempt: boolean } = { finalAttempt: false },
+): Promise<void> {
   const message = event.data.message as unknown as TelegramMessage;
   const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
   if (!project || !resolveFeatureFlag(project.metadata, 'connectors_v2')) return;
@@ -138,10 +141,16 @@ export async function handleTelegramEvent(event: IntegrationEvent): Promise<void
   }
 
   // Two messages racing into a new chat: one creates, the other follows up.
-  const claimKey = `telegram:threadcreate:${install.botId}:${thread.threadId}`;
+  const claimKey = `telegram:threadcreate:${event.projectId}:${install.botId}:${thread.threadId}`;
   if (!(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(thread);
-    if (!sessionId) throw new Error('telegram thread create in flight');
+    if (!sessionId) {
+      // The first message's session is still starting. Retry with backoff; on
+      // the last attempt say so, so the message is never dropped in silence.
+      if (!run.finalAttempt) throw new Error('telegram thread create in flight');
+      await reply('Kortix is still starting a session for this chat. Send your message again in a minute.');
+      return;
+    }
     await lifecycle.deliverThroughQueue({
       source: 'telegram',
       idempotencyKey: `telegram:${install.botId}:${event.id}`,

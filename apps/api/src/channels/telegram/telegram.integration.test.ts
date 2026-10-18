@@ -97,7 +97,7 @@ afterAll(async () => {
   resetTelegramLifecycleForTest();
   fake.stop(true);
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
-  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${BOT_ID}:%`));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await deleteTelegramInstall(PROJECT);
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
@@ -158,7 +158,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
 
   test('a create the lifecycle requeued keeps the chat claimed; a final failure says why and frees it', async () => {
     const claim = (chat: number) =>
-      db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `telegram:threadcreate:${BOT_ID}:${chat}`));
+      db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:${BOT_ID}:${chat}`));
 
     createResult = { status: 'failed', retryable: true, requeued: true, error: { status: 503, body: { error: 'clone failed' } } };
     await handleTelegramEvent(update('first try', ALLOWED, 901));
@@ -172,6 +172,18 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(String(calls.at(-1)!.body.text)).toContain('out of credits');
     expect(await claim(902)).toHaveLength(0);
   });
+
+  test('a chat whose first session is still starting: retry, and on the last attempt say so', async () => {
+    await db.insert(chatEventDedup).values({
+      eventId: `telegram:threadcreate:${PROJECT}:${BOT_ID}:903`,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const event = update('are you there?', ALLOWED, 903);
+    await handleTelegramEvent(event, { finalAttempt: true });
+    expect(created).toHaveLength(0);
+    expect(calls.map((c) => c.method)).toEqual(['sendChatAction', 'sendMessage']);
+    expect(String(calls[1]!.body.text)).toContain('Send your message again');
+  }, 20_000);
 
   test('with connectors_v2 off the consumer does nothing', async () => {
     await setFlag(false);
