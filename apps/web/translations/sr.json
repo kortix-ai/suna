@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
+        },
+        "connectors_v2": {
+          "name": "Konektori v2",
+          "description": "Poveži Telegram bota kao kanal i razgovaraj tamo sa svojim agentima. Dolazni događaji prolaze kroz jedno trajno sanduče, a novi nalozi konektora se podrazumevano više ne dele sa celim projektom."
         }
       }
     },

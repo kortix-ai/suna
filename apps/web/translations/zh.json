@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
+        },
+        "connectors_v2": {
+          "name": "连接器 v2",
+          "description": "将 Telegram 机器人连接为渠道，并在其中与你的智能体聊天。入站事件经过一个持久的收件箱，新的连接器账户默认不再与整个项目共享。"
         }
       }
     },

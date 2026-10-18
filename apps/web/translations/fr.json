@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
+        },
+        "connectors_v2": {
+          "name": "Connecteurs v2",
+          "description": "Connectez un bot Telegram comme canal et discutez-y avec vos agents. Les événements entrants passent par une boîte de réception durable, et les nouveaux comptes de connecteurs ne sont plus partagés avec tout le projet par défaut."
         }
       }
     },

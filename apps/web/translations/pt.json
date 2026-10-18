@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
+        },
+        "connectors_v2": {
+          "name": "Conectores v2",
+          "description": "Conecte um bot do Telegram como canal e converse com seus agentes por lá. Os eventos recebidos passam por uma caixa de entrada durável, e as novas contas de conectores deixam de ser compartilhadas com todo o projeto por padrão."
         }
       }
     },

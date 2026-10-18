@@ -1258,6 +1258,10 @@
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
+        },
+        "connectors_v2": {
+          "name": "Connettori v2",
+          "description": "Collega un bot Telegram come canale e chatta lì con i tuoi agenti. Gli eventi in arrivo passano da una casella persistente e i nuovi account dei connettori non sono più condivisi con l'intero progetto per impostazione predefinita."
         }
       }
     },

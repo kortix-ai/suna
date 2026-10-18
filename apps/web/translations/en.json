@@ -1080,6 +1080,10 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "connectors_v2": {
+          "name": "Connectors v2",
+          "description": "Connect a Telegram bot as a channel and chat with your agents there. Inbound events go through one durable inbox, and new connector accounts are no longer shared with the whole project by default."
         }
       }
     },

@@ -39,6 +39,7 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agentmail_email: reconcileProjectChannels,
+  connectors_v2: reconcileProjectChannels,
   // Off: drop every provider instance so no delivery outlives the switch.
   // On: existing triggers go live without a re-save.
   event_triggers: async ({ projectId, accountId, metadata }) => {

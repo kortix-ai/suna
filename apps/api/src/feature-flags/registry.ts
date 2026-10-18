@@ -454,6 +454,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
       '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
+  {
+    key: 'connectors_v2',
+    name: 'Connectors v2',
+    description:
+      'Telegram as a channel connector: connect a bot with its token, chat with your agents in Telegram, and let them reply through the kortix_telegram connector. Inbound events go through one durable inbox. New connector accounts are no longer created for the whole project by default.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: /projects/:id/channels/telegram/* answer 403 `feature_disabled` when off ' +
+      '(projects/routes/channel-telegram.ts). BEHAVIORAL: the Telegram webhook keeps its legacy ' +
+      'one-session-per-message path when off (channels/telegram-webhook.ts); the kortix_telegram ' +
+      'connector is materialized only while on (connectors/channel-materialize.ts); sync seeds no ' +
+      'empty project-owned account while on (connectors/sync.ts).',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
