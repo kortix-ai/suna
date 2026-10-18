@@ -1,41 +1,45 @@
 /**
  * The authoritative subprocessor list that the Data Processing Addendum
  * (section 7.2, Annex III) points to. `/legal/subprocessors` renders it, and the
- * API emails it (`billing/services/subprocessor-notices.ts`).
+ * API emails it (`apps/api/src/billing/services/subprocessor-notices.ts`).
+ * Procedure: the `compliance` skill.
  *
  * A new subprocessor needs 30 days' notice before it processes customer
- * personal data (DPA section 7.3). To add one:
+ * personal data (DPA section 7.3). Add its row with `addedOn` set to the day
+ * the change merges, and move `SUBPROCESSORS_UPDATED` to the same day. Prod
+ * emails the notice once the row is live there (the release has 7 days), and
+ * the row takes effect `addedOn` + 37 days: every customer gets 30 to 37 days.
+ * Send the subprocessor no customer data before that date.
  *
- * 1. Add its row with `noticeDate` set to the day the change reaches prod.
- * 2. Move `SUBPROCESSORS_UPDATED` to that day.
- * 3. From `noticeDate`, prod emails the owners and admins of every paid account,
- *    once. The page shows "From <noticeDate + 30 days>" on the row.
- * 4. Send it no customer data before that date.
- *
- * Changing an existing row (purpose, location) needs no `noticeDate`.
+ * Changing an existing row (purpose, location) needs no `addedOn`.
  */
 
 export type Subprocessor = {
   name: string;
   purpose: string;
   location: string;
-  /** `YYYY-MM-DD`: the day the 30-day notice starts. Set on a newly added row. */
-  noticeDate?: string;
+  /** `YYYY-MM-DD`: the day the row merged. Set on a newly added row only. */
+  addedOn?: string;
 };
 
+/** The notice the DPA promises (section 7.3). */
 export const SUBPROCESSOR_NOTICE_DAYS = 30;
+/** The time a merged row has to reach prod before its notice gives fewer than 30 days. */
+export const SUBPROCESSOR_RELEASE_DAYS = 7;
 
-export const SUBPROCESSORS_UPDATED = "2026-10-19";
+export const SUBPROCESSORS_UPDATED = "2026-10-18";
 
 /** The first day `row` may process customer personal data (`YYYY-MM-DD`), or null for an established row. */
 export function subprocessorEffectiveDate(row: Subprocessor): string | null {
-  if (!row.noticeDate) return null;
-  const date = new Date(`${row.noticeDate}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + SUBPROCESSOR_NOTICE_DAYS);
+  if (!row.addedOn) return null;
+  const date = new Date(`${row.addedOn}T00:00:00Z`);
+  date.setUTCDate(
+    date.getUTCDate() + SUBPROCESSOR_NOTICE_DAYS + SUBPROCESSOR_RELEASE_DAYS,
+  );
   return date.toISOString().slice(0, 10);
 }
 
-/** `2026-11-18` → `November 18, 2026`. */
+/** `2026-11-24` → `November 24, 2026`. */
 export function formatSubprocessorDate(day: string): string {
   return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
     year: "numeric",
@@ -104,11 +108,53 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
     location: "United States",
   },
   {
-    name: "Deep Infra, Inc.; Together Computer Inc.; Baseten Labs, Inc.; Parasail; Modal Labs, Inc.; Groq, Inc.; Cerebras Systems Inc.",
+    name: "Deep Infra, Inc.",
     purpose:
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
-    noticeDate: "2026-10-19",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Together Computer Inc.",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Baseten Labs, Inc.",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Parasail",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Modal Labs, Inc.",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Groq, Inc.",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
+  },
+  {
+    name: "Cerebras Systems Inc.",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
+    location: "United States",
+    addedOn: "2026-10-18",
   },
   {
     name: "GitHub, Inc.",

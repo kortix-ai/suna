@@ -1,13 +1,14 @@
 /**
  * Integration test (real local DB): a new subprocessor is announced to every
- * paid account 30 days before it takes effect (DPA section 7.3), once.
+ * paid account 30 days before it takes effect (DPA section 7.3), once, and
+ * leaves evidence: an audit event per account and a report to privacy@.
  * Captured: the email transport. Everything else is real: credit_accounts,
- * account members, auth users and chat_event_dedup.
+ * account members, auth users, audit_events and chat_event_dedup.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accountMembers, creditAccounts } from '@kortix/db';
+import { accountMembers, auditEvents, creditAccounts } from '@kortix/db';
 import type { Subprocessor } from '@kortix/shared/subprocessors';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
 import { openSubprocessorNotices, runSubprocessorNoticeSweep } from '../billing/services/subprocessor-notices';
 import { config } from '../config';
@@ -24,12 +25,14 @@ const email = (id: string, role: string) => `subproc-${role}-${id.slice(0, 8)}@e
 
 const ROWS: Subprocessor[] = [
   { name: 'Established Hosting, Inc.', purpose: 'Hosting', location: 'United Kingdom' },
-  { name: 'Example Inference, Inc.', purpose: 'Inference for Kortix-managed AI models', location: 'United States', noticeDate: '2026-10-19' },
+  { name: 'Example Inference, Inc.', purpose: 'Inference for Kortix-managed AI models', location: 'United States', addedOn: '2026-10-18' },
 ];
 
 let paid: SeededProject;
 let free: SeededProject;
 let sent: EmailMessage[] = [];
+const customerEmails = () => sent.filter((m) => !m.subject.startsWith('[Kortix compliance]'));
+const privacyReports = () => sent.filter((m) => m.subject.startsWith('[Kortix compliance]'));
 const savedEnv = config.INTERNAL_KORTIX_ENV;
 
 beforeAll(async () => {
@@ -71,38 +74,64 @@ afterAll(async () => {
 });
 
 describe('open subprocessor notices', () => {
-  test('a notice is open from its notice date until the day before it takes effect, 30 days later', () => {
-    expect(openSubprocessorNotices(ROWS, '2026-10-18')).toEqual([]);
-    const [onDay] = openSubprocessorNotices(ROWS, '2026-10-19');
-    expect(onDay).toEqual({ noticeDate: '2026-10-19', effectiveDate: '2026-11-18', rows: [ROWS[1]!] });
-    expect(openSubprocessorNotices(ROWS, '2026-11-17')).toHaveLength(1);
-    expect(openSubprocessorNotices(ROWS, '2026-11-18')).toEqual([]);
+  test('a notice is open from the day its row is added until the day before it takes effect, 37 days later', () => {
+    expect(openSubprocessorNotices(ROWS, '2026-10-17')).toEqual([]);
+    const [onDay] = openSubprocessorNotices(ROWS, '2026-10-18');
+    expect(onDay).toEqual({ addedOn: '2026-10-18', effectiveDate: '2026-11-24', rows: [ROWS[1]!] });
+    expect(openSubprocessorNotices(ROWS, '2026-11-23')).toHaveLength(1);
+    expect(openSubprocessorNotices(ROWS, '2026-11-24')).toEqual([]);
   });
 });
 
 describe('the subprocessor notice sweep', () => {
-  test('emails the owner and the admin of a paid account (not the member, not a free account), once', async () => {
+  test('emails the owner and the admin of a paid account (not the member, not a free account), once, with evidence', async () => {
     const now = new Date('2026-10-20T09:00:00Z');
-    await runSubprocessorNoticeSweep(now, ROWS);
+    expect(await runSubprocessorNoticeSweep(now, ROWS)).toEqual({ accountsNotified: 1 });
 
-    const to = sent.flatMap((message) => message.to).sort();
+    const to = customerEmails().flatMap((message) => message.to).sort();
     expect(to).toEqual([email(ADMIN, 'admin'), email(OWNER, 'owner')].sort());
-    const [message] = sent;
-    expect(message!.subject).toBe('Kortix subprocessor update, effective November 18, 2026');
+    const [message] = customerEmails();
+    expect(message!.subject).toBe('Kortix subprocessor update, effective November 24, 2026');
     expect(message!.category).toBe('legal-subprocessor-notice');
     expect(message!.replyTo).toBe('privacy@kortix.com');
     expect(message!.text).toContain('Example Inference, Inc.: Inference for Kortix-managed AI models (United States)');
     expect(message!.text).toContain('/legal/subprocessors');
     expect(message!.text).not.toContain('Established Hosting');
 
+    const [audit] = await db
+      .select({ resourceId: auditEvents.resourceId, outputSummary: auditEvents.outputSummary })
+      .from(auditEvents)
+      .where(and(eq(auditEvents.accountId, paid.account_id), eq(auditEvents.action, 'legal.subprocessor_notice.sent')));
+    expect(audit!.resourceId).toBe('2026-10-18');
+    expect(audit!.outputSummary).toMatchObject({ recipients: 2, effective_date: '2026-11-24', subprocessors: ['Example Inference, Inc.'] });
+    const freeAudits = await db
+      .select({ id: auditEvents.eventId })
+      .from(auditEvents)
+      .where(and(eq(auditEvents.accountId, free.account_id), eq(auditEvents.action, 'legal.subprocessor_notice.sent')));
+    expect(freeAudits).toEqual([]);
+
+    const [report] = privacyReports();
+    expect(report!.to).toEqual(['privacy@kortix.com']);
+    expect(report!.subject).toBe('[Kortix compliance] Subprocessor notice sent to 1 accounts');
+    expect(report!.text).toContain('takes effect November 24, 2026, 34 days from now');
+
     sent = [];
-    await runSubprocessorNoticeSweep(new Date('2026-10-20T10:00:00Z'), ROWS);
+    expect(await runSubprocessorNoticeSweep(new Date('2026-10-20T10:00:00Z'), ROWS)).toEqual({ accountsNotified: 0 });
     expect(sent).toEqual([]);
+  });
+
+  test('a notice that starts late tells privacy@ how many days it gave', async () => {
+    // Added 2026-10-01, effective 2026-11-07, first seen on prod 2026-10-20: a 10-day-late release.
+    const rows: Subprocessor[] = [{ ...ROWS[1]!, addedOn: '2026-10-01' }];
+    await runSubprocessorNoticeSweep(new Date('2026-10-20T09:00:00Z'), rows);
+    const [report] = privacyReports();
+    expect(report!.subject).toBe('[Kortix compliance] Subprocessor notice gave only 17 days');
+    expect(report!.text).toContain('Send no customer data to these subprocessors until 30 days from now');
   });
 
   test('outside prod the sweep emails nobody', async () => {
     config.INTERNAL_KORTIX_ENV = 'dev';
-    const rows: Subprocessor[] = [{ ...ROWS[1]!, noticeDate: '2026-10-21' }];
+    const rows: Subprocessor[] = [{ ...ROWS[1]!, addedOn: '2026-10-21' }];
     expect(await runSubprocessorNoticeSweep(new Date('2026-10-21T09:00:00Z'), rows)).toEqual({ accountsNotified: 0 });
     expect(sent).toEqual([]);
   });
