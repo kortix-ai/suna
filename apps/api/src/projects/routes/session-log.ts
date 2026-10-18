@@ -260,8 +260,11 @@ export function registerSessionLogRoutes(): void {
       if (outcome.status === 409) return c.json(outcome.body, 409);
       if (outcome.status === 422) return c.json(outcome.body, 422);
       if (outcome.status === 429) {
-        c.header('Retry-After', '2');
-        return c.json(outcome.body, 429);
+        // Header inline, never `c.header(...)` first: the request deadline may
+        // have answered this request already, and Context#header on the
+        // finalized context re-wraps its consumed body stream (KRTX-2737;
+        // mechanism and precedent: the audit-ingest contended 503, KRTX-2600).
+        return c.json(outcome.body, 429, { 'Retry-After': '2' });
       }
       return c.json(outcome.body, 404);
     },
