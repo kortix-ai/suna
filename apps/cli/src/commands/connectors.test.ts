@@ -1,6 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorSecretBindingInput, oauth2AuthorizeSteps, parsePolicyConditions } from './connectors.ts';
+import {
+  connectorRulesLines,
+  connectorSecretBindingInput,
+  oauth2AuthorizeSteps,
+  parsePolicyConditions,
+} from './connectors.ts';
+
+describe('connectorRulesLines', () => {
+  test('policy ls lists a rule set seconds earlier (KRTX-2527)', () => {
+    expect(connectorRulesLines([{ slug: 'dogfood-mcp', count: 1 }])).toHaveLength(2);
+    const lines = connectorRulesLines([{ slug: 'dogfood-mcp', count: 1 }]);
+    expect(lines[1]).toContain('dogfood-mcp');
+    expect(lines[1]).toContain('1 rule');
+    expect(lines[1]).toContain('policy dogfood-mcp ls');
+  });
+
+  test('no connector rules render nothing — the project-rules branch keeps its own empty state', () => {
+    expect(connectorRulesLines([])).toEqual([]);
+  });
+});
 
 describe('parsePolicyConditions', () => {
   test('preserves operators inside equality and negated matcher values', () => {

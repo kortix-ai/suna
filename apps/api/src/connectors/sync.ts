@@ -19,7 +19,7 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep.
  */
-import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
@@ -529,7 +529,7 @@ async function syncProjectConnectorsFenced(
   // Every existing one stays materialized, which also keeps its native catalog
   // current after a code change.
   const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
-  const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+  const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs.specs];
 
   // A connector binding is server-side by definition. Convert legacy runtime
   // rows before catalog discovery or a concurrent sandbox start can read them.
@@ -542,7 +542,7 @@ async function syncProjectConnectorsFenced(
 
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
-  if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
+  if (!manifest && channelSpecs.length === 0 && computerSpecs.specs.length === 0) {
     return {
       synced: 0,
       errors: [{ slug: '(manifest)', error: 'kortix.yaml not found or unreadable' }],
@@ -671,7 +671,12 @@ async function syncProjectConnectorsFenced(
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      synced++;
+      // The summary must agree with `connectors ls` (KRTX-2669): the admin
+      // list hides a machineless computer connector (no tunnel-bound
+      // connection row — `hideMachinelessComputers`, KRTX-1492), so
+      // re-upserting one for catalog freshness does not count toward the
+      // summary. Paired machines still count.
+      if (!computerSpecs.hiddenSlugs.has(spec.slug)) synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
@@ -1113,16 +1118,32 @@ function storedSensitive(config: unknown): boolean {
   return (config as { sensitive?: unknown } | null)?.sensitive === true;
 }
 
+/**
+ * Computer connectors are created by pairing a machine, never by kortix.yaml:
+ * every existing one (undeclared) stays materialized, which also keeps its
+ * native catalog current after a code change.
+ *
+ * `hiddenSlugs` carries the same predicate the admin list applies
+ * (`hideMachinelessComputers`, KRTX-1492): which of those connectors have no
+ * machine — no `connector_connections` row bound to a tunnel. They are
+ * upserted like any other spec but stay out of the sync summary, so the
+ * summary counts exactly what `connectors ls` lists (KRTX-2669).
+ */
 async function existingComputerConnectorSpecs(
   projectId: string,
   declared: ConnectorSpec[],
-): Promise<ConnectorSpec[]> {
+): Promise<{ specs: ConnectorSpec[]; hiddenSlugs: Set<string> }> {
   const declaredSlugs = new Set(declared.map((spec) => spec.slug));
   const rows = await db
-    .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
+    .select({
+      connectorId: connectors.connectorId,
+      slug: connectors.slug,
+      name: connectors.name,
+      config: connectors.config,
+    })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
-  return rows
+  const specs = rows
     .filter((row) => !declaredSlugs.has(row.slug))
     .map((row) =>
       computerConnectorSpec({
@@ -1131,6 +1152,27 @@ async function existingComputerConnectorSpecs(
         sensitive: storedSensitive(row.config),
       }),
     );
+  if (specs.length === 0) return { specs, hiddenSlugs: new Set<string>() };
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(
+              connectorConnections.connectorId,
+              rows.map((row) => row.connectorId),
+            ),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  const hiddenSlugs = new Set(
+    rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug),
+  );
+  return { specs, hiddenSlugs };
 }
 
 /**

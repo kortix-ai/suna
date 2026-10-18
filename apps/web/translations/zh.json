@@ -20759,6 +20759,7 @@
     "notFoundDescription": "它已被移除，或链接有误。",
     "backToConnectors": "返回连接器",
     "installed": "{name} 已安装",
+    "yourConnectors": "你的连接器",
     "installedSyncFailed": "{name} 已安装。Kortix 无法加载其工具：{error}",
     "newSession": "新建会话",
     "sections": "{name} 的分区",

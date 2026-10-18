@@ -113,6 +113,8 @@ interface PolicyRule {
 interface ProjectPoliciesView {
   policies: PolicyRule[];
   defaultMode: 'risk' | 'allow_all';
+  /** Per-connector tool-call rule counts (KRTX-2527). */
+  connectorRules?: { slug: string; count: number }[];
 }
 
 /** One record in the direct-connector catalogue (integrations.sh). */
@@ -1346,7 +1348,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stdout.write(
             `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
           );
-          if (resp.policies.length === 0) {
+          if (resp.policies.length === 0 && !(resp.connectorRules?.length)) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
@@ -1354,6 +1356,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
             process.stdout.write(
               `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
             );
+          }
+          for (const line of connectorRulesLines(resp.connectorRules ?? [])) {
+            process.stdout.write(line);
           }
           process.stdout.write('\n');
           return 0;
@@ -2087,6 +2092,24 @@ export function parsePolicyConditions(
 function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
+}
+
+/**
+ * `policy ls` renders per-connector rule counts below the project rules
+ * (KRTX-2527): a rule `policy <slug> set` wrote seconds earlier must be
+ * visible in the parent view, not only in `policy <slug> ls`.
+ */
+export function connectorRulesLines(rules: ReadonlyArray<{ slug: string; count: number }>): string[] {
+  if (rules.length === 0) return [];
+  const lines = [
+    `\n  ${C.dim}connector rules:${C.reset}\n`,
+  ];
+  for (const rule of rules) {
+    lines.push(
+      `  ${C.cyan}${rule.slug}${C.reset} ${C.dim}·${C.reset} ${rule.count} rule${rule.count === 1 ? '' : 's'}${C.dim} — policy ${rule.slug} ls${C.reset}\n`,
+    );
+  }
+  return lines;
 }
 
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */

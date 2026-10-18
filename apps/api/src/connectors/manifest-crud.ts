@@ -670,6 +670,9 @@ export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /** Per-connector tool-call rule counts, from the same manifest (KRTX-2527):
+   *  `policy <slug> set` must be visible to the parent `policy ls` too. */
+  connectorRules: Array<{ slug: string; count: number }>;
 }
 
 /** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
@@ -679,12 +682,17 @@ export async function getProjectPoliciesFromManifest(
   const row = await loadRow(projectId);
   if (!row) return null;
   const manifest = await loadManifestForEdit(row).catch(() => null);
-  if (!manifest) return { policies: [], defaultMode: 'allow_all', errors: [] };
+  if (!manifest)
+    return { policies: [], defaultMode: 'allow_all', errors: [], connectorRules: [] };
   const parsed = extractProjectPolicies(manifest);
+  const connectorSpecs = extractConnectors(manifest).specs;
   return {
     policies: parsed.policies,
     defaultMode: parsed.settings.defaultMode,
     errors: parsed.errors,
+    connectorRules: connectorSpecs
+      .filter((spec) => spec.policies.length > 0)
+      .map((spec) => ({ slug: spec.slug, count: spec.policies.length })),
   };
 }
 
