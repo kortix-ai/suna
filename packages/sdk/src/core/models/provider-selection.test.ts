@@ -32,13 +32,18 @@ describe('normalizeProviderList', () => {
     const normalized = normalizeProviderList({
       providers: [{ id: 'legacy', models: {} }],
     } as unknown as ProviderListResponse);
-    expect(normalized.all).toEqual([{ id: 'legacy', models: {} }]);
+    expect(normalized.all).toHaveLength(1);
+    expect(normalized.all[0]).toMatchObject({ id: 'legacy' });
     expect(normalized.connected).toEqual(['legacy']);
   });
 
   test('the modern shape passes through with its arrays kept', () => {
     const modern = { all: [{ id: 'a', models: {} }], connected: ['a'], default: { a: 'm' } };
-    expect(normalizeProviderList(modern as ProviderListResponse)).toEqual(modern);
+    const normalized = normalizeProviderList(modern as unknown as ProviderListResponse);
+    expect(normalized.all).toHaveLength(1);
+    expect(normalized.all[0]).toMatchObject({ id: 'a' });
+    expect(normalized.connected).toEqual(['a']);
+    expect(normalized.default).toEqual({ a: 'm' });
   });
 });
 

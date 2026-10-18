@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { ProviderListResponse } from '../runtime/runtime-types';
 import { flattenModels } from './model-flatten';
 
 /** A gateway `/model-picker` list: the synthetic `kortix` provider whose models
@@ -9,7 +10,7 @@ function gatewayList(models: Record<string, unknown>, name = 'Kortix') {
     all: [{ id: 'kortix', name, source: 'gateway', models }],
     connected: ['kortix'],
     default: {},
-  };
+  } as unknown as ProviderListResponse;
 }
 
 describe('flattenModels · the gateway loose-shape projection', () => {

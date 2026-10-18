@@ -3,6 +3,8 @@ import type {
   SessionTurn,
   SessionTurnEnded,
 } from '../rest/projects-client/sessions';
+import { endedByRuntime } from './working-runtime';
+import { instant } from './working-time';
 
 /**
  * WHICH observation decided the state.
@@ -360,7 +362,39 @@ export function countLiveInboxPrompts(prompts: readonly SessionPrompt[]): number
   return live;
 }
 
-import { decideWorking } from './working-project';
+/** Freshness and local-action floors: a read issued before acknowledgement cannot answer for that action. */
+function workingEvidence({
+  optimistic,
+  abort,
+  inbox,
+  server,
+  stream,
+  activity,
+  nowMs,
+}: WorkingInputs) {
+  const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
+  const abortLive = !!abort && nowMs - abort.atMs < OPTIMISTIC_ABORT_MAX_MS;
+  return {
+    receiptLive,
+    receiptTurnId: optimistic
+      ? optimistic.turnId === undefined
+        ? optimistic.messageId
+        : optimistic.turnId
+      : null,
+    serverFloor: receiptLive
+      ? (optimistic?.acceptedAtMs ?? Number.POSITIVE_INFINITY)
+      : Number.NEGATIVE_INFINITY,
+    streamFloor: receiptLive ? optimistic?.atMs : Number.NEGATIVE_INFINITY,
+    abortLive,
+    abortFloor: abortLive
+      ? (abort?.settledAtMs ?? Number.POSITIVE_INFINITY)
+      : Number.NEGATIVE_INFINITY,
+    serverFresh: !!server && nowMs - server.atMs <= SERVER_OBSERVATION_MAX_MS,
+    streamFresh: !!stream && nowMs - stream.atMs <= STREAM_OBSERVATION_MAX_MS,
+    inboxFresh: !!inbox && nowMs - inbox.atMs <= INBOX_OBSERVATION_MAX_MS,
+    activityFresh: !!activity && nowMs - activity.atMs <= STREAM_OBSERVATION_MAX_MS,
+  };
+}
 
 /**
  * The one place a session's working state is decided.
@@ -399,8 +433,208 @@ import { decideWorking } from './working-project';
  *    for that long is not evidence, and standing on one is the latch. Callers
  *    must re-evaluate at those instants — see `workingExpiryAtMs`.
  */
+
+function runtimeActivity(
+  inputs: WorkingInputs,
+  evidence: ReturnType<typeof workingEvidence>,
+  idleFrame: WorkingInputs['stream'],
+  serverOpenTurnToken: string | null,
+): WorkingProjection | null {
+  const { activity, server } = inputs;
+  const { serverFresh, abortFloor, activityFresh } = evidence;
+  // Runtime content outranks observer frames only while fresh and after any wire idle.
+  const activityAfterIdle = activityFresh && (!idleFrame || activity!.atMs > idleFrame.atMs);
+  if (activityAfterIdle && activity!.atMs >= abortFloor) {
+    return {
+      state: 'working',
+      source: 'stream',
+      turnId: serverFresh
+        ? (server!.turns.find(
+            (turn) => turn.state === 'active' && !endedByRuntime(turn, idleFrame, server),
+          )?.message_id ?? null)
+        : null,
+      since: activity!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+
+  return null;
+}
+
+function openAuthority(
+  inputs: WorkingInputs,
+  evidence: ReturnType<typeof workingEvidence>,
+  idleFrame: WorkingInputs['stream'],
+  serverOpenTurnToken: string | null,
+): { result: WorkingProjection | null; openTurn: SessionTurn | undefined } {
+  const { server, stream } = inputs;
+  const { serverFresh, abortFloor } = evidence;
+  // Keep all ledger rows: a spent first row must not hide a live later one.
+  const openTurns = serverFresh
+    ? server!.turns.filter((t) => !endedByRuntime(t, idleFrame, server))
+    : [];
+  const openTurn = openTurns.find((turn) => turn.state === 'active') ?? openTurns[0];
+
+  const streamContradicts = !!stream && !(stream.type === 'idle' && stream.origin === 'local');
+  if (
+    openTurn &&
+    server!.atMs >= abortFloor &&
+    (!streamContradicts || server!.atMs >= stream!.atMs)
+  ) {
+    return {
+      result: {
+        ...(openTurn.state === 'delivering' ? { pendingDelivery: true as const } : {}),
+        state: 'working',
+        source: 'server',
+        turnId: openTurn.message_id,
+        since: instant(openTurn.started_at) ?? server!.atMs,
+        serverOpenTurnToken,
+      },
+      openTurn,
+    };
+  }
+
+  return { result: null, openTurn };
+}
+
+function inboxAuthority(
+  inputs: WorkingInputs,
+  evidence: ReturnType<typeof workingEvidence>,
+  serverOpenTurnToken: string | null,
+): WorkingProjection | null {
+  const { inbox, server, stream } = inputs;
+  const {
+    inboxFresh,
+    abortFloor,
+    streamFresh,
+    serverFresh,
+    receiptLive,
+    receiptTurnId,
+    abortLive,
+  } = evidence;
+  if (inboxFresh && inbox!.pending > 0 && inbox!.atMs >= abortFloor) {
+    const runtimeIsResponding =
+      streamFresh &&
+      stream!.type !== 'idle' &&
+      (!serverFresh || stream!.atMs > server!.atMs) &&
+      stream!.atMs >= abortFloor;
+    return {
+      ...(!runtimeIsResponding ? { pendingDelivery: true as const } : {}),
+      state: 'working',
+      source: 'server',
+      turnId: receiptLive ? receiptTurnId : null,
+      since: inbox!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+
+  // Only a later server read retires a witnessed queue drain; status snapshots cannot.
+  const drainedAtMs = inbox?.drainedAtMs;
+  const drainFloorHolds =
+    inboxFresh &&
+    inbox!.pending === 0 &&
+    drainedAtMs != null &&
+    !abortLive &&
+    !(serverFresh && server!.atMs >= drainedAtMs);
+  if (drainFloorHolds) {
+    return {
+      pendingDelivery: true,
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      since: drainedAtMs!,
+      serverOpenTurnToken,
+    };
+  }
+
+  return null;
+}
+
+function lastAnswer(
+  inputs: WorkingInputs,
+  evidence: ReturnType<typeof workingEvidence>,
+  openTurn: SessionTurn | undefined,
+  serverOpenTurnToken: string | null,
+): WorkingProjection {
+  const { server, stream, optimistic, nowMs } = inputs;
+  const {
+    serverFresh,
+    serverFloor,
+    streamFresh,
+    streamFloor,
+    abortFloor,
+    receiptLive,
+    receiptTurnId,
+  } = evidence;
+  // A local send sets separate server and stream floors; abort floors bar old busy reads.
+  const serverAnswers = serverFresh && !openTurn && server!.atMs >= serverFloor;
+  const streamAnswers =
+    streamFresh &&
+    stream!.atMs >= streamFloor &&
+    (stream!.type === 'idle' || stream!.atMs >= abortFloor);
+
+  if (serverAnswers && (!stream || server!.atMs >= stream.atMs)) {
+    return {
+      state: 'idle',
+      source: 'server',
+      turnId: null,
+      since: instant(server!.lastEnded?.ended_at) ?? server!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+
+  if (streamAnswers) {
+    return {
+      state: stream!.type === 'idle' ? 'idle' : 'working',
+      source: 'stream',
+      turnId: null,
+      since: stream!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+
+  if (receiptLive) {
+    return {
+      pendingDelivery: true,
+      state: 'working',
+      source: 'optimistic',
+      turnId: receiptTurnId,
+      since: optimistic!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+  const newest =
+    server && stream
+      ? server.atMs >= stream.atMs
+        ? { source: 'server' as const, atMs: server.atMs }
+        : { source: 'stream' as const, atMs: stream.atMs }
+      : server
+        ? { source: 'server' as const, atMs: server.atMs }
+        : stream
+          ? { source: 'stream' as const, atMs: stream.atMs }
+          : { source: 'server' as const, atMs: nowMs };
+  return {
+    state: 'idle',
+    source: newest.source,
+    turnId: null,
+    since: newest.atMs,
+    serverOpenTurnToken,
+  };
+}
+
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
-  return decideWorking(inputs);
+  const evidence = workingEvidence(inputs);
+  const { server, stream } = inputs;
+  const idleFrame = stream && stream.type === 'idle' && stream.origin !== 'local' ? stream : null;
+  const serverOpenTurnToken = server?.turns[0]?.turn_token ?? null;
+  const activity = runtimeActivity(inputs, evidence, idleFrame, serverOpenTurnToken);
+  if (activity) return activity;
+  const { result, openTurn } = openAuthority(inputs, evidence, idleFrame, serverOpenTurnToken);
+  return (
+    result ??
+    inboxAuthority(inputs, evidence, serverOpenTurnToken) ??
+    lastAnswer(inputs, evidence, openTurn, serverOpenTurnToken)
+  );
 }
 
 /**

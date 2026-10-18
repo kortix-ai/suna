@@ -12,7 +12,8 @@ import { fetchEventTransport } from './runtime-rest-client';
 /** Collect the messages a fake streaming body yields for `raw`. */
 async function parse(raw: string): Promise<Array<{ id?: string; retry?: number; data?: string }>> {
   const body = new Response(raw).body!;
-  const transport = fetchEventTransport(() => Promise.resolve(new Response(body)));
+  const stubFetch = (() => Promise.resolve(new Response(body))) as unknown as typeof fetch;
+  const transport = fetchEventTransport(stubFetch);
   const messages = [];
   for await (const message of transport({ url: 'http://x', headers: new Headers(), signal: new AbortController().signal })) {
     messages.push(message);
