@@ -16,3 +16,9 @@ export async function runFreeTierCreditRotation(): Promise<void> {
   const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
   await processFreeTierCreditRotation();
 }
+
+/** DPA section 7.3: email each open subprocessor notice to every paid account. */
+export async function runSubprocessorNotices(): Promise<void> {
+  const { runSubprocessorNoticeSweep } = await import('./services/subprocessor-notices');
+  await runSubprocessorNoticeSweep();
+}
