@@ -6,6 +6,7 @@ import { CountBadge } from '@/components/ui/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { downloadBlob } from '@/lib/utils/download';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   fetchSessionAttachment,
   sessionLogReferencedTexts,
@@ -13,6 +14,8 @@ import {
   type SessionLogMessage,
 } from '@kortix/sdk';
 import { useState } from 'react';
+
+import { FullTextControl, type FullTextState } from './session-history';
 
 const previewText = (item: { text: string; ref?: string; bytes?: number }) =>
   item.ref ? `${item.text}\n[Preview · ${item.bytes ?? 'unknown'} bytes total]` : item.text;
@@ -48,11 +51,12 @@ export function trajectoryText(block: SessionLogBlock): string {
   }
 }
 
+/** The message's referenced texts, offered through the transcript's shared full-text control. */
 export function TrajectoryFullText({ message }: { message: SessionLogMessage }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [state, setState] = useState<FullTextState>('idle');
   const refs = sessionLogReferencedTexts([message]);
   if (!refs.length) return null;
-  const download = async () => {
+  const downloadAll = async () => {
     setState('loading');
     try {
       const blobs = await Promise.all(refs.map(({ ref }) => fetchSessionAttachment(ref)));
@@ -63,29 +67,28 @@ export function TrajectoryFullText({ message }: { message: SessionLogMessage }) 
     }
   };
   return (
-    <Button size="sm" variant="outline" disabled={state === 'loading'} onClick={download}>
-      {state === 'loading'
-        ? 'Loading full text…'
-        : state === 'error'
-          ? 'Retry full-text download'
-          : 'Download full text'}
-    </Button>
+    <FullTextControl
+      count={refs.length}
+      bytes={refs.reduce((n, r) => n + r.bytes, 0)}
+      download
+      state={state}
+      onLoad={() => void downloadAll()}
+    />
   );
 }
 
 /** Uses the same canonical log as the transcript: no second event stream or polling. */
 export function SessionTrajectory({ messages }: { messages: readonly SessionLogMessage[] }) {
+  const t = useTranslations('sessionUi.trajectory');
   return (
-    <section aria-label="Trajectory" className="shrink-0 space-y-3">
+    <section aria-label={t('title')} className="shrink-0 space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-medium">Trajectory</h2>
+        <h2 className="text-sm font-medium">{t('title')}</h2>
         <CountBadge count={messages.length} />
       </div>
-      <p className="text-muted-foreground text-xs">
-        Agent activity in order. Open a step to inspect reasoning, tool inputs and results.
-      </p>
+      <p className="text-muted-foreground text-xs">{t('subtitle')}</p>
       {messages.length === 0 ? (
-        <EmptyState size="sm" title="No activity yet" />
+        <EmptyState size="sm" title={t('empty')} />
       ) : (
         <ol className="space-y-2">
           {messages.map((message, index) => (
@@ -106,7 +109,7 @@ export function SessionTrajectory({ messages }: { messages: readonly SessionLogM
                     </Badge>
                     {!message.in_context && (
                       <Badge size="sm" variant="outline">
-                        Outside context
+                        {t('outsideContext')}
                       </Badge>
                     )}
                     <time

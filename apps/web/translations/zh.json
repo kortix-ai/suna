@@ -1979,6 +1979,12 @@
       "fullTextDownload": "下载全文（{size}）",
       "fullTextError": "无法加载全文。",
       "fullTextRetry": "重试"
+    },
+    "trajectory": {
+      "title": "轨迹",
+      "subtitle": "按顺序显示智能体活动。打开某一步骤可查看推理、工具输入和结果。",
+      "empty": "暂无活动",
+      "outsideContext": "上下文之外"
     }
   },
   "agents": {

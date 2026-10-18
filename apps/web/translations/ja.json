@@ -1979,6 +1979,12 @@
       "fullTextDownload": "全文をダウンロード（{size}）",
       "fullTextError": "全文を読み込めませんでした。",
       "fullTextRetry": "再試行"
+    },
+    "trajectory": {
+      "title": "軌跡",
+      "subtitle": "エージェントの活動を順に表示します。ステップを開くと、推論、ツールの入力と結果を確認できます。",
+      "empty": "まだ活動がありません",
+      "outsideContext": "コンテキスト外"
     }
   },
   "agents": {

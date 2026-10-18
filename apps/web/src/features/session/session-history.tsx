@@ -150,7 +150,8 @@ export function TurnFullText({
   );
 }
 
-function FullTextControl({ count, bytes, download, state, onLoad }: { count: number; bytes: number; download: boolean; state: FullTextState; onLoad: () => void }) {
+/** The one preview control of the transcript and the trajectory: the label says what shows, the button loads or retries. */
+export function FullTextControl({ count, bytes, download, state, onLoad }: { count: number; bytes: number; download: boolean; state: FullTextState; onLoad: () => void }) {
   const t = useTranslations('sessionUi.history');
   const locale = useLocale();
   const loading = state === 'loading';

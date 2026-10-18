@@ -305,6 +305,7 @@ export function SessionSiteHeader({
   // session. Listed only while the transcript on screen holds one: otherwise it changes nothing.
   const historyKey = projectSessionId || sessionId;
   const tHistory = useTranslations('sessionUi.history');
+  const tTrajectory = useTranslations('sessionUi.trajectory');
   const outOfContextPresent = useSessionHistoryViewStore((s) => !!s.outOfContext[historyKey]);
   const outOfContextHidden = useSessionHistoryViewStore((s) => s.hidden.includes(historyKey));
   const setOutOfContextHidden = useSessionHistoryViewStore((s) => s.setHidden);
@@ -452,7 +453,7 @@ export function SessionSiteHeader({
       )}
 
       {onOpenTrajectory && (
-        <DropdownMenuItem onClick={onOpenTrajectory}>Trajectory</DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpenTrajectory}>{tTrajectory('title')}</DropdownMenuItem>
       )}
 
       {outOfContextPresent && (

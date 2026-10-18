@@ -1979,6 +1979,12 @@
       "fullTextDownload": "Télécharger le texte complet ({size})",
       "fullTextError": "Impossible de charger le texte complet.",
       "fullTextRetry": "Réessayer"
+    },
+    "trajectory": {
+      "title": "Trajectoire",
+      "subtitle": "Activité de l’agent dans l’ordre. Ouvrez une étape pour examiner le raisonnement, les entrées d’outils et les résultats.",
+      "empty": "Aucune activité pour le moment",
+      "outsideContext": "Hors contexte"
     }
   },
   "agents": {

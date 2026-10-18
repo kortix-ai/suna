@@ -1979,6 +1979,12 @@
       "fullTextDownload": "Download full text ({size})",
       "fullTextError": "Could not load the full text.",
       "fullTextRetry": "Try again"
+    },
+    "trajectory": {
+      "title": "Trajectory",
+      "subtitle": "Agent activity in order. Open a step to inspect reasoning, tool inputs and results.",
+      "empty": "No activity yet",
+      "outsideContext": "Outside context"
     }
   },
   "agents": {

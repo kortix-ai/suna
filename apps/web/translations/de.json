@@ -1979,6 +1979,12 @@
       "fullTextDownload": "Vollständigen Text herunterladen ({size})",
       "fullTextError": "Der vollständige Text konnte nicht geladen werden.",
       "fullTextRetry": "Erneut versuchen"
+    },
+    "trajectory": {
+      "title": "Ablauf",
+      "subtitle": "Agentenaktivität in Reihenfolge. Öffne einen Schritt, um Gedankengang, Tool-Eingaben und Ergebnisse zu prüfen.",
+      "empty": "Noch keine Aktivität",
+      "outsideContext": "Außerhalb des Kontexts"
     }
   },
   "agents": {

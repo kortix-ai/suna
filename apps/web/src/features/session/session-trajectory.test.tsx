@@ -136,11 +136,16 @@ test('full text uses the SDK, handles failure, and retries a download', async ()
   const renderer = create(<TrajectoryFullText message={message} />);
   try {
     await act(async () => {});
+    expect(renderer.root.findByType('span').props.children).toBe(
+      'A long text here shows its first 16 kB.',
+    );
+    expect(renderer.root.findByType('button').props.children).toBe('Download full text (32 kB)');
     fetch.mockRejectedValueOnce(new Error('offline'));
     await act(async () => {
       await renderer.root.findByType('button').props.onClick();
     });
-    expect(renderer.root.findByType('button').props.children).toBe('Retry full-text download');
+    expect(renderer.root.findByType('span').props.children).toBe('Could not load the full text.');
+    expect(renderer.root.findByType('button').props.children).toBe('Try again');
     expect(download).not.toHaveBeenCalled();
     const blob = new Blob(['complete tool output']);
     fetch.mockResolvedValueOnce(blob);
@@ -149,7 +154,7 @@ test('full text uses the SDK, handles failure, and retries a download', async ()
     });
     expect(fetch).toHaveBeenLastCalledWith('stored-text');
     expect(download).toHaveBeenCalledWith(blob, 'full-text-1.txt');
-    expect(renderer.root.findByType('button').props.children).toBe('Download full text');
+    expect(renderer.root.findByType('button').props.children).toBe('Download full text (32 kB)');
   } finally {
     await act(async () => renderer.unmount());
     fetch.mockRestore();
