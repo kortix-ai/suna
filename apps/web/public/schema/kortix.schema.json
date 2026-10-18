@@ -245,11 +245,18 @@
                 },
                 "session_mode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_key": {
@@ -266,11 +273,18 @@
                 },
                 "sessionMode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_id": {
@@ -366,7 +380,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -381,7 +405,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -660,15 +694,22 @@
                 },
                 "provider": {
                   "type": "string",
-                  "enum": [
-                    "pipedream",
-                    "composio",
-                    "mcp",
-                    "openapi",
-                    "postman",
-                    "graphql",
-                    "http",
-                    "channel"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pipedream",
+                        "composio",
+                        "mcp",
+                        "openapi",
+                        "postman",
+                        "graphql",
+                        "http",
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "app": {
@@ -688,9 +729,16 @@
                 },
                 "transport": {
                   "type": "string",
-                  "enum": [
-                    "http",
-                    "sse"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "http",
+                        "sse"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "spec": {
@@ -698,19 +746,33 @@
                 },
                 "platform": {
                   "type": "string",
-                  "enum": [
-                    "slack",
-                    "teams",
-                    "email",
-                    "telegram"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "slack",
+                        "teams",
+                        "email",
+                        "telegram"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "credential": {},
                 "authorization_strategy": {
                   "type": "string",
-                  "enum": [
-                    "project",
-                    "user"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "project",
+                        "user"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
+                    }
                   ],
                   "default": "project"
                 },
@@ -723,16 +785,23 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": [
-                        "bearer",
-                        "basic",
-                        "custom",
-                        "api_key",
-                        "oauth1",
-                        "hmac",
-                        "aws_sigv4",
-                        "mtls",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "bearer",
+                            "basic",
+                            "custom",
+                            "api_key",
+                            "oauth1",
+                            "hmac",
+                            "aws_sigv4",
+                            "mtls",
+                            "none"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        }
                       ]
                     },
                     "secret": false
@@ -767,10 +836,17 @@
                       },
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "always_run",
-                          "require_approval",
-                          "block"
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "always_run",
+                              "require_approval",
+                              "block"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+                          }
                         ]
                       }
                     }
@@ -790,7 +866,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -806,7 +892,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -822,7 +918,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -838,7 +944,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "computer"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "computer"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][oO][mM][pP][uU][tT][eE][rR])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -847,7 +963,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "pipedream"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "pipedream"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -861,7 +987,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "mcp"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "mcp"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[mM][cC][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -875,7 +1011,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "graphql"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "graphql"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[gG][rR][aA][pP][hH][qQ][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -889,7 +1035,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "http"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[hH][tT][tT][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -912,7 +1068,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -926,7 +1092,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -938,7 +1114,17 @@
                       "auth": {
                         "properties": {
                           "type": {
-                            "const": "none"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -973,10 +1159,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1058,10 +1255,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1143,10 +1351,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ],
@@ -1164,10 +1383,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1184,10 +1414,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1558,10 +1799,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1595,10 +1847,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1615,10 +1878,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1635,10 +1909,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1710,10 +1995,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -1785,10 +2081,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ],
@@ -2254,11 +2561,18 @@
                 },
                 "session_mode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_key": {
@@ -2275,11 +2589,18 @@
                 },
                 "sessionMode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_id": {
@@ -2375,7 +2696,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -2390,7 +2721,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -2669,15 +3010,22 @@
                 },
                 "provider": {
                   "type": "string",
-                  "enum": [
-                    "pipedream",
-                    "composio",
-                    "mcp",
-                    "openapi",
-                    "postman",
-                    "graphql",
-                    "http",
-                    "channel"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pipedream",
+                        "composio",
+                        "mcp",
+                        "openapi",
+                        "postman",
+                        "graphql",
+                        "http",
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "app": {
@@ -2697,9 +3045,16 @@
                 },
                 "transport": {
                   "type": "string",
-                  "enum": [
-                    "http",
-                    "sse"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "http",
+                        "sse"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "spec": {
@@ -2707,21 +3062,45 @@
                 },
                 "platform": {
                   "type": "string",
-                  "enum": [
-                    "slack",
-                    "teams",
-                    "email",
-                    "telegram"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "slack",
+                        "teams",
+                        "email",
+                        "telegram"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "credential": {
-                  "const": "shared"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "shared"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][hH][aA][rR][eE][dD])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 },
                 "authorization_strategy": {
                   "type": "string",
-                  "enum": [
-                    "project",
-                    "user"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "project",
+                        "user"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
+                    }
                   ],
                   "default": "project"
                 },
@@ -2734,16 +3113,23 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": [
-                        "bearer",
-                        "basic",
-                        "custom",
-                        "api_key",
-                        "oauth1",
-                        "hmac",
-                        "aws_sigv4",
-                        "mtls",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "bearer",
+                            "basic",
+                            "custom",
+                            "api_key",
+                            "oauth1",
+                            "hmac",
+                            "aws_sigv4",
+                            "mtls",
+                            "none"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        }
                       ]
                     },
                     "secret": false
@@ -2778,10 +3164,17 @@
                       },
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "always_run",
-                          "require_approval",
-                          "block"
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "always_run",
+                              "require_approval",
+                              "block"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+                          }
                         ]
                       }
                     }
@@ -2801,7 +3194,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -2817,7 +3220,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -2833,7 +3246,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -2849,7 +3272,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "computer"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "computer"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][oO][mM][pP][uU][tT][eE][rR])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -2858,7 +3291,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "pipedream"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "pipedream"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -2872,7 +3315,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "mcp"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "mcp"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[mM][cC][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -2886,7 +3339,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "graphql"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "graphql"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[gG][rR][aA][pP][hH][qQ][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -2900,7 +3363,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "http"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[hH][tT][tT][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -2923,7 +3396,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -2937,7 +3420,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -2949,7 +3442,17 @@
                       "auth": {
                         "properties": {
                           "type": {
-                            "const": "none"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -3905,11 +4408,18 @@
                 },
                 "session_mode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_key": {
@@ -3926,11 +4436,18 @@
                 },
                 "sessionMode": {
                   "type": "string",
-                  "enum": [
-                    "fresh",
-                    "reuse",
-                    "pinned",
-                    "keyed"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "fresh",
+                        "reuse",
+                        "pinned",
+                        "keyed"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "session_id": {
@@ -4026,7 +4543,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -4041,7 +4568,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -4320,15 +4857,22 @@
                 },
                 "provider": {
                   "type": "string",
-                  "enum": [
-                    "pipedream",
-                    "composio",
-                    "mcp",
-                    "openapi",
-                    "postman",
-                    "graphql",
-                    "http",
-                    "channel"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pipedream",
+                        "composio",
+                        "mcp",
+                        "openapi",
+                        "postman",
+                        "graphql",
+                        "http",
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "app": {
@@ -4348,9 +4892,16 @@
                 },
                 "transport": {
                   "type": "string",
-                  "enum": [
-                    "http",
-                    "sse"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "http",
+                        "sse"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "spec": {
@@ -4358,21 +4909,45 @@
                 },
                 "platform": {
                   "type": "string",
-                  "enum": [
-                    "slack",
-                    "teams",
-                    "email",
-                    "telegram"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "slack",
+                        "teams",
+                        "email",
+                        "telegram"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 },
                 "credential": {
-                  "const": "shared"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "shared"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][hH][aA][rR][eE][dD])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 },
                 "authorization_strategy": {
                   "type": "string",
-                  "enum": [
-                    "project",
-                    "user"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "project",
+                        "user"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
+                    }
                   ],
                   "default": "project"
                 },
@@ -4385,16 +4960,23 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": [
-                        "bearer",
-                        "basic",
-                        "custom",
-                        "api_key",
-                        "oauth1",
-                        "hmac",
-                        "aws_sigv4",
-                        "mtls",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "bearer",
+                            "basic",
+                            "custom",
+                            "api_key",
+                            "oauth1",
+                            "hmac",
+                            "aws_sigv4",
+                            "mtls",
+                            "none"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        }
                       ]
                     },
                     "secret": false
@@ -4429,10 +5011,17 @@
                       },
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "always_run",
-                          "require_approval",
-                          "block"
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "always_run",
+                              "require_approval",
+                              "block"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+                          }
                         ]
                       }
                     }
@@ -4452,7 +5041,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -4468,7 +5067,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -4484,7 +5093,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -4500,7 +5119,17 @@
                   "then": {
                     "properties": {
                       "provider": {
-                        "const": "computer"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "computer"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][oO][mM][pP][uU][tT][eE][rR])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   }
@@ -4509,7 +5138,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "pipedream"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "pipedream"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -4523,7 +5162,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "mcp"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "mcp"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[mM][cC][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -4537,7 +5186,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "graphql"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "graphql"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[gG][rR][aA][pP][hH][qQ][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -4551,7 +5210,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "http"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[hH][tT][tT][pP])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -4574,7 +5243,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     }
                   },
@@ -4588,7 +5267,17 @@
                   "if": {
                     "properties": {
                       "provider": {
-                        "const": "channel"
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -4600,7 +5289,17 @@
                       "auth": {
                         "properties": {
                           "type": {
-                            "const": "none"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -5565,10 +6264,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5585,10 +6295,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5605,10 +6326,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5625,10 +6357,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5645,10 +6388,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5673,10 +6427,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5693,10 +6458,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]
@@ -5768,10 +6544,21 @@
                     },
                     {
                       "type": "string",
-                      "enum": [
-                        "all",
-                        "*",
-                        "none"
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "all",
+                            "*",
+                            "none",
+                            ""
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        },
+                        {
+                          "pattern": "^\\s*$(?![\\s\\S])"
+                        }
                       ]
                     }
                   ]

@@ -82,7 +82,7 @@ export const SESSION_SYNC_TAIL_PAGE_SIZE = 50;
  */
 export const MAX_TURN_BACKFILL_PAGES = 10;
 
-export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
+type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'error';
 
 export interface SessionSyncMessage {
   info: Message;
@@ -106,7 +106,7 @@ export interface SessionSyncPage {
  * from `projectWorking` over the server's own turn authority
  * (`core/session/working.ts`), so this controller holds no opinion about it.
  */
-export interface SessionSyncSnapshot {
+interface SessionSyncSnapshot {
   freshness: SessionSyncFreshness;
   hasOlder: boolean;
   isLoadingOlder: boolean;
@@ -209,7 +209,7 @@ export interface SessionSyncControllerOptions {
   readTimeoutMs?: number;
 }
 
-export interface HttpSessionSyncControllerOptions extends Pick<
+interface HttpSessionSyncControllerOptions extends Pick<
   SessionSyncControllerOptions,
   | 'sessionId'
   | 'hydrate'
@@ -226,14 +226,14 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   fetch?: SessionSyncFetch;
 }
 
-export type SessionSyncFetch = (input: string, init?: RequestInit) => Promise<Response>;
+type SessionSyncFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 type HttpSessionSyncSourceOptions = Pick<
   HttpSessionSyncControllerOptions,
   'baseUrl' | 'sessionId' | 'getToken' | 'fetch'
 >;
 
-export function createHttpSessionSyncPageLoader(
+function createHttpSessionSyncPageLoader(
   options: HttpSessionSyncSourceOptions,
 ): SessionSyncControllerOptions['loadPage'] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
@@ -417,13 +417,13 @@ export class SessionSyncController {
     }
     if (this.tailRequest) return this.tailRequest;
     // `loading` covers the first read AND a not-ready retry, so a waking box
-    // does not flip to `stale` between attempts; a session that already has a
-    // fresh transcript revalidates as `stale`.
+    // does not flip between attempts; a re-read of a fresh or failed
+    // transcript leaves the state alone.
     this.update({
       freshness:
         this.snapshot.freshness === 'idle' || this.snapshot.freshness === 'loading'
           ? 'loading'
-          : 'stale',
+          : this.snapshot.freshness,
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -600,7 +600,7 @@ export class SessionSyncController {
       // empty-`fresh` — `markLoaded` above ran only on success, so a failed
       // read never records the session as an empty transcript. A read that
       // outlived its budget says nothing about the session either: keep the
-      // `loading`/`stale` state `reconcile` set and retry.
+      // `loading` state `reconcile` set and retry.
       if (!timedOut) {
         this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
       }

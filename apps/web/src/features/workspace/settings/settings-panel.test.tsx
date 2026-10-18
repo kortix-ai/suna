@@ -243,6 +243,18 @@ describe('SettingsPanelView — the dialog frame', () => {
     expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
   });
+
+  /**
+   * KRTX-1975: opened from inside a project, the dialog titled itself
+   * "Settings — <project>" while every pane left in it is personal or
+   * account-scoped. The title is `chrome.settings` unconditionally now —
+   * asserted on the view's source, the only place the view's title is
+   * reachable without a DOM (the dialog portals, see this file's header).
+   */
+  test('the dialog title is plain Settings, never project-titled', () => {
+    expect(SOURCE).toContain('modalTitle={chrome.settings}');
+    expect(SOURCE).not.toContain('projectTitle');
+  });
 });
 
 test('mobile Settings headers sit in the native titlebar band on macOS', () => {
@@ -409,15 +421,15 @@ describe('SettingsPanelShell — real tab content gating', () => {
 });
 
 /**
- * The shell no longer takes a project at all.
- *
- * It took one to render `RelatedProjectsSwitcher` in the rail, back when the
- * overlay held thirteen project-configuration tabs. Every pane left in it is
- * user-scoped, so switching project from here changes nothing visible inside
- * the frame; the project sidebar's own switcher
+ * The shell takes no `project`, and neither does the view any more. The view
+ * took one to name the dialog "Settings — <project>" — a lie about what the
+ * dialog holds (KRTX-1975), and since the view dropped the prop (this
+ * commit's companion change) the accessible title is plain "Settings". The
+ * rail carried a `RelatedProjectsSwitcher` while the overlay held thirteen
+ * project-configuration tabs; switching project from a dialog that holds
+ * Profile, Preferences, Connected accounts and one workspace pane changes
+ * nothing you can see in it, and the project sidebar's own switcher
  * (`project-sidebar/workspace-switcher.tsx`) is where that job lives.
- * `SettingsPanelView` still takes the project — for the dialog's accessible
- * title — which is why this is asserted on the shell's props, not the view's.
  */
 describe('SettingsPanelShell — project-free', () => {
   test('renders the rail with no project in scope', () => {

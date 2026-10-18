@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { compareMessagesForDisplay, groupMessagesIntoTurns } from './grouping';
+import { compareMessagesForDisplay } from './display-order';
+import { groupMessagesIntoTurns } from './grouping';
 import type { MessageWithPartsLike } from './types';
 
 /**

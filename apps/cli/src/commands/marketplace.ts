@@ -235,10 +235,15 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
         'timeout',
         `Install timed out after ${timeout}s. Inspect session ${sessionId ?? '(not yet created)'}; the agent may still be running.`,
       );
+    // The session hint only helps when a session exists to inspect
+    // (KRTX-2075): a 400 unknown-item or a 402 plan gate never created one,
+    // so the message names the cause alone.
     return finish(
       1,
       'failed',
-      `Install failed${sessionId ? ` in session ${sessionId}` : ''}: ${error instanceof Error ? error.message : String(error)}. Inspect the session before retrying.`,
+      `Install failed${sessionId ? ` in session ${sessionId}` : ''}: ${error instanceof Error ? error.message : String(error)}.${
+        sessionId ? ' Inspect the session before retrying.' : ''
+      }`,
     );
   } finally {
     clearTimeout(timer);

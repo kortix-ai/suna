@@ -292,35 +292,23 @@ volumes:
 `;
 }
 
-export function applyPreviewEnvironment(
-  baseEnvironmentText: string,
-  input: PreviewStackInput,
-  rawSecrets: Record<string, string>,
-): { runtimeEnv: string; testEnv: string } {
-  validatePreviewRuntimeSecrets(rawSecrets);
-  if (!/^[0-9a-f]{40}$/.test(input.sha))
-    throw new Error('preview SHA must contain 40 hex characters');
-  const origin = validatedOrigin(input.origin);
-  const runtime = parseEnvironment(baseEnvironmentText);
-  const postgresPassword = runtime.POSTGRES_PASSWORD;
-  const anonKey = runtime.SUPABASE_ANON_KEY;
-  const serviceRoleKey = runtime.SUPABASE_SERVICE_ROLE_KEY;
-  const internalServiceKey = runtime.INTERNAL_SERVICE_KEY;
-  if (!postgresPassword || !anonKey || !serviceRoleKey || !internalServiceKey) {
-    throw new Error('self-host environment is missing generated preview credentials');
-  }
-  // Managed git has two supported shapes, and the API prefers the PAT when both
-  // are present (see managedGithubToken in projects/git-backends/github.ts):
-  //
-  //   1. a GitHub App — short-lived, repo-scoped, auto-rotating installation
-  //      tokens, but it only works if the App is installed on the owner org AND
-  //      carries `administration: write`, or it cannot create a repo at all;
-  //   2. a single org PAT — no install/permission dance, at the cost of a
-  //      long-lived org-wide token.
-  //
-  // Accept either. Requiring the App shape made a preview whose App lacks the
-  // permission unfixable without a code change, which is what blocked every
-  // preview from creating ANY project.
+/**
+ * Managed git has two supported shapes, and the API prefers the PAT when both
+ * are present (see managedGithubToken in projects/git-backends/github.ts):
+ *
+ *   1. a GitHub App — short-lived, repo-scoped, auto-rotating installation
+ *      tokens, but it only works if the App is installed on the owner org AND
+ *      carries `administration: write`, or it cannot create a repo at all;
+ *   2. a single org PAT — no install/permission dance, at the cost of a
+ *      long-lived org-wide token.
+ *
+ * Accept either. Requiring the App shape made a preview whose App lacks the
+ * permission unfixable without a code change, which is what blocked every
+ * preview from creating ANY project.
+ */
+function derivePreviewCapabilities(rawSecrets: Record<string, string>): {
+  managedGitEnabled: boolean;
+} {
   const owner = rawSecrets.MANAGED_GIT_GITHUB_OWNER?.trim();
   const managedGitApp = [
     rawSecrets.KORTIX_GITHUB_APP_ID,
@@ -335,13 +323,17 @@ export function applyPreviewEnvironment(
       'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
     );
   }
-  // Sessions in a preview run on Platinum only. Without its key the preview
-  // could run no session at all, so fail before boot rather than fall back.
-  const platinumApiKey = rawSecrets.PLATINUM_API_KEY?.trim() ?? '';
-  if (!platinumApiKey) {
-    throw new Error('preview sessions run on Platinum only; PLATINUM_API_KEY is required');
-  }
+  return { managedGitEnabled };
+}
 
+function buildPreviewRuntimeEnvironment(
+  runtime: Record<string, string>,
+  input: PreviewStackInput,
+  origin: string,
+  platinumApiKey: string,
+  rawSecrets: Record<string, string>,
+  postgresPassword: string,
+): void {
   Object.assign(runtime, {
     API_IMAGE: input.apiImage,
     GATEWAY_IMAGE: input.gatewayImage,
@@ -415,8 +407,20 @@ export function applyPreviewEnvironment(
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });
+}
 
-  const testEnvironment: Record<string, string> = {
+function buildPreviewTestEnvironment(
+  input: PreviewStackInput,
+  origin: string,
+  runtime: Record<string, string>,
+  rawSecrets: Record<string, string>,
+  postgresPassword: string,
+  anonKey: string,
+  serviceRoleKey: string,
+  internalServiceKey: string,
+  managedGitEnabled: boolean,
+): Record<string, string> {
+  return {
     CI: '1',
     KE2E_TARGET: 'preview',
     KE2E_LIVE_CONFIRM: 'preview',
@@ -449,9 +453,47 @@ export function applyPreviewEnvironment(
     KE2E_CAP_PROJECT_SNAPSHOTS: '0',
     KE2E_DEFAULT_FLOW_ATTEMPTS: '1',
   };
+}
 
+export function applyPreviewEnvironment(
+  baseEnvironmentText: string,
+  input: PreviewStackInput,
+  rawSecrets: Record<string, string>,
+): { runtimeEnv: string; testEnv: string } {
+  validatePreviewRuntimeSecrets(rawSecrets);
+  if (!/^[0-9a-f]{40}$/.test(input.sha))
+    throw new Error('preview SHA must contain 40 hex characters');
+  const origin = validatedOrigin(input.origin);
+  const runtime = parseEnvironment(baseEnvironmentText);
+  const postgresPassword = runtime.POSTGRES_PASSWORD;
+  const anonKey = runtime.SUPABASE_ANON_KEY;
+  const serviceRoleKey = runtime.SUPABASE_SERVICE_ROLE_KEY;
+  const internalServiceKey = runtime.INTERNAL_SERVICE_KEY;
+  if (!postgresPassword || !anonKey || !serviceRoleKey || !internalServiceKey) {
+    throw new Error('self-host environment is missing generated preview credentials');
+  }
+  const { managedGitEnabled } = derivePreviewCapabilities(rawSecrets);
+  // Sessions in a preview run on Platinum only. Without its key the preview
+  // could run no session at all, so fail before boot rather than fall back.
+  const platinumApiKey = rawSecrets.PLATINUM_API_KEY?.trim() ?? '';
+  if (!platinumApiKey) {
+    throw new Error('preview sessions run on Platinum only; PLATINUM_API_KEY is required');
+  }
+  buildPreviewRuntimeEnvironment(runtime, input, origin, platinumApiKey, rawSecrets, postgresPassword);
   return {
     runtimeEnv: renderEnvironment(runtime),
-    testEnv: renderEnvironment(testEnvironment),
+    testEnv: renderEnvironment(
+      buildPreviewTestEnvironment(
+        input,
+        origin,
+        runtime,
+        rawSecrets,
+        postgresPassword,
+        anonKey,
+        serviceRoleKey,
+        internalServiceKey,
+        managedGitEnabled,
+      ),
+    ),
   };
 }
