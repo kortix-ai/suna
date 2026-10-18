@@ -93,7 +93,7 @@ Personal API keys — act as YOU, and die with your membership:
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
-  rm <token-id> [-y]                Revoke a key immediately.
+  rm <token-id> [-y]                Revoke a key; delete it if already revoked.
 
 Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
@@ -272,7 +272,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   }
 }
 
-/** `kortix tokens rm` — revoke one of the account's personal API keys. */
+/** `kortix tokens rm` — revoke a key, or delete an already-revoked personal key. */
 async function revokeToken(
   client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
   positional: string[],
@@ -282,7 +282,7 @@ async function revokeToken(
   if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
   if (!opts.yes) {
     const ok = await confirm(
-      `Revoke API key ${C.bold}${tokenId}${C.reset}? Anything using it stops working immediately.`,
+      `Revoke API key ${C.bold}${tokenId}${C.reset}, or permanently delete it if already revoked?`,
       false,
       { onEndOfInput: false },
     );
@@ -291,8 +291,10 @@ async function revokeToken(
       return 0;
     }
   }
-  await client.delete(`/accounts/tokens/${encodeURIComponent(tokenId)}`);
-  process.stdout.write(`${status.ok(`Revoked ${C.bold}${tokenId}${C.reset}`)}\n`);
+  const result = await client.delete<{ deleted?: boolean }>(
+    `/accounts/tokens/${encodeURIComponent(tokenId)}?delete_revoked=true`,
+  );
+  process.stdout.write(`${status.ok(`${result.deleted ? 'Deleted' : 'Revoked'} ${C.bold}${tokenId}${C.reset}`)}\n`);
   return 0;
 }
 

@@ -352,6 +352,22 @@ export async function getAccountTokenOwner(
   };
 }
 
+/** Permanently remove only revoked, hand-minted keys in the authorized account. */
+export async function deleteRevokedPersonalAccountToken(
+  tokenId: string,
+  accountId: string,
+): Promise<boolean> {
+  const rows = await db.delete(accountTokens).where(and(
+    eq(accountTokens.tokenId, tokenId),
+    eq(accountTokens.accountId, accountId),
+    eq(accountTokens.status, 'revoked'),
+    isNull(accountTokens.sessionId),
+    isNull(accountTokens.serviceAccountId),
+    isNull(accountTokens.agentGrant),
+  )).returning({ tokenId: accountTokens.tokenId });
+  return rows.length > 0;
+}
+
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,

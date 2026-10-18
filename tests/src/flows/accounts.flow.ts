@@ -3,6 +3,7 @@
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
 import { AccountSummarySchema } from '@kortix/api-contract';
+import { CliSandbox } from '../fixtures/cli';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { Principal } from '../core/types';
@@ -1009,7 +1010,7 @@ flow('ACCT-3', { domain: 'accounts', routes: ['GET /v1/accounts/:accountId'] }, 
 });
 
 // TOK-3 — account-PAT revoke semantics: revoke → 200; unknown/already-revoked
-// → 404; a revoked secret used on any route → 401.
+// → 404 unless delete_revoked=true removes a revoked personal key; its secret → 401.
 flow(
   'TOK-3',
   {
@@ -1020,6 +1021,7 @@ flow(
       'POST /v1/accounts/tokens',
       'DELETE /v1/accounts/tokens/:tokenId',
       'GET /v1/accounts/me',
+      'GET /v1/accounts/tokens',
     ],
   },
   async (ctx) => {
@@ -1041,7 +1043,7 @@ flow(
     await ctx.step('revoke → 200 {ok:true}', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
+        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId }, query: { delete_revoked: 'true' } });
       r.status(200).body().has('$.ok', true);
     });
     await ctx.step('revoke again (already revoked) → 404', async () => {
@@ -1049,6 +1051,34 @@ flow(
         .as(ctx.P.OWNER)
         .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
       r.status(404);
+    });
+    await ctx.step('the revoked key stays listed until explicit deletion and cannot authenticate', async () => {
+      (await ctx.client.withBearer(secret).get('/v1/accounts/me')).status(401);
+      const listed = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens', { query: { mine: 'true' } });
+      listed.status(200);
+      if (!listed.json<Array<{ token_id: string }>>().some((row) => row.token_id === tokenId)) {
+        throw new Error('first removal deleted an active key instead of revoking it');
+      }
+      (await ctx.client.as(ctx.P.NONMEMBER).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId }, query: { delete_revoked: 'true' },
+      })).status(404);
+    });
+    await ctx.step('the CLI deletes a revoked key and mine no longer lists it', async () => {
+      const cli = new CliSandbox('tok3-delete');
+      try {
+        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), { noProject: true });
+        if (login.exitCode !== 0) throw new Error('CLI login failed');
+        const removed = await cli.run(['tokens', 'rm', tokenId, '-y']);
+        if (removed.exitCode !== 0 || !removed.stdout.includes('Deleted')) {
+          throw new Error(`CLI deletion failed: ${removed.stderr}`);
+        }
+        const listed = await cli.run(['tokens', 'ls', '--mine', '--json']);
+        if (listed.exitCode !== 0 || listed.stdout.includes(tokenId)) {
+          throw new Error('deleted key remains in personal listing');
+        }
+      } finally {
+        cli.dispose();
+      }
     });
     await ctx.step('revoke an unknown id → 404', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {

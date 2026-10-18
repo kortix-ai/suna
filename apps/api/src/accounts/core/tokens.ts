@@ -10,6 +10,7 @@ import {
   listPersonalAccountTokens,
   getAccountTokenOwner,
   revokeAccountToken,
+  deleteRevokedPersonalAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
@@ -19,7 +20,6 @@ import {
   accountsRouter,
   accountDisplayName,
   AccountTokenSchema,
-  OkSchema,
   MeSchema,
   autoClaimPendingInvites,
   resolveAccountForUser,
@@ -330,14 +330,14 @@ accountsRouter.openapi(
     method: 'delete',
     path: '/tokens/{tokenId}',
     tags: ['accounts'],
-    summary: 'Revoke a PAT',
+    summary: 'Revoke a PAT, or delete an already-revoked personal key',
     ...auth,
     request: {
       params: z.object({ tokenId: z.string() }),
-      query: z.object({ account_id: z.string() }).partial(),
+      query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
     },
     responses: {
-      200: json(OkSchema, 'Revocation result'),
+      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
       ...errors(400, 401, 403, 404),
     },
   }),
@@ -373,6 +373,11 @@ accountsRouter.openapi(
     actor,
     ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
   );
+
+  if (c.req.query('delete_revoked') === 'true') {
+    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
+    if (deleted) return c.json({ ok: true, deleted: true });
+  }
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

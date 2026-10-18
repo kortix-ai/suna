@@ -82,6 +82,9 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   if (p === '/v1/accounts/tokens/tok_a' && req.method === 'DELETE') {
     return Response.json({ ok: true });
   }
+  if (p === '/v1/accounts/tokens/tok_revoked' && req.method === 'DELETE') {
+    return Response.json({ ok: true, deleted: true });
+  }
   if (p === '/v1/accounts/tokens/tok_missing' && req.method === 'DELETE') {
     return Response.json({ error: 'token not found or already revoked' }, { status: 404 });
   }
@@ -277,6 +280,12 @@ describe('kortix tokens', () => {
       path: '/v1/accounts/tokens/tok_a',
     });
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
+    expect(api!.requests[0]!.query).toContain('delete_revoked=true');
+
+    expect(ok.stdout).toContain('Revoked');
+    const deleted = await runCommand(runner, ['rm', 'tok_revoked', '-y'], { cwd: tmp, configFile: config });
+    expect(deleted.code).toBe(0);
+    expect(deleted.stdout).toContain('Deleted');
 
     const miss = await runCommand(runner, ['rm', 'tok_missing', '-y'], {
       cwd: tmp,
