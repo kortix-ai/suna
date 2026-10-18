@@ -506,9 +506,11 @@ const nextConfig = (): NextConfig => ({
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
       // `agents`, `config` became `settings`; the rest kept their names.
-      // `review` is NOT in this list: Review left Customize on 2026-10-02 and
-      // `/projects/:id/review` is its own page again. Redirecting it here
-      // would loop with `customize/review/page.tsx`, which sends it back.
+      // `review` is NOT in this list: since KRTX-2444 the Review Center lives
+      // at `/projects/:id/files/review` (the Repo page's review section), and
+      // both legacy addresses redirect there in their own page files, so
+      // sending `/projects/:id/review` to `customize/review` would only add
+      // a hop to a page that immediately redirects elsewhere.
       {
         source: '/projects/:id/agent/:path*',
         destination: '/projects/:id/customize/agents/:path*',
