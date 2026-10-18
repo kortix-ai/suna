@@ -38,6 +38,7 @@ import { ProjectHero } from '@/components/session/ProjectHero';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
+import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import { haptics } from '@/lib/haptics';
 import { ArrowUpRightIcon, FolderIcon } from '@/lib/icons';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
@@ -53,10 +54,9 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 export default function NewProjectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signOut } = useAuthContext();
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
-  const [signingOut, setSigningOut] = React.useState(false);
+  const { signingOut, signOutAndRoute } = useSignOutAndRoute();
   const webCreate = useWebCreateHandoff();
   const { colorScheme } = useColorScheme();
   // Glyph colour on a `default` fill (CLAUDE.md Color rule 6), as on the auth screen.
@@ -103,14 +103,11 @@ export default function NewProjectScreen() {
   }, [webCreate, openProject]);
   const busy = webCreate.pending;
 
-  const handleSignOut = React.useCallback(async () => {
+  const handleSignOut = React.useCallback(() => {
     if (signingOut) return;
     haptics.tap();
-    setSigningOut(true);
-    const result = await signOut().catch(() => null);
-    setSigningOut(false);
-    if (result?.success) router.replace('/auth');
-  }, [router, signOut, signingOut]);
+    void signOutAndRoute();
+  }, [signingOut, signOutAndRoute]);
 
   return (
     <>

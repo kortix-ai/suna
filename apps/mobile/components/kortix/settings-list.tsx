@@ -47,11 +47,6 @@ import { SHEET_ROW_SURFACE, SurfaceContext } from '@/components/kortix/surface-c
 import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 
 /**
- * Side padding of a settings-style screen. `page` is the app default (20pt);
- * `project` is the 16pt edge (`px-4`) of every page inside a project
- * (Jay, 2026-09-16), the same as the project home composer.
- */
-/**
  * Screen header: Go back (native SwiftUI button on iOS, secondary pill on
  * Android), the title, and an optional trailing action. A project page passes
  * `onOpenMenu`: the hamburger that opens the project drawer replaces Go back.
