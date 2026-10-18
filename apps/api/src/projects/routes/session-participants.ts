@@ -77,25 +77,24 @@ export function registerSessionParticipantsRoutes(): void {
 
       const ownerId = visible.row.createdBy ?? null;
       // ONE identity read covers the roster (a shadow — a directory row that is
-      // not a real auth user — drops out here, as the access screen's member
-      // fold drops it), the owner and the viewer.
+      // not a real auth user — drops out in buildSessionParticipants, as the
+      // access screen's member fold drops it), the owner and the viewer.
       const identities = await resolveUserIdentities([
         ...(roster?.ids ?? []),
         ...(ownerId ? [ownerId] : []),
         loaded.userId,
       ]);
       // The access screen's member order: account-role rank, then email. It
-      // decides WHO lands among the listed twenty on a big roster, so keep it.
+      // decides WHO lands among the listed twenty on a big roster, so mirror it
+      // here instead of the directory order the access view used to leak.
       const rank: Record<string, number> = { owner: 0, admin: 1, member: 2 };
-      const rosterIds = (roster?.ids ?? [])
-        .filter((id) => identities.get(id)?.exists !== false)
-        .sort((a, b) => {
+      const rosterIds = (roster?.ids ?? []).sort((a, b) => {
           const roleDelta =
             (rank[roster?.accountRoles.get(a) ?? 'member'] ?? rank.member) -
             (rank[roster?.accountRoles.get(b) ?? 'member'] ?? rank.member);
           if (roleDelta !== 0) return roleDelta;
           return (identities.get(a)?.email ?? a).localeCompare(identities.get(b)?.email ?? b);
-        });
+      });
       const audienceIds = sessionAudienceIds({
         ownerId,
         visibility,

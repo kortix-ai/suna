@@ -54,6 +54,10 @@ export function registerSessionPresenceRoutes(): void {
       const mayStart = projectCapabilityAllowed(
         c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
+      // When the upsert below rejects first, this verdict is never awaited —
+      // mark the orphan handled so the 500 the route already returns is not
+      // doubled by an unhandled-rejection report.
+      mayStart.catch(() => undefined);
       await Promise.all([
         upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true),
         // KRTX-1742: a person looking at the session has seen what it notified.
