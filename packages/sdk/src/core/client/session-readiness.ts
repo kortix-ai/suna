@@ -1,6 +1,6 @@
 import { type KortixPlatformConfig, platformConfig } from '../http/config';
-import type { ProjectSession } from '../rest/projects-client/sessions';
 import { projectSessionStartSeed } from '../rest/projects-client/session-sandbox';
+import type { ProjectSession } from '../rest/projects-client/sessions';
 import { setCurrentRuntime } from '../session/current-runtime';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
@@ -58,7 +58,8 @@ export function bindSessionReadiness(
       platformConfig().backendUrl ?? config.backendUrl,
     ).catch(() => null);
 
-    const seed = opts?.session?.session_id === sessionId ? projectSessionStartSeed(opts.session) : null;
+    const seed =
+      opts?.session?.session_id === sessionId ? projectSessionStartSeed(opts.session) : null;
     const seededSandbox = seed?.sandbox?.external_id;
     const seededRuntimeSession = seed?.runtime_session_id;
     if (seededSandbox && seededRuntimeSession) {

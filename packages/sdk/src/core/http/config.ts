@@ -82,7 +82,11 @@ export interface KortixPlatformConfig {
   /** Current user id, used to scope the offline message cache. */
   getUserId?: () => Promise<string | null>;
   /** Toast sink — the host renders it. */
-  onToast?: (level: 'info' | 'success' | 'error' | 'warning', message: string, options?: unknown) => void;
+  onToast?: (
+    level: 'info' | 'success' | 'error' | 'warning',
+    message: string,
+    options?: unknown,
+  ) => void;
   /** OS/web-notification sink — the host renders it. */
   onNotify?: (event: { kind: string; sessionId: string; [key: string]: unknown }) => void;
   /** Explicit per-flag overrides for `@kortix/sdk/feature-flags` (portable path). */

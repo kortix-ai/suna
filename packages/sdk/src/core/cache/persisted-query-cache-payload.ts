@@ -54,7 +54,11 @@ export function forget(config: PayloadConfig): Promise<void> {
   }
 }
 
-export function apply(config: PayloadConfig, client: PersistableQueryClient, raw: string | null): number {
+export function apply(
+  config: PayloadConfig,
+  client: PersistableQueryClient,
+  raw: string | null,
+): number {
   if (!raw) return 0;
   let stored: StoredCache;
   try {
@@ -116,7 +120,12 @@ export async function write(config: PayloadConfig, client: PersistableQueryClien
   // A full store refuses the write. Halve the payload, newest kept, until it
   // fits or nothing is left to keep.
   while (true) {
-    const payload: StoredCache = { v: config.version, user: config.userId, at: config.now(), queries: entries };
+    const payload: StoredCache = {
+      v: config.version,
+      user: config.userId,
+      at: config.now(),
+      queries: entries,
+    };
     try {
       await settle(config.storage.setItem(config.storageKey, JSON.stringify(payload)));
       return;

@@ -36,12 +36,12 @@ import type { SessionPrompt } from '../rest/projects-client/sessions';
 import type { RuntimeEvent } from '../stream/event-stream';
 import { platformEventTransport } from '../stream/platform-event-transport';
 import {
+  type FrameCursors,
+  type SharedStream,
   dispatchFrame,
   each,
   notifyConnectionListeners,
   safely,
-  type FrameCursors,
-  type SharedStream,
 } from './control-stream-frames';
 
 export { subscribeSessionStreamConnections } from './control-stream-frames';
@@ -139,7 +139,9 @@ const LIVENESS_MS = 45_000;
 const streams = new Map<string, SharedStream>();
 
 /** Join (or open) the session's stream. `close()` leaves it. */
-export function openSessionStream(options: SessionControlStreamOptions): SessionControlStreamHandle {
+export function openSessionStream(
+  options: SessionControlStreamOptions,
+): SessionControlStreamHandle {
   const key = `${options.projectId}/${options.sessionId}`;
   let shared = streams.get(key);
   if (!shared) {
@@ -190,8 +192,10 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
     safely(() => options.onControl?.(frame));
   }
   if (target.lastQueue) safely(() => options.onQueue?.(target.lastQueue!));
-  if (options.runtime && target.lastStatus) safely(() => options.onRuntimeStatus?.(target.lastStatus!));
-  if (options.runtime && target.lastHealth) safely(() => options.onRuntimeHealth?.(target.lastHealth!));
+  if (options.runtime && target.lastStatus)
+    safely(() => options.onRuntimeStatus?.(target.lastStatus!));
+  if (options.runtime && target.lastHealth)
+    safely(() => options.onRuntimeHealth?.(target.lastHealth!));
   let closed = false;
   return {
     connected: () => target.connected,
@@ -205,7 +209,11 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       if (options.schema === 'v2') target.logRefs -= 1;
       if (target.subscribers.size > 0) {
         // The last v2 subscriber left: back to the v1 transcript frames.
-        if (target.connectedWithLog && (target.logRefs === 0 || target.runtimeRefs === 0) && target.attempt) {
+        if (
+          target.connectedWithLog &&
+          (target.logRefs === 0 || target.runtimeRefs === 0) &&
+          target.attempt
+        ) {
           target.reconnectNow = true;
           target.attempt.abort();
         }

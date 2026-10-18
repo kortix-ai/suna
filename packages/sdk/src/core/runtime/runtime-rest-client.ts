@@ -168,7 +168,10 @@ export interface RuntimeClient {
       Session
     >;
     status: OptionalMethod<Scope, { [sessionID: string]: KortixSessionStatus }>;
-    messages: Method<Scope & { sessionID: string; limit?: number; before?: string }, TranscriptMessage[]>;
+    messages: Method<
+      Scope & { sessionID: string; limit?: number; before?: string },
+      TranscriptMessage[]
+    >;
     prompt: Method<Scope & PromptInput, Reply>;
     promptAsync: Method<Scope & PromptInput, {}>;
     abort: Method<Scope & { sessionID: string }, boolean>;
@@ -229,7 +232,12 @@ export interface RuntimeClient {
   };
   find: {
     files: Method<
-      Scope & { query: string; dirs?: 'true' | 'false'; type?: 'file' | 'directory'; limit?: number },
+      Scope & {
+        query: string;
+        dirs?: 'true' | 'false';
+        type?: 'file' | 'directory';
+        limit?: number;
+      },
       string[]
     >;
   };
@@ -238,7 +246,9 @@ export interface RuntimeClient {
   };
   global: {
     /** The live event stream. Resolves once the stream object exists; the first read connects. */
-    event: (options?: RuntimeEventStreamOptions) => Promise<{ stream: AsyncGenerator<Event | string, void, unknown> }>;
+    event: (
+      options?: RuntimeEventStreamOptions,
+    ) => Promise<{ stream: AsyncGenerator<Event | string, void, unknown> }>;
     health: (options?: RuntimeRequestOptions) => RuntimeResult<{ healthy: true; version: string }>;
     dispose: (options?: RuntimeRequestOptions) => RuntimeResult<boolean>;
     config: {
@@ -338,7 +348,17 @@ interface Route {
 }
 
 const SCOPE = ['directory', 'workspace'] as const;
-const PROMPT_BODY = ['messageID', 'model', 'agent', 'noReply', 'tools', 'format', 'system', 'variant', 'parts'];
+const PROMPT_BODY = [
+  'messageID',
+  'model',
+  'agent',
+  'noReply',
+  'tools',
+  'format',
+  'system',
+  'variant',
+  'parts',
+];
 
 const r = (
   method: Route['method'],
@@ -350,11 +370,32 @@ const r = (
 
 /** Every route the client sends, keyed by method path (`session.list`). */
 export const RUNTIME_REST_ROUTES = {
-  'session.list': r('GET', '/session', [...SCOPE, 'scope', 'path', 'roots', 'start', 'search', 'limit']),
+  'session.list': r('GET', '/session', [
+    ...SCOPE,
+    'scope',
+    'path',
+    'roots',
+    'start',
+    'search',
+    'limit',
+  ]),
   'session.get': r('GET', '/session/{sessionID}'),
-  'session.create': r('POST', '/session', SCOPE, ['parentID', 'title', 'agent', 'model', 'metadata', 'permission', 'workspaceID']),
+  'session.create': r('POST', '/session', SCOPE, [
+    'parentID',
+    'title',
+    'agent',
+    'model',
+    'metadata',
+    'permission',
+    'workspaceID',
+  ]),
   'session.delete': r('DELETE', '/session/{sessionID}'),
-  'session.update': r('PATCH', '/session/{sessionID}', SCOPE, ['title', 'metadata', 'permission', 'time']),
+  'session.update': r('PATCH', '/session/{sessionID}', SCOPE, [
+    'title',
+    'metadata',
+    'permission',
+    'time',
+  ]),
   'session.status': r('GET', '/session/status'),
   'session.messages': r('GET', '/session/{sessionID}/message', [...SCOPE, 'limit', 'before']),
   'session.prompt': r('POST', '/session/{sessionID}/message', SCOPE, PROMPT_BODY),
@@ -362,8 +403,20 @@ export const RUNTIME_REST_ROUTES = {
   'session.abort': r('POST', '/session/{sessionID}/abort'),
   'session.revert': r('POST', '/session/{sessionID}/revert', SCOPE, ['messageID', 'partID']),
   'session.unrevert': r('POST', '/session/{sessionID}/unrevert'),
-  'session.summarize': r('POST', '/session/{sessionID}/summarize', SCOPE, ['providerID', 'modelID', 'auto']),
-  'session.command': r('POST', '/session/{sessionID}/command', SCOPE, ['messageID', 'agent', 'model', 'arguments', 'command', 'variant', 'parts']),
+  'session.summarize': r('POST', '/session/{sessionID}/summarize', SCOPE, [
+    'providerID',
+    'modelID',
+    'auto',
+  ]),
+  'session.command': r('POST', '/session/{sessionID}/command', SCOPE, [
+    'messageID',
+    'agent',
+    'model',
+    'arguments',
+    'command',
+    'variant',
+    'parts',
+  ]),
   'session.share': r('POST', '/session/{sessionID}/share'),
   'session.unshare': r('DELETE', '/session/{sessionID}/share'),
   'session.fork': r('POST', '/session/{sessionID}/fork', SCOPE, ['messageID']),
@@ -374,7 +427,13 @@ export const RUNTIME_REST_ROUTES = {
   'question.list': r('GET', '/question'),
   'question.reply': r('POST', '/question/{requestID}/reply', SCOPE, ['answers']),
   'question.reject': r('POST', '/question/{requestID}/reject'),
-  'part.update': r('PATCH', '/session/{sessionID}/message/{messageID}/part/{partID}', SCOPE, [], 'part'),
+  'part.update': r(
+    'PATCH',
+    '/session/{sessionID}/message/{messageID}/part/{partID}',
+    SCOPE,
+    [],
+    'part',
+  ),
   'part.delete': r('DELETE', '/session/{sessionID}/message/{messageID}/part/{partID}'),
   'file.list': r('GET', '/file', [...SCOPE, 'path']),
   'file.read': r('GET', '/file/content', [...SCOPE, 'path']),
@@ -386,8 +445,14 @@ export const RUNTIME_REST_ROUTES = {
   'global.config.update': r('PATCH', '/global/config', [], [], 'config'),
   'provider.list': r('GET', '/provider'),
   'provider.auth': r('GET', '/provider/auth'),
-  'provider.oauth.authorize': r('POST', '/provider/{providerID}/oauth/authorize', SCOPE, ['method', 'inputs']),
-  'provider.oauth.callback': r('POST', '/provider/{providerID}/oauth/callback', SCOPE, ['method', 'code']),
+  'provider.oauth.authorize': r('POST', '/provider/{providerID}/oauth/authorize', SCOPE, [
+    'method',
+    'inputs',
+  ]),
+  'provider.oauth.callback': r('POST', '/provider/{providerID}/oauth/callback', SCOPE, [
+    'method',
+    'code',
+  ]),
   'auth.set': r('PUT', '/auth/{providerID}', [], [], 'auth'),
   'app.agents': r('GET', '/agent'),
   'app.skills': r('GET', '/skill'),
@@ -429,7 +494,9 @@ function buildRuntimeRequest(
   options: RuntimeRequestOptions = {},
 ): Request {
   const route: Route = RUNTIME_REST_ROUTES[name];
-  const path = route.path.replace(/\{(\w+)\}/g, (_, key: string) => encodeURIComponent(String(params[key])));
+  const path = route.path.replace(/\{(\w+)\}/g, (_, key: string) =>
+    encodeURIComponent(String(params[key])),
+  );
   let body: unknown;
   let hasBody = false;
   if (route.bodyParam) {
@@ -459,12 +526,16 @@ function parseAs(contentType: string | null): 'json' | 'text' | 'blob' | 'formDa
   const type = contentType.split(';')[0]?.trim() ?? '';
   if (type.startsWith('application/json') || type.endsWith('+json')) return 'json';
   if (type === 'multipart/form-data') return 'formData';
-  if (['application/', 'audio/', 'image/', 'video/'].some((prefix) => type.startsWith(prefix))) return 'blob';
+  if (['application/', 'audio/', 'image/', 'video/'].some((prefix) => type.startsWith(prefix)))
+    return 'blob';
   if (type.startsWith('text/')) return 'text';
   return 'json';
 }
 
-async function send(config: RuntimeClientConfig, request: Request): Promise<Record<string, unknown>> {
+async function send(
+  config: RuntimeClientConfig,
+  request: Request,
+): Promise<Record<string, unknown>> {
   const fetchFn = config.fetch ?? globalThis.fetch;
   let response: Response;
   try {
@@ -479,7 +550,14 @@ async function send(config: RuntimeClientConfig, request: Request): Promise<Reco
   if (response.ok) {
     const as = parseAs(response.headers.get('Content-Type'));
     if (response.status === 204 || response.headers.get('Content-Length') === '0') {
-      const empty = as === 'json' ? {} : as === 'formData' ? new FormData() : as === 'stream' ? response.body : await response[as]();
+      const empty =
+        as === 'json'
+          ? {}
+          : as === 'formData'
+            ? new FormData()
+            : as === 'stream'
+              ? response.body
+              : await response[as]();
       return { data: empty, request, response };
     }
     if (as === 'stream') return { data: response.body, request, response };
@@ -521,9 +599,13 @@ function parseSseChunk(chunk: string): RuntimeEventMessage {
 }
 
 /** The default transport: a streaming `fetch` body, split into SSE messages. */
-export function fetchEventTransport(fetchFn: typeof fetch = globalThis.fetch): RuntimeEventTransport {
+export function fetchEventTransport(
+  fetchFn: typeof fetch = globalThis.fetch,
+): RuntimeEventTransport {
   return async function* ({ url, headers, signal }) {
-    const response = await fetchFn(new Request(url, { method: 'GET', headers, signal, redirect: 'follow' }));
+    const response = await fetchFn(
+      new Request(url, { method: 'GET', headers, signal, redirect: 'follow' }),
+    );
     if (!response.ok) {
       throw Object.assign(new Error(`SSE failed: ${response.status} ${response.statusText}`), {
         status: response.status,
@@ -590,7 +672,8 @@ async function* eventStream(
       return;
     } catch (error) {
       options.onSseError?.(error);
-      if (options.sseMaxRetryAttempts !== undefined && attempt >= options.sseMaxRetryAttempts) return;
+      if (options.sseMaxRetryAttempts !== undefined && attempt >= options.sseMaxRetryAttempts)
+        return;
       const backoff = Math.min(retryDelay * 2 ** (attempt - 1), options.sseMaxRetryDelay ?? 30000);
       await new Promise((resolve) => setTimeout(resolve, backoff));
     }
@@ -602,10 +685,10 @@ async function* eventStream(
 /** A client for the runtime at `config.baseUrl`. */
 export function createRuntimeRestClient(config: RuntimeClientConfig): RuntimeClient {
   const call =
-    (name: RouteName) =>
-    (params?: Record<string, unknown>, options?: RuntimeRequestOptions) =>
+    (name: RouteName) => (params?: Record<string, unknown>, options?: RuntimeRequestOptions) =>
       send(config, buildRuntimeRequest(config.baseUrl, name, params, options));
-  const bare = (name: RouteName) => (options?: RuntimeRequestOptions) => call(name)(undefined, options);
+  const bare = (name: RouteName) => (options?: RuntimeRequestOptions) =>
+    call(name)(undefined, options);
   const client = {
     session: {
       list: call('session.list'),
@@ -629,7 +712,11 @@ export function createRuntimeRestClient(config: RuntimeClientConfig): RuntimeCli
       todo: call('session.todo'),
     },
     permission: { list: call('permission.list'), reply: call('permission.reply') },
-    question: { list: call('question.list'), reply: call('question.reply'), reject: call('question.reject') },
+    question: {
+      list: call('question.list'),
+      reply: call('question.reply'),
+      reject: call('question.reject'),
+    },
     part: { update: call('part.update'), delete: call('part.delete') },
     file: { list: call('file.list'), read: call('file.read') },
     find: { files: call('find.files') },
@@ -645,7 +732,10 @@ export function createRuntimeRestClient(config: RuntimeClientConfig): RuntimeCli
     provider: {
       list: call('provider.list'),
       auth: call('provider.auth'),
-      oauth: { authorize: call('provider.oauth.authorize'), callback: call('provider.oauth.callback') },
+      oauth: {
+        authorize: call('provider.oauth.authorize'),
+        callback: call('provider.oauth.callback'),
+      },
     },
     auth: { set: call('auth.set') },
     app: { agents: call('app.agents'), skills: call('app.skills'), log: call('app.log') },
@@ -656,7 +746,11 @@ export function createRuntimeRestClient(config: RuntimeClientConfig): RuntimeCli
       add: call('mcp.add'),
       connect: call('mcp.connect'),
       disconnect: call('mcp.disconnect'),
-      auth: { start: call('mcp.auth.start'), callback: call('mcp.auth.callback'), remove: call('mcp.auth.remove') },
+      auth: {
+        start: call('mcp.auth.start'),
+        callback: call('mcp.auth.callback'),
+        remove: call('mcp.auth.remove'),
+      },
     },
     project: { list: call('project.list'), current: call('project.current') },
     path: { get: call('path.get') },

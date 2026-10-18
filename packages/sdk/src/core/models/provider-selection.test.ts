@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProviderAuthRequirement } from '@kortix/llm-catalog/lite';
 import {
+  type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
   mergeProjectSecretConnectedProviders,
   normalizeProviderList,
-  type ProviderListResponse,
 } from './provider-selection';
 
 describe('normalizeProviderList', () => {
@@ -62,7 +62,11 @@ function list(allIds: string[], connected: string[]): ProviderListResponse {
 
 describe('mergeProjectSecretConnectedProviders', () => {
   test('a provider whose auth the secret NAMES satisfy flips to connected', () => {
-    const merged = mergeProjectSecretConnectedProviders(list(['acme', 'beta'], []), new Set(['ACME_API_KEY']), creds);
+    const merged = mergeProjectSecretConnectedProviders(
+      list(['acme', 'beta'], []),
+      new Set(['ACME_API_KEY']),
+      creds,
+    );
     expect(merged.connected).toEqual(['acme']);
   });
 
@@ -76,7 +80,11 @@ describe('mergeProjectSecretConnectedProviders', () => {
   });
 
   test('a provider the list does not carry is never added by its secret', () => {
-    const merged = mergeProjectSecretConnectedProviders(list(['acme'], []), new Set(['BETA_API_KEY', 'ACME_API_KEY']), creds);
+    const merged = mergeProjectSecretConnectedProviders(
+      list(['acme'], []),
+      new Set(['BETA_API_KEY', 'ACME_API_KEY']),
+      creds,
+    );
     expect(merged.connected).toEqual(['acme']);
   });
 
@@ -84,19 +92,31 @@ describe('mergeProjectSecretConnectedProviders', () => {
     const other: Array<{ id: string; authRequirement: ProviderAuthRequirement }> = [
       { id: 'gamma', authRequirement: { methods: [{ envVars: ['GAMMA_KEY'] }] } },
     ];
-    const merged = mergeProjectSecretConnectedProviders(list(['acme', 'gamma'], []), new Set(['GAMMA_KEY']), other);
+    const merged = mergeProjectSecretConnectedProviders(
+      list(['acme', 'gamma'], []),
+      new Set(['GAMMA_KEY']),
+      other,
+    );
     expect(merged.connected).toEqual(['gamma']);
   });
 
   test('the codex auth-json exception connects codex from either file name', () => {
     for (const secret of ['CODEX_AUTH_JSON', 'OPENCODE_AUTH_JSON']) {
-      const merged = mergeProjectSecretConnectedProviders(list(['codex'], []), new Set([secret]), []);
+      const merged = mergeProjectSecretConnectedProviders(
+        list(['codex'], []),
+        new Set([secret]),
+        [],
+      );
       expect(merged.connected).toEqual(['codex']);
     }
   });
 
   test('the codex exception does not add codex when the list does not carry it', () => {
-    const merged = mergeProjectSecretConnectedProviders(list(['acme'], []), new Set(['CODEX_AUTH_JSON']), []);
+    const merged = mergeProjectSecretConnectedProviders(
+      list(['acme'], []),
+      new Set(['CODEX_AUTH_JSON']),
+      [],
+    );
     expect(merged.connected).toEqual([]);
   });
 });

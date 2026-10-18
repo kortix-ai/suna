@@ -40,8 +40,14 @@ export interface PersistableQueryClient {
     getAll(): readonly PersistableQuery[];
     subscribe(listener: (event: { type: string; query: PersistableQuery }) => void): () => void;
   };
-  getQueryState(queryKey: readonly unknown[]): { data?: unknown; dataUpdatedAt: number } | undefined;
-  setQueryData(queryKey: readonly unknown[], data: unknown, options?: { updatedAt?: number }): unknown;
+  getQueryState(
+    queryKey: readonly unknown[],
+  ): { data?: unknown; dataUpdatedAt: number } | undefined;
+  setQueryData(
+    queryKey: readonly unknown[],
+    data: unknown,
+    options?: { updatedAt?: number },
+  ): unknown;
   /**
    * Marks a restored entry so it refetches the first time it is read. Optional
    * in the type only: a TanStack `QueryClient` has it.
@@ -89,6 +95,8 @@ export interface PersistedQueryCache {
 }
 
 import {
+  type PayloadConfig,
+  type StoredCache,
   apply,
   fit,
   forget,
@@ -96,8 +104,6 @@ import {
   settle,
   snapshot,
   write,
-  type PayloadConfig,
-  type StoredCache,
 } from './persisted-query-cache-payload';
 
 /** Bump when a persisted query's data shape changes incompatibly. */
@@ -138,7 +144,9 @@ export function isPersistableQueryKey(queryKey: readonly unknown[]): boolean {
   return queryKey.length === 5 && queryKey[4] !== 'list' && queryKey[4] !== 'list-paged';
 }
 
-export function createPersistedQueryCache(options: PersistedQueryCacheOptions): PersistedQueryCache {
+export function createPersistedQueryCache(
+  options: PersistedQueryCacheOptions,
+): PersistedQueryCache {
   const {
     storage,
     userId,
@@ -160,7 +168,16 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
 
   // The payload layer reads exactly this — the (de)serialization and budget
   // functions take it explicitly instead of closing over the factory.
-  const payload: PayloadConfig = { storage, storageKey, version, userId, maxAgeMs, maxBytes, shouldPersist, now };
+  const payload: PayloadConfig = {
+    storage,
+    storageKey,
+    version,
+    userId,
+    maxAgeMs,
+    maxBytes,
+    shouldPersist,
+    now,
+  };
 
   const cancelTimer = () => {
     if (timer === null) return;

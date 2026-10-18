@@ -80,15 +80,13 @@ export interface SubdomainUrlOptions {
  * Captures optional path, query string, and fragment.
  * Does NOT match bare localhost without a port (too ambiguous).
  */
-const LOCALHOST_URL_REGEX =
-  /https?:\/\/(?:localhost|127\.0\.0\.1):\d{1,5}[^\s)"'<>]*/g;
+const LOCALHOST_URL_REGEX = /https?:\/\/(?:localhost|127\.0\.0\.1):\d{1,5}[^\s)"'<>]*/g;
 
 /**
  * Regex to parse subdomain preview URLs.
  * Matches: http://p{port}-{sandboxId}.localhost:{backendPort}/{path}
  */
-const SUBDOMAIN_URL_REGEX =
-  /^https?:\/\/p(\d+)-([^.]+)\.localhost(?::(\d+))?(\/.*)?$/;
+const SUBDOMAIN_URL_REGEX = /^https?:\/\/p(\d+)-([^.]+)\.localhost(?::(\d+))?(\/.*)?$/;
 
 /**
  * A deployed preview ORIGIN: `{env}-p{port}-{sandbox-label}.{domain}`. Matched
@@ -106,7 +104,7 @@ const PREVIEW_ORIGIN_URL_REGEX =
 const EXCLUDED_PORTS = new Set([
   22, // SSH daemon — never preview/probe as HTTP
   4096, // OpenCode API (proxied by Kortix Master)
-  parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10), // Kortix Master itself
+  Number.parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10), // Kortix Master itself
 ]);
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -183,7 +181,8 @@ const KORTIX_MASTER_PROXY_REGEX = /^\/proxy\/(\d{1,5})(\/.*)?$/;
  * localhost/127.0.0.1 are same-app navigations, NOT sandbox services
  * to proxy. They should render as plain clickable links.
  */
-const APP_ROUTE_PREFIXES = /^\/(connectors|settings|dashboard|projects|agents|skills|tools|commands|support|changelog|files|p|browser|desktop|terminal|sessions|services|workspace|channels|scheduled-tasks|marketplace|templates|tunnel|admin|auth)(\/|$|\?)/;
+const APP_ROUTE_PREFIXES =
+  /^\/(connectors|settings|dashboard|projects|agents|skills|tools|commands|support|changelog|files|p|browser|desktop|terminal|sessions|services|workspace|channels|scheduled-tasks|marketplace|templates|tunnel|admin|auth)(\/|$|\?)/;
 
 export function isAppRouteUrl(rawUrl: string | undefined): boolean {
   if (!rawUrl) return false;
@@ -203,9 +202,7 @@ export function isAppRouteUrl(rawUrl: string | undefined): boolean {
  * from inside the sandbox (Kortix Master). These are rewritten to appear as
  * `localhost:{port}/{path}` so they get proxied correctly.
  */
-export function parseLocalhostUrl(
-  rawUrl: string | undefined,
-): ParsedLocalhostUrl | null {
+export function parseLocalhostUrl(rawUrl: string | undefined): ParsedLocalhostUrl | null {
   if (!rawUrl) return null;
 
   const candidate = stripUrlWrappers(stripMarkdownArtifacts(rawUrl.trim()));
@@ -226,29 +223,25 @@ export function parseLocalhostUrl(
 
   try {
     const parsed = new URL(candidate);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
-      return null;
-    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1')
-      return null;
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') return null;
     if (!parsed.port) return null;
 
-    let port = parseInt(parsed.port, 10);
+    let port = Number.parseInt(parsed.port, 10);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
 
     let pathStr = `${parsed.pathname || '/'}${parsed.search}${parsed.hash}`;
 
     // Special case: localhost:8000/proxy/{port}/... (Kortix Master proxy URL).
     // Extract the real port and remaining path so detection/rewriting works.
-    const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
+    const kortixMasterPort = Number.parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
     if (port === kortixMasterPort) {
       const proxyMatch = parsed.pathname.match(KORTIX_MASTER_PROXY_REGEX);
       if (proxyMatch) {
-        const realPort = parseInt(proxyMatch[1], 10);
+        const realPort = Number.parseInt(proxyMatch[1], 10);
         if (realPort >= 1 && realPort <= 65535) {
           port = realPort;
-          pathStr = normalizePath(
-            `${proxyMatch[2] || '/'}${parsed.search}${parsed.hash}`,
-          );
+          pathStr = normalizePath(`${proxyMatch[2] || '/'}${parsed.search}${parsed.hash}`);
           return {
             originalUrl: `http://localhost:${port}${pathStr}`,
             port,
@@ -309,10 +302,7 @@ function getCodeRanges(text: string): Array<[number, number]> {
 /**
  * Check if an index falls inside any of the given ranges.
  */
-function isInsideCodeBlock(
-  index: number,
-  ranges: Array<[number, number]>,
-): boolean {
+function isInsideCodeBlock(index: number, ranges: Array<[number, number]>): boolean {
   return ranges.some(([start, end]) => index >= start && index < end);
 }
 
@@ -535,9 +525,7 @@ export function getStaticFileHealthPath(): string {
   return '/health';
 }
 
-export function buildStaticFileHealthPreviewUrl(
-  options: SubdomainUrlOptions,
-): string {
+export function buildStaticFileHealthPreviewUrl(options: SubdomainUrlOptions): string {
   return rewriteLocalhostUrl(3211, getStaticFileHealthPath(), options);
 }
 
@@ -545,10 +533,7 @@ export function buildStaticFileHealthPreviewUrl(
  * Build the proxy base URL for a given port (without path).
  * Used for opening preview tabs.
  */
-export function getProxyBaseUrl(
-  port: number,
-  subdomainOpts: SubdomainUrlOptions,
-): string {
+export function getProxyBaseUrl(port: number, subdomainOpts: SubdomainUrlOptions): string {
   return rewriteLocalhostUrl(port, '/', subdomainOpts);
 }
 
@@ -601,7 +586,7 @@ export function proxyLocalhostUrl(
  *
  * @example toInternalUrl(8080, '/api/docs') → 'http://localhost:8080/api/docs'
  */
-export function toInternalUrl(port: number, path: string = '/'): string {
+export function toInternalUrl(port: number, path = '/'): string {
   return `http://localhost:${port}${path}`;
 }
 
@@ -609,8 +594,7 @@ export function toInternalUrl(port: number, path: string = '/'): string {
  * Regex to detect path-based proxy URLs:
  *   https://domain/v1/p/{sandboxId}/{port}/{path}
  */
-const PATH_PROXY_URL_REGEX =
-  /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
+const PATH_PROXY_URL_REGEX = /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
 
 /**
  * Parse a preview proxy URL back to its components.
@@ -629,9 +613,9 @@ export function parseSubdomainUrl(url: string): {
   const subMatch = url.match(SUBDOMAIN_URL_REGEX);
   if (subMatch) {
     return {
-      port: parseInt(subMatch[1], 10),
+      port: Number.parseInt(subMatch[1], 10),
       sandboxId: subMatch[2],
-      backendPort: subMatch[3] ? parseInt(subMatch[3], 10) : 80,
+      backendPort: subMatch[3] ? Number.parseInt(subMatch[3], 10) : 80,
       path: subMatch[4] || '/',
     };
   }
@@ -646,7 +630,7 @@ export function parseSubdomainUrl(url: string): {
     try {
       const parsed = new URL(url);
       backendPort = parsed.port
-        ? parseInt(parsed.port, 10)
+        ? Number.parseInt(parsed.port, 10)
         : parsed.protocol === 'https:'
           ? 443
           : 80;
@@ -655,7 +639,7 @@ export function parseSubdomainUrl(url: string): {
       return null;
     }
     return {
-      port: parseInt(originMatch[1], 10),
+      port: Number.parseInt(originMatch[1], 10),
       sandboxId: originMatch[2],
       backendPort,
       path: originMatch[4] || '/',
@@ -668,9 +652,9 @@ export function parseSubdomainUrl(url: string): {
     try {
       const parsed = new URL(url);
       return {
-        port: parseInt(pathMatch[2], 10),
+        port: Number.parseInt(pathMatch[2], 10),
         sandboxId: pathMatch[1],
-        backendPort: parseInt(parsed.port, 10) || (parsed.protocol === 'https:' ? 443 : 80),
+        backendPort: Number.parseInt(parsed.port, 10) || (parsed.protocol === 'https:' ? 443 : 80),
         path: pathMatch[3] || '/',
       };
     } catch {
@@ -710,9 +694,7 @@ export function proxyUrlToInternal(proxyUrl: string): string | null {
  */
 export function isPreviewUrl(url: string): boolean {
   return (
-    isSubdomainUrl(url)
-    || PREVIEW_ORIGIN_URL_REGEX.test(url)
-    || PATH_PROXY_URL_REGEX.test(url)
+    isSubdomainUrl(url) || PREVIEW_ORIGIN_URL_REGEX.test(url) || PATH_PROXY_URL_REGEX.test(url)
   );
 }
 
@@ -759,7 +741,7 @@ export function buildWebProxyUrl(
     const scheme = parsed.protocol.replace(':', '');
     const proxyPath = `${WEB_PROXY_PATH_PREFIX}${scheme}/${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 
-    const kmPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10); // 8000
+    const kmPort = Number.parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10); // 8000
     const baseUrl = rewriteLocalhostUrl(kmPort, '/', subdomainOpts);
     return `${baseUrl.replace(/\/$/, '')}${proxyPath}`;
   } catch {
