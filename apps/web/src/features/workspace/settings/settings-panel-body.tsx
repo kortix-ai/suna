@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { hubTarget } from '@/stores/account-panel-store';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
-import { getProjectDetail, type KortixProject } from '@kortix/sdk';
+import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -240,7 +240,6 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         onTabChange={setTab}
         onOpenChange={(next) => (next ? undefined : close())}
         isMobile={isMobile}
-        project={project}
         projectId={projectId}
         accountId={resolvedAccountId}
         groups={groups}
@@ -249,9 +248,11 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         organizationCopy={organizationCopy}
         chrome={chrome}
         startOnPane={paneRequested}
-        modalTitle={
-          project ? tSettingsRail('projectTitle', { projectName: project.name }) : chrome.settings
-        }
+        // The dialog is the personal settings shell wherever it opens from —
+        // inside a project too, where only the `workspace` pane knows the
+        // project exists (KRTX-1975): the accessible title stays "Settings",
+        // never "Settings — <project>".
+        modalTitle={chrome.settings}
       />
     </SettingsNavProvider>
   );
@@ -263,7 +264,6 @@ export interface SettingsPanelViewProps {
   onTabChange: (tab: SettingsTab) => void;
   onOpenChange: (open: boolean) => void;
   isMobile: boolean;
-  project: KortixProject | undefined;
   /** Required by the `workspace` pane, and by nothing else — see
    *  `SettingsPanelShellProps`. `undefined` outside a project, which is the
    *  same condition that filters that pane out. */
@@ -296,7 +296,6 @@ export function SettingsPanelView({
   onTabChange,
   onOpenChange,
   isMobile,
-  project,
   projectId,
   accountId,
   groups,
@@ -355,15 +354,16 @@ export function SettingsPanelView({
 }
 
 /**
- * The shell takes no `project`, but it does take `projectId` again.
- *
- * `SettingsPanelView` takes `project` because it names the project in the
- * dialog's accessible title. Nothing inside the frame needs the whole entity.
- * The rail carried a `RelatedProjectsSwitcher` while the overlay held thirteen
- * project-configuration tabs; switching project from a dialog that holds
- * Profile, Preferences, Connected accounts and one workspace pane changes
- * nothing you can see in it, and the project sidebar's own switcher
- * (`project-sidebar/workspace-switcher.tsx`) is where that job lives.
+ * The shell takes no `project`, and neither does the view any more. The view
+ * took one to name the dialog "Settings — <project>"; that title lied about
+ * what the dialog holds (every pane left in it is personal or account-scoped
+ * but the one workspace pane — KRTX-1975), so the accessible title is plain
+ * "Settings" now. The rail carried a `RelatedProjectsSwitcher` while the
+ * overlay held thirteen project-configuration tabs; switching project from a
+ * dialog that holds Profile, Preferences, Connected accounts and one
+ * workspace pane changes nothing you can see in it, and the project sidebar's
+ * own switcher (`project-sidebar/workspace-switcher.tsx`) is where that job
+ * lives.
  *
  * `projectId` was dropped on 2026-08-17, when the last pane that consumed it —
  * the Connected tab's project-scoped ChatGPT row — was removed. It is back on
@@ -379,7 +379,7 @@ export function SettingsPanelView({
  */
 export type SettingsPanelShellProps = Omit<
   SettingsPanelViewProps,
-  'open' | 'onOpenChange' | 'project' | 'modalTitle' | 'organizationCopy'
+  'open' | 'onOpenChange' | 'modalTitle' | 'organizationCopy'
 > & {
   organizationCopy?: AccountMembershipsCopy;
 };
