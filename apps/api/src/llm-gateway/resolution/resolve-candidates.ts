@@ -21,6 +21,7 @@ import {
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
+import { isRefusedCodexModelId } from '../models/codex-models';
 import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
@@ -439,7 +440,16 @@ export async function resolveCandidates(
   }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
   const context = { principal, effectiveModel, personalUserId, pooledEnabled, options };
-  if (provider === 'codex') return resolveCodexCandidates(context);
+  if (provider === 'codex') {
+    if (isRefusedCodexModelId(effectiveModel.slice('codex/'.length))) {
+      throw new GatewayResolutionError(
+        'model_retired',
+        `The "${effectiveModel}" model is no longer available with a ChatGPT account.`,
+        'Choose another model from the current ChatGPT lineup.',
+      );
+    }
+    return resolveCodexCandidates(context);
+  }
 
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {

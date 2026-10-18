@@ -299,7 +299,9 @@ export async function maybeSwapAgent(
       `[snapshots] ${template.slug}: agent-only drift ${prevSnapshot} → ${identity.snapshotName}; ` +
       `CAS agent-swap (no rebuild)`,
     );
-    await provider.swapAgent(identity.snapshotName, prevSnapshot);
+    // Equal swapKeys mean equal regions (the region is hashed into it), so
+    // the predecessor already lives where the new image must.
+    await provider.swapAgent(identity.snapshotName, prevSnapshot, { region: identity.region });
     return true;
   } catch (err) {
     console.warn(

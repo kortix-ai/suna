@@ -75,7 +75,9 @@ describe('CostModelList', () => {
   test('renders cost and request count for each row', () => {
     const models = [model('gpt-5', 12.4, 250)];
     const html = renderToStaticMarkup(<CostModelList models={models} />);
-    expect(html).toContain('$12.40');
+    expect(html).toContain('1,240');
+    expect(html).toContain('credits');
+    expect(html).not.toContain('$');
     expect(html).toContain('250');
   });
 });

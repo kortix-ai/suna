@@ -138,11 +138,8 @@ an on-demand App only while awake. Apps have no budget. Every App lists its `cap
 subcommand for a capability the App lacks exits `1` with
 `App <slug> does not support <capability>.`
 
-Apps is internal-only: Kortix enables it per project on request, and only
-Kortix can change it. When it is on, `kortix projects features` lists
-`apps on kortix` and `kortix projects info --json` has `experimental.apps: true`.
-When it is off, every `kortix apps` command answers `feature_disabled`
-("Contact Kortix to enable it.").
+Apps are generally available in every project. Use `kortix apps` directly;
+no feature flag or enablement request is required.
 
 | Command | Effect |
 | --- | --- |
@@ -354,6 +351,9 @@ the same state.
 | `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
+| `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fire with a JSON object merged over the manual payload. `--dry-run` fires nothing: it prints the rendered prompt, the filter verdict and the session key. Test a webhook or event prompt this way. |
+| `kortix triggers runs <slug> [--status queued\|running\|fired\|failed\|skipped\|rejected] [--limit N] [--cursor <c>] [--json]` | The trigger's run history, newest first: run id, started, source, status, run status, duration, cost, session. |
+| `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fire again with that run's stored payload. An unverified webhook run exits 1 until you pass `--confirm-unverified`. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
 | `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |

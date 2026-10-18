@@ -42,6 +42,8 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     },
     /** Take the deleted session out of the trash before its `restore_until`. */
     restore: () => P.restoreProjectSession(ctx.projectId, ctx.sessionId),
+    /** A lost session (its computer gone at the provider) continues on a new computer. */
+    recover: () => P.recoverProjectSession(ctx.projectId, ctx.sessionId),
     start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
       P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
     /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
@@ -84,6 +86,10 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
     /** Watch (`true`) or mute (`false`) this session for the caller. */
     setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
+    /** Pin (`true`) or unpin this session in the caller's own list. */
+    setPinned: (pinned: boolean) => P.setSessionPinned(ctx.projectId, ctx.sessionId, pinned),
+    /** Archive (`true`) or unarchive this session in the caller's own list. */
+    setArchived: (archived: boolean) => P.setSessionArchived(ctx.projectId, ctx.sessionId, archived),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {

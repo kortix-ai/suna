@@ -188,12 +188,6 @@ variable "fargate_base_on_demand" {
   }
 }
 
-variable "container_insights" {
-  description = "Enable CloudWatch Container Insights."
-  type        = bool
-  default     = true
-}
-
 variable "log_retention_days" {
   description = "CloudWatch log retention. The security baseline requires at least 365 days."
   type        = number

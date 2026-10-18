@@ -29,6 +29,7 @@ import {
 } from '@kortix/api-contract/session-log'
 import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog, bootOpenCodeSessionLog, type SeqState } from '@/harness/open-code/session-log'
 import { OpencodeDb, type StoreSnapshot } from '@/harness/open-code/opencode-db'
+import { OFFLOAD_PLACEHOLDER_URL } from '@/harness/open-code/attachment-offload'
 import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
 import { readOpenCodeSessionPin, writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
 import type { Opencode } from '@/harness/open-code/lifecycle'
@@ -227,6 +228,26 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     part.data = JSON.stringify({ ...JSON.parse(part.data), url: 'data:image/png,%E0%A4%A' })
     const image = all(exported(store).log).flatMap((m) => m.blocks).find((b) => b.id === part.id)
     expect(image).toEqual({ type: 'attachment', id: part.id, mime: 'image/png', name: 'dot.png' })
+  })
+
+  test('P2.13: blob() gives the bytes behind each blob: ref the last changes() exported, inline or offloaded to a sidecar', async () => {
+    const dbPath = join(dir, 'opencode.db')
+    const statePath = join(dir, 'state.json')
+    const store = structuredClone(after)
+    // A second image, offloaded: the row holds the placeholder and a marker naming the sidecar file.
+    const sidecar = join(dir, 'sidecar.bin')
+    const offloaded = Buffer.from('synthetic offloaded attachment bytes')
+    writeFileSync(sidecar, offloaded)
+    const image = store.parts.find((p) => JSON.parse(p.data).type === 'file')!
+    store.parts.push({ ...image, id: `${image.id}x`, data: JSON.stringify({ ...JSON.parse(image.data), url: OFFLOAD_PLACEHOLDER_URL, kortix: { offloaded: true, sidecar } }) })
+    writeStore(dbPath, store)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
+    const refs = (await port.changes([])).messages.flatMap((m) => m.message.blocks.flatMap((b) => (b.type === 'attachment' ? [b.ref] : [])))
+    const offloadedSha = new Bun.CryptoHasher('sha256').update(offloaded).digest('hex')
+    expect(refs).toEqual([`blob:${PNG_SHA}`, `blob:${offloadedSha}`])
+    expect(new Bun.CryptoHasher('sha256').update(port.blob!(PNG_SHA)!).digest('hex')).toBe(PNG_SHA)
+    expect(port.blob!(offloadedSha)).toEqual(offloaded)
+    expect(port.blob!('0'.repeat(64))).toBeNull()
   })
 
   test('a corrupt seq file restarts the seqs at 1', async () => {

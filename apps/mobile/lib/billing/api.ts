@@ -20,7 +20,12 @@ export interface AccountState {
     /** The paid plan's monthly amount in USD; null for free and enterprise. */
     monthly_usd?: number | null;
   } | null;
+  /** @deprecated Trials are removed: always null. */
+  trial?: { plan: 'credits' | 'enterprise'; ends_at: string; days_left: number } | null;
+  /** The Enterprise feature layer. Absent on older APIs. */
+  enterprise?: { state: 'off' | 'demo' | 'licensed' };
   can_manage_billing?: boolean;
+  /** USD amounts (1 credit = $0.01). Show them with `formatUsdAsCredits`. */
   credits: {
     total: number;
     daily: number;

@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import { loadTools, toolBridgeKey } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { toolNamesInDir } from './config-directory-inventory'
 
 /**
@@ -95,7 +96,7 @@ export async function writeToolBridge(
 
 function compiledTools(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null') as Partial<CompiledAgentSet> | null
+    return JSON.parse(compiledAgentConfigFromEnv(env) ?? 'null') as Partial<CompiledAgentSet> | null
   } catch {
     return null
   }

@@ -116,7 +116,7 @@ describe('writeResults', () => {
 });
 
 describe('the artifact guard step', () => {
-  const workflows = ['tests.yml', 'tests-browser-nightly.yml', 'tests-release.yml'];
+  const workflows = ['tests.yml', 'tests-release.yml'];
 
   it.each(workflows)('%s greps with the runner-scrubbed pattern and never calls rg', (name) => {
     const source = readFileSync(resolve(import.meta.dirname, `../../.github/workflows/${name}`), 'utf8');

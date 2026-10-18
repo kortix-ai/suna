@@ -14,16 +14,9 @@ describe('strict browser skip reporter', () => {
     await expect(reporter.onEnd({} as never)).resolves.toEqual({ status: 'failed' });
   });
 
-  it('records only the preview OAuth exclusion without failing the run', async () => {
-    const reporter = new StrictSkipReporter({
-      requireAll: true,
-      allowPreviewOAuthExclusion: true,
-      writeExclusions: async () => {},
-    });
-    reporter.onTestEnd(
-      skipped(['chromium', '17 — OAuth provider initiation', 'Google accepts callback']),
-      { status: 'skipped' } as never,
-    );
+  it('records a skip without failing a non-strict run', async () => {
+    const reporter = new StrictSkipReporter({ requireAll: false, writeExclusions: async () => {} });
+    reporter.onTestEnd(skipped(['chromium', 'journey']), { status: 'skipped' } as never);
     await expect(reporter.onEnd({} as never)).resolves.toBeUndefined();
   });
 });

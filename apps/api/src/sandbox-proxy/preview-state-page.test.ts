@@ -7,6 +7,7 @@ const STATES: Array<[PreviewState, string, boolean, boolean]> = [
   ['signed-out', 'Sign in to open this preview', true, false],
   ['forbidden', 'This preview address is not signed', true, false],
   ['unknown', 'This preview is no longer available', false, false],
+  ['unavailable', 'This share link is no longer available', false, false],
   ['starting', 'Starting the sandbox', false, true],
   ['not-listening', 'Waiting for port 8081', false, true],
   ['unreachable', 'Port 8081 is not answering', false, true],

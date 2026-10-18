@@ -4,7 +4,7 @@ import { log } from '../core/log';
 import { sleep } from '../core/poll';
 import { subscribe } from '../fixtures/billing';
 
-flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }, async (ctx) => {
+flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /health'] }, async (ctx) => {
   const gw = new Client(ctx.env.gatewayUrl);
   await ctx.step('gateway /health is public', async () => {
     const r = await gw.get('/health');
@@ -27,7 +27,7 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }
 });
 
 // GW-1b — the API's public streaming bridge to standalone gateway health.
-flow('GW-1b', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
+flow('GW-1b', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
   await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
     const r = await ctx.client.get('/v1/llm/health');
     r.status(200)
@@ -72,6 +72,7 @@ flow(
   'GW-2',
   {
     domain: 'llm-gateway',
+    tags: ['deployed'],
     requires: ['funded'],
     routes: ['GET /v1/llm/models', 'GET /v1/models', 'GET /v1/openai/models'],
   },
@@ -476,6 +477,7 @@ flow('GW-ACCESS-1', {
     'PATCH /v1/projects/:projectId/experimental',
     'PUT /v1/projects/:projectId/gateway/routing-policy',
     'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
   ],
@@ -503,6 +505,13 @@ flow('GW-ACCESS-1', {
       .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
     const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'model access verification' }, { params });
     minted.status(200).body().exists('$.secret_key');
+    // The mint response states the URL to use the key against (KRTX-1750) —
+    // the standalone gateway's origin when one is configured, null when the
+    // API serves the gateway itself (the client falls back to its own host).
+    // Mint and list must agree on it, whatever the environment sets.
+    const keysList = await owner.get('/v1/projects/:projectId/gateway/keys', { params });
+    keysList.status(200);
+    minted.status(200).body().has('$.gateway_url', keysList.json<{ gateway_url: string | null }>().gateway_url);
     key = minted.json<{ secret_key: string }>().secret_key;
   });
   await ctx.step('anonymous and nonmember requests cannot read or change access', async () => {
@@ -683,6 +692,7 @@ const RED_SQUARE_PNG =
 // local profile has no provider key and excludes it through `stripe`.
 flow('GW-MANAGED-1', {
   domain: 'llm-gateway',
+  tags: ['deployed'],
   requires: ['stripe'],
   timeoutMs: 300_000,
   routes: [

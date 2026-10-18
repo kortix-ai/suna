@@ -22,6 +22,7 @@ import {
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
+import { requestMemo } from '../lib/request-context';
 import { db } from '../shared/db';
 import { groupIdsOfUser } from '../iam/group-read';
 
@@ -65,13 +66,29 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 /* ─── DB helpers (used by the gateway + CRUD) ─────────────────────────────── */
 
 /** Resolve a user's group memberships → the subject the gateway authorizes with.
- *  Read fresh on every call: a membership added between two connector calls
+ *
+ *  Read fresh on every REQUEST: a membership added between two connector calls
  *  must authorize (or deny) the second one, and no TTL can honor that without
  *  an invalidation hook the admin routes and the flows' direct seeds don't
- *  share. */
+ *  share. Within ONE request the resolution is memoized (`requestMemo`):
+ *  independent helpers re-resolve the same subject several times per request
+ *  (the Apps list resolves it 3× — visibility filter, openable set, then the
+ *  link slugs' visibility re-check — measured on the 2026-10-14/15
+ *  pool-saturation burst, KRTX-2341), and every one of those reads answers
+ *  from the same first read of this request. The first resolution of each
+ *  request is still a fresh read, so the cross-call contract above holds;
+ *  outside a request scope (background sweeps, tests) there is no memo at all.
+ *  A request that writes memberships and then re-resolves in the same request
+ *  would read pre-write data — no such flow exists today (SCIM's membership
+ *  writes never resolve a subject; `reconcileAccountIdentities` moves
+ *  memberships and does not re-resolve). If one appears, it must call
+ *  `invalidateRequestMemo('share-subject:' + userId)` after its write, like
+ *  `git.ts` and `session-connector-bindings.ts` do for their memos. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
-  const rows = await groupIdsOfUser(userId);
-  return { userId, groupIds: rows.map((r) => r.groupId) };
+  return requestMemo(`share-subject:${userId}`, async () => {
+    const rows = await groupIdsOfUser(userId);
+    return { userId, groupIds: rows.map((r) => r.groupId) };
+  });
 }
 
 /* ─── Session sharing — default private; team-wide or select-members ───────────

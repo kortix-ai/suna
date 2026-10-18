@@ -7,8 +7,9 @@ import type { UiTranslator } from '@/i18n/translator';
  */
 
 import type { TurnCostInfo } from '@/ui';
-import { formatCost, formatDuration, formatTokens } from '@/ui';
+import { formatDuration, formatTokens } from '@/ui';
 import type { SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { formatDistanceStrict } from 'date-fns';
 
 import type { TurnServedModel } from './turn/served-model';
@@ -107,10 +108,11 @@ export function sessionTurnMetaRows(
   // for. When a fallback model answered, that price is for a model that did
   // not run, so the row shows what Kortix billed instead.
   const shownCost = served?.fallbackFrom ? served.billedCost : (cost?.cost ?? 0);
-  // `formatCost(0)` renders as "$0.00" — a real-looking number for a turn
-  // that spent nothing — so the row is gated on the raw value, not the string.
+  // A zero renders as "0" — a real-looking number for a turn that spent
+  // nothing — so the row is gated on the raw value, not the string. Spend
+  // reads in credits (1 credit = $0.01); the label carries the unit.
   if (shownCost > 0) {
-    rows.push({ label: tI18nComplete.raw('text204a5eb2cd28'), value: formatCost(shownCost) });
+    rows.push({ label: tI18nComplete.raw('text0f046f7588f9'), value: formatUsdAsCredits(shownCost) });
   }
 
   // Deliberately `input + output` only, NOT every token field: `reasoning` /

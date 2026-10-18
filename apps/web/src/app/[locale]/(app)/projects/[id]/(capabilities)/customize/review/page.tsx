@@ -1,26 +1,16 @@
-import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { redirect } from 'next/navigation';
+import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 
 /**
- * The Review Center's old address, from when it was a Customize tab
- * (2026-09-02 to 2026-10-02). It redirects to `/projects/[id]/review` and
- * keeps the query, so a shared `?id=<review item id>` link still opens the
- * same review.
+ * /projects/[id]/customize/review — the Review Center, a Customize tab
+ * (`reviewHref`). The tab bar and its access rule come from the
+ * `(capabilities)` layout: only a caller holding `project.review.act` reaches
+ * it. `?id=<review item id>` opens one item.
  */
-export default async function LegacyCustomizeReviewPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const [{ id }, query] = await Promise.all([params, searchParams]);
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
-      search.append(key, v);
-    }
-  }
-  const suffix = search.toString();
-  redirect(suffix ? `${reviewHref(id)}?${suffix}` : reviewHref(id));
+export default async function ProjectReviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <ReviewView projectId={id} />
+    </div>
+  );
 }

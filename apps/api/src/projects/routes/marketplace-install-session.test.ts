@@ -27,7 +27,12 @@ let createSessionCalls = 0;
 
 const app = new OpenAPIHono<AppEnv>();
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId,
     row: {
@@ -39,6 +44,8 @@ mock.module('../lib/access', () => ({
       manifestPath: null,
     },
   }),
+
+  assertProjectCapability: async () => undefined,
 }));
 mock.module('../../feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
 const realEntitlements = await import('../../billing/services/entitlements');
@@ -58,7 +65,12 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayOn,
 }));
+const realSessionLifecycle = await import('../session-lifecycle');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   createSession: async () => {
     createSessionCalls += 1;
     return {

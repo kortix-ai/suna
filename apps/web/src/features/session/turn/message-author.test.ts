@@ -7,6 +7,7 @@ import {
   awaitsAgent,
   resolveTranscriptAuthors,
   showAuthorName,
+  stoppedByName,
 } from './message-author';
 
 const avery: SessionMessageAuthor = { kind: 'member', user_id: 'u1', name: 'Avery', email: 'avery@example.com' };
@@ -95,5 +96,27 @@ describe('missingAuthorKey', () => {
 describe('awaitsAgent', () => {
   test('a no_reply prompt is not queued for the agent; others are, including old servers without the field', () => {
     expect([{ no_reply: true }, { no_reply: false }, {}].map(awaitsAgent)).toEqual([false, true, true]);
+  });
+});
+
+describe('stoppedByName', () => {
+  const stops = { authors: {}, initial_author: null, stops: { m1: blair } };
+
+  test('a turn another member stopped names them', () => {
+    expect(stoppedByName(stops, 'm1', 'u1')).toBe('Blair');
+  });
+
+  test('a turn the viewer stopped names nobody: their own stop is not news', () => {
+    expect(stoppedByName(stops, 'm1', 'u2')).toBeNull();
+  });
+
+  test('a turn with no recorded stop, or an older server without stops, names nobody', () => {
+    expect(stoppedByName(stops, 'm2', 'u1')).toBeNull();
+    expect(stoppedByName({ authors: {}, initial_author: null }, 'm1', 'u1')).toBeNull();
+    expect(stoppedByName(undefined, 'm1', 'u1')).toBeNull();
+  });
+
+  test('a stop recorded for an agent session names nobody', () => {
+    expect(stoppedByName({ authors: {}, initial_author: null, stops: { m1: parent } }, 'm1', 'u1')).toBeNull();
   });
 });

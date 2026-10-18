@@ -175,12 +175,11 @@ module "api" {
   # ("InvalidParameterException"), which failed Deploy Prod for v0.13.54 and
   # v0.13.55. Pinning 100 (KRTX-586) needs availability_zone_rebalancing =
   # "DISABLED" on this service first; that is a resilience decision of its own.
-  min_capacity       = 3
-  max_capacity       = 10
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  min_capacity     = 3
+  max_capacity     = 10
+  use_fargate_spot = false
+  cpu_target       = 55
+  memory_target    = 65
   # Load-proportional scaling. CPU/mem alone left the service flat during the
   # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
   # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
@@ -247,7 +246,6 @@ module "gateway" {
   min_capacity               = 3
   max_capacity               = 20
   use_fargate_spot           = false
-  container_insights         = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

@@ -48,7 +48,6 @@ import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL 
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
-import type { ProjectRole } from '../access';
 import {
   SESSION_PAGE_DEFAULT_LIMIT,
   SESSION_PAGE_MAX_LIMIT,
@@ -60,6 +59,12 @@ import {
   type SessionInventoryItem,
   type SessionOwnerIdentity,
 } from './session-inventory';
+import {
+  loadSessionUserStates,
+  sessionUserStateSql,
+  type SessionListView,
+  type SessionUserState,
+} from './session-user-state';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -83,6 +88,12 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
+  /** The person whose pins and archive apply (`personUserId`). Null: an
+   *  agent, API key or service account, which reads the raw list. */
+  personId?: string | null;
+  /** Only the person's pinned or archived sessions. Absent: every session the
+   *  person has not archived. */
+  view?: SessionListView | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -169,6 +180,7 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
         : searchMatchSql(t, filter.q),
     );
   }
+  conditions.push(sessionUserStateSql(filter.view ?? null, filter.personId ?? null));
   return conditions.length ? and(...conditions) : undefined;
 }
 
@@ -289,6 +301,8 @@ export interface ProjectSessionInventory {
   childCounts: Map<string, number>;
   /** Display names of member/service-account initiators on this page. */
   initiatorNames: Map<string, string>;
+  /** The person's pin and archive per served session (`filter.personId`). */
+  userStates: Map<string, SessionUserState>;
 }
 
 type SessionInventoryInput = Parameters<typeof loadProjectSessionInventory>[0];
@@ -300,12 +314,13 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
             filter.q ?? null,
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
+            ...(filter.view ? [{ view: filter.view }] : []),
           ])
         : undefined,
   };
@@ -325,11 +340,13 @@ async function foldSessionRows(
     grantsBySession: Map<string, SecretGrant[]>;
     ownerIdentities: Map<string, SessionOwnerIdentity>;
     runtimeStatusBySession: Map<string, RuntimeStatus>;
+    userStates: Map<string, SessionUserState>;
   },
 ) {
-  const { input, canManageProject, subject, accountSessionOversight, grantsBySession, ownerIdentities, runtimeStatusBySession } = ctx;
+  const { input, canManageProject, subject, accountSessionOversight, grantsBySession, ownerIdentities, runtimeStatusBySession, userStates } = ctx;
   const rowIds = rows.map((row) => row.sessionId);
-  const [runtimeRows, rowGrants, rowOwners] = await Promise.all([
+  const personId = input.filter?.personId ?? null;
+  const [runtimeRows, rowGrants, rowOwners, rowStates] = await Promise.all([
     db
       .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
       .from(sessionSandboxes)
@@ -356,9 +373,11 @@ async function foldSessionRows(
       ],
       input.accountId,
     ),
+    personId ? loadSessionUserStates(rowIds, personId) : new Map<string, SessionUserState>(),
   ]);
 
   const rowRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
+  for (const [key, value] of rowStates) userStates.set(key, value);
   for (const [key, value] of rowRuntime) runtimeStatusBySession.set(key, value);
   for (const [key, value] of rowGrants) grantsBySession.set(key, value);
   for (const [key, value] of rowOwners) ownerIdentities.set(key, value);
@@ -398,7 +417,8 @@ async function appendMissingAncestors(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  const appendAncestors = !filter.parent && !filter.labels?.length;
+  // A pinned or archived view promises only those rows.
+  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
@@ -417,6 +437,8 @@ async function appendMissingAncestors(input: {
           eq(projectSessions.projectId, input.projectId),
           eq(projectSessions.accountId, input.accountId),
           inArray(projectSessions.sessionId, missing),
+          // A coordinator the person archived stays out of their list.
+          sessionUserStateSql(null, filter.personId ?? null),
         ),
       );
     if (ancestorRows.length === 0) break;
@@ -466,7 +488,6 @@ export async function loadProjectSessionInventory(input: {
   projectId: string;
   accountId: string;
   userId: string;
-  effectiveRole: ProjectRole;
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
@@ -558,7 +579,6 @@ export async function loadProjectSessionInventory(input: {
   // every list row report `can_manage_lifecycle: true` to a credential whose
   // DELETE would then 403 — the two answers must come from one predicate.
   const standingRead = viewerManagerStanding(
-    input.effectiveRole,
     input.boundCredentialSessionId,
     input.probeManageCapability,
   );
@@ -611,6 +631,7 @@ export async function loadProjectSessionInventory(input: {
       subject,
       childCounts: new Map(),
       initiatorNames: new Map(),
+      userStates: new Map(),
     };
   }
 
@@ -622,6 +643,7 @@ export async function loadProjectSessionInventory(input: {
   const grantsBySession = new Map<string, SecretGrant[]>();
   const ownerIdentities = new Map<string, SessionOwnerIdentity>();
   const runtimeStatusBySession = new Map<string, RuntimeStatus>();
+  const userStates = new Map<string, SessionUserState>();
 
   let nextCursor: string | null = null;
   let exhausted = false;
@@ -639,6 +661,7 @@ export async function loadProjectSessionInventory(input: {
       grantsBySession,
       ownerIdentities,
       runtimeStatusBySession,
+      userStates,
     });
 
   for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
@@ -714,5 +737,6 @@ export async function loadProjectSessionInventory(input: {
     ownerIdentities,
     runtimeStatusBySession,
     subject,
+    userStates,
   };
 }

@@ -29,7 +29,7 @@ import {
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { deleteManagedProjectRepo } from '../lib/project-deletion';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -128,10 +128,11 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`apps`) starts billable machines, so Kortix
-  // decides it: only a platform operator writes it, never a project admin and
-  // never an agent session. An operator acting in a customer project through
-  // impersonation passes (`userId` stays the operator's).
+  // An internal-only flag (`session_log`, `session_log_restore`) changes what
+  // the platform records, so Kortix decides it: only a platform operator
+  // writes it, never a project admin and never an agent session. An operator
+  // acting in a customer project through impersonation passes (`userId`
+  // stays the operator's).
   if (isOperatorOnlyFeatureFlag(feature)) {
     const operator = !isProjectSessionPrincipal(c) && (await isPlatformAdmin(c.get('userId')));
     if (!operator) {
@@ -173,8 +174,9 @@ export function registerProjectSettingsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Two independent writes share this route. `completed` is a TOP-LEVEL
     // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
@@ -236,16 +238,14 @@ export function registerProjectSettingsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404, 502),
+          ...errors(404, 500, 502),
       },
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Deletion is admin-only. The floor `member` role explicitly excludes
-    // project.delete; loadProjectForUser('manage') would otherwise let
-    // members through via project.write.
+    // project.delete is the gate; the load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
     // Release prompt attachments first. After the repository deletion below, a
@@ -264,6 +264,19 @@ export function registerProjectSettingsRoutes(): void {
     } catch (error) {
       logger.error('[projects] failed to delete the managed repo', { projectId, error: String(error) });
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
+    }
+
+    // Purge the project's connector rows before the archive: after it the
+    // project answers 404, so a failed purge could never be retried.
+    // The row survives its archive as a tombstone, so the database's
+    // connectors FK cascade never fires and the rows would outlive the
+    // purged project (KRTX-1907). Same visibility rule as the repo delete:
+    // a failure leaves the project active and the deletion retryable.
+    try {
+      await purgeProjectConnectors(projectId);
+    } catch (error) {
+      logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
+      return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
     const [row] = await db
@@ -308,7 +321,7 @@ export function registerProjectSettingsRoutes(): void {
   // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
   // (follow the platform default/distribution). Bypasses the distribution weights by
   // design — pin a project to platinum even when platinum's weight is 0. Human callers
-  // only: project 'manage' + project.settings.write, and never a session principal —
+  // only: project.settings.write, and never a session principal —
   // the pin routes EVERY new session in the project (KRTX-1681: a security-audit
   // agent pinned its whole project to daytona to unblock its own task).
   projectsApp.openapi(

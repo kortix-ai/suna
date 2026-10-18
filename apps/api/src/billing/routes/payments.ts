@@ -1,3 +1,4 @@
+import { createHostedCheckout } from '../services/hosted-checkout';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
@@ -11,9 +12,9 @@ import {
   insertPurchase,
 } from '../repositories/transactions';
 import { BillingError } from '../../errors';
-import { resolveScopedAccountId } from '../../middleware/resolve-account';
-import { resolveBillingWriteAccountId } from '../http-require-billing-write';
+import { resolveBillingReadAccountId, resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -75,7 +76,7 @@ paymentsRouter.openapi(
       accountId,
       amountDollars: String(amount),
       status: 'pending',
-      description: `$${amount} credit purchase`,
+      description: `Credit purchase: ${formatUsdAsCredits(amount)} credits ($${amount})`,
       provider: 'stripe',
     });
 
@@ -91,7 +92,7 @@ paymentsRouter.openapi(
           quantity: 1,
         }];
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await createHostedCheckout(stripe, {
       customer: customerId,
       mode: 'payment',
       line_items: lineItems,
@@ -151,7 +152,7 @@ paymentsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
+    const accountId = await resolveBillingReadAccountId(c);
     const limit = Number(c.req.query('limit') ?? 50);
     const offset = Number(c.req.query('offset') ?? 0);
     const typeFilterParam = c.req.query('type_filter') || undefined;
@@ -200,7 +201,7 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
+    const accountId = await resolveBillingReadAccountId(c);
     const days = Number(c.req.query('days') ?? 30);
     const summary = await getTransactionsSummary(accountId, days);
     return c.json(summary);
@@ -222,7 +223,7 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
+    const accountId = await resolveBillingReadAccountId(c);
     const { getAutoTopupSettings } = await import('../services/auto-topup');
     const settings = await getAutoTopupSettings(accountId);
     return c.json(settings);
@@ -242,7 +243,7 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
+    const accountId = await resolveBillingReadAccountId(c);
     const { getAutoTopupSetupStatus } = await import('../services/auto-topup');
     const status = await getAutoTopupSetupStatus(accountId);
     return c.json(status);
@@ -325,7 +326,7 @@ paymentsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
+    const accountId = await resolveBillingReadAccountId(c);
     const limit = Number(c.req.query('limit') ?? 50);
     const offset = Number(c.req.query('offset') ?? 0);
 

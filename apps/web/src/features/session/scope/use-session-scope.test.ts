@@ -133,7 +133,7 @@ describe('loadSessionScopeCatalog', () => {
     const queryClient = new QueryClient();
     let calls = 0;
     const response = { connectors: [connector('mail')] };
-    const fetchConnectors = async () => {
+    const fetchConnectors = async (_projectId?: string, _options?: { includeSchemas?: boolean }) => {
       calls += 1;
       return response;
     };

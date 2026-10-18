@@ -13,8 +13,7 @@ import {
   readLocalSupabaseEnvironment,
   resolveLocalTopology,
 } from './local-stack';
-import { assertTargetSmokeHealth, resolveTargetSmokeConfig } from './target-smoke';
-import { LANE_GROUPS, resolveScope, scopePlan } from './test-scope';
+import { resolveTargetSmokeConfig, waitForTargetSha } from './target-smoke';
 
 export interface LocalTestLane {
   name: string;
@@ -72,6 +71,17 @@ function deployedFlowTimeoutMs(): string {
   return override === undefined || override === '' ? DEPLOYED_FLOW_TIMEOUT_MS : override;
 }
 
+/**
+ * The flow tag the deployed API lanes (`--target-api-full`, `--target-full`)
+ * select. The `Tests` lanes already ran every flow on the same tree, so a
+ * deployed run proves only what a deployment can break: auth against the real
+ * Supabase, real sandbox boot and wake, the runtime proxy and SSE through the
+ * edge, the LLM gateway, Stripe, object storage, managed git push, email,
+ * health and SHA, CORS and domains. The seam-to-flow table is in
+ * tests/README.md ("Release gate"). `--require-all` applies to this set.
+ */
+export const DEPLOYED_FLOW_TAG = 'deployed';
+
 const flowFilterFlags = new Set(['--domain', '--id', '--tag', '--smoke']);
 
 function hasFlowFilter(args: string[]): boolean {
@@ -112,8 +122,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
-  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
-  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
+  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs (the
+  // browser lane sharded), so `max(api, browser)` replaces a contended sum on one 2-vCPU
   // runner. `--target-full` still runs both lanes in one process for
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
@@ -126,11 +136,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // minimal target validation and health probe instead.
   const latencyOnly = args.includes('--latency');
   const agenticOnly = args.includes('--agentic-only');
-  // CI's `core` lane passes this: its `packages` lane already runs package
-  // quality, so the core lane would spend ~18 min repeating it.
+  // The core run without package quality: CI's `packages-*` lanes run it.
   const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
+  // `--package-group=api|cli|kortixd|rest`: one slice of package quality
+  // (tests/bin/package-quality.ts), so CI runs the slices on parallel runners.
+  const packageGroupArgs = args.filter((arg) => arg.startsWith('--package-group='));
+  // `--core-group=flows|db`: one half of the core run without package quality,
+  // so CI runs the REST/CLI flows and the DB suites on parallel runners.
+  const coreGroupArgs = args.filter((arg) => arg.startsWith('--core-group='));
   const modes = [
     full,
     flowsOnly,
@@ -158,6 +173,24 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   if (apiShardArgs.length > 1) {
     throw new Error('choose only one --api-shard value');
+  }
+  if (packageGroupArgs.length > 1) {
+    throw new Error('choose only one --package-group value');
+  }
+  if (coreGroupArgs.length > 1) {
+    throw new Error('choose only one --core-group value');
+  }
+  const coreGroup = coreGroupArgs[0]?.slice('--core-group='.length);
+  if (coreGroupArgs.length === 1) {
+    if (coreGroup !== 'flows' && coreGroup !== 'db') throw new Error('--core-group must be flows or db');
+    if (modes > 0) throw new Error('--core-group applies only to the default core run');
+  }
+  const packageGroup = packageGroupArgs[0]?.slice('--package-group='.length);
+  if (packageGroupArgs.length === 1) {
+    if (!['api', 'cli', 'kortixd', 'rest'].includes(packageGroup ?? '')) {
+      throw new Error('--package-group must be api, cli, kortixd or rest');
+    }
+    if (!packagesOnly) throw new Error('--package-group requires --packages-only');
   }
   const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
   if (browserShardArgs.length === 1) {
@@ -187,6 +220,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--target-api-full' &&
       arg !== '--target-browser-full' &&
       arg !== '--no-packages' &&
+      !arg.startsWith('--package-group=') &&
+      !arg.startsWith('--core-group=') &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -197,6 +232,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const sdk: LocalTestLane = {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
+    // The root runner already applied its own Mac gate (refusesSuiteRun).
+    env: { KORTIX_FULL_TEST: '1' },
   };
   // Every PostgreSQL-backed test file, one process and one fresh database per
   // file (src/core/db-suites.ts). Needs local Supabase; the runner starts it
@@ -231,6 +268,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
     command: ['bun', 'tests/bin/package-quality.ts'],
+    ...(packageGroup ? { env: { KORTIX_PACKAGE_GROUP: packageGroup } } : {}),
   };
   // Everything except the mode flag itself passes straight through, so
   // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —
@@ -258,6 +296,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      DEPLOYED_FLOW_TAG,
       ...(apiShard ? ['--shard', apiShard] : []),
     ],
     // KE2E_API_WORKERS was 3. `provision.ts`'s global KE2E_PROVISION_CONCURRENCY
@@ -265,8 +305,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     // measured parallelism at 1.43x. 6 is the paired half of raising provision
     // concurrency to 4; raising either alone does almost nothing. Sandbox
     // workers stay at 3 because those boot real cloud sandboxes.
-    // The release gate's shards override BOTH so the fleet total stays bounded
-    // — see the arithmetic in tests-release.yml.
+    // The release gate's API job overrides BOTH so the fleet total stays
+    // bounded — see the arithmetic in tests-release.yml.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '6',
       KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
@@ -284,14 +324,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     cwd: 'tests',
     env: {
       E2E_BROWSER_WORKERS: process.env.E2E_BROWSER_WORKERS ?? '2',
-      E2E_ENABLE_SDK_ONLY_SESSION: '1',
-      E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-      E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
-      ...(process.env.KE2E_TARGET === 'preview'
-        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
-        : {}),
     },
   };
 
@@ -380,13 +414,19 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   const coreStage = [flows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
   const lanes = [...coreStage, sdk];
-  // `pnpm test` is the whole attested suite minus the browser journeys, so it
-  // also runs package quality (the attestation's `packages` lane) after the
-  // core stage. The SDK runs once, as its own lane.
+  // `pnpm test` is the whole suite minus the browser journeys, so it also runs
+  // package quality after the core stage. The SDK runs once, as its own lane.
   const corePackageQuality: LocalTestLane = {
     ...packageQuality,
     env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
   };
+  // The two core groups partition `--no-packages`: the flows on one runner,
+  // everything else on the other.
+  if (coreGroup === 'flows') return { mode: 'core', lanes: [flows], stages: [[flows]] };
+  if (coreGroup === 'db') {
+    const dbStage = coreStage.filter((lane) => lane !== flows);
+    return { mode: 'core', lanes: [...dbStage, sdk], stages: [dbStage, [sdk]] };
+  }
   if (noPackages) return { mode: 'core', lanes, stages: [coreStage, [sdk]] };
   return {
     mode: 'core',
@@ -544,8 +584,6 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
 
 /** Lanes that start the local Supabase, so they need Docker. */
 const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
-/** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
-const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
 
 function dockerAvailable(): boolean {
   try {
@@ -555,39 +593,42 @@ function dockerAvailable(): boolean {
   }
 }
 
+/**
+ * A suite-wide run on a developer Mac: the default `pnpm test`, `--full`,
+ * `--packages-only`, `--browser-only`, or `--db-only` with no path filter.
+ * These run in CI and on Linux boxes only. 2026-10-16: five agent sessions ran
+ * the suite at once on one laptop (load average 112, 16.5 of 17.4 GB swap).
+ * `KORTIX_FULL_TEST=1` overrides.
+ */
+export function refusesSuiteRun(plan: LocalTestPlan, platform: string, env: Record<string, string | undefined>): boolean {
+  if (platform !== 'darwin' || env.KORTIX_FULL_TEST === '1') return false;
+  if (plan.mode === 'db') return plan.lanes[0]!.command.length <= 2;
+  return plan.mode === 'core' || plan.mode === 'full' || plan.mode === 'packages' || plan.mode === 'browser';
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
-  let plan = buildLocalTestPlan(args);
-  // Sanctioned environment skips: verify-attestation.mjs records them, never
-  // counts a skip as a pass, and `--strict` (a push to main) rejects them.
-  const skipped = new Map<string, string>();
-  if (plan.mode === 'core') {
-    // Diff-scoped core run (core/test-scope.ts): unaffected lanes are recorded
-    // as skipped-unaffected, and groups that already passed on this diff are kept.
-    const { scope, freshLanes, files } = resolveScope(root);
-    const scoped = scopePlan(plan, scope, freshLanes);
-    plan = scoped.plan;
-    for (const name of scoped.unaffected) skipped.set(name, 'skipped-unaffected');
-    console.log(
-      scope.full
-        ? `[test] scope=full (${scope.reason})`
-        : `[test] scope=${scope.packages.join(',') || 'none'} (${files?.length ?? 0} changed files)`,
+  const plan = buildLocalTestPlan(args);
+  if (refusesSuiteRun(plan, process.platform, process.env)) {
+    console.error(
+      [
+        `[test] REFUSED: mode=${plan.mode} runs a whole suite. A Mac runs targeted tests only; the suite runs in CI.`,
+        '  One flow:        pnpm test -- --id <ID>   (or --domain <d>)',
+        '  DB suites:       pnpm test -- --db-only <path-filter>',
+        '  SDK:             pnpm test -- --sdk-only',
+        '  One package:     pnpm --filter <pkg> test <file>',
+        '  The whole suite: add the `test` label to the PR (CI), or KORTIX_FULL_TEST=1 pnpm test',
+      ].join('\n'),
     );
-    for (const group of scoped.reused)
-      console.log(`[test] REUSE ${group}: already pass for this diff (delete the attestation to rerun)`);
-    for (const name of scoped.unaffected) console.log(`[test] SKIP ${name} (unaffected by this diff)`);
+    return 2;
   }
-  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
-    if (plan.lanes.some((lane) => DOCKER_LANES.has(lane.name)) && !dockerAvailable()) {
-      // No Docker (a factory sandbox): the DB lanes cannot run.
-      for (const lane of plan.lanes) {
-        if (!DOCKER_LANES.has(lane.name)) continue;
-        skipped.set(lane.name, 'skipped-no-db');
-        console.log(`[test] SKIP ${lane.name} (skipped-no-db, not a pass)`);
-      }
-      plan.lanes = plan.lanes.filter((l) => !DOCKER_LANES.has(l.name));
-      plan.stages = plan.stages.map((stage) => stage.filter((l) => !DOCKER_LANES.has(l.name)));
-      if (plan.lanes.length === 0) return 1;
+  if (plan.mode !== 'full' && plan.lanes.some((lane) => DOCKER_LANES.has(lane.name)) && !dockerAvailable()) {
+    // No Docker (a factory sandbox): the DB lanes cannot run. A skip is not a pass.
+    for (const lane of plan.lanes) {
+      if (DOCKER_LANES.has(lane.name)) console.log(`[test] SKIP ${lane.name} (no Docker, not a pass)`);
     }
+    plan.lanes = plan.lanes.filter((l) => !DOCKER_LANES.has(l.name));
+    plan.stages = plan.stages.map((stage) => stage.filter((l) => !DOCKER_LANES.has(l.name)));
+    if (plan.lanes.length === 0) return 1;
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
@@ -598,7 +639,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   try {
     if (DEPLOYED_TARGET_MODES.has(plan.mode)) {
       const target = resolveTargetSmokeConfig();
-      await assertTargetSmokeHealth(target);
+      await waitForTargetSha(target);
       console.log(
         `[test] deployed-target api=${target.apiUrl} web=${target.webUrl} sha=${target.expectedSha}`,
       );
@@ -671,28 +712,5 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     );
   }
   console.log(`[test] benchmark ${outputPath}`);
-  // A filtered (--id, path filter) or sharded run proves less than its lane
-  // name says, so it never writes an attestation.
-  const MODE_FLAGS = ['--', '--full', '--flows-only', '--sdk-only', '--db-only', '--browser-only', '--packages-only'];
-  const partial = args.some((a) => !MODE_FLAGS.includes(a));
-  if (ATTESTED_MODES.has(plan.mode) && !partial) {
-    // Attestation lanes group the runner lanes. A group is written only when
-    // every member ran (or was skipped) in this run, or when one failed.
-    // A group whose lanes all ran or were skipped is `pass` when any of them
-    // ran, else its skip value (a scoped run may skip the SDK inside `core`).
-    const lanes: Record<string, string> = {};
-    for (const [group, members] of Object.entries(LANE_GROUPS)) {
-      const ran = results.filter((r) => members.includes(r.name));
-      const skipValues = members.map((m) => skipped.get(m)).filter((v) => v !== undefined);
-      if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
-      else if (ran.length + skipValues.length === members.length) {
-        lanes[group] = ran.length > 0 ? 'pass' : (skipValues[0] ?? 'pass');
-      }
-    }
-    Bun.spawnSync(
-      ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
-      { cwd: root, stdout: 'inherit', stderr: 'inherit' },
-    );
-  }
   return failed.length === 0 ? 0 : 1;
 }

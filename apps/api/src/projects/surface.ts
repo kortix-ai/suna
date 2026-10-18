@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// A person's pins and archive (consumed by account erasure and offboarding).
+export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
+
 // Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
@@ -66,6 +69,11 @@ export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
 
+// The stamp the removal gate reads: mark a teardown as Kortix-initiated BEFORE
+// the provider call so its `removed` webhook cannot read as a lost runtime
+// (consumed by ../billing/services account deletion).
+export { markKortixRemovalIntent } from './runtime-identity';
+
 // Offboarding pauses the reminders a departed member set (consumed by
 // ../accounts/core/offboard-member).
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
@@ -103,9 +111,13 @@ export { readStoredTranscriptWindow } from './session-log-read';
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 // The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
-export { backfillSessionLogs, newBackfillState } from './session-log-backfill';
+export { backfillSessionLogs } from './session-log-backfill';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
 export { refreshIntervalMs, refreshMirror } from './git/mirror';
 export type { GitBackedProject } from './git/types';
+
+// Who may stop a running turn (consumed by channels/core/turn-stop.ts and
+// sandbox-proxy/forward/abort-authority.ts).
+export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';

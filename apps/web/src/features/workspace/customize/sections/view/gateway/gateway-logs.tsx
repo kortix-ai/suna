@@ -7,13 +7,13 @@ import {
   XIcon,
   ScrollIcon as ScrollText,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { Fragment, forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code/code-block';
 import { Badge } from '@/components/ui/badge';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { HistogramBars } from '@/components/ui/histogram-bars';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
@@ -36,6 +36,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 import { CopyButton, displayModel } from './_shared';
 
@@ -339,7 +340,7 @@ function LogListHeader() {
       <span className={LANE.time}>{tI18nComplete.raw('text33b93476cf59')}</span>
       <span className={LANE.latency}>{tI18nComplete.raw('texte0e7d293043c')}</span>
       <span className={LANE.tokens}>{tI18nComplete.raw('texta039dfb9628b')}</span>
-      <span className={LANE.cost}>{tI18nComplete.raw('text204a5eb2cd28')}</span>
+      <span className={LANE.cost}>{tI18nComplete.raw('text0f046f7588f9')}</span>
     </div>
   );
 }
@@ -358,6 +359,7 @@ const LogRow = forwardRef<
   // A failed call that never reached a model has no tokens and no cost; a dash
   // says "nothing" instead of a 0 that reads like a measurement.
   const empty = !row.ok && row.input_tokens + row.output_tokens === 0;
+  const locale = useLocale();
   return (
     <button
       ref={ref}
@@ -391,7 +393,7 @@ const LogRow = forwardRef<
       <span className={cn(LANE.cost, 'tabular-nums', empty ? 'text-muted-foreground' : 'text-foreground')}>
         {/* What the request cost YOU — the full caller-facing total, not just
             the Kortix-billed slice (`kortix_cost`, 0 on a plain BYOK call). */}
-        {empty ? '—' : `$${row.total_cost.toFixed(4)}`}
+        {empty ? '—' : formatUsdAsCredits(row.total_cost, { locale })}
       </span>
     </button>
   );
@@ -538,6 +540,7 @@ function GatewayLogDetail({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('gatewayLogs');
+  const locale = useLocale();
   const { data, isLoading } = useGatewayLog(projectId, logId);
 
   const payloads = data
@@ -616,11 +619,14 @@ function GatewayLogDetail({
                 label={tI18nComplete.raw('texta039dfb9628b')}
                 value={(data.input_tokens + data.output_tokens).toLocaleString()}
               />
-              <StatCell label={tI18nComplete.raw('text204a5eb2cd28')} value={`$${data.total_cost.toFixed(4)}`} />
+              <StatCell
+                label={tI18nComplete.raw('text0f046f7588f9')}
+                value={formatUsdAsCredits(data.total_cost, { locale })}
+              />
               {data.kortix_cost > 0 && data.provider_cost > 0 && (
                 <StatCell
-                  label={tI18nComplete.raw('text27343e44b3f1')}
-                  value={`$${data.kortix_cost.toFixed(4)}`}
+                  label={tI18nComplete.raw('text88548ef048ed')}
+                  value={formatUsdAsCredits(data.kortix_cost, { locale })}
                 />
               )}
             </div>
@@ -698,6 +704,7 @@ const HISTOGRAM_BUCKETS = 48;
 export function LogBucketCard({ bucket }: { bucket: LogBucketStats }) {
   const t = useTranslations('gatewayLogs');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const stats: [string, ReactNode][] = [
     [
       t('cardErrors'),
@@ -708,7 +715,7 @@ export function LogBucketCard({ bucket }: { bucket: LogBucketStats }) {
     [t('successRate'), `${Math.round((bucket.successRate ?? 0) * 100)}%`],
     [t('cardMedianLatency'), bucket.medianLatency != null ? fmtLatency(bucket.medianLatency) : '—'],
     [tI18nComplete.raw('texta039dfb9628b'), bucket.tokens.toLocaleString()],
-    [tI18nComplete.raw('text204a5eb2cd28'), `$${bucket.cost.toFixed(4)}`],
+    [tI18nComplete.raw('text0f046f7588f9'), formatUsdAsCredits(bucket.cost, { locale })],
   ];
   return (
     <div className="flex flex-col gap-2 tabular-nums" data-slot="log-bucket-card">
@@ -789,47 +796,34 @@ export function LogHistogram({
           </span>
         ) : null}
       </div>
-      <div className="flex h-14 items-end gap-1.5">
-        {buckets.map((b) => (
-          <HoverCard key={b.start} openDelay={0} closeDelay={0}>
-            <HoverCardTrigger asChild>
-              <button
-                type="button"
-                aria-label={`${fmtRange(b)} · ${t('requestsLabel', { count: b.total })} ${b.total}`}
-                onClick={() => onSelectRange?.({ start: b.start, end: b.end })}
-                className="group/bar flex h-full min-w-0 flex-1 cursor-pointer items-end outline-none"
-              >
-                <span
-                  className={cn(
-                    'flex w-full flex-col overflow-hidden rounded-xs transition-[background-color] duration-(--duration-normal)',
-                    b.total
-                      ? 'bg-muted-foreground/45 group-hover/bar:bg-foreground/70 group-focus-visible/bar:bg-foreground/70'
-                      : 'bg-muted group-hover/bar:bg-muted-foreground/45 group-focus-visible/bar:bg-muted-foreground/45',
-                  )}
-                  style={{ height: b.total ? `${Math.max(4, (b.total / peak) * 100)}%` : 2 }}
-                >
-                  {b.errors > 0 ? (
-                    <span
-                      className="bg-destructive w-full shrink-0"
-                      style={{ height: `${Math.max(14, (b.errors / b.total) * 100)}%` }}
-                    />
-                  ) : null}
-                </span>
-              </button>
-            </HoverCardTrigger>
-            <HoverCardContent
-              side="bottom"
-              align="center"
-              sideOffset={6}
-              collisionPadding={8}
-              animated={false}
-              className="w-60 p-3"
+      <HistogramBars
+        className="flex h-14 items-end gap-1.5"
+        onSelect={(i) => onSelectRange?.({ start: buckets[i].start, end: buckets[i].end })}
+        renderCard={(i) => <LogBucketCard bucket={buckets[i]} />}
+        bars={buckets.map((b) => ({
+          key: b.start,
+          ariaLabel: `${fmtRange(b)} · ${t('requestsLabel', { count: b.total })} ${b.total}`,
+          empty: b.total === 0,
+          bar: (
+            <span
+              className={cn(
+                'flex w-full flex-col overflow-hidden rounded-xs transition-[background-color] duration-(--duration-normal)',
+                b.total
+                  ? 'bg-muted-foreground/45 group-hover/bar:bg-foreground/70 group-focus-visible/bar:bg-foreground/70'
+                  : 'bg-muted group-hover/bar:bg-muted-foreground/45 group-focus-visible/bar:bg-muted-foreground/45',
+              )}
+              style={{ height: b.total ? `${Math.max(4, (b.total / peak) * 100)}%` : 2 }}
             >
-              <LogBucketCard bucket={b} />
-            </HoverCardContent>
-          </HoverCard>
-        ))}
-      </div>
+              {b.errors > 0 ? (
+                <span
+                  className="bg-destructive w-full shrink-0"
+                  style={{ height: `${Math.max(14, (b.errors / b.total) * 100)}%` }}
+                />
+              ) : null}
+            </span>
+          ),
+        }))}
+      />
       <div className="text-muted-foreground flex justify-between text-xs tabular-nums" aria-hidden>
         {tickAt.map((i) => (
           <span key={i}>

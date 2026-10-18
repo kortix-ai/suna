@@ -298,6 +298,21 @@ const envSchema = z.object({
   // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
   // On by default. Off answers 503 and claims nothing: the box boots without a restore.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
+  // Default of the project flag `session_log_restore` for a project with no stored value. Off by
+  // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
+  // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
+  // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
+  // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
+  // of blobs (~125 screenshots of 500 kB). Above it the claim still happens and the answer is 413 without messages:
+  // the box boots with the D3 note alone. A pi restore peaks at about 38x the log in the daemon's
+  // memory (a 38.5 MB log: +1.45 GB on a 4 GB box) and about 9x in the API (+330 MB). 24 MiB keeps the
+  // daemon peak under 1 GB and is 1.6x the p99.9 session (15 MB; p99 3.7 MB).
+  SESSION_LOG_RESTORE_MAX_BYTES: optInt(24 * 1024 * 1024),
+  // How long `PUT …/log/blobs/<sha256>` waits for its body (P2.13): a body not read by then is
+  // cancelled with 408 and its upload slot freed. Under the route's 95 s request deadline.
+  SESSION_LOG_BLOB_READ_MS: optInt(60_000),
   // Operator switch for the retention purge of session content (P2.8, decision D6): session
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
@@ -305,8 +320,13 @@ const envSchema = z.object({
   // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
   // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
   // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
-  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only.
+  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
+  // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
+  // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
+  KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -329,8 +349,7 @@ const envSchema = z.object({
   // audit access) regardless of the account's billing tier — see
   // getAccountEntitlements()/accountHasEntitlement() in
   // billing/services/entitlements.ts. Off by default; billing is irrelevant
-  // for a self-host license check, unlike the `demoEnterprise` per-account
-  // preview toggle this mirrors.
+  // for a self-host license check.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
@@ -896,9 +915,11 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
-  // Where public demo-request / "book a demo" lead notifications are sent.
-  // Comma-separated list; every address gets every submission.
-  DEMO_LEAD_NOTIFY_EMAIL: optStrDefault('marko@kortix.ai,hey@kortix.ai'),
+  // Where Kortix sales hears about leads: "book a demo", "Talk to sales", the
+  // Enterprise demo turned on, billing ops copies. Comma-separated list; every
+  // address gets every email. Unset → the sales inboxes on prod only: dev,
+  // staging, local and self-host test accounts must never email sales.
+  DEMO_LEAD_NOTIFY_EMAIL: z.string().optional(),
   // Sender for those notifications. kortix.ai (not the global MAILTRAP_FROM_
   // EMAIL on kortix.com) so the send is DKIM-aligned with the kortix.ai
   // recipient inboxes — the kortix.com sender was landing in spam.
@@ -1273,8 +1294,12 @@ export const config = {
   GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
+  SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
@@ -1574,7 +1599,8 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
-  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
+  DEMO_LEAD_NOTIFY_EMAIL:
+    env.DEMO_LEAD_NOTIFY_EMAIL ?? (env.INTERNAL_KORTIX_ENV === 'prod' ? 'marko@kortix.ai,hey@kortix.ai' : ''),
   DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
 
   // ─── Mailtrap contact sync (signup → automation lists) ────────────────────

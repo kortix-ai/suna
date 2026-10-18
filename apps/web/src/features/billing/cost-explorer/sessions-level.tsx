@@ -32,7 +32,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
 import { SESSION_COST_PAGE_SIZE, useSessionCosts } from '@/hooks/billing/use-session-costs';
 
-import { formatSessionCostUsd } from '../session-cost-format';
+import { formatSessionCostCredits } from '../session-cost-format';
 import { CostExportButton, type SessionCostExportFilters } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { CostSortHeader } from './cost-sort-header';
@@ -352,7 +352,7 @@ export function SessionsLevelTable({
             <TableHead className="text-right">LLM</TableHead>
             <TableHead className="text-right">{tI18nComplete.raw('textcedc516df056')}</TableHead>
             <CostSortHeader
-              label={tI18nComplete.raw('textc9b3c38247f7')}
+              label={tI18nComplete.raw('text607d4d4de45d')}
               align="right"
               direction={sessionSortDirection(sort, 'total')}
               onSort={() => onSort('total')}
@@ -388,13 +388,13 @@ export function SessionsLevelTable({
                   {session.request_count.toLocaleString('en-US')}
                 </TableCell>
                 <TableCell className="text-right font-mono tabular-nums">
-                  {formatSessionCostUsd(session.llm_cost)}
+                  {formatSessionCostCredits(session.llm_cost)}
                 </TableCell>
                 <TableCell className="text-right font-mono tabular-nums">
-                  {formatSessionCostUsd(session.compute_cost)}
+                  {formatSessionCostCredits(session.compute_cost)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium tabular-nums">
-                  {formatSessionCostUsd(session.total_cost)}
+                  {formatSessionCostCredits(session.total_cost)}
                 </TableCell>
               </TableRow>
             );
@@ -418,13 +418,13 @@ export function SessionsLevelTable({
               {sumBy(sessions, (session) => session.request_count).toLocaleString('en-US')}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostUsd(sumBy(sessions, (session) => session.llm_cost))}
+              {formatSessionCostCredits(sumBy(sessions, (session) => session.llm_cost))}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostUsd(sumBy(sessions, (session) => session.compute_cost))}
+              {formatSessionCostCredits(sumBy(sessions, (session) => session.compute_cost))}
             </TableCell>
             <TableCell className="text-right font-mono font-medium tabular-nums">
-              {formatSessionCostUsd(sumBy(sessions, (session) => session.total_cost))}
+              {formatSessionCostCredits(sumBy(sessions, (session) => session.total_cost))}
             </TableCell>
           </TableRow>
         </TableFooter>

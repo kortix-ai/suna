@@ -60,6 +60,10 @@ import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
+
+const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -94,9 +98,14 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
-  const owner = visible.row.createdBy
-    ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
-    : undefined;
+  const personId = personUserId(c, loaded);
+  const [owners, userStates] = await Promise.all([
+    visible.row.createdBy
+      ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
+      : undefined,
+    personId ? loadSessionUserStates([sessionId], personId) : undefined,
+  ]);
+  const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
@@ -106,6 +115,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     ownerName: owner?.name ?? null,
     ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
+    userState: personId ? (userStates?.get(sessionId) ?? NO_USER_STATE) : undefined,
   }), 200);
 }
 
@@ -297,7 +307,7 @@ export function registerProjectSessionsRoutes(): void {
     return c.json(
         serializeSession(result.row, {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       }),
       201,
     );
@@ -355,6 +365,10 @@ export function registerProjectSessionsRoutes(): void {
             label: z
               .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
               .optional(),
+            // The requesting person's pinned or archived sessions only. Without
+            // either, the list leaves out the sessions the person archived.
+            pinned: z.literal('only').optional(),
+            archived: z.literal('only').optional(),
           }),
         },
       responses: {
@@ -403,15 +417,18 @@ export function registerProjectSessionsRoutes(): void {
       }
     }
 
+    if (query.pinned && query.archived) {
+      return c.json({ error: 'Choose pinned=only or archived=only, not both' }, 400);
+    }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const personId = personUserId(c, loaded);
 
     const inventory = await loadProjectSessionInventory({
       projectId,
       accountId: loaded.row.accountId,
       userId: loaded.userId,
-      effectiveRole: loaded.effectiveRole,
       scope,
       orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
       limit: query.limit,
@@ -421,6 +438,8 @@ export function registerProjectSessionsRoutes(): void {
         startedBy: query.started_by ?? null,
         q: query.q ?? null,
         labels: query.label === undefined ? null : [query.label].flat(),
+        personId,
+        view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -456,6 +475,7 @@ export function registerProjectSessionsRoutes(): void {
         runtimeStatus: item.runtimeStatus,
         deletedAt: item.deletedAt,
         deletedBy: item.deletedBy,
+        userState: personId ? (inventory.userStates.get(row.sessionId) ?? NO_USER_STATE) : undefined,
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,

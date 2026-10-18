@@ -165,9 +165,8 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
 /**
  * `@kortix/starter`'s `base` template — the scaffold every managed project
  * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
- * default, not an opt-in") — ships the harness-agnostic layout PR #7681
- * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
- * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * default, not an opt-in") — ships the kortix_version 3 layout: root
+ * `agents/`, `skills/`, `extensions/`, `memory/`. This flow deliberately drives the
  * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
  * (`CONFIG_FILES` below), so every managed project it creates clears that
  * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
@@ -179,7 +178,7 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
  * the wrong tree. The `local` target never seeds a starter template
  * (`createLocalGitRepository`), so this is a no-op there.
  */
-const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'extensions', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
@@ -2080,6 +2079,9 @@ harnessFlow(
 // fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
 // timeout raised with it.
 const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Which layer said 503: kortixd's boot phase header and body, or the API's. */
+const describe503 = (r: { header(name: string): string | undefined; text(): string }) =>
+  `(phase=${r.header('x-kortix-boot-phase') ?? 'none'}): ${r.text().slice(0, 400)}`;
 /** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
 const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
@@ -2161,7 +2163,7 @@ harnessFlow(
           const r = await box.send(prompt);
           // THE DEFECT: `503` here, because the swap killed the process that
           // had already accepted this prompt.
-          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
+          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503 ${describe503(r)}`);
           r.status(200);
           const body = r.json<any>();
           if (body?.deduplicated) throw new Error(`round ${round}: the prompt was swallowed as a duplicate`);
@@ -2204,7 +2206,7 @@ harnessFlow(
         await new Promise((resolve) => setTimeout(resolve, 1_000));
 
         const r = await box.send(MARKER_PROMPT);
-        if (r.statusCode === 503) throw new Error('the send answered 503 while a convergence was parked');
+        if (r.statusCode === 503) throw new Error(`the send answered 503 while a convergence was parked ${describe503(r)}`);
         r.status(200);
         const body = r.json<any>();
         if (!body?.info || !Array.isArray(body?.parts)) {
@@ -2288,14 +2290,11 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
-  // pi on deployed staging answers from a stale system prompt after an idle
-  // convergence (gates 37557504543 and 37933459772: DEF-DEV-2 answered
-  // marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both times).
-  // Suspected: harness/pi/config-release.ts swap + reconfigure keeps the old
-  // compiled governance. Remove when the pi fix lands.
-  process.env.KE2E_TARGET === 'staging'
-    ? { quarantine: 'pi keeps a stale system prompt after idle config convergence on staging (DEF-DEV-2), open since v0.13.52 — quarantined 2026-10-09 until the pi reconfigure fix lands' }
-    : {},
+  // Known pi defect on deployed staging: pi answers from a stale system prompt
+  // after an idle convergence (gates 37557504543 and 37933459772: DEF-DEV-2
+  // answered marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both
+  // times). Suspected: harness/pi/config-release.ts swap + reconfigure keeps
+  // the old compiled governance. A red CFG-12-pi is that bug, not this test.
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─

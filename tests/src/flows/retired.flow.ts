@@ -34,7 +34,16 @@ const RETIRED: Array<[method: string, template: string]> = [
   ['GET', '/v1/projects/suna-migration/eligibility'],
   ['GET', '/v1/projects/suna-migration/status'],
   ['POST', '/v1/projects/suna-migration/start'],
+  // One plan system (2026-10-15): the Enterprise preview became a dated trial,
+  // and Enterprise is set by a contract.
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/trial'],
+  ['DELETE', '/v1/admin/api/accounts/:id/trial'],
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-entitlement'],
+  ['POST', '/v1/admin/api/accounts/:id/managed-models'],
 ];
+
+const ANY_UUID = '00000000-0000-4000-a000-000000000000';
 
 flow(
   'RET-1',
@@ -46,7 +55,7 @@ flow(
     await ctx.step('every retired route answers ANON with 410 ENDPOINT_RETIRED', async () => {
       for (const [method, template] of RETIRED) {
         const r = await ctx.client.as(ctx.P.ANON).request(method, template, {
-          params: { model: 'any-model' },
+          params: { model: 'any-model', accountId: ANY_UUID, id: ANY_UUID },
           body: method === 'GET' || method === 'DELETE' ? undefined : {},
         });
         r.status(410).body().has('$.code', 'ENDPOINT_RETIRED');

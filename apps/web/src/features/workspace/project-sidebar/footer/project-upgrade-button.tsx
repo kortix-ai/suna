@@ -1,7 +1,10 @@
 'use client';
 
+import { canManageBilling } from '@kortix/sdk';
+
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
+import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -43,11 +46,12 @@ function useSidebarUpgrade(accountId?: string) {
     return { show: false as const, handleClick };
   }
 
-  const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-  // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
-  // trial reads as paid here, exactly as the server's gates read it.
+  // The RESOLVED plan family (free = the keys `free` and `none`), exactly as
+  // the server's gates read it. A live subscription already pays. A caller
+  // without `billing.write` cannot subscribe, so the offer is not theirs.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  const show = isFreeOrNoPlan && !hasActiveSubscription;
+  const show =
+    isFreeOrNoPlan && !accountHasLiveSubscription(accountState) && canManageBilling(accountState);
 
   return { show, handleClick };
 }
@@ -60,12 +64,7 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        variant="primary"
-        className={cn(className)}
-        onClick={handleClick}
-      >
+      <SidebarMenuButton type="button" variant="primary" className={cn(className)} onClick={handleClick}>
         {t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>

@@ -38,7 +38,13 @@ import type {
   SessionTurnStatus,
   WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
-import type { ProjectTrigger, ProjectTriggerListing } from './core/rest/projects-client/triggers';
+import type {
+  ProjectTrigger,
+  ProjectTriggerDryRunResult,
+  ProjectTriggerListing,
+  ProjectTriggerRun,
+  ProjectTriggerRunList,
+} from './core/rest/projects-client/triggers';
 import type { CaptureSearchHit, CaptureSearchResult, CaptureWorkspace } from './core/rest/platform-client/capture';
 
 declare function fits<Sdk>(contract: Sdk): void;
@@ -74,6 +80,12 @@ export function contractDrift(): void {
   noPhantom<NoPhantom<ProjectTrigger, C.Trigger>>();
   fits<ProjectTriggerListing>(wire<C.TriggerList>());
   noPhantom<NoPhantom<ProjectTriggerListing, C.TriggerList>>();
+  fits<ProjectTriggerRun>(wire<C.TriggerRun>());
+  noPhantom<NoPhantom<ProjectTriggerRun, C.TriggerRun>>();
+  fits<ProjectTriggerRunList>(wire<C.TriggerRunList>());
+  noPhantom<NoPhantom<ProjectTriggerRunList, C.TriggerRunList>>();
+  fits<ProjectTriggerDryRunResult>(wire<C.TriggerDryRunResult>());
+  noPhantom<NoPhantom<ProjectTriggerDryRunResult, C.TriggerDryRunResult>>();
 
   fits<SessionTranscript>(wire<C.SessionTranscript>());
   noPhantom<NoPhantom<SessionTranscript, C.SessionTranscript>>();

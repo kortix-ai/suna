@@ -180,14 +180,16 @@ export function FileViewer({
           />
         </ViewerPathPill>
 
-        <ButtonGroup className="shrink-0">
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
           {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
           {markdown && (
             <SaveAsPdfButton
               variant="secondary"
               fileName={fileName}
               content={content}
-              className="size-7"
               iconClassName="size-3.5"
             />
           )}
@@ -322,7 +324,7 @@ function FileBody({
     // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
     // off and renders the body as a document (embedded markup stays text), the
     // same component the chat's inline preview uses.
-    return <MarkdownWithFrontmatter content={content} className="p-6" />;
+    return <MarkdownWithFrontmatter content={content} documentPath={path} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

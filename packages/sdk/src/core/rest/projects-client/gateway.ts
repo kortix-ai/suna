@@ -218,6 +218,8 @@ export interface CreatedGatewayKey {
   name: string;
   key_prefix: string;
   secret_key: string;
+  /** Public gateway base when one is configured ({url}/v1/chat/completions); null when the API serves the gateway itself. */
+  gateway_url?: string | null;
 }
 
 export type GatewayFallbackCondition = 'transient' | 'any-error';

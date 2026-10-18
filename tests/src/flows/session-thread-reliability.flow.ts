@@ -179,23 +179,10 @@ harnessFlow(
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    // Un-quarantined in 09aa887a55 (2026-08-24) on the expectation that the
-    // stop-time abort + boot-time orphan finalizer had closed the wake path.
-    // Its first release-gate run since (v0.13.6, run 32992496089, api shard 2)
-    // failed again at 168.7s: `status in [200] — expected [200], got 503` on
-    // the first OpenCode read through the preview proxy right after `/start`
-    // reported ready — the box was still waking (the "503 = waking state"
-    // class), i.e. the same pre-existing stop→wake defect the earlier
-    // quarantine documented (#6638 investigation). On Kortix routes
-    // (2026-09-28, local stack, 2 of 2 runs) the OpenCode defect reads
-    // differently: the first prompt after the wake is recorded
-    // "accepted by the runtime but never became a message" and gets no
-    // reply. SESS-23-pi passed the same flow. Quarantined until the wake path
-    // is proven on a staging dry run
-    // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
-    // un-quarantine ONLY in the PR that carries that green run.
-    quarantine:
-      'stop→wake on OpenCode: the first prompt after the wake is accepted by the runtime but never becomes a message, so it gets no reply (local stack 2026-09-28, 2 of 2 runs; pi passes). First seen as a post-wake 503 on gate run 32992496089; quarantined since 2026-08-26',
+    // Known OpenCode defect (local stack 2026-09-28, 2 of 2 runs): the first
+    // prompt after the wake is "accepted by the runtime but never became a
+    // message" and gets no reply. SESS-23-pi passed the same flow. A red
+    // SESS-23 is that bug, not this test.
     // Boot readiness 540_000 + turn start 120_000 + stop settle 60_000 + wake
     // 180_000 + reply 240_000 exceeds 900_000 only when every wait runs to its
     // bound; 1_200_000 matches SESS-24.
@@ -490,31 +477,6 @@ harnessFlow(
       },
     );
 
-    let detailSnapshotBeforeStop: any = null;
-    await ctx.step(
-      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
-      async () => {
-        detailSnapshotBeforeStop = await waitFor(
-          async () => {
-            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-              params: { projectId: project.id, sessionId: sessionA.id },
-            });
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (row) => {
-              const title = typeof row?.name === 'string' ? row.name.trim() : '';
-              return Boolean(title) && !/^new (session|agent)\b/i.test(title);
-            },
-            timeoutMs: 180_000,
-            intervalMs: 3_000,
-            description: `session A's mirrored title settles`,
-          },
-        );
-      },
-    );
-
     await ctx.step("session A's completed turn has a durable transcript before stopping", async () => {
       await waitFor(
         async () => {
@@ -538,27 +500,89 @@ harnessFlow(
       );
     });
 
+    // After the durable transcript, and the same title on two polls in a row:
+    // a title generated after the first non-default one replaced it between
+    // this baseline and the post-stop read (release gate v0.13.58, attempt 3).
+    let detailSnapshotBeforeStop: any = null;
+    await ctx.step(
+      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
+      async () => {
+        let previousTitle = '';
+        detailSnapshotBeforeStop = await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+              params: { projectId: project.id, sessionId: sessionA.id },
+            });
+            r.status(200);
+            return r.json<any>();
+          },
+          {
+            until: (row) => {
+              const title = typeof row?.name === 'string' ? row.name.trim() : '';
+              const settled = Boolean(title) && !/^new (session|agent)\b/i.test(title) && title === previousTitle;
+              previousTitle = title;
+              return settled;
+            },
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `session A's mirrored title settles`,
+          },
+        );
+      },
+    );
+
     await ctx.step("stop session A's sandbox → 200 stopped (or stopping, then stopped)", async () => {
       await stopSessionAndWait(ctx, project.id, sessionA.id);
     });
 
+    // `name` resolves custom_name ?? the runtime root title in the mirrored tree
+    // ?? the Kortix-generated title (serializers.ts `serializeSession`).
+    // The runtime's own title reaches the mirror asynchronously and outranks
+    // the generated one, so a baseline read can legitimately hold the
+    // generated title while the post-stop read holds the runtime's (release
+    // gate 38737177991: "Exact Single Token Reply" → "Reply with SESS24
+    // session token"). The contract is a mirrored, non-default title and an
+    // unwiped tree that stay put once no runtime is left to change them.
     await ctx.step(
-      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the SAME mirrored title/tree for the now-stopped session — the read path works without a live runtime",
+      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the mirrored title/tree for the now-stopped session, stable across reads — the read path works without a live runtime",
       async () => {
-        const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-          params: { projectId: project.id, sessionId: sessionA.id },
-        });
-        r.status(200)
-          .body()
-          .has('$.name', detailSnapshotBeforeStop.name)
-          .has('$.session_id', sessionA.id);
-        const body = r.json<any>();
+        const read = async () => {
+          const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+            params: { projectId: project.id, sessionId: sessionA.id },
+          });
+          r.status(200).body().has('$.session_id', sessionA.id);
+          return r.json<any>();
+        };
+        const body = await read();
+        const tree: any[] = Array.isArray(body.opencode_sessions) ? body.opencode_sessions : [];
+        const root =
+          tree.find((entry) => entry?.id === body.runtime_session_id) ?? tree.find((entry) => !entry?.parent_id);
+        const runtimeTitle = typeof root?.title === 'string' ? root.title.trim() : '';
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || /^new (session|agent)\b/i.test(name)) {
+          throw new Error(`the stopped session's detail read lost its title: ${JSON.stringify(body.name)}`);
+        }
+        if (name !== detailSnapshotBeforeStop.name && name !== runtimeTitle) {
+          throw new Error(
+            `the stopped session's title is neither the pre-stop title nor the mirrored runtime title: ` +
+              `before=${JSON.stringify(detailSnapshotBeforeStop.name)} after=${JSON.stringify(body.name)} runtime=${JSON.stringify(runtimeTitle)}`,
+          );
+        }
+        const ids = new Set(tree.map((entry) => entry?.id));
+        const lost = (detailSnapshotBeforeStop.opencode_sessions ?? [])
+          .map((entry: any) => entry?.id)
+          .filter((id: unknown) => !ids.has(id));
+        if (lost.length > 0) {
+          throw new Error(`the mirrored opencode_sessions tree lost ${lost.join(', ')} across the stop`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        const again = await read();
         if (
-          JSON.stringify(body.opencode_sessions) !==
-          JSON.stringify(detailSnapshotBeforeStop.opencode_sessions)
+          again.name !== body.name ||
+          JSON.stringify(again.opencode_sessions) !== JSON.stringify(body.opencode_sessions)
         ) {
           throw new Error(
-            'the mirrored opencode_sessions tree changed (or was wiped) across the stop — the cached-paint read is not stable without a live runtime',
+            'the stopped session\'s mirrored title/tree changed between two reads with no live runtime — the cached-paint read is not stable',
           );
         }
       },

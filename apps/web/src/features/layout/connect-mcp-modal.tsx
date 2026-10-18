@@ -40,7 +40,7 @@ export function cursorInstallUrl(url: string): string {
 
 type ClientId = 'claude' | 'claude-code' | 'cursor' | 'codex' | 'other';
 
-interface Client {
+export interface Client {
   id: ClientId;
   /** Product names are identifiers, not UI copy. `null`: the translated "Any MCP client". */
   name: string | null;
@@ -56,7 +56,7 @@ const OtherLogo = ({ className }: { className?: string }) => (
   <LinkSimpleIcon className={cn('text-muted-foreground', className)} />
 );
 
-const CLIENTS: readonly Client[] = [
+export const CLIENTS: readonly Client[] = [
   { id: 'claude', name: 'Claude', Logo: Claude, action: { kind: 'url' } },
   {
     id: 'claude-code',
@@ -163,7 +163,7 @@ export function ConnectMcpModal({
 const ACTION_CLASS = 'hover:border-ring hover:border hover:ring-ring/15 hover:ring-2 hit-area-y-3 hit-area-l-3 shrink-0 border border-transparent';
 
 /** The client's own one-click action: copy the URL or its command, or open its deep link. */
-function ClientAction({ client, url }: { client: Client; url: string }) {
+export function ClientAction({ client, url }: { client: Client; url: string }) {
   const t = useTranslations('connectMcp');
   // The button itself confirms the copy; no toast.
   const { copy, copied } = useCopy({ toast: false });

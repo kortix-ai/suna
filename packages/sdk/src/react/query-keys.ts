@@ -54,19 +54,21 @@
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels'>;
+type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels' | 'view'>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
-  if (!filters?.parent && !filters?.startedBy && !q && !labels) return undefined;
+  const view = filters?.view;
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view) return undefined;
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label keys stay byte-identical.
+    // Only present when set, so pre-label and pre-view keys stay byte-identical.
     ...(labels ? { labels } : {}),
+    ...(view ? { view } : {}),
   };
 }
 
@@ -503,6 +505,14 @@ export const qk = {
 
     /** `listProjectTriggerEventApps` — the apps that can trigger events. */
     triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
+
+    /** `listTriggerRuns` pages — one trigger's run history. Under `triggers`,
+     *  so a fire or replay that invalidates the listing refreshes it too. */
+    triggerRuns: (id: string, slug: string) => [...qk.project.triggers(id), 'runs', slug] as const,
+
+    /** `listProjectTriggerRuns` pages — every run of the project, one slot per status filter. */
+    projectTriggerRuns: (id: string, status?: string | null) =>
+      [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the

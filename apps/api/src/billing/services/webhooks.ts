@@ -1,3 +1,4 @@
+import { formatUsdAsCredits } from '@kortix/shared';
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
@@ -6,13 +7,11 @@ import { WebhookError } from '../../errors';
 import { applyStripeSync } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
-import { markTrialConverted } from './trial-admin';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { getCustomerByStripeId } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
 import { billingPeriodForSubscription, canonicalTier, monthlyCreditsForSubscription, planForSubscription, planMonthlyUsd } from './tiers';
 import { grantTopUpBonus } from './top-up-bonus';
-import { enterpriseEntitledFromRow } from './resolve-billing';
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
@@ -80,7 +79,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     accountId,
     amount: amountTotal,
     kind: 'purchase',
-    description: `Credit purchase: $${amountTotal.toFixed(2)}`,
+    description: `Credit purchase: ${formatUsdAsCredits(amountTotal)} credits ($${amountTotal.toFixed(2)})`,
     expiring: false,
     key: { event: session.id },
   });
@@ -146,6 +145,23 @@ async function handleSubscriptionCheckout(
   });
 }
 
+/**
+ * The Enterprise contract an event belongs to, from the metadata the contract
+ * put on its Checkout session and subscription (Stripe copies subscription
+ * metadata onto each invoice). Null for every other event.
+ */
+function contractIdOfEvent(event: Stripe.Event): string | null {
+  const object = event.data.object as {
+    metadata?: Stripe.Metadata | null;
+    subscription_details?: { metadata?: Stripe.Metadata | null } | null;
+  };
+  if (event.type.startsWith('invoice.')) return object.subscription_details?.metadata?.contract_id || null;
+  if (event.type.startsWith('checkout.session.') || event.type.startsWith('customer.subscription.')) {
+    return object.metadata?.contract_id || null;
+  }
+  return null;
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -163,6 +179,16 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   }
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
+
+  // An Enterprise contract's events never reach the credits handlers below:
+  // they would refuse to write Enterprise (applyStripeSync). The contract
+  // module loads only for an event that carries a contract_id.
+  if (contractIdOfEvent(event)) {
+    const { routeContractEvent } = await import('./enterprise-contracts');
+    await routeContractEvent(event);
+    await recordWebhookEvent(event.id, event.type);
+    return { received: true, event_type: event.type };
+  }
 
   switch (event.type) {
     case 'checkout.session.completed':
@@ -294,9 +320,14 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   // The amount follows the subscription even before it pays, so the plan page
   // shows what the customer is about to be billed. The tier needs payment.
   // A comped $0 subscription leaves the stored amount alone.
+  // A scheduled cut is the exception: Stripe already bills the lower amount,
+  // but this period keeps the amount in effect until the renewal applies it.
   const subscriptionUsd = monthlyCreditsForSubscription(subscription);
-  if (resolvedTier === 'credits' && subscriptionUsd > 0) {
+  const cutPending = account?.scheduledMonthlyUsd != null && Number(account.scheduledMonthlyUsd) === subscriptionUsd;
+  if (resolvedTier === 'credits' && subscriptionUsd > 0 && !cutPending) {
     updates.planMonthlyUsd = String(subscriptionUsd);
+    updates.scheduledMonthlyUsd = null;
+    updates.scheduledTierChangeDate = null;
   }
   if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
@@ -308,11 +339,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
-  const trialConvertedByThisSub =
-    account?.trialStatus === 'active' &&
-    !!updates.tier &&
-    (subscription.status === 'active' || subscription.status === 'trialing');
-
   // Every paid key is `credits` now, so "the tier this subscription granted" is
   // "this is the account's own subscription": a different id returned early
   // above as stale.
@@ -320,7 +346,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     subscription.status === 'incomplete_expired' &&
     account &&
     account.stripeSubscriptionId === subscription.id &&
-    !enterpriseEntitledFromRow(account) &&
+    account.tier !== 'enterprise' &&
     account.tier &&
     !['free', 'none'].includes(account.tier);
 
@@ -337,10 +363,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     mode: account ? 'update' : 'upsert',
     reason: 'customer.subscription.sync',
   });
-
-  if (trialConvertedByThisSub) {
-    await markTrialConverted(accountId);
-  }
 
   if (shouldGrantRecoveryCredits && resolvedTier) {
     const recoveryCredits = allowanceForSubscription(resolvedTier, subscription, account);
@@ -448,6 +470,7 @@ async function revertToFree(
     {
       tier: 'free',
       planMonthlyUsd: null,
+      scheduledMonthlyUsd: null,
       stripeSubscriptionStatus: 'canceled',
       scheduledTierChange: null,
       scheduledTierChangeDate: null,
@@ -494,7 +517,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const account = await getCreditAccount(accountId);
   if (!account) return;
 
-  const periodStart = invoice.period_start;
+  // The period this renewal OPENS. Stripe dates a subscription_cycle invoice
+  // by the period that ended (`period_start` is that period's start, which
+  // activation already recorded), so `period_end` is the new period's start.
+  // Keying on `period_start` skipped the first renewal after activation.
+  const periodStart = invoice.period_end;
   if (account.lastRenewalPeriodStart && account.lastRenewalPeriodStart >= periodStart) {
     console.log(`[Webhook] Renewal already processed for period ${periodStart}`);
     return;
@@ -529,6 +556,9 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     accountId,
     {
       ...(tierName === 'credits' ? { planMonthlyUsd: String(allowance) } : {}),
+      // A scheduled cut takes effect with this renewal.
+      scheduledMonthlyUsd: null,
+      scheduledTierChangeDate: null,
       lastRenewalPeriodStart: periodStart,
       lastProcessedInvoiceId: invoice.id,
       lastGrantDate: new Date().toISOString(),

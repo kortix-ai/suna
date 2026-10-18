@@ -802,4 +802,100 @@ describe('the boot reconcile on pi (P6.4)', () => {
       api.stop()
     }
   }, 60_000)
+
+  test('over the restore cap (413): the box boots with the note alone at the claimed generation, numbers above the floor, and does not restore again', async () => {
+    const log = storedImage()
+    const rootId = log.threads[0]!.thread_id
+    const live = log.threads.flatMap((t) => t.messages).length
+    const box = freshBox(log.session_id)
+    const api = fakeSessionLogApi(log, { projectId: PROJECT, stateDir: join(box.workspace, '.runtime'), objects, maxBytes: 1024 })
+    try {
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
+      // One claim, no text or attachment read.
+      expect(api.calls).toEqual(['GET log/manifest', 'POST log/restore'])
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toMatchObject({ restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: live }, truncated: 0 } } } } })
+      await service.lifecycle.start()
+      const rt = service.runtime()!
+      expect(rt.rootId).toBe(rootId)
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), boot)
+      expect(await flushSessionLogJournal()).toBe(true)
+      // The journal sent the note at the claimed generation, above the stored floor (seq 14), and no stored message.
+      expect(new Set(api.journal.map((b) => b.generation))).toEqual(new Set([1]))
+      expect(api.journal.flatMap((b) => b.puts.map((p) => p.message.blocks[0]?.id))).toEqual(['prt_kortix_restore_g1'])
+      const note = api.stored().threads[0]!.messages.at(-1)!
+      expect(note).toMatchObject({ role: 'user', origin: 'notification', seq: 15 })
+      // The next request: the note and the prompt, nothing of the earlier conversation.
+      const expected = { ...structuredClone(api.stored()), threads: [{ ...api.stored().threads[0]!, messages: [note] }] }
+      const [body] = await turn(rt, 'Anything else?', [{ text: 'OK' }])
+      expect(JSON.stringify(body)).toMatch(new RegExp(`Its earlier conversation \\(${live} messages, [0-9.]+ KiB\\) is above the 1 KiB restore limit and was not restored\\.`))
+      expect(oracle(expected, rootId, rt, 'Anything else?', body!).diffs).toEqual([])
+      expect(await flushSessionLogJournal()).toBe(true)
+      expect(Math.min(...api.journal.flatMap((b) => b.puts.map((p) => p.message.seq)))).toBe(15)
+
+      // A daemon restart: the stored ids the restore left out do not read as behind; no second claim.
+      await service.lifecycle.stop()
+      resetSessionLogJournalForTests()
+      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toMatchObject({ generation: 1, cursors: [] })
+      expect(restores(api)).toBe(1)
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
+
+  test('P2.13: the journal stores a prompt image and a tool-result image; a fresh box restores both with nothing dropped', async () => {
+    const sessionId = 'sess-pi-blobs'
+    const empty: SessionLog = {
+      schema: 'kortix.session/2', v: 1, session_id: sessionId, title: null, created_at: '2026-10-15T00:00:00.000Z', restore_grade: 'native',
+      harness: { current: 'pi', history: [] }, selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] }, threads: [],
+    }
+    const recorded = freshBox(sessionId)
+    // Two synthetic PNGs: a 1x1 sent with a prompt (twice), a 2x2 a tool reads from disk.
+    const prompt = FIXTURE_PNG
+    const shot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgaPgPQhAKACX2Bf2gcp/LAAAAAElFTkSuQmCC', 'base64')
+    writeFileSync(join(recorded.workspace, 'shot.png'), shot)
+    const digest = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+    const api = fakeSessionLogApi(empty, { projectId: PROJECT, stateDir: join(recorded.workspace, '.runtime') })
+    try {
+      const rt = await recorded.start()
+      startSessionLogJournal(createPiSessionLogPort(() => rt.sessionLogSnapshot()), { generation: 0 })
+      const image = { mime: 'image/png', url: `data:image/png;base64,${prompt.toString('base64')}`, filename: 'prompt.png' }
+      await turn(rt, 'what is this', [{ text: 'an image' }], [image])
+      await turn(rt, 'read the screenshot', [{ tool: 'read', args: { path: 'shot.png' } }, { text: 'a pixel' }])
+      await turn(rt, 'and this again', [{ text: 'same image' }], [image])
+      expect(await flushSessionLogJournal()).toBe(true)
+
+      // Each sha256 asked once and uploaded once; the records name the stored objects.
+      const blobCalls = api.calls.filter((c) => c.startsWith('GET blobs/') || c.startsWith('PUT blobs/'))
+      expect(blobCalls.sort()).toEqual([`GET blobs/${digest(prompt)}`, `GET blobs/${digest(shot)}`, `PUT blobs/${digest(prompt)}`, `PUT blobs/${digest(shot)}`].sort())
+      const own = `kortix-attachment://${PROJECT}/${sessionId}/`
+      const messages = api.stored().threads.flatMap((t) => t.messages)
+      const userImages = messages.flatMap((m) => m.blocks.filter((b) => b.type === 'attachment'))
+      expect(userImages).toHaveLength(2)
+      for (const b of userImages) expect(b).toMatchObject({ ref: `${own}blob-${digest(prompt)}`, sha256: digest(prompt), bytes: prompt.length, mime: 'image/png' })
+      const toolImages = messages.flatMap((m) => m.blocks.flatMap((b) => (b.type === 'tool_call' ? (b.result?.content ?? []).filter((c) => c.type === 'attachment') : [])))
+      expect(toolImages).toEqual([{ type: 'attachment', ref: `${own}blob-${digest(shot)}`, mime: 'image/png', sha256: digest(shot) }])
+      expect(api.objects.get(`blob-${digest(shot)}`)).toEqual(shot)
+      await rt.abort()
+      resetSessionLogJournalForTests()
+
+      // A fresh box: the restore reads both objects back, drops nothing, and the next request carries both images.
+      const box = freshBox(sessionId)
+      const service = box.service()
+      const boot = (await reconcileSessionLog(probe(box, sessionId), { retryMs: 1 }))!
+      expect(boot.generation).toBe(1)
+      expect(boot.session).toBeUndefined()
+      expect(api.calls.filter((c) => c.startsWith('GET attachments/')).sort()).toEqual([`GET attachments/blob-${digest(prompt)}`, `GET attachments/blob-${digest(shot)}`].sort())
+      await service.lifecycle.start()
+      const restored = service.runtime()!
+      const [body] = await turn(restored, 'Anything else?', [{ text: 'OK' }])
+      const sent = JSON.stringify(body)
+      expect(sent).toContain(`data:image/png;base64,${prompt.toString('base64')}`)
+      expect(sent).toContain(shot.toString('base64'))
+      expect(oracle(api.stored(), restored.rootId, restored, 'Anything else?', body!).diffs).toEqual([])
+    } finally {
+      api.stop()
+    }
+  }, 60_000)
 })

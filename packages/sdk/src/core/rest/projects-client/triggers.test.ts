@@ -9,6 +9,10 @@ import type {
 } from './triggers';
 import {
   createProjectTrigger,
+  fireProjectTrigger,
+  listProjectTriggerRuns,
+  listTriggerRuns,
+  replayTriggerRun,
   listProjectTriggerEventApps,
   listProjectTriggerEventTypes,
   listProjectTriggers,
@@ -425,4 +429,119 @@ test('updateProjectTrigger accepts event_config', async () => {
   const input: UpdateProjectTriggerInput = { event_config: { repo: 'acme/other' } };
   await updateProjectTrigger('P1', 's', input);
   expect(last().body).toEqual(input);
+});
+
+// ── Run history, fire with payload / dry run, replay (KRTX-1743) ──────────────
+
+/** One serialized run, exactly as `TriggerRunSchema` emits it (synthetic ids). */
+const RUN_WIRE_ENTRY = {
+  run_id: '00000000-0000-4000-8000-000000000001',
+  slug: 'nightly',
+  source: 'manual',
+  status: 'fired',
+  run_status: 'succeeded',
+  error: null,
+  run_error: null,
+  session_id: 'session-1',
+  command_id: null,
+  replay_of: null,
+  payload_verified: true,
+  payload: { body: { ticket: 'T-9', api_key: '[redacted]' } },
+  scheduled_for: '2026-10-16T18:03:54.382Z',
+  created_at: '2026-10-16T18:03:54.382Z',
+  started_at: '2026-10-16T18:03:54.382Z',
+  ended_at: '2026-10-16T18:08:54.382Z',
+  duration_ms: 300000,
+  cost_usd: 0.25,
+};
+
+test('listTriggerRuns GETs one trigger\'s runs with cursor and limit, and returns the page', async () => {
+  nextResponse = { status: 200, body: { runs: [RUN_WIRE_ENTRY], next_cursor: 'c2' } };
+
+  const page = await listTriggerRuns('P1', 'nightly', { cursor: 'c 1/=', limit: 10 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs?limit=10&cursor=c+1%2F%3D');
+  expect(page.next_cursor).toBe('c2');
+  expect(page.runs[0]).toEqual(RUN_WIRE_ENTRY as never);
+});
+
+test('listTriggerRuns without options sends no query string', async () => {
+  nextResponse = { status: 200, body: { runs: [], next_cursor: null } };
+  await listTriggerRuns('P1', 'nightly');
+  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs');
+});
+
+test('listProjectTriggerRuns GETs every run of the project, filtered by status', async () => {
+  nextResponse = { status: 200, body: { runs: [], next_cursor: null } };
+
+  await listProjectTriggerRuns('P1', { status: 'failed', cursor: 'c1', limit: 25 });
+  expect(last().method).toBe('GET');
+  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs?status=failed&limit=25&cursor=c1');
+
+  await listProjectTriggerRuns('P1');
+  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs');
+});
+
+test('fireProjectTrigger without options still POSTs an empty body (plain manual fire)', async () => {
+  nextResponse = {
+    status: 202,
+    body: { status: 'deduped', command_id: 'cmd-1', session_id: null, deduped: true, run_id: 'run-1' },
+  };
+
+  const result = await fireProjectTrigger('P1', 'nightly');
+
+  expect(last().method).toBe('POST');
+  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/fire');
+  expect(last().body).toEqual({});
+  expect(result.status).toBe('deduped');
+  expect(result.deduped).toBe(true);
+  expect(result.command_id).toBe('cmd-1');
+  expect(result.run_id).toBe('run-1');
+});
+
+test('fireProjectTrigger sends payload and dry_run, and returns the dry-run result', async () => {
+  const dry = {
+    dry_run: true,
+    rendered_prompt: 'Ticket T-1 from manual',
+    filter_matches: true,
+    session_key: 'T-1',
+    payload: { source: 'manual', body: { ticket: 'T-1' } },
+  };
+  nextResponse = { status: 200, body: dry };
+
+  const result = await fireProjectTrigger('P1', 'tickets', {
+    payload: { body: { ticket: 'T-1' } },
+    dryRun: true,
+  });
+
+  expect(last().body).toEqual({ payload: { body: { ticket: 'T-1' } }, dry_run: true });
+  expect(result.dry_run).toBe(true);
+  expect(result.rendered_prompt).toBe('Ticket T-1 from manual');
+  expect(result.filter_matches).toBe(true);
+  expect(result.session_key).toBe('T-1');
+});
+
+test('fireProjectTrigger with a payload alone sends no dry_run key', async () => {
+  nextResponse = { status: 202, body: { status: 'fired', command_id: null, session_id: 's', deduped: false, run_id: 'r' } };
+  await fireProjectTrigger('P1', 'tickets', { payload: { body: { ticket: 'T-2' } } });
+  expect(last().body).toEqual({ payload: { body: { ticket: 'T-2' } } });
+});
+
+test('replayTriggerRun POSTs the replay route, with confirm_unverified only when asked', async () => {
+  nextResponse = { status: 202, body: { status: 'fired', command_id: null, session_id: 's', deduped: false, run_id: 'run-2' } };
+
+  const result = await replayTriggerRun('P1', 'nightly', 'run-1');
+  expect(last().method).toBe('POST');
+  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs/run-1/replay');
+  expect(last().body).toEqual({});
+  expect(result.run_id).toBe('run-2');
+
+  await replayTriggerRun('P1', 'nightly', 'run-1', { confirmUnverified: true });
+  expect(last().body).toEqual({ confirm_unverified: true });
+});
+
+test('replayTriggerRun throws on 409 payload_unverified', async () => {
+  nextResponse = { status: 409, body: { error: 'Payload unverified', code: 'payload_unverified' } };
+  await expect(replayTriggerRun('P1', 'nightly', 'run-1')).rejects.toBeDefined();
 });

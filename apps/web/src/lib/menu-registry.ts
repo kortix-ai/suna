@@ -222,8 +222,6 @@ export interface MenuItemDef {
   keywords?: string;
   /** If true, item is only shown when billing is enabled */
   requiresBilling?: boolean;
-  /** If true, item is only shown for admin users */
-  requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
@@ -232,10 +230,6 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
   /** If set, the item is only shown when the named per-project FEATURE FLAG is
    *  enabled (mirrors the Customize rail gating). A disabled feature's surface
    *  is invisible, so EVERY registry consumer must honour this — the command
@@ -419,8 +413,8 @@ export const menuRegistry: MenuItemDef[] = [
     // anything, which is why it read as a list rather than as the switcher it
     // opens. The verb stays; only the noun changed.
     //
-    // It said "Switch workspace" until the product settled on ONE noun
-    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // It said "Switch workspace" until the product settled on ONE noun.
+    // "Project" won
     // because it is the load-bearing one — the URL (`/projects/<id>`), the API
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
@@ -760,7 +754,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
@@ -799,8 +792,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own project page since 2026-10-02, outside Customize.
-    href: '/projects/{projectId}/review',
+    // The Customize Review tab (`reviewHref`).
+    href: '/projects/{projectId}/customize/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },

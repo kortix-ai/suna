@@ -31,8 +31,16 @@ mock.module('../core/http/api-client', () => ({
   },
 }));
 
-const { useSetBillingPlan } = await import('./use-billing-plan');
-const { useAdminGrantTrial } = await import('./use-admin-accounts');
+const { useSetBillingPlan, useAcceptEnterpriseOffer, useBillingPlanPreview } = await import('./use-billing-plan');
+const {
+  ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
+  useAdminGrantTrial,
+  useAdminEnterpriseContracts,
+  useAdminCreateEnterpriseContract,
+  useAdminEndEnterpriseContract,
+  useAdminWithdrawEnterpriseOffer,
+  useAdminEnterpriseOfferLink,
+} = await import('./use-admin-accounts');
 
 beforeEach(() => {
   requests = [];
@@ -57,7 +65,8 @@ test('useSetBillingPlan posts monthly_usd and invalidates account-state on succe
   expect(result).toEqual({ status: 'updated', monthly_usd: 100, ok: true });
 
   hook.onSuccess();
-  expect(invalidated).toEqual([{ queryKey: ['account-state'] }]);
+  // A changed plan makes every cached preview stale too.
+  expect(invalidated).toEqual([{ queryKey: ['account-state'] }, { queryKey: ['billing-plan-preview'] }]);
 });
 
 test('useAdminGrantTrial sends no seats and passes credit_grant', async () => {
@@ -72,4 +81,56 @@ test('useAdminGrantTrial sends no seats and passes credit_grant', async () => {
   });
   expect(requests[0].path).toBe('/admin/api/accounts/acc-1/trial');
   expect(requests[0].body).toEqual({ tier_key: 'credits', duration_days: 14, credit_grant: 25 });
+});
+
+test('useAcceptEnterpriseOffer posts to /billing/enterprise-offer/checkout', async () => {
+  const hook = useAcceptEnterpriseOffer() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  await hook.mutationFn({ successUrl: 'https://e.test/s', cancelUrl: 'https://e.test/c', accountId: 'acc-1' });
+  expect(requests[0]).toMatchObject({ method: 'POST', path: '/billing/enterprise-offer/checkout' });
+  expect(requests[0].body).toMatchObject({ success_url: 'https://e.test/s', account_id: 'acc-1' });
+});
+
+test('the admin contract hooks hit the contract routes with the snake_case body', async () => {
+  const list = useAdminEnterpriseContracts('acc-1') as unknown as { queryKey: unknown[]; queryFn: () => Promise<unknown> };
+  await list.queryFn();
+  expect(requests[0]).toMatchObject({ method: 'GET', path: '/admin/api/accounts/acc-1/enterprise-contracts' });
+
+  const create = useAdminCreateEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  // A license carries no credits: a stale creditsUsd is not sent.
+  await create.mutationFn({ accountId: 'acc-1', licenseUsd: 25000, creditsUsd: 15000, termMonths: 12, collection: 'manual', note: 'x' });
+  expect(requests[1]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract' });
+  expect(requests[1].body).toEqual({ license_usd: 25000, term_months: 12, collection: 'manual', note: 'x' });
+
+  const end = useAdminEndEnterpriseContract() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  await end.mutationFn({ accountId: 'acc-1' });
+  expect(requests[2]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract/end' });
+
+  const withdraw = useAdminWithdrawEnterpriseOffer() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  await withdraw.mutationFn({ accountId: 'acc-1' });
+  expect(requests[3]).toMatchObject({ method: 'DELETE', path: '/admin/api/accounts/acc-1/enterprise-offer' });
+
+  const link = useAdminEnterpriseOfferLink() as unknown as { mutationFn: (v: unknown) => Promise<unknown> };
+  await link.mutationFn({ accountId: 'acc-1' });
+  expect(requests[4]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract/checkout-link' });
+});
+
+test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS lists exactly the seven keys the server accepts', () => {
+  expect([...ADMIN_ENTITLEMENT_OVERRIDE_KEYS].sort()).toEqual(['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso']);
+});
+
+test('useBillingPlanPreview posts the amount to /billing/plan/preview, keyed by account and amount', async () => {
+  const hook = useBillingPlanPreview({ monthlyUsd: 500, accountId: 'acc-1' }) as unknown as {
+    queryKey: unknown[];
+    queryFn: () => Promise<unknown>;
+    enabled: boolean;
+  };
+  expect(hook.queryKey).toEqual(['billing-plan-preview', 'acc-1', 500]);
+  expect(hook.enabled).toBe(true);
+  await hook.queryFn();
+  expect(requests).toEqual([{ method: 'POST', path: '/billing/plan/preview', body: { monthly_usd: 500, account_id: 'acc-1' } }]);
+});
+
+test('useBillingPlanPreview stays idle without an amount', () => {
+  const hook = useBillingPlanPreview({ monthlyUsd: null }) as unknown as { enabled: boolean };
+  expect(hook.enabled).toBe(false);
 });

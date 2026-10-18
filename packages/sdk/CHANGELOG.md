@@ -5,6 +5,74 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session-log restore notice)
+- `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
+  restore of a session log could not bring back, from the session record
+  (`restore_grade: 'partial'`, `grade_counts`, `ext.kortix.data.restore`).
+  `missing[].kind` includes `'message'`: the log was over the API's restore cap
+  (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
+  messages; the transcript keeps them.
+
+### Changed (Enterprise is a feature layer; trials removed)
+- `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
+  Demo is self-serve (owners and admins); Licensed is a license contract.
+- `getEnterpriseDemo` / `setEnterpriseDemo` call `GET`/`PUT
+  /accounts/:id/iam/enterprise-demo` again (they rejected with
+  `ENDPOINT_RETIRED`). New hook `useSetEnterpriseDemo()`.
+- `contactEnterpriseSales(params)` (`POST /billing/enterprise/contact`),
+  `kortix.billing.contactSales`, `useContactSales()`: one-click "Talk to sales".
+- `AccountState.trial` is always null (`@deprecated`): trials are removed.
+- `AccountContract.credits_usd` / `AccountEnterpriseOffer.credits_usd` are
+  optional and `@deprecated`: a license carries no credits.
+
+### Added (BYOK fee entitlement)
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
+  (additive union member): the BYOK platform fee is an entitlement, on by
+  default for Free and Credits, off on Enterprise, and an operator override
+  switches it per account.
+
+### Changed (Enterprise is a feature layer)
+- An Enterprise trial no longer sets `AccountState.plan` to Enterprise: `plan`
+  stays the billing plan (what the account pays for), and the trial lends the
+  Enterprise features only (`trial.plan === 'enterprise'`, `tier.entitlements`).
+  A Credits trial still overlays `plan`. `plan.family === 'enterprise'` now
+  means an Enterprise contract.
+- `AccountState.subscription.monthly_usd` (optional, additive): the credits
+  plan's monthly amount the account pays, kept during a trial.
+
+### Added (Enterprise contracts and trials)
+One plan system (2026-10-15): the plan decides features; a trial is a dated
+grant of a plan; Enterprise is an annual contract (license + credit pool).
+
+- `AccountState` adds optional `trial` (`AccountTrial`: `plan`, `ends_at`,
+  `days_left`), `contract` (`AccountContract`), `enterprise_offer`
+  (`AccountEnterpriseOffer`) and `grace` (`AccountAccessGrace`: SSO/SCIM kept
+  14 days after an Enterprise trial or contract ends). Absent on an older
+  server. Additive.
+- `acceptEnterpriseOffer(params)` (`POST /billing/enterprise-offer/checkout`),
+  `kortix.billing.acceptEnterpriseOffer` and `useAcceptEnterpriseOffer()`:
+  a Stripe Checkout link for the open offer. Needs `billing.write`, which owners
+  AND admins now hold. Additive.
+- Admin: `useAdminEnterpriseContracts`, `useAdminCreateEnterpriseContract`,
+  `useAdminEndEnterpriseContract`, `useAdminWithdrawEnterpriseOffer`,
+  `useAdminEnterpriseOfferLink`, types `AdminEnterpriseContract`,
+  `AdminAccountContract`, `AdminContractCollection`,
+  `AdminCreateEnterpriseContractVariables`, and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS`
+  (the six override keys the server accepts). `AdminAccount` adds optional
+  `contract` and `graceEndsAt`. Additive.
+
+### Deprecated (Enterprise preview and flags)
+- `getEnterpriseDemo`, `setEnterpriseDemo`, `useAdminSetEnterpriseDemo`,
+  `useAdminSetEnterpriseEntitled`, `useAdminSetManagedModels` now reject with
+  `ENDPOINT_RETIRED` and send no request (the API answers 410). Grant an
+  Enterprise trial (`useAdminGrantTrial`), create a contract, or set the
+  `managedModels` override. Removed in the next major. No export was removed.
+- Type changes (the API no longer sends these fields): `AdminAccount`
+  `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled` and
+  `computeRateMultiplier` become optional and `@deprecated`;
+  `AdminAccountTrial.monthlyUsd` becomes optional and `@deprecated`;
+  `AccountState.enterprise_entitled` is `@deprecated` (read `plan.family`).
+
 ### Changed (credits-only billing)
 Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
 whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited

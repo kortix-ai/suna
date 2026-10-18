@@ -34,6 +34,55 @@ export type BillingState =
  */
 export type PlanFamily = 'free' | 'credits' | 'enterprise';
 
+/** A dated grant of a plan. `days_left` counts whole days, rounded up; 0 on the last day. */
+/** The Enterprise feature layer of an account (`AccountState.enterprise`). */
+export interface AccountEnterprise {
+  state: 'off' | 'demo' | 'licensed';
+}
+
+export interface AccountTrial {
+  plan: 'credits' | 'enterprise';
+  started_at: string | null;
+  ends_at: string;
+  days_left: number;
+}
+
+/** How an Enterprise contract is paid: Stripe Checkout by card, a Stripe invoice, or outside Stripe. */
+export type EnterpriseContractCollection = 'checkout' | 'invoice' | 'manual';
+
+/** An active Enterprise contract: an annual license plus a prepaid credit pool. */
+export interface AccountContract {
+  id: string;
+  /** Annual platform fee, USD. */
+  license_usd: number;
+  /** Annual credit commitment, USD, granted as one pool per term. */
+  /** @deprecated A license carries no credits (2026-10-15); no longer sent. */
+  credits_usd?: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+  starts_at: string | null;
+  /** End of the current term. Null for an open-ended contract. */
+  ends_at: string | null;
+  /** True when the term renews on its own. */
+  renews: boolean;
+}
+
+/** An Enterprise contract offered and not yet accepted. */
+export interface AccountEnterpriseOffer {
+  id: string;
+  license_usd: number;
+  /** @deprecated A license carries no credits (2026-10-15); no longer sent. */
+  credits_usd?: number;
+  term_months: number;
+  collection: EnterpriseContractCollection;
+}
+
+/** SSO/SCIM kept after an Enterprise trial or contract ended. */
+export interface AccountAccessGrace {
+  reason: 'trial_ended' | 'contract_ended';
+  ends_at: string;
+}
+
 export interface AccountState {
   credits: {
     total: number;
@@ -64,10 +113,12 @@ export interface AccountState {
    * The plan the account BEHAVES as, named the way the product names plans.
    *
    * Distinct from `subscription` on purpose. `subscription.tier_key` is the
-   * STORED plan (legacy keys read as `'credits'`). This block is the RESOLVED
-   * plan: an active admin-issued trial overlays it, so it reports the plan the
-   * server's gates actually enforce. Read it through {@link resolvedPlan},
-   * which also covers responses from an API too old to send it.
+   * STORED plan (legacy keys read as `'credits'`). This block is the BILLING
+   * plan: what the account pays for. A Credits trial overlays it; an
+   * Enterprise trial does not, because it lends the Enterprise features only
+   * (see `trial`, and `tier.entitlements` for what the gates enforce). Read it
+   * through {@link resolvedPlan}, which also covers responses from an API too
+   * old to send it.
    */
   plan?: {
     /** Plan key — 'none' | 'free' | 'credits' | 'enterprise'. */
@@ -90,6 +141,9 @@ export interface AccountState {
   subscription: {
     tier_key: string;
     tier_display_name: string;
+    /** The credits plan's monthly amount the account PAYS, in USD, or null
+     *  when it pays none. Kept during a trial, while `plan.monthly_usd` is null. */
+    monthly_usd?: number | null;
     status: string;
     billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
     provider: 'stripe' | 'revenuecat' | 'local';
@@ -104,11 +158,16 @@ export interface AccountState {
       current_tier: {
         name: string;
         display_name: string;
+        /** Credits a month (1 credit = $0.01). */
         monthly_credits?: number;
+        /** The same amount in USD. */
+        monthly_usd?: number;
       };
       target_tier: {
         name: string;
         display_name: string;
+        /** The same amount in USD. */
+        monthly_usd?: number;
         monthly_credits?: number;
       };
       effective_date: string;
@@ -179,16 +238,31 @@ export interface AccountState {
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
    *  forces every enterprise entitlement on platform-wide — the frontend
-   *  hides the self-serve "Enterprise features — Demo" toggle and any
-   *  "Request enterprise access" upsell when this is true. */
+   *  hides every Enterprise upsell when this is true. */
   enterprise_license_available?: boolean;
-  /** True when an operator flagged this account as a contracted cloud
-   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
-   *  then resolves all enterprise entitlements regardless of billing tier, so
-   *  an account can hold a paid credits plan AND enterprise at once. The
-   *  frontend uses this to hide the self-serve demo toggle (a real contract
-   *  supersedes the demo). */
+  /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
+   *  plan (a contract or an Enterprise trial). */
   enterprise_entitled?: boolean;
+  /** The active trial: a dated grant of a plan. Null when there is none.
+   *  Absent on an older server. */
+  /** @deprecated Trials are removed (2026-10-15): always null. Read {@link AccountState.enterprise}. */
+  trial?: AccountTrial | null;
+  /**
+   * The Enterprise feature layer: 'off', 'demo' (self-serve, marked "Demo") or
+   * 'licensed' (a license contract). Absent on an older server.
+   */
+  enterprise?: AccountEnterprise;
+  /** The active Enterprise contract. Null when there is none. Absent on an
+   *  older server. */
+  contract?: AccountContract | null;
+  /** An Enterprise contract offered and not yet accepted. A billing manager
+   *  accepts a `checkout` offer with {@link acceptEnterpriseOffer}. Null when
+   *  there is none. Absent on an older server. */
+  enterprise_offer?: AccountEnterpriseOffer | null;
+  /** SSO and SCIM stay on after an Enterprise trial or contract ends, until
+   *  `ends_at`, so nobody is locked out. Null outside that window. Absent on
+   *  an older server. */
+  grace?: AccountAccessGrace | null;
   auto_topup?: {
     enabled: boolean;
     threshold: number;
@@ -251,6 +325,7 @@ export function getDefaultAccountState(): AccountState {
     subscription: {
       tier_key: 'none',
       tier_display_name: 'No Plan',
+      monthly_usd: null,
       status: 'no_subscription',
       billing_period: null,
       provider: 'stripe',
@@ -879,17 +954,70 @@ export interface SetBillingPlanParams {
 }
 
 /**
+ * What a plan change did, or would do ({@link PlanChangePreview}).
+ * - `raised`: instant. Charged now, prorated; the credits for the rest of the
+ *   period are added at once.
+ * - `scheduled`: a lower amount from the next renewal (`effective_at`). No
+ *   charge, no refund; this period keeps its amount and credits.
+ * - `kept`: a scheduled lower amount was cancelled.
+ * - `none`: the amount equals the one in effect.
+ * - `checkout`: no paid subscription yet (preview only).
+ */
+export type PlanChange = 'raised' | 'scheduled' | 'kept' | 'none' | 'checkout';
+
+/**
  * Result of {@link setBillingPlan}.
  * - `checkout_created`: no paid subscription yet. Redirect to `checkout_url`.
- * - `updated` / `unchanged`: an existing subscription changed in place. A raise
- *   is charged now and grants the prorated credits at once; a cut applies at
- *   the next renewal.
+ * - `updated` / `unchanged`: an existing subscription changed in place;
+ *   `change` says how (optional: absent on an older API).
  * - `payment_pending`: the raise needs payment confirmation with `client_secret`.
  */
 export type SetBillingPlanResult =
   | { status: 'checkout_created'; checkout_url: string; monthly_usd: number }
-  | { status: 'updated' | 'unchanged'; monthly_usd: number }
+  | {
+      status: 'updated' | 'unchanged';
+      monthly_usd: number;
+      change?: PlanChange;
+      /** `scheduled`: when the lower amount takes effect (the next renewal). */
+      effective_at?: string;
+      /** `raised`: USD charged now. */
+      charged_usd?: number;
+      /** `raised`: credits added now (1 credit = $0.01). */
+      credits_added?: number;
+    }
   | { status: 'payment_pending'; monthly_usd: number; client_secret: string };
+
+/** What {@link setBillingPlan} would do for an amount: {@link previewBillingPlan}. */
+export interface PlanChangePreview {
+  change: PlanChange;
+  /** The amount asked for, USD a month. */
+  monthly_usd: number;
+  /** The amount in effect this period. Null without a paid subscription. */
+  current_monthly_usd: number | null;
+  /** USD due now: the prorated raise, or the first month at checkout. */
+  due_now_usd: number;
+  /** Credits added now (1 credit = $0.01). */
+  credits_now: number;
+  /** `scheduled`: when the lower amount takes effect. */
+  effective_at: string | null;
+}
+
+export interface PreviewBillingPlanParams {
+  /** Whole USD per month. */
+  monthlyUsd: number;
+  accountId?: string;
+}
+
+/** Preview a plan change without making it: `POST /billing/plan/preview`. */
+export async function previewBillingPlan(params: PreviewBillingPlanParams): Promise<PlanChangePreview> {
+  return unwrap(
+    await backendApi.post<PlanChangePreview>('/billing/plan/preview', {
+      monthly_usd: params.monthlyUsd,
+      account_id: params.accountId,
+    }),
+    'Failed to preview the plan change',
+  );
+}
 
 /** Subscribe to, or change, the credits plan: `POST /billing/plan`. Rejects with 400 outside 20..10,000. */
 export async function setBillingPlan(params: SetBillingPlanParams): Promise<SetBillingPlanResult> {
@@ -902,6 +1030,60 @@ export async function setBillingPlan(params: SetBillingPlanParams): Promise<SetB
       account_id: params.accountId,
     }),
     'Failed to set billing plan',
+  );
+}
+
+export interface AcceptEnterpriseOfferParams {
+  successUrl: string;
+  cancelUrl: string;
+  /** Defaults to the caller's active account. */
+  accountId?: string;
+}
+
+export interface AcceptEnterpriseOfferResult {
+  /** Stripe Checkout for the offered contract. Expires within 24 h: create one per click. */
+  checkout_url: string;
+  contract_id: string;
+}
+
+/**
+ * Accept the account's open Enterprise offer (`POST /billing/enterprise-offer/checkout`):
+ * returns a Stripe Checkout link that pays the annual license and credit
+ * commitment by card. Needs `billing.write` (owners and admins). Rejects with
+ * 404 when there is no open offer and 409 when the offer is invoiced instead.
+ */
+export async function acceptEnterpriseOffer(
+  params: AcceptEnterpriseOfferParams,
+): Promise<AcceptEnterpriseOfferResult> {
+  return unwrap(
+    await backendApi.post<AcceptEnterpriseOfferResult>('/billing/enterprise-offer/checkout', {
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      account_id: params.accountId,
+    }),
+    'Failed to start the Enterprise checkout',
+  );
+}
+
+export interface ContactEnterpriseSalesParams {
+  accountId?: string;
+  /** Optional free text for sales, e.g. what the team needs. */
+  note?: string;
+}
+
+/**
+ * "Talk to sales" from inside the app: one click, no form. The API emails
+ * Kortix sales the account, the signed-in user and its Enterprise state. Any
+ * member may ask (`billing.read`). `sent` is false when the deployment has no
+ * sales inbox configured.
+ */
+export async function contactEnterpriseSales(params: ContactEnterpriseSalesParams = {}): Promise<{ sent: boolean }> {
+  return unwrap(
+    await backendApi.post<{ sent: boolean }>('/billing/enterprise/contact', {
+      account_id: params.accountId,
+      ...(params.note ? { note: params.note } : {}),
+    }),
+    'Failed to reach Kortix sales',
   );
 }
 

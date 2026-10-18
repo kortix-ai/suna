@@ -47,18 +47,17 @@ export function browserLaneRequirements(
   const present = (value: string | undefined): boolean => Boolean(value?.trim());
   const requirements: Requirement[] = [
     {
-      // 13-sdk-only, 18-apps-ui, 19-feature-flags, 20-workspace-switching,
-      // 21-trigger-session-access, 22-resource-grant-multiselect all
-      // `test.skip(!databaseUrl, ...)`.
+      // 49-connector-connect-landing `test.skip(!databaseUrl, ...)`; 27, 34,
+      // 37 and 45 throw without it.
       name: 'KE2E_DATABASE_URL',
-      detail: 'direct database access; 6 specs skip without it',
+      detail: 'direct database access; 49 skips and 27, 34, 37, 45 fail without it',
       ok: () => present(env.KE2E_DATABASE_URL) || present(env.E2E_DATABASE_URL),
     },
     {
-      // 01-account-auth and 08-accounts-project-access skip on a live probe, so
-      // this must PROBE, not just check that a key is set.
+      // 01-account-auth skips on a live probe, so this must PROBE, not just
+      // check that a key is set.
       name: 'email provider',
-      detail: 'inbox delivery; 01 and 08 skip without it',
+      detail: 'inbox delivery; 01 skips without it',
       ok: async () => (await probeEmail()).available,
       reason: async () => (await probeEmail()).reason,
     },
@@ -67,27 +66,7 @@ export function browserLaneRequirements(
       detail: '10-billing-journey skips without it',
       ok: () => env.E2E_ENABLE_BILLING_JOURNEY === '1',
     },
-    {
-      name: 'E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1',
-      detail: '12-sandbox-templates rebuild case skips without it',
-      ok: () => env.E2E_ENABLE_SANDBOX_TEMPLATE_BUILD === '1',
-    },
-    {
-      name: 'E2E_ENABLE_SDK_ONLY_SESSION=1',
-      detail: '13-sdk-only-session skips without it',
-      ok: () => env.E2E_ENABLE_SDK_ONLY_SESSION === '1',
-    },
   ];
-  // Preview has no stable OAuth callback broker, so `local-runner.ts` sets
-  // E2E_OAUTH_PROVIDER_INITIATION=0 there and authorises that one exclusion in
-  // the strict reporter. Everywhere else spec 17 must really run.
-  if (env.E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION !== '1') {
-    requirements.push({
-      name: 'E2E_OAUTH_PROVIDER_INITIATION=1',
-      detail: '17-oauth-provider-initiation skips without it',
-      ok: () => env.E2E_OAUTH_PROVIDER_INITIATION === '1',
-    });
-  }
   return requirements;
 }
 

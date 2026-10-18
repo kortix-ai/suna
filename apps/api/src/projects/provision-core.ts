@@ -598,7 +598,7 @@ async function insertProvisionedProject(
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
       // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 2) — record that as the canonical path so
+      // kortix.yaml (kortix_version 3) — record that as the canonical path so
       // a project created here is never labeled with a stale v1 filename. A
       // CLI `kortix ship` that pushes its own files instead of seeding still
       // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),

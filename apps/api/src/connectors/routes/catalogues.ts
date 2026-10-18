@@ -1,5 +1,5 @@
 /** Catalogue browse routes: Discover (integrations.sh), easy-connect toolkits, Pipedream apps. */
-import { withDirectIds } from '../connect-direct-twins';
+import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
@@ -139,21 +139,27 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
 }
 
 /**
- * Each managed app with `directId`: the same app's API/MCP catalogue id, so a
- * card and the app page offer both ways to connect. Only for a project with
- * the API/MCP catalogue on; a lookup failure leaves the listing as it was.
+ * Each managed app with `directMcpUrl` (its hosted MCP server, which Install
+ * offers first) and, for a project with the API/MCP catalogue on, `directId`
+ * (the same app's catalogue id). A lookup failure leaves the listing as it was.
  */
 async function withCatalogTwins(
   deps: ConnectorRouterDeps,
   projectId: string,
   result: unknown,
 ): Promise<unknown> {
-  if (!deps.catalogDirectIds) return result;
+  let out = result;
   try {
-    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return result;
-    return withDirectIds(result, await deps.catalogDirectIds());
+    if (deps.catalogDirectMcpUrls) out = withDirectMcpUrls(out, await deps.catalogDirectMcpUrls());
   } catch {
-    return result;
+    /* listing without MCP URLs */
+  }
+  if (!deps.catalogDirectIds) return out;
+  try {
+    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return out;
+    return withDirectIds(out, await deps.catalogDirectIds());
+  } catch {
+    return out;
   }
 }
 

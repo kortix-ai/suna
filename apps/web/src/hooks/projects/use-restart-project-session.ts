@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast } from '@/components/ui/toast';
-import { restartProjectSession, sessionStartKey } from '@kortix/sdk';
+import { recoverProjectSession, restartProjectSession, sessionStartKey } from '@kortix/sdk';
 import { clearRuntimeEnsureGuard, qk, resetRuntimeQueries } from '@kortix/sdk/react';
 
 /** The optimistic `/start` payload a restart puts in the cache on click. */
@@ -19,9 +19,12 @@ export function restartPendingStartSeed() {
 }
 
 /** One sentence for the card + toast, whatever `POST /restart` rejected with. */
-export function restartFailureMessage(error: unknown): string {
+export function restartFailureMessage(
+  error: unknown,
+  fallback = 'Restart failed. Try again in a moment.',
+): string {
   const message = error instanceof Error ? error.message.trim() : '';
-  return message || 'Restart failed. Try again in a moment.';
+  return message || fallback;
 }
 
 /**
@@ -45,11 +48,32 @@ export function restartFailureMessage(error: unknown): string {
  *    query family, `/start`, the session-sandbox row, and the sidebar list.
  */
 export function useRestartProjectSession(projectId: string, sessionId: string) {
+  return useSessionBootAction(projectId, sessionId, restartProjectSession);
+}
+
+/**
+ * Continue a lost session on a new computer (KRTX-2419): `POST /recover`, then
+ * the same exit as a restart. The `/start` that follows boots a fresh box from
+ * the session branch, which restores the saved conversation. A refusal
+ * (no saved conversation, the old box still being removed) keeps the lost
+ * banner and names the reason.
+ */
+export function useRecoverLostSession(projectId: string, sessionId: string) {
+  const action = useSessionBootAction(projectId, sessionId, recoverProjectSession, 'Could not continue the session. Try again in a moment.');
+  return { recover: action.restart, isPending: action.isPending, errorMessage: action.errorMessage };
+}
+
+function useSessionBootAction(
+  projectId: string,
+  sessionId: string,
+  run: (projectId: string, sessionId: string) => Promise<unknown>,
+  fallback?: string,
+) {
   const queryClient = useQueryClient();
   const startKey = sessionStartKey(projectId, sessionId);
 
   const mutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId, sessionId),
+    mutationFn: () => run(projectId, sessionId),
     onMutate: () => {
       const previous = queryClient.getQueryData(startKey);
       queryClient.setQueryData(startKey, restartPendingStartSeed());
@@ -69,13 +93,13 @@ export function useRestartProjectSession(projectId: string, sessionId: string) {
       // by a REJECTED restart would spin the boot loader forever.
       if (context?.previous !== undefined) queryClient.setQueryData(startKey, context.previous);
       else queryClient.invalidateQueries({ queryKey: startKey });
-      errorToast(restartFailureMessage(error));
+      errorToast(restartFailureMessage(error, fallback));
     },
   });
 
   return {
     restart: () => mutation.mutate(),
     isPending: mutation.isPending,
-    errorMessage: mutation.error ? restartFailureMessage(mutation.error) : null,
+    errorMessage: mutation.error ? restartFailureMessage(mutation.error, fallback) : null,
   };
 }

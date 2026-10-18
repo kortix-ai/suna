@@ -1121,6 +1121,48 @@
       "when": 1792021630676,
       "tag": "20261014034706_capture_health_notification_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1792030354602,
+      "tag": "20261015021234_enterprise_contracts",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792057728805,
+      "tag": "20261015094848_session_pin_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792106777017,
+      "tag": "20261015232617_scheduled_monthly_usd",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792177827319,
+      "tag": "20261016191027_apps_external_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1792200673314,
+      "tag": "20261017013113_session_log_backfill_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1792252746876,
+      "tag": "20261017155906_trigger_run_history",
+      "breakpoints": true
     }
   ]
 }

@@ -41,6 +41,13 @@ function parse(input: string, format: 'toml' | 'yaml'): unknown {
   return format === 'yaml' ? parseYaml(input) : parseToml(input);
 }
 
+import { GOLDEN_V3 } from './fixtures/golden-v3.ts';
+
+function swapV3(from: string, to: string): string {
+  if (!GOLDEN_V3.includes(from)) throw new Error(`golden v3 manifest has no "${from}"`);
+  return GOLDEN_V3.replace(from, to);
+}
+
 interface Fixture {
   name: string;
   format: 'toml' | 'yaml';
@@ -1035,6 +1042,18 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - ../outside.ts\n',
   },
   {
+    name: 'v2: harnesses.pi.codemode at the top level and on an agent accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  pi:\n    codemode: only\nagents:\n  w:\n    harnesses:\n      pi:\n        codemode: off\n',
+  },
+  {
+    name: 'v2: harnesses.pi.codemode outside off, on, only rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    codemode: yes\n',
+  },
+  {
     name: 'v2: an unknown harness rejected',
     format: 'yaml',
     valid: false,
@@ -1071,6 +1090,102 @@ connectors:
     input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
   },
   {
+    name: 'v3: the golden manifest',
+    format: 'yaml',
+    valid: true,
+    input: GOLDEN_V3,
+  },
+  {
+    name: 'v3: harnesses rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\nharnesses:\n  pi:\n    codemode: on\n'),
+  },
+  {
+    name: 'v3: top-level permission rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\npermission: allow\n'),
+  },
+  {
+    name: 'v3: an unknown top-level key rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('default_agent: assistant\n', 'default_agent: assistant\nagentz: {}\n'),
+  },
+  {
+    name: 'v3: a kortix- project skill rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('pdf: skills/pdf', 'kortix-pdf: skills/kortix-pdf'),
+  },
+  {
+    name: 'v3: kortix:<name> tool value rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('lookup_order: tools/lookup_order.ts', 'lookup_order: kortix:web_search'),
+  },
+  {
+    name: 'v3: a command with prompt and prompt_file rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    prompt: Summarize', '    prompt_file: x.md\n    prompt: Summarize'),
+  },
+  {
+    name: 'v3: a command agent key rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    prompt: Summarize', '    agent: assistant\n    prompt: Summarize'),
+  },
+  {
+    name: 'v3: an empty extension rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('  web-access:\n    pi: npm:pi-web-access@0.30.0', '  web-access: {}'),
+  },
+  {
+    name: 'v3: an npm OpenCode plugin rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('opencode: extensions/audit.opencode.ts', 'opencode: npm:audit@1.0.0'),
+  },
+  {
+    name: 'v3: a ranged pi pin rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('pi: npm:pi-web-access@0.30.0', 'pi: npm:pi-web-access@^0.30.0'),
+  },
+  {
+    name: 'v3: agent file rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    mode: primary\n', '    mode: primary\n    file: agents/a.md\n'),
+  },
+  {
+    name: 'v3: agent harnesses rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    mode: primary\n', '    mode: primary\n    harnesses: {}\n'),
+  },
+  {
+    name: 'v3: permission.skill rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('      external_directory: deny', '      skill: allow'),
+  },
+  {
+    name: 'v3: tools map form rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('    tools: all\n', '    tools:\n      bash: false\n'),
+  },
+  {
+    name: 'v3: bad codemode rejected',
+    format: 'yaml',
+    valid: false,
+    input: swapV3('codemode: on', 'codemode: maybe'),
+  },
+  {
     name: 'v2: tools mixes kortix:<name> and module paths',
     format: 'yaml',
     valid: true,
@@ -1104,6 +1219,86 @@ connectors:
   },
 ];
 
+// Blank companions are absent values for sandbox selection, not competing keys.
+for (const image of [undefined, '', '   ', 'python:3.12']) {
+  for (const dockerfile of [undefined, '', '   ', 'Dockerfile']) {
+    FIXTURES.push({
+      name: `sandbox nonblank XOR: image=${JSON.stringify(image)}, dockerfile=${JSON.stringify(dockerfile)}`,
+      format: 'yaml',
+      input: `kortix_version: 1\nsandbox:\n  templates:\n    - ${JSON.stringify({ slug: 'worker', image, dockerfile })}\n`,
+      valid: Number(Boolean(image?.trim())) + Number(Boolean(dockerfile?.trim())) === 1,
+    });
+  }
+}
+for (const field of ['prompt', 'connector', 'event', 'account', 'source']) {
+  for (const blank of ['', '   ', '\t\n', '\u00a0']) {
+    FIXTURES.push({
+      name: `event nonblank ${field}: ${JSON.stringify(blank)}`,
+      format: 'yaml',
+      input: `kortix_version: 1\ntriggers:\n  - ${JSON.stringify({ slug: 'events', type: 'event', prompt: 'Handle event', connector: 'github', event: 'push', [field]: blank })}\n`,
+      valid: false,
+    });
+  }
+}
+
+// Cover blank rejection across the trim-checked field families.
+for (const blank of ['   ', '\t\n', '\u00a0']) {
+  const cases: Array<[string, object]> = [
+    ['opencode path', { opencode: { config_dir: blank } }],
+    ['sandbox default', { sandbox: { templates: [{ slug: 'worker', image: 'python:3.12' }], default: blank } }],
+    ['grant item', { agents: [{ name: 'worker', connectors: [blank] }] }],
+    ['connector name', { connectors: [{ slug: 'github', provider: 'composio', name: blank }] }],
+    ['policy match', { connectors: [{ slug: 'github', provider: 'composio', policies: [{ match: blank, action: 'allow' }] }] }],
+    ['channel platform', { channels: [{ platform: blank }] }],
+    ['monitor run', { triggers: [{ slug: 'watch', type: 'monitor', prompt: 'Watch', run: blank, mode: 'daemon', expect_event_within: '5m' }] }],
+  ];
+  for (const [name, fields] of cases) {
+    FIXTURES.push({ name: `${name} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 1, ...fields }) });
+  }
+}
+for (const [prompt, prompt_template, valid] of [
+  ['Handle event', '', true], ['', 'Handle event', false], [undefined, '   ', false],
+] as const) {
+  FIXTURES.push({ name: `prompt alias precedence ${JSON.stringify([prompt, prompt_template])}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: 1, triggers: [{ slug: 'events', type: 'event', prompt, prompt_template, connector: 'github', event: 'push' }] }) });
+}
+for (const blank of ['   ', '\t\n', '\u00a0']) {
+  const cases: Array<[string, object]> = [
+    ['app env', { apps: { site: { type: 'static', path: '.', env: { KEY: blank } } } }],
+    ['app secrets', { apps: { site: { type: 'static', path: '.', secrets: { KEY: blank } } } }],
+    ['app path', { apps: { site: { type: 'static', path: blank } } }],
+    ['required connector', { agents: { worker: { connectors_required: [blank] } } }],
+    ['legacy required connector', { agents: { worker: { connectors_personal: [blank] } } }],
+    ['tool name', { agents: { worker: { tools: [blank] } } }],
+    ['default agent', { default_agent: blank }],
+  ];
+  for (const [name, fields] of cases) {
+    FIXTURES.push({ name: `${name} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, ...fields }) });
+  }
+  for (const field of ['prompt', 'commands']) {
+    FIXTURES.push({ name: `v3 ${field} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 3, default_agent: 'worker', agents: { worker: field === 'prompt' ? { prompt: blank } : {} }, ...(field === 'commands' ? { commands: { greet: { prompt: blank } } } : {}) }) });
+  }
+}
+for (const image of ['', '   ', '\t\n', '\u00a0', 'python:3.12']) {
+  FIXTURES.push({ name: `OCI image nonblank ${JSON.stringify(image)}`, format: 'yaml', valid: image === 'python:3.12', input: JSON.stringify({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, apps: { site: { type: 'oci_image', image, command: ['node'], port: 3000 } } }) });
+}
+// Trigger aliases use canonical-field precedence; pinned IDs alone must be nonblank.
+for (const version of [1, 2, 3]) {
+  const base = version === 1 ? {} : { default_agent: 'worker', agents: { worker: {} } };
+  const cases: Array<[string, object, boolean]> = [
+    ['blank agent', { agent: '   ' }, version === 1],
+    ['blank legacy agent', { agent_name: '   ' }, true],
+    ['blank unpinned ID', { session_id: '   ' }, true],
+    ['pinned missing ID', { session_mode: 'pinned' }, false],
+    ['pinned blank ID', { session_mode: 'pinned', session_id: '   ' }, false],
+    ['pinned blank alias ID', { sessionMode: 'pinned', sessionId: '\t\n' }, false],
+    ['canonical blank overrides ID alias', { session_mode: 'pinned', session_id: '   ', sessionId: 'synthetic-session' }, false],
+    ['canonical ID overrides blank alias', { session_mode: 'pinned', session_id: 'synthetic-session', sessionId: '   ' }, true],
+    ['canonical mode overrides pinned alias', { session_mode: 'fresh', sessionMode: 'pinned', session_id: '   ' }, true],
+  ];
+  for (const [name, fields, valid] of cases) {
+    FIXTURES.push({ name: `v${version} trigger ${name}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: version, ...base, triggers: [{ slug: 'tick', type: 'cron', cron: '0 9 * * *', prompt: 'Go', ...fields }] }) });
+  }
+}
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
   for (const fixture of FIXTURES) {
     test(`[${fixture.format}] ${fixture.name}`, () => {
@@ -1160,7 +1355,7 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
         };
       }
     ).properties.connectors.items.properties;
-    expect(connectorProperties.name).toEqual({ type: 'string', minLength: 1 });
+    expect(connectorProperties.name).toEqual({ type: 'string', pattern: '\\S' });
     expect(connectorProperties.authorization_strategy).toEqual({
       type: 'string',
       enum: ['project', 'user'],

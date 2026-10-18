@@ -297,9 +297,21 @@
     ]
   },
   {
+    "id": "commandcode",
+    "env": [
+      "CMD_API_KEY"
+    ]
+  },
+  {
     "id": "lowrouter",
     "env": [
       "LOWROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "reflection",
+    "env": [
+      "REFLECTION_API_KEY"
     ]
   },
   {
@@ -1379,6 +1391,12 @@
     "id": "digitalocean",
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
+    ]
+  },
+  {
+    "id": "boundless",
+    "env": [
+      "BOUNDLESS_API_KEY"
     ]
   },
   {

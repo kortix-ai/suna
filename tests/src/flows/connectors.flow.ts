@@ -9,8 +9,6 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
-import { setFeatureAsOperator } from '../fixtures/feature-flags';
-import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -684,6 +682,42 @@ flow(
           { provider: 'openapi' },
           { params: { projectId: p.id } },
         );
+      r.status(403);
+    });
+  },
+);
+
+// Install asks this before it offers an app's hosted MCP server. The positive
+// answers need a public OAuth server, so the unit tests cover them
+// (`mcpSignInCheck`); here the guard and the permission.
+flow(
+  'CONN-36',
+  {
+    domain: 'connectors',
+    routes: ['POST /v1/connectors/projects/:projectId/connectors/mcp-sign-in-check'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const path = '/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check';
+
+    await ctx.step('a local MCP server URL is refused by the egress guard', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'https://127.0.0.1/mcp' }, { params: { projectId: p.id } });
+      r.status(400).body().has('$.code', 'invalid_source_address');
+    });
+
+    await ctx.step('a value that is not a URL is a 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'linear' }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step('NONMEMBER cannot check a server', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(path, { url: 'https://mcp.example.test/mcp' }, { params: { projectId: p.id } });
       r.status(403);
     });
   },
@@ -4262,6 +4296,125 @@ flow(
   },
 );
 
+// ── CONN-MCP-SECRET-1 — an MCP connector authenticates with a bound project secret ──
+// Found live 2026-10-17: `kortix connectors secret <slug> <ID>` stored the
+// binding on the connector row, and every sync then sent tools/list with no
+// Authorization header (HTTP 401, zero tools). Local target only: the MCP
+// server is runner-local and only the local stack allows 127.0.0.1.
+flow(
+  'CONN-MCP-SECRET-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+      'GET /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/connectors/projects/:projectId/connectors/sync',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local MCP server: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const stamp = Date.now().toString(36);
+    const slug = `ke2e-mcp-secret-${stamp}`;
+    const SECRET = `KE2E_MCP_TOKEN_${stamp.toUpperCase()}`;
+    const TOKEN = `ke2e-bound-${stamp}`;
+    const { createServer } = await import('node:http');
+    // What each tools/list carried in Authorization; a wrong or missing bearer gets 401.
+    const listAuth: string[] = [];
+    const upstream = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const msg = raw ? (JSON.parse(raw) as { id?: number; method?: string }) : {};
+        if (msg.method === 'tools/list') listAuth.push(req.headers.authorization ?? '');
+        if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+          res.writeHead(401, { 'content-type': 'application/json' });
+          res.end('{"error":"unauthorized"}');
+          return;
+        }
+        if (msg.id === undefined) {
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        const result =
+          msg.method === 'initialize'
+            ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'ke2e', version: '1' } }
+            : msg.method === 'tools/list'
+              ? { tools: [{ name: 'ping', description: 'Answer pong', inputSchema: { type: 'object', properties: {} } }] }
+              : {};
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const row = async () => {
+      const r = await owner.get('/v1/connectors/projects/:projectId/connectors', { params });
+      r.status(200);
+      const found = r.json<{ connectors: Array<{ slug: string; status: string; actions: Array<{ name?: string; path?: string }> }> }>()
+        .connectors.find((c) => c.slug === slug);
+      if (!found) throw new Error(`the list omitted ${slug}: ${r.text().slice(0, 400)}`);
+      return found;
+    };
+
+    try {
+      await ctx.step('store a broker project secret for the connector → 200', async () => {
+        (await owner.post('/v1/projects/:projectId/secrets', { name: SECRET, value: TOKEN, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      });
+
+      await ctx.step('add a bearer MCP connector with no credential → 200; tools/list is refused, zero tools', async () => {
+        const r = await owner.post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug, provider: 'mcp', url: `http://127.0.0.1:${port}/mcp`, transport: 'http', auth: { type: 'bearer' } },
+          { params, timeoutMs: 60_000 },
+        );
+        r.status(200);
+        if ((await row()).actions.length !== 0) throw new Error('tools loaded without a credential');
+      });
+
+      await ctx.step('bind the secret → 200 with a clean re-sync; tools/list carried the secret as the bearer; the tool is listed', async () => {
+        const before = listAuth.length;
+        const r = await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+          { secret_identifier: SECRET },
+          { params: { ...params, slug }, timeoutMs: 60_000 },
+        );
+        r.status(200);
+        const sync = r.json<{ sync?: { errors: Array<{ slug: string; error: string }> } }>().sync;
+        if (!sync || sync.errors.some((e) => e.slug === slug)) throw new Error(`bind sync: ${r.text().slice(0, 400)}`);
+        if (listAuth.slice(before).at(-1) !== `Bearer ${TOKEN}`) throw new Error(`tools/list auth: ${JSON.stringify(listAuth.slice(before))}`);
+        const c = await row();
+        if (c.status !== 'active' || !c.actions.some((a) => (a.name ?? a.path) === 'ping')) throw new Error(`row: ${JSON.stringify(c)}`);
+      });
+
+      await ctx.step('a manual sync fetches tools/list with the bound secret again; the connector stays active', async () => {
+        const before = listAuth.length;
+        const r = await owner.post('/v1/connectors/projects/:projectId/connectors/sync', {}, { params, timeoutMs: 60_000 });
+        r.status(200);
+        const errors = r.json<{ errors: Array<{ slug: string; error: string }> }>().errors;
+        if (errors.some((e) => e.slug === slug)) throw new Error(`sync errors: ${JSON.stringify(errors)}`);
+        if (listAuth.slice(before).at(-1) !== `Bearer ${TOKEN}`) throw new Error(`tools/list auth: ${JSON.stringify(listAuth.slice(before))}`);
+        if ((await row()).status !== 'active') throw new Error('the connector left active after a manual sync');
+      });
+    } finally {
+      await owner.del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { ...params, slug } }).catch(() => undefined);
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  },
+);
+
 // ── CONN-32 — the REST call route: request checks and every policy layer ─────
 // The gateway reads three policy sources on every call: connector rules
 // (connector_policies), project rules on fully-qualified paths
@@ -5038,7 +5191,6 @@ flow(
   {
     domain: 'connectors',
     requires: ['database', 'appHost'],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/connectors/projects/:projectId/call',
@@ -5169,7 +5321,6 @@ flow(
       });
 
       await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
-        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await owner.post('/v1/projects/:projectId/apps',
           { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
         created.status(201);

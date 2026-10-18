@@ -72,11 +72,11 @@ describe('pricing copy', () => {
     expect(english.billing.pricing.faq.credit.answer).toContain('1 credit is $0.01');
   });
 
-  test('the FAQ states the tier range, the most popular tier and the one rate', () => {
+  test('the FAQ states the tier range and the one rate, and names no tier most popular', () => {
     const answer = english.billing.pricing.faq.amounts.answer;
     expect(answer).toContain('$50 a month (5,000 credits)');
-    expect(answer).toContain('$10,000 a month (1,000,000 credits)');
-    expect(answer).toContain('$200 a month (20,000 credits) is the most popular');
+    expect(answer).toContain('$50,000 a month (5,000,000 credits)');
+    expect(answer).not.toContain('most popular');
     expect(answer).toContain('100 credits per dollar');
   });
 
@@ -86,17 +86,19 @@ describe('pricing copy', () => {
     expect(english.billing.pricing.faq.rollover.answer).toContain('roll over for one month');
   });
 
-  test('models are separate: three sources, base price plus the fee only for Kortix models', () => {
+  test('models are separate: three sources; Kortix models carry the fee, own keys 5% past $1,000 a month, ChatGPT nothing', () => {
     const models = english.billing.pricing.models;
     expect(Object.keys(models).filter((key) => typeof models[key] === 'object')).toEqual([
       'keys',
       'chatgpt',
       'kortix',
     ]);
-    expect(models.keys.tag).toBe('No credits');
+    // billing/services/byok-fee.ts: BYOK_FEE_FREE_MONTHLY_USD = 1000, BYOK_FEE_PERCENT = 5.
+    expect(models.keys.tag).toBe('Free to $1,000/mo');
+    expect(models.keys.body).toContain('The first $1,000 a month is free, then Kortix adds 5%');
     expect(models.chatgpt.tag).toBe('No credits');
     expect(models.kortix.body).toContain('{fee}% platform fee');
-    expect(models.summary).toContain('only for the agent computer');
+    expect(models.summary).toContain('5% of model usage past $1,000 a month');
     expect(english.billing.pricing.faq.models.answer).toContain('{fee}% platform fee');
   });
 

@@ -13,6 +13,7 @@
  * make sessions unbootable nor read as up to date.
  */
 
+import { COMPILED_AGENT_CONFIG_ENV, COMPILED_AGENT_CONFIG_GZ_CAPABILITY, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
 import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import type { GitBackedProject } from '../projects/git/types';
 import {
@@ -126,6 +127,22 @@ const defaultDeps: DesiredReleaseDeps = {
  * different release ID (governance only) than one with access, so the two
  * never share a fallback.
  */
+/**
+ * The descriptor a daemon receives. A kortixd built before the gzip form
+ * (@kortix/api-contract/compiled-agent-config-env) stores a release's
+ * governance raw in its env; over 128 KiB every exec on the box then fails
+ * with E2BIG. Such a daemon gets no governance and keeps the config it has.
+ * `capabilities` is what the daemon declared in its descriptor request.
+ */
+export function governanceForDaemon<T extends { compiled_governance: string | null; compiled_governance_etag: string | null }>(descriptor: T, capabilities: readonly string[]): T {
+  const governance = descriptor.compiled_governance;
+  if (governance === null || fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, governance)) return descriptor;
+  if (capabilities.includes(COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) return descriptor;
+  // Both fields go together: kortixd rejects a descriptor with only one of them
+  // and then boots the image default config instead of the project's.
+  return { ...descriptor, compiled_governance: null, compiled_governance_etag: null };
+}
+
 export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: boolean): string {
   return repositoryAccess ? variant : `${variant}#governance-only`;
 }

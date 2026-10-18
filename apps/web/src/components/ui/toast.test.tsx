@@ -41,7 +41,7 @@ mock.module('sonner', () => ({
   },
 }));
 
-const { successToast, progressToast, loadingToast, errorToast, infoToast, warningToast } =
+const { successToast, progressToast, loadingToast, errorToast, infoToast, warningToast, undoToast } =
   await import('./toast');
 
 const setViewport = (width: number) => {
@@ -111,11 +111,11 @@ describe('toast factories — shared DOM shape', () => {
 
   test('each factory carries its own icon class, size and element', () => {
     const icons: Array<[() => void, string]> = [
-      [() => successToast('Saved'), 'text-kortix-green size-5 shrink-0'],
-      [() => progressToast('Saved'), 'text-primary size-4 shrink-0 animate-spin'],
-      [() => errorToast('Saved'), 'text-kortix-red size-6 shrink-0'],
-      [() => infoToast('Saved'), 'text-kortix-blue size-6 shrink-0'],
-      [() => warningToast('Saved'), 'text-kortix-yellow size-6 shrink-0'],
+      [() => successToast('Saved'), 'size-4 shrink-0 overflow-visible text-kortix-green'],
+      [() => progressToast('Saved'), 'animate-spinner-spokes'],
+      [() => errorToast('Saved'), 'size-4 shrink-0 overflow-visible text-kortix-red'],
+      [() => infoToast('Saved'), 'size-4 shrink-0 overflow-visible text-foreground'],
+      [() => warningToast('Saved'), 'text-kortix-orange size-4 shrink-0 overflow-visible'],
     ];
 
     for (const [fire, iconClass] of icons) {
@@ -239,7 +239,7 @@ describe('loadingToast — promise chaining', () => {
     expect(result).toBe('done');
     expect(dismissed).toEqual([1]);
     expect(customCalls).toHaveLength(2);
-    expect(lastMarkup()).toContain('text-kortix-green size-5 shrink-0');
+    expect(lastMarkup()).toContain('size-4 shrink-0 overflow-visible text-kortix-green');
     expect(lastMarkup()).toContain('>Completed<');
   });
 
@@ -257,7 +257,7 @@ describe('loadingToast — promise chaining', () => {
 
     expect(dismissed).toEqual([1]);
     expect(customCalls).toHaveLength(2);
-    expect(lastMarkup()).toContain('text-kortix-red size-6 shrink-0');
+    expect(lastMarkup()).toContain('size-4 shrink-0 overflow-visible text-kortix-red');
     expect(lastMarkup()).toContain('>boom<');
   });
 
@@ -269,5 +269,74 @@ describe('loadingToast — promise chaining', () => {
 
     expect(dismissed).toEqual([1]);
     expect(customCalls).toHaveLength(1);
+  });
+});
+
+describe('toast options — actions, entity, compact', () => {
+  test('actions render as xs ghost buttons, with meta after them', () => {
+    reset();
+    successToast('Trigger created', {
+      actions: [
+        { label: 'View', onClick: () => undefined },
+        { label: 'Copy link', onClick: () => undefined },
+      ],
+      meta: '4m 12s',
+    });
+    const html = lastMarkup();
+    expect(html).toContain('>View</button>');
+    expect(html).toContain('>Copy link</button>');
+    expect(html).toContain('text-kortix-blue');
+    expect(html).toContain('>4m 12s</span>');
+  });
+
+  test('an entity puts its name under the title', () => {
+    reset();
+    successToast('Task complete', { entity: { label: 'Competitor pricing research' } });
+    expect(lastMarkup()).toContain('>Competitor pricing research</p>');
+  });
+
+  test("an entity icon becomes the leading tile, the status glyph badged on it", () => {
+    reset();
+    successToast('Queued', { entity: { icon: <i data-entity-icon />, label: 'Weekly revenue digest' } });
+    const html = lastMarkup();
+    expect(html).toContain('[&amp;_svg]:size-5"><i data-entity-icon="true"></i></div>');
+    // The badge holds the success glyph; the entity icon is not repeated on the name line.
+    expect(html).toMatch(/rounded-full[^"]*"><svg[^>]*text-kortix-green/);
+    // Twice: muted, then the green reflection masked to the badge's corner (V1 rim reflection).
+    expect(html.match(/data-entity-icon/g)).toHaveLength(2);
+    expect(html).toMatch(/text-kortix-green" style="mask-image:radial-gradient\(circle 16px at 85% 85%/);
+  });
+
+  test('a progress toast reflects no colour onto its entity icon', () => {
+    reset();
+    progressToast('Indexing', { entity: { icon: <i data-entity-icon />, label: 'Drive' } });
+    expect(lastMarkup().match(/data-entity-icon/g)).toHaveLength(1);
+  });
+
+  test('a compact toast is one line with no close button', () => {
+    reset();
+    successToast('Link copied', { compact: true });
+    const html = lastMarkup();
+    expect(html).toContain('>Link copied</span>');
+    expect(html).not.toContain('aria-label="Close notification"');
+  });
+});
+
+describe('undoToast', () => {
+  test('defaults to 5 s, passes the id, and renders Undo as the text-link action', () => {
+    reset();
+    const id = undoToast('Session archived', {
+      id: 'undo-1',
+      undoLabel: 'Undo',
+      onUndo: () => undefined,
+    });
+    expect(id).toBe(customCalls.length);
+    expect(lastData()).toMatchObject({ id: 'undo-1', duration: 5000 });
+    const html = lastMarkup();
+    // The same card as every other toast: the message, then Undo as the
+    // text-link action "Open session" uses.
+    expect(html).toContain('>Session archived</p>');
+    expect(html).toMatch(/<button[^>]*hover:bg-kortix-blue\/15[^>]*>Undo<\/button>/);
+    expect(html).toContain('aria-label="Close notification"');
   });
 });

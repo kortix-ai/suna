@@ -53,6 +53,9 @@ describe('SETTINGS_TABS', () => {
       'sessions',
       'preferences',
       'tokens',
+      // The Connect pages (KRTX-1997).
+      'mcp',
+      'computer',
     ]);
   });
 
@@ -219,7 +222,7 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
     expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
   });
 

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
-import { useRetiredQuery } from './retired-endpoint';
+import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
  * the trial tier; every other value is history the row keeps for audit.
- * Mirrors `TRIAL_STATUS` in `apps/api/src/billing/services/effective-tier.ts`.
+ * @deprecated Trials are removed; the admin list no longer sends them.
  */
 export type AdminTrialStatus = 'none' | 'active' | 'expired' | 'revoked' | 'converted';
 
@@ -14,8 +14,9 @@ export interface AdminAccountTrial {
   status: AdminTrialStatus | string;
   /** Paid tier the trial emulates (never 'free'/'none'). */
   tier: string | null;
-  /** Monthly USD amount of the trial's plan. Null when none. */
-  monthlyUsd: number | null;
+  /** @deprecated No longer sent: a trial grants one credit amount at the start,
+   *  not a monthly one. Removed in the next major. */
+  monthlyUsd?: number | null;
   startedAt: string | null;
   endsAt: string | null;
   note: string | null;
@@ -83,9 +84,29 @@ export const ADMIN_OVERRIDE_KEYS = [
   'auditAccess',
   'branding',
   'managedModels',
+  'byokFee',
 ] as const;
 
 export type AdminOverrideKey = (typeof ADMIN_OVERRIDE_KEYS)[number];
+
+/**
+ * The per-feature override keys the server accepts (2026-10-15). Build console
+ * rows from this list. {@link ADMIN_OVERRIDE_KEYS} keeps the retired keys
+ * (`enterpriseEntitled`, `demoEnterprise`, `managedModelsOverride`,
+ * `maxConcurrentSessions`, `computeRateMultiplier`) only because removing a
+ * union member is a breaking change; the server answers 400 for them.
+ */
+export const ADMIN_ENTITLEMENT_OVERRIDE_KEYS = [
+  'sso',
+  'scim',
+  'rbac',
+  'auditAccess',
+  'branding',
+  'managedModels',
+  // The BYOK platform fee (5% past the free monthly allowance). On by default
+  // for Free and Credits; set off to waive it for one account.
+  'byokFee',
+] as const satisfies readonly AdminOverrideKey[];
 
 /**
  * A merge patch (RFC 7386, scoped to the known keys): an entry SETS the key,
@@ -104,6 +125,8 @@ export function adminAccountOverridesPath(accountId: string): string {
 export interface AdminAccount {
   accountId: string;
   name: string | null;
+  /** The Enterprise feature layer: off, demo (self-serve) or licensed (a license contract). Absent on an older server. */
+  enterprise?: 'off' | 'demo' | 'licensed';
   /**
    * The name the PRODUCT shows for this account. `name` is the raw stored
    * column, which for old rows is a migration placeholder ('Personal' /
@@ -131,11 +154,21 @@ export interface AdminAccount {
   billingCustomerId: string | null;
   billingCustomerEmail: string | null;
   createdAt: string | null;
-  trial: AdminAccountTrial;
-  /** null = the effective tier decides; true = force managed models; false = BYOK only. */
-  managedModelsOverride: boolean | null;
-  demoEnterprise: boolean;
-  enterpriseEntitled: boolean;
+  /** @deprecated No longer sent: trials are removed. Read {@link AdminAccount.enterprise}. */
+  trial?: AdminAccountTrial;
+  /** The active Enterprise contract. Null on every other account; an Enterprise
+   *  account with null has no contract on file. Optional: absent on an older API. */
+  contract?: AdminAccountContract | null;
+  /** Set while SSO/SCIM stay on after an Enterprise license ended. Optional:
+   *  absent on an older API. */
+  graceEndsAt?: string | null;
+  /** @deprecated No longer sent: the managed-models override is the
+   *  `managedModels` key of {@link AdminAccount.entitlementOverrides}. */
+  managedModelsOverride?: boolean | null;
+  /** @deprecated No longer sent: read `enterprise === 'demo'`. */
+  demoEnterprise?: boolean;
+  /** @deprecated No longer sent: read `enterprise === 'licensed'`. */
+  enterpriseEntitled?: boolean;
   /**
    * The STORED override map, exactly as the account row carries it — expiry is
    * NOT applied, so a lapsed entry is still present and the console can show an
@@ -143,12 +176,52 @@ export interface AdminAccount {
    * omits it. Null is tolerated because the column itself is nullable.
    */
   entitlementOverrides?: AdminEntitlementOverrides | null;
-  /**
-   * The RESOLVED compute rate multiplier the meter bills at (1 = list price,
-   * 0.5 = half, 0 = free). Already clamped to [0, 10] by the server. Optional
-   * for the same reason as {@link AdminAccount.entitlementOverrides}.
-   */
+  /** @deprecated No longer sent: every account pays list compute rates. */
   computeRateMultiplier?: number;
+}
+
+/** How an Enterprise contract is paid: Stripe Checkout by card, a Stripe invoice, or outside Stripe. */
+export type AdminContractCollection = 'checkout' | 'invoice' | 'manual';
+
+/** The active Enterprise contract as the accounts list reports it. */
+export interface AdminAccountContract {
+  id: string;
+  licenseUsd: number;
+  creditsUsd: number;
+  collection: AdminContractCollection | string;
+  endsAt: string | null;
+  autoRenews: boolean;
+}
+
+/** One Enterprise contract, any status, as the contract routes return it. */
+export interface AdminEnterpriseContract {
+  id: string;
+  status: 'offered' | 'active' | 'ended' | 'withdrawn' | string;
+  /** Annual platform fee, USD. */
+  licenseUsd: number;
+  /** @deprecated A license carries no credits: always 0. */
+  creditsUsd: number;
+  termMonths: number;
+  collection: AdminContractCollection | string;
+  startsAt: string | null;
+  endsAt: string | null;
+  autoRenews: boolean;
+  stripeSubscriptionId: string | null;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  endedAt: string | null;
+}
+
+export interface AdminCreateEnterpriseContractVariables {
+  accountId: string;
+  licenseUsd: number;
+  /** @deprecated A license carries no credits (2026-10-15): ignored by the API, not sent. */
+  creditsUsd?: number;
+  /** 1–12 for a Stripe-collected contract, up to 60 for `manual`. Defaults to 12. */
+  termMonths?: number;
+  collection: AdminContractCollection;
+  note?: string;
 }
 
 export interface AdminAccountsSummary {
@@ -364,9 +437,8 @@ export function useAdminSetTier() {
 
 /**
  * Every entitlement mutation below invalidates the same two keys the credit
- * mutations do: the paginated accounts list (the row carries `trial`,
- * `managedModelsOverride`, `demoEnterprise` and `enterpriseEntitled`) and the
- * per-account detail subtree.
+ * mutations do: the paginated accounts list (the row carries
+ * `entitlementOverrides`) and the per-account detail subtree.
  */
 function invalidateAdminAccount(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -435,74 +507,37 @@ export function useAdminRevokeTrial() {
 }
 
 /**
- * Set the account's managed-models override. Tri-state: `null` restores "the
- * effective tier decides", `true` forces managed (Kortix-credential) models on,
- * `false` forces BYOK-only.
+ * @deprecated The route is retired (410). Fails at once with `ENDPOINT_RETIRED`
+ * and sends no request. Set the `managedModels` key with
+ * {@link useAdminSetOverrides}. Removed in the next major.
  */
 export function useAdminSetManagedModels() {
-  const queryClient = useQueryClient();
-  return useMutation<
+  return useRetiredMutation<
     { ok: boolean; override: boolean | null },
-    Error,
     { accountId: string; override: boolean | null }
-  >({
-    mutationFn: async ({ accountId, override }) => {
-      const response = await backendApi.post<{ ok: boolean; override: boolean | null }>(
-        `/admin/api/accounts/${accountId}/managed-models`,
-        { override },
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
-  });
+  >('useAdminSetManagedModels');
 }
 
 /**
- * Set the account's enterprise-demo flag — an interactive preview of SSO, SCIM,
- * RBAC and audit. Operator-only since the self-serve IAM toggle was retired.
+ * @deprecated The Enterprise preview is retired (410). Fails at once with
+ * `ENDPOINT_RETIRED` and sends no request. Grant an Enterprise trial with
+ * {@link useAdminGrantTrial}. Removed in the next major.
  */
 export function useAdminSetEnterpriseDemo() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    { ok: boolean; enabled: boolean },
-    Error,
-    { accountId: string; enabled: boolean }
-  >({
-    mutationFn: async ({ accountId, enabled }) => {
-      const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
-        `/admin/api/accounts/${accountId}/enterprise-demo`,
-        { enabled },
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
-  });
+  return useRetiredMutation<{ ok: boolean; enabled: boolean }, { accountId: string; enabled: boolean }>(
+    'useAdminSetEnterpriseDemo',
+  );
 }
 
 /**
- * Set the contracted-Enterprise entitlement flag. Independent of `tier`: it
- * keeps SSO/SCIM/RBAC/audit entitled for a signed Enterprise account that is
- * ALSO on a paid credits plan, which the Stripe webhook would otherwise reconcile away.
+ * @deprecated The flag is retired (410). Fails at once with `ENDPOINT_RETIRED`
+ * and sends no request. Enterprise is set by a contract:
+ * {@link useAdminCreateEnterpriseContract}. Removed in the next major.
  */
 export function useAdminSetEnterpriseEntitled() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    { ok: boolean; enabled: boolean },
-    Error,
-    { accountId: string; enabled: boolean }
-  >({
-    mutationFn: async ({ accountId, enabled }) => {
-      const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
-        `/admin/api/accounts/${accountId}/enterprise-entitlement`,
-        { enabled },
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
-  });
+  return useRetiredMutation<{ ok: boolean; enabled: boolean }, { accountId: string; enabled: boolean }>(
+    'useAdminSetEnterpriseEntitled',
+  );
 }
 
 /**
@@ -510,9 +545,7 @@ export function useAdminSetEnterpriseEntitled() {
  * override, and the only one that can express an expiry.
  *
  * Send only the keys the form owns: an entry sets, `null` deletes, an absent
- * key is untouched. The server mirrors a PERMANENT patch onto the four legacy
- * columns and clears the column for a TIMED one, so the three single-purpose
- * mutations above and this one stay consistent with each other.
+ * key is untouched.
  */
 export function useAdminSetOverrides() {
   const queryClient = useQueryClient();
@@ -661,5 +694,85 @@ export function useAdminAccountSubscription(accountId: string | null) {
       return response.data!;
     },
     staleTime: 60_000,
+  });
+}
+
+// ─── Enterprise contracts ───────────────────────────────────────────────────
+// The one way onto Enterprise: an annual license plus a prepaid credit pool.
+
+const contractsKey = (accountId: string) => ['admin', 'account', accountId, 'enterprise-contracts'] as const;
+
+async function adminCall<T>(call: Promise<{ data?: T | null; error?: { message: string } | null }>): Promise<T> {
+  const response = await call;
+  if (response.error) throw new Error(response.error.message);
+  return response.data as T;
+}
+
+/** An account's Enterprise contracts, newest first. */
+export function useAdminEnterpriseContracts(accountId: string | null | undefined) {
+  return useQuery<{ contracts: AdminEnterpriseContract[] }, Error>({
+    queryKey: contractsKey(accountId ?? ''),
+    queryFn: () =>
+      adminCall(backendApi.get<{ contracts: AdminEnterpriseContract[] }>(`/admin/api/accounts/${accountId}/enterprise-contracts`)),
+    enabled: !!accountId,
+  });
+}
+
+function onContractChange(queryClient: ReturnType<typeof useQueryClient>, accountId: string) {
+  queryClient.invalidateQueries({ queryKey: contractsKey(accountId) });
+  invalidateAdminAccount(queryClient, accountId);
+}
+
+/**
+ * Create an Enterprise contract: `checkout` makes an offer the account's
+ * billing managers accept in the app, `invoice` bills through a Stripe invoice
+ * and activates at once, `manual` records a contract paid outside Stripe.
+ */
+export function useAdminCreateEnterpriseContract() {
+  const queryClient = useQueryClient();
+  return useMutation<{ contract: AdminEnterpriseContract }, Error, AdminCreateEnterpriseContractVariables>({
+    mutationFn: ({ accountId, licenseUsd, creditsUsd, termMonths, collection, note }) => {
+      void creditsUsd; // a license carries no credits
+      const body: Record<string, unknown> = { license_usd: licenseUsd, collection };
+      if (termMonths !== undefined) body.term_months = termMonths;
+      if (note !== undefined) body.note = note;
+      return adminCall(
+        backendApi.post<{ contract: AdminEnterpriseContract }>(`/admin/api/accounts/${accountId}/enterprise-contract`, body),
+      );
+    },
+    onSuccess: (_data, { accountId }) => onContractChange(queryClient, accountId),
+  });
+}
+
+/** End the account's active contract now: the account returns to its base plan, SSO/SCIM kept for the grace. */
+export function useAdminEndEnterpriseContract() {
+  const queryClient = useQueryClient();
+  return useMutation<{ contract: AdminEnterpriseContract }, Error, { accountId: string }>({
+    mutationFn: ({ accountId }) =>
+      adminCall(backendApi.post<{ contract: AdminEnterpriseContract }>(`/admin/api/accounts/${accountId}/enterprise-contract/end`, {})),
+    onSuccess: (_data, { accountId }) => onContractChange(queryClient, accountId),
+  });
+}
+
+/** Withdraw the account's open offer. */
+export function useAdminWithdrawEnterpriseOffer() {
+  const queryClient = useQueryClient();
+  return useMutation<{ contract: AdminEnterpriseContract }, Error, { accountId: string }>({
+    mutationFn: ({ accountId }) =>
+      adminCall(backendApi.delete<{ contract: AdminEnterpriseContract }>(`/admin/api/accounts/${accountId}/enterprise-offer`)),
+    onSuccess: (_data, { accountId }) => onContractChange(queryClient, accountId),
+  });
+}
+
+/** A fresh Stripe Checkout link for the open offer, to send to the customer (valid up to 24 h). */
+export function useAdminEnterpriseOfferLink() {
+  return useMutation<{ checkout_url: string; contract_id: string }, Error, { accountId: string }>({
+    mutationFn: ({ accountId }) =>
+      adminCall(
+        backendApi.post<{ checkout_url: string; contract_id: string }>(
+          `/admin/api/accounts/${accountId}/enterprise-contract/checkout-link`,
+          {},
+        ),
+      ),
   });
 }

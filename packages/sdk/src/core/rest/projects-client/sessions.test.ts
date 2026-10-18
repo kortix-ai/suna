@@ -8,7 +8,9 @@ import type {
   ProjectSession,
   RemovedSessionPrompt,
   SessionConfigRelease,
+  SessionListState,
   SessionManagedCatalogState,
+  SessionModelUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
@@ -51,6 +53,7 @@ import {
   reloadProjectSessionConfigStream,
   resolvePublicShareUrl,
   restartProjectSession,
+  recoverProjectSession,
   restoreProjectSession,
   retrySessionPrompt,
   revokeSessionPublicShare,
@@ -59,6 +62,8 @@ import {
   setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
+  setSessionArchived,
+  setSessionPinned,
   setSessionWatch,
   stopProjectSession,
   updateProjectSession,
@@ -829,6 +834,27 @@ test('restoreProjectSession rejects a refused restore with the status and code',
   await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 410, code: 'session_purged' });
   nextResponse = { status: 409, body: { error: 'This session is not deleted', code: 'session_not_deleted' } };
   await expect(restoreProjectSession('P1', 'S1')).rejects.toMatchObject({ status: 409, code: 'session_not_deleted' });
+});
+
+// KRTX-2419: a lost session (the provider removed its computer) continues on a
+// new computer, whose boot restores the saved conversation.
+test('recoverProjectSession POSTs to /recover', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await recoverProjectSession('P1', 'S1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/recover');
+  expect(last().method).toBe('POST');
+});
+
+test('recoverProjectSession rejects a refused recover with the status, code and message', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'This session has no saved conversation, so it cannot continue on a new computer. Nothing was changed.', code: 'session_transcript_missing' },
+  };
+  await expect(recoverProjectSession('P1', 'S1')).rejects.toMatchObject({
+    status: 409,
+    code: 'session_transcript_missing',
+    message: expect.stringContaining('no saved conversation'),
+  });
 });
 
 test('restartProjectSession POSTs to /restart', async () => {
@@ -1835,11 +1861,14 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
-  const body = {
-    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  const body: SessionModelUsage = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
     billed_cost: 0.875,
     turns: {
-      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75, fallbacks: [
+        { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'provider_pool_rate_limited' },
+        { requested_model: 'openai/gpt-5.4', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+      ] },
       msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
     },
   };
@@ -1919,6 +1948,48 @@ describe('session watch', () => {
   test('setSessionWatch rejects on a 403 (an agent token cannot watch)', async () => {
     nextResponse = { status: 403, body: { error: 'Human login required' } };
     await expect(setSessionWatch('P1', 'S1', true)).rejects.toBeTruthy();
+  });
+});
+
+// KRTX-2418: a person pins a session to the top of their list or archives it
+// out of the list. Per person; the list hides the caller's archived sessions.
+describe('session pin and archive', () => {
+  test('listProjectSessionsPage sends view pinned / archived as pinned=only / archived=only', async () => {
+    nextResponse = { status: 200, body: [] };
+    await listProjectSessionsPage('P1', { view: 'pinned' });
+    expect(new URL(last().url).searchParams.get('pinned')).toBe('only');
+    expect(new URL(last().url).searchParams.get('archived')).toBeNull();
+    await listProjectSessions('P1', { view: 'archived', limit: 5 });
+    expect(new URL(last().url).searchParams.get('archived')).toBe('only');
+    expect(new URL(last().url).searchParams.get('pinned')).toBeNull();
+    await listProjectSessions('P1');
+    expect(last().url).not.toContain('pinned=');
+    expect(last().url).not.toContain('archived=');
+  });
+
+  test('setSessionPinned PUTs { pinned } and returns the stored state', async () => {
+    const stored = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
+    nextResponse = { status: 200, body: stored };
+    const state: SessionListState = await setSessionPinned('P1', 'S1', true);
+    expect(state).toEqual(stored);
+    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/pin', method: 'PUT', body: { pinned: true } });
+  });
+
+  test('setSessionArchived PUTs { archived } and returns the stored state', async () => {
+    nextResponse = { status: 200, body: { pinned_at: null, archived_at: null } };
+    expect(await setSessionArchived('P1', 'S1', false)).toEqual({ pinned_at: null, archived_at: null });
+    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/archive', method: 'PUT', body: { archived: false } });
+  });
+
+  test('both reject on a 403 (an agent token has no list of its own)', async () => {
+    nextResponse = { status: 403, body: { error: 'Only a person can pin or archive a session' } };
+    await expect(setSessionPinned('P1', 'S1', true)).rejects.toBeTruthy();
+    await expect(setSessionArchived('P1', 'S1', true)).rejects.toBeTruthy();
+  });
+
+  test('a list row carries the caller`s pinned_at and archived_at', () => {
+    const row: Pick<ProjectSession, 'pinned_at' | 'archived_at'> = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
+    expect(row.pinned_at).toBeTruthy();
   });
 });
 

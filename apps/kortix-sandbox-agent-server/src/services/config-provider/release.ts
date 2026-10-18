@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { ReleaseManifest } from './boot-config'
 import type { ConfigReleaseDescriptor } from './descriptor'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from './compiled-agent-config'
 
 /**
  * The harness-neutral half of a convergence: what the descriptor means. Each
@@ -43,7 +45,8 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
   return {
     release_id: releaseId,
     source_commit: descriptor.source_commit!,
-    config_dir: descriptor.config_dir,
+    // kortix.yaml v3 has no harness config dir: its compiled set is the only input.
+    config_dir: compiledSetV3(descriptor.compiled_governance) ? null : descriptor.config_dir,
     config_tree_id: descriptor.config_tree_id!,
     // v3: a tree over the API's archive cap has no archive. The box builds it
     // from its checkout or the snapshot; '' never reaches the download.
@@ -79,6 +82,10 @@ export function agentRepointSentence(
  * place: the API sends null for a project without compiled governance or for
  * a read failure, and deleting the env would drop every agent. Returns the
  * function that restores the previous values.
+ *
+ * Governance over 128 KiB is stored gzip-encoded (`setCompiledAgentConfigEnv`):
+ * held raw in `process.env`, it would make every later child exec fail with
+ * E2BIG, OpenCode's first.
  */
 export function deliverGovernance(
   governance: string | null,
@@ -87,14 +94,13 @@ export function deliverGovernance(
 ): () => void {
   if (governance === null) return () => undefined
   const previous = {
-    config: env.KORTIX_COMPILED_AGENT_CONFIG,
+    config: compiledAgentConfigFromEnv(env),
     etag: env.KORTIX_COMPILED_AGENT_CONFIG_ETAG,
   }
-  env.KORTIX_COMPILED_AGENT_CONFIG = governance
+  setCompiledAgentConfigEnv(env, governance)
   env.KORTIX_COMPILED_AGENT_CONFIG_ETAG = etag ?? ''
   return () => {
-    if (previous.config === undefined) delete env.KORTIX_COMPILED_AGENT_CONFIG
-    else env.KORTIX_COMPILED_AGENT_CONFIG = previous.config
+    setCompiledAgentConfigEnv(env, previous.config ?? null)
     if (previous.etag === undefined) delete env.KORTIX_COMPILED_AGENT_CONFIG_ETAG
     else env.KORTIX_COMPILED_AGENT_CONFIG_ETAG = previous.etag
   }

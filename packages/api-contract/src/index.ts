@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   agentmail_email: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
-  apps: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -178,7 +177,9 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: FeatureFlagMapSchema,
+  /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
+   *  v0.14.0, which gate `kortix apps` on it, keep working. */
+  experimental: FeatureFlagMapSchema.extend({ apps: z.literal(true).optional() }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
@@ -1148,6 +1149,11 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** When the requesting person pinned / archived it (KRTX-2418). Present on
+   *  the list and the read by id for a person; absent for an agent, an API
+   *  key or a service account, and on other responses. */
+  pinned_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -1518,6 +1524,78 @@ export const TriggerListSchema = z.object({
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
+/**
+ * One run of a trigger (KRTX-1743): one fire from any source, its outcome, and
+ * the agent turn it started. `payload` is display-redacted: every value under a
+ * credential-named key reads `[redacted]`. A payload over 64 KiB reads
+ * `{ truncated: true, bytes }` and cannot be replayed.
+ */
+export const TriggerRunSchema = z.object({
+  run_id: z.string(),
+  slug: z.string(),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  /** The fire's outcome. `fired` = a session was started or prompted. */
+  status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: z.enum(['running', 'succeeded', 'failed']).nullable(),
+  /** Why the fire failed, was skipped or was rejected. */
+  error: z.string().nullable(),
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: z.string().nullable(),
+  session_id: z.string().nullable(),
+  command_id: z.string().nullable(),
+  /** The run this one replayed, or null. */
+  replay_of: z.string().nullable(),
+  /** False for a webhook delivery refused before its signature verified. */
+  payload_verified: z.boolean(),
+  payload: z.record(z.string(), z.unknown()),
+  scheduled_for: z.string(),
+  created_at: z.string(),
+  started_at: z.string(),
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: z.number().nullable(),
+});
+export type TriggerRun = z.infer<typeof TriggerRunSchema>;
+
+/** `GET …/triggers/:slug/runs` and `GET …/trigger-runs`: newest first, keyset-paged. */
+export const TriggerRunListSchema = z.object({
+  runs: z.array(TriggerRunSchema),
+  /** Pass as `cursor` for the next page; null on the last page. A page can hold fewer than `limit` runs. */
+  next_cursor: z.string().nullable(),
+});
+export type TriggerRunList = z.infer<typeof TriggerRunListSchema>;
+
+/** Optional body of `POST …/triggers/:slug/fire`. No body = a plain manual fire. */
+export const TriggerFireRequestSchema = z.object({
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload: z.record(z.string(), z.unknown()).optional(),
+  /** Render and evaluate only: no session, no command, no run row. */
+  dry_run: z.boolean().optional(),
+});
+export type TriggerFireRequest = z.infer<typeof TriggerFireRequestSchema>;
+
+/** `POST …/fire` with `dry_run: true`: what a real fire would send, with nothing written. */
+export const TriggerDryRunResultSchema = z.object({
+  dry_run: z.literal(true),
+  rendered_prompt: z.string(),
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: z.boolean(),
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type TriggerDryRunResult = z.infer<typeof TriggerDryRunResultSchema>;
+
+/** Optional body of `POST …/triggers/:slug/runs/:run_id/replay`. */
+export const TriggerReplayRequestSchema = z.object({
+  /** Required to replay a payload whose webhook signature never verified. */
+  confirm_unverified: z.boolean().optional(),
+});
+export type TriggerReplayRequest = z.infer<typeof TriggerReplayRequestSchema>;
+
 // ─── Session reads: transcript, turn, prompt queue, snapshot ────────────────
 // The wire shapes of the routes a session view reads on every open. apps/api
 // builds them through these types; the SDK's own interfaces are checked
@@ -1670,6 +1748,12 @@ export const SessionTurnStatusSchema = z.object({
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
   /** Present on the session stream's `kortix.control.turn` frame. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * May THIS caller stop the running turn: its prompter, the session owner or
+   * a project manager. True when nothing runs. Present on `GET .../turn` and
+   * the snapshot's turn leg; absent on the stream frame, which is not per caller.
+   */
+  can_stop: z.boolean().optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 

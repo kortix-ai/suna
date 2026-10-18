@@ -26,9 +26,9 @@ import { getCreditAccount } from '../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../billing/services/account-write-owner';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
-/** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
-const setDemoEnterprise = (accountId: string, enabled: boolean) =>
-  applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
+/** Test fixture: put the account on, or take it off, the Enterprise plan through the ownership chokepoint. */
+const setEnterprisePlan = (accountId: string, tier: string) =>
+  applyAdminOverride(accountId, { tier }, { action: 'test.enterprise_plan.set' });
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -82,7 +82,7 @@ let humanToken = HUMAN_SESSION;
 let humanUserId = '';
 let readOnlyToken = READER_SESSION;
 let readOnlyUserId = '';
-let priorDemoEnterprise = false;
+let priorTier = 'free';
 const SHARED_SESSION = crypto.randomUUID();
 // The same launcher, but the session came from an API token (the CLI, a
 // service account): `origin: 'backend'`, so only managers decide.
@@ -195,8 +195,8 @@ beforeAll(async () => {
   // The full-trail assertions below need the auditAccess entitlement; flip the
   // enterprise demo on for the suite (restored in afterAll). The unentitled
   // contract has its own dedicated test that toggles it off.
-  priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
-  await setDemoEnterprise(ctx.accountId, true);
+  priorTier = (await getCreditAccount(ctx.accountId))?.tier ?? 'free';
+  await setEnterprisePlan(ctx.accountId, 'enterprise');
 }, 30_000);
 
 afterAll(async () => {
@@ -244,7 +244,7 @@ afterAll(async () => {
       sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${ctx.userId}`,
     );
   }
-  if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
+  if (ctx) await setEnterprisePlan(ctx.accountId, priorTier);
   if (seeded) await removeSeeded([seeded]);
   if (ctx && humanUserId) {
     await deleteFromView(
@@ -474,7 +474,7 @@ describe('approvals inbox + resolution', () => {
     });
     const pendingId = await seedPending();
 
-    await setDemoEnterprise(ctx.accountId, false);
+    await setEnterprisePlan(ctx.accountId, 'free');
     try {
       const res = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
       expect(res.status).toBe(200);
@@ -488,7 +488,7 @@ describe('approvals inbox + resolution', () => {
       expect(ids).not.toContain(resolvedId);
       expect(body.actions.every((action) => action.status === 'pending_approval')).toBe(true);
     } finally {
-      await setDemoEnterprise(ctx.accountId, true);
+      await setEnterprisePlan(ctx.accountId, 'enterprise');
     }
   });
 
@@ -670,14 +670,24 @@ describe('approvals inbox + resolution', () => {
       args_preview_authorized: true,
     });
 
+    // A plain member cannot open the owner's private session, so the item is
+    // not listed at all (#10136). On a session shared with the project they
+    // see the item, without the parameters they cannot act on.
+    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/suna' }, {
+      sessionId: SHARED_SESSION,
+      actingUserId: launcherUserId,
+    });
     const readOnly = await readOnlyGet(path);
     expect(readOnly.status).toBe(200);
     const readOnlyBody = (await readOnly.json()) as {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
+    const ids = readOnlyBody.review_items.map((item) => item.review_item_id);
+    expect(ids).not.toContain(`call:${execId}`);
     const readOnlyItem = readOnlyBody.review_items.find(
-      (item) => item.review_item_id === `call:${execId}`,
+      (item) => item.review_item_id === `call:${sharedExecId}`,
     );
+    expect(readOnlyItem).toBeDefined();
     expect(readOnlyItem?.detail).not.toHaveProperty('args_preview');
     expect(readOnlyItem?.detail).toMatchObject({
       args_preview_complete: false,

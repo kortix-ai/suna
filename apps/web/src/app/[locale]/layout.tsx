@@ -340,7 +340,7 @@ export default async function RootLayout({
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
@@ -365,8 +365,9 @@ export default async function RootLayout({
                     <ReactQueryProvider>
                       <Toaster />
                       {/* Global "Request a demo" qualifier modal — mounted once here
-                      so every enterprise CTA across the app (accounts settings,
-                      billing, IAM) can open it via useRequestDemo(). */}
+                      so a public-site CTA can open it via useRequestDemo(). In
+                      the signed-in app, "Talk to sales" is one click
+                      (features/billing/use-enterprise-sales.ts). */}
                       {/* Organization branding (Enterprise): the active
                       account's own logo / icon / favicon / product name.
                       Reads the shared account-list query, so it sits inside

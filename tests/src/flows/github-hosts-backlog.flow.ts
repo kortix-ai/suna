@@ -239,6 +239,14 @@ flow(
         .get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
+    await ctx.step("a project member without project.credentials.issue cannot list the project's keys → 403", async () => {
+      const member = await team.addMember("member");
+      await team.grantProjectRole(p.id, member.userId!, "member");
+      const r = await ctx.client
+        .as(member)
+        .get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
+      r.status(403);
+    });
     await ctx.step("OWNER revokes the token → 200 {ok:true}", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

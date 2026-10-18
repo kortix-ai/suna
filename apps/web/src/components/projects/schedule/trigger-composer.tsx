@@ -46,6 +46,7 @@ import {
   schemaFields,
 } from './event-trigger-copy';
 import { type TriggerKind, describeCadence, describeOneOff } from './schedule-copy';
+import { triggerToastEntity } from './trigger-toast';
 import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
@@ -286,6 +287,11 @@ function ComposerForm({
       const created = listing.triggers
         .filter((t) => t.type === draft.kind && t.name === name.trim())
         .slice(-1)[0];
+      const cadence = isCron
+        ? draft.runAt
+          ? describeOneOff(draft.runAt)
+          : describeCadence(draft.cron.trim())
+        : undefined;
       successToast(
         isEvent
           ? tI18nComplete.raw('text840993da3129')
@@ -293,6 +299,7 @@ function ComposerForm({
             ? tI18nComplete.raw('text84e98b45ad8b')
             : tI18nComplete.raw('text20bf63f7b46f'),
         {
+          entity: triggerToastEntity({ name: name.trim(), type: draft.kind }, cadence),
           description: isEvent
             ? created?.event
               ? created.event.status === 'needs_connection'
@@ -301,9 +308,7 @@ function ComposerForm({
                   tI18nComplete.raw('text80273a6c8918'))
               : undefined
             : isCron
-              ? draft.runAt
-                ? describeOneOff(draft.runAt)
-                : describeCadence(draft.cron.trim())
+              ? undefined
               : tI18nComplete.raw('text4aded5c6750d'),
         },
       );

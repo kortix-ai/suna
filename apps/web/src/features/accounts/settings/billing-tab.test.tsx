@@ -33,6 +33,10 @@ mock.module('@/features/billing/use-change-credit-plan', () => ({
   useChangeCreditPlan: () => ({ change: () => {}, isPending: false }),
 }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => billingEnabled }));
+mock.module('@/features/billing/use-enterprise-sales', () => ({
+  useTalkToSales: () => ({ talk: () => {}, isPending: false }),
+  useEnterpriseDemo: () => ({ set: () => {}, isPending: false }),
+}));
 mock.module('@/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
   useBillingAccountResolved: () => true,
@@ -42,7 +46,7 @@ const { BillingTab } = await import('./billing-tab');
 
 /**
  * The Plan pane of an account with no paid subscription: the plan card names
- * Free, shows its 200 credits, and offers the tier select with a Subscribe
+ * Free, shows its 500 credits, and offers the tier select with a Subscribe
  * action. The wallet (balance, spend) belongs to the Credits pane and the
  * wallet-first view, so the Plan pane must not print it.
  */
@@ -63,23 +67,23 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     );
   }
 
-  test('shows the Free plan with its monthly credits and the tier select on the most popular tier', () => {
+  test('shows the Free plan with its monthly credits and the tier select on the $200 tier', () => {
     billingEnabled = true;
     accountStateData = freeState();
     const html = renderPlan();
     expect(html).toContain('Current plan');
     expect(html).toContain('>Free</p>');
-    expect(html).toContain('200 credits / month');
+    expect(html).toContain('500 credits / month');
     expect(html).toContain('Monthly credits');
     expect(html).toContain('Subscribe for $200 / month');
     expect(html).toContain('20,000 credits / month');
     expect(html).not.toContain('Available balance');
   });
 
-  test('the tier select marks the most popular tier and estimates agent hours', () => {
+  test('the tier select shows no popularity badge and estimates agent hours', () => {
     accountStateData = freeState();
     const html = renderPlan();
-    expect(html).toContain('Most popular');
+    expect(html).not.toContain('Most popular');
     expect(html).toContain('≈ 1,830 agent-computer hours a month.'); // agentHoursForCredits(20_000)
     expect(html).not.toContain('Starter');
   });
@@ -87,7 +91,7 @@ describe('BillingTab — plan pane without a paid subscription', () => {
   test('a member who may not change billing sees who to ask, not the picker', () => {
     accountStateData = freeState({ can_manage_billing: false });
     const html = renderPlan();
-    expect(html).toContain('Only account owners can change the plan.');
+    expect(html).toContain('Only account owners and admins can change the plan.');
     expect(html).not.toContain('Subscribe for');
   });
 
@@ -99,13 +103,57 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     billingEnabled = true;
   });
 
-  test('wallet-first view keeps the balance and adds the plan changer under it', () => {
+  // Enterprise is a feature layer, read and switched where billing is managed.
+  test('the Enterprise row renders on the plan pane, with the demo switch for a manager', () => {
+    accountStateData = freeState({ enterprise: { state: 'off' } });
+    const html = renderPlan();
+    expect(html).toContain('Enterprise features');
+    expect(html).toContain('Turn on demo');
+    expect(html).toContain('Talk to sales');
+  });
+
+  test('a self-host Enterprise license hides the Enterprise row', () => {
+    accountStateData = freeState({ enterprise_license_available: true });
+    expect(renderPlan()).not.toContain('Enterprise features');
+  });
+
+  test('no trial line renders, even from a leftover trial block', () => {
+    accountStateData = freeState({
+      trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+    });
+    expect(renderPlan().toLowerCase()).not.toContain('trial');
+  });
+
+  // KRTX-2376 (dogfood): the hub's wallet-first view on Free showed
+  // "Available balance" with no way to fund it — the only top-up control in
+  // the product lives behind the subscribe dialog. The wallet blocks are for
+  // a wallet the plan can FUND, so on a plan that cannot purchase credits
+  // the pane leads with the plan card (which carries the monthly grant), and
+  // the balance returns the moment the plan allows purchases.
+  test('the hub wallet-first view on Free leads with the plan card, not a fundless wallet', () => {
     total = 2;
     accountStateData = freeState();
     const html = renderToStaticMarkup(
       createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
     );
-    expect(html).toContain('Subscribe for');
+    expect(html).not.toContain('Available balance');
+    expect(html).toContain('Current plan');
+    expect(html).toContain('>Free</p>');
+    expect(html).toContain('Subscribe for $200 / month');
+  });
+
+  test('the hub wallet-first view on a plan that can purchase credits keeps the balance and top-up', () => {
+    total = 100;
+    accountStateData = {
+      ...freeState(),
+      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
+      subscription: { status: 'active', subscription_id: 'sub_synthetic', can_purchase_credits: true },
+    };
+    const html = renderToStaticMarkup(
+      createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
+    );
+    expect(html).toContain('Available balance');
+    expect(html).toContain('Add credits');
   });
 });
 
