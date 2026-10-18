@@ -317,7 +317,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     enabled: !manage.isLoading,
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
-    // reader uses. It includes accessible warm and soft-deleted rows, but never
+    // reader uses. It applies manager oversight, but never includes unused warm drafts, deleted rows, or
     // sessions the manager cannot open. It MUST carry its own scope segment in
     // the key (see qk.project.sessionsPaged' doc comment). Sharing the
     // default-scope key here is the exact bug this file existed to fix.

@@ -89,6 +89,10 @@ describe('sessionRowMatchesSearch', () => {
     expect(sessionRowMatchesSearch(row({}), 'ABCDEF')).toBe(true);
     expect(sessionRowMatchesSearch(row({ name: 'Other' }), 'rent')).toBe(false);
   });
+  test('matches an unnamed empty session by its branch name (KRTX-2476)', () => {
+    expect(sessionRowMatchesSearch(row({}, { branchName: 'demo-pipeline-branch' }), 'pipeline')).toBe(true);
+    expect(sessionRowMatchesSearch(row({ name: 'Other' }), 'pipeline')).toBe(false);
+  });
   test('matches a label, case-insensitively', () => {
     expect(sessionRowMatchesSearch(row({}, { labels: ['Customer: EU'] }), 'customer: eu')).toBe(true);
     expect(sessionRowMatchesSearch(row({}, { labels: ['bug'] }), 'urgent')).toBe(false);

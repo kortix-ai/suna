@@ -292,12 +292,12 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
     expect(second.nextCursor).toBeNull();
   });
 
-  test('the manager inventory still lists the tombstones and the live warm drafts', async () => {
+  test('the manager inventory excludes tombstones and unused warm drafts', async () => {
     const { ids, requests } = await walk({ project: PROJECT_B, viewer: OWNER, manager: true, scope: 'project', limit: 200 });
-    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(1500);
+    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(0);
     expect(ids.filter((id) => id.startsWith('live-'))).toHaveLength(60);
-    expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(20);
-    expect(requests).toBe(8);
+    expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(0);
+    expect(requests).toBe(1);
   });
 
   test('the visible page walks idx_project_sessions_project_live in list order, with no sort, with and without a generic plan', async () => {
