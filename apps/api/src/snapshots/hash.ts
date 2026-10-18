@@ -21,6 +21,9 @@
  *      snapshot at build time. Only mixed in when at least one field is set,
  *      so projects that don't declare a spec keep their existing hashes (no
  *      mass rebuild when this field rolls out).
+ *   5. Build region — set only for an image built outside the provider's
+ *      home region (templates.ts projectImageRegion). Home-region images
+ *      keep their hashes.
  *
  * The output is a hex SHA-256 (64 chars). Snapshot names take the first
  * 12 chars to stay readable while keeping collision probability
@@ -44,6 +47,11 @@ export interface SnapshotHashInputs {
   spec?: SandboxSpec;
   /** `container_runtime: true` bakes kernel modules; hashed only when true. */
   containerRuntime?: boolean;
+  /**
+   * Provider region the image is built in, when it is not the home region.
+   * Hashed only when set, so home-region images keep their hashes.
+   */
+  region?: string;
   /**
    * Override of the runtime fingerprint. Defaults to SANDBOX_VERSION
    * — the platform-wide constant that bumps on every Kortix release.
@@ -86,6 +94,7 @@ export function computeSnapshotHash(inputs: SnapshotHashInputs): SnapshotHashRes
   const specSegment = serializeSpec(inputs.spec);
   if (specSegment) blob.push(`spec=${specSegment}`);
   if (inputs.containerRuntime) blob.push('container_runtime=1');
+  if (inputs.region) blob.push(`region=${inputs.region}`);
 
   const contentHash = createHash('sha256').update(blob.join('\n')).digest('hex');
   return {

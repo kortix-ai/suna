@@ -13,6 +13,7 @@ import {
 } from '../lib/triggers';
 import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
@@ -165,6 +166,7 @@ async function deliverToRow(
       source: 'event',
       idempotencyKey,
     });
+    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, ...triggerRunFromFire(result), now: new Date() });
     if (result.status === 'failed') {
       const error = result.error ?? 'Failed to fire trigger';
       logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
@@ -188,6 +190,7 @@ async function deliverToRow(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('[trigger-events] fire threw', { projectId: row.projectId, slug: row.slug, error: message });
+    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, status: 'failed', error: message, now: new Date() });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
     // The provider retries on our 500: the same rule as a retryable failure.
     if (alertsOn && (await eventFailureAlerts(row.projectId, idempotencyKey))) {

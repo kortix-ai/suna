@@ -9,22 +9,19 @@ import { MoonIcon } from '@phosphor-icons/react';
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
 import { QuoteList } from './quote-list';
-import { ServedModelBar } from './served-model-bar';
 
 /**
- * A full-width bar between a docked question and the card (the notice, the
- * served-model bar). The question, these bars, and the card read as one
- * surface: square top, and the side segments of the ring the question starts
- * and the card ends. The clip keeps only the side ring, so no ring line
- * crosses a seam.
+ * A full-width bar between a docked question and the card (the notice). The
+ * question, this bar, and the card read as one surface: square top, and the
+ * side segments of the ring the question starts and the card ends. The clip
+ * keeps only the side ring, so no ring line crosses a seam.
  */
 const DOCKED_MIDDLE_LAYER_CLASS =
   'ring-muted/15 rounded-t-none ring-3 [clip-path:inset(0_-8px_0_-8px)]';
 
 /**
  * The composer's stack ABOVE the card: the `'above'` `/` dock anchor, the
- * reply-quote card, then the queue strip, the "still waking" notice, the
- * "computer stays on" strip and the served-model strip.
+ * reply-quote card, then the queue strip and the "still waking" notice.
  * `ComposerImpl` owns the state and effects and passes them in; this renders
  * exactly the subtree `ComposerImpl` used to inline (KRTX-373 phase 1).
  */
@@ -48,14 +45,11 @@ export function ComposerAboveCard({
   inputSlot,
   notice = null,
   onNoticeRetry,
-  servedModel = null,
   onModelChange,
   slashMenuPlacement = 'above',
   questionActive = false,
 }: ComposerAboveCardProps) {
   const showQueueStrip = Boolean(inputSlot);
-  // The strip explains the model selector, so it shows only where one exists.
-  const served = onModelChange ? servedModel : null;
 
   return (
     <>
@@ -99,19 +93,19 @@ export function ComposerAboveCard({
     {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
 
     {/*
-      The stack above the card. Every layer is full width (the strip, the
-      notice, the sandbox-on strip, the served-model bar, the card), so the stack reads as one
-      surface: the topmost visible layer rounds its top, every layer under
-      it is square and its top border is the divider. A narrower strip
-      exposed the corners of the layer under it and is not allowed
-      (`composer-above-card.test.tsx` pins `w-full`).
+      The stack above the card. Every layer is full width (the queue strip,
+      the notice, the card), so the stack reads as one surface: the topmost
+      visible layer rounds its top, every layer under it is square and its
+      top border is the divider. A narrower strip exposed the corners of the
+      layer under it and is not allowed (`composer-above-card.test.tsx` pins
+      `w-full`).
 
       Whether the strip is visible is known only to CSS (`:empty`, see
       below), so "square under a visible strip" is a sibling selector on
       this wrapper. `ComposerCard` applies the same rule to the card
       through `data-composer-stack`.
     */}
-    {(notice || served || showQueueStrip) && (
+    {(notice || showQueueStrip) && (
       <div
         data-composer-stack
         className="relative isolate flex w-full flex-col items-center justify-center [&>[data-composer-strip]:not(:empty)~*]:rounded-t-none"
@@ -174,15 +168,6 @@ export function ComposerAboveCard({
           </div>
         )}
 
-        {served && (
-          <ServedModelBar
-            notice={served}
-            className={cn(
-              notice && 'rounded-t-none',
-              questionActive && DOCKED_MIDDLE_LAYER_CLASS,
-            )}
-          />
-        )}
       </div>
     )}
     </>

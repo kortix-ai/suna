@@ -89,8 +89,10 @@ token.personal.revoke). Service accounts and other people's keys need
 token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
-  ls [--mine] [--json]              List the account's keys. --mine narrows to
-                                    the ones you minted yourself.
+  ls [--mine] [--all] [--json]      List the account's keys. --mine narrows to
+                                    the ones you minted yourself. Keys that
+                                    cannot authenticate are hidden; --all
+                                    lists them too.
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
@@ -116,6 +118,9 @@ A new service account holds NO permissions. Grant it one with
 
 Options:
   --mine              ls: only the keys you minted.
+  --all               ls: with --mine, also list the keys that cannot
+                      authenticate (revoked, or revoked_at stamped on a row
+                      still reading active).
   --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
   --project <id>      new: bind the key to one project.
   --description <t>   service-accounts new: what this identity is for.
@@ -143,6 +148,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   const f: Record<string, string | undefined> = {};
   let json = false;
   let mine = false;
+  let all = false;
   let yes = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
@@ -152,6 +158,7 @@ export async function runTokens(argv: string[]): Promise<number> {
     f.description = takeFlagValue(rest, ['--description', '--desc']);
     json = takeFlagBool(rest, ['--json']);
     mine = takeFlagBool(rest, ['--mine']);
+    all = takeFlagBool(rest, ['--all']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
     return fail((err as Error).message);
@@ -185,33 +192,54 @@ export async function runTokens(argv: string[]): Promise<number> {
         const tokens = await ctx.client.get<AccountToken[]>(
           `/accounts/tokens${mine ? '?mine=true' : ''}`,
         );
+        // `?mine=true` keeps dead keys as history — the settings page renders
+        // them muted — but a CLI list means "keys that still authenticate":
+        // status='active' AND revoked_at null, the server's own live predicate
+        // (listAccountTokens / validateAccountToken / isRevokedRow in
+        // apps/api/src/repositories/account-tokens.ts; the two columns are not
+        // tied by any DB constraint, so both halves are needed). `--all` brings
+        // the history back.
+        const visible =
+          mine && !all
+            ? tokens.filter((t) => t.status === 'active' && !t.revoked_at)
+            : tokens;
+        const hidden = tokens.length - visible.length;
         if (json) {
-          emitJson(tokens);
+          emitJson(visible);
           return 0;
         }
-        if (tokens.length === 0) {
+        if (visible.length === 0) {
           process.stdout.write(
             `\n  ${C.dim}No API keys${mine ? ' minted by you' : ''}. Mint one with ` +
-              `${C.reset}${C.cyan}kortix tokens new <name>${C.reset}\n\n`,
+              `${C.reset}${C.cyan}kortix tokens new <name>${C.reset}\n`,
           );
+          if (hidden > 0) {
+            process.stdout.write(
+              `  ${C.dim}${hidden} revoked key${hidden === 1 ? '' : 's'} hidden — list them with ` +
+                `${C.reset}${C.cyan}kortix tokens ls --all${C.reset}\n`,
+            );
+          }
+          process.stdout.write('\n');
           return 0;
         }
-        const nameW = Math.max(...tokens.map((t) => t.name.length), 4);
-        const keyW = Math.max(...tokens.map((t) => t.public_key.length), 6);
+        const nameW = Math.max(...visible.map((t) => t.name.length), 4);
+        const keyW = Math.max(...visible.map((t) => t.public_key.length), 6);
         process.stdout.write('\n');
         process.stdout.write(
           `  ${C.dim}${pad('NAME', nameW)}   ${pad('PUBLIC KEY', keyW)}   ${pad('STATUS', 7)}   ${pad('EXPIRES', 10)}   TOKEN ID${C.reset}\n`,
         );
-        for (const t of tokens) {
+        for (const t of visible) {
           const state = t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
           process.stdout.write(
             `  ${pad(t.name, nameW)}   ${pad(t.public_key, keyW)}   ${pad(state, 7)}   ` +
               `${pad(t.expires_at ? t.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${t.token_id}${C.reset}\n`,
           );
         }
-        process.stdout.write(
-          `\n  ${C.dim}${tokens.length} key${tokens.length === 1 ? '' : 's'}${C.reset}\n\n`,
-        );
+        const count =
+          hidden > 0
+            ? `${visible.length} key${visible.length === 1 ? '' : 's'} · ${hidden} revoked hidden (--all lists them)`
+            : `${visible.length} key${visible.length === 1 ? '' : 's'}`;
+        process.stdout.write(`\n  ${C.dim}${count}${C.reset}\n\n`);
         return 0;
       }
 

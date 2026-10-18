@@ -17,6 +17,46 @@ const ACCOUNT = 'account_1';
 const SA = '55555555-5555-4555-8555-555555555555';
 const IAM = `/v1/accounts/${ACCOUNT}/iam`;
 
+const laptop = {
+  token_id: 'tok_a',
+  name: 'laptop',
+  project_id: null,
+  public_key: 'kx_pub_a',
+  status: 'active',
+  expires_at: null,
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: null,
+};
+const ci = {
+  token_id: 'tok_b',
+  name: 'ci',
+  project_id: 'p1',
+  public_key: 'kx_pub_b',
+  status: 'revoked',
+  expires_at: '2026-12-01T00:00:00.000Z',
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: '2026-02-01T00:00:00.000Z',
+};
+// `status` and `revoked_at` are not tied by any DB constraint: a direct
+// `UPDATE … SET revoked_at` (the release-gate sweep) can leave a row reading
+// active with revoked_at stamped (apps/api/src/repositories/account-tokens.ts,
+// `isRevokedRow`). It cannot authenticate either, so it must hide as well.
+const ghost = {
+  token_id: 'tok_c',
+  name: 'ghost',
+  project_id: null,
+  public_key: 'kx_pub_c',
+  status: 'active',
+  expires_at: null,
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: '2026-02-02T00:00:00.000Z',
+};
+/** Overridden by the all-dead test; null falls back to the standard fixture. */
+let mineFixture: unknown[] | null = null;
+
 let tmp: string;
 let runner: string;
 let api: FakeApi | null = null;
@@ -25,43 +65,8 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
     const mine = url.searchParams.get('mine') === 'true';
-    return Response.json(
-      mine
-        ? [
-            {
-              token_id: 'tok_a',
-              name: 'laptop',
-              project_id: null,
-              public_key: 'kx_pub_a',
-              status: 'active',
-              expires_at: null,
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-          ]
-        : [
-            {
-              token_id: 'tok_a',
-              name: 'laptop',
-              project_id: null,
-              public_key: 'kx_pub_a',
-              status: 'active',
-              expires_at: null,
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-            {
-              token_id: 'tok_revoked',
-              name: 'ci',
-              project_id: 'p1',
-              public_key: 'kx_pub_b',
-              status: 'revoked',
-              expires_at: '2026-12-01T00:00:00.000Z',
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-          ],
-    );
+    if (mine) return Response.json(mineFixture ?? [laptop, ci, ghost]);
+    return Response.json([laptop, ci, { ...ci, token_id: 'tok_revoked' }]);
   }
   if (p === '/v1/accounts/tokens' && req.method === 'POST') {
     const b = body as { name: string };
@@ -191,6 +196,7 @@ describe('kortix tokens', () => {
   afterEach(() => {
     api?.stop();
     api = null;
+    mineFixture = null;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -199,7 +205,7 @@ describe('kortix tokens', () => {
     expect(h.code).toBe(0);
     for (const fragment of [
       'Usage: kortix tokens',
-      'ls [--mine] [--json]',
+      'ls [--mine] [--all] [--json]',
       'new <name>',
       'service-accounts ls',
       'token.personal.create',
@@ -233,6 +239,67 @@ describe('kortix tokens', () => {
     expect(mine.code).toBe(0);
     expect(api!.requests.at(-1)!.query).toContain('mine=true');
     expect(JSON.parse(mine.stdout).map((t: { name: string }) => t.name)).toEqual(['laptop']);
+  });
+
+  test('--mine hides keys that cannot authenticate; --all lists them again', async () => {
+    const config = boot();
+    // After a revoke the settings page drops the row and the key 401s — the
+    // CLI's default list must agree instead of showing dead history.
+    const mine = await runCommand(runner, ['ls', '--mine', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(mine.code).toBe(0);
+    expect(JSON.parse(mine.stdout).map((t: { token_id: string }) => t.token_id)).toEqual(['tok_a']);
+
+    const everything = await runCommand(runner, ['ls', '--mine', '--all', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(everything.code).toBe(0);
+    expect(JSON.parse(everything.stdout).map((t: { token_id: string }) => t.token_id)).toEqual([
+      'tok_a',
+      'tok_b',
+      'tok_c',
+    ]);
+  });
+
+  test('--mine hides dead rows from the table and says what it hid', async () => {
+    const config = boot();
+    const table = await runCommand(runner, ['ls', '--mine'], { cwd: tmp, configFile: config });
+    expect(table.code).toBe(0);
+    expect(table.stdout).toContain('laptop');
+    expect(table.stdout).not.toContain('ci');
+    expect(table.stdout).not.toContain('ghost');
+    expect(table.stdout).toContain('1 key');
+    expect(table.stdout).toContain('2 revoked hidden');
+    expect(table.stdout).toContain('--all');
+
+    const full = await runCommand(runner, ['ls', '--mine', '--all'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(full.code).toBe(0);
+    for (const name of ['laptop', 'ci', 'ghost']) expect(full.stdout).toContain(name);
+    expect(full.stdout).toContain('revoked');
+    expect(full.stdout).toContain('3 keys');
+  });
+
+  test('when every key is dead --mine says so and points at --all', async () => {
+    mineFixture = [ci, ghost];
+    const config = boot();
+    const json = await runCommand(runner, ['ls', '--mine', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual([]);
+
+    const table = await runCommand(runner, ['ls', '--mine'], { cwd: tmp, configFile: config });
+    expect(table.code).toBe(0);
+    expect(table.stdout).toContain('No API keys minted by you');
+    expect(table.stdout).toContain('2 revoked');
+    expect(table.stdout).toContain('--all');
   });
 
   test('new POSTs account_id IN THE BODY and prints the secret once', async () => {

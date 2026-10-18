@@ -196,6 +196,18 @@ downgrade N+1.
    `apps/capture/update-public-key.txt` (section "Updater").
 4. Remove the old `CAPTURE_RELEASES_TOKEN` secret from `kortix-ci-env`; nothing reads it.
 
+## Sign-in against the real Kortix
+
+The CI stand-in issuer is local, so each OS job also starts a sign-in at
+`https://dev-api.kortix.com` with the installed binary ("Sign-in reaches the real Kortix
+through Cloudflare"). Cloudflare there refuses a request without a User-Agent (403); the
+check needs no secret and approves nothing.
+
+The full flow, by hand, with any build: `python3 -I apps/capture/scripts/dev_signin_e2e.py
+<kortix-capture binary>`. It signs in through Cloudflare, approves as the owner of a
+throwaway account (the Kortix CLI's `dev` host token), connects, uploads a probe object,
+checks Kortix lists the computer, and cleans up.
+
 ## When a verification fails
 
 Download `capture-evidence-<os>` from the run. `Assert` prints the failing line

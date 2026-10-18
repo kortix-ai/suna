@@ -60,6 +60,7 @@ import { TurnWorkAccordion } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
+import { TurnFallbackRows } from '../turn/fallback-row';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   queuedBubbleTone,
@@ -1948,6 +1949,7 @@ function TurnFooter(
         isAbort={turnErrorRow.isAbort}
       />
     )}
+    <TurnFallbackRows working={working} events={servedModel?.fallbacks ?? []} />
     {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
     {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──

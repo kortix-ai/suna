@@ -27,6 +27,8 @@ export interface TriggerScheduleSpec {
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
+  /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
+  maxLatenessSeconds?: number;
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -93,6 +95,9 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
+    // Joins only when set: the claim reads it from the stored spec, which is
+    // rewritten only on a revision change. Unset keeps every revision put.
+    ...(spec.maxLatenessSeconds ? { maxLatenessSeconds: spec.maxLatenessSeconds } : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }

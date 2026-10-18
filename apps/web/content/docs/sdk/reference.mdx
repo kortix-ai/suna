@@ -335,7 +335,9 @@ Accounts, the account a call uses, typed calls and errors are explained in [Conn
 | --- | --- |
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
 | `triggers.create(input)` · `triggers.update(slug, input)` · `triggers.remove(slug)` | Write a trigger. `type` is `cron`, `webhook`, `monitor` or `event`. `name`, `type` and `prompt_template` are required. |
-| `triggers.fire(slug)` | Run one trigger now. It works while triggers are paused. |
+| `triggers.fire(slug, { payload?, dryRun? }?)` | Run one trigger now. It works while triggers are paused. `payload` deep-merges over the manual payload at the root, for example `{ body: { … } }`. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult`: `rendered_prompt`, `filter_matches`, `session_key` and `payload`. A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
+| `triggers.runs(slug, { cursor?, limit? }?)` · `triggers.projectRuns({ status?, cursor?, limit? }?)` | One trigger's runs · every run of the project, newest first, as `{ runs: ProjectTriggerRun[], next_cursor }`. `limit` is 1–100, default 25. `status` is `queued`, `running`, `fired`, `failed`, `skipped` or `rejected`. A page can hold fewer than `limit` runs while `next_cursor` is set: follow `next_cursor` until it is `null`. |
+| `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fire the trigger again with the run's stored payload and the current spec. Returns `409 run_in_progress` while the run is queued or running, `409 payload_unverified` for an unverified webhook payload unless `confirmUnverified: true`, and `422 payload_truncated` for a payload over 64 KiB. |
 | `triggers.setActivation(paused)` | Pause or resume every trigger of the project. |
 | `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Apps with events · the event types of one connector or app. |
 | `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session you can open: list, pause or resume, delete. One session's reminders are `s.reminders`. |
