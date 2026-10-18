@@ -501,6 +501,25 @@ async function send(config: RuntimeClientConfig, request: Request): Promise<Reco
 
 // ─── Event stream ────────────────────────────────────────────────────────────
 
+/** Parse one blank-line-terminated SSE chunk into a message: the `data:`
+ *  lines join with newlines, `id:` and numeric `retry:` are carried, anything
+ *  else (comments, unknown fields) is ignored. Pure — one chunk in, one message out.
+ */
+function parseSseChunk(chunk: string): RuntimeEventMessage {
+  const message: RuntimeEventMessage = {};
+  const data: string[] = [];
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('data:')) data.push(line.replace(/^data:\s*/, ''));
+    else if (line.startsWith('id:')) message.id = line.replace(/^id:\s*/, '');
+    else if (line.startsWith('retry:')) {
+      const parsed = Number.parseInt(line.replace(/^retry:\s*/, ''), 10);
+      if (!Number.isNaN(parsed)) message.retry = parsed;
+    }
+  }
+  if (data.length) message.data = data.join('\n');
+  return message;
+}
+
 /** The default transport: a streaming `fetch` body, split into SSE messages. */
 export function fetchEventTransport(fetchFn: typeof fetch = globalThis.fetch): RuntimeEventTransport {
   return async function* ({ url, headers, signal }) {
@@ -531,18 +550,9 @@ export function fetchEventTransport(fetchFn: typeof fetch = globalThis.fetch): R
         const chunks = buffer.split('\n\n');
         buffer = chunks.pop() ?? '';
         for (const chunk of chunks) {
-          const message: RuntimeEventMessage = {};
-          const data: string[] = [];
-          for (const line of chunk.split('\n')) {
-            if (line.startsWith('data:')) data.push(line.replace(/^data:\s*/, ''));
-            else if (line.startsWith('id:')) message.id = line.replace(/^id:\s*/, '');
-            else if (line.startsWith('retry:')) {
-              const parsed = Number.parseInt(line.replace(/^retry:\s*/, ''), 10);
-              if (!Number.isNaN(parsed)) message.retry = parsed;
-            }
-          }
-          if (data.length) message.data = data.join('\n');
-          yield message;
+          // A comment-only chunk yields a field-less message: it still proves
+          // liveness to the reconnect loop.
+          yield parseSseChunk(chunk);
         }
       }
     } finally {
