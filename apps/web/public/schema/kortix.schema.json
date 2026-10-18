@@ -380,7 +380,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -395,7 +405,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -2642,7 +2662,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -2657,7 +2687,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }
@@ -4468,7 +4508,17 @@
                         ],
                         "properties": {
                           "session_mode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       },
@@ -4483,7 +4533,17 @@
                         ],
                         "properties": {
                           "sessionMode": {
-                            "const": "pinned"
+                            "type": "string",
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned"
+                                ]
+                              },
+                              {
+                                "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                              }
+                            ]
                           }
                         }
                       }

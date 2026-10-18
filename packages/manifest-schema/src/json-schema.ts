@@ -482,8 +482,8 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       {
         if: {
           anyOf: [
-            { required: ['session_mode'], properties: { session_mode: { const: 'pinned' } } },
-            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: { const: 'pinned' } } },
+            { required: ['session_mode'], properties: { session_mode: normalizedEnumSchema(['pinned']) } },
+            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: normalizedEnumSchema(['pinned']) } },
           ],
         },
         then: {

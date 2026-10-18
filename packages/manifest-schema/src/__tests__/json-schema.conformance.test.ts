@@ -1294,6 +1294,12 @@ for (const version of [1, 2, 3]) {
     ['canonical blank overrides ID alias', { session_mode: 'pinned', session_id: '   ', sessionId: 'synthetic-session' }, false],
     ['canonical ID overrides blank alias', { session_mode: 'pinned', session_id: 'synthetic-session', sessionId: '   ' }, true],
     ['canonical mode overrides pinned alias', { session_mode: 'fresh', sessionMode: 'pinned', session_id: '   ' }, true],
+    // Case variants normalize to "pinned" in the validator (trim+toLowerCase), so
+    // the schema guard must fire on them too — without the ID they must be
+    // rejected by BOTH sides.
+    ['case-variant pinned missing ID', { session_mode: 'PINNED' }, false],
+    ['case-variant pinned alias blank ID', { sessionMode: 'Pinned', sessionId: '   ' }, false],
+    ['case-variant pinned with ID', { session_mode: 'PINNED', session_id: 'synthetic-session' }, true],
   ];
   for (const [name, fields, valid] of cases) {
     FIXTURES.push({ name: `v${version} trigger ${name}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: version, ...base, triggers: [{ slug: 'tick', type: 'cron', cron: '0 9 * * *', prompt: 'Go', ...fields }] }) });
@@ -1357,12 +1363,14 @@ describe('normalized enums retain their boundaries', () => {
 
 describe('normalized enums fold Unicode case equivalents (KRTX-2538)', () => {
   // The validator matches with `trim().toLowerCase()` (`./index.ts`), and JS
-  // `toLowerCase()` is Unicode-aware: U+212A KELVIN SIGN folds to "k", so
-  // "Keyed" normalizes to "keyed" and the schema pattern must accept it too.
-  // A full scan of Unicode finds no other non-ASCII code point whose
-  // `toLowerCase()` is a single ASCII letter — U+017F is already lowercase,
-  // fullwidth Ｋ folds to fullwidth ｋ, and İ expands to two code points — so
-  // those stay rejected by BOTH sides, pinned below as the boundary.
+  // `toLowerCase()` is Unicode-aware: U+212A KELVIN SIGN folds to "k", so the
+  // fixture value "\u212Aeyed" (KELVIN SIGN + "eyed" — it looks like Keyed but
+  // the K is the Kelvin sign) normalizes to "keyed", and the schema pattern
+  // must accept it too. A full scan of Unicode finds no other non-ASCII code
+  // point whose `toLowerCase()` is a single ASCII letter — U+017F is already
+  // lowercase, fullwidth Ｋ folds to fullwidth ｋ, and İ expands to two code
+  // points — so those stay rejected by BOTH sides, pinned below as the
+  // boundary.
   const kelvinKeyed = '\u212Aeyed';
   const kelvinSlack = 'SLAC\u212A';
   test('session_mode accepts a KELVIN SIGN k', () => {
