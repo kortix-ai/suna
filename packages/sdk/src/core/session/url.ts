@@ -346,14 +346,13 @@ export function detectLocalhostUrls(text: string): DetectedLocalhostUrl[] {
   return results;
 }
 
-
-
 /**
  * Check if a string contains any localhost URLs worth rewriting.
  */
 export function hasLocalhostUrls(text: string): boolean {
   return detectLocalhostUrls(text).length > 0;
 }
+
 /**
  * Detect whether the kortix-api backend is on the user's own machine
  * (i.e. apiBaseUrl hostname is localhost/127.0.0.1).
