@@ -57,25 +57,30 @@ describe('startDestination', () => {
 });
 
 describe('onboardingAccountId', () => {
+  const can = { 'acc-owned': true, 'acc-admin': true };
   test('keeps the selected account when a project can be created in it', () => {
-    expect(onboardingAccountId([owned, admin], 'acc-admin')).toBe('acc-admin');
+    expect(onboardingAccountId([owned, admin], 'acc-admin', can)).toBe('acc-admin');
   });
 
   test('a member-only selection moves to the first owned or admin account', () => {
-    expect(onboardingAccountId([member, admin, owned], 'acc-member')).toBe('acc-admin');
+    expect(onboardingAccountId([member, admin, owned], 'acc-member', can)).toBe('acc-admin');
   });
 
   test('no selection: the first owned or admin account', () => {
-    expect(onboardingAccountId([member, owned], null)).toBe('acc-owned');
+    expect(onboardingAccountId([member, owned], null, can)).toBe('acc-owned');
   });
 
   test('member-only accounts: the selected one, else the first', () => {
-    expect(onboardingAccountId([member, account('acc-m2', 'member')], 'acc-m2')).toBe('acc-m2');
-    expect(onboardingAccountId([member], 'gone')).toBe('acc-member');
+    expect(onboardingAccountId([member, account('acc-m2', 'member')], 'acc-m2', {})).toBe('acc-m2');
+    expect(onboardingAccountId([member], 'gone', {})).toBe('acc-member');
+  });
+
+  test('no verdict yet: no account counts as creatable', () => {
+    expect(onboardingAccountId([owned, admin], 'gone', {})).toBe('acc-owned');
   });
 
   test('no account: null', () => {
-    expect(onboardingAccountId([], 'gone')).toBeNull();
+    expect(onboardingAccountId([], 'gone', {})).toBeNull();
   });
 });
 

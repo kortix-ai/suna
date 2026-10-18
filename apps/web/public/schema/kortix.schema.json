@@ -292,6 +292,10 @@
                 "timezone": {
                   "type": "string"
                 },
+                "max_lateness": {
+                  "type": "string",
+                  "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -486,6 +490,27 @@
                       "source": false,
                       "event": false,
                       "config": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "webhook",
+                          "monitor",
+                          "event"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "max_lateness": false
                     }
                   }
                 },
@@ -1697,6 +1722,7 @@
                       "properties": {
                         "project_repository": {
                           "type": "boolean",
+                          "default": true,
                           "description": "Check out the project repository and allow repository access. Defaults to true."
                         }
                       },
@@ -2189,6 +2215,10 @@
                 "timezone": {
                   "type": "string"
                 },
+                "max_lateness": {
+                  "type": "string",
+                  "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -2383,6 +2413,27 @@
                       "source": false,
                       "event": false,
                       "config": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "webhook",
+                          "monitor",
+                          "event"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "max_lateness": false
                     }
                   }
                 },
@@ -3723,6 +3774,10 @@
                 "timezone": {
                   "type": "string"
                 },
+                "max_lateness": {
+                  "type": "string",
+                  "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -3917,6 +3972,27 @@
                       "source": false,
                       "event": false,
                       "config": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "webhook",
+                          "monitor",
+                          "event"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "max_lateness": false
                     }
                   }
                 },
@@ -5432,11 +5508,13 @@
                   ]
                 },
                 "workspace": {
+                  "description": "What new sessions of this agent get in /workspace.",
                   "type": "object",
                   "properties": {
                     "project_repository": {
                       "type": "boolean",
-                      "description": "Check out the project repository and allow repository access. Defaults to true."
+                      "default": false,
+                      "description": "Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true."
                     }
                   },
                   "additionalProperties": false

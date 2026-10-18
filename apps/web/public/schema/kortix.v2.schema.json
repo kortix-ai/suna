@@ -565,6 +565,7 @@
                 "properties": {
                   "project_repository": {
                     "type": "boolean",
+                    "default": true,
                     "description": "Check out the project repository and allow repository access. Defaults to true."
                   }
                 },
@@ -1057,6 +1058,10 @@
           "timezone": {
             "type": "string"
           },
+          "max_lateness": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+          },
           "secret_env": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -1251,6 +1256,27 @@
                 "source": false,
                 "event": false,
                 "config": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "webhook",
+                    "monitor",
+                    "event"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "max_lateness": false
               }
             }
           },

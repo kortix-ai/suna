@@ -454,11 +454,11 @@ export function ModelSelector({
   // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
-  // got a "You don't have permission" toast for each. Hidden on a RECEIVED
-  // denial only, from the shared project-page probe batch.
+  // got a "You don't have permission" toast for each. Shown on a RECEIVED
+  // allow only, from the shared project-page probe batch.
   const caps = useProjectPageCans(projectId ?? undefined);
   const canManageModels =
-    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed !== false;
+    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed === true;
   const rowDefaultControls = canManageModels ? defaultControls : undefined;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');

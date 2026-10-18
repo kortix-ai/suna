@@ -9,6 +9,7 @@ import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import { Resolver } from 'node:dns/promises';
 import {
   createSsoGroupMapping,
@@ -565,10 +566,13 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
     const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
-    const rows = await listSsoGroupMappings(accountId);
+    const actor = await actorOf(c, accountId);
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_READ);
+    // A mapping names its group: only the groups the caller may see
+    // (iam/directory-visibility.ts), none for a plain member.
+    const [rows, { groupIds }] = await Promise.all([listSsoGroupMappings(accountId), visibleDirectory(actor)]);
     return c.json({
-      mappings: rows.map((m) => ({
+      mappings: rows.filter((m) => !groupIds || groupIds.has(m.groupId)).map((m) => ({
         mapping_id: m.mappingId,
         claim_value: m.claimValue,
         group_id: m.groupId,

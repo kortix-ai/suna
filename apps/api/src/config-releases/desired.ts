@@ -134,11 +134,13 @@ const defaultDeps: DesiredReleaseDeps = {
  * with E2BIG. Such a daemon gets no governance and keeps the config it has.
  * `capabilities` is what the daemon declared in its descriptor request.
  */
-export function governanceForDaemon<T extends { compiled_governance: string | null }>(descriptor: T, capabilities: readonly string[]): T {
+export function governanceForDaemon<T extends { compiled_governance: string | null; compiled_governance_etag: string | null }>(descriptor: T, capabilities: readonly string[]): T {
   const governance = descriptor.compiled_governance;
   if (governance === null || fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, governance)) return descriptor;
   if (capabilities.includes(COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) return descriptor;
-  return { ...descriptor, compiled_governance: null };
+  // Both fields go together: kortixd rejects a descriptor with only one of them
+  // and then boots the image default config instead of the project's.
+  return { ...descriptor, compiled_governance: null, compiled_governance_etag: null };
 }
 
 export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: boolean): string {

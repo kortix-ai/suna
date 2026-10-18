@@ -85,6 +85,11 @@ jobs:
           next="${ma}.${mi}.$((pa + 1))"
           echo "version=${next}-staging.${SOURCE_SHA::8}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Anonymous Docker Hub reads share the runner IP's limit: 429 on 2026-10-17.
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Assert staging images exist
         env:
           SHA8: ${{ steps.ref.outputs.sha8 }}

@@ -84,6 +84,7 @@ describe('agentConfigViewV3', () => {
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
       kortix_permissions: ['project.session.start'],
+      repository_access: false,
     });
   });
 
@@ -124,6 +125,8 @@ describe('applyAgentConfigV3', () => {
       codemode: 'only',
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
+      // An omitted repository choice is pinned to the v3 default.
+      workspace: { project_repository: false },
     });
     expect(validateManifest(applied.raw, 'yaml').valid).toBe(true);
   });
@@ -153,7 +156,7 @@ describe('applyAgentConfigV3', () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.promptWrite).toBeNull();
-    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts and cite sources.' });
+    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts and cite sources.', workspace: { project_repository: false } });
   });
 
   test('a new agent with a prompt gets agents/<name>.md as its prompt file', () => {
@@ -165,7 +168,7 @@ describe('applyAgentConfigV3', () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.promptWrite).toEqual({ path: 'agents/writer.md', content: 'You write.\n' });
-    expect(block(applied.raw, 'writer')).toEqual({ mode: 'all', prompt_file: 'agents/writer.md', skills: ['triage'] });
+    expect(block(applied.raw, 'writer')).toEqual({ mode: 'all', prompt_file: 'agents/writer.md', skills: ['triage'], workspace: { project_repository: false } });
   });
 
   test('clearing an inline prompt removes the key', () => {
@@ -173,7 +176,7 @@ describe('applyAgentConfigV3', () => {
 
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent' });
+    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', workspace: { project_repository: false } });
   });
 
   test('a v3 grant sent as none clears it', () => {
@@ -187,6 +190,14 @@ describe('applyAgentConfigV3', () => {
     expect(next.subagents).toBeUndefined();
     expect(next.commands).toBeUndefined();
     expect(next.extensions).toBeUndefined();
+  });
+
+  test('an omitted repository choice is written explicitly as the v3 default, false', () => {
+    const applied = applyAgentConfigV3(manifest(), 'researcher', { governance: { skills: 'all' } });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(block(applied.raw, 'researcher').workspace).toEqual({ project_repository: false });
   });
 
   test('repository_access is written as workspace.project_repository', () => {
@@ -241,7 +252,7 @@ describe('the v2 writers accept a v3 manifest', () => {
 
     expect(granted).toMatchObject({ ok: true, alreadyGranted: false });
     if (!granted.ok) return;
-    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', secrets: ['HELPDESK_TOKEN'] });
+    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', secrets: ['HELPDESK_TOKEN'], workspace: { project_repository: false } });
   });
 
   test('applyAgentBlockV2 refuses a v1 manifest only', () => {

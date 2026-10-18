@@ -44,6 +44,18 @@ describe('hasLinkReferenceDefinition', () => {
     expect(hasLinkReferenceDefinition('   [x]: /relative/path')).toBe(true);
   });
 
+  test('a definition inside a fence or display math does not define a target', () => {
+    expect(hasLinkReferenceDefinition('```md\n[1]: https://kortix.com\n```\n\nUse [text][1]')).toBe(false);
+    expect(hasLinkReferenceDefinition('~~~\n[1]: https://kortix.com\n~~~')).toBe(false);
+    expect(hasLinkReferenceDefinition('$$\n[1]: https://kortix.com\n$$')).toBe(false);
+    expect(hasLinkReferenceDefinition('```\n[1]: https://kortix.com')).toBe(false);
+  });
+
+  test('a definition after a fence, or one a container fence cannot own, still defines a target', () => {
+    expect(hasLinkReferenceDefinition('```\ncode\n```\n\n[1]: https://kortix.com')).toBe(true);
+    expect(hasLinkReferenceDefinition('- item\n\n  ```\n  code\n\n[1]: https://kortix.com')).toBe(true);
+  });
+
   test('inline links, plain brackets, and indented code are not definitions', () => {
     expect(hasLinkReferenceDefinition('[docs](https://kortix.com/docs)')).toBe(false);
     expect(hasLinkReferenceDefinition('Array access: arr[0]: first element')).toBe(false);

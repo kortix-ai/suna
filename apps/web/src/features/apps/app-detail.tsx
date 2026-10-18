@@ -75,7 +75,9 @@ export function AppDetailModal({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appCopy = localizedAppCopy(tI18nComplete);
   const apps = useProjectApps(projectId);
-  const deployments = useAppDeployments(projectId, app.app_id);
+  // Releases, logs, machines and volumes are operations data: the API answers
+  // them only with `deploy`. No id, no request for anyone else.
+  const deployments = useAppDeployments(projectId, canDeploy ? app.app_id : null);
   const preview = appCan(app, 'preview');
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess && preview });
@@ -320,7 +322,7 @@ export function AppDetailModal({
                       share one left edge. */}
                   <DropdownMenuContent align="end" className="w-60">
                     {/* An external App has no versions: Kortix never deploys it. */}
-                    {app.external_url ? null : (
+                    {app.external_url || !canDeploy ? null : (
                       <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
                         <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
                         {versionsOpen
@@ -388,7 +390,7 @@ export function AppDetailModal({
               drawer under it: the App narrows and stays live, and the list
               gets the full height to scroll. */}
           <SplitSheet
-            open={versionsOpen}
+            open={versionsOpen && canDeploy}
             onOpenChange={setVersionsOpen}
             size="lg"
             className="h-auto min-h-0 flex-1"

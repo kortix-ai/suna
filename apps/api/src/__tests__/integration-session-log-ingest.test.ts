@@ -449,13 +449,13 @@ describe('operator switch', () => {
   });
 });
 
-test('RLS stays on with no policy on the four session-log tables', async () => {
+test('RLS stays on with no policy on the session-log tables', async () => {
   const rows = (await db.execute(sql`
     SELECT c.relname AS name, c.relrowsecurity AS rls,
            (SELECT count(*)::int FROM pg_policies p WHERE p.schemaname = 'kortix' AND p.tablename = c.relname) AS policies
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'kortix' AND c.relkind = 'r' AND c.relname LIKE 'session_log%' ORDER BY 1`)) as unknown as Array<{ name: string; rls: boolean; policies: number }>;
   expect(rows).toEqual(
-    ['session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
+    ['session_log_backfill_state', 'session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
   );
 });

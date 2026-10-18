@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { hasReferenceDefinitionOutsideFences } from '@kortix/shared/markdown-math';
 
 // Renders the real `MarkdownTable` from the library's real AST on the iOS path
 // (`UITextView`). Every native module is a host stub. Run with `bun test --isolate`.
@@ -51,6 +52,7 @@ mock.module('@/components/ui/button', () => ({ Button: none }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@kortix/shared', () => ({
+  hasReferenceDefinitionOutsideFences,
   isMathFenceLanguage: () => false,
   isMermaidCode: () => false,
   prepareMarkdownForMath: (s: string) => s,

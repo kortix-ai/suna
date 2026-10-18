@@ -2304,11 +2304,13 @@ export interface SessionServedModel {
   /** How the request ended: `answered` (a model answered it), `client_aborted`
    *  (the caller canceled it) or `error` (it failed outright). A cancel is not
    *  a model failure — the UI must not present one as such (KRTX-2572). */
-  outcome: 'answered' | 'client_aborted' | 'error';
+  outcome?: 'answered' | 'client_aborted' | 'error';
 }
 
 /** The models that answered one turn, and what Kortix billed for it. */
 export interface SessionTurnModelUsage {
+  /** Successful fallback requests, oldest first. Error codes are safe public categories. */
+  fallbacks?: { requested_model: string; served_model: string; error_code: string }[];
   /** Route ids of the models that answered in this turn, most requests first. */
   served_models: string[];
   fallback_from: string | null;

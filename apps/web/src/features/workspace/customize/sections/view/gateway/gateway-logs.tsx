@@ -13,7 +13,7 @@ import { Fragment, forwardRef, useEffect, useMemo, useRef, useState, type ReactN
 
 import { HighlightedCode } from '@/components/markdown/code/code-block';
 import { Badge } from '@/components/ui/badge';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { HistogramBars } from '@/components/ui/histogram-bars';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
@@ -796,47 +796,34 @@ export function LogHistogram({
           </span>
         ) : null}
       </div>
-      <div className="flex h-14 items-end gap-1.5">
-        {buckets.map((b) => (
-          <HoverCard key={b.start} openDelay={0} closeDelay={0}>
-            <HoverCardTrigger asChild>
-              <button
-                type="button"
-                aria-label={`${fmtRange(b)} · ${t('requestsLabel', { count: b.total })} ${b.total}`}
-                onClick={() => onSelectRange?.({ start: b.start, end: b.end })}
-                className="group/bar flex h-full min-w-0 flex-1 cursor-pointer items-end outline-none"
-              >
-                <span
-                  className={cn(
-                    'flex w-full flex-col overflow-hidden rounded-xs transition-[background-color] duration-(--duration-normal)',
-                    b.total
-                      ? 'bg-muted-foreground/45 group-hover/bar:bg-foreground/70 group-focus-visible/bar:bg-foreground/70'
-                      : 'bg-muted group-hover/bar:bg-muted-foreground/45 group-focus-visible/bar:bg-muted-foreground/45',
-                  )}
-                  style={{ height: b.total ? `${Math.max(4, (b.total / peak) * 100)}%` : 2 }}
-                >
-                  {b.errors > 0 ? (
-                    <span
-                      className="bg-destructive w-full shrink-0"
-                      style={{ height: `${Math.max(14, (b.errors / b.total) * 100)}%` }}
-                    />
-                  ) : null}
-                </span>
-              </button>
-            </HoverCardTrigger>
-            <HoverCardContent
-              side="bottom"
-              align="center"
-              sideOffset={6}
-              collisionPadding={8}
-              animated={false}
-              className="w-60 p-3"
+      <HistogramBars
+        className="flex h-14 items-end gap-1.5"
+        onSelect={(i) => onSelectRange?.({ start: buckets[i].start, end: buckets[i].end })}
+        renderCard={(i) => <LogBucketCard bucket={buckets[i]} />}
+        bars={buckets.map((b) => ({
+          key: b.start,
+          ariaLabel: `${fmtRange(b)} · ${t('requestsLabel', { count: b.total })} ${b.total}`,
+          empty: b.total === 0,
+          bar: (
+            <span
+              className={cn(
+                'flex w-full flex-col overflow-hidden rounded-xs transition-[background-color] duration-(--duration-normal)',
+                b.total
+                  ? 'bg-muted-foreground/45 group-hover/bar:bg-foreground/70 group-focus-visible/bar:bg-foreground/70'
+                  : 'bg-muted group-hover/bar:bg-muted-foreground/45 group-focus-visible/bar:bg-muted-foreground/45',
+              )}
+              style={{ height: b.total ? `${Math.max(4, (b.total / peak) * 100)}%` : 2 }}
             >
-              <LogBucketCard bucket={b} />
-            </HoverCardContent>
-          </HoverCard>
-        ))}
-      </div>
+              {b.errors > 0 ? (
+                <span
+                  className="bg-destructive w-full shrink-0"
+                  style={{ height: `${Math.max(14, (b.errors / b.total) * 100)}%` }}
+                />
+              ) : null}
+            </span>
+          ),
+        }))}
+      />
       <div className="text-muted-foreground flex justify-between text-xs tabular-nums" aria-hidden>
         {tickAt.map((i) => (
           <span key={i}>

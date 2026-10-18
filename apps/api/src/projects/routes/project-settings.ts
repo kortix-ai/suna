@@ -174,8 +174,9 @@ export function registerProjectSettingsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Two independent writes share this route. `completed` is a TOP-LEVEL
     // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
@@ -242,11 +243,9 @@ export function registerProjectSettingsRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Deletion is admin-only. The floor `member` role explicitly excludes
-    // project.delete; loadProjectForUser('manage') would otherwise let
-    // members through via project.write.
+    // project.delete is the gate; the load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
     // Release prompt attachments first. After the repository deletion below, a
@@ -322,7 +321,7 @@ export function registerProjectSettingsRoutes(): void {
   // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
   // (follow the platform default/distribution). Bypasses the distribution weights by
   // design — pin a project to platinum even when platinum's weight is 0. Human callers
-  // only: project 'manage' + project.settings.write, and never a session principal —
+  // only: project.settings.write, and never a session principal —
   // the pin routes EVERY new session in the project (KRTX-1681: a security-audit
   // agent pinned its whole project to daytona to unblock its own task).
   projectsApp.openapi(

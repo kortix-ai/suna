@@ -165,6 +165,8 @@ describe('kortix migrate --write', () => {
       connectors: 'all',
       secrets: ['HELPDESK_TOKEN'],
       kortix_permissions: 'all',
+      // v2 cloned the repository when the key was omitted; v3 does not, so migrate pins it.
+      workspace: { project_repository: true },
     });
     // reviewer: its own permission wins; task deny → no subagents; its own plugin set.
     expect(manifest.agents.reviewer).toEqual({

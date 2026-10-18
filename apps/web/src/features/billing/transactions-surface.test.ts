@@ -28,7 +28,7 @@ describe('account credit transactions surface', () => {
     // inputs (entitlements, membership, flags) are not worth standing up here.
     // What matters is that `billingActive` never re-enters the condition.
     const source = readFileSync(hubAccessPath, 'utf8');
-    expect(source).toContain('transactions: canWriteAccount === true,');
-    expect(source).not.toContain('transactions: canWriteAccount === true && billingActive');
+    expect(source).toContain('transactions: canReadBilling === true,');
+    expect(source).not.toContain('transactions: canReadBilling === true && billingActive');
   });
 });

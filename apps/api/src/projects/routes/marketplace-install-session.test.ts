@@ -44,6 +44,8 @@ mock.module('../lib/access', () => ({
       manifestPath: null,
     },
   }),
+
+  assertProjectCapability: async () => undefined,
 }));
 mock.module('../../feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
 const realEntitlements = await import('../../billing/services/entitlements');

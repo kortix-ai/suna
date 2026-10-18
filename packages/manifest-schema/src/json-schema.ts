@@ -428,6 +428,9 @@ function triggerSchema(): JsonSchemaFragment {
       run_at: { type: 'string', minLength: 1 },
       runAt: { type: 'string', minLength: 1 },
       timezone: { type: 'string' },
+      // `type: cron` only — the misfire bound. Its 60s floor is the imperative
+      // validator's, like the monitor duration floors below.
+      max_lateness: durationSchema,
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -499,6 +502,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The misfire bound exists only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -761,6 +769,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
             properties: {
               project_repository: {
                 type: 'boolean',
+                default: true,
                 description: 'Check out the project repository and allow repository access. Defaults to true.',
               },
             },
@@ -1099,7 +1108,18 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       secrets: v2.properties.secrets,
       apps: v2.properties.apps,
       kortix_permissions: v2.properties.kortix_permissions,
-      workspace: v2.properties.workspace.oneOf[0],
+      workspace: {
+        description: 'What new sessions of this agent get in /workspace.',
+        type: 'object',
+        properties: {
+          project_repository: {
+            type: 'boolean',
+            default: false,
+            description: 'Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true.',
+          },
+        },
+        additionalProperties: false,
+      },
       sandbox: v2.properties.sandbox,
       network_egress: v2.properties.network_egress,
     },

@@ -118,11 +118,11 @@ describe('authorizeGitProxy — CLI PAT', () => {
     ]);
   });
 
-  test('a same-account PAT clone is checked against project.gitops.read', async () => {
+  test('a same-account personal PAT clone needs project.gitops.push: the proxy serves every session branch', async () => {
     authorizeAllowed = false;
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
     expect(res).toMatchObject({ ok: false, status: 403 });
-    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.read']);
+    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.push']);
   });
 
   test('a same-account PAT whose user holds the git role is allowed', async () => {
@@ -211,13 +211,13 @@ describe('authorizeGitProxy — CLI PAT', () => {
     expect(res).toMatchObject({ ok: false, status: 403 });
   });
 
-  test('read and write map to different capabilities', async () => {
+  test('a personal PAT on another account also needs project.gitops.push to read', async () => {
     patResult = { isValid: true, accountId: OTHER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
     authorizeAllowed = true;
 
     await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
 
-    expect(authorizeCalls[0]?.action).toBe('project.gitops.read');
+    expect(authorizeCalls[0]?.action).toBe('project.gitops.push');
   });
 
   test('a project-scoped PAT for a different project is rejected before any capability check', async () => {

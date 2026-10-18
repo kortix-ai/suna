@@ -30,7 +30,11 @@ import {
   getSessionScopeAvailability,
 } from '@/features/session/scope/session-scope-toolbar';
 import { useSessionScope } from '@/features/session/scope/use-session-scope';
-import { useFeatureFlag, useSessionProviderSecretPools } from '@kortix/sdk/react';
+import {
+  useFeatureFlag,
+  useProjectSession,
+  useSessionProviderSecretPools,
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
@@ -253,6 +257,12 @@ export function SessionOverridesToolbar({
   // a failed catalog read for someone who IS allowed keeps its row.
   const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
   const secretsDenied = !secretRead.isLoading && !secretRead.allowed;
+  // Choosing a session's provider keys is a lifecycle action: the pools route
+  // refuses anyone who cannot manage the session (`mayChangeSessionModel`).
+  // A new session is the caller's own. An existing one shows the row only once
+  // its row says the viewer manages it.
+  const sessionRow = useProjectSession(projectId, sessionId, { enabled: !!sessionId }).data;
+  const managesSession = !sessionId || sessionRow?.can_manage_lifecycle === true;
   const { scope, catalog, catalogError, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
     sessionId,
@@ -388,7 +398,7 @@ export function SessionOverridesToolbar({
     // card it showed. Credentials are not a session-minting decision: the agent
     // may use every account it is entitled to and names one at call time
     // (`kortix connectors call --account`, `accounts` to see them).
-    if (pooledSecretsEnabled) list.push(providerKeysRow(projectId, sessionId,
+    if (pooledSecretsEnabled && managesSession) list.push(providerKeysRow(projectId, sessionId,
       providerPoolDraft, providerDrafts, providerPools.isError, providerPools.isLoading,
       llmGatewayEnabled, saving, onProviderDraftChange, onProviderSecretPoolsChange, tPooled));
     list.push(sandboxRow(sandboxSlot, sandbox, tI18nComplete));
@@ -401,6 +411,7 @@ export function SessionOverridesToolbar({
     draft,
     onChange,
     pooledSecretsEnabled,
+    managesSession,
     llmGatewayEnabled,
     providerPoolDraft,
     providerDrafts,
