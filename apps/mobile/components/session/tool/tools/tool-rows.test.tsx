@@ -7,7 +7,6 @@
 
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
-// @ts-ignore -- this app has no @types/react-test-renderer
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { toolCallBlock, type ToolPart } from '@kortix/sdk';
 import { mockGraph } from '@/lib/testing/mock-graph';

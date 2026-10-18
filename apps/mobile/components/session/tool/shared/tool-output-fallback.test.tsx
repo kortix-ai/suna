@@ -17,7 +17,6 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import React from 'react';
-// @ts-ignore -- this app has no @types/react-test-renderer
 import { act, create } from 'react-test-renderer';
 import { configureKortix, type ToolPart } from '@kortix/sdk';
 import { mockGraph } from '@/lib/testing/mock-graph';
@@ -25,7 +24,10 @@ import { mockGraph } from '@/lib/testing/mock-graph';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 
-const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
+const host =
+  (name: string) =>
+  ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>): React.ReactElement =>
+    React.createElement(name, props, children);
 
 await mockGraph(
   ['components/session/tool/shared/infrastructure.tsx'],
@@ -95,7 +97,9 @@ beforeAll(async () => {
 });
 
 const texts = (instance: ReturnType<typeof create>): string[] =>
-  instance.root.findAll((n: any) => typeof n.props?.children === 'string').map((n: any) => n.props.children as string);
+  instance.root
+    .findAll((n: { props: { children?: unknown } }) => typeof n.props?.children === 'string')
+    .map((n: { props: { children?: unknown } }) => n.props.children as string);
 
 const render = (output: string, isStreaming = false): ReturnType<typeof create> => {
   let instance!: ReturnType<typeof create>;

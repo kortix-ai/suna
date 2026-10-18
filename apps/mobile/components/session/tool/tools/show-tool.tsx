@@ -239,7 +239,9 @@ export function ShowTool({ call, sessionId }: ToolProps) {
             />
           </ActiveServicePreviewContext.Provider>
         ) : isWebsitePreview ? (
-          <ServicePreviewRow preview={preview} url={resolvedPreviewUrl} />
+          // url stays empty, as the pre-refactor viewport rendered it: the
+          // subtitle reads "Live preview", not the resolved URL.
+          <ServicePreviewRow preview={preview} url="" />
         ) : (
           <>
             <ShowContentRenderer

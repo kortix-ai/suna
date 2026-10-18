@@ -24,6 +24,10 @@ mock.module('react-native', () => ({
   Pressable: host('pressable'),
   Platform: { OS: 'ios', select: (o: Record<string, string>) => o.ios },
 }));
+// `nativewind`'s real build (the color-scheme hook the component read before
+// the useTone swap) parses the native react-native graph under bun; the mock
+// keeps the test green at the base too.
+mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 // The theme lives behind the same seam: the real module pulls
 // `expo-router/react-navigation`, whose native graph (fonts, PNG assets) bun
 // cannot parse outside Metro. The question behavior under test does not

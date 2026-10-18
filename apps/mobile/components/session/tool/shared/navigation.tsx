@@ -3,8 +3,7 @@
  *
  * Mirrors apps/web `tool/shared/infrastructure.tsx` `ToolNavigationContext` /
  * `useToolNavigation` / `useProxyUrl` / `useServicePreview` /
- * `ServicePreviewActions` / `ServicePreviewViewport` /
- * `ServicePreviewUrlFallback` / `InlineServicePreview`, adapted to mobile's
+ * `ServicePreviewActions` / `InlineServicePreview`, adapted to mobile's
  * mechanisms:
  * - a FILE opens in `FilePreviewSheet` (the sheet every other file-open on mobile
  *   uses) through `useToolFilePreviewStore` — web's `useFilePreviewStore`
@@ -19,8 +18,8 @@
  * - an EXTERNAL link opens with `openLink` (http/https only) in the in-app
  *   browser (KRTX-2104).
  *
- * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card: its tap
- * opens the in-session sheet instead of an embedded page.
+ * Mobile has no iframe, so a preview renders as a tappable row: its tap opens
+ * the in-session sheet instead of an embedded page.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';

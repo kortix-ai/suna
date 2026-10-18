@@ -71,11 +71,7 @@ mock.module('@/components/kortix/settings-list', () => ({
   SettingsRow: host('settings-row'),
 }));
 // The picker itself is the seam under test: a host that exposes its props.
-mock.module('@/components/session/PickerSheet', () => ({ PickerSheet: (p: HostProps) => {
-  const ch = p.children;
-  console.log('FAKE-SHEET children', Array.isArray(ch) ? ch.map((c: unknown) => typeof c === 'function' ? 'fn' : c === null ? 'null' : typeof c) : typeof ch, 'title', p.title);
-  return host('picker-sheet')(p);
-} }));
+mock.module('@/components/session/PickerSheet', () => ({ PickerSheet: host('picker-sheet') }));
 
 type ModelPicker = typeof import('./ModelPickerSheet');
 let mod: ModelPicker;

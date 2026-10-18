@@ -121,15 +121,7 @@ export function ShowResultRow({
 /** The leading still in a show row: the settings list's own icon slot, squared. */
 const SHOW_ROW_THUMB = 22;
 
-export function ShowFileActions({
-  path,
-  inPanel = false,
-  onRefresh,
-}: {
-  path: string;
-  inPanel?: boolean;
-  onRefresh?: () => void;
-}) {
+export function ShowFileActions({ path, onRefresh }: { path: string; onRefresh?: () => void }) {
   const palette = useTurnPalette();
   const queryClient = useQueryClient();
   const { openFile } = useToolNavigation();
@@ -149,7 +141,7 @@ export function ShowFileActions({
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1), flexShrink: 0 }}>
-      {showFileActions({ inPanel }).map((action) => {
+      {showFileActions({ inPanel: false }).map((action) => {
         if (action === 'refresh') {
           return (
             <Button key={action} variant="ghost" size="icon" onPress={handleRefresh} disabled={refreshing} accessibilityLabel="Refresh">

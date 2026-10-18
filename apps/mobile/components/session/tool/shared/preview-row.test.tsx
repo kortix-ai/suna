@@ -1,7 +1,7 @@
 /**
  * Characterization of the tool-preview surface (`ServicePreviewRow`,
- * `useServicePreview`, `ServicePreviewViewport`) before the unreachable
- * panel-context layer is removed (KRTX-2416):
+ * `useServicePreview`) before the unreachable panel-context layer is removed
+ * (KRTX-2416):
  * - a preview row is ONE tappable target: label, `localhost:port` subtitle,
  *   open affordance — never a viewport wrapper around a second control;
  * - `openInSession` for a sandbox (proxiable localhost) URL opens the
@@ -18,7 +18,6 @@
  */
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
-// @ts-ignore -- this app has no @types/react-test-renderer
 import { act, create } from 'react-test-renderer';
 import { configureKortix } from '@kortix/sdk';
 import { mockGraph } from '@/lib/testing/mock-graph';

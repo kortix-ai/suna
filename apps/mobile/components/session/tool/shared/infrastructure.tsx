@@ -25,12 +25,8 @@
  *                               here — ported
  *   ToolActivateContext / BoundActivateContext
  *                               here — ported (no mobile provider yet)
- *   ToolSurfaceContext / TOOL_INDENT / useToolIndent / useToolCardFrame /
- *   useToolCardPad              `./surface` — adapted: indent/pad are points,
- *                               the frame is a style object (null on 'panel')
  *   ToolNavigationContext / useToolNavigation / useProxyUrl /
- *   useServicePreview / ServicePreviewActions / ServicePreviewViewport /
- *   ServicePreviewUrlFallback / InlineServicePreview
+ *   useServicePreview / ServicePreviewActions / InlineServicePreview
  *                               `./navigation` — adapted: `useToolNavigation()`
  *                               adds `openFile(path, line?)`, `openSession(id)`
  *                               and `openPreview(url, label?)`; a sandbox
