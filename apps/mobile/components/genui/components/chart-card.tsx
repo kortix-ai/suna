@@ -30,8 +30,7 @@ export function ChartCard({
 }: {
   title: string;
   legend: string[];
-  /** Legend swatch colors, one per series. */
-  /** Swatch colors for the legend dots; a card without a legend (pie) needs none. */
+  /** Legend swatch colors, one per series; a card without a legend (pie) needs none. */
   palette?: string[];
   head: string[];
   rows: Cell[][];

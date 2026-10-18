@@ -362,7 +362,7 @@ SheetRef, ReviewDetailSheetProps>(
         }
         send(item, verdict);
       },
-      [item, send, closeSheet],
+      [item, send, closeSheet, deferAfterClose],
     );
 
     const handleDismiss = React.useCallback(() => {
@@ -373,7 +373,7 @@ SheetRef, ReviewDetailSheetProps>(
       const queued = takeAfterClose();
       if (queued) setConfirming(queued);
       onDismiss?.();
-    }, [onDismiss]);
+    }, [takeAfterClose, onDismiss]);
 
     const actionable = item?.status === 'needs_you';
     // A connector call this viewer may not decide: the sheet says who does.

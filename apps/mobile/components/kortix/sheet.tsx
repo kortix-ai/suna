@@ -1,6 +1,5 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { useCallback, useEffect, useRef } from 'react';
 import { Keyboard, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   ANIMATION_STATUS,
@@ -25,7 +24,6 @@ import { haptics } from '@/lib/haptics';
 import { CheckIcon, CopyIcon, XIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
-import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
 import { PinnedBarShiftContext } from '@/components/kortix/pinned-bar';
@@ -481,45 +479,7 @@ export interface SheetRef {
 }
 
 export { useCloseThen } from './use-close-then';
-
-/**
- * The present/dismiss glue for a `KortixBottomSheetModal` driven by an `open`
- * boolean, through `sheetOpenMove` (`lib/ui/sheet-open.ts`): a closed sheet
- * that was never presented is never dismissed — gorhom's modal refuses to
- * render after a dismiss that came before its first present (the device bug:
- * the sheet never appeared). Presenting waits one frame, so a sheet mounted
- * by the same render that opens it is on screen before `present` runs.
- *
- * Call `markDismissed()` from the sheet's `onDismiss`.
- */
-export function useSheetOpenMove(ref: React.RefObject<BottomSheetModal | null>, open: boolean) {
-  const presentedRef = useRef(false);
-  useEffect(() => {
-    const move = sheetOpenMove(open, presentedRef.current);
-    if (move === 'present') {
-      presentedRef.current = true;
-      const frame = requestAnimationFrame(() => ref.current?.present());
-      return () => cancelAnimationFrame(frame);
-    }
-    if (move === 'dismiss') {
-      presentedRef.current = false;
-      ref.current?.dismiss();
-    }
-  }, [open, ref]);
-  return {
-    /** True while the sheet is on screen: set on present, cleared by markDismissed. */
-    isPresented: () => presentedRef.current,
-    /** Present and mark presented (a re-present must count as presented too). */
-    present: useCallback(() => {
-      presentedRef.current = true;
-      ref.current?.present();
-    }, [ref]),
-    markDismissed: useCallback(() => {
-      presentedRef.current = false;
-    }, []),
-  };
-}
-
+export { useSheetOpenMove } from './use-sheet-open-move';
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */
