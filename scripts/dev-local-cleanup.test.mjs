@@ -61,6 +61,7 @@ esac`);
       const readyFile = join(dir, 'ready');
       await new Promise((resolveReady, rejectReady) => {
         const watcher = watch(dir, () => { if (existsSync(readyFile)) { watcher.close(); resolveReady(); } });
+        if (existsSync(readyFile)) { watcher.close(); resolveReady(); } // file may beat the watcher
         watcher.on('error', rejectReady);
         const guard = setTimeout(() => { watcher.close(); rejectReady(new Error(`startup reached: ${output}`)); }, 15000);
         watcher.once('close', () => clearTimeout(guard));

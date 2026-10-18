@@ -500,7 +500,7 @@ cleanup() {
   /bin/sleep 0.2
   kill -KILL -- "-$STACK_PID" 2>/dev/null || true
   wait "$STACK_PID" 2>/dev/null || true
-  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG" || true
   exit "$exit_code"
 }
 
