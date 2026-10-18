@@ -559,17 +559,17 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
 
 // Checked against OpenRouter's ZDR and provider-location feeds on 2026-09-26;
-// the DeepInfra and Morph tags on 2026-10-18 (README, "OpenRouter endpoint pools").
+// morph/fp8 on 2026-10-18 (README, "OpenRouter endpoint pools").
 // Resolver uses this list for operator overlays too; an unknown endpoint fails closed.
 export const VERIFIED_US_MANAGED_ENDPOINTS = [
-  'deepinfra/fp8', 'deepinfra/fp8/priority', 'morph/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
+  'morph/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
 ] as const;
 
 // Customer-facing name of the US inference provider behind each route. The
 // picker shows this name, never the aggregator or the quantization tag.
 // `morph` is the direct Morph route (off by default; see MORPH_MANAGED_MODELS).
 export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_US_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
-  'deepinfra/fp8': 'DeepInfra', 'deepinfra/fp8/priority': 'DeepInfra', 'morph/fp8': 'Morph',
+  'morph/fp8': 'Morph',
   'decart/fp4': 'Decart', 'coreweave/nvfp4': 'CoreWeave', 'fireworks/us': 'Fireworks',
   morph: 'Morph',
 };
@@ -581,15 +581,13 @@ export const MANAGED_MODELS: ManagedModel[] = [
     morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
-    openrouterEndpointPricing: {
-      'deepinfra/fp8': { inputPerMillion: 0.098, cachedInputPerMillion: 0.00294, outputPerMillion: 0.294 },
-      'deepinfra/fp8/priority': { inputPerMillion: 0.147, cachedInputPerMillion: 0.00441, outputPerMillion: 0.441 },
-      'morph/fp8': { inputPerMillion: 0.09, cachedInputPerMillion: 0.008, outputPerMillion: 0.55 },
-    },
+    openrouterEndpointPricing: { 'morph/fp8': { inputPerMillion: 0.09, cachedInputPerMillion: 0.008, outputPerMillion: 0.55 } },
     tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 65_536 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
-      only: ['deepinfra/fp8', 'deepinfra/fp8/priority', 'morph/fp8'],
+      // ponytail: one endpoint, no OpenRouter fallback. deepinfra/fp8 and
+      // deepinfra/fp8/priority pass ZDR + US; add them after the DPA 7.3 notice.
+      only: ['morph/fp8'],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.3, completion: 1.2 },
     },

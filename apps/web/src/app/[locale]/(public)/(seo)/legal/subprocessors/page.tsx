@@ -17,7 +17,7 @@ import {
  * customer personal data (DPA section 7.3): update LAST_UPDATED and email the
  * change to subscribers first.
  */
-const LAST_UPDATED = 'October 18, 2026';
+const LAST_UPDATED = 'October 9, 2026';
 
 export const metadata: Metadata = {
   title: 'Subprocessors',
@@ -74,7 +74,7 @@ const CORE: Row[] = [
     location: 'United States',
   },
   {
-    name: 'CoreWeave, Inc.; DeepInfra, Inc.; Fireworks AI, Inc.; Decart; Morph',
+    name: 'CoreWeave, Inc.; Fireworks AI, Inc.; Decart',
     purpose: 'Inference for Kortix-managed AI models, reached through OpenRouter',
     location: 'United States',
   },

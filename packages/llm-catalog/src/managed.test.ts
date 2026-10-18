@@ -90,7 +90,7 @@ describe('managed catalog', () => {
       }
     }
     // US headquarters without a confirmed US datacenter.
-    for (const tag of ['wafer', 'together', 'parasail/fp8', 'io-net/fp8', 'novita/fp8', 'phala', 'phala/fp8', 'baseten/fp8', 'fireworks', 'deepinfra/bf16', 'modal']) {
+    for (const tag of ['wafer', 'together', 'parasail/fp8', 'io-net/fp8', 'novita/fp8', 'phala', 'phala/fp8', 'baseten/fp8', 'fireworks', 'deepinfra/fp8', 'deepinfra/bf16', 'modal']) {
       for (const id of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) expect(only(id), `${id} ${tag}`).not.toContain(tag);
     }
     // HTTP 400 on image input (confirmed-US, still excluded).
@@ -124,7 +124,7 @@ describe('managed catalog', () => {
 const MEASURED_CONTEXT_WINDOW: Record<string, number> = {
   // Zen, prompt only. OpenRouter Decart and CoreWeave: prompt + max_tokens <= 1,048,576.
   'glm-5.3-flash': 1_048_573,
-  // OpenRouter DeepInfra and Morph, 1017 snapshot (2026-10-18): prompt + max_tokens <= 1,048,576.
+  // OpenRouter Morph, 1017 snapshot (2026-10-18): prompt + max_tokens <= 1,048,576.
   'deepseek-v4.1-flash': 1_048_576,
   // OpenRouter Fireworks, prompt only. Morph answered 429 to every probe.
   'kimi-k3': 1_048_575,

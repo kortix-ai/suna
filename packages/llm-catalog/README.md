@@ -60,15 +60,15 @@ Every pool member has a **confirmed US datacenter**. OpenRouter lists the provid
 
 | Model | Pool (`only`) | `max_price` prompt / completion |
 | --- | --- | --- |
-| DeepSeek V4.1 Flash | `deepinfra/fp8`, `deepinfra/fp8/priority`, `morph/fp8` | $0.30 / $1.20 |
+| DeepSeek V4.1 Flash | `morph/fp8` | $0.30 / $1.20 |
 | GLM-5.3-Flash | `decart/fp4`, `coreweave/nvfp4` | $0.15 / $0.50 |
 | Kimi K3 2.8T | `fireworks/us` | $3.30 / $16.50 |
 
 The 2026-09-24 probe included Morph. The reduced OpenRouter pools were probed with text and image inputs on 2026-09-26.
 
-DeepSeek V4.1 Flash moved to the 1017 snapshot (`deepseek/deepseek-v4.1-flash-1017`) on 2026-10-18. CoreWeave does not serve that snapshot. Probe results for the new pool:
+DeepSeek V4.1 Flash moved to the 1017 snapshot (`deepseek/deepseek-v4.1-flash-1017`) on 2026-10-18. CoreWeave does not serve that snapshot. The pool is Morph only, because Morph is already a listed subprocessor. Probe results:
 
-- `deepinfra/fp8` and `deepinfra/fp8/priority` declare `provider_region: "us"`. Both are in the ZDR feed. Both returned a tool call and read a test image correctly.
+- `deepinfra/fp8` and `deepinfra/fp8/priority` declare `provider_region: "us"`. Both are in the ZDR feed. Both returned a tool call and read a test image correctly. They are not in the pool yet: DeepInfra is not a listed subprocessor, and DPA section 7.3 requires 30 days' customer notice before it processes customer personal data.
 - `morph/fp8`: Morph lists US headquarters and US datacenters, and the endpoint is in the ZDR feed. It returned a tool call and read a test image correctly. Early on 2026-10-18 its OpenRouter metadata omitted `tools`, and OpenRouter refused tool requests pinned to it ("No endpoints found that support tool use"). The metadata was corrected the same day.
 - `deepinfra/fp8/flex` is excluded. OpenRouter keeps it out of standard routing (8.9 s first token, 89.9% 1-day uptime).
 - Excluded without a declared US location: `inference-net/fp8`, `cloudflare`, `baseten`, `parasail/fp8`, `relace`. Excluded as non-US and non-ZDR: `deepseek` (CN).
@@ -101,7 +101,6 @@ Measured on 2026-09-30 with synthetic prompts at the edge of each window:
 | GLM-5.3-Flash | OpenRouter `coreweave/nvfp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
 | GLM-5.3-Flash | Morph | prompt 1,036,630 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
 | DeepSeek V4.1 Flash | Morph | prompt 1,047,041 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
-| DeepSeek V4.1 Flash 1017 | OpenRouter `deepinfra/fp8`, `deepinfra/fp8/priority` | prompt 1,032,008 + `max_tokens` 16,384 (2026-10-18) | combined | HTTP 200 with an error body: "maximum context length is 1048576 tokens" |
 | DeepSeek V4.1 Flash 1017 | OpenRouter `morph/fp8` | prompt 1,032,008 + `max_tokens` 16,384 (2026-10-18) | combined | HTTP 400 "Invalid request" |
 | Kimi K3 | OpenRouter `fireworks/us` | prompt 1,048,575 | prompt only | HTTP 400 "prompt is too long" |
 | Kimi K3 | Morph | not measured: HTTP 429 `service_overloaded` on every probe | | |
