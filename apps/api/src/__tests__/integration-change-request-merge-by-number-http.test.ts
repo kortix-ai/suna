@@ -156,6 +156,15 @@ describe('change-request routes accept the display number a caller can pass', ()
     expect(res.status).toBe(404);
   });
 
+  test('a number above the int4 range is a clean 404, not a 22003 500', async () => {
+    const secret = await managerToken();
+    const res = await post(
+      `/v1/projects/${PROJECT}/change-requests/99999999999999999999/merge`,
+      secret,
+    );
+    expect(res.status).toBe(404);
+  });
+
   test('close and reopen by number complete their own writes', async () => {
     const secret = await managerToken();
     const close = await post(`/v1/projects/${PROJECT}/change-requests/234/close`, secret);
@@ -188,5 +197,20 @@ describe('change-request routes accept the display number a caller can pass', ()
     const notes = (row!.metadata as { requested_changes?: unknown[] } | null)?.requested_changes;
     expect(Array.isArray(notes)).toBe(true);
     expect(notes).toHaveLength(1);
+  });
+
+  test('PATCH (edit title) by number binds the resolved row, not the raw param', async () => {
+    const secret = await managerToken();
+    const res = await app.request(`/v1/projects/${PROJECT}/change-requests/234`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'renamed by number' }),
+    });
+    expect(res.status).toBe(200);
+    const [row] = await db
+      .select({ title: changeRequests.title })
+      .from(changeRequests)
+      .where(eq(changeRequests.number, 234));
+    expect(row!.title).toBe('renamed by number');
   });
 });

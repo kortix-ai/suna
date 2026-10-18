@@ -85,4 +85,10 @@ describe('getCrById resolves a uuid, a per-project number, or nothing', () => {
   test('an unknown number is a clean null', async () => {
     expect(await getCrById('9999', PROJECT)).toBeNull();
   });
+
+  test('a number above the int4 range is a clean null, not a 22003 500', async () => {
+    expect(await getCrById('99999999999999999999', PROJECT)).toBeNull();
+    expect(await getCrById('2147483648', PROJECT)).toBeNull();
+    expect(await getCrById('#2147483648', PROJECT)).toBeNull();
+  });
 });

@@ -138,7 +138,10 @@ const CR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 export async function getCrById(crId: string, projectId: string) {
   const ref = crId.replace(/^#/, '');
-  const byNumber = /^\d+$/.test(ref);
+  // `number` is int4: a digit string above 2^31-1 would bind as 22003
+  // (integer out of range) — a 500, not the 404 this lookup promises.
+  const num = Number(ref);
+  const byNumber = /^\d+$/.test(ref) && num <= 2147483647;
   if (!CR_UUID_RE.test(ref) && !byNumber) return null;
   const [row] = await db
     .select()
@@ -148,7 +151,7 @@ export async function getCrById(crId: string, projectId: string) {
         eq(changeRequests.projectId, projectId),
         // The (project_id, number) unique index serves the number lookup; a
         // number can never be a UUID, so the two shapes never collide.
-        byNumber ? eq(changeRequests.number, Number(ref)) : eq(changeRequests.crId, ref),
+        byNumber ? eq(changeRequests.number, num) : eq(changeRequests.crId, ref),
       ),
     )
     .limit(1);
