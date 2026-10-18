@@ -67,7 +67,7 @@ export async function loadProjectRosterIds(loaded: AwaitedProjectAccessLoad): Pr
   const ids: string[] = [];
   const roles = new Map<string, AccountRoleKey>();
   for (const member of identityRows) {
-    const accountRole = (accountRoles.get(member.userId) ?? 'member') as AccountRoleKey;
+    const accountRole = accountRoles.get(member.userId) ?? 'member';
     const fold = foldProjectAccess({
       accountRole,
       directRole: normalizeProjectRole(grantsByUser.get(member.userId)?.projectRole),
