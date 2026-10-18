@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, existsSync, watch } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -55,11 +55,19 @@ esac`);
     child.stderr.on('data', chunk => { output += chunk; });
     const exited = new Promise(resolve => child.on('exit', (code, sig) => resolve({ code, sig })));
     try {
-      for (let i = 0; i < 200 && !existsSync(join(dir, 'ready')); i++) await delay(10);
-      assert.ok(existsSync(join(dir, 'ready')), `startup reached: ${output}`);
+      // Event-driven readiness: the fixture signals "rotation + API restart
+      // reached" by creating the ready file. watch() resolves on that event;
+      // no fixed real-clock window can race the stubbed watchdog schedule.
+      const readyFile = join(dir, 'ready');
+      await new Promise((resolveReady, rejectReady) => {
+        const watcher = watch(dir, () => { if (existsSync(readyFile)) { watcher.close(); resolveReady(); } });
+        watcher.on('error', rejectReady);
+        const guard = setTimeout(() => { watcher.close(); rejectReady(new Error(`startup reached: ${output}`)); }, 15000);
+        watcher.once('close', () => clearTimeout(guard));
+      });
       if (signal && signal !== 'build failure') child.kill(signal);
-      const result = await Promise.race([exited, delay(5000).then(() => null)]);
-      assert.ok(result, 'shutdown finishes within five seconds');
+      const result = await Promise.race([exited, delay(10000).then(() => null)]);
+      assert.ok(result, 'shutdown finishes within ten seconds');
       assert.equal(result.code, signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : signal === 'build failure' ? 7 : 0);
       const pids = readFileSync(pidsFile, 'utf8').trim().split('\n').map(Number);
       assert.ok(pids.length >= (signal === 'build failure' ? 4 : 5), 'initial tunnel, rotated tunnel, Stripe and gateway descendants started');

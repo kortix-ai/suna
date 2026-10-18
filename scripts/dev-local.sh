@@ -4,12 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
-FRONTEND_PID=""
-API_PID=""
-GATEWAY_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
-STRIPE_PID=""
 
 # Standalone LLM gateway: a single fixed port (laptop dev is single-instance,
 # unlike worktrees which stride per-slot) and a fixed shared internal token the
@@ -253,7 +249,6 @@ start_tunnel_watchdog() {
       pkill -f -- '--hot src/index.ts' 2>/dev/null || true
     done
   ) &
-  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -287,7 +282,6 @@ ensure_stripe_listen() {
   stripe listen --api-key "$STRIPE_SECRET_KEY" \
     --forward-to "http://localhost:${api_port}/v1/billing/webhooks/stripe" 2>&1 \
     | sed 's/^/[stripe] /' &
-  STRIPE_PID=$!
 }
 
 # Start the standalone LLM gateway (apps/llm-gateway) so the API routes sandbox
@@ -306,7 +300,6 @@ ensure_dev_gateway() {
       GATEWAY_API_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
       pnpm --filter @kortix/llm-gateway-server dev 2>&1 | sed 's/^/[gateway] /'
   ) &
-  GATEWAY_PID=$!
 }
 
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
@@ -507,6 +500,7 @@ cleanup() {
   /bin/sleep 0.2
   kill -KILL -- "-$STACK_PID" 2>/dev/null || true
   wait "$STACK_PID" 2>/dev/null || true
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
   exit "$exit_code"
 }
 
@@ -671,7 +665,6 @@ EOF
     if pnpm --filter Kortix-Computer-Frontend build; then
       echo "[dev] Frontend built — serving (pnpm start) on :3000"
       pnpm --filter Kortix-Computer-Frontend start &
-      FRONTEND_PID=$!
     else
       echo "[dev] ⚠️  Frontend build failed — continuing with API only"
     fi
@@ -683,7 +676,6 @@ EOF
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
     (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
-    FRONTEND_PID=$!
   fi
 
   echo "[dev] Starting API (dev) on :8008"
@@ -788,11 +780,10 @@ ensure_dev_gateway
 if [[ "$BUILD_MODE" == "1" ]]; then
   # The API needs no build step, so boot it in the BACKGROUND now and let it
   # come up on :8008 while the (multi-minute) frontend build runs — overlapping
-  # the two instead of paying them back-to-back. cleanup() kills API_PID on exit.
+  # the two instead of paying them back-to-back. cleanup() stops the worker's
+  # process group on exit, so the background API needs no tracked pid.
   echo "[dev] Starting API (production runtime, no --hot) on :8008…"
   ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
-  API_PID=$!
-
 
   # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
   # BUILD time, so the build must run with the env load_local_env() exported (it
@@ -822,7 +813,6 @@ if [[ "$BUILD_MODE" == "1" ]]; then
 else
   echo "[dev] Starting frontend..."
   pnpm --filter Kortix-Computer-Frontend dev &
-  FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
   # Turbopack's on-demand compile. Unauthenticated requests still compile the
