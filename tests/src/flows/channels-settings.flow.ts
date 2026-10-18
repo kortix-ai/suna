@@ -36,7 +36,9 @@ async function slackWorld(ctx: FlowContext): Promise<SlackWorld> {
   await team.grantProjectRole(p.id, manager.userId!, "manager");
   const world: SlackWorld = {
     projectId: p.id,
-    accountId: "",
+    // team.project() returns the account id it created the project under —
+    // the same column the projects row carries, so no re-read is needed.
+    accountId: p.accountId!,
     teamId: `TKE2E${randomUUID().slice(0, 8).toUpperCase()}`,
     secret: `ke2e-signing-${randomUUID()}`,
     member,
@@ -53,8 +55,6 @@ async function slackWorld(ctx: FlowContext): Promise<SlackWorld> {
     );
   r.status([200, 201]);
   await withDb(ctx, async (db) => {
-    world.accountId = (await db.query("SELECT account_id FROM kortix.projects WHERE project_id = $1", [p.id])).rows[0]
-      .account_id as string;
     await db.query("INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('slack', $1, $2)", [
       world.teamId,
       p.id,
