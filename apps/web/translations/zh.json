@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "小型团队",
           "growing": "成长型团队",
-          "scale": "规模版"
+          "scale": "规模版",
+          "large": "大型组织"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "免费版",
           "note": "从真实的沙盒积分开始。",
-          "f1": "每月 200 个积分，无需绑卡",
-          "f2": "1 个项目",
-          "f3": "可自带 API 密钥使用任何高级模型",
-          "f4": "连接你的 ChatGPT 订阅"
+          "f1": "每月 500 个积分，无需绑卡",
+          "f2": "托管模型：Kimi、DeepSeek、GLM。零数据保留，美国推理",
+          "f3": "1 个项目",
+          "f4": "可自带 API 密钥使用任何高级模型",
+          "f5": "连接你的 ChatGPT 订阅"
         },
         "credits": {
           "name": "积分版",
@@ -2467,7 +2469,7 @@
           "f2": "成员不限数量，共用一个积分池",
           "f3": "未用完的积分可顺延一个月",
           "f4": "随时充值，充值的积分永不过期",
-          "f5": "托管模型和全部功能",
+          "f5": "最多 200 个项目，更高的模型速率限制",
           "f6": "邮件支持"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "免费版包含什么？",
-          "answer": "免费版每月包含 200 个沙盒算力积分和 1 个项目。可自带 API 密钥或连接 ChatGPT 订阅来使用高级模型。使用 Kortix 密钥的托管模型需要付费套餐。"
+          "answer": "免费版每月包含 500 个积分、托管模型和全部功能，可用于 1 个项目。积分用于支付智能体电脑和 Kortix 模型。其他模型可自带 API 密钥或连接 ChatGPT 订阅使用。"
         },
         "credit": {
           "question": "一个积分能买到什么？",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "我每月需要支付多少？",
-          "answer": "可选择每月 50 美元（5,000 个积分）到每月 10,000 美元（1,000,000 个积分）的档位。所有档位的积分费率相同：每美元 100 个积分。每月超过 10,000 美元请联系销售。"
+          "answer": "可选择每月 50 美元（5,000 个积分）到每月 50,000 美元（5,000,000 个积分）的档位。所有档位的积分费率相同：每美元 100 个积分。每月超过 50,000 美元请联系销售。"
         },
         "members": {
           "question": "成员需要付费吗？",
@@ -17408,6 +17410,54 @@
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
       "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)",
+      "text848f54e89660": "运行记录",
+      "textb098a09c78aa": "使用负载测试",
+      "text99733344956d": "负载",
+      "text4309aba52556": "预览提示词",
+      "text98ee1ca163c3": "使用此负载运行",
+      "text920ed46028e8": "请输入有效的 JSON。",
+      "text6ea4fcc31727": "请输入一个 JSON 对象。",
+      "text2631c2f64174": "过滤器匹配",
+      "text2319ec274750": "会话键",
+      "text398d270b036a": "无法加载运行记录。",
+      "text4c2e1df4570b": "监视器",
+      "text31757bbfa17e": "提醒",
+      "text12698ce1ea5c": "已跳过",
+      "text9daf8e05c684": "未签名",
+      "text7f2b8f3a675c": "Webhook 签名未经验证。",
+      "text98c78fbb22fe": "重放运行",
+      "texta9cd409ba9ca": "重放此未签名的运行？",
+      "text776bb15115b3": "其签名未经验证。重放会将相同的负载再次发送给智能体。",
+      "text2f1b3ba06cfb": "无法重放运行",
+      "textff2c3559cd6b": "预览此负载生成的提示词，或使用它运行触发器。",
+      "text15e8856d4d77": "会运行一个真实会话，会产生费用。",
+      "text858e4ba7a29f": "暂停",
+      "texte0ab721ade45": "{count, plural, other {次运行}}",
+      "textf1a06b0cb2ca": "中位时长",
+      "textfa14066e0399": "中位时长",
+      "text26735edf00f9": "没有运行",
+      "textd2c58b300c07": "随时间的运行",
+      "text6de3a7d8e5db": "此时间范围内没有运行",
+      "text84b05fbb7f76": "事件触发",
+      "text27a2c8b3a0d2": "下次 {value0}",
+      "textd47d7cb0e4f8": "更多",
+      "textc8dae6371b33": "重放",
+      "text4aaee10f3594": "已复制会话 ID",
+      "text4001631320f1": "{count, plural, other {次失败}}",
+      "textd835122c9dd1": "{count, plural, other {积分}}",
+      "text72a85758b69c": "还没有运行。",
+      "text75c4316dcad4": "还没有运行。此触发器已暂停。",
+      "textdf86da65c421": "还没有运行。第一次将于 {value0} 开始。",
+      "text1cc5b0d9628f": "{count, plural, other {已选 #}}",
+      "text6363885af551": "正在暂停 {done}/{total}…",
+      "text4cc2a4d3a49a": "正在恢复 {done}/{total}…",
+      "text6e24bb562ab0": "正在删除 {done}/{total}…",
+      "textd845c8702b04": "{ok, plural, other {已暂停 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "texte57e0a07011b": "{ok, plural, other {已恢复 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "text1412a8506003": "{ok, plural, other {已删除 #}}{failed, plural, =0 {} other {，# 个失败}}",
+      "textd142c482800c": "删除 {count, plural, other {# 个触发器}}？",
+      "text75af4531ed17": "它们会从项目清单中移除。此操作无法撤销。",
+      "textc9e9d972eda2": "此项目目前不会自动运行任何内容。你仍可以手动启动触发器。",
       "textd861cc0af73c": "kortix init 负责搭建，kortix ship 负责上线。它们使用同一个仓库完成同一件事，因此本地开发和线上系统不再是两种不同的类别。",
       "textd864380a766f": "沙盒仅携带一个项目范围的 Kortix 令牌，不携带第三方密钥。你的跟踪器和帮助台凭据会在服务器端解密并附加到出站调用中。",
       "textd8707d411d99": "密钥",
@@ -19730,6 +19780,9 @@
       "texta7a8d2a5fb25": "让智能体帮你构建一个。",
       "text42cf267578ad": "已列出触发器事件类型",
       "text631b422403db": "已列出可触发事件的应用",
+      "text104b83c048f9": "已列出触发器运行记录",
+      "text7823ec680410": "已重放触发器运行",
+      "text7ecaa37e9cf6": "已列出项目触发器运行记录",
       "text5d5b7c17acf0": "已接收应用事件",
       "textd919fde889e9": "需要连接",
       "textd7b77185afd1": "正在激活",
@@ -19964,7 +20017,7 @@
       "text146aaf3c71fa": "为已签约、同时通过付费套餐计费的企业版账户保持 SSO、SCIM、RBAC 和审计权限，避免 Stripe 对账将其移除。",
       "text517105fd13ce": "积分用于支付沙盒算力——即使是 BYOK 试用，运行会话也需要钱包余额。免费欢迎额度为 2 美元。",
       "text2f1d17f50af8": "企业版为此账户开通 SAML SSO、SCIM 目录同步、RBAC 和审计访问。计费套餐保持不变。",
-      "text12836c0e435d": "免费版 0 美元——1 个项目，每月 200 个沙盒算力积分，高级模型使用你自己的密钥。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个账户。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
+      "text12836c0e435d": "免费版 0 美元——1 个项目，每月 500 个积分，托管模型和全部功能，其他模型使用你自己的密钥。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个账户。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
       "text5dffd4db88c5": "此账户的套餐、积分和账单。",
       "text49fd64c206dd": "你的套餐已生效，积分已到账。",
       "textad828837ddd8": "成员 成员 工作区 访问 协作者 人员 队友 名册 谁可以查看 权限 授予 分享",
@@ -20087,7 +20140,13 @@
       "text68cf13547e38": "通过 URL 添加应用",
       "text46bc646c9bfe": "在此项目中显示托管在任何地方的网站。Kortix 会在原处打开它，与其运行的应用并列。",
       "text08e6480e9b78": "已添加 {value0}",
-      "text6241684827b2": "此网站不允许 Kortix 在此显示。"
+      "text6241684827b2": "此网站不允许 Kortix 在此显示。",
+      "textdae75dce541f": "暂停此项目中的所有定时任务和 Webhook。",
+      "textced57bebd466": "重新开启此项目的定时任务和 Webhook。",
+      "agentsListSubagentsTitle": "子代理",
+      "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
+      "agentsListAlsoSubagent": "也可作为子代理",
+      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21508,7 +21567,11 @@
         "excluded": "已排除",
         "noMatch": "没有匹配项。",
         "noExcludedApps": "没有已排除的应用。",
-        "noExcludedSites": "没有已排除的网站。"
+        "noExcludedSites": "没有已排除的网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站",
+        "showList": "显示列表",
+        "hideList": "隐藏列表"
       },
       "remoteDays": "Kortix 中",
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
@@ -21532,7 +21595,7 @@
       "experimentalTitle": "实验功能",
       "experimentalHint": "试用仍可能变化的功能。",
       "privacyControls": "隐私控制",
-      "privacyControlsHint": "显示个人数据遮盖，以及所有电脑都不录制的应用和网站。关闭后会隐藏这些控制，已有设置继续生效。",
+      "privacyControlsHint": "显示个人数据遮盖。关闭后会隐藏此项；已设置的内容继续生效。",
       "maskingTitle": "遮盖",
       "framesTitle": "屏幕帧",
       "interval": "帧间隔",
@@ -21543,10 +21606,10 @@
       "framesHint": "未设置时，每台电脑使用自己的设置（1440p，每 2 秒一帧）。设置后，所有电脑都使用该值，用户无法更改。无论间隔多长，点击、输入和滚动都会连同各自的截图一起记录。",
       "computerDecides": "由每台电脑决定",
       "included": {
-        "title": "只录制这些应用和网站",
-        "hint": "开启：{org} 中的每台电脑只录制这里列出的内容。其他内容一律涂黑，从不保存。成员可以在 Kortix Capture 中添加自己的项目，但不能关闭此项，也不能移除这些项目。",
+        "title": "应用和网站",
+        "hint": "选择 {org} 中每台电脑录制什么。被跳过的内容一律涂黑，从不保存或上传。成员可以在 Kortix Capture 中添加自己的项目，但不能移除这些项目，也不能关闭“只录制”。",
         "switch": "只录制已包含的应用和网站",
-        "switchHint": "关闭：录制所有未排除的内容。",
+        "switchHint": "关闭：除“从不录制”外全部录制。",
         "kindLabel": "应用或网站",
         "apps": "应用",
         "websites": "网站",
@@ -21556,7 +21619,19 @@
         "addDomain": "包含 {domain}",
         "included": "已包含",
         "noApps": "未包含任何应用。只录制已包含的网站。",
-        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。"
+        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。",
+        "switchHintOn": "开启：只录制下方的应用和网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站",
+        "policyType": "策略类型",
+        "exclusionPolicy": "排除策略",
+        "exclusionPolicyHint": "录制除排除项以外的全部内容。",
+        "inclusionPolicy": "包含策略",
+        "inclusionPolicyHint": "只录制包含的内容。其他一律涂黑。",
+        "recordTitle": "只录制这些",
+        "exceptTitle": "即使已包含也从不录制",
+        "memberInclusions": "成员可以添加自己要包含的应用和网站",
+        "memberInclusionsHint": "关闭：电脑只录制这里列出的应用和网站。成员仍可添加要跳过的应用和网站。"
       }
     },
     "area": {

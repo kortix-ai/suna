@@ -133,6 +133,12 @@ export function AdvancedFields({
   );
   const installUrl = installationsQuery.data?.install_url ?? null;
   const managedConfigured = managedQuery.data?.configured ?? false;
+  // The repositories listing is operator-only (403 for everyone else), so the
+  // import field mounts only for a flagged caller — and stays hidden while the
+  // backend read is in flight or failed (`?? false` is fail-closed). Before
+  // this gate every customer opening /new fired the operator-only call and
+  // swallowed its 403 (KRTX-1892).
+  const managedOperator = managedQuery.data?.operator ?? false;
   const options = useMemo(
     () => gitAccountOptions(connections, managedConfigured),
     [connections, managedConfigured],
@@ -321,7 +327,7 @@ export function AdvancedFields({
         </div>
       ) : null}
 
-      {selected?.kind === 'managed' ? (
+      {selected?.kind === 'managed' && managedOperator ? (
         <>
           <ManagedImportField state={state} onChange={onChange} />
           {/* A managed repository the server creates has no branch to choose —
@@ -434,10 +440,10 @@ function ImportRepositoryField({
  *
  * It replaces the synthetic `pat` entry that used to appear in the GitHub
  * ACCOUNT list, where it read like one more customer connection and listed the
- * managed owner's entire repository set to anyone who picked it. This control
- * only exists when `GET /projects/git/backend/repositories` answers — the
- * route is operator-only and 403s for everyone else, which is a reason to hide
- * the control, not an error to report.
+ * managed owner's entire repository set to anyone who picked it. The parent
+ * mounts it only when GET /projects/git/backend flags the caller as a self-host
+ * operator — the listing route is operator-only, which is a reason to keep the
+ * call off the wire entirely, not an error to report (KRTX-1892).
  */
 function ManagedImportField({
   state,

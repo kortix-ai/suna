@@ -46,9 +46,9 @@ describe('canonicalTier', () => {
     expect(isPaidTier('enterprise')).toBe(true);
   });
 
-  test('the self-serve range is $50 to $10,000', () => {
+  test('the self-serve range is $50 to $50,000', () => {
     expect(PLAN_MIN_MONTHLY_USD).toBe(50);
-    expect(PLAN_MAX_MONTHLY_USD).toBe(10_000);
+    expect(PLAN_MAX_MONTHLY_USD).toBe(50_000);
   });
 });
 

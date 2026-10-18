@@ -1926,6 +1926,7 @@ fn fetch_favicons(
     }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .user_agent(super::sync::user_agent())
         .build()?;
     for (id, domain) in domains {
         let fetched = favicon_candidate(&domain)

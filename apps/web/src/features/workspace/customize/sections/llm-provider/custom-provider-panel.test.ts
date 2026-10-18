@@ -40,7 +40,7 @@ describe('custom provider list', () => {
     ).toEqual(['acme', 'zed']);
   });
 
-  // Paper board CP01: the form IS the tab, with the live snippet beside it.
+  // The form stays on the tab; no separate configuration example.
   // The saved list (board CP02) sits above it only when there is something
   // to show, and never replaces it.
   test('the form is the tab; saved providers list above it only when they exist', () => {
@@ -50,10 +50,6 @@ describe('custom provider list', () => {
       panelSource.indexOf('<CustomProviderForm'),
     );
     expect(panelSource).not.toContain('EmptyState');
-    expect(formSource).toContain('data-custom-provider-preview');
-    // Shiki, through the shared component — never a hand-rolled highlighter.
-    expect(formSource).toContain('<HighlightedCode code={preview} language="json" />');
-    expect(formSource).toContain('.opencode/opencode.jsonc');
   });
 
   test('a saved provider opens in the page sheet, with no Remove control', () => {
