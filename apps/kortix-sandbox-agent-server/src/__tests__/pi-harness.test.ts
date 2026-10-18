@@ -327,6 +327,25 @@ describe('pi harness', () => {
     const text = await readSse(events, (value) => value.includes('event: session.error') && value.includes('event: session.idle'))
     expect(text).toContain('The session made no progress')
   })
+  test('a synthetic prompt part reaches the transcript as harness context (KRTX-2597)', async () => {
+    const r = await boot({ script: [{ text: 'done' }] })
+    const root = r.service.runtime()!.rootId
+    const continuation = 'msg_0198e2a4b0f0ABCDEFGHIJKLMN'
+    const mixed = 'msg_0198e2a4b0f0BCDEFGHIJKLMNO'
+    expect((await prompt(r, root, { messageID: continuation, parts: [{ type: 'text', text: '[auto-recovery] Continue from where you left off.', synthetic: true }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    // The person's prompt mixing harness context with their own words is NOT
+    // internal: the flag is a per-part mark, and only an all-synthetic text
+    // body is a continuation.
+    const mixedRes = await prompt(r, root, { messageID: mixed, parts: [{ type: 'text', text: 'harness note', synthetic: true }, { type: 'text', text: 'my real question' }] })
+    expect(mixedRes.status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    const rows = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info?: { id?: string; role?: string }; parts?: Array<Record<string, unknown>> }>
+    expect(rows.find((row) => row.info?.id === continuation)?.parts?.[0]).toMatchObject({ type: 'text', synthetic: true })
+    const mixedRow = rows.find((row) => row.info?.id === mixed)
+    expect(mixedRow?.parts?.[0]).toMatchObject({ type: 'text' })
+    expect(mixedRow?.parts?.[0]).not.toHaveProperty('synthetic', true)
+  })
   test('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
     const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>

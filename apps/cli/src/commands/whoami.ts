@@ -1,7 +1,7 @@
 import type { DefaultProjectRef } from '@kortix/shared/host-config';
 import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
-import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import { activeHostEntry, defaultProject, getHost, listHosts } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
@@ -73,11 +73,10 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     return 1;
   }
 
-  const resolvedHost = opts.host ?? activeHostName();
+  const resolvedHost = opts.host ?? activeHostEntry().name;
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
-  // Default project is read from the active host only (a --host probe shows
-  // the other host's identity, not this machine's active default).
-  const def = opts.host ? null : defaultProject();
+  // A named-host probe reports that host's own default, never another host's.
+  const def = opts.host ? (getHost(opts.host)?.default_project ?? null) : defaultProject();
 
   if (opts.json) {
     whoamiJson(me, auth, resolvedHost, active, def);

@@ -19,6 +19,7 @@ import {
   listAccountTokens,
   listOAuthGrants,
   listSignedInDevices,
+  revokeAccountToken,
   revokeOAuthGrant,
   signOutDevice,
 } from './tokens';
@@ -101,6 +102,35 @@ test('revokeOAuthGrant(clientId) deletes that grant, escaping the id', async () 
   expect(await revokeOAuthGrant('kortix client/1')).toEqual({ ok: true, revoked_tokens: 2 });
   expect(last().url).toBe('http://test.local/oauth/grants/kortix%20client%2F1');
   expect(last().method).toBe('DELETE');
+});
+
+// A revoked personal key can be deleted by the same route: the API's
+// `?delete_revoked=true` (`apps/api/src/accounts/core/tokens.ts`) removes the
+// dead row instead of answering 404. The settings page's Delete action for a
+// revoked key rides on this (KRTX-2656).
+test('revokeAccountToken(id) revokes — no delete flag', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await revokeAccountToken('tok-1', 'acc-1')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/accounts/tokens/tok-1?account_id=acc-1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('revokeAccountToken(id, acc, { deleteRevoked: true }) deletes the dead row', async () => {
+  nextResponse = { status: 200, body: { ok: true, deleted: true } };
+  expect(await revokeAccountToken('tok-1', 'acc-1', { deleteRevoked: true })).toEqual({
+    ok: true,
+    deleted: true,
+  });
+  expect(last().url).toBe(
+    'http://test.local/accounts/tokens/tok-1?account_id=acc-1&delete_revoked=true',
+  );
+  expect(last().method).toBe('DELETE');
+});
+
+test('{ deleteRevoked: true } without an account id still reaches the API', async () => {
+  nextResponse = { status: 200, body: { ok: true, deleted: true } };
+  await revokeAccountToken('tok-1', undefined, { deleteRevoked: true });
+  expect(last().url).toBe('http://test.local/accounts/tokens/tok-1?delete_revoked=true');
 });
 
 test('listSignedInDevices() reads the caller’s own browser sign-ins', async () => {

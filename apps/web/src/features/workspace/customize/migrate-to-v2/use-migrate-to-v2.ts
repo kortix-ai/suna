@@ -18,16 +18,8 @@
 
 import { useCallback } from 'react';
 
-import type { StartStash } from '@kortix/sdk/react';
-
 import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
-import { buildUpgradeStash, useRunUpgrade } from './use-run-upgrade';
-
-/** Pure — the exact stash payload the migration session is seeded with.
- *  Split out from the hook so it's unit-testable without React. */
-export function buildMigrateToV2Stash(): StartStash {
-  return buildUpgradeStash(MIGRATE_TO_V2_PROMPT);
-}
+import { useRunUpgrade } from './use-run-upgrade';
 
 export interface MigrateToV2 {
   /** Mint + navigate to the migration session. Safe to call repeatedly —

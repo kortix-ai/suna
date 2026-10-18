@@ -194,12 +194,15 @@ describe('createTurnAutoResumer', () => {
     expect(h.prompts.length).toBe(1);
     const prompt = h.prompts[0];
     if (!prompt) throw new Error('expected a delivered prompt');
-    const body = prompt.body as { parts: Array<{ type: string; text: string }> };
+    const body = prompt.body as { parts: Array<{ type: string; text: string; synthetic?: boolean }> };
     const part = body.parts[0];
     if (!part) throw new Error('expected a text part');
     expect(part.type).toBe('text');
     expect(part.text).toContain('Upstream idle timeout exceeded');
     expect(part.text).toContain('Do not redo work that already succeeded');
+    // Harness context, not a user prompt (KRTX-2597): the transcript renders
+    // the resume as a notice, never as a user bubble.
+    expect(part.synthetic).toBe(true);
     // No model override — the session keeps its own model.
     expect('model' in (prompt.body as Record<string, unknown>)).toBe(false);
     // T22: the session was read at the error AND again at fire time.

@@ -1486,6 +1486,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected. A body with a wrong-typed field → 400, with or without a JSON content-type.
 `MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
 `PROJ-20` An authenticated user reads whether managed Git is configured.
+`PROJ-43` An authenticated user reads the project-cap state of an account: `ANON` → 401; a member of the account → 200 `{capped, limit, count, message}` where `count` is a number only when the plan caps and `message` is non-null exactly when `capped`; an explicit `account_id` outside the caller's memberships → 403 and a malformed one → 400. The pre-check the /new form uses to show the cap before a create fails.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.
 `PROJ-31` A project manager changes the sandbox provider. The pin target comes from the project's `available_sandbox_providers` (the deployment's enabled set), never from a hard-coded provider. Unknown providers, known but disabled providers, and unauthorized callers are rejected.
