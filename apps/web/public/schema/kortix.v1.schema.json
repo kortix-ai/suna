@@ -48,7 +48,7 @@
       "properties": {
         "config_dir": {
           "type": "string",
-          "minLength": 1,
+          "pattern": "\\S",
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
           },
@@ -97,17 +97,8 @@
               "entrypoint": {
                 "type": "string"
               },
-              "image": {
-                "type": "string",
-                "minLength": 1
-              },
-              "dockerfile": {
-                "type": "string",
-                "minLength": 1,
-                "not": {
-                  "pattern": "^/|(^|/)\\.\\.($|/)"
-                }
-              },
+              "image": {},
+              "dockerfile": {},
               "cpu": {
                 "type": "integer",
                 "minimum": 1
@@ -129,20 +120,47 @@
                 "required": [
                   "image"
                 ],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
                 "not": {
                   "required": [
                     "dockerfile"
-                  ]
+                  ],
+                  "properties": {
+                    "dockerfile": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               },
               {
                 "required": [
                   "dockerfile"
                 ],
+                "properties": {
+                  "dockerfile": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  }
+                },
                 "not": {
                   "required": [
                     "image"
-                  ]
+                  ],
+                  "properties": {
+                    "image": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               }
             ]
@@ -150,7 +168,7 @@
         },
         "default": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S"
         }
       },
       "additionalProperties": true
@@ -242,12 +260,10 @@
             "minLength": 1
           },
           "prompt": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt_template": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "cron": {
             "type": "string",
@@ -282,7 +298,6 @@
           },
           "run": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 1024
           },
           "mode": {
@@ -302,19 +317,19 @@
           },
           "connector": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "account": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "source": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "event": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "config": {
             "type": "object"
@@ -323,18 +338,30 @@
         "additionalProperties": true,
         "allOf": [
           {
-            "anyOf": [
-              {
-                "required": [
-                  "prompt"
-                ]
-              },
-              {
-                "required": [
-                  "prompt_template"
-                ]
+            "if": {
+              "required": [
+                "prompt"
+              ]
+            },
+            "then": {
+              "properties": {
+                "prompt": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
               }
-            ]
+            },
+            "else": {
+              "required": [
+                "prompt_template"
+              ],
+              "properties": {
+                "prompt_template": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
+            }
           },
           {
             "if": {
@@ -406,6 +433,10 @@
                 "mode"
               ],
               "properties": {
+                "run": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
                 "cron": false,
                 "schedule": false,
                 "run_at": false,
@@ -548,7 +579,7 @@
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "provider": {
             "type": "string",
@@ -654,7 +685,7 @@
               "properties": {
                 "match": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 },
                 "action": {
                   "type": "string",
@@ -859,7 +890,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -1050,7 +1081,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -1070,7 +1101,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
@@ -1097,7 +1128,7 @@
         "properties": {
           "platform": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "enabled": {
             "oneOf": [
