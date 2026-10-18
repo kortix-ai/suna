@@ -36,6 +36,7 @@ import {
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
+import { hideSupersededSlack } from './channel-rules';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
@@ -525,11 +526,27 @@ async function syncProjectConnectorsFenced(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are created by pairing a machine, never by kortix.yaml.
-  // Every existing one stays materialized, which also keeps its native catalog
-  // current after a code change.
+  // Computer connectors are created by pairing a machine, never by kortix.yaml
+  // (the parser rejects `provider="computer"`). Every existing one stays
+  // materialized, which also keeps its native catalog current after a code change.
   const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
-  const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs.specs];
+  const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+  // The summary must agree with `connectors ls` (KRTX-2669): the list applies
+  // two hiding predicates (`hideMachinelessComputers` and `hideSupersededSlack`,
+  // see `listConnectors`), so the summary counts a spec only when the list
+  // would show its row after the sync. A machineless computer connector is
+  // re-upserted for catalog freshness but stays out of both; a legacy `slack`
+  // connector stays hidden while the Slack channel exists.
+  const machinelessSlugs = await machinelessComputerSlugs(projectId);
+  const visibleSpecSlugs = new Set(
+    hideSupersededSlack(
+      specs.map((spec) => ({
+        slug: spec.slug,
+        providerType: spec.provider,
+        config: { app: spec.app },
+      })),
+    ).map((view) => view.slug),
+  );
 
   // A connector binding is server-side by definition. Convert legacy runtime
   // rows before catalog discovery or a concurrent sandbox start can read them.
@@ -542,7 +559,7 @@ async function syncProjectConnectorsFenced(
 
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
-  if (!manifest && channelSpecs.length === 0 && computerSpecs.specs.length === 0) {
+  if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
     return {
       synced: 0,
       errors: [{ slug: '(manifest)', error: 'kortix.yaml not found or unreadable' }],
@@ -671,12 +688,7 @@ async function syncProjectConnectorsFenced(
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      // The summary must agree with `connectors ls` (KRTX-2669): the admin
-      // list hides a machineless computer connector (no tunnel-bound
-      // connection row — `hideMachinelessComputers`, KRTX-1492), so
-      // re-upserting one for catalog freshness does not count toward the
-      // summary. Paired machines still count.
-      if (!computerSpecs.hiddenSlugs.has(spec.slug)) synced++;
+      if (!machinelessSlugs.has(spec.slug) && visibleSpecSlugs.has(spec.slug)) synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
@@ -1118,32 +1130,16 @@ function storedSensitive(config: unknown): boolean {
   return (config as { sensitive?: unknown } | null)?.sensitive === true;
 }
 
-/**
- * Computer connectors are created by pairing a machine, never by kortix.yaml:
- * every existing one (undeclared) stays materialized, which also keeps its
- * native catalog current after a code change.
- *
- * `hiddenSlugs` carries the same predicate the admin list applies
- * (`hideMachinelessComputers`, KRTX-1492): which of those connectors have no
- * machine — no `connector_connections` row bound to a tunnel. They are
- * upserted like any other spec but stay out of the sync summary, so the
- * summary counts exactly what `connectors ls` lists (KRTX-2669).
- */
 async function existingComputerConnectorSpecs(
   projectId: string,
   declared: ConnectorSpec[],
-): Promise<{ specs: ConnectorSpec[]; hiddenSlugs: Set<string> }> {
+): Promise<ConnectorSpec[]> {
   const declaredSlugs = new Set(declared.map((spec) => spec.slug));
   const rows = await db
-    .select({
-      connectorId: connectors.connectorId,
-      slug: connectors.slug,
-      name: connectors.name,
-      config: connectors.config,
-    })
+    .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
-  const specs = rows
+  return rows
     .filter((row) => !declaredSlugs.has(row.slug))
     .map((row) =>
       computerConnectorSpec({
@@ -1152,7 +1148,21 @@ async function existingComputerConnectorSpecs(
         sensitive: storedSensitive(row.config),
       }),
     );
-  if (specs.length === 0) return { specs, hiddenSlugs: new Set<string>() };
+}
+
+/**
+ * Which computer connectors have no machine — no `connector_connections` row
+ * bound to a tunnel. The same predicate `hideMachinelessComputers` applies to
+ * the admin list (KRTX-1492), so the sync summary can count exactly what the
+ * list shows (KRTX-2669). Declared computer specs cannot exist (the parser
+ * rejects `provider="computer"`), so the existing rows are the whole story.
+ */
+async function machinelessComputerSlugs(projectId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ connectorId: connectors.connectorId, slug: connectors.slug })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  if (rows.length === 0) return new Set();
   const withMachine = new Set(
     (
       await db
@@ -1169,10 +1179,7 @@ async function existingComputerConnectorSpecs(
         )
     ).map((row) => row.connectorId),
   );
-  const hiddenSlugs = new Set(
-    rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug),
-  );
-  return { specs, hiddenSlugs };
+  return new Set(rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug));
 }
 
 /**
