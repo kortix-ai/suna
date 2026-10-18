@@ -1275,6 +1275,40 @@ describe('normalized enums retain their boundaries', () => {
   });
 });
 
+describe('normalized enums fold Unicode case equivalents (KRTX-2538)', () => {
+  // The validator matches with `trim().toLowerCase()` (`./index.ts`), and JS
+  // `toLowerCase()` is Unicode-aware: U+212A KELVIN SIGN folds to "k", so
+  // "Keyed" normalizes to "keyed" and the schema pattern must accept it too.
+  // A full scan of Unicode finds no other non-ASCII code point whose
+  // `toLowerCase()` is a single ASCII letter — U+017F is already lowercase,
+  // fullwidth Ｋ folds to fullwidth ｋ, and İ expands to two code points — so
+  // those stay rejected by BOTH sides, pinned below as the boundary.
+  const kelvinKeyed = '\u212Aeyed';
+  const kelvinSlack = 'SLAC\u212A';
+  test('session_mode accepts a KELVIN SIGN k', () => {
+    const input = `kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\ntriggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, session_mode: "${kelvinKeyed}"}]\n`;
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+  test('platform accepts a KELVIN SIGN k', () => {
+    const input = `kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: sample, provider: channel, platform: "${kelvinSlack}"}]\n`;
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+  test('a fullwidth K stays rejected by both (folds to fullwidth k, not "k")', () => {
+    const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+      triggers: [{ slug: 'nightly', type: 'cron', cron: '0 9 * * *', prompt: 'Digest', session_mode: '\uFF2Beyed' }] };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+    expect(validateCombined(input)).toBe(false);
+  });
+  test('a dotted capital I stays rejected by both (folds to two code points)', () => {
+    const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+      connectors: [{ slug: 'sample', provider: 'p\u0130pedream', url: 'https://example.test/mcp' }] };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+    expect(validateCombined(input)).toBe(false);
+  });
+});
+
 describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles them)', () => {
   test('kortix.v1.schema.json compiles', () => {
     expect(() =>

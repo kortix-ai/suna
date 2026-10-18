@@ -279,11 +279,22 @@ const SLUG_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: SLUG_RE.sourc
  *  `..`, and no `/` or end immediately after it). */
 const PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN = String.raw`^/|(^|/)\.\.($|/)`;
 
+/** Non-ASCII code points whose `toLowerCase()` folds to an ASCII letter. A
+ *  scan of every code point U+0000..U+10FFFF finds exactly one: U+212A KELVIN
+ *  SIGN → "k" (U+017F is already lowercase; İ and fullwidth Ｋ fold to
+ *  non-ASCII or multi-char results). The validator matches with
+ *  `trim().toLowerCase()` (`./index.ts`), so a literal containing `k` must
+ *  also accept the KELVIN SIGN. Pinned by the Unicode conformance fixtures
+ *  in `./__tests__/json-schema.conformance.test.ts`. */
+const UNICODE_ASCII_FOLDS: Record<string, string> = { k: '\u212A' };
+
 /** Every case-variant of one of `isEnabledValue`'s (`./index.ts`) accepted
  *  sentinel words, turned into a case-insensitive regex alternative (JSON
- *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`. */
+ *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`,
+ *  plus the Unicode folds the validator's `toLowerCase()` performs
+ *  (`keyed` → `[Kk\u212A][Ee]…`). */
 function caseInsensitiveLiteral(word: string): string {
-  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}${UNICODE_ASCII_FOLDS[ch.toLowerCase()] ?? ''}]`);
 }
 
 /** Preserve editor suggestions while matching the validator's trim/lowercase. */
