@@ -11,6 +11,7 @@ import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, proje
 import { and, eq, like } from 'drizzle-orm';
 import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
+import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
 import {
@@ -194,6 +195,16 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     } finally {
       await setFlag(true);
     }
+  });
+
+  test('the kortix_telegram connector counts as connected exactly while the project has an install', async () => {
+    const check = (projectId: string) =>
+      connectorConnectionIsConnected({
+        connector: { connectorId: crypto.randomUUID(), projectId, slug: 'kortix_telegram', name: 'Telegram', providerType: 'channel', config: { platform: 'telegram' }, enabled: true, status: 'active' },
+        connection: { connectionId: crypto.randomUUID(), isDefault: false, ownerType: 'project', ownerId: projectId, status: 'active', metadata: {} },
+      } as never);
+    expect(await check(PROJECT)).toBe(true);
+    expect(await check(crypto.randomUUID())).toBe(false);
   });
 
   test('allowed users are replaced, not merged', async () => {
