@@ -1036,6 +1036,13 @@ flow(
       tokenId = j.token_id;
       secret = j.secret_key;
     });
+    await ctx.step('explicit deletion never revokes an active key, even when replayed', async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
+          params: { tokenId }, query: { delete_revoked: 'true' },
+        })).status(404);
+      }
+    });
     await ctx.step('secret authenticates before revoke → 200', async () => {
       const r = await ctx.client.withBearer(secret).get('/v1/accounts/me');
       r.status(200);
@@ -1043,7 +1050,7 @@ flow(
     await ctx.step('revoke → 200 {ok:true}', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId }, query: { delete_revoked: 'true' } });
+        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
       r.status(200).body().has('$.ok', true);
     });
     await ctx.step('revoke again (already revoked) → 404', async () => {

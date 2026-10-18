@@ -330,7 +330,7 @@ accountsRouter.openapi(
     method: 'delete',
     path: '/tokens/{tokenId}',
     tags: ['accounts'],
-    summary: 'Revoke a PAT, or delete an already-revoked personal key',
+    summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
     ...auth,
     request: {
       params: z.object({ tokenId: z.string() }),
@@ -377,6 +377,7 @@ accountsRouter.openapi(
   if (c.req.query('delete_revoked') === 'true') {
     const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
     if (deleted) return c.json({ ok: true, deleted: true });
+    return c.json({ error: 'revoked personal token not found' }, 404);
   }
 
   const ok = await revokeAccountToken(tokenId, accountId);

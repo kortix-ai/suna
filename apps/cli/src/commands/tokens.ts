@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -291,10 +292,25 @@ async function revokeToken(
       return 0;
     }
   }
-  const result = await client.delete<{ deleted?: boolean }>(
-    `/accounts/tokens/${encodeURIComponent(tokenId)}?delete_revoked=true`,
-  );
-  process.stdout.write(`${status.ok(`${result.deleted ? 'Deleted' : 'Revoked'} ${C.bold}${tokenId}${C.reset}`)}\n`);
+  const tokens = await client.get<AccountToken[]>('/accounts/tokens');
+  const token = tokens.find((row) => row.token_id === tokenId);
+  const query = token?.status === 'revoked' ? '?delete_revoked=true' : '';
+  let deleted = false;
+  try {
+    const result = await client.delete<{ deleted?: boolean }>(
+      `/accounts/tokens/${encodeURIComponent(tokenId)}${query}`,
+    );
+    deleted = result.deleted === true;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404 || !token) throw error;
+    // A lost response can replay a completed operation. Verify its intended
+    // result without issuing a second, different mutation.
+    const remaining = await client.get<AccountToken[]>('/accounts/tokens');
+    const current = remaining.find((row) => row.token_id === tokenId);
+    deleted = token.status === 'revoked';
+    if (deleted ? current !== undefined : current?.status !== 'revoked') throw error;
+  }
+  process.stdout.write(`${status.ok(`${deleted ? 'Deleted' : 'Revoked'} ${C.bold}${tokenId}${C.reset}`)}\n`);
   return 0;
 }
 
