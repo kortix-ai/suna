@@ -18,6 +18,7 @@ import {
   createProjectRepo,
   getProject,
   getProjectDetail,
+  getProjectQuota,
   provisionProject,
   provisionProjectStream,
   provisionProjectWithToken,
@@ -1189,4 +1190,53 @@ test('a failed repository create does not raise the global error toast', async (
   ).rejects.toThrow();
 
   expect(toasted).toEqual([]);
+});
+
+// ── Project quota pre-check ─────────────────────────────────────────────────
+//
+// `GET /projects/quota` reports the target account's project-cap state so the
+// `/new` page can show the cap up front instead of after a failed submit. The
+// contract: `account_id` rides the query when given (the same resolution the
+// provision POST accepts), is omitted otherwise (the server then resolves the
+// same default account the create itself would target), and the body is the
+// cap state verbatim.
+
+test('getProjectQuota reads the cap state for an explicit account', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentUrl = '';
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    sentUrl = String(input);
+    return new Response(
+      JSON.stringify({ capped: true, limit: 1, count: 1, message: 'Free accounts are limited to 1 project.' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }) as unknown as typeof fetch;
+
+  const quota = await getProjectQuota({ accountId: 'acc-1' });
+
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota?account_id=acc-1');
+  expect(quota.capped).toBe(true);
+  expect(quota.limit).toBe(1);
+  expect(quota.count).toBe(1);
+  expect(quota.message).toBe('Free accounts are limited to 1 project.');
+});
+
+test('getProjectQuota omits account_id to let the server resolve the default', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentUrl = '';
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    sentUrl = String(input);
+    return new Response(JSON.stringify({ capped: false, limit: 5, count: 2, message: null }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  const quota = await getProjectQuota();
+
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota');
+  expect(quota.capped).toBe(false);
+  expect(quota.message).toBeNull();
 });

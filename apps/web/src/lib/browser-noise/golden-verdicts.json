@@ -1934,5 +1934,11 @@
 {"input":{"message":"Illegal invocation"},"runtime":false,"sentry":false},
 {"input":{"message":"TypeError: Illegal invocation"},"runtime":false,"sentry":false},
 {"input":{"message":"Unhandled promise rejection: TypeError: Illegal invocation"},"runtime":false,"sentry":false},
-{"input":{"reason":{"message":"Illegal invocation","name":"TypeError"}},"runtime":false,"sentry":false}
+{"input":{"reason":{"message":"Illegal invocation","name":"TypeError"}},"runtime":false,"sentry":false},
+{"input":{"request":{"url":"https://kortix.com/"},"exception":{"values":[{"type":"TypeError","value":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","mechanism":{"type":"auto.browser.browserapierrors.requestAnimationFrame","handled":false},"stacktrace":{"frames":[{"filename":"app:///_next/static/immutable/chunks/159tn3qpi9s08.js","function":"r"},{"filename":"app:///client_data/5b1102243ea0c0e5d64998452cb87826/banner.js","function":"t"}]}}]}},"runtime":false,"sentry":true},
+{"input":{"message":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","filename":"app:///client_data/5b1102243ea0c0e5d64998452cb87826/banner.js"},"runtime":true,"sentry":false},
+{"input":{"message":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","filename":"app:///_next/static/chunks/159tn3qpi9s08.js"},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","stacktrace":{"frames":[{"filename":"app:///_next/static/immutable/chunks/159tn3qpi9s08.js","function":"r"}]}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","stacktrace":{"frames":[{"filename":"app:///client_data/5b1102243ea0c0e5d64998452cb87826/widget.js"}]}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.","stacktrace":{"frames":[{"filename":"https://cdn.cookieyes.com/cookieyes.js"}]}}]}},"runtime":false,"sentry":false}
 ]

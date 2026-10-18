@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { NextRequest } from 'next/server';
 
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
+import { getMaintenanceConfig, setMaintenanceConfig } from '@/lib/maintenance-store';
 import type { MiddlewareAuth } from '@/lib/supabase/middleware-identity';
 
 const user = { id: '11111111-1111-4111-8111-111111111111', user_metadata: { locale: 'de' } };
@@ -101,5 +102,25 @@ describe('middleware leaves session refresh to the browser', () => {
         expectRetained(request, value, response);
       }
     });
+  }
+});
+
+test('blocking maintenance redirects signed-in locale-prefixed app routes', async () => {
+  const original = await getMaintenanceConfig();
+  await setMaintenanceConfig({ ...original, level: 'blocking' }, 'synthetic-token');
+  try {
+    for (const path of ['/en/settings?tab=profile', '/fr/projects']) {
+      const { request } = sessionRequest(3600);
+      request.nextUrl.pathname = path.split('?')[0];
+      request.nextUrl.search = path.includes('?') ? '?tab=profile' : '';
+      const response = await middleware(request);
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get('location') ?? '');
+      expect(location.pathname).toBe('/maintenance');
+      expect(location.searchParams.get('from')).toBe(path.slice(3));
+      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    }
+  } finally {
+    await setMaintenanceConfig(original, 'synthetic-token');
   }
 });

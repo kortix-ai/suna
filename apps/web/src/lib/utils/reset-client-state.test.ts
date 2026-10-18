@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 // mismatch silently detaches the mock and lets the real IndexedDB run.
 import * as deviceCaches from '@/lib/device-caches';
 import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { useMobileAppPromoStore } from '@/stores/mobile-app-promo-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import {
@@ -295,6 +296,51 @@ describe('resetClientState resets registered persisted stores IN MEMORY, not jus
     await resetClientState({ idbTimeoutMs: 5 });
 
     expect(useUserPreferencesStore.getState().preferences.darkTheme).toBe('pure-dark');
+  });
+
+  test('a promo dismissal survives resetClientState() — a fresh sign-in must not re-ask', async () => {
+    // `kortix.mobileAppPromo` is device-scoped (`KEEP_STORAGE_KEYS`), so the
+    // sign-out sweep must leave both halves of this dismissal alone: the disk
+    // key (the sweep) and the store's in-memory `closed` (it deliberately does
+    // not register a reset). Sweeping either half re-asked the promo on the
+    // next sign-in (KRTX-2640).
+    //
+    // The store's persist rides `window.localStorage` and the sweep reads the
+    // bare globals; this environment has no DOM (`test-setup.ts`), so a small
+    // fake stands in for all three, the same technique
+    // `clear-local-storage.test.ts` uses throughout.
+    const entries = new Map<string, string>();
+    const fake: Storage = {
+      get length() {
+        return entries.size;
+      },
+      clear: () => entries.clear(),
+      getItem: (key) => (entries.has(key) ? entries.get(key)! : null),
+      key: (index) => [...entries.keys()][index] ?? null,
+      removeItem: (key) => entries.delete(key),
+      setItem: (key, value) => entries.set(key, value),
+    };
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: { localStorage: fake, sessionStorage: fake },
+    });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: fake });
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, writable: true, value: fake });
+    try {
+      useMobileAppPromoStore.getState().close();
+      expect(useMobileAppPromoStore.getState().closed).toBe(true);
+
+      await resetClientState({ idbTimeoutMs: 5 });
+
+      expect(useMobileAppPromoStore.getState().closed).toBe(true);
+      const persisted = JSON.parse(entries.get('kortix.mobileAppPromo') ?? '{}') as {
+        state?: { closed?: boolean };
+      };
+      expect(persisted.state?.closed).toBe(true);
+    } finally {
+      restoreLocalStorage();
+    }
   });
 });
 

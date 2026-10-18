@@ -75,7 +75,8 @@ export function ProjectHome({
   // (`firstChatHref`: the sidebar row or the onboarding exit). Plain project
   // home, which "New session" opens, stays the normal home.
   const searchParams = useSearchParams();
-  const firstChat = useFirstChatPending(projectId) && isFirstChatRequested(searchParams);
+  const firstChatPending = useFirstChatPending(projectId);
+  const firstChat = firstChatPending && isFirstChatRequested(searchParams);
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -287,8 +288,16 @@ export function ProjectHome({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
-      {/* Not over the first chat or the onboarding wizard: onboarding owns those screens. */}
-      {firstChat || !onboarded ? null : <MobileAppPromo />}
+      {/* Not while the project is in its first-chat era, and not over the
+          onboarding wizard: onboarding owns those screens. The era starts when
+          the wizard's exit starts the first chat and then stays for the
+          browser's lifetime (`first-chat-store.ts`: "Onboarding starts it, and
+          it stays" — `finish` runs only on sign-out), so a wizard exit (which
+          stamps the project) can never be followed by the promo popping over
+          the project page the user just asked for (KRTX-2635). On later
+          projects, which the create flow stamps without a wizard, the era
+          never starts and the promo shows as before. */}
+      {firstChatPending || !onboarded ? null : <MobileAppPromo />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

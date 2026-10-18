@@ -29,6 +29,7 @@ import {
 } from '@/features/workspace/new/new-workspace-form';
 import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
+import { useProjectQuota } from '@/features/workspace/new/use-project-quota';
 import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
@@ -255,6 +256,18 @@ export function NewWorkspacePage() {
     accountId: effectiveAccountId,
   };
 
+  // The target account's project-cap state, read once on load. When the plan
+  // caps the account, the form shows the cap reason and the Upgrade affordance
+  // up front (KRTX-2495) and Create cannot submit — the same information a
+  // denied submit would have taught, without the failed attempt first. Gated
+  // on `!accountsQuery.isLoading` so the pre-check never fires for an account
+  // the create would not target (the effective id is still unresolved during
+  // the load window), and on `userId` so a signed-out render reads nothing.
+  const quotaQuery = useProjectQuota(effectiveAccountId, {
+    enabled: !accountsQuery.isLoading && Boolean(userId),
+  });
+  const capState = quotaQuery.data?.capped ? quotaQuery.data : null;
+
   // `accountsQuery.isLoading` is checked here AS WELL AS inside
   // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
   // purpose, not redundant: during the loading window `creatableAccounts` is
@@ -281,6 +294,9 @@ export function NewWorkspacePage() {
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
     !submitting &&
+    // The account is at its plan cap (the quota pre-check said so): a create
+    // can only fail with the 403 the cap block on screen already explains.
+    !capState &&
     // Belt and braces on top of `effectiveAccountId` already being forced
     // null above for a FOREIGN list — `isSubmittable`'s own
     // `accountCount > 1 && !accountId` check already fails on that null, but
@@ -543,6 +559,39 @@ export function NewWorkspacePage() {
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
                 {t('actions.create')}
               </Button>
+              {/* The plan cap, known BEFORE any submit (KRTX-2495): the quota
+                  pre-check answered `capped` for the target account, so the
+                  form states the cap reason here instead of teaching it
+                  through a failed create. Same slot and treatment as the
+                  post-submit error block below — form-level, `role="alert"`,
+                  one message and one secondary action — so the cap says the
+                  same thing about the same account wherever it is met. Shown
+                  only while `status === 'idle'`: once a submit runs, the
+                  handoff ('creating') or the post-submit block ('error') owns
+                  this slot, so at most one cap message is ever on screen.
+                  The Upgrade affordance is gated on billing exactly like the
+                  post-submit one: with billing off there is nothing to upgrade
+                  to, and the server itself answers `capped: false`. */}
+              {capState && status === 'idle' ? (
+                <div role="alert" className="flex flex-col items-center gap-1.5">
+                  <p className="text-destructive text-center text-xs">{capState.message}</p>
+                  {isBillingEnabled() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        openUpgradeDialog({
+                          reason: 'subscription_required',
+                          accountId: effectiveAccountId ?? undefined,
+                        })
+                      }
+                    >
+                      {t('actions.upgrade')}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
                     bad name, a managed-git-unavailable 503, a retryable 502, or

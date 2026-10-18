@@ -1,3 +1,23 @@
+export const SESSION_SECTIONS = {
+  'needs-you': { key: 'section.needsYou', label: 'Needs you' },
+  running: { key: 'section.running', label: 'Running' },
+  recent: { key: 'section.recent', label: 'Recent' },
+  today: { key: 'section.today', label: 'Today' },
+  yesterday: { key: 'section.yesterday', label: 'Yesterday' },
+  week: { key: 'section.week', label: 'This week' },
+  older: { key: 'section.older', label: 'Older' },
+  chat: { key: 'section.chat', label: 'Chat' },
+  slack: { key: 'section.slack', label: 'Slack' },
+  telegram: { key: 'section.telegram', label: 'Telegram' },
+  teams: { key: 'section.teams', label: 'Teams' },
+  email: { key: 'section.email', label: 'Email' },
+  schedule: { key: 'section.scheduled', label: 'Scheduled' },
+  webhook: { key: 'section.webhook', label: 'Webhook' },
+  event: { key: 'section.event', label: 'App event' },
+  manual: { key: 'section.manual', label: 'Manual' },
+  all: { key: 'section.all', label: 'All' },
+} as const;
+
 import type { ProjectSession } from '@kortix/sdk';
 
 import { sessionDisplayStatus, sessionSource } from '@/components/projects/session-label';
@@ -97,34 +117,32 @@ export interface GroupedSessions {
   showHeaders: boolean;
 }
 
-const STATUS_SECTION_ORDER: Array<{ id: SessionSectionId; label: string }> = [
-  { id: 'needs-you', label: 'Needs you' },
-  { id: 'running', label: 'Running' },
-  { id: 'recent', label: 'Recent' },
-];
+type AllSectionId = keyof typeof SESSION_SECTIONS;
 
 type ActivityBucketId = 'today' | 'yesterday' | 'week' | 'older';
 
-const ACTIVITY_SECTION_ORDER: Array<{ id: ActivityBucketId; label: string }> = [
-  { id: 'today', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'week', label: 'This week' },
-  { id: 'older', label: 'Older' },
+/** Which sections a mode shows, in display order. Labels localize at read
+ *  time in `groupSessionsByMode` — the catalog copy, not these English
+ *  constants, is what renders. */
+const STATUS_SECTION_ORDER: readonly AllSectionId[] = ['needs-you', 'running', 'recent'];
+const ACTIVITY_SECTION_ORDER: readonly AllSectionId[] = [
+  'today',
+  'yesterday',
+  'week',
+  'older',
 ];
-
-const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
-  { id: 'chat', label: 'Chat' },
-  { id: 'slack', label: 'Slack' },
-  { id: 'telegram', label: 'Telegram' },
-  { id: 'teams', label: 'Teams' },
-  { id: 'email', label: 'Email' },
-  { id: 'schedule', label: 'Scheduled' },
-  { id: 'webhook', label: 'Webhook' },
-  { id: 'event', label: 'App event' },
-  { id: 'manual', label: 'Manual' },
+const SOURCE_SECTION_ORDER: readonly AllSectionId[] = [
+  'chat',
+  'slack',
+  'telegram',
+  'teams',
+  'email',
+  'schedule',
+  'webhook',
+  'event',
+  'manual',
 ];
-
-const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];
+const NONE_SECTION_ORDER: readonly AllSectionId[] = ['all'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -207,6 +225,11 @@ export function groupSessions(
 ): GroupedSessions {
   const { mode, order, reviewCountBySession, hiddenSections, now = Date.now() } = options;
   const hidden = new Set(hiddenSections ?? []);
+  const sectionCopy = localizeUiCatalog(
+    SESSION_SECTIONS,
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
 
   // Precompute last-activity once per session (decorate-sort-undecorate):
   // sessionLastActivityAt re-scans runtime_sessions, so calling it inside a
@@ -227,26 +250,12 @@ export function groupSessions(
   const yesterdayStart = todayStart - DAY_MS;
   const weekStart = todayStart - 7 * DAY_MS;
 
-  const statusSections = localizeUiCatalog(
-    STATUS_SECTION_ORDER,
-    tI18nComplete,
-    PRODUCT_CATALOG_TRANSLATION_KEYS,
-  );
-  const activitySections = localizeUiCatalog(
-    ACTIVITY_SECTION_ORDER,
-    tI18nComplete,
-    PRODUCT_CATALOG_TRANSLATION_KEYS,
-  );
-  const sourceSections = localizeUiCatalog(
-    SOURCE_SECTION_ORDER,
-    tI18nComplete,
-    PRODUCT_CATALOG_TRANSLATION_KEYS,
-  );
-  const allSections = localizeUiCatalog(
-    NONE_SECTION_ORDER,
-    tI18nComplete,
-    PRODUCT_CATALOG_TRANSLATION_KEYS,
-  );
+  const localize = (ids: readonly AllSectionId[]) =>
+    ids.map((id) => ({ id, label: sectionCopy[id].label }));
+  const statusSections = localize(STATUS_SECTION_ORDER);
+  const activitySections = localize(ACTIVITY_SECTION_ORDER);
+  const sourceSections = localize(SOURCE_SECTION_ORDER);
+  const allSections = localize(NONE_SECTION_ORDER);
   const declared =
     mode === 'status'
       ? statusSections

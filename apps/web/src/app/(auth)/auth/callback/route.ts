@@ -18,6 +18,7 @@ import {
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
+import type { EmailOtpType } from '@supabase/supabase-js';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -34,7 +35,7 @@ import { NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
-  const token = searchParams.get('token'); // Supabase verification token
+  const token = searchParams.get('token_hash') || searchParams.get('token');
   const type = searchParams.get('type'); // signup, recovery, etc.
   const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'));
   const termsAccepted = searchParams.get('terms_accepted') === 'true';
@@ -111,22 +112,29 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
 
-  // Handle token-based verification (email confirmation, etc.)
-  // Supabase sends these to the redirect URL for processing
-  if (token && type) {
-    // For token-based flows, redirect to auth page that can handle the verification client-side
-    const verifyUrl = new URL(`${baseUrl}/auth`);
-    verifyUrl.searchParams.set('token', token);
-    verifyUrl.searchParams.set('type', type);
-    if (termsAccepted) verifyUrl.searchParams.set('terms_accepted', 'true');
-
-    return NextResponse.redirect(verifyUrl);
+  // Only email OTP types are valid for token-hash verification. Never forward
+  // verification credentials to /auth, which does not consume them.
+  const isEmailOtpType = (value: string | null): value is EmailOtpType =>
+    ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email'].some(
+      (allowed) => allowed === value,
+    );
+  const otpType = isEmailOtpType(type) ? type : null;
+  if (token && !otpType) {
+    return NextResponse.redirect(`${baseUrl}/auth?error=invalid_otp_type`);
   }
 
-  // Handle code exchange (OAuth, magic link)
-  if (code) {
+  // Both exchanges establish the identity used by the same success path below.
+  if (code || token) {
     try {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      const exchange = token && otpType
+        ? await supabase.auth.verifyOtp({ token_hash: token, type: otpType })
+        : code
+          ? await supabase.auth.exchangeCodeForSession(code)
+          : null;
+      // Unreachable (the branch guarantees one credential) — the type system
+      // needs the narrowing.
+      if (!exchange) return NextResponse.redirect(`${baseUrl}/auth`);
+      const { data, error } = exchange;
 
       if (error) {
         console.error('Error exchanging code for session:', error);
@@ -140,7 +148,7 @@ export async function GET(request: NextRequest) {
         // which then runs the normal exchange and the normal success path
         // (return-URL demotion, terms stamp, billing-aware landing). Every
         // other exchange failure keeps today's behavior below.
-        if (error.code === 'pkce_code_verifier_not_found') {
+        if (!token && code && error.code === 'pkce_code_verifier_not_found') {
           const resumeUrl = new URL(`${baseUrl}/auth`);
           resumeUrl.searchParams.set('pkce_code', code);
           if (next) resumeUrl.searchParams.set('returnUrl', next);

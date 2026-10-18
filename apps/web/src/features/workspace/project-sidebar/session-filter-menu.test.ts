@@ -5,9 +5,9 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import enMessages from '../../../../translations/en.json';
+import { resolveSectionLabels } from './session-section-labels';
 import {
   resolveRenderedSectionIds,
-  resolveSectionLabels,
   resolveShowOptions,
   resolveSourceFacetOptions,
   resolveStatusFacetOptions,

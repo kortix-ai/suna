@@ -130,7 +130,7 @@ export function MenuRow({ id, selected, onSelect, onHover, children, className }
         'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
         // Coarse pointers get a 44px-tall target without changing the desktop
         // rhythm — the rows are 32px on a mouse.
-        'min-h-8 [@media(pointer:coarse)]:min-h-11',
+        'min-h-8 pointer-coarse:min-h-11',
         selected ? 'bg-primary/[0.06]' : 'hover:bg-primary/[0.04]',
         className,
       )}
