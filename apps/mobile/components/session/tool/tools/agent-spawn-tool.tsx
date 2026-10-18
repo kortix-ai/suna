@@ -34,7 +34,7 @@ import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
-import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-agent';
+import { SubAgentStatusBanner, useChildSession } from './sub-agent';
 
 function VerificationLine({ text }: { text: string }) {
   const palette = useTurnPalette();

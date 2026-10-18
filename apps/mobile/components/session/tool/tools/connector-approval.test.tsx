@@ -14,7 +14,6 @@
 
 import { beforeEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
-// @ts-ignore -- this app has no @types/react-test-renderer
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configureKortix, toolCallBlock, type ToolPart } from '@kortix/sdk';
@@ -233,7 +232,6 @@ const render = async (): Promise<ReactTestRenderer> => {
   return renderer!;
 };
 
-/** The rendered tree's text, depth-first. */
 /** The rendered tree's text, from every host whose child is a string. */
 const texts = (renderer: ReactTestRenderer): string[] =>
   renderer.root
