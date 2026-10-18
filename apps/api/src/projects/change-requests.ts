@@ -188,7 +188,10 @@ export async function recordRequestedChange(
       metadata: { ...meta, requested_changes: [...requestedChangesOf(cr), entry] },
       updatedAt: new Date(),
     })
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    // crId may be the display number ("233", "#233") that getCrById just
+    // resolved — bind the write to the resolved canonical id, never the raw
+    // argument, or a numeric id would 22P02 the update it just earned.
+    .where(and(eq(changeRequests.crId, cr.crId), eq(changeRequests.projectId, projectId)))
     .returning();
   return row ?? null;
 }

@@ -12,12 +12,13 @@
 // it in the same batch. See MIGRATIONS.md "Roll-forward safety".
 //
 // Rules for this file:
-//   - One LOGICAL operation -- the index. It takes several statements because
-//     PostgreSQL cannot build an index CONCURRENTLY on a partitioned PARENT
-//     ("cannot create index on partitioned table ... concurrently", still true
-//     on PG 17), and the documented attach flow below is the only way to add
-//     one to a live partitioned table without blocking writes. Each statement
-//     is independently re-runnable.
+//   - One LOGICAL operation -- the audit list's tool-action index. It takes
+//     several statements because PostgreSQL cannot build an index CONCURRENTLY
+//     on a partitioned PARENT ("cannot create index on partitioned table
+//     ... concurrently", still true on PG 17 even with ON ONLY), and the
+//     documented attach flow below is the only way to add one to a live
+//     partitioned table without blocking writes. Each statement is
+//     independently re-runnable.
 //   - lock_timeout MUST be generous here -- 180s below, never the 2-5s used by
 //     a plain .sql migration. CREATE INDEX CONCURRENTLY does not just take a
 //     brief lock at the end: before it can start, and again before it can
@@ -38,19 +39,10 @@
 //   - This is lint-enforced: packages/db/scripts/lint-migrations.ts requires
 //     pgm.noTransaction() AND a CONCURRENTLY operation in every .concurrent.ts
 //     file, or CI fails.
-//   - DROPPING an index/constraint here (not just creating one) is ALSO
-//     covered by the mixed-version guard, same as a plain .sql migration --
-//     add `// mixed-version-safe: <justification>` above `up` if this drops
-//     something old code might still read (see MIGRATIONS.md).
-
-export const shorthands = undefined;
-
-const INDEX = 'idx_audit_events_account_tool_action_time';
-const DEFINITION = `(account_id, occurred_at, event_id) where action like 'connector.%' or action like 'computer.%'`;
-
-// The audit list endpoint's connector/computer filter (prod, Better Stack
-// 2346961, 2026-10-17 21:10) crossed the 25 s statement timeout on a busy
-// account:
+//
+// THE PROBLEM: the audit list endpoint's connector/computer filter (prod,
+// Better Stack 2346961, 2026-10-17 21:10) crossed the 25 s statement timeout
+// on a busy account:
 //
 //   GET /v1/accounts/:accountId/audit?action=connector.
 //     (apps/api/src/accounts/audit.ts + audit-filters.ts; the `connector.`
@@ -82,54 +74,61 @@ const DEFINITION = `(account_id, occurred_at, event_id) where action like 'conne
 // the partial predicate and uses the index. Write cost is bounded: only
 // tool-action rows are indexed, not the whole ledger.
 //
-// WHY THE ATTACH FLOW: audit_events is RANGE-partitioned by week
-// (20261001225732973). A plain CREATE INDEX on the parent builds inside every
-// existing partition while blocking that partition's writes; CONCURRENTLY is
-// refused on the parent outright. PostgreSQL's documented flow for a live
-// partitioned table:
+// THE FLOW (PostgreSQL's documented one for a live partitioned table --
+// audit_events is RANGE-partitioned by week, 20261001225732973):
 //
-//   1. CREATE INDEX ... ON ONLY kortix.audit_events -- instant (catalog only);
-//      the parent index starts INVALID. CONCURRENTLY is refused even here:
-//      PostgreSQL rejects a concurrent build on any partitioned parent.
-//   2. Per existing partition: CREATE INDEX CONCURRENTLY on the partition
-//      (partitions are plain tables -- CONCURRENTLY works), then
+//   1. CREATE INDEX ... ON ONLY kortix.audit_events -- the parent index as a
+//      catalog-only entry, INVALID, instant (ON ONLY never scans data; its
+//      ShareUpdateExclusive lock excludes other DDL and VACUUM, never reads
+//      or writes). CONCURRENTLY is refused even here: PostgreSQL rejects a
+//      concurrent build on any partitioned parent, so the non-concurrent
+//      catalog-only form is the safe one. Executed DIRECTLY (pgm.db.query)
+//      while up() runs -- BEFORE the partition enumeration below -- so any
+//      partition ATTACHed from this moment on (the audit-partition worker's
+//      weekly ensure_partitions, or CREATE TABLE ... PARTITION OF)
+//      auto-creates its child of this index with no further work.
+//   2. Per EXISTING partition that lacks one: CREATE INDEX CONCURRENTLY on the
+//      partition (partitions are plain tables -- CONCURRENTLY works), then
 //      ALTER INDEX <parent> ATTACH PARTITION <child>. When the last child
 //      attaches, the parent index turns valid by itself.
-//   3. Future partitions need nothing: both partition-creation paths
-//      (CREATE TABLE ... PARTITION OF and the ensure_partitions ATTACH) auto-
-//      create the parent's partitioned indexes on the new partition.
+//   3. Future partitions need nothing from this file (see 1: auto-inherit).
+//      A partition ATTACHed between the enumeration and the queued statements
+//      also auto-inherits, so this file has no enumeration window to guard.
 //
-// A PARTIALLY-FAILED run is safe to re-run: the parent and every child use
-// IF NOT EXISTS, an INVALID leftover child (a CONCURRENT build cancelled
-// mid-build) is dropped and rebuilt before attaching, and an already-attached
-// child is detected and skipped. The gateway-logs sibling migration
+// A PARTIALLY-FAILED run is safe to re-run: each child uses IF NOT EXISTS, an
+// INVALID leftover child (a CONCURRENT build cancelled mid-build) is dropped
+// and rebuilt before attaching, and a partition that already has a valid
+// attached child (auto-created by a post-step-1 ATTACH, or attached by a
+// previous run) is detected by DEFINITION -- not by name -- and skipped, so
+// no duplicate child is ever built. The gateway-logs sibling migration
 // (20261018093447137) is one statement because gateway_request_logs is not
 // partitioned; this file is its partitioned-table counterpart.
+
+export const shorthands = undefined;
+
+const INDEX = 'idx_audit_events_account_tool_action_time';
+const DEFINITION = `(account_id, occurred_at, event_id) where action like 'connector.%' or action like 'computer.%'`;
+
 /** @param {import('node-pg-migrate').MigrationBuilder} pgm */
 export const up = async (pgm) => {
   pgm.noTransaction();
-  // IMPORTANT: separate pgm.sql() calls, NOT one multi-statement string.
-  // Postgres's simple query protocol treats a single query string containing
-  // multiple ;-separated statements as an IMPLICIT transaction block -- which
-  // silently defeats pgm.noTransaction() (CONCURRENTLY still fails with
-  // "cannot run inside a transaction block") even though noTransaction() IS
-  // working correctly at the node-pg-migrate level. One statement per call.
-  pgm.sql(`set lock_timeout = '180s'`);
-  pgm.sql(`set statement_timeout = '30min'`);
-  // The PARENT index must be a plain CREATE INDEX: PostgreSQL refuses
-  // CONCURRENTLY on a partitioned parent outright -- even with ON ONLY
-  // ("cannot create index on partitioned table ... concurrently"). ON ONLY
-  // never scans data: it is a catalog-only entry, created invalid, and takes
-  // ShareUpdateExclusive (excludes other DDL and VACUUM, not reads/writes),
-  // so the non-concurrent form is safe here. The actual row work happens
-  // per partition, CONCURRENTLY, below.
-  pgm.sql(`
+  // Run DIRECTLY (pgm.db.query executes immediately; queued pgm.sql calls run
+  // only after up() returns). The parent index must exist BEFORE the
+  // enumeration query below, or a partition attached inside the
+  // enumeration-to-execution window would inherit nothing and the parent
+  // would stay invalid forever (the planner silently ignores it). The
+  // timeouts are also set directly, for the same reason: the parent create
+  // runs before any queued statement would have set them.
+  await pgm.db.query(`set lock_timeout = '180s'`);
+  await pgm.db.query(`set statement_timeout = '30min'`);
+  await pgm.db.query(`
     create index if not exists ${INDEX}
       on only kortix.audit_events ${DEFINITION}
   `);
 
-  // Enumerate the CURRENT partitions. Runs through pgm.db on the migration's
-  // own connection, before the queued statements execute.
+  // Enumerate the CURRENT partitions. Every partition attached after the
+  // parent index was created (directly above) already has its (valid) child —
+  // the loop skips those by definition, not by name.
   const { rows } = await pgm.db.query(
     `select c.relname as partition
        from pg_inherits i
@@ -139,6 +138,22 @@ export const up = async (pgm) => {
   );
 
   for (const { partition } of rows) {
+    // Schema-qualified identity everywhere: a same-named index in another
+    // schema must never satisfy a check.
+    const [attached] = await pgm.db.query(
+      `select count(*)::int as children
+         from pg_inherits ci
+         join pg_class parent_i on parent_i.oid = ci.inhparent
+         join pg_namespace pn on pn.oid = parent_i.relnamespace
+         join pg_index i on i.indexrelid = ci.inhrelid
+        where pn.nspname = 'kortix'
+          and parent_i.relname = $1
+          and i.indrelid = ('kortix.' || $2)::regclass
+          and i.indisvalid`,
+      [INDEX, partition],
+    ).then((r) => r.rows);
+    if (attached && attached.children > 0) continue;
+
     const child = `idx_ae_tool_time_${String(partition).replace(/^audit_events_/, '')}`;
     if (child.length > 63) throw new Error(`child index name too long: ${child}`);
 
@@ -149,28 +164,25 @@ export const up = async (pgm) => {
     const [existing] = await pgm.db.query(
       `select i.indisvalid
          from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
          join pg_index i on i.indexrelid = c.oid
-        where c.relname = $1 and c.relkind = 'i'`,
+        where c.relname = $1 and c.relkind = 'i' and n.nspname = 'kortix'`,
       [child],
     ).then((r) => r.rows);
     if (existing && !existing.indisvalid) {
+      // mixed-version-safe: the only index this can drop is THIS migration's
+      // own child (name-prefixed idx_ae_tool_time_), left INVALID by a
+      // cancelled CONCURRENT build of a previous partial run. It was created
+      // by this same migration, is not yet attached to the parent, and no old
+      // code can read it (the planner ignores an index that is not attached).
       pgm.sql(`drop index if exists kortix.${child}`);
     }
     pgm.sql(`create index concurrently if not exists ${child} on kortix."${partition}" ${DEFINITION}`);
 
-    // Skip the ATTACH when a previous run already attached this child
-    // (ALTER INDEX ... ATTACH PARTITION errors on an already-attached child).
-    const attached = await pgm.db.query(
-      `select 1
-         from pg_class parent_i
-         join pg_inherits inh on inh.inhparent = parent_i.oid
-         join pg_class child_i on child_i.oid = inh.inhrelid
-        where parent_i.relname = $1 and child_i.relname = $2`,
-      [INDEX, child],
-    );
-    if (attached.rowCount === 0) {
-      pgm.sql(`alter index kortix.${INDEX} attach partition kortix.${child}`);
-    }
+    // ATTACH the freshly built child. Partitions that already had a child
+    // were skipped above (ALTER INDEX ... ATTACH PARTITION errors on an
+    // already-attached child).
+    pgm.sql(`alter index kortix.${INDEX} attach partition kortix.${child}`);
   }
 };
 
