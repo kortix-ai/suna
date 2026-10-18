@@ -1327,6 +1327,11 @@
     "tokens": {
       "keyRevoked": "API кључ је опозван",
       "revokeFailed": "API кључ није могао да се опозове",
+      "deleteKey": "Обриши кључ",
+      "deleteTitle": "Обрисати овај API кључ?",
+      "deleteDescription": "{name} је већ опозван. Брисање га уклања са списка. Ова радња се не може опозвати.",
+      "keyDeleted": "API кључ је обрисан",
+      "deleteFailed": "API кључ није могао да се обрише",
       "newKey": "Нови кључ",
       "confirmIdentity": "Потврдите свој идентитет",
       "verify": "Потврди",

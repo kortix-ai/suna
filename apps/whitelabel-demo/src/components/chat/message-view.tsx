@@ -34,6 +34,7 @@ import {
 import { Fragment } from 'react';
 import { Markdown } from './markdown';
 import { ToolCall } from './tool-call';
+import { userMessageParts } from './user-message-parts';
 
 function Reasoning({ text }: { text: string }) {
   return (
@@ -157,18 +158,17 @@ export function MessageView({ message }: { message: SessionLogMessage }) {
   const { parts, error, isEmpty } = classifySessionLogMessage(message);
 
   if (isUser) {
-    const text = parts
-      .filter((p) => p.kind === 'text')
-      .map((p) => p.text)
-      .join('\n')
-      .trim();
-    if (!text) return null;
+    const user = userMessageParts(parts);
+    if (!user.text && !user.parts.length) return null;
     // Bubble sits directly in the row (no min-w-0 column) so it sizes to its
     // content up to max-width — never collapses to a sliver.
     return (
       <Message align="end" data-message-role="user">
         <Bubble variant="secondary" align="end">
-          <BubbleContent>{text}</BubbleContent>
+          <BubbleContent>{user.text}</BubbleContent>
+          {renderParts(user.parts, partRenderers).map((node, i) => (
+            <Fragment key={user.parts[i].kind === 'unknown' ? i : user.parts[i].id}>{node}</Fragment>
+          ))}
         </Bubble>
       </Message>
     );

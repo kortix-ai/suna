@@ -1,11 +1,11 @@
 'use client';
 
+import { useActiveSection } from '@/hooks/use-active-section';
 import {
   DOC_BODY,
   DOC_GRID,
   DocRail,
   docRailItem,
-  useActiveSection,
 } from '@/features/marketing/doc-rail';
 import { cn } from '@/lib/utils';
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, type Icon } from '@phosphor-icons/react';
@@ -161,7 +161,10 @@ export function SupportDocGrid({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ids = sections.map((section) => section.id);
-  const active = useActiveSection(ids);
+  // Band runs from just under the fixed navbar to 45% down the viewport, so a
+  // section lights up as its heading arrives — not while its tail is still on
+  // screen.
+  const active = useActiveSection(ids, { rootMargin: '-96px 0px -55% 0px' });
 
   return (
     <div className={DOC_GRID}>

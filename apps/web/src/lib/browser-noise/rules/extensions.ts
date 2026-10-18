@@ -33,7 +33,41 @@ const EXTENSION_PROTOCOL_PREFIXES = [
 
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
-  /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
+  // CookieYes (https://www.cookieyes.com) cookie-consent SDK runtime, served
+  // from its own CDN workspace directory
+  // `https://cdn-cookieyes.com/client_data/<workspace-id>/…`: `script.js` is
+  // the SDK's main runtime, `banner.js` its consent-banner UI bundle (the
+  // same directory also holds the SDK's config/translation/audit-table
+  // JSONs). The marketing site loads the SDK via GTM (the app's own
+  // `ConsentGate` only toggles the banner's CSS classes, and the CSP
+  // allowlists `cdn-cookieyes.com`). Errors thrown inside these files are the
+  // third-party SDK's own bugs — e.g. Better Stack pattern
+  // `2e256e5f05cfde3531e693c0f2b9d3449cf95d468eb845b73f2b5add250f5865`
+  // (KRTX-2739, Kortix Frontend prod, application_id 2346967): 1 occurrence,
+  // 0 identified users, 2026-10-18 01:52:32 UTC. After the visitor clicked
+  // CookieYes' own "Accept All" button (`button.cky-btn.cky-btn-accept`),
+  // banner.js's revisit-consent focus-retry loop — CookieYes' minified fn
+  // `t`: `"visible"===window.getComputedStyle(o).visibility?(o.focus(),o=null):e<100&&(e++,requestAnimationFrame(t))`
+  // where `o` is the revisit-consent element's `firstChild` — called
+  // `window.getComputedStyle()` on that `firstChild`, which can be a
+  // whitespace TEXT node (not an Element), throwing the canonical DOM
+  // wording `TypeError: Failed to execute 'getComputedStyle' on 'Window':
+  // parameter 1 is not of type 'Element'.` UNCAUGHT (Sentry mechanism
+  // `auto.browser.browserapierrors.requestAnimationFrame`, `handled:false`).
+  // Frames (oldest-first → last is the throw site):
+  // `app:///_next/static/immutable/chunks/159tn3qpi9s08.js` fn `r` (the rAF
+  // scheduling wrapper, NOT the throw site) +
+  // `app:///client_data/5b1102243ea0c0e5d64998452cb87826/banner.js` fn `t`
+  // line 1 col 6777. Sentry normalizes the cross-origin CDN script origin to
+  // the same `app:///` empty-host shape as the other injected sources above,
+  // and no first-party `app:///_next/…` bundle frame or de-minified
+  // `apps/web/src/…` source path ever carries a `client_data/<id>/` path, so
+  // anchoring on it is conservative: a real first-party `getComputedStyle`
+  // TypeError throws inside an app chunk (or a de-minified `apps/web/src/…`
+  // frame) and is never matched. The anchor stays tight to the two runtime
+  // file names observed in the directory (`script.js`, `banner.js`); any
+  // other file name there keeps reporting.
+  /^app:\/\/\/client_data\/[^/]+\/(?:script|banner)\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
   /^app:\/\/\/injectedScript\.bundle\.js$/,
   // CAPTCHA / anti-bot browser-extension (DataDome, Cloudflare, or similar
