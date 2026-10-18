@@ -9,33 +9,17 @@
  * created on the web, KRTX-246).
  */
 
-import { useMemo } from 'react';
 import { useAccount, useAccountCapabilities, type AccountCapability } from '@/lib/accounts/hooks';
 
 export type AccountCaps = Record<AccountCapability, boolean>;
 
 /**
- * The account plus the current user's capabilities on it. The IAM probe is
- * merged with the account role so owners/admins keep full access even if the
- * probe is slow or unavailable (it can't *remove* a granted capability).
+ * The account plus the current user's capabilities on it, from the IAM probe
+ * alone. No role fallback: a slow or failed probe reads as denied, so a
+ * control never shows to someone the API would refuse.
  */
 export function useEffectiveAccountCaps(accountId: string | null, userId: string | null) {
   const accountQuery = useAccount(accountId);
   const { can } = useAccountCapabilities(accountId, userId);
-  const account = accountQuery.data;
-  const isAdmin = account?.role === 'owner' || account?.role === 'admin';
-  const isOwner = account?.role === 'owner';
-  const effectiveCan = useMemo<AccountCaps>(
-    () => ({
-      'account.write': can['account.write'] || isAdmin,
-      'account.delete': can['account.delete'] || isOwner,
-      'member.invite': can['member.invite'] || isAdmin,
-      'member.remove': can['member.remove'] || isAdmin,
-      'member.update': can['member.update'] || isAdmin,
-      'group.create': can['group.create'] || isAdmin,
-      'audit.read': can['audit.read'] || isAdmin,
-    }),
-    [can, isAdmin, isOwner]
-  );
-  return { accountQuery, account, can: effectiveCan };
+  return { accountQuery, account: accountQuery.data, can: can as AccountCaps };
 }

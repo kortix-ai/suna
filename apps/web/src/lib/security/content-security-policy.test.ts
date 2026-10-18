@@ -31,7 +31,7 @@ describe('content security policy', () => {
   test('the embed policy opens framing for host pages and keeps the other enforced directives', () => {
     const policy = directives(embedContentSecurityPolicy());
 
-    expect(policy.get('frame-ancestors')).toEqual(['*']);
+    expect(policy.get('frame-ancestors')).toEqual(["'self'", 'https://kortix.com', 'https://*.kortix.com']);
     expect(policy.get('object-src')).toEqual(["'none'"]);
     expect(policy.get('base-uri')).toEqual(["'self'"]);
     // The embed carries the same report-only script policy as every page.

@@ -1,0 +1,17 @@
+{
+  "source_hash": "3c7607553a76b0eb3c7c94876d025e505027b0e5100d4383adc4be3fcef9baa8",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(public)/share/session/[token]/page.tsx",
+    "apps/web/src/app/[locale]/(public)/share/session/[token]/start-session.test.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "c68e6f7ef9cffa0ef62d79471203e43cbf1133b556d3c9f4c5eaa173c05145df",
+  "head": "fdb3412f910e08b8c35be6ad7758e66354ccaf14",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "skipped-unaffected"
+  },
+  "at": "2026-10-14T18:46:09.222Z"
+}

@@ -45,26 +45,9 @@ export function enforcedContentSecurityPolicy(): string {
   return ["frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
 }
 
-/**
- * The embeddable session page (`/projects/:projectId/sessions/:sessionId`, and
- * its locale-prefixed form) is framed by host pages — the Share dialog's Embed
- * snippet. Its enforced policy therefore opens `frame-ancestors` while keeping
- * the other two enforced directives.
- *
- * What a cross-site frame can render is bounded by the auth cookie, not by
- * this rule: the Supabase cookie is SameSite=Lax, so a frame on a different
- * site gets the unauthenticated shell, and its /auth bounce is itself refused
- * by the global `frame-ancestors 'self'` on /auth. A frame on the same site
- * carries the cookie and renders the real session.
- *
- * The global `/:path*` rule still sends `X-Frame-Options: SAMEORIGIN` on this
- * path (a header rule can add but not remove). That is fine: a browser that
- * implements CSP `frame-ancestors` — every evergreen browser, CSP2+ — ignores
- * `X-Frame-Options` when the policy carries `frame-ancestors`. See the
- * `headers()` comment in next.config.ts.
- */
+/** Session embeds reuse authentication and allow only Kortix-owned same-site hosts. */
 export function embedContentSecurityPolicy(): string {
-  return ["frame-ancestors *", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
+  return ["frame-ancestors 'self' https://kortix.com https://*.kortix.com", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
 }
 
 export function reportOnlyContentSecurityPolicy(): string {

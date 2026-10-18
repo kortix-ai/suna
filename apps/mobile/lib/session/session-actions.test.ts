@@ -116,6 +116,7 @@ describe('sessionActionRows files row', () => {
     isOpenThread: true,
     hasRuntime: true,
     canManageLifecycle: true,
+    canOpenChangeRequest: true,
     canCompact: true,
     changes: { pending: false, error: false, count: 0 },
     busy: false,
@@ -144,6 +145,7 @@ describe('sessionActionRows', () => {
     isOpenThread: true,
     hasRuntime: true,
     canManageLifecycle: true,
+    canOpenChangeRequest: true,
     canCompact: true,
     changes: { pending: false, error: false, count: 3 },
     busy: false,
@@ -155,6 +157,10 @@ describe('sessionActionRows', () => {
     expect(rows.openChangeRequest).toEqual({ visible: true, enabled: true });
     expect(rows.viewChanges).toEqual({ visible: true, enabled: true, value: '3 files' });
     expect(rows.compact).toEqual({ visible: true, enabled: true });
+  });
+
+  test('without project.write + gitops.push the Open change request row is hidden', () => {
+    expect(sessionActionRows({ ...base, canOpenChangeRequest: false }).openChangeRequest.visible).toBe(false);
   });
 
   test('no changes disables View changes with "No changes"', () => {

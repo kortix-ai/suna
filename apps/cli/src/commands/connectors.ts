@@ -684,21 +684,27 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stderr.write(`${status.err('No value provided.')}\n`);
           return 2;
         }
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential`, { value });
+        const resp = await ctx.client.put<{ sync?: SyncResult }>(
+          `${ex}/connectors/${encodeURIComponent(slug)}/credential`,
+          { value },
+        );
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
+        reportSync(resp?.sync);
         return 0;
       }
       case 'secret': {
         const input = connectorSecretBindingInput(positional, clearSecretBinding);
         if ('error' in input) return missing(input.error);
-        await withKortixScope(ctx.auth, () =>
+        // An MCP connector re-lists its tools with the bound secret; show why when that fails.
+        const resp = (await withKortixScope(ctx.auth, () =>
           setConnectorSecretBinding(ctx.projectId, input.slug, input.secretIdentifier),
-        );
+        )) as { sync?: SyncResult } | undefined;
         process.stdout.write(
           input.secretIdentifier
             ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
             : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
         );
+        reportSync(resp?.sync);
         return 0;
       }
       /**

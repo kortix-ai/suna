@@ -79,7 +79,7 @@ export function turnIntrinsicSize(
 ): string | undefined {
   if (state !== 'measured') return undefined;
   if (!(measuredHeight >= TURN_MIN_CONTAIN_PX)) return undefined;
-  return `auto ${Math.round(measuredHeight)}px`;
+  return `auto ${measuredHeight}px`;
 }
 
 /**
@@ -126,6 +126,18 @@ export function turnViewportClassName(
 export const TURN_SETTLE_MS = 500;
 
 /**
+ * A turn's height: its exact layout height, never `offsetHeight`'s whole
+ * pixels. The reading becomes the stand-in, and containment swaps the real
+ * box for the stand-in: any difference moves everything under the turn. With
+ * `--spacing` at 0.23rem turn heights are fractional, so a rounded stand-in was
+ * off by up to 0.5px a turn — ~4.5px in sum for a page of older turns,
+ * contained 500ms after it rendered, under a reader who was reading it.
+ */
+export function turnLayoutHeight(el: HTMLElement): number {
+  return el.getBoundingClientRect().height;
+}
+
+/**
  * `unmeasured` until the turn has held one height for `TURN_SETTLE_MS`, then
  * `measured`/`empty` by whether it actually has a box — tracked for LIFE, not
  * just once: a turn that later collapses to nothing (its messages render no
@@ -142,9 +154,10 @@ export const TURN_SETTLE_MS = 500;
  * the one we published, the new one replaces it (and the browser records its
  * own last-remembered size from that same layout).
  *
- * Readings are rounded to whole pixels, and a reading equal to the one already
- * published is dropped, so the observer can never loop against its own write:
- * while the turn is skipped it reports the stand-in size, which IS that value.
+ * Readings are exact (`turnLayoutHeight`), and a reading equal to the one
+ * already published is dropped, so the observer can never loop against its own
+ * write: while the turn is skipped it reports the stand-in size, which IS that
+ * value.
  */
 export function useTurnMeasure(ref: React.RefObject<HTMLDivElement | null>): {
   state: TurnMeasureState;
@@ -165,7 +178,7 @@ export function useTurnMeasure(ref: React.RefObject<HTMLDivElement | null>): {
     let seen = -1;
 
     const publish = () => {
-      const measured = Math.round(el.offsetHeight);
+      const measured = turnLayoutHeight(el);
       const state: TurnMeasureState = measured > 0 ? 'measured' : 'empty';
       setMeasure((prev) => {
         // An empty turn keeps whatever height it last had: it is uncontained
@@ -177,7 +190,7 @@ export function useTurnMeasure(ref: React.RefObject<HTMLDivElement | null>): {
       });
     };
     const read = () => {
-      const measured = Math.round(el.offsetHeight);
+      const measured = turnLayoutHeight(el);
       if (measured === seen) return; // still the same height — let it settle
       seen = measured;
       clearTimeout(settleTimer);

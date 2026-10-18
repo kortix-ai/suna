@@ -76,9 +76,18 @@ describe('a deleted workspace closes its side doors', () => {
     expect(await loadPublicAppState(ROUTE_KEY)).not.toBeNull();
   });
 
-  test('after the delete: kgw_ key refused, share link gone (410), App not found', async () => {
+  test('after the delete: kgw_ key refused but attributed, share link gone (410), App not found', async () => {
     await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, PROJECT));
-    expect(await validateGatewayKey(gatewaySecret)).toBeNull();
+    // KRTX-1714 kept the refusal; KRTX-1749 adds the owner: the hash-match
+    // survives the archive, so the gateway can log the refused request
+    // against the (now archived) workspace instead of dropping it.
+    expect(await validateGatewayKey(gatewaySecret)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      keyId: expect.any(String),
+      userId: expect.any(String),
+      refused: 'project_archived',
+    });
     const share = await resolvePublicShare(shareToken);
     expect(share.ok).toBe(false);
     expect(share.ok ? 0 : share.status).toBe(410);

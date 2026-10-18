@@ -938,15 +938,9 @@ const nextConfig = (): NextConfig => ({
       // when the policy carries frame-ancestors, so the global SAMEORIGIN is
       // inert on this path.
       //
-      // The session page is authenticated content: what a cross-site frame
-      // can render is bounded by the auth cookie, not by this rule. The
-      // cookie is SameSite=Lax (lib/supabase/client.ts), so a frame on a
-      // different site renders the unauthenticated shell and its /auth bounce
-      // is itself refused by the global frame-ancestors 'self' on /auth. A
-      // frame on the same site (any *.kortix.com page, localhost dev) carries
-      // the cookie and renders the real session. Both canonical URL forms
-      // (unprefixed, and the locale-prefixed one a visitor's address bar
-      // shows) are covered.
+      // Only same-origin and Kortix-owned same-site host pages can frame the
+      // authenticated session. Cookies and existing project/session permissions
+      // still determine access. Both canonical URL forms are covered.
       {
         source: '/projects/:projectId/sessions/:sessionId',
         headers: embedFrameHeaders(),

@@ -73,9 +73,11 @@ export async function resetClientState({
   // below empties the query cache, so the next user's queries can never be
   // persisted under this user's key. The query cache is a `kortix.` key, so
   // the sweep below removes it too; the saved copies are in IndexedDB, which
-  // the last step empties. The returned promise is not awaited.
+  // the last step empties. The promise is not awaited; its `.catch` reports a purge rejection.
   try {
-    void clearDeviceCaches();
+    void clearDeviceCaches().catch((error) => {
+      console.error('Failed to clear the device caches:', error);
+    });
   } catch (error) {
     console.error('Failed to clear the device caches:', error);
   }

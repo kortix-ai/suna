@@ -45,12 +45,14 @@ export function SessionEmbedSection({
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(
-    () => () => {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const origin = typeof window === 'undefined' ? null : window.location.origin;
   const snippet = origin ? sessionEmbedSnippet(projectId, sessionId, origin) : null;
@@ -59,11 +61,13 @@ export function SessionEmbedSection({
     if (!snippet) return;
     try {
       await navigator.clipboard.writeText(snippet);
+      if (!mounted.current) return;
       setCopied(true);
       successToast(t('copied'));
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
+      if (!mounted.current) return;
       errorToast(tI18nComplete.raw('text167c96824acb'));
     }
   };
@@ -74,7 +78,7 @@ export function SessionEmbedSection({
         <Label>{t('sectionTitle')}</Label>
         <p className="text-muted-foreground text-xs">{t('sectionDescription')}</p>
       </div>
-      <Button variant="outline" size="sm" disabled={!snippet} onClick={() => void copy()}>
+      <Button variant="outline" size="sm" disabled={!snippet} onClick={copy}>
         {copied ? (
           <CheckIcon className="text-kortix-green size-4 shrink-0" />
         ) : (

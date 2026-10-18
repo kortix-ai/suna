@@ -64,17 +64,20 @@ const PICKER_BODY = { providers: [] };
 /** Count requests per path so assertions name the wire, not a mock's memory. */
 const counts = { detail: 0, picker: 0, other: 0 };
 let detailFails = true;
+/** The status the failing detail read answers with (500 unless a test sets it). */
+let detailStatus = 500;
 
 function installFetch() {
   counts.detail = 0;
   counts.picker = 0;
   counts.other = 0;
   detailFails = true;
+  detailStatus = 500;
   globalThis.fetch = (async (url: unknown) => {
     const path = String(url);
     if (path.includes('/detail')) {
       counts.detail += 1;
-      if (detailFails) return Response.json({ error: 'server error' }, { status: 500 });
+      if (detailFails) return Response.json({ error: 'server error' }, { status: detailStatus });
       return Response.json(DETAIL_BODY);
     }
     if (path.includes('/model-picker')) {
@@ -163,6 +166,101 @@ test('a failed detail read self-heals on the mounted page and opens the gated mo
 });
 
 /**
+ * The gone-project screen (KRTX-2436): a detail read that answers 404 is a
+ * FINAL answer — the project does not exist, and no retry can change that.
+ * The self-heal fail-safe above used to treat it like a transient failure and
+ * retried it with the same capped backoff, so the gone screen re-asked a dead
+ * project every 30 s forever (16 → 18 → 20 requests over 65 s on dev), each
+ * with a CORS preflight and a console warning. A final 404 stands down: the
+ * entry is asked exactly once and never again while the page stays mounted.
+ */
+test('a final 404 stands down: the self-heal interval never refires on the mounted page', async () => {
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+  installFetch();
+  detailStatus = 404;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  jest.useFakeTimers();
+
+  function Probe() {
+    useProjectLlmGatewayEnabled('p1');
+    return null;
+  }
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    await flush();
+  });
+  await act(async () => {
+    await flush();
+  });
+
+  // The one and only ask of the dead project.
+  expect(counts.detail).toBe(1);
+
+  try {
+    await act(async () => {
+      // Far past every backoff rung (2 + 4 + 8 + 16 + 30 s) and two more cap
+      // intervals: today the interval refires each of these, so this fails.
+      jest.advanceTimersByTime(70_000);
+      await flush();
+      jest.advanceTimersByTime(30_000);
+      await flush();
+    });
+  } finally {
+    jest.useRealTimers();
+  }
+
+  expect(counts.detail).toBe(1);
+
+  await act(async () => root?.unmount());
+  client.clear();
+});
+
+/**
+ * The same final 404 must not refetch when ANOTHER observer mounts the entry —
+ * the mount burst on the gone screen (`retryOnMount` refires a settled error
+ * for every new observer, which is how six duplicate detail reads landed in
+ * 20 ms on dev). Mounting onto the settled 404 costs zero requests.
+ */
+test('a final 404 does not refetch when a new observer mounts the settled entry', async () => {
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+  installFetch();
+  detailStatus = 404;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function Probe() {
+    useProjectLlmGatewayEnabled('p1');
+    return null;
+  }
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    await flush();
+  });
+  await act(async () => {
+    await flush();
+  });
+  expect(counts.detail).toBe(1);
+
+  // Remount: a fresh observer subscribing to the same errored entry.
+  await act(async () => root?.unmount());
+  let second: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    second = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    await flush();
+  });
+  await act(async () => {
+    await flush();
+  });
+
+  expect(counts.detail).toBe(1);
+
+  await act(async () => second?.unmount());
+  client.clear();
+});
+
+/**
  * The healing loop stops once data is in: a healthy entry polls nothing. The
  * first success must clear the interval, not keep refetching detail forever.
  */
@@ -209,7 +307,12 @@ test('the self-heal interval stands down after the first success', async () => {
  * structural subset is what the engine guarantees on every call.
  */
 describe('errorSelfHealRefetchInterval', () => {
-  const intervalFor = (state: { status: string; data?: unknown; errorUpdateCount: number }) => {
+  const intervalFor = (state: {
+    status: string;
+    data?: unknown;
+    errorUpdateCount: number;
+    error?: unknown;
+  }) => {
     const fn = contract('config').refetchInterval as unknown as (query: {
       state: typeof state;
     }) => number | false;
@@ -230,6 +333,35 @@ describe('errorSelfHealRefetchInterval', () => {
     expect(intervalFor({ status: 'error', data: undefined, errorUpdateCount: 3 })).toBe(8_000);
     expect(intervalFor({ status: 'error', data: undefined, errorUpdateCount: 7 })).toBe(30_000);
     expect(intervalFor({ status: 'error', data: undefined, errorUpdateCount: 40 })).toBe(30_000);
+  });
+
+  test('a transient failure still retries regardless of how the error carries it', () => {
+    // A 5xx, a 401/403 (auth publishing, access approval — both recoverable)
+    // and a status-less error (network blip) all keep the fail-safe.
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 1, error: { status: 500 } }),
+    ).toBe(2_000);
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 1, error: { status: 401 } }),
+    ).toBe(2_000);
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 1, error: { status: 403 } }),
+    ).toBe(2_000);
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 1, error: new Error('x') }),
+    ).toBe(2_000);
+  });
+
+  test('a final gone answer (404/410) stands down', () => {
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 1, error: { status: 404 } }),
+    ).toBe(false);
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 7, error: { status: 410 } }),
+    ).toBe(false);
+    expect(
+      intervalFor({ status: 'error', data: undefined, errorUpdateCount: 40, error: { status: 404 } }),
+    ).toBe(false);
   });
 
   test('every non-directory tier carries it; the directory tier keeps its own poll', () => {

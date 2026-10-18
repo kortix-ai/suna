@@ -4,7 +4,8 @@ import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../../iam/actions';
-import { assertAuthorized } from '../../iam/authorize';
+import { assertAuthorized, listAccessible } from '../../iam/authorize';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import { actorOf } from '../../middleware/actor';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
@@ -99,6 +100,26 @@ export async function resolveAccountWideUsageAccountId(c: Context<AppEnv>): Prom
   const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
   return accountId;
+}
+
+/**
+ * Session costs name each session's owner, with their email. A caller without
+ * `member.read` sees only their own sessions (iam/directory-visibility.ts):
+ * another `owner_id` → 403, the same answer whether that person exists or not.
+ * Returns the owner filter to apply; undefined = every owner.
+ */
+async function sessionCostOwner(
+  c: Context<AppEnv>,
+  accountId: string,
+  requested: string | undefined,
+): Promise<string | undefined> {
+  const actor = await actorOf(c, accountId);
+  const { userIds } = await visibleDirectory(actor);
+  if (!userIds) return requested;
+  if (requested && requested !== actor.userId) {
+    throw new HTTPException(403, { message: 'You can read only your own session costs' });
+  }
+  return actor.userId;
 }
 
 const UsageTotalsSchema = z
@@ -514,8 +535,8 @@ usageApp.openapi(
     }
 
     const projectId = c.req.query('project_id') || undefined;
-    const ownerId = c.req.query('owner_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
+    const ownerId = await sessionCostOwner(c, accountId, c.req.query('owner_id') || undefined);
 
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, projectId, ownerId,
@@ -596,7 +617,8 @@ usageApp.openapi(
       projectId,
       sessionId: c.req.param('sessionId'),
     });
-    if (!detail) {
+    const owner = await sessionCostOwner(c, accountId, undefined);
+    if (!detail || (owner && detail.owner_id !== owner)) {
       throw new HTTPException(404, { message: 'Session not found' });
     }
     return c.json(detail);
@@ -676,6 +698,17 @@ usageApp.openapi(
       throw error;
     }
 
+    // billing.read shows the account's spend, not every project's name: a
+    // caller sees the rows of the projects they can read (owners and admins:
+    // all of them). A project-scoped token already names its one project.
+    const accessible = projectId
+      ? null
+      : await listAccessible(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_READ, 'project');
+    const visibleProjectIds =
+      !accessible || accessible.mode === 'all'
+        ? undefined
+        : accessible.mode === 'allow_only' ? accessible.allowed : new Set<string>();
+
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, window, sort) —
       // only limit/offset differ, because a CSV export wants up to
@@ -683,6 +716,7 @@ usageApp.openapi(
       const page = await listCostByProject({
         accountId,
         projectId,
+        visibleProjectIds,
         window,
         sort,
         limit: CSV_ROW_CAP,
@@ -715,7 +749,7 @@ usageApp.openapi(
       });
     }
 
-    return c.json(await listCostByProject({ accountId, projectId, window, sort, limit, offset }));
+    return c.json(await listCostByProject({ accountId, projectId, visibleProjectIds, window, sort, limit, offset }));
   },
 );
 

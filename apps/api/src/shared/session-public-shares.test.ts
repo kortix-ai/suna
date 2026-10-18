@@ -35,6 +35,14 @@ describe('transcript shares are removed (KRTX-2358)', () => {
     }
   });
 
+  test('truthy legacy transcript fields cannot become preview shares', () => {
+    for (const transcript of ['true', 1, {}, []]) {
+      expect(buildPublicShareInsert({ transcript, preview: { port: 3000 } }, CTX)).toEqual({
+        ok: false, status: 400, error: 'Transcript sharing is no longer available',
+      });
+    }
+  });
+
   test('a legacy transcript share is view-only whatever its stored mode says', () => {
     expect(isViewOnlyShare({ resourceType: 'transcript', mode: 'interactive' })).toBe(true);
   });

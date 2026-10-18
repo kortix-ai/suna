@@ -126,9 +126,7 @@ describe('mirrored settings-panel constants', () => {
  * offered-but-unreachable tab is a test failure rather than a dead click.
  */
 describe('offered tabs survive the panel filter', () => {
-  // `canProject: () => true` — the palette offers the two IAM-gated Workspace
-  // rows without probing; the panel answers the probe and hides a denied row.
-  const allowedParams = (hasProject: boolean) => ({ hasProject, canProject: () => true });
+  const allowedParams = (hasProject: boolean) => ({ hasProject });
 
   test('with a project, every offered tab is allowed', () => {
     for (const tab of tabsFor(IN_A_PROJECT)) {

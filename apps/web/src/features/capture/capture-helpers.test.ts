@@ -70,7 +70,7 @@ describe('device status', () => {
   test('a locked screen or an excluded app in front is not a pause: own words, no hue', () => {
     expect(deviceStatus(device('paused', { reason: 'locked' }))).toMatchObject({ key: 'locked', tone: 'none' });
     expect(deviceStatus(device('not_recording', { reason: 'locked' }))).toMatchObject({ key: 'locked', tone: 'none' });
-    for (const reason of ['excluded_app', 'excluded_domain', 'private_browsing']) {
+    for (const reason of ['excluded_app', 'excluded_domain', 'not_included', 'private_browsing']) {
       expect(deviceStatus(device('paused', { reason }))).toMatchObject({ key: 'excluded', tone: 'none' });
     }
     expect(deviceStatus(device('paused', { reason: 'paused' }))).toMatchObject({ key: 'paused', tone: 'orange' });

@@ -221,7 +221,7 @@ export function buildPublicShareInsert(input: PublicShareInput, ctx: {
   userId: string;
 }) {
   const file = typeof input.file === 'object' && input.file ? input.file as Record<string, unknown> : null;
-  if (input.transcript === true) {
+  if (input.transcript) {
     // Public transcript sharing was removed (KRTX-2358). A named 400 beats a
     // silent reinterpretation of the body as a preview share.
     return { ok: false as const, status: 400, error: 'Transcript sharing is no longer available' };

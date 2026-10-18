@@ -27,30 +27,43 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
-import { triggerRunActions, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
+import { fireResultToast, triggerToastEntity } from '@/components/projects/schedule/trigger-toast';
+import { Alert, AlertActions, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
-import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import {
+  NewEntityMenu,
+  RICH_ROW_CLASS,
+  RichRowBody,
+} from '@/features/workspace/capabilities/shared/new-entity-menu';
 import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
+import { hasOpenFloatingLayer } from '@/lib/z-stack';
 import {
   type ProjectTrigger,
   deleteProjectTrigger,
@@ -59,22 +72,23 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps, useTriggerRuns } from '@kortix/sdk/react';
 import {
+  CheckSquareIcon,
+  DotsThreeIcon,
   LightningIcon,
-  LockKeyIcon,
-  MagnifyingGlassIcon as SearchIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
-  WarningIcon,
+  MagnifyingGlassIcon as SearchIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useDebounce } from '@/hooks/use-debounce';
+import { useSlashFocus } from '@/hooks/utils';
 import { EventAppsStrip } from './schedule/event-apps-strip';
-import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
 import {
   type TriggerKind,
   describeWhen,
@@ -85,8 +99,7 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
-import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
-import { ScheduleTable } from './schedule/schedule-table';
+import { ScheduleDetailSplitContent } from './schedule/schedule-detail-sheet';
 import { TriggerComposer } from './schedule/trigger-composer';
 import { useTriggerControls } from './schedule/trigger-controls';
 import {
@@ -95,11 +108,22 @@ import {
   filterTriggers,
   groupTriggersByApp,
   parseTriggerFilter,
-  triggerCounts,
+  readTriggerSheet,
+  triggerSheetHref,
 } from './schedule/trigger-filter';
-import { useEventAppConnect } from './schedule/use-event-app-connect';
+import { TriggerList } from './schedule/trigger-list';
+import { runsInFlight } from './schedule/trigger-runs-logic';
+import { runsOf } from './schedule/trigger-runs-panel';
+import {
+  bulkTargets,
+  runSequentially,
+  selectAllShown,
+  selectRange,
+  toggleSlug,
+  visibleSelection,
+} from './schedule/trigger-selection';
+import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
 import { useEventTitles } from './schedule/use-event-titles';
-import { useSlashFocus } from '@/hooks/utils';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -110,59 +134,100 @@ const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
 };
 
 /**
- * Pure — no hooks, no data fetching. Renders the pause-all button for a
- * MANAGER only; returns `null` for anyone else. Split out from
- * {@link TriggerActivationMenu} (its data-fetching container, below) purely
- * so this gate is testable under `renderToStaticMarkup` — apps/web has no DOM
- * testing library, so a pure component taking `canManage` as a prop is the
- * only way `schedule-view.test.tsx` can pin "an editor doesn't see this"
- * without a live QueryClient. See {@link TriggerActivationMenu}'s header
- * comment for why `canManage` here is deliberately NOT `ScheduleView`'s own
- * `canWrite`.
- *
- * A labelled button, not a switch behind a gear: the gear hid the one control
- * it held. The label names the action the click takes — "Pause all" while
- * triggers run, "Resume all" while they are paused — and the tooltip says
- * what pausing means.
+ * Pure: no hooks, no data fetching. The toolbar's ⋯ menu (Paper C03 `6O9-0`
+ * + `6YS-0`) for a viewer who may update triggers; `null` for anyone else.
+ * It holds the project-wide switch: Pause all (with the active count beside
+ * it) and Resume all, each disabled while it would change nothing. Split from
+ * {@link TriggerActivationMenu} so the gate renders under
+ * `renderToStaticMarkup` without a QueryClient.
  */
-export function TriggerPauseButton({
+export function TriggerToolbarMenu({
   canManage,
   paused,
   isPending,
   onToggle,
+  onSelectMode,
 }: {
   canManage: boolean;
+  /** The project-wide switch (`triggers_paused`). */
   paused: boolean;
   isPending: boolean;
   onToggle: (next: boolean) => void;
+  /** Turns on multi-select; absent when there is nothing to select. */
+  onSelectMode?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canManage) return null;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
+          variant="secondary"
+          size="icon-base"
           disabled={isPending}
-          aria-pressed={paused}
-          onClick={() => onToggle(!paused)}
+          aria-label={tI18nComplete.raw('textd47d7cb0e4f8')}
         >
-          {paused ? (
-            <PlayIcon className="size-4 shrink-0" />
-          ) : (
-            <PauseIcon className="size-4 shrink-0" />
-          )}
-          {paused ? tI18nComplete.raw('text43e673c5503d') : tI18nComplete.raw('text0b6258b50010')}
+          <DotsThreeIcon className="text-muted-foreground size-4 shrink-0" />
         </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-64">
-        {tI18nComplete.raw('text19a4be984642')}
-      </TooltipContent>
-    </Tooltip>
+      </DropdownMenuTrigger>
+      {/* One project-wide switch: the rows say what it does, not a per-trigger count. */}
+      <DropdownMenuContent align="end" className="w-76">
+        <DropdownMenuItem
+          className={RICH_ROW_CLASS}
+          disabled={paused}
+          onSelect={() => onToggle(true)}
+        >
+          <RichRowBody
+            icon={PauseIcon}
+            title={tI18nComplete.raw('text0b6258b50010')}
+            description={tI18nComplete.raw('textdae75dce541f')}
+          />
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className={RICH_ROW_CLASS}
+          disabled={!paused}
+          onSelect={() => onToggle(false)}
+        >
+          <RichRowBody
+            icon={PlayIcon}
+            title={tI18nComplete.raw('text43e673c5503d')}
+            description={tI18nComplete.raw('textced57bebd466')}
+          />
+        </DropdownMenuItem>
+        {onSelectMode ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onSelectMode}>
+              <CheckSquareIcon />
+              {tI18nComplete.raw('text2a78025de6aa')}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+}
+
+/**
+ * The project-wide pause switch (`PATCH /projects/:id/triggers/activation`):
+ * `mutate(true)` pauses every schedule and webhook, `mutate(false)` resumes.
+ * The toolbar menu and the paused alert share it, so both toast and update
+ * the cached listing the same way.
+ */
+export function useTriggersActivation(projectId: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    onSuccess: (data, next) => {
+      queryClient.setQueryData(qk.project.triggers(projectId), data);
+      successToast(
+        next ? tI18nComplete.raw('text5f6f23bff165') : tI18nComplete.raw('text5e4efd91b927'),
+      );
+    },
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
+  });
 }
 
 /**
@@ -190,9 +255,13 @@ export function TriggerPauseButton({
  *
  * Exported for `trigger-activation-menu.test.tsx`, which renders it per role.
  */
-export function TriggerActivationMenu({ projectId }: { projectId: string }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
+export function TriggerActivationMenu({
+  projectId,
+  onSelectMode,
+}: {
+  projectId: string;
+  onSelectMode?: () => void;
+}) {
   const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
     queryKey,
@@ -206,23 +275,15 @@ export function TriggerActivationMenu({ projectId }: { projectId: string }) {
   // is the update control rather than `ScheduleView`'s create gate.
   const canManage = useTriggerControls(projectId).canUpdate;
 
-  const mutation = useMutation({
-    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
-    onSuccess: (data, next) => {
-      queryClient.setQueryData(queryKey, data);
-      successToast(
-        next ? tI18nComplete.raw('text5f6f23bff165') : tI18nComplete.raw('text5e4efd91b927'),
-      );
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
-  });
+  const mutation = useTriggersActivation(projectId);
 
   return (
-    <TriggerPauseButton
+    <TriggerToolbarMenu
       canManage={canManage}
       paused={paused}
       isPending={mutation.isPending || triggersQuery.isLoading}
       onToggle={(v) => mutation.mutate(v)}
+      onSelectMode={onSelectMode}
     />
   );
 }
@@ -250,6 +311,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   });
 
   const [query, setQuery] = useState('');
+  // The input shows every keystroke; the list filters 200 ms after the last one.
+  const { debouncedValue: debouncedQuery } = useDebounce(query, 200);
   const [createOpen, setCreateOpen] = useState(false);
   // The empty state's "App event" button opens the form past the type step.
   const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
@@ -260,11 +323,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     setCreateApp(app);
     setCreateOpen(true);
   };
-  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
-  // `?t=<slug>` opens that trigger's sheet: the connector page links here.
   const searchParams = useSearchParams();
-  const linkedSlug = searchParams?.get('t') ?? null;
+  // `?id=<trigger id>[&tab=runs]` is the open trigger: a link, Back and Forward all open it.
+  const sheet = readTriggerSheet(searchParams);
   // App events are a beta feature behind the project flag `event_triggers`. Fail
   // closed: until the flag resolves on, nothing that lists, browses or requests events renders.
   const featureFlags = useProjectFeatureFlags(projectId);
@@ -284,10 +346,18 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   };
   // A null project id keeps the hook idle: with events off the page asks for no event data at all.
   const eventApps = useProjectTriggerEventApps(eventsOn ? projectId : null);
-  const appIndex = useMemo(() => indexEventApps(eventApps.data?.apps), [eventApps.data]);
-  const agents = useVisibleAgents({ projectId });
-  const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
+  const navigateSheet = (next: Parameters<typeof triggerSheetHref>[2]) => {
+    const { href, mode } = triggerSheetHref(
+      pathname,
+      searchParams?.toString() ?? '',
+      next,
+      selected !== null,
+    );
+    if (mode === 'push') router.push(href, { scroll: false });
+    else router.replace(href, { scroll: false });
+  };
+  const openTrigger = (slug: string) => navigateSheet({ slug });
+  const closeTrigger = () => navigateSheet({ slug: null });
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(
@@ -300,43 +370,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res, trigger) => {
-      const entity = triggerToastEntity(trigger);
-      if (res.status === 'fired') {
-        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
-          entity,
-          ...(res.session_id
-            ? { actions: triggerRunActions(projectId, res.session_id, tI18nComplete.raw('textb205bb47f81a')) }
-            : { description: tI18nComplete.raw('text747e9e0e8e92') }),
-        });
-      } else if (res.status === 'queued') {
-        successToast(tI18nComplete.raw('text661ff40a07e0'), {
-          entity,
-          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
-        });
-      } else {
-        errorToast(tI18nComplete.raw('text9c18cb990345'), { entity, description: res.error });
-      }
+      fireResultToast(res, trigger, projectId, tI18nComplete);
       invalidate();
     },
     onError: (err) =>
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
 
-  const toggle = useMutation({
-    mutationFn: (trigger: ProjectTrigger) =>
-      updateProjectTrigger(projectId, trigger.slug, { enabled: !trigger.enabled }),
-    onSuccess: (_data, trigger) => {
-      successToast(
-        trigger.enabled
-          ? tI18nComplete.raw('texte159b06187d3')
-          : tI18nComplete.raw('texta97d32ddb6ba'),
-        { entity: triggerToastEntity(trigger) },
-      );
-      invalidate();
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
-  });
+  // The paused alert's own Resume all: the same switch and hook as the toolbar menu.
+  const resumeAll = useTriggersActivation(projectId);
 
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
@@ -349,7 +391,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         { entity: triggerToastEntity(trigger) },
       );
       setDeleteTarget(null);
-      setSelectedSlug(null);
+      closeTrigger();
       invalidate();
     },
     onError: (err) =>
@@ -380,11 +422,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, showContent && triggers.length > 0);
   const eventNames = useEventTitles(projectId, triggers, eventsOn, eventApps.data?.apps);
-  const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
   const filtered = useMemo(
-    () => ofKind.filter((t) => matchesQuery(t, query, tI18nComplete)),
-    [ofKind, query, tI18nComplete],
+    () => ofKind.filter((t) => matchesQuery(t, debouncedQuery, tI18nComplete)),
+    [ofKind, debouncedQuery, tI18nComplete],
   );
   const appGroups = useMemo(
     () =>
@@ -407,248 +448,440 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   );
 
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
-  const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
+  // An unknown slug matches nothing: the sheet stays closed, with no error.
+  const selected = triggers.find((t) => t.slug === sheet.slug) ?? null;
+
+  // The open trigger's runs: the same query (same key) the Runs tab reads, so
+  // no second request. A run in progress makes its clock green and its row
+  // show the dot matrix, for as long as the run lasts, even under the
+  // project-wide pause (Run now still fires there).
+  const [runsLive, setRunsLive] = useState(false);
+  const selectedRuns = useTriggerRuns(projectId, selected?.slug ?? '', {
+    enabled: !!selected,
+    refetchInterval: runsLive ? 5000 : false,
+  });
+  const live = !!selected && runsInFlight(runsOf(selectedRuns));
+  // Adjust state while rendering (guarded): poll only while a run is in progress.
+  if (live !== runsLive) setRunsLive(live);
+  const liveSlug = live && selected ? selected.slug : null;
+
+  /* ── Select mode: multi-select, then sequential bulk Pause / Resume / Delete ── */
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(() => new Set());
+  const [anchorSlug, setAnchorSlug] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    verb: BulkVerb;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const orderedSlugs = useMemo(
+    () => (appGroups ? appGroups.flatMap((g) => g.triggers) : filtered).map((t) => t.slug),
+    [appGroups, filtered],
+  );
+  const enterSelectMode = () => {
+    if (selected) closeTrigger();
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+    setSelectMode(true);
+  };
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+  }, []);
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      // An Esc that a dialog or menu already handled is theirs, not the selection's.
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenFloatingLayer()) return;
+      if (bulkProgress || bulkDeleteOpen) return;
+      exitSelectMode();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectMode, bulkProgress, bulkDeleteOpen, exitSelectMode]);
+  // A filter or search change drops the selection: bulk actions never reach hidden rows.
+  const selectionScope = `${filter}\u0000${debouncedQuery}`;
+  const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
+  if (selectionScope !== selectionScopeSeen) {
+    setSelectionScopeSeen(selectionScope);
+    setSelectedSlugs(new Set());
+    setAnchorSlug(null);
+  }
+  // …and intersects with what is shown at action time, as a second guard.
+  const actionable = useMemo(
+    () => visibleSelection(filtered, selectedSlugs),
+    [filtered, selectedSlugs],
+  );
+  // Stops a running bulk loop between items when the page unmounts.
+  const bulkCancelled = useRef(false);
+  useEffect(() => {
+    bulkCancelled.current = false;
+    return () => {
+      bulkCancelled.current = true;
+    };
+  }, []);
+  const BULK_RESULT_KEY = {
+    pause: 'textd845c8702b04',
+    resume: 'texte57e0a07011b',
+    delete: 'text1412a8506003',
+  } as const;
+  // ponytail: one request per trigger, in order (no bulk trigger API yet;
+  // each write commits the manifest, so concurrency 1 avoids commit conflicts).
+  const runBulk = async (verb: BulkVerb) => {
+    const items =
+      verb === 'delete'
+        ? triggers.filter((t) => actionable.has(t.slug))
+        : bulkTargets(triggers, actionable, verb === 'resume');
+    if (items.length === 0) return;
+    setBulkProgress({ verb, done: 0, total: items.length });
+    const tally = await runSequentially(
+      items,
+      (t) =>
+        verb === 'delete'
+          ? deleteProjectTrigger(projectId, t.slug)
+          : updateProjectTrigger(projectId, t.slug, { enabled: verb === 'resume' }),
+      (done, total) => setBulkProgress({ verb, done, total }),
+      () => bulkCancelled.current,
+    );
+    if (tally.cancelled) return;
+    setBulkProgress(null);
+    const message = tI18nComplete(BULK_RESULT_KEY[verb], { ok: tally.ok, failed: tally.failed });
+    // Each failure's own reason, first three, under the tally.
+    if (tally.failed > 0) errorToast(message, { description: tally.errors.slice(0, 3).join('\n') });
+    else successToast(message);
+    if (verb === 'delete') setSelectedSlugs(new Set());
+    void invalidate();
+  };
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
   return (
-    <CapabilityPageShell
-      /* The heading comes from `TRIGGERS_COPY` — this is one page now, not a
+    // The open trigger takes a column beside the list, wider than it (60/40):
+    // while it is open it is the main content. Below 48rem it covers the list.
+    // The route's `flex min-h-0 flex-1` column bounds the height.
+    <SplitSheet
+      open={!!selected}
+      onOpenChange={(next) => {
+        if (!next) closeTrigger();
+      }}
+      size="lg"
+      className="flex-1 [--split-sheet-max:60%] [--split-sheet-width:60%]"
+    >
+      {/* A flex column, so the shell's own `flex-1 overflow-y-auto` div is the
+          scroller: the select bar's `sticky bottom-4` then pins to the visible
+          bottom of the list column. */}
+      <SplitSheetMain className="flex flex-col">
+        <CapabilityPageShell
+          /* The heading comes from `TRIGGERS_COPY` — this is one page now, not a
          pane switched by `type`. It read the Settings rail while
          Schedules/Webhooks were overlay panes; a capability page has no rail
          entry, and a rail lookup that misses renders no heading at all. */
-      title={copy.title}
-      description={copy.description}
-      search={
-        showContent && triggers.length > 0 ? (
-          <InputGroupSearch>
-            <InputGroupSearchIcon>
-              <SearchIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              ref={searchRef}
-              placeholder={copy.searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              variant="popover"
-              size="sm"
-            />
-            <InputGroupSearchClear onClick={() => setQuery('')} />
-          </InputGroupSearch>
-        ) : undefined
-      }
-      filters={
-        showFilter ? (
-          <Tabs
-            value={filter}
-            onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
-            className="max-w-full overflow-x-auto"
-          >
-            <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
-              {filters.map((value) => (
-                <TabsTrigger key={value} value={value} className="gap-1.5">
-                  {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                  <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        ) : undefined
-      }
-      action={
-        /* One right-hand cluster, secondary control first: the project-wide
+          title={copy.title}
+          description={copy.description}
+          // Beside an open trigger the list is a 40% column: stack the header so
+          // search, Pause all and New trigger share one full-width row.
+          stacked={!!selected}
+          search={
+            showContent && triggers.length > 0 ? (
+              <InputGroupSearch>
+                <InputGroupSearchIcon>
+                  <SearchIcon />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  ref={searchRef}
+                  placeholder={copy.searchPlaceholder}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  variant="popover"
+                  size="sm"
+                />
+                <InputGroupSearchClear onClick={() => setQuery('')} />
+              </InputGroupSearch>
+            ) : undefined
+          }
+          filters={
+            showFilter ? (
+              <Tabs
+                value={filter}
+                onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
+                className="max-w-full overflow-x-auto"
+              >
+                {/* The sheet's tab style (underline), so both tab bars match. */}
+                <TabsList
+                  type="underline"
+                  underlineSize="md"
+                  size="sm"
+                  aria-label={tI18nComplete.raw('text51035b5b67dc')}
+                  className="h-8 justify-start gap-5"
+                >
+                  {filters.map((value) => (
+                    <TabsTrigger
+                      key={value}
+                      value={value}
+                      className="flex-none px-0 text-xs font-medium"
+                    >
+                      {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            ) : undefined
+          }
+          action={
+            /* One right-hand cluster, secondary control first: the project-wide
            pause (its own manager-only probe, NOT this view's `canWrite`), then
            the primary create action, last and labelled.
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
-        showContent ? (
-          <div className="flex items-center gap-2">
-            {triggers.length > 0 || paused ? (
-              <TriggerActivationMenu projectId={projectId} />
-            ) : null}
-            {canWrite ? (
-              <NewEntityMenu
-                label={copy.createLabel}
-                pending={configure.pending}
-                onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => openCreate() }}
-              />
-            ) : null}
-          </div>
-        ) : undefined
-      }
-    >
-      <div className="space-y-4">
-        {/* The paused STATE, not the control: it stays at the top of the page
+            showContent ? (
+              // Search, then one group: ⋯ and New trigger, both `secondary` at `h-8`.
+              <ButtonGroup>
+                {triggers.length > 0 || paused ? (
+                  <TriggerActivationMenu
+                    projectId={projectId}
+                    onSelectMode={triggers.length > 0 ? enterSelectMode : undefined}
+                  />
+                ) : null}
+                {canWrite ? (
+                  <NewEntityMenu
+                    label={copy.createLabel}
+                    pending={configure.pending}
+                    onChat={() => configure.start(newConfigPrompt('trigger'))}
+                    manual={{ onSelect: () => openCreate() }}
+                    caret={false}
+                  />
+                ) : null}
+              </ButtonGroup>
+            ) : undefined
+          }
+        >
+          <div className="space-y-4">
+            {/* The paused STATE, not the control: it stays at the top of the page
             because a project that runs nothing on its own is something a
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
-        {paused && showContent && (
-          <InfoBanner
-            tone="warning"
-            icon={WarningIcon}
-            title={tI18nComplete.raw('textb18b93a52cd2')}
-          >
-            {tI18nComplete.raw('text3bc554b5c290')}
-          </InfoBanner>
-        )}
+            {paused && showContent && (
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('textb18b93a52cd2')}</AlertTitle>
+                <AlertDescription>{tI18nComplete.raw('textc9e9d972eda2')}</AlertDescription>
+                {controls.canUpdate ? (
+                  <AlertActions>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={resumeAll.isPending}
+                      onClick={() => resumeAll.mutate(false)}
+                    >
+                      {resumeAll.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                      {tI18nComplete.raw('text43e673c5503d')}
+                    </Button>
+                  </AlertActions>
+                ) : null}
+              </Alert>
+            )}
 
-        {triggersQuery.isLoading ? (
-          <div className="space-y-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-              <Skeleton key={i} className="h-10 rounded-md" />
-            ))}
+            {triggersQuery.isLoading ? (
+              <div className="space-y-1">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+                  <Skeleton key={i} className="h-10 rounded-md" />
+                ))}
+              </div>
+            ) : isForbidden ? (
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('textabb84be05cfa')}</AlertTitle>
+                <AlertDescription>
+                  {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
+                  {tI18nComplete.raw('text382584f2456e')}
+                </AlertDescription>
+              </Alert>
+            ) : triggersQuery.isError ? (
+              <ErrorState
+                size="sm"
+                title={tI18nComplete('text7ce02a51e3dd', { value0: copy.noun })}
+                description={
+                  (triggersQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')
+                }
+                action={
+                  <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
+                    {tI18nComplete.raw('textd8b8392e2c54')}
+                  </Button>
+                }
+              />
+            ) : filter !== 'all' && ofKind.length === 0 ? (
+              <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
+            ) : triggers.length === 0 ? (
+              <EmptyState
+                icon={LightningIcon}
+                title={copy.emptyTitle}
+                description={copy.emptyBody}
+                className="py-12"
+                action={
+                  canWrite ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => openCreate()}
+                    >
+                      <PlusIcon className="size-4 shrink-0" />
+                      {copy.createLabel}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : filtered.length === 0 ? (
+              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                {tI18nComplete.raw('text965b516df3ba')}{' '}
+                <span className="text-foreground font-medium">{debouncedQuery}</span>.
+              </p>
+            ) : (
+              <TriggerList
+                triggers={filtered}
+                groups={appGroups}
+                eventNames={eventNames}
+                projectPaused={paused}
+                selectedSlug={selected?.slug ?? null}
+                runningSlug={run.isPending ? (run.variables?.slug ?? null) : liveSlug}
+                onOpen={(t) => openTrigger(t.slug)}
+                selection={
+                  selectMode
+                    ? {
+                        selected: selectedSlugs,
+                        onToggle: (t, range) => {
+                          setSelectedSlugs((prev) =>
+                            range
+                              ? selectRange(prev, orderedSlugs, anchorSlug, t.slug)
+                              : toggleSlug(prev, t.slug),
+                          );
+                          setAnchorSlug(t.slug);
+                        },
+                      }
+                    : null
+                }
+              />
+            )}
+
+            {selectMode ? (
+              // Floats at the bottom centre of the list column, inside its edges.
+              <div className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
+                <div className="pointer-events-auto w-full max-w-xl">
+                  <TriggerSelectionBar
+                    selectedCount={actionable.size}
+                    shownCount={filtered.length}
+                    allSelected={
+                      filtered.length > 0 && filtered.every((t) => selectedSlugs.has(t.slug))
+                    }
+                    canPause={bulkTargets(triggers, actionable, false).length > 0}
+                    canResume={bulkTargets(triggers, actionable, true).length > 0}
+                    canDelete={controls.canDelete}
+                    progress={bulkProgress}
+                    onSelectAll={() => setSelectedSlugs(selectAllShown(filtered))}
+                    onClear={() => setSelectedSlugs(new Set())}
+                    onPause={() => void runBulk('pause')}
+                    onResume={() => void runBulk('resume')}
+                    onDelete={() => setBulkDeleteOpen(true)}
+                    onExit={exitSelectMode}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {showContent && eventsOn && filter === 'event' ? (
+              <EventAppsStrip
+                projectId={projectId}
+                disabled={!canWrite}
+                onPick={(app) => openCreate('event', { app: app.app })}
+              />
+            ) : null}
+
+            {parseErrors.length > 0 && (
+              <Alert variant="warning">
+                <AlertTitle>{tI18nComplete.raw('text5f6dc605ac36')}</AlertTitle>
+                <AlertDescription>
+                  <ul className="space-y-0.5 text-xs">
+                    {parseErrors.map((err) => (
+                      <li key={err.slug}>
+                        <code className="font-mono">{err.path}</code> — {err.error}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
-        ) : isForbidden ? (
-          <InfoBanner
-            tone="warning"
-            icon={LockKeyIcon}
-            title={tI18nComplete.raw('textabb84be05cfa')}
-          >
-            {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
-            {tI18nComplete.raw('text382584f2456e')}
-          </InfoBanner>
-        ) : triggersQuery.isError ? (
-          <ErrorState
-            size="sm"
-            title={tI18nComplete('text7ce02a51e3dd', { value0: copy.noun })}
-            description={
-              (triggersQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
-                {tI18nComplete.raw('textd8b8392e2c54')}
-              </Button>
-            }
-          />
-        ) : filter !== 'all' && ofKind.length === 0 ? (
-          <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
-        ) : triggers.length === 0 ? (
-          <EmptyState
-            icon={LightningIcon}
-            title={copy.emptyTitle}
-            description={copy.emptyBody}
-            className="py-12"
-            action={
-              canWrite ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openCreate()}>
-                  <PlusIcon className="size-4 shrink-0" />
-                  {copy.createLabel}
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tI18nComplete.raw('text965b516df3ba')}{' '}
-            <span className="text-foreground font-medium">{query}</span>.
-          </p>
-        ) : (
-          <ScheduleTable
-            triggers={filtered}
-            groups={appGroups}
-            apps={appIndex}
-            eventNames={eventNames}
-            agentLabel={agentLabel}
-            controls={controls}
-            runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
-            togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
-            onOpen={(t) => setSelectedSlug(t.slug)}
-            onRun={(t) => run.mutate(t)}
-            onToggle={(t) => toggle.mutate(t)}
-            onDelete={(t) => setDeleteTarget(t)}
-            onConnect={
-              eventConnect.canConnect
-                ? (t) =>
-                    t.event &&
-                    eventConnect.connect({
-                      app: t.event.app ?? t.event.connector,
-                      name: eventAppName(t.event, appIndex),
-                      connector: t.event.connector,
-                    })
-                : undefined
-            }
-          />
-        )}
 
-        {showContent && eventsOn && filter === 'event' ? (
-          <EventAppsStrip
+          <TriggerComposer
             projectId={projectId}
-            disabled={!canWrite}
-            onPick={(app) => openCreate('event', { app: app.app })}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            initialKind={createKind}
+            initialApp={createApp}
+            onCreated={(slug) => {
+              setCreateOpen(false);
+              invalidate();
+              // Drop straight into the new entry so the address or the first run
+              // is one click away, not two.
+              openTrigger(slug);
+            }}
           />
-        ) : null}
 
-        {parseErrors.length > 0 && (
-          <InfoBanner
-            tone="warning"
-            icon={WarningIcon}
-            title={tI18nComplete.raw('text5f6dc605ac36')}
-          >
-            <ul className="space-y-0.5 text-xs">
-              {parseErrors.map((err) => (
-                <li key={err.slug}>
-                  <code className="font-mono">{err.path}</code> — {err.error}
-                </li>
-              ))}
-            </ul>
-          </InfoBanner>
-        )}
-      </div>
+          <ConfirmDialog
+            open={!!deleteTarget}
+            onOpenChange={(next) => {
+              if (!next) setDeleteTarget(null);
+            }}
+            title={tI18nComplete('text4e9e0de01d8a', {
+              value0: deleteTarget ? kindCopy[deleteTarget.type as TriggerKind].noun : copy.noun,
+            })}
+            description={
+              deleteTarget ? (
+                <>
+                  <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
+                  {describeWhen(deleteTarget).toLowerCase()}
+                  {tI18nComplete.raw('text33575b279b5e')}
+                </>
+              ) : null
+            }
+            confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
+            confirmVariant="destructive"
+            isPending={remove.isPending}
+            onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
+          />
 
-      <TriggerComposer
-        projectId={projectId}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        initialKind={createKind}
-        initialApp={createApp}
-        onCreated={(slug) => {
-          setCreateOpen(false);
-          invalidate();
-          // Drop straight into the new entry so the address or the first run
-          // is one click away, not two.
-          setSelectedSlug(slug);
-        }}
-      />
-
-      <ScheduleDetailSheet
+          <ConfirmDialog
+            open={bulkDeleteOpen}
+            onOpenChange={setBulkDeleteOpen}
+            title={tI18nComplete('textd142c482800c', { count: actionable.size })}
+            description={tI18nComplete.raw('text75af4531ed17')}
+            confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
+            confirmVariant="destructive"
+            isPending={bulkProgress?.verb === 'delete'}
+            onConfirm={() => {
+              setBulkDeleteOpen(false);
+              void runBulk('delete');
+            }}
+          />
+        </CapabilityPageShell>
+      </SplitSheetMain>
+      <ScheduleDetailSplitContent
         projectId={projectId}
         trigger={selected}
         eventsEnabled={eventsOn}
         controls={controls}
-        open={!!selected}
-        onOpenChange={(next) => {
-          if (!next) setSelectedSlug(null);
-        }}
+        initialTab={sheet.tab}
+        projectPaused={paused}
+        live={!!selected && selected.slug === liveSlug}
+        onResumeAll={() => resumeAll.mutate(false)}
+        resumingAll={resumeAll.isPending}
+        onTabChange={(tab) => selected && navigateSheet({ slug: selected.slug, tab })}
         onRun={() => selected && run.mutate(selected)}
         running={run.isPending && run.variables?.slug === selected?.slug}
         onDelete={() => selected && setDeleteTarget(selected)}
         onMutated={invalidate}
       />
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(next) => {
-          if (!next) setDeleteTarget(null);
-        }}
-        title={tI18nComplete('text4e9e0de01d8a', {
-          value0: deleteTarget ? kindCopy[deleteTarget.type as TriggerKind].noun : copy.noun,
-        })}
-        description={
-          deleteTarget ? (
-            <>
-              <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
-              {describeWhen(deleteTarget).toLowerCase()}
-              {tI18nComplete.raw('text33575b279b5e')}
-            </>
-          ) : null
-        }
-        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
-        confirmVariant="destructive"
-        isPending={remove.isPending}
-        onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
-      />
-    </CapabilityPageShell>
+    </SplitSheet>
   );
 }
