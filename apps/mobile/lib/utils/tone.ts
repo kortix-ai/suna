@@ -9,7 +9,7 @@ import { useColorScheme } from 'nativewind';
  * test without the native `nativewind` graph (which bun cannot parse
  * outside Metro); test fakes mock `@/lib/utils/tone` with `useTone`.
  */
-export type Tone = 'light' | 'dark';
+type Tone = 'light' | 'dark';
 
 export function useTone(): Tone {
   const { colorScheme } = useColorScheme();
