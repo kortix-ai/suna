@@ -1492,6 +1492,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
       tailwindcss:
         specifier: ^4
         version: 4.3.3

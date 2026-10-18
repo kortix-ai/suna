@@ -39,7 +39,7 @@ import {
 } from '@/lib/syntax-highlight';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Code2, Copy } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 export function CallSnippet({
@@ -168,12 +168,28 @@ function Block({
   copyable?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearTimeout(resetTimer.current);
+    };
+  }, []);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    toast.success(`${label} call copied`);
-    setTimeout(() => setCopied(false), 1_500);
+    try {
+      await navigator.clipboard.writeText(code);
+      if (!mounted.current) return;
+      setCopied(true);
+      toast.success(`${label} call copied`);
+      clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      if (mounted.current) toast.error('Could not copy');
+    }
   };
 
   return (

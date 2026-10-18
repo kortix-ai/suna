@@ -28,15 +28,21 @@ export interface ServedModelNotice {
 }
 
 /**
- * The newest answer came from a fallback model in place of the one the
- * session asked for — what the session modal reports. Null before any
- * answer, or when the session's own model answered directly.
+ * The newest request was being served by a fallback model in place of the one
+ * the session asked for — what the session modal reports. Null before any
+ * answer, when the session's own model answered directly, or when the newest
+ * request ended without an answer: a cancel is not a fallback to report
+ * (KRTX-2572).
  */
 export function servedModelNotice(
   usage: SessionModelUsage | undefined,
   models: readonly NamedModel[] | undefined,
 ): ServedModelNotice | null {
   const latest = usage?.latest;
+  // A request the user canceled did not fail: the selected model "not
+  // answering" is the cancel's effect, not a fallback to report (KRTX-2572).
+  // The notice returns with the next answered request, as before.
+  if (latest?.outcome === 'client_aborted' || latest?.outcome === 'error') return null;
   if (!latest?.fallback_from) return null;
   return {
     served: modelNameOfWire(models, latest.served_model),
@@ -95,9 +101,10 @@ export function turnServedModelResolver(models: readonly NamedModel[] | undefine
 }
 
 /**
- * What Kortix billed the session, when a fallback model answered any of its
- * turns. The transcript's own estimate prices every turn at the model that was
- * asked for, so it is wrong for exactly these sessions. Null keeps the estimate.
+ * What Kortix billed the session, when any of its requests was rerouted to a
+ * fallback model. The transcript's own estimate prices every turn at the model
+ * that was asked for, so it is wrong for exactly these sessions. Null keeps
+ * the estimate.
  */
 export function sessionBilledCost(usage: SessionModelUsage | undefined): number | null {
   if (!usage) return null;
