@@ -34,7 +34,9 @@
  *    several reads died on the browser's 30 s deadline; the same read served
  *    in-VM took 276 ms. The cost was entirely the bytes leaving.
  */
-import type { CompiledCommand } from '@kortix/api-contract/runtime-relay'
+import type { CompiledAgentSet, CompiledCommand } from '@kortix/api-contract/runtime-relay'
+import { compilePermissionPolicy, skillGranted } from '../permission-policy'
+import { compiledV3 } from './manifest-v3'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 
 // ---------------------------------------------------------------------------
@@ -159,19 +161,24 @@ export function projectAgents(payload: unknown): AgentProjection[] {
   return out
 }
 
-/**
- * `compiled` is a kortix.yaml v3 set's `commands`. Then only those commands
- * are listed, each with its `agents`: OpenCode's own (`init`, `review`), MCP
- * prompts and skills are no command of a v3 project.
- */
+/** Only manifest-registered skills are slash commands in v3. */
+export function registeredSkillAgents(set: CompiledAgentSet, name: string): string[] {
+  if (!Object.hasOwn(set.skills ?? {}, name)) return []
+  return Object.entries(set.agent ?? {})
+    .filter(([, agent]) => !agent.disable && agent.mode !== 'subagent' && skillGranted(compilePermissionPolicy(agent.permission), name))
+    .map(([name]) => name)
+}
+
 export function projectCommands(payload: unknown, compiled?: Record<string, CompiledCommand>): CommandProjection[] {
   const out: CommandProjection[] = []
+  const set = compiled ? compiledV3() : null
   for (const raw of asList(payload)) {
     if (!raw || typeof raw !== 'object') continue
     const command = raw as Record<string, unknown>
     const name = str(command.name)
     if (!name) continue
-    if (compiled && !Object.hasOwn(compiled, name)) continue
+    const agents = compiled && Object.hasOwn(compiled, name) ? compiled[name]!.agents : set && command.source === 'skill' ? registeredSkillAgents(set, name) : []
+    if (compiled && !Object.hasOwn(compiled, name) && !agents.length) continue
     out.push({
       name,
       description: str(command.description),
@@ -181,7 +188,7 @@ export function projectCommands(payload: unknown, compiled?: Record<string, Comp
       subtask: bool(command.subtask),
       hints: strArray(command.hints),
       template_bytes: typeof command.template === 'string' ? command.template.length : 0,
-      ...(compiled ? { agents: compiled[name]!.agents } : {}),
+      ...(compiled ? { agents } : {}),
     })
   }
   return out

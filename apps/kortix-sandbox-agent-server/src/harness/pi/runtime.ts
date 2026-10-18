@@ -920,21 +920,11 @@ export class PiRuntime {
       })
   }
 
-  /**
-   * The command list a client reads (`GET /command`). v3: every compiled
-   * command, with the agents that enable it — skills stay out, matching the
-   * OpenCode proxy's v3 filter. Otherwise pi's prompt templates PLUS the
-   * project's loaded skills: OpenCode served each skill as a `source: 'skill'`
-   * command row here (the web's `/` menu buckets those under a Skills
-   * heading), and the pi migration dropped them — a form-created skill never
-   * surfaced in the menu (KRTX-2543). The rows are invocable through
-   * `/skill:<name>` (pi's own expansion), so `commandPrompt` maps a picked
-   * row to that form.
-   */
+  /** Commands precede loaded skills; v3 skill rows list the runnable agents that grant them. */
   commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
     if (this.v3()) {
-      return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
+      const commands = Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
         name,
         description: command.description ?? '',
         source: 'command' as const,
@@ -942,6 +932,18 @@ export class PiRuntime {
         hints: hints(command.template),
         agents: command.agents,
       }))
+      const agents = Object.entries(this.compiled?.agent ?? {})
+        .filter(([, agent]) => !agent.disable && agent.mode !== 'subagent')
+        .map(([name, agent]) => ({ name, policy: compilePermissionPolicy(agent.permission) }))
+      const skills = this.skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        source: 'skill' as const,
+        template: '',
+        hints: [],
+        agents: agents.filter((agent) => skillGranted(agent.policy, skill.name)).map((agent) => agent.name),
+      })).filter((skill) => skill.agents.length > 0 && !Object.hasOwn(this.compiled?.commands ?? {}, skill.name))
+      return [...commands, ...skills]
     }
     return [
       ...(this.pi?.session.promptTemplates ?? []).map((template) => ({
@@ -971,7 +973,8 @@ export class PiRuntime {
   commandPrompt(raw: unknown): PromptInput {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
     const name = typeof body.command === 'string' ? body.command : ''
-    if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
+    const row = this.commandList().find((command) => command.name === name)
+    if (!row) throw new PromptRejected(`unknown command "${name}"`)
     const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
     const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
     const compiled = this.v3() ? this.compiled?.commands?.[name] : undefined
@@ -996,7 +999,12 @@ export class PiRuntime {
     // a loaded skill's name keeps running as the command it is (templates are
     // listed first), and the row the menu showed is the row the expansion
     // follows (KRTX-2543).
-    const skillBacked = this.commandList().find((command) => command.name === name)?.source === 'skill'
+    const skillBacked = row.source === 'skill'
+    if (this.v3() && skillBacked) {
+      const requested = (typeof body.agent === 'string' && body.agent.trim()) || this.sessionAgentName
+      const agent = this.resolveTurnAgent(requested)
+      if ((requested !== 'default' && agent !== requested) || !row.agents?.includes(agent)) throw new CommandNotEnabled(name, requested)
+    }
     const text = skillBacked ? `/skill:${name}${args ? ` ${args}` : ''}` : `/${name}${args ? ` ${args}` : ''}`
     return {
       ...parsePromptBody({

@@ -17,13 +17,12 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { slugifySlug } from '@kortix/manifest-schema';
-import { stringify as stringifyYaml } from 'yaml';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
-import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
+import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRepoFileNotFoundError, listRepoFiles, readRepoFile } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import { PROJECT_SKILL_SLUG_PATTERN, skillFolderFilePaths } from '../lib/project-resources';
@@ -32,6 +31,8 @@ import {
   assertProjectCapability,
   loadProjectForUser,
 } from '../lib/access';
+import { readManifest } from '../manifest-io';
+import { projectSkillManifestEdit, renderSkillMarkdown } from '../lib/project-skill-edit';
 import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 
@@ -57,26 +58,6 @@ const CreateSkillSchema = z.object({
     .transform((value) => value.replace(/\r?\n/g, ' '))
     .optional(),
 });
-type CreateSkillInput = z.infer<typeof CreateSkillSchema>;
-
-/** The committed file's full text: frontmatter (real YAML, the same writer
- *  `serializeAgentMarkdown` uses) plus a starter body. `lineWidth: 0` keeps
- *  every scalar on one line, which is what the summary's frontmatter reader
- *  parses. */
-function renderSkillMarkdown(skill: CreateSkillInput): string {
-  const frontmatter: Record<string, string> = { name: skill.name };
-  if (skill.description) frontmatter.description = skill.description;
-  const header = stringifyYaml(frontmatter, { lineWidth: 0 }).trimEnd();
-  const body = [
-    `# ${skill.name}`,
-    '',
-    ...(skill.description ? [skill.description, ''] : []),
-    'Describe when the agent should load this skill and what to do. Edit this file',
-    'in the repo, or ask an agent in chat to extend it.',
-    '',
-  ].join('\n');
-  return `---\n${header}\n---\n\n${body}`;
-}
 
 export function registerProjectSkillsRoutes(): void {
   projectsApp.openapi(
@@ -132,7 +113,23 @@ export function registerProjectSkillsRoutes(): void {
     const path = `skills/${slug}/SKILL.md`;
 
     const gitProject = await withProjectGitAuth(loaded.row);
+    let manifestEdit: ReturnType<typeof projectSkillManifestEdit>;
     try {
+      const manifest = await readManifest(gitProject, { forceRefresh: true, rethrowReadErrors: true });
+      try {
+        manifestEdit = projectSkillManifestEdit(manifest, slug, 'create');
+      } catch (err) {
+        const message = (err as Error).message;
+        return c.json({ error: message }, message.includes('already exists') ? 409 : 400);
+      }
+    } catch (err) {
+      return c.json({ error: `Failed to read the project manifest: ${(err as Error).message}`, code: 'manifest_read' }, 502);
+    }
+    try {
+      const files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+      if (skillFolderFilePaths(files, slug).length > 0) {
+        return c.json({ error: `A skill named "${slug}" already exists`, code: 'skill_exists' }, 409);
+      }
       await readRepoFile(gitProject, path);
       // The file reads back: this slug is taken.
       return c.json(
@@ -156,9 +153,9 @@ export function registerProjectSkillsRoutes(): void {
     }
 
     try {
-      await commitFileToBranch(gitProject, {
-        path,
-        content: renderSkillMarkdown(skill),
+      await commitMultipleFilesToBranch(gitProject, {
+        ...manifestEdit,
+        files: [...manifestEdit.files, { path, content: renderSkillMarkdown(skill, slug) }],
         message: `feat: add skill ${slug}`,
         branch: loaded.row.defaultBranch,
       });
@@ -229,7 +226,14 @@ projectsApp.openapi(
 
     const gitProject = await withProjectGitAuth(loaded.row);
     let repoFiles: Array<{ path: string }>;
+    let manifestEdit: ReturnType<typeof projectSkillManifestEdit>;
     try {
+      const manifest = await readManifest(gitProject, { forceRefresh: true, rethrowReadErrors: true });
+      try {
+        manifestEdit = projectSkillManifestEdit(manifest, slug, 'delete');
+      } catch (err) {
+        return c.json({ error: (err as Error).message, code: 'invalid_slug' }, 400);
+      }
       repoFiles = await listRepoFiles(gitProject, loaded.row.defaultBranch);
     } catch (err) {
       return c.json(
@@ -244,6 +248,7 @@ projectsApp.openapi(
 
     try {
       await commitMultipleFilesToBranch(gitProject, {
+        ...manifestEdit,
         deletes,
         message: `chore: remove skill ${slug}`,
         branch: loaded.row.defaultBranch,

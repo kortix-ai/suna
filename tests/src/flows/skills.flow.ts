@@ -224,7 +224,7 @@ flow(
       if (!skill) {
         throw new Error(`the created skill is missing from the catalog: ${JSON.stringify(skills.map((s) => s.path))}`);
       }
-      if (skill.name !== 'Release Notes') throw new Error(`frontmatter name read back as "${skill.name}"`);
+      if (skill.name !== slug) throw new Error(`frontmatter name read back as "${skill.name}"`);
       if (skill.description !== 'Draft the weekly "release notes": go') {
         throw new Error(`frontmatter description read back as "${skill.description}"`);
       }
@@ -238,7 +238,7 @@ flow(
       r.status(200);
       const content = r.json<any>().content as string;
       if (!content?.startsWith('---\n')) throw new Error('the committed skill must start with frontmatter');
-      if (!/^name: .+$/m.test(content)) {
+      if (!new RegExp(`^name: ${slug}$`, 'm').test(content)) {
         throw new Error(`frontmatter must carry the name, got:\n${content.split('\n').slice(0, 4).join('\n')}`);
       }
       if (!/# Release Notes/.test(content)) throw new Error('the body must start with the skill title');

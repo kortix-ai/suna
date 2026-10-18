@@ -8,7 +8,8 @@ import { isRepoMaterialized } from '@/services/workspace-provider/checkout'
 import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
-import { commandRefusal, compiledV3 } from './manifest-v3'
+import { commandRefusal, compiledV3, sessionAgentName } from './manifest-v3'
+import { registeredSkillAgents } from './opencode-projection'
 import {
   abortTargetOf,
   loopStartTargetOf,
@@ -169,13 +170,20 @@ export function createOpenCodeProxyService(
         try {
           parsed = JSON.parse(body)
         } catch {}
-        const refusal = commandRefusal(v3, process.env, parsed)
-        if (refusal) {
+        const fields = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
+        const command = typeof fields.command === 'string' ? fields.command : ''
+        const agent = typeof fields.agent === 'string' && fields.agent.trim() ? fields.agent.trim() : sessionAgentName(v3, process.env)
+        const configured = agent ? v3.agent?.[agent] : undefined
+        const runnable = configured && !configured.disable && configured.mode !== 'subagent'
+        const skillAllowed = !Object.hasOwn(v3.commands ?? {}, command) && agent && registeredSkillAgents(v3, command).includes(agent)
+        const refusal = runnable && skillAllowed ? null : commandRefusal(v3, process.env, parsed)
+        const rejected = !runnable ? { error: 'command_not_enabled', command, agent } : refusal
+        if (rejected) {
           return {
             status: 403,
             statusText: 'Forbidden',
             headers: new Headers({ 'content-type': 'application/json; charset=utf-8' }),
-            body: JSON.stringify(refusal),
+            body: JSON.stringify(rejected),
           }
         }
       }
@@ -221,8 +229,7 @@ export function createOpenCodeProxyService(
         const respHeaders = new Headers(upstream.headers)
 
         // kortix.yaml v3: the command list is the compiled commands, each with
-        // the agents that may run it. OpenCode's own commands, MCP prompts and
-        // skills are no command of a v3 project.
+        // the agents that may run it, plus registered skill source rows.
         if (v3 && method === 'GET' && upstream.ok && input.path === '/command') {
           const commands = v3.commands ?? {}
           const listed = (await upstream.json()) as Array<Record<string, unknown>>
@@ -235,8 +242,12 @@ export function createOpenCodeProxyService(
             headers: respHeaders,
             body: JSON.stringify(
               (Array.isArray(listed) ? listed : [])
-                .filter((command) => typeof command?.name === 'string' && Object.hasOwn(commands, command.name))
-                .map((command) => ({ ...command, agents: commands[command.name as string]!.agents })),
+                .flatMap((command) => {
+                  if (typeof command?.name !== 'string') return []
+                  if (Object.hasOwn(commands, command.name)) return [{ ...command, agents: commands[command.name]!.agents }]
+                  const agents = command.source === 'skill' ? registeredSkillAgents(v3, command.name) : []
+                  return agents.length ? [{ ...command, agents }] : []
+                }),
             ),
           }
         }

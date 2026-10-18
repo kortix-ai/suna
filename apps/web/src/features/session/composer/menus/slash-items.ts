@@ -63,33 +63,18 @@ function bucketFor(command: Command): CommandBucket {
   return 'command';
 }
 
-/**
- * Folds the project's config-scan skills into a runtime command list, so the
- * `/` menu lists them wherever it renders (KRTX-2543).
- *
- * A session's live list comes from the runtime (`GET /command`) and, since the
- * pi harness fixes, already carries the project's skills as `source: 'skill'`
- * rows. The draft composer has no runtime at all — but the project detail's
- * config scan does name every skill the form wrote, and OpenCode served those
- * same rows natively. This is what restores that surface: the config rows are
- * appended under the ones the runtime did not already supply, deduped on the
- * name OR the path's folder slug (pi names a skill from its frontmatter while
- * the scan names the folder — the form sets both to the slug, hand-authored
- * skills can differ).
- *
- * Returns the list unchanged-shaped when there is nothing to add, and
- * `undefined` only when there is nothing at all — the caller keeps its own
- * "no commands yet" distinction.
- */
+/** Runtime commands are agent-filtered and authoritative, including an empty list.
+ * Config inventory is only a fallback for a draft without a runtime. */
 export function mergeProjectSkillCommands(
   runtime: Command[] | undefined,
   configSkills: readonly ProjectConfigSkill[] | undefined,
 ): Command[] | undefined {
+  if (runtime !== undefined) return runtime;
   const skills = configSkills ?? [];
-  if (!(Array.isArray(runtime) && runtime.length > 0) && skills.length === 0) return undefined;
+  if (skills.length === 0) return undefined;
 
-  const commands = [...(runtime ?? [])];
-  const known = new Set(commands.flatMap((command) => (command.name ? [command.name.toLowerCase()] : [])));
+  const commands: Command[] = [];
+  const known = new Set<string>();
   for (const skill of skills) {
     const slug = skillFolderSlug(skill.path)?.toLowerCase();
     if (known.has(skill.name.toLowerCase()) || (slug !== undefined && known.has(slug))) continue;

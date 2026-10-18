@@ -8,6 +8,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import type { Opencode } from '@/harness/open-code/lifecycle'
+import { projectCommands } from '@/harness/open-code/opencode-projection'
 import { createOpenCodeProxyService } from '@/harness/open-code/proxy'
 
 const UPSTREAM_COMMANDS = [
@@ -98,6 +99,41 @@ describe('kortix.yaml v3 commands', () => {
     for (const command of ['init', 'research']) {
       expect((await call('POST', '/session/ses_1/command', { command, arguments: '', agent: 'lead' })).status).toBe(403)
     }
+  })
+})
+
+describe('registered v3 skill commands', () => {
+  const set = { ...V3, skills: { research: 'skills/research', init: 'skills/init' }, agent: {
+    lead: { mode: 'primary', permission: { skill: { '*': 'deny', research: 'allow' } } },
+    helper: { mode: 'all', permission: 'ask' },
+    denied: { permission: { skill: 'deny' } },
+    disabled: { disable: true }, child: { mode: 'subagent' },
+  } }
+  test('lists only registered skill source rows with runnable granted agents', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify(set)
+    expect(projectCommands(UPSTREAM_COMMANDS, set.commands).map(({ name, agents }) => ({ name, agents }))).toEqual([
+      { name: 'weekly', agents: ['lead'] }, { name: 'research', agents: ['lead', 'helper'] },
+    ])
+    expect((await call('GET', '/command')).json).toEqual([
+      { ...UPSTREAM_COMMANDS[1], agents: ['lead'] },
+      { ...UPSTREAM_COMMANDS[2], agents: ['lead', 'helper'] },
+    ])
+  })
+  test('granted skills run, denied/unknown/disabled/subagents never reach upstream', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify(set)
+    for (const agent of ['lead', 'helper']) {
+      expect((await call('POST', '/session/ses_1/command', { command: 'research', agent })).status).toBe(200)
+    }
+    received.length = 0
+    for (const agent of ['denied', 'missing', 'disabled', 'child']) {
+      expect((await call('POST', '/session/ses_1/command', { command: 'research', agent })).status).toBe(403)
+    }
+    expect(received).toEqual([])
+  })
+  test('declared commands take precedence over same-named registered skills', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ ...set, commands: { ...V3.commands, research: { template: 'declared', agents: ['lead'] } } })
+    expect((await call('GET', '/command')).json[1].agents).toEqual(['lead'])
+    expect((await call('POST', '/session/ses_1/command', { command: 'research', agent: 'helper' })).status).toBe(403)
   })
 })
 

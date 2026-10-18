@@ -193,14 +193,11 @@ export function ComposerChatInput({
   // An empty project roster refuses an unbound composer; the resolver answers
   // `disabled` for exactly that case.
   const noAccessibleAgents = agentResolution.disabled;
-  // The slash menu lists only the commands the selected agent may run, plus
-  // the project's own skills: the config scan names them whether or not a
-  // sandbox runtime is up, and a draft — which has no runtime list at all —
-  // would otherwise offer nothing to run (KRTX-2543).
+  // A live session must never replace agent-filtered commands with project inventory.
   const { data: runtimeCommands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
   const commands = useMemo(
-    () => mergeProjectSkillCommands(runtimeCommands, projectConfig?.skills),
-    [runtimeCommands, projectConfig?.skills],
+    () => mergeProjectSkillCommands(runtimeCommands, !sessionId && !noAccessibleAgents ? projectConfig?.skills : undefined),
+    [runtimeCommands, projectConfig?.skills, sessionId, noAccessibleAgents],
   );
 
   useEffect(() => {

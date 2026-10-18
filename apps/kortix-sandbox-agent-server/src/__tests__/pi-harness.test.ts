@@ -3984,7 +3984,10 @@ describe('kortix.yaml v3 on pi', () => {
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
     expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
-    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'deploy', description: 'deploy skill', source: 'skill', template: '', hints: [], agents: ['build'] },
+      { name: 'review', description: 'review skill', source: 'skill', template: '', hints: [], agents: ['build'] },
+    ])
     const before = gateway.sent.length
     await promptAndSettle(r, 'hello')
     const system = systemSent(gateway.sent[before]!)
@@ -4094,6 +4097,40 @@ describe('kortix.yaml v3 on pi', () => {
   })
   const command = (r: Rig, root: string, body: Record<string, unknown>) =>
     r.user(`/session/${root}/command`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  test('v3 skill commands use each runnable agent grant and enforce the selected agent', async () => {
+    const r = await boot({
+      script: [{ text: 'Reviewed.' }, { text: 'Compiled.' }],
+      prepare: harnessFolders,
+      env: { KORTIX_COMPILED_AGENT_CONFIG: v3({
+        default_agent: 'build',
+        agent: {
+          build: { mode: 'primary', permission: { skill: { '*': 'deny' } } },
+          reviewer: { mode: 'all', prompt: 'You review.', permission: { skill: { review: 'allow', '*': 'deny' } } },
+          child: { mode: 'subagent', permission: 'allow' },
+          off: { mode: 'primary', disable: true, permission: 'allow' },
+        },
+        skills: { deploy: 'skills/deploy', review: 'team/review' },
+        commands: { deploy: { template: 'Compiled deploy.', agents: ['build'] } },
+      }) },
+    })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'deploy', description: '', source: 'command', template: 'Compiled deploy.', hints: [], agents: ['build'] },
+      { name: 'review', description: 'review skill', source: 'skill', template: '', hints: [], agents: ['reviewer'] },
+    ])
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    for (const agent of [undefined, 'build', 'child', 'off', 'missing', '__proto__']) {
+      const refused = await command(r, root, { command: 'review', agent })
+      expect(refused.status).toBe(403)
+    }
+    expect(gateway.requests.length).toBe(calls)
+    expect((await command(r, root, { command: 'review', agent: 'reviewer', arguments: 'module' })).status).toBe(200)
+    expect(JSON.stringify(gateway.sent.at(-1))).toContain('Body.')
+    expect(JSON.stringify(gateway.sent.at(-1))).toContain('You review.')
+    expect((await command(r, root, { command: 'deploy' })).status).toBe(200)
+    expect(JSON.stringify(gateway.sent.at(-1))).toContain('Compiled deploy.')
+  })
 
   test('GET /command lists every compiled command with its agents; no folder prompt is a command', async () => {
     const r = await boot({ script: [], prepare: harnessFolders, env: { KORTIX_COMPILED_AGENT_CONFIG: COMMANDS } })

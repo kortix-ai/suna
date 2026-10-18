@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { Command } from '@kortix/sdk/react';
 
 import { SLASH_ACTIONS } from './slash-actions';
 import { buildSlashSections, groupCommandsBySource, mergeProjectSkillCommands } from './slash-items';
@@ -406,15 +407,19 @@ describe('mergeProjectSkillCommands (KRTX-2543)', () => {
     expect(mergeProjectSkillCommands(undefined, [])).toBeUndefined();
   });
 
-  test('a runtime list keeps its rows and gains only the skills it does not already carry', () => {
+  test('an agent-filtered runtime list is authoritative over project inventory', () => {
     const runtime = [cmd('build'), cmd('deploy', 'skill')];
     const merged = mergeProjectSkillCommands(runtime, [
       configSkill('deploy', 'skills/deploy/SKILL.md'),
       configSkill('release', 'skills/release/SKILL.md'),
     ]);
-    expect(merged!.map((c) => c.name)).toEqual(['build', 'deploy', 'release']);
-    // The config-derived row is a skill row the menu can bucket.
-    expect(merged!.at(-1)).toMatchObject({ source: 'skill', name: 'release' });
+    expect(merged).toBe(runtime);
+  });
+
+  test('an empty runtime list does not restore skills denied to the selected agent', () => {
+    const runtime: Command[] = [];
+    expect(mergeProjectSkillCommands(runtime, [configSkill('denied', 'skills/denied/SKILL.md')])).toBe(runtime);
+    expect(mergeProjectSkillCommands(runtime, undefined)).toBe(runtime);
   });
 
   test('a skill whose runtime name differs from its folder slug is not duplicated', () => {
