@@ -4,39 +4,24 @@
  * bound to one session's runtime URL and root conversation, and throws an
  * `ApiError` when the runtime refuses.
  *
- * `messages()` reads the Kortix transcript route (`/kortix/runtime/messages`);
- * the other verbs use the runtime's compatibility routes until the daemon
- * serves Kortix ones. A host never needs to know which.
+ * The transcript read lives in `runtime-transcript.ts`; the other verbs use
+ * the runtime's compatibility routes until the daemon serves Kortix ones. A
+ * host never needs to know which.
  */
 import { ApiError } from '../http/api/errors';
 import { createRuntimeRestClient } from '../runtime/runtime-rest-client';
 import type {
-  KortixMessage,
   KortixSessionStatus,
   RuntimePermissionReply,
   RuntimePermissionRequest,
   RuntimeQuestionAnswer,
   RuntimeQuestionRequest,
 } from '../runtime/transcript-types';
+import { createTranscriptReader, errorMessage, type TranscriptPage, type TranscriptReaderInput } from './runtime-transcript';
 
-/** The most messages kortixd answers in one transcript page (`MAX_MESSAGE_PAGE`). */
-const MESSAGE_PAGE_MAX = 200;
+export type { TranscriptPage } from './runtime-transcript';
 
-export interface RuntimeVerbsInput {
-  /** The session's runtime base URL (`${backendUrl}/p/{externalId}/{port}`). */
-  runtimeUrl: string;
-  /** The session's root conversation in the runtime. */
-  rootId: string;
-  /** The fetch to send with (the SDK's authenticated fetch). */
-  fetch: typeof fetch;
-}
-
-/** One page of a conversation, oldest first. */
-export interface TranscriptPage {
-  messages: KortixMessage[];
-  /** More messages exist before the first one. */
-  hasMore: boolean;
-}
+export interface RuntimeVerbsInput extends TranscriptReaderInput {}
 
 /** What a session's runtime waits on. */
 export interface PendingInteractions {
@@ -44,16 +29,6 @@ export interface PendingInteractions {
   statuses: Record<string, KortixSessionStatus>;
   permissions: RuntimePermissionRequest[];
   questions: RuntimeQuestionRequest[];
-}
-
-async function errorMessage(response: Response): Promise<string> {
-  const text = await response.text().catch(() => '');
-  try {
-    const body = JSON.parse(text) as { error?: string; message?: string; data?: { message?: string } };
-    return body.data?.message || body.error || body.message || text || `HTTP ${response.status}`;
-  } catch {
-    return text || `HTTP ${response.status}`;
-  }
 }
 
 /** A compatibility-route result as data, or an `ApiError`. */
@@ -71,50 +46,10 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
   const base = input.runtimeUrl.replace(/\/$/, '');
   const client = createRuntimeRestClient({ baseUrl: base, fetch: input.fetch });
 
+  const reader = createTranscriptReader(input);
+
   return {
-    /**
-     * A page of a conversation's messages, oldest first: the root by default,
-     * or `conversationId` (a subagent child). `before` pages backwards; a
-     * `limit` above the daemon's 200-message page is read in several pages.
-     */
-    messages: async (
-      options: { conversationId?: string; limit?: number; before?: string; signal?: AbortSignal } = {},
-    ): Promise<TranscriptPage> => {
-      const conversation = encodeURIComponent(options.conversationId ?? input.rootId);
-      const readPage = async (limit: number | undefined, before: string | undefined) => {
-        const query = new URLSearchParams();
-        if (limit !== undefined) query.set('limit', String(limit));
-        if (before) query.set('before', before);
-        const suffix = `/messages/${conversation}${query.size ? `?${query}` : ''}`;
-        const read = (mount: string) =>
-          input.fetch(
-            new Request(`${base}${mount}${suffix}`, { method: 'GET', ...(options.signal ? { signal: options.signal } : {}) }),
-          );
-        let response = await read('/kortix/runtime');
-        // A daemon built before W3 serves the same route at its OpenCode name.
-        if (response.status === 404 || (response.headers.get('content-type') ?? '').startsWith('text/html')) {
-          response = await read('/kortix/opencode');
-        }
-        if (!response.ok) {
-          throw new ApiError(`Reading the session transcript failed: ${await errorMessage(response)}`, {
-            status: response.status,
-            response,
-          });
-        }
-        const body = (await response.json()) as { messages?: KortixMessage[]; has_more?: boolean };
-        return { messages: body.messages ?? [], hasMore: body.has_more === true };
-      };
-      // The daemon serves at most MESSAGE_PAGE_MAX a page: a larger limit pages
-      // backwards from the newest, and the pages join oldest first.
-      let page = await readPage(options.limit === undefined ? undefined : Math.min(options.limit, MESSAGE_PAGE_MAX), options.before);
-      const messages = [...page.messages];
-      while (options.limit !== undefined && messages.length < options.limit && page.hasMore && messages.length > 0) {
-        page = await readPage(Math.min(options.limit - messages.length, MESSAGE_PAGE_MAX), messages[0]!.info.id);
-        if (!page.messages.length) break;
-        messages.unshift(...page.messages);
-      }
-      return { messages, hasMore: page.hasMore };
-    },
+    messages: reader.messages,
 
     /** The conversations' statuses and the permission requests and questions waiting for an answer. */
     pending: async (): Promise<PendingInteractions> => {
