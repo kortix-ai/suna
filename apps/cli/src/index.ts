@@ -287,7 +287,12 @@ async function main(rawArgv: string[]): Promise<number> {
   // A per-invocation global flag may lead the line (KRTX-2603):
   // `kortix --host <name> sessions ls` is `sessions ls --host <name>`.
   // With a `--` separator the position IS the meaning — leave argv alone.
-  if (separator < 0) argv = liftLeadingGlobalFlags(argv);
+  let liftedGlobals = 0;
+  if (separator < 0) {
+    const lift = liftLeadingGlobalFlags(argv);
+    argv = lift.argv;
+    liftedGlobals = lift.lifted;
+  }
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
   // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
@@ -312,6 +317,11 @@ async function main(rawArgv: string[]): Promise<number> {
       await printLanding({ offerUpdate: argv.length === 0 });
       return 0;
     }
+    if (topic === 'help') {
+      // `kortix help help` — the landing screen IS the help about help.
+      await printLanding({ offerUpdate: false });
+      return 0;
+    }
     if (topic === 'version') {
       printVersion();
       return 0;
@@ -325,6 +335,14 @@ async function main(rawArgv: string[]): Promise<number> {
     topicLines.push(`       Run ${C.cyan}kortix --help${C.reset} for the full list.`);
     process.stderr.write(`${topicLines.join('\n')}\n`);
     return 2;
+  }
+  // The documented global flags were understood but no command follows
+  // (`kortix --host x`, `kortix --host x --help`): the landing screen names
+  // the verbs — there is nothing else to report, and blaming a flag the CLI
+  // just honored would be absurd.
+  if (liftedGlobals > 0 && argv[0]?.startsWith('-')) {
+    await printLanding({ offerUpdate: false });
+    return 0;
   }
   if (argv[0] === 'version') {
     printVersion();

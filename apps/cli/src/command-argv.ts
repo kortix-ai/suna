@@ -19,14 +19,15 @@ const isHelpArg = (arg: string) => arg === '-h' || arg === '--help';
  */
 const LEADING_GLOBAL_FLAGS = new Set(['--host', '--project']);
 
-export function liftLeadingGlobalFlags(argv: readonly string[]): string[] {
+export function liftLeadingGlobalFlags(argv: readonly string[]): {
+  argv: string[];
+  lifted: number;
+} {
   const lifted: string[] = [];
   let i = 0;
-  while (i < argv.length) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) break;
-    const eq = arg.indexOf('=');
-    const name = eq < 0 ? arg : arg.slice(0, eq);
+  while (i < argv.length && argv[i].startsWith('--')) {
+    const eq = argv[i].indexOf('=');
+    const name = eq < 0 ? argv[i] : argv[i].slice(0, eq);
     if (!LEADING_GLOBAL_FLAGS.has(name)) break;
     if (eq < 0) {
       const value = argv[i + 1];
@@ -34,18 +35,18 @@ export function liftLeadingGlobalFlags(argv: readonly string[]): string[] {
       lifted.push(name, value);
       i += 2;
     } else {
-      lifted.push(arg);
+      lifted.push(argv[i]);
       i += 1;
     }
   }
   const command = argv[i];
   // No documented flag led the line, or only flags follow: leave argv alone —
-  // a help flag in command position is the root help, an unknown flag is the
-  // caller's option error.
+  // a help flag in command position is the root help, and a lift with no
+  // command token is the caller's "no command" case.
   if (lifted.length === 0 || command === undefined || command.startsWith('-')) {
-    return [...argv];
+    return { argv: [...argv], lifted: lifted.length };
   }
-  return [command, ...argv.slice(i + 1), ...lifted];
+  return { argv: [command, ...argv.slice(i + 1), ...lifted], lifted: lifted.length };
 }
 
 /**

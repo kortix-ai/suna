@@ -46,6 +46,8 @@ secret value itself. Same as \`kortix whoami --token-only\`.
 Options:
   --host <name>     Read the token context of a specific host (default: active).
   --json            Print the full identity JSON instead (same as \`kortix whoami --json\`).
+  --token-only      Accepted for symmetry with \`kortix whoami --token-only\` (this
+                    command is the token-only view).
   -h, --help        Show this help.
 `;
 
@@ -53,6 +55,9 @@ export async function runToken(argv: string[]): Promise<number> {
   const flags = takeFlags(argv, TOKEN_HELP, (rest) => ({
     host: takeFlagValue(rest, ['--host']),
     json: takeFlagBool(rest, ['--json']),
+    // Symmetry with `kortix whoami --token-only`; this command IS the
+    // token-only view, so the flag changes nothing.
+    tokenOnly: takeFlagBool(rest, ['--token-only']),
   }));
   if (typeof flags === 'number') return flags;
   return performWhoami({ ...flags, tokenOnly: !flags.json });

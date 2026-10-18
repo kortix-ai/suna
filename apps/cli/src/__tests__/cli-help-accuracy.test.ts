@@ -185,6 +185,20 @@ describe('KRTX-2603: a leading global flag in command position', () => {
     expect(r.stderr).not.toContain('unknown command');
     expect(r.stderr).toContain('kortix --help');
   });
+
+  test('lifted flags with no command land on the root help, not an option error', async () => {
+    // The flags were understood — blaming one of them would tell the user to
+    // do what they just did. `--help` or not, the landing names the verbs.
+    for (const args of [
+      ['--host', 'host-run', '--help'],
+      ['--host', 'host-run'],
+    ]) {
+      const r = await runCli(args);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('Kortix CLI');
+      expect(r.stderr).not.toContain('unknown option');
+    }
+  });
 });
 
 describe('KRTX-2604: `kortix help <topic>`', () => {
@@ -202,6 +216,18 @@ describe('KRTX-2604: `kortix help <topic>`', () => {
     expect(r.stdout).not.toContain('Kortix CLI');
   });
 
+  test('a near-miss topic suggests the command', async () => {
+    const r = await runCli(['help', 'sessionz']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('Did you mean kortix help sessions?');
+  });
+
+  test('`help help` keeps the landing screen', async () => {
+    const r = await runCli(['help', 'help']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Kortix CLI');
+  });
+
   test('bare `kortix help` keeps the landing screen', async () => {
     const r = await runCli(['help']);
     expect(r.code).toBe(0);
@@ -215,6 +241,12 @@ describe('KRTX-1802: `kortix token --help`', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('Usage: kortix token');
     expect(r.stdout).not.toContain('Usage: kortix whoami');
+  });
+
+  test('`token --token-only` stays accepted (symmetry with whoami)', async () => {
+    const r = await runCli(['token', '--token-only']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('project token');
   });
 
   test('bare `kortix token` still prints the token context', async () => {
