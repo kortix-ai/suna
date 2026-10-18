@@ -29,6 +29,7 @@ export {
   createSession,
   startSession,
   continueSession,
+  deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
   retireWarmProjectSessions,

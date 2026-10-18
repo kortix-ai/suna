@@ -462,6 +462,9 @@ const envSchema = z.object({
   AGENTMAIL_API_KEY: optStr,
   AGENTMAIL_WEBHOOK_SECRET: optStr,
 
+  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
+
   // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
   // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
   // serve every tenant; the per-conversation tenant id arrives on each inbound
@@ -1376,6 +1379,7 @@ export const config = {
   AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
   AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+  TELEGRAM_API_URL: env.TELEGRAM_API_URL,
 
   // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
   MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,

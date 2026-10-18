@@ -13,6 +13,7 @@ import {
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsTenantForProject,
+  loadTelegramBotToken,
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
@@ -182,6 +183,7 @@ async function channelToken(
   }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
 

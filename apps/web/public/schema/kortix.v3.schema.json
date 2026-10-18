@@ -694,7 +694,8 @@
             "enum": [
               "slack",
               "teams",
-              "email"
+              "email",
+              "telegram"
             ]
           },
           "credential": {
