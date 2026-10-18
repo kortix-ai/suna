@@ -313,6 +313,432 @@ interface LiveStream {
 const liveStreamsByClient = new WeakMap<EventStreamClient, LiveStream>();
 
 /**
+ * The event coalescing queue (like the SolidJS reference): pushes replace
+ * earlier same-key events and merge part deltas, and a 16ms flush timer
+ * batches the queue into one dispatch burst.
+ */
+function createEventCoalescer(
+  t: EventStreamTimers,
+  dispatch: (event: RuntimeEvent) => void,
+): {
+  push: (event: RuntimeEvent) => void;
+  flush: () => void;
+  clearTimer: () => void;
+} {
+  // Event coalescing queue (like the SolidJS reference)
+  let queue: ({ type: string; event: RuntimeEvent } | undefined)[] = [];
+  let flushTimer: EventStreamTimerHandle | undefined;
+  let lastFlush = 0;
+
+  // Coalescing map — replaces earlier events of the same key
+  const coalesced = new Map<string, number>();
+
+  const flush = () => {
+    if (flushTimer) t.clearTimeout(flushTimer);
+    flushTimer = undefined;
+    if (queue.length === 0) return;
+
+    const events = queue;
+    queue = [];
+    coalesced.clear();
+    lastFlush = t.now();
+
+    for (const item of events) {
+      if (!item) continue;
+      // A single subscriber's handler must never break the stream OR crash
+      // the host, and must never stop the OTHER subscribers from receiving
+      // this event — `dispatchToSubscribers` catches per-subscriber. e.g. a
+      // handler calls getClient() before the sandbox URL is pinned (during a
+      // session switch) — that throw used to escape to the route error
+      // boundary. Swallow + log; the next events + retries recover.
+      dispatch(item.event);
+    }
+  };
+
+  const schedule = () => {
+    if (flushTimer) return;
+    const elapsed = t.now() - lastFlush;
+    flushTimer = t.setTimeout(flush, Math.max(0, COALESCE_FLUSH_MS - elapsed));
+  };
+
+  return {
+    push(event) {
+      // The tail is never a replaced slot: a replacement pushes right after.
+      const merged = mergePartDelta(queue[queue.length - 1]?.event, event);
+      if (merged) {
+        queue[queue.length - 1] = { type: merged.type, event: merged };
+      } else {
+        const ck = getCoalesceKey(event);
+        if (ck) {
+          const existing = coalesced.get(ck);
+          if (existing !== undefined) {
+            queue[existing] = undefined;
+          }
+          coalesced.set(ck, queue.length);
+        }
+        queue.push({ type: event.type, event });
+      }
+      schedule();
+    },
+    flush,
+    clearTimer: () => {
+      if (flushTimer) t.clearTimeout(flushTimer);
+    },
+  };
+}
+
+/** Calls `fn` on every current subscriber. A throwing subscriber must
+ *  never break dispatch to the others or crash the host. */
+function dispatchToStreamSubscribers<A extends unknown[]>(
+  subscribers: Set<StreamSubscriber>,
+  pick: (sub: StreamSubscriber) => ((...a: A) => void) | undefined,
+  ...args: A
+): void {
+  for (const sub of subscribers) {
+    const fn = pick(sub);
+    if (!fn) continue;
+    try {
+      fn(...args);
+    } catch (e) {
+      console.warn('[opencode-events] subscriber handler threw, skipping', e);
+    }
+  }
+}
+
+/** The SSE connect call itself, raced against `connectTimeoutMs`. A
+ *  black-holed proxy can swallow the request with no error, no data, and
+ *  no close — the heartbeat watchdog only starts once this resolves, so
+ *  it can't rescue a hung connect. On timeout, abort the attempt (cancels
+ *  the underlying request, same as any other reconnect) and reject so the
+ *  attempt falls into its catch block and retries through the normal
+ *  backoff path, exactly like any other connect failure. */
+async function connectEventStream(
+  client: EventStreamClient,
+  t: EventStreamTimers,
+  connectTimeoutMs: number,
+  attemptAbort: AbortController,
+): Promise<{ stream: AsyncIterable<unknown> }> {
+  return new Promise<{ stream: AsyncIterable<unknown> }>((resolve, reject) => {
+    let settled = false;
+    const connectTimer = t.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      logger.warn('SSE connect timed out, forcing reconnect', { connectTimeoutMs });
+      attemptAbort.abort();
+      reject(new Error(`SSE connect timed out after ${connectTimeoutMs}ms`));
+    }, connectTimeoutMs);
+    client.global
+      .event({
+        signal: attemptAbort.signal,
+        sseDefaultRetryDelay: SSE_DEFAULT_RETRY_DELAY_MS,
+        sseMaxRetryDelay: SSE_MAX_RETRY_DELAY_MS,
+        // CRITICAL: caps the vendor client's OWN internal reconnect loop
+        // to a single attempt. `@opencode-ai/sdk`'s `createSseClient`
+        // wraps every connection in its own `while(true)` retry-with-
+        // backoff generator that swallows failures and silently
+        // schedules its next fetch via a plain `setTimeout` sleep that
+        // does NOT observe `signal` — aborting mid-sleep only stops it
+        // once the sleep elapses and the generator wakes up to check
+        // `signal.aborted`. Left unset (the old default), that inner
+        // loop runs CONCURRENTLY with this module's own outer
+        // connect/backoff loop below: the moment we abort a stalled
+        // attempt (heartbeat timeout, gap reconnect, or a fresh `close()`)
+        // and immediately open the next one, the previous vendor-level
+        // generator can still be mid-sleep and — on a race — wakes up
+        // and fires ONE MORE fetch before it finally notices the abort,
+        // stacking a second live connection on top of the new attempt.
+        // On a flaky self-host sandbox (frequent brief-unreachable →
+        // reconnect cycles) this piles up fast: every retry can leave a
+        // stray in-flight fetch behind, and under HTTP/1.1's 6-per-origin
+        // cap those leaked connections alone can saturate the pool and
+        // queue out every other request (/projects, /sessions, ...).
+        // Setting this to 1 makes a failed fetch complete the generator
+        // (a clean `done`, no throw, no internal retry/sleep) instead of
+        // scheduling its own reconnect — so THIS module's outer loop is
+        // the only thing that ever decides to open a new connection, and
+        // it only ever does so after the previous attempt's
+        // `attemptAbort.abort()` has already run (see the `finally`
+        // block below).
+        sseMaxRetryAttempts: 1,
+      })
+      .then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          t.clearTimeout(connectTimer);
+          resolve(value);
+        },
+        (err) => {
+          if (settled) return;
+          settled = true;
+          t.clearTimeout(connectTimer);
+          reject(err);
+        },
+      );
+  });
+}
+
+/** Consume an established stream: queue + coalesce + 16ms flush + yield
+ *  every 8ms. Returns whether the stream delivered any work.
+ *
+ *  The read itself has to be abortable, not just checked between
+ *  reads. If the underlying `.next()` parks (server stops sending, no
+ *  error, no close), a plain `for await` never yields control back to
+ *  this loop body, so a heartbeat/abort that fires while parked would
+ *  never actually be observed. Race each read against the
+ *  heartbeat/abort signals instead — whichever settles first wins. */
+async function readEventStream(
+  stream: AsyncIterable<unknown>,
+  t: EventStreamTimers,
+  signal: AbortSignal,
+  coalescer: ReturnType<typeof createEventCoalescer>,
+  onEventful: () => void,
+): Promise<boolean> {
+  // Events other than the connection's own `server.connected` greeting.
+  let streamHadWork = false;
+  let yieldedAt = t.now();
+  const iterator = stream[Symbol.asyncIterator]();
+  while (!signal.aborted) {
+    const nextOutcome = iterator.next().then(
+      (result) => ({ kind: 'next' as const, result }),
+      (error) => ({ kind: 'error' as const, error }),
+    );
+    const abortWatch = onceAborted(signal);
+    const outcome = await Promise.race([
+      nextOutcome,
+      abortWatch.promise.then(() => ({ kind: 'aborted' as const })),
+    ]);
+    abortWatch.cleanup();
+
+    if (outcome.kind === 'aborted') break;
+    if (outcome.kind === 'error') throw outcome.error;
+    if (outcome.result.done) break;
+
+    onEventful();
+    const raw: unknown = outcome.result.value;
+    const e = (
+      raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
+    ) as RuntimeEvent;
+    if (!e?.type) continue;
+    // The connection's own greeting is not work that a drop could lose.
+    if (e.type !== 'server.connected') streamHadWork = true;
+
+    coalescer.push(e);
+
+    if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
+    await new Promise<void>((resolve) => t.setTimeout(resolve, 0));
+    // The budget starts when reading resumes. The host renders inside the
+    // yield; counting that wait as reading made every later event yield
+    // again, one event per render, so the transcript trailed the wire.
+    yieldedAt = t.now();
+  }
+  return streamHadWork;
+}
+
+/** A HARD failure delivered zero events AND either carried an HTTP-level
+ *  status (the vendor client wraps non-2xx as `Error` with `cause: { status }`
+ *  — see @opencode-ai/sdk's error-interceptor) or died within
+ *  HARD_FAILURE_WINDOW_MS (edge 503s surface as opaque network/CORS errors
+ *  with no status attached) — the "dead sandbox" signature the driver's
+ *  give-up (park) check keys on. */
+function isHardAttemptFailure(
+  streamHadWork: boolean,
+  attemptError: unknown,
+  attemptDurationMs: number,
+): boolean {
+  const httpStatus = (attemptError as { cause?: { status?: unknown } } | null)?.cause?.status;
+  // A greeting alone is not delivery: a proxy that says hello and closes
+  // is as dead as one that refuses the connect.
+  return (
+    !streamHadWork &&
+    ((typeof httpStatus === 'number' && httpStatus >= 400) ||
+      attemptDurationMs < HARD_FAILURE_WINDOW_MS)
+  );
+}
+
+/** Tell every subscriber the stream parked (gave up). The caller drops its
+ *  own connection state and stops the loop. */
+function parkStream(
+  subscribers: Set<StreamSubscriber>,
+  consecutiveFailures: number,
+  lastError: unknown,
+): void {
+  logger.error('SSE event stream parked — giving up after consecutive hard failures', {
+    consecutiveFailures,
+    lastError: String(lastError),
+  });
+  // A subscriber's park handler must never crash the (already-
+  // terminal) stream machine, and must never stop another
+  // subscriber's from firing — `dispatchToStreamSubscribers` catches per
+  // subscriber.
+  dispatchToStreamSubscribers(subscribers, (sub) => sub.onParked, {
+    consecutiveFailures,
+    lastError,
+  });
+}
+
+/** The next reconnect delay: the 250ms fast path after a stable stream until
+ *  it proves unstable, else exponential backoff (1s → 30s cap) with jitter. */
+function reconnectDelay(retryCount: number, fastPath: boolean, t: EventStreamTimers): number {
+  const baseDelay = fastPath
+    ? FAST_RECONNECT_DELAY_MS
+    : Math.min(
+        BASE_RECONNECT_DELAY_MS * 2 ** Math.min(retryCount - 1, MAX_BACKOFF_EXPONENT),
+        MAX_RECONNECT_DELAY_MS,
+      );
+  return Math.round(baseDelay * (1 + RECONNECT_JITTER * (t.random?.() ?? 0)));
+}
+
+/** Resolve after `delayMs`, or immediately when `signal` aborts. */
+function abortableDelay(t: EventStreamTimers, signal: AbortSignal, delayMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = t.setTimeout(resolve, delayMs);
+    const onAbort = () => {
+      t.clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** What one connect attempt produced: whether it delivered work, whether it
+ *  counts as stable (the driver's fast-path input), and the error it died to
+ *  (null when it ended cleanly — stream `done` — as well as on an outer
+ *  abort, which the driver observes through its own check). */
+interface EventStreamAttemptOutcome {
+  streamHadWork: boolean;
+  stableConnection: boolean;
+  error: unknown;
+}
+
+/** One connect attempt: the SSE connect race against `connectTimeoutMs`, the
+ *  driver's gap repair once the connection exists, the heartbeat watchdog,
+ *  and the abortable read loop that queues + coalesces events. Owns its
+ *  timers (`connectTimer`, `heartbeatTimer`, `attemptAbort`) and releases
+ *  them in its `finally`; an error is logged (with a token refresh on auth
+ *  failures) and returned as the outcome. The driver decides what the
+ *  outcome means — park, backoff, fast path. */
+async function connectAttempt(deps: {
+  client: EventStreamClient;
+  t: EventStreamTimers;
+  connectTimeoutMs: number;
+  heartbeatTimeoutMs: number;
+  outerSignal: AbortSignal;
+  retryCount: number;
+  setConnectionState: (state: EventStreamConnectionState) => void;
+  /** Runs once the connect promise resolves, before the first read — the
+   *  driver repairs a pending gap there (see `pendingGap`). */
+  onConnected: () => void;
+  coalescer: ReturnType<typeof createEventCoalescer>;
+}): Promise<EventStreamAttemptOutcome> {
+  const {
+    client,
+    t,
+    connectTimeoutMs,
+    heartbeatTimeoutMs,
+    outerSignal,
+    retryCount,
+    setConnectionState,
+    onConnected,
+    coalescer,
+  } = deps;
+  let streamHadWork = false;
+  let stableConnection = false;
+  let heartbeatTimer: EventStreamTimerHandle | undefined;
+  // What this attempt died to (null = clean end) — feeds the hard-failure
+  // classification the driver runs on the outcome.
+  let attemptError: unknown = null;
+  // Per-attempt controller passed to the SSE client. Aborting it is what
+  // actually cancels the underlying network reader — the vendor client
+  // only cancels on the signal IT was handed. It aborts when EITHER the
+  // heartbeat fires OR the outer controller aborts (linked below), so a
+  // heartbeat-forced reconnect tears the old connection down instead of
+  // leaving it parked/leaking while a new one opens.
+  const attemptAbort = new AbortController();
+
+  setConnectionState('connecting');
+  const outerLink = onceAborted(outerSignal);
+  outerLink.promise.then(() => attemptAbort.abort());
+  try {
+    const { stream } = await connectEventStream(client, t, connectTimeoutMs, attemptAbort);
+
+    onConnected();
+
+    // Heartbeat timeout — if no events arrive within the idle budget
+    // (default 60s, see HEARTBEAT_MS for why), abort and reconnect. This
+    // is the ONLY recovery mechanism we need on an established stream —
+    // replaces the stall watchdog, reconciler, and visibility handler.
+    const resetHeartbeat = () => {
+      t.clearTimeout(heartbeatTimer);
+      heartbeatTimer = t.setTimeout(() => {
+        logger.warn('SSE heartbeat timeout, forcing reconnect');
+        attemptAbort.abort();
+      }, heartbeatTimeoutMs);
+    };
+    resetHeartbeat();
+
+    streamHadWork = await readEventStream(stream, t, attemptAbort.signal, coalescer, () => {
+      setConnectionState('open');
+      resetHeartbeat();
+    });
+
+    // Healthy stream ONLY if it actually delivered events. There used to
+    // be a time-based OR-branch here ("or stayed open >10s") — that was a
+    // prod reconnect storm: anything that kills idle connections on a
+    // period ABOVE that threshold (our own heartbeat watchdog, an idle
+    // proxy timeout, server-side rotation) made every idle disconnect
+    // look "stable", which reset retryCount and locked the loop into the
+    // 250ms fast-reconnect path forever (~236 reconnects/hour/stream).
+    // An idle disconnect — watchdog-triggered or natural — must ride the
+    // exponential backoff (1s → 30s cap) instead; the moment a
+    // reconnected stream delivers a real event, backoff resets and the
+    // fast path returns. Missed-while-waiting events are covered by the
+    // gap-rehydrate signal below.
+    stableConnection = streamHadWork;
+  } catch (err) {
+    attemptError = err;
+    // An outer abort is a deliberate stop, not a failure: no error log,
+    // no token refresh.
+    if (outerSignal.aborted) return { streamHadWork, stableConnection, error: attemptError };
+    const errStr = String(err);
+    // By status or `AuthError`, never by message text. The vendor client puts
+    // the HTTP status on `cause`.
+    const isAuthError =
+      isAuthFailure(err) || isAuthFailure((err as { cause?: unknown } | null)?.cause);
+    logger.error('SSE event stream error', {
+      error: errStr,
+      retryCount,
+      isAuthError,
+    });
+
+    // On auth errors, invalidate the token cache and fetch a fresh token.
+    // This ensures all callers (SSE, health check, SDK) immediately use
+    // the refreshed token instead of serving stale cached ones for 30s.
+    if (isAuthError) {
+      try {
+        invalidateTokenCache();
+        await getSupabaseAccessToken();
+        logger.info('SSE: refreshed auth token after auth error');
+      } catch (refreshErr) {
+        logger.error('SSE: failed to refresh auth token', {
+          error: String(refreshErr),
+        });
+      }
+    }
+  } finally {
+    t.clearTimeout(heartbeatTimer);
+    // Release the reader/connection if we left the loop for any reason
+    // other than an already-fired abort (e.g. stream `done`, or a thrown
+    // error), and detach the outer-abort listener so it can't accumulate
+    // across reconnects.
+    attemptAbort.abort();
+    outerLink.cleanup();
+    coalescer.flush();
+  }
+  return { streamHadWork, stableConnection, error: attemptError };
+}
+
+/**
  * Opens (or joins) the underlying connect/reconnect loop for `client` and
  * fans its events out to every subscriber in `subscribers`. Only ever called
  * once per client, by whichever `openEventStream()` call finds no existing
@@ -340,20 +766,10 @@ function createLiveStream(
 
   /** Calls `fn` on every current subscriber. A throwing subscriber must
    *  never break dispatch to the others or crash the host. */
-  function dispatchToSubscribers<A extends unknown[]>(
+  const dispatchToSubscribers = <A extends unknown[]>(
     pick: (sub: StreamSubscriber) => ((...a: A) => void) | undefined,
     ...args: A
-  ): void {
-    for (const sub of subscribers) {
-      const fn = pick(sub);
-      if (!fn) continue;
-      try {
-        fn(...args);
-      } catch (e) {
-        console.warn('[opencode-events] subscriber handler threw, skipping', e);
-      }
-    }
-  }
+  ): void => dispatchToStreamSubscribers(subscribers, pick, ...args);
 
   let connectionState: EventStreamConnectionState | null = null;
   let parked = false;
@@ -376,41 +792,37 @@ function createLiveStream(
   // still ends in exactly one rehydrate.
   let pendingGap: { lastActivityAt: number; eventful: boolean } | null = null;
 
-  // Event coalescing queue (like the SolidJS reference)
-  let queue: ({ type: string; event: RuntimeEvent } | undefined)[] = [];
-  let flushTimer: EventStreamTimerHandle | undefined;
-  let lastFlush = 0;
-
-  // Coalescing map — replaces earlier events of the same key
-  const coalesced = new Map<string, number>();
-
-  const flush = () => {
-    if (flushTimer) t.clearTimeout(flushTimer);
-    flushTimer = undefined;
-    if (queue.length === 0) return;
-
-    const events = queue;
-    queue = [];
-    coalesced.clear();
-    lastFlush = t.now();
+  const coalescer = createEventCoalescer(t, (event) => {
+    // A flush that delivered events is stream activity: the gap clock
+    // restarts here (see `pendingGap`).
     lastStreamActivityTime = t.now();
+    dispatchToSubscribers((sub) => sub.onEvent, event);
+  });
 
-    for (const item of events) {
-      if (!item) continue;
-      // A single subscriber's handler must never break the stream OR crash
-      // the host, and must never stop the OTHER subscribers from receiving
-      // this event — `dispatchToSubscribers` catches per-subscriber. e.g. a
-      // handler calls getClient() before the sandbox URL is pinned (during a
-      // session switch) — that throw used to escape to the route error
-      // boundary. Swallow + log; the next events + retries recover.
-      dispatchToSubscribers((sub) => sub.onEvent, item.event);
-    }
-  };
-
-  const schedule = () => {
-    if (flushTimer) return;
-    const elapsed = t.now() - lastFlush;
-    flushTimer = t.setTimeout(flush, Math.max(0, COALESCE_FLUSH_MS - elapsed));
+  const attemptDeps = {
+    client,
+    t,
+    connectTimeoutMs,
+    heartbeatTimeoutMs,
+    outerSignal: abortController.signal,
+    setConnectionState,
+    onConnected: () => {
+      // Repair the previous drop now that a live stream exists. The gap runs
+      // from the last frame received to this connection. A dropped stream
+      // that was delivering events always repairs — its outage window may
+      // have held any frame. An idle one repairs only past 5s, so routine
+      // idle rotation does not re-read every transcript.
+      if (pendingGap) {
+        const gap = t.now() - pendingGap.lastActivityAt;
+        const eventful = pendingGap.eventful;
+        pendingGap = null;
+        if (eventful || gap > GAP_REHYDRATE_MS) {
+          dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
+        }
+      }
+      lastStreamActivityTime = t.now();
+    },
+    coalescer,
   };
 
   // Consume the stream in the background with automatic retry
@@ -422,242 +834,11 @@ function createLiveStream(
     let consecutiveHardFailures = 0;
     let consecutiveShortStable = 0;
     while (!abortController.signal.aborted) {
-      // Events other than the connection's own `server.connected` greeting.
-      let streamHadWork = false;
-      let stableConnection = false;
-      let heartbeatTimer: EventStreamTimerHandle | undefined;
-      let connectTimer: EventStreamTimerHandle | undefined;
-      // What this attempt died to (null = clean end), plus when it started —
-      // both feed the hard-failure classification below the try block.
-      let attemptError: unknown = null;
       const attemptStartedAt = t.now();
-      // Per-attempt controller passed to the SSE client. Aborting it is what
-      // actually cancels the underlying network reader — the vendor client
-      // only cancels on the signal IT was handed. It aborts when EITHER the
-      // heartbeat fires OR the outer controller aborts (linked below), so a
-      // heartbeat-forced reconnect tears the old connection down instead of
-      // leaving it parked/leaking while a new one opens.
-      const attemptAbort = new AbortController();
-      setConnectionState('connecting');
-      const outerLink = onceAborted(abortController.signal);
-      outerLink.promise.then(() => attemptAbort.abort());
-      try {
-        // Race the connect call itself against `connectTimeoutMs`. A
-        // black-holed proxy can swallow this request with no error, no data,
-        // and no close — the heartbeat watchdog below only starts once this
-        // resolves, so it can't rescue a hung connect. On timeout, abort this
-        // attempt (cancels the underlying request, same as any other
-        // reconnect) and reject so it falls into the catch block below and
-        // retries through the normal backoff path, exactly like any other
-        // connect failure.
-        const result = await new Promise<{ stream: AsyncIterable<unknown> }>((resolve, reject) => {
-          let settled = false;
-          connectTimer = t.setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            logger.warn('SSE connect timed out, forcing reconnect', { connectTimeoutMs });
-            attemptAbort.abort();
-            reject(new Error(`SSE connect timed out after ${connectTimeoutMs}ms`));
-          }, connectTimeoutMs);
-          client.global
-            .event({
-              signal: attemptAbort.signal,
-              sseDefaultRetryDelay: SSE_DEFAULT_RETRY_DELAY_MS,
-              sseMaxRetryDelay: SSE_MAX_RETRY_DELAY_MS,
-              // CRITICAL: caps the vendor client's OWN internal reconnect loop
-              // to a single attempt. `@opencode-ai/sdk`'s `createSseClient`
-              // wraps every connection in its own `while(true)` retry-with-
-              // backoff generator that swallows failures and silently
-              // schedules its next fetch via a plain `setTimeout` sleep that
-              // does NOT observe `signal` — aborting mid-sleep only stops it
-              // once the sleep elapses and the generator wakes up to check
-              // `signal.aborted`. Left unset (the old default), that inner
-              // loop runs CONCURRENTLY with this module's own outer
-              // connect/backoff loop below: the moment we abort a stalled
-              // attempt (heartbeat timeout, gap reconnect, or a fresh `close()`)
-              // and immediately open the next one, the previous vendor-level
-              // generator can still be mid-sleep and — on a race — wakes up
-              // and fires ONE MORE fetch before it finally notices the abort,
-              // stacking a second live connection on top of the new attempt.
-              // On a flaky self-host sandbox (frequent brief-unreachable →
-              // reconnect cycles) this piles up fast: every retry can leave a
-              // stray in-flight fetch behind, and under HTTP/1.1's 6-per-origin
-              // cap those leaked connections alone can saturate the pool and
-              // queue out every other request (/projects, /sessions, ...).
-              // Setting this to 1 makes a failed fetch complete the generator
-              // (a clean `done`, no throw, no internal retry/sleep) instead of
-              // scheduling its own reconnect — so THIS module's outer loop is
-              // the only thing that ever decides to open a new connection, and
-              // it only ever does so after the previous attempt's
-              // `attemptAbort.abort()` has already run (see the `finally`
-              // block below).
-              sseMaxRetryAttempts: 1,
-            })
-            .then(
-              (value) => {
-                if (settled) return;
-                settled = true;
-                t.clearTimeout(connectTimer);
-                resolve(value);
-              },
-              (err) => {
-                if (settled) return;
-                settled = true;
-                t.clearTimeout(connectTimer);
-                reject(err);
-              },
-            );
-        });
-        const { stream } = result;
-
-        // Repair the previous drop now that a live stream exists. The gap runs
-        // from the last frame received to this connection. A dropped stream
-        // that was delivering events always repairs — its outage window may
-        // have held any frame. An idle one repairs only past 5s, so routine
-        // idle rotation does not re-read every transcript.
-        if (pendingGap) {
-          const gap = t.now() - pendingGap.lastActivityAt;
-          const eventful = pendingGap.eventful;
-          pendingGap = null;
-          if (eventful || gap > GAP_REHYDRATE_MS) {
-            dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
-          }
-        }
-        lastStreamActivityTime = t.now();
-
-        // Heartbeat timeout — if no events arrive within the idle budget
-        // (default 60s, see HEARTBEAT_MS for why), abort and reconnect. This
-        // is the ONLY recovery mechanism we need on an established stream —
-        // replaces the stall watchdog, reconciler, and visibility handler.
-        const resetHeartbeat = () => {
-          t.clearTimeout(heartbeatTimer);
-          heartbeatTimer = t.setTimeout(() => {
-            logger.warn('SSE heartbeat timeout, forcing reconnect');
-            attemptAbort.abort();
-          }, heartbeatTimeoutMs);
-        };
-        resetHeartbeat();
-
-        // Consume stream: queue + coalesce + 16ms flush + yield every 8ms.
-        //
-        // The read itself has to be abortable, not just checked between
-        // reads. If the underlying `.next()` parks (server stops sending, no
-        // error, no close), a plain `for await` never yields control back to
-        // this loop body, so a heartbeat/abort that fires while parked would
-        // never actually be observed. Race each read against the
-        // heartbeat/abort signals instead — whichever settles first wins.
-        let yieldedAt = t.now();
-        const iterator = stream[Symbol.asyncIterator]();
-        while (!attemptAbort.signal.aborted) {
-          const nextOutcome = iterator.next().then(
-            (result) => ({ kind: 'next' as const, result }),
-            (error) => ({ kind: 'error' as const, error }),
-          );
-          const abortWatch = onceAborted(attemptAbort.signal);
-          const outcome = await Promise.race([
-            nextOutcome,
-            abortWatch.promise.then(() => ({ kind: 'aborted' as const })),
-          ]);
-          abortWatch.cleanup();
-
-          if (outcome.kind === 'aborted') break;
-          if (outcome.kind === 'error') throw outcome.error;
-          if (outcome.result.done) break;
-
-          setConnectionState('open');
-          resetHeartbeat();
-          const raw = outcome.result.value as any;
-          const e = (
-            raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-          ) as RuntimeEvent;
-          if (!e?.type) continue;
-          // The connection's own greeting is not work that a drop could lose.
-          if (e.type !== 'server.connected') streamHadWork = true;
-
-          // The tail is never a replaced slot: a replacement pushes right after.
-          const merged = mergePartDelta(queue[queue.length - 1]?.event, e);
-          if (merged) {
-            queue[queue.length - 1] = { type: merged.type, event: merged };
-          } else {
-            const ck = getCoalesceKey(e);
-            if (ck) {
-              const existing = coalesced.get(ck);
-              if (existing !== undefined) {
-                queue[existing] = undefined;
-              }
-              coalesced.set(ck, queue.length);
-            }
-            queue.push({ type: (e as any).type, event: e });
-          }
-          schedule();
-
-          if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
-          await new Promise<void>((resolve) => t.setTimeout(resolve, 0));
-          // The budget starts when reading resumes. The host renders inside the
-          // yield; counting that wait as reading made every later event yield
-          // again, one event per render, so the transcript trailed the wire.
-          yieldedAt = t.now();
-        }
-
-        // Healthy stream ONLY if it actually delivered events. There used to
-        // be a time-based OR-branch here ("or stayed open >10s") — that was a
-        // prod reconnect storm: anything that kills idle connections on a
-        // period ABOVE that threshold (our own heartbeat watchdog, an idle
-        // proxy timeout, server-side rotation) made every idle disconnect
-        // look "stable", which reset retryCount and locked the loop into the
-        // 250ms fast-reconnect path forever (~236 reconnects/hour/stream).
-        // An idle disconnect — watchdog-triggered or natural — must ride the
-        // exponential backoff (1s → 30s cap) instead; the moment a
-        // reconnected stream delivers a real event, backoff resets and the
-        // fast path returns. Missed-while-waiting events are covered by the
-        // gap-rehydrate signal below.
-        stableConnection = streamHadWork;
-      } catch (err) {
-        if (abortController.signal.aborted) break;
-        attemptError = err;
-        const errStr = String(err);
-        // By status or `AuthError`, never by message text. The vendor client puts
-        // the HTTP status on `cause`.
-        const isAuthError =
-          isAuthFailure(err) || isAuthFailure((err as { cause?: unknown } | null)?.cause);
-        logger.error('SSE event stream error', {
-          error: errStr,
-          retryCount,
-          isAuthError,
-        });
-
-        // On auth errors, invalidate the token cache and fetch a fresh token.
-        // This ensures all callers (SSE, health check, SDK) immediately use
-        // the refreshed token instead of serving stale cached ones for 30s.
-        if (isAuthError) {
-          try {
-            invalidateTokenCache();
-            await getSupabaseAccessToken();
-            logger.info('SSE: refreshed auth token after auth error');
-          } catch (refreshErr) {
-            logger.error('SSE: failed to refresh auth token', {
-              error: String(refreshErr),
-            });
-          }
-        }
-      } finally {
-        t.clearTimeout(heartbeatTimer);
-        t.clearTimeout(connectTimer);
-        // Release the reader/connection if we left the loop for any reason
-        // other than an already-fired abort (e.g. stream `done`, or a thrown
-        // error), and detach the outer-abort listener so it can't accumulate
-        // across reconnects.
-        attemptAbort.abort();
-        outerLink.cleanup();
-        flush();
-      }
-
-      // Stream ended or errored — reconnect with exponential backoff.
-      // ERR_INCOMPLETE_CHUNKED_ENCODING is normal when the server closes the
-      // SSE connection between response cycles. Minimum 1s delay even on
-      // first retry to avoid reconnection storms when the server is flapping
-      // (connect → immediate disconnect loops).
+      const outcome = await connectAttempt({ ...attemptDeps, retryCount });
       if (abortController.signal.aborted) break;
+      const attemptError = outcome.error;
+      const { streamHadWork, stableConnection } = outcome;
 
       // ── Give-up (park) check — the "dead sandbox" terminal state. ────────
       // A stream pointed at an archived/stopped session's sandbox otherwise
@@ -673,29 +854,12 @@ function createLiveStream(
       // the streak. After `maxConsecutiveHardFailures` in a row — spread
       // over ~2 minutes by the exponential backoff below — park for good.
       const attemptDurationMs = t.now() - attemptStartedAt;
-      const httpStatus = (attemptError as { cause?: { status?: unknown } } | null)?.cause?.status;
-      // A greeting alone is not delivery: a proxy that says hello and closes
-      // is as dead as one that refuses the connect.
-      const isHardFailure =
-        !streamHadWork &&
-        ((typeof httpStatus === 'number' && httpStatus >= 400) ||
-          attemptDurationMs < HARD_FAILURE_WINDOW_MS);
+      const isHardFailure = isHardAttemptFailure(streamHadWork, attemptError, attemptDurationMs);
       consecutiveHardFailures = isHardFailure ? consecutiveHardFailures + 1 : 0;
       if (consecutiveHardFailures >= maxConsecutiveHardFailures) {
-        logger.error('SSE event stream parked — giving up after consecutive hard failures', {
-          consecutiveFailures: consecutiveHardFailures,
-          lastError: String(attemptError),
-        });
-        // A subscriber's park handler must never crash the (already-
-        // terminal) stream machine, and must never stop another
-        // subscriber's from firing — `dispatchToSubscribers` catches per
-        // subscriber.
+        parkStream(subscribers, consecutiveHardFailures, attemptError);
         connectionState = null;
         parked = true;
-        dispatchToSubscribers((sub) => sub.onParked, {
-          consecutiveFailures: consecutiveHardFailures,
-          lastError: attemptError,
-        });
         break;
       }
       setConnectionState('lost');
@@ -723,24 +887,9 @@ function createLiveStream(
           logger.warn('SSE event stream reconnecting', { retryCount });
         }
       }
-      const baseDelay = fastPath
-        ? FAST_RECONNECT_DELAY_MS
-        : Math.min(
-            BASE_RECONNECT_DELAY_MS * 2 ** Math.min(retryCount - 1, MAX_BACKOFF_EXPONENT),
-            MAX_RECONNECT_DELAY_MS,
-          );
-      const delay = Math.round(baseDelay * (1 + RECONNECT_JITTER * (t.random?.() ?? 0)));
-      await new Promise<void>((resolve) => {
-        const timer = t.setTimeout(resolve, delay);
-        const onAbort = () => {
-          t.clearTimeout(timer);
-          resolve();
-        };
-        abortController.signal.addEventListener('abort', onAbort, { once: true });
-      });
+      await abortableDelay(t, abortController.signal, reconnectDelay(retryCount, fastPath, t));
     }
   })();
-
   return {
     subscribers,
     connectionState: () => connectionState,
@@ -748,7 +897,7 @@ function createLiveStream(
     teardown: () => {
       connectionState = null;
       abortController.abort();
-      if (flushTimer) t.clearTimeout(flushTimer);
+      coalescer.clearTimer();
     },
   };
 }
