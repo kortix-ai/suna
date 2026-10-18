@@ -320,7 +320,7 @@ async function revokeToken(
       return 0;
     }
   }
-  const tokens = await client.get<AccountToken[]>('/accounts/tokens');
+  const tokens = await client.get<AccountToken[]>('/accounts/tokens?mine=true');
   const token = tokens.find((row) => row.token_id === tokenId);
   const query = token?.status === 'revoked' ? '?delete_revoked=true' : '';
   let deleted = false;
@@ -333,7 +333,7 @@ async function revokeToken(
     if (!(error instanceof ApiError) || error.status !== 404 || !token) throw error;
     // A lost response can replay a completed operation. Verify its intended
     // result without issuing a second, different mutation.
-    const remaining = await client.get<AccountToken[]>('/accounts/tokens');
+    const remaining = await client.get<AccountToken[]>('/accounts/tokens?mine=true');
     const current = remaining.find((row) => row.token_id === tokenId);
     deleted = token.status === 'revoked';
     if (deleted ? current !== undefined : current?.status !== 'revoked') throw error;

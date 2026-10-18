@@ -66,7 +66,7 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
     const mine = url.searchParams.get('mine') === 'true';
     if (mine) return Response.json(mineFixture ?? [laptop, ci, ghost]);
-    return Response.json([laptop, ci, { ...ci, token_id: 'tok_revoked' }]);
+    return Response.json([laptop, ci]);
   }
   if (p === '/v1/accounts/tokens' && req.method === 'POST') {
     const b = body as { name: string };
@@ -88,7 +88,7 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   if (p === '/v1/accounts/tokens/tok_a' && req.method === 'DELETE') {
     return Response.json({ ok: true });
   }
-  if (p === '/v1/accounts/tokens/tok_revoked' && req.method === 'DELETE') {
+  if (p === '/v1/accounts/tokens/tok_b' && req.method === 'DELETE') {
     return Response.json({ ok: true, deleted: true });
   }
   if (p === '/v1/accounts/tokens/tok_missing' && req.method === 'DELETE') {
@@ -394,7 +394,7 @@ describe('kortix tokens', () => {
     expect(api!.requests[1]!.query).not.toContain('delete_revoked=true');
 
     expect(ok.stdout).toContain('Revoked');
-    const deleted = await runCommand(runner, ['rm', 'tok_revoked', '-y'], { cwd: tmp, configFile: config });
+    const deleted = await runCommand(runner, ['rm', 'tok_b', '-y'], { cwd: tmp, configFile: config });
     expect(deleted.code).toBe(0);
     expect(deleted.stdout).toContain('Deleted');
 
