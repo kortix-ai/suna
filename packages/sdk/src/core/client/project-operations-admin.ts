@@ -31,8 +31,25 @@ export function bindProjectOperationsAdmin(projectId: string) {
         P.updateProjectTrigger(projectId, ...a),
       remove: (...a: DropFirst<Parameters<typeof P.deleteProjectTrigger>>) =>
         P.deleteProjectTrigger(projectId, ...a),
-      fire: (...a: DropFirst<Parameters<typeof P.fireProjectTrigger>>) =>
-        P.fireProjectTrigger(projectId, ...a),
+      fire: ((slug: string, options?: P.FireProjectTriggerOptions) =>
+        P.fireProjectTrigger(projectId, slug, options)) as {
+        (slug: string, options: P.FireProjectTriggerOptions & { dryRun: true }): Promise<P.ProjectTriggerDryRunResult>;
+        (
+          slug: string,
+          options?: P.FireProjectTriggerOptions & { dryRun?: false },
+        ): Promise<P.FireProjectTriggerResponse>;
+        (
+          slug: string,
+          options?: P.FireProjectTriggerOptions,
+        ): Promise<P.FireProjectTriggerResponse | P.ProjectTriggerDryRunResult>;
+      },
+      /** One trigger's runs, newest first — see `listTriggerRuns`. */
+      runs: (...a: DropFirst<Parameters<typeof P.listTriggerRuns>>) => P.listTriggerRuns(projectId, ...a),
+      /** Every run of the project — see `listProjectTriggerRuns`. */
+      projectRuns: (...a: DropFirst<Parameters<typeof P.listProjectTriggerRuns>>) =>
+        P.listProjectTriggerRuns(projectId, ...a),
+      /** Fire again with a past run's payload — see `replayTriggerRun`. */
+      replay: (...a: DropFirst<Parameters<typeof P.replayTriggerRun>>) => P.replayTriggerRun(projectId, ...a),
       setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
         P.setProjectTriggersActivation(projectId, ...a),
     },

@@ -41,9 +41,11 @@ function platinumBase(): string {
 // forwarded response carries `x-pt-served-by: <owner origin>`, and a sandbox
 // body carries `api_url` (https://us-east.api.platinum.dev for a US box,
 // https://api.platinum.dev for an EU one). Calls for that id then go straight
-// to the owner. Until an id is learned, and for everything that is not about
-// one sandbox (create, list, templates), the global origin is used, and
-// Platinum's own forwarding keeps that path correct.
+// to the owner. A call that names its region (a create, an image build, a
+// template prepare) goes straight to that region's control plane; see
+// "Region → origin" below. Until an id is learned, and for lists and every
+// other template call, the global origin is used, and Platinum's own
+// forwarding keeps that path correct.
 //
 // The Bearer key goes only to an origin that is the configured host or a
 // subdomain of it, over https on the default port. A response cannot point the
@@ -103,15 +105,30 @@ function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
   sandboxOrigins.set(sandboxId, origin);
 }
 
-// Region → origin, learned from boxes this process has already seen in that
-// region (their `api_url` / `x-pt-served-by`). A CREATE names its region in the
-// body but has no box id yet, so without this it always went to the global
+// Region → origin. A call that names its region in the body (a create, both
+// phases of an image build, a template prepare) has no box id to route by. It
+// used to go to the global origin until a box in that region taught its
 // origin: for a US box that is Kortix → EU control plane → US control plane,
-// one transatlantic forward per create (Dev, 2026-10-02: the US create also
-// paid the EU hop while every later call for the box went direct).
-// replica-local: same contract as the sandbox origins — an unlearned replica
-// pays the extra forward through the global origin, it never mis-routes.
+// one transatlantic forward per call, and an image build never teaches one. On
+// prod 2026-10-17 a US create through the EU control plane took 3.0 s median
+// against 1.9 s direct. Such a call now goes straight to the region's control
+// plane: the origin learned from a box there, else Platinum's regional name
+// (platinumRegionControlPlane). The global origin stays the fallback: for the
+// home region, when the configured origin already is that region, and for a
+// minute after the regional name fails to connect.
+// replica-local: same contract as the sandbox origins — a replica that cannot
+// reach a region pays the forward through the global origin, it never
+// mis-routes.
 const regionOrigins = new Map<string, string>();
+// replica-local: regions this replica has seen served by the configured origin
+// itself (the home region). A replica that has not seen one tries the regional
+// name, which the home region may not have, and falls back once.
+const homeRegions = new Set<string>();
+// replica-local: region → when this replica may try that region's control plane
+// again after it failed to connect. Another replica finds out on its own and
+// falls back the same way.
+const unreachableRegions = new Map<string, number>();
+export const PLATINUM_REGION_RETRY_AFTER_MS = 60_000;
 
 function rememberRegionOrigin(region: unknown, candidate: unknown): void {
   if (typeof region !== 'string' || !/^[a-z]{2,8}-[a-z]{2,12}$/.test(region)) return;
@@ -119,14 +136,27 @@ function rememberRegionOrigin(region: unknown, candidate: unknown): void {
   if (!origin) return;
   if (origin === new URL(platinumBase()).origin) {
     regionOrigins.delete(region);
+    homeRegions.add(region);
     return;
   }
+  homeRegions.delete(region);
   regionOrigins.set(region, origin);
 }
 
-/** The origin a create naming `region` goes to now: learned, else global. */
+/** Where a call naming `region` goes first; undefined is the configured origin. */
+function regionalOriginFor(region: string): string | undefined {
+  const learned = regionOrigins.get(region);
+  if (learned) return learned;
+  if (homeRegions.has(region)) return undefined;
+  if (new URL(platinumBase()).hostname.startsWith(`${region}.`)) return undefined;
+  const retryAt = unreachableRegions.get(region);
+  if (retryAt !== undefined && Date.now() < retryAt) return undefined;
+  return platinumRegionControlPlane(region) ?? undefined;
+}
+
+/** The origin a call naming `region` goes to now. */
 export function platinumOriginForRegion(region: string): string {
-  return regionOrigins.get(region) ?? new URL(platinumBase()).origin;
+  return regionalOriginFor(region) ?? new URL(platinumBase()).origin;
 }
 
 /**
@@ -142,8 +172,13 @@ export function platinumRegionControlPlane(region: string): string | null {
   return acceptedPlatinumOrigin(`https://${region}.${new URL(platinumBase()).hostname}`);
 }
 
-function createRegionOf(path: string, method: string, body: unknown): string | null {
-  if (method !== 'POST' || !SANDBOX_COLLECTION_PATH.test(path) || typeof body !== 'string') return null;
+// The calls that name their region in the body and act in it: a create, both
+// phases of an image build, and a template prepare.
+const REGIONAL_CALL_PATH =
+  /^\/v1\/(?:sandboxes|templates\/from-build(?:\/presign)?|templates\/[^/?#]+\/prepare)(?=[?#]|$)/;
+
+function regionOfCall(path: string, method: string, body: unknown): string | null {
+  if (method !== 'POST' || !REGIONAL_CALL_PATH.test(path) || typeof body !== 'string') return null;
   try {
     const region = (JSON.parse(body) as { region?: unknown }).region;
     return typeof region === 'string' && region ? region : null;
@@ -161,6 +196,8 @@ export function platinumOriginForSandbox(sandboxId: string): string {
 export function __resetPlatinumSandboxOriginsForTests(): void {
   sandboxOrigins.clear();
   regionOrigins.clear();
+  homeRegions.clear();
+  unreachableRegions.clear();
 }
 
 function learnFromResponse(path: string, method: string, res: Response, body: unknown): void {
@@ -259,11 +296,11 @@ export async function platinumFetch(path: string, init: RequestInit = {}, origin
       },
     });
   const sandboxId = sandboxIdOf(path);
-  const createRegion = sandboxId ? null : createRegionOf(path, method, init.body);
+  const callRegion = sandboxId ? null : regionOfCall(path, method, init.body);
   const regional = sandboxId
     ? sandboxOrigins.get(sandboxId)
-    : createRegion
-      ? regionOrigins.get(createRegion)
+    : callRegion
+      ? regionalOriginFor(callRegion)
       : undefined;
   try {
     // An explicit control plane (platinumRegionControlPlane) gets the call as is.
@@ -276,7 +313,11 @@ export async function platinumFetch(path: string, init: RequestInit = {}, origin
       // Forget the owner; the global origin forwards to it and the answer
       // names it again.
       if (sandboxId && sandboxOrigins.get(sandboxId) === regional) sandboxOrigins.delete(sandboxId);
-      if (createRegion && regionOrigins.get(createRegion) === regional) regionOrigins.delete(createRegion);
+      // A region's control plane is skipped for a minute after that.
+      if (callRegion) {
+        if (regionOrigins.get(callRegion) === regional) regionOrigins.delete(callRegion);
+        unreachableRegions.set(callRegion, Date.now() + PLATINUM_REGION_RETRY_AFTER_MS);
+      }
       logger.warn(
         `[platinum] ${method} ${path} via ${regional} failed (${err instanceof Error ? ((err as { code?: unknown }).code ?? err.message) : err}); retrying once via the global origin`,
       );

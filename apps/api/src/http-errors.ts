@@ -4,7 +4,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
-import { isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isRequestDeadlineHTTPException, isDeadlineOrphan, REQUEST_DEADLINE_CODE } from './middleware/request-deadline';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
@@ -485,6 +485,34 @@ function handleUnhandledError(err: Error, c: Context): Response {
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
+  // A request whose deadline already fired had its 503 (Retry-After) served
+  // while the handler kept running with no owner — see request-deadline.ts.
+  // When that orphan resumes it touches the served context (`c.header(...)`
+  // makes Hono recreate the sent Response from its consumed body stream, and
+  // Bun rejects that with `TypeError: Body object should not be disturbed or
+  // locked`), compose catches the throw at its dispatch level and calls
+  // onError a SECOND time with an error that can no longer reach any client.
+  // prod 2026-10-16 22:43:05, request mvbjzd4t-a8d: the manifest handler,
+  // orphaned for 675 ms behind a stalled DB pool, threw exactly that and was
+  // captured as a 500 (Better Stack pattern 235fd74b…).
+  //
+  // Classify it: warn (not error), no captureException, and a 503 body — the
+  // request already degraded as 503 and nobody reads this discarded response.
+  // MUST NOT call c.header/c.status here: on a served context those recreate
+  // the consumed body and would throw the very error this branch absorbs.
+  if (isDeadlineOrphan(c, err)) {
+    appLogger.warn(`${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`, {
+      method,
+      path,
+      errorType: 'deadline-orphan',
+      causeErrorType: errName,
+      causeMessage: err.message.slice(0, 200),
+    });
+    return c.json(
+      { error: true, message: 'Request deadline already exceeded', status: 503, code: REQUEST_DEADLINE_CODE },
+      503,
+    );
+  }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);

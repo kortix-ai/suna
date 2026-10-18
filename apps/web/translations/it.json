@@ -2284,7 +2284,8 @@
         "groups": {
           "small": "Piccoli team",
           "growing": "Team in crescita",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Grandi organizzazioni"
         }
       }
     },
@@ -2454,10 +2455,11 @@
         "free": {
           "name": "Free",
           "note": "Inizia con veri crediti sandbox.",
-          "f1": "200 crediti / mese, nessuna carta richiesta",
-          "f2": "1 progetto",
-          "f3": "Usa la tua chiave API per qualsiasi modello premium",
-          "f4": "Collega il tuo abbonamento ChatGPT"
+          "f1": "500 crediti / mese, nessuna carta richiesta",
+          "f2": "Modelli gestiti: Kimi, DeepSeek, GLM. Zero conservazione dei dati, inferenza negli USA",
+          "f3": "1 progetto",
+          "f4": "Usa la tua chiave API per qualsiasi modello premium",
+          "f5": "Collega il tuo abbonamento ChatGPT"
         },
         "credits": {
           "name": "Crediti",
@@ -2467,7 +2469,7 @@
           "f2": "Membri illimitati, un unico pool di crediti condiviso",
           "f3": "I crediti non usati si trasferiscono di un mese",
           "f4": "Ricarica quando vuoi. Le ricariche non scadono mai",
-          "f5": "Modelli gestiti e tutte le funzionalità",
+          "f5": "Fino a 200 progetti e limiti di frequenza dei modelli più alti",
           "f6": "Assistenza via email"
         },
         "enterprise": {
@@ -2485,7 +2487,7 @@
       "faq": {
         "free": {
           "question": "Cosa include Free?",
-          "answer": "Free include ogni mese 200 crediti per il calcolo sandbox e 1 progetto. Usa la tua chiave API o collega il tuo abbonamento ChatGPT per i modelli premium. I modelli gestiti con le chiavi Kortix richiedono un piano a pagamento."
+          "answer": "Free include ogni mese 500 crediti, modelli gestiti e tutte le funzionalità, per 1 progetto. I crediti pagano il computer dell'agente e i modelli Kortix. Usa la tua chiave API o collega il tuo abbonamento ChatGPT per qualsiasi altro modello."
         },
         "credit": {
           "question": "Cosa si può comprare con un credito?",
@@ -2493,7 +2495,7 @@
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
-          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 10.000 $ al mese (1.000.000 di crediti). Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 10.000 $ al mese contatta il reparto vendite."
+          "answer": "Scegli un livello da 50 $ al mese (5.000 crediti) a 50.000 $ al mese (5.000.000 di crediti). Ogni livello offre crediti alla stessa tariffa: 100 crediti per dollaro. Per più di 50.000 $ al mese contatta il reparto vendite."
         },
         "members": {
           "question": "Pago per i membri?",
@@ -17408,6 +17410,54 @@
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
       "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)",
+      "text848f54e89660": "Esecuzioni",
+      "textb098a09c78aa": "Prova con payload",
+      "text99733344956d": "Payload",
+      "text4309aba52556": "Anteprima prompt",
+      "text98ee1ca163c3": "Esegui con questo payload",
+      "text920ed46028e8": "Inserisci un JSON valido.",
+      "text6ea4fcc31727": "Inserisci un oggetto JSON.",
+      "text2631c2f64174": "Il filtro corrisponde",
+      "text2319ec274750": "Chiave di sessione",
+      "text398d270b036a": "Impossibile caricare le esecuzioni.",
+      "text4c2e1df4570b": "Monitor",
+      "text31757bbfa17e": "Promemoria",
+      "text12698ce1ea5c": "Saltata",
+      "text9daf8e05c684": "Non firmata",
+      "text7f2b8f3a675c": "La firma del webhook non è stata verificata.",
+      "text98c78fbb22fe": "Ripeti esecuzione",
+      "texta9cd409ba9ca": "Ripetere questa esecuzione non firmata?",
+      "text776bb15115b3": "La firma non è stata verificata. Una ripetizione invia di nuovo lo stesso payload all’agente.",
+      "text2f1b3ba06cfb": "Impossibile ripetere l’esecuzione",
+      "textff2c3559cd6b": "Visualizza il prompt generato da questo payload o esegui il trigger con esso.",
+      "text15e8856d4d77": "Avvia una sessione reale. Si applicano costi.",
+      "text858e4ba7a29f": "Metti in pausa",
+      "texte0ab721ade45": "{count, plural, one {esecuzione} other {esecuzioni}}",
+      "textf1a06b0cb2ca": "durata mediana",
+      "textfa14066e0399": "Durata mediana",
+      "text26735edf00f9": "Nessuna esecuzione",
+      "textd2c58b300c07": "Esecuzioni nel tempo",
+      "text6de3a7d8e5db": "Nessuna esecuzione in questo intervallo",
+      "text84b05fbb7f76": "A un evento",
+      "text27a2c8b3a0d2": "prossima {value0}",
+      "textd47d7cb0e4f8": "Altro",
+      "textc8dae6371b33": "Ripeti",
+      "text4aaee10f3594": "ID sessione copiato",
+      "text4001631320f1": "{count, plural, one {non riuscita} other {non riuscite}}",
+      "textd835122c9dd1": "{count, plural, one {credito} other {crediti}}",
+      "text72a85758b69c": "Ancora nessuna esecuzione.",
+      "text75c4316dcad4": "Ancora nessuna esecuzione. Questo trigger è in pausa.",
+      "textdf86da65c421": "Ancora nessuna esecuzione. La prima parte {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# selezionato} other {# selezionati}}",
+      "text6363885af551": "Pausa {done} di {total}…",
+      "text4cc2a4d3a49a": "Ripresa {done} di {total}…",
+      "text6e24bb562ab0": "Eliminazione {done} di {total}…",
+      "textd845c8702b04": "{ok, plural, other {# in pausa}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "texte57e0a07011b": "{ok, plural, other {# ripresi}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "text1412a8506003": "{ok, plural, other {# eliminati}}{failed, plural, =0 {} other {, # non riusciti}}",
+      "textd142c482800c": "Eliminare {count, plural, one {# trigger} other {# trigger}}?",
+      "text75af4531ed17": "Vengono rimossi dal manifest del progetto. L’operazione non può essere annullata.",
+      "textc9e9d972eda2": "Al momento nulla in questo progetto parte da solo. Puoi comunque avviare un trigger a mano.",
       "textd861cc0af73c": "kortix init crea la struttura, kortix ship la rende operativa. È lo stesso repo che fa la stessa cosa, quindi lo sviluppo locale e il sistema live non appartengono più a categorie diverse.",
       "textd864380a766f": "La sandbox contiene un token Kortix con ambito di progetto e nessuna chiave di terze parti. Le credenziali del tracker e dell’helpdesk vengono decrittate lato server e allegate alla chiamata in uscita.",
       "textd8707d411d99": "Segreti",
@@ -19730,6 +19780,9 @@
       "texta7a8d2a5fb25": "Chiedi a un agente di crearne una.",
       "text42cf267578ad": "Tipi di evento del trigger elencati",
       "text631b422403db": "App che possono attivare eventi elencate",
+      "text104b83c048f9": "Esecuzioni del trigger elencate",
+      "text7823ec680410": "Esecuzione del trigger ripetuta",
+      "text7ecaa37e9cf6": "Esecuzioni dei trigger del progetto elencate",
       "text5d5b7c17acf0": "Evento app ricevuto",
       "textd919fde889e9": "Connessione richiesta",
       "textd7b77185afd1": "Attivazione in corso",
@@ -19964,7 +20017,7 @@
       "text146aaf3c71fa": "Mantiene abilitati SSO, SCIM, RBAC e audit per un account Enterprise firmato che è anche fatturato tramite un piano a pagamento, così la riconciliazione di Stripe non può rimuoverli.",
       "text517105fd13ce": "I crediti finanziano il calcolo sandbox: anche una prova BYOK richiede saldo nel portafoglio per eseguire le sessioni. Il credito di benvenuto gratuito è di 2 $.",
       "text2f1d17f50af8": "Enterprise sblocca SAML SSO, sincronizzazione directory SCIM, RBAC e accesso all'audit per questo account. Il piano fatturato non cambia.",
-      "text12836c0e435d": "Free costa 0 $ – un progetto e 200 crediti al mese di calcolo sandbox, con la tua chiave per qualsiasi modello premium. I piani a pagamento sono a crediti: scegli un importo mensile, i membri sono gratuiti e illimitati e un unico pool copre l'intero account. L'self-hosting del software non costa nulla; paghi invece la tua fattura per i modelli e quella per il calcolo.",
+      "text12836c0e435d": "Free costa 0 $ – un progetto, 500 crediti al mese, modelli gestiti e tutte le funzionalità, con la tua chiave per qualsiasi altro modello. I piani a pagamento sono a crediti: scegli un importo mensile, i membri sono gratuiti e illimitati e un unico pool copre l'intero account. L'self-hosting del software non costa nulla; paghi invece la tua fattura per i modelli e quella per il calcolo.",
       "text5dffd4db88c5": "Il tuo piano, i tuoi crediti e la fatturazione per questo account.",
       "text49fd64c206dd": "Il tuo piano è attivo. I crediti sono pronti.",
       "textad828837ddd8": "membri membro accesso allo spazio di lavoro collaboratori persone compagni di team elenco chi può vedere autorizzazioni concedi condividi",
@@ -20087,7 +20140,13 @@
       "text68cf13547e38": "Aggiungi un’app tramite URL",
       "text46bc646c9bfe": "Mostra in questo progetto un sito ospitato ovunque. Kortix lo apre qui, accanto alle app che esegue.",
       "text08e6480e9b78": "{value0} aggiunta",
-      "text6241684827b2": "Questo sito non consente a Kortix di mostrarlo qui."
+      "text6241684827b2": "Questo sito non consente a Kortix di mostrarlo qui.",
+      "textdae75dce541f": "Mette in pausa tutte le pianificazioni e i webhook di questo progetto.",
+      "textced57bebd466": "Riattiva le pianificazioni e i webhook di questo progetto.",
+      "agentsListSubagentsTitle": "Subagenti",
+      "agentsListSubagentsHint": "Altri agenti li chiamano durante una sessione. Nessuno avvia una chat con loro.",
+      "agentsListAlsoSubagent": "Anche subagente",
+      "servedModelTurnRow": "{requested} non è riuscito ({reason}) — passaggio a {served}."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -21485,7 +21544,11 @@
         "excluded": "Esclusi",
         "noMatch": "Nessun risultato.",
         "noExcludedApps": "Nessuna app è esclusa.",
-        "noExcludedSites": "Nessun sito web è escluso."
+        "noExcludedSites": "Nessun sito web è escluso.",
+        "commonApps": "App comuni",
+        "commonSites": "Siti web comuni",
+        "showList": "Mostra elenco",
+        "hideList": "Nascondi elenco"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "Per quanto tempo Kortix conserva le registrazioni. 0 le conserva senza limite.",
@@ -21509,7 +21572,7 @@
       "experimentalTitle": "Sperimentale",
       "experimentalHint": "Prova funzioni che possono ancora cambiare.",
       "privacyControls": "Controlli privacy",
-      "privacyControlsHint": "Mostra il mascheramento dei dati personali e le app e i siti che nessun computer registra. Disattivarlo li nasconde; le impostazioni restano valide.",
+      "privacyControlsHint": "Mostra il mascheramento dei dati personali. Disattivarlo lo nasconde; ciò che è impostato continua ad applicarsi.",
       "maskingTitle": "Mascheramento",
       "framesTitle": "Fotogrammi dello schermo",
       "interval": "Un fotogramma ogni",
@@ -21520,10 +21583,10 @@
       "framesHint": "Senza valore, ogni computer usa il proprio (un'immagine ogni 2 s a 1440p). Con un valore, tutti i computer lo usano e nessuno può modificarlo. Clic, digitazione e scorrimento vengono registrati con le proprie schermate a qualsiasi intervallo.",
       "computerDecides": "Decide ogni computer",
       "included": {
-        "title": "Registra solo queste app e siti web",
-        "hint": "Attivo: ogni computer di {org} registra solo ciò che è elencato qui. Tutto il resto viene oscurato e mai salvato. Le persone possono aggiungere i propri in Kortix Capture; non possono disattivarlo né rimuovere questi.",
+        "title": "App e siti web",
+        "hint": "Scegli cosa registra ogni computer di {org}. Ciò che viene saltato è oscurato e mai salvato né caricato. Le persone possono aggiungere i propri in Kortix Capture; non possono rimuovere questi né disattivare Registra solo.",
         "switch": "Registra solo app e siti web inclusi",
-        "switchHint": "Disattivo: viene registrato tutto ciò che non è escluso.",
+        "switchHint": "Disattivo: viene registrato tutto tranne Non registrare mai.",
         "kindLabel": "App o siti web",
         "apps": "App",
         "websites": "Siti web",
@@ -21533,7 +21596,19 @@
         "addDomain": "Includi {domain}",
         "included": "Inclusi",
         "noApps": "Nessuna app inclusa. Vengono registrati solo i siti web inclusi.",
-        "noSites": "Nessun sito web incluso. I browser vengono registrati solo se l’app del browser è inclusa."
+        "noSites": "Nessun sito web incluso. I browser vengono registrati solo se l’app del browser è inclusa.",
+        "switchHintOn": "Attivo: vengono registrati solo le app e i siti web qui sotto.",
+        "commonApps": "App comuni",
+        "commonSites": "Siti web comuni",
+        "policyType": "Tipo di criterio",
+        "exclusionPolicy": "Criterio di esclusione",
+        "exclusionPolicyHint": "Registra tutto tranne ciò che escludi.",
+        "inclusionPolicy": "Criterio di inclusione",
+        "inclusionPolicyHint": "Registra solo ciò che includi. Tutto il resto viene oscurato.",
+        "recordTitle": "Registra solo questi",
+        "exceptTitle": "Non registrare mai, anche se inclusi",
+        "memberInclusions": "Le persone possono includere app e siti web propri",
+        "memberInclusionsHint": "Disattivo: i computer registrano solo le app e i siti web elencati qui. Le persone possono comunque aggiungere app e siti web da saltare."
       }
     },
     "area": {

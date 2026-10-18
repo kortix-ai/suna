@@ -48,6 +48,23 @@ export interface AccountTokenValidationResult {
    *  turn-stream and audit/events from boxes that outlived their token).
    *  Absent on success and on 'Validation error' (a DB failure IS transient). */
   credentialDead?: boolean;
+  /** When the presented secret hash-matches a stored token row that is dead,
+   *  expired, lease-refused or idle-revoked, the row's real identity rides on
+   *  the refusal so the LLM gateway can log the request against its owning
+   *  account (KRTX-1749). Absent when nothing matches: a garbage secret stays
+   *  unattributed, so spray traffic writes no log rows.
+   *
+   *  Account-only refusals (a personal PAT has no project) are attributed but
+   *  the product's log readers are project-scoped — today that class of row is
+   *  visible in the store, not in any UI/CLI list. An account-scoped reader is
+   *  the deliberate follow-up, not this PR. */
+  refusedIdentity?: {
+    accountId: string;
+    userId: string;
+    tokenId: string | null;
+    projectId: string | null;
+    sessionId: string | null;
+  };
 }
 
 export interface CreateAccountTokenParams {
@@ -563,6 +580,8 @@ async function validateAccountTokenMatching(
       const [dead] = await db
         .select({
           tokenId: accountTokens.tokenId,
+          accountId: accountTokens.accountId,
+          userId: accountTokens.userId,
           projectId: accountTokens.projectId,
           sessionId: accountTokens.sessionId,
           status: accountTokens.status,
@@ -575,11 +594,36 @@ async function validateAccountTokenMatching(
         isValid: false,
         error: dead && isRevokedRow(dead) ? deadTokenReason(dead) : 'PAT not found or revoked',
         credentialDead: true,
+        // The secret hash-matches a real (dead) row: the gateway refusal keeps
+        // its owner (KRTX-1749). A garbage secret matches nothing and stays
+        // unattributed.
+        ...(dead
+          ? {
+              refusedIdentity: {
+                accountId: dead.accountId,
+                userId: dead.userId,
+                tokenId: dead.tokenId,
+                projectId: dead.projectId,
+                sessionId: dead.sessionId,
+              },
+            }
+          : {}),
       };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
-      return { isValid: false, error: 'PAT expired', credentialDead: true };
+      return {
+        isValid: false,
+        error: 'PAT expired',
+        credentialDead: true,
+        refusedIdentity: {
+          accountId: row.accountId,
+          userId: row.userId,
+          tokenId: row.tokenId,
+          projectId: row.projectId,
+          sessionId: row.sessionId,
+        },
+      };
     }
 
     // A session credential is authority for one live sandbox, not a durable
@@ -600,7 +644,18 @@ async function validateAccountTokenMatching(
         )
         .limit(1);
       if (!lease)
-        return { isValid: false, error: SESSION_LEASE_REFUSAL, credentialDead: true };
+        return {
+          isValid: false,
+          error: SESSION_LEASE_REFUSAL,
+          credentialDead: true,
+          refusedIdentity: {
+            accountId: row.accountId,
+            userId: row.userId,
+            tokenId: row.tokenId,
+            projectId: row.projectId,
+            sessionId: row.sessionId,
+          },
+        };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -623,6 +678,13 @@ async function validateAccountTokenMatching(
           isValid: false,
           error: 'PAT auto-revoked due to inactivity',
           credentialDead: true,
+          refusedIdentity: {
+            accountId: row.accountId,
+            userId: row.userId,
+            tokenId: row.tokenId,
+            projectId: row.projectId,
+            sessionId: row.sessionId,
+          },
         };
       }
     }
