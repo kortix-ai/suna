@@ -244,7 +244,20 @@ pub fn checked(paths: &MemoryPaths) -> bool {
 }
 
 pub fn mark_checked(paths: &MemoryPaths) {
+    if checked(paths) {
+        return;
+    }
     let _ = std::fs::write(checked_path(paths), b"");
+    // The recorder, audio and actions reload when settings.json or policy.json changes;
+    // with no policy there is no policy.json to change. A new mtime on settings.json
+    // (same bytes) makes each of them see the wait is over within one tick.
+    touch(&paths.settings());
+}
+
+fn touch(path: &std::path::Path) {
+    if let Ok(f) = std::fs::File::options().append(true).open(path) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+    }
 }
 
 /// A new sign-in: the previous destination's policy no longer applies, and recording

@@ -49,6 +49,22 @@ mock.module('../billing/services/yolo-tokens', () => ({
   attributeYoloToken: async () => null,
 }));
 
+// The gateway-key and account-token refusals are mutable per test: `null`
+// means "no row matches this token" (the unattributable case).
+let gatewayKeyValidation: (token: string) => unknown = () => null;
+let accountTokenExtra: Record<string, unknown> | null = null;
+
+mock.module('./gateway-keys', () => ({
+  INTERNAL_SESSION_TITLE_KEY_NAME: 'internal-session-title',
+  createGatewayKey: async () => {
+    throw new Error('not used in this test');
+  },
+  listGatewayKeys: async () => [],
+  deleteGatewayKey: async () => false,
+  revokeGatewayKey: async () => false,
+  validateGatewayKey: async (token: string) => gatewayKeyValidation(token),
+}));
+
 // 'good' is a PROJECT-SCOPED token (projectId set) — the shape every admitted
 // inference principal must have. 'pat' is a full-account PAT: it authenticates
 // against the account but resolves with no projectId, which is exactly the
@@ -59,7 +75,7 @@ mock.module('../repositories/account-tokens', () => ({
       ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: 'proj-1', sessionId: null }
       : token === 'pat'
         ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null }
-        : { isValid: false },
+        : { isValid: false, ...(accountTokenExtra ?? {}) },
 }));
 
 mock.module('./resolution/default-model', () => ({
@@ -162,6 +178,62 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     expect(result.ok).toBe(true);
     expect(billingCalls).toBe(0);
     if (result.ok) expect(result.principal.billingHold).toBeUndefined();
+  });
+});
+
+describe('authorizeRequest — a refused token that still matches a known credential attributes its refusal', () => {
+  // KRTX-1749 follow-through: the 401 branch used to drop every identity, so a
+  // revoked gateway key or a dead PAT was invisible in usage and logs. The
+  // denial now carries the credential row's identity when the presented secret
+  // still hash-matches one; a token matching NO row stays unattributed.
+  beforeEach(() => {
+    gatewayKeyValidation = () => null;
+    accountTokenExtra = null;
+  });
+
+  test('a revoked gateway key denies 401 with its account, project and key attached', async () => {
+    gatewayKeyValidation = () => ({
+      accountId: 'acct-1',
+      projectId: 'proj-1',
+      userId: 'user-1',
+      keyId: 'key-1',
+      refused: 'revoked',
+    });
+    const result = await authorizeRequest('kortix_gw_revoked');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(401);
+      expect(result.errorCode).toBe('invalid_token');
+      expect(result.principal).toBeDefined();
+      expect(result.principal?.accountId).toBe('acct-1');
+      expect(result.principal?.projectId).toBe('proj-1');
+      expect(result.principal?.keyId).toBe('key-1');
+    }
+  });
+
+  test('a dead PAT denies 401 with its account attached', async () => {
+    accountTokenExtra = {
+      error: 'token t_1 is revoked',
+      refusedIdentity: { accountId: 'acct-2', userId: 'user-2', tokenId: 't_1', projectId: null, sessionId: null },
+    };
+    const result = await authorizeRequest('kortix_pat_dead');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(401);
+      expect(result.principal).toBeDefined();
+      expect(result.principal?.accountId).toBe('acct-2');
+      expect(result.principal?.userId).toBe('user-2');
+    }
+  });
+
+  test('a token matching no row denies 401 without a principal — unattributable stays unrecorded', async () => {
+    const result = await authorizeRequest('kortix_gw_garbage');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(401);
+      expect(result.errorCode).toBe('invalid_token');
+      expect(result.principal).toBeUndefined();
+    }
   });
 });
 
