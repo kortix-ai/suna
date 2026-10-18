@@ -17,7 +17,7 @@ import {
  * customer personal data (DPA section 7.3): update LAST_UPDATED and email the
  * change to subscribers first.
  */
-const LAST_UPDATED = 'October 9, 2026';
+const LAST_UPDATED = 'October 18, 2026';
 
 export const metadata: Metadata = {
   title: 'Subprocessors',
@@ -30,7 +30,8 @@ type Row = { name: string; purpose: string; location: string };
 const CORE: Row[] = [
   {
     name: 'Amazon Web Services, Inc.',
-    purpose: 'Hosting of the API and gateway, storage, secrets, transactional email (SES)',
+    purpose:
+      'Hosting of the API and gateway, storage, secrets, transactional email (SES), inference for Kortix-managed AI models (Amazon Bedrock)',
     location: 'United Kingdom',
   },
   {
@@ -81,6 +82,11 @@ const CORE: Row[] = [
   {
     name: 'OpenCode Zen; Morph',
     purpose: 'Inference for Kortix-managed AI models, reached directly',
+    location: 'United States',
+  },
+  {
+    name: 'Deep Infra, Inc.; Together Computer Inc.; Baseten Labs, Inc.; Parasail; Modal Labs, Inc.; Groq, Inc.; Cerebras Systems Inc.',
+    purpose: 'Inference for Kortix-managed AI models, reached through OpenRouter or directly',
     location: 'United States',
   },
   {
