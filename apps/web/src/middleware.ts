@@ -375,6 +375,16 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
 
+  // Normalize app paths before maintenance, desktop and authentication gates.
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
+  const remainingPath = '/' + pathSegments.slice(1).join('/');
+  const isRemainingPathMarketing = MARKETING_ROUTES.some(
+    (route) => remainingPath === route ||
+      (route !== '/' && remainingPath.startsWith(route + '/')),
+  );
+  if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
+
   // ── Blocking maintenance mode ──────────────────────────────────────────
   // When maintenance level is "blocking" (Full Lockdown), redirect DASHBOARD /
   // app traffic to /maintenance — but NOT the public marketing/landing site.
@@ -470,46 +480,25 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Extract path segments
-  const pathSegments = pathname.split('/').filter(Boolean);
-  const firstSegment = pathSegments[0];
-
-  let explicitLocale: Locale | undefined;
-
-  // Check if first segment is a locale (e.g., /de, /it)
-  if (firstSegment && locales.includes(firstSegment as Locale)) {
-    const locale = firstSegment as Locale;
-    const remainingPath = '/' + pathSegments.slice(1).join('/') || '/';
-
-    // Verify remaining path is a marketing route
-    const isRemainingPathMarketing = MARKETING_ROUTES.some((route) => {
-      if (route === '/') {
-        return remainingPath === '/' || remainingPath === '';
-      }
-      return remainingPath === route || remainingPath.startsWith(route + '/');
+  // Explicit marketing locales retain their static, identity-free rewrite.
+  if (explicitLocale && isRemainingPathMarketing) {
+    const locale = explicitLocale;
+    // /de/pricing is already the internal path app/[locale]/…/pricing with
+    // locale=de. Rewrite onto its normalized form (/de/ -> /de) and name the
+    // locale for Server Actions. Static per-locale HTML; no identity lookup.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-locale', locale);
+    requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+    const target = request.nextUrl.clone();
+    target.pathname = localizedPathname(locale, remainingPath);
+    const response = NextResponse.rewrite(target, {
+      request: { headers: requestHeaders },
     });
+    // Keep the locale response header for diagnostics and cache inspection.
+    // Do not persist it: language only changes permanently via profile settings.
+    response.headers.set('x-locale', locale);
 
-    if (isRemainingPathMarketing) {
-      // /de/pricing is already the internal path app/[locale]/…/pricing with
-      // locale=de. Rewrite onto its normalized form (/de/ -> /de) and name the
-      // locale for Server Actions. Static per-locale HTML; no identity lookup.
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set('x-locale', locale);
-      requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
-      const target = request.nextUrl.clone();
-      target.pathname = localizedPathname(locale, remainingPath);
-      const response = NextResponse.rewrite(target, {
-        request: { headers: requestHeaders },
-      });
-      // Keep the locale response header for diagnostics and cache inspection.
-      // Do not persist it: language only changes permanently via profile settings.
-      response.headers.set('x-locale', locale);
-
-      return finalizeEnvironmentAccess(response);
-    }
-
-    explicitLocale = locale;
-    pathname = remainingPath;
+    return finalizeEnvironmentAccess(response);
   }
 
   // Every unprefixed page URL is rewritten onto app/[locale] (see the
