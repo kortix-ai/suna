@@ -91,6 +91,15 @@ async function prefetchModelPickerOnceGatewayKnown(
   queryClient: QueryClient,
   projectId: string,
 ): Promise<void> {
+  // An entry that already settled as error WITHOUT data belongs to the
+  // contract's retry policy, not to this prefetch: `fetchQuery` refetches an
+  // errored entry unconditionally, so every navigation to a project the
+  // boundary denies re-asked a final 404 — the gone screen's second source of
+  // the KRTX-2436 refetch loop (the mounted hooks' interval and `retryOnMount`
+  // are fixed in `contract()` itself). Remounting hooks decide instead: a
+  // transient error retries on mount, a gone answer (404/410) stands down.
+  const detailState = queryClient.getQueryState(qk.project.detail(projectId));
+  if (detailState?.status === 'error' && detailState.data === undefined) return;
   const detail = await queryClient
     .fetchQuery({
       queryKey: qk.project.detail(projectId),

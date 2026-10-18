@@ -20180,7 +20180,8 @@
       "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
       "agentsListSubagentsTitle": "Subagenten",
       "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
-      "agentsListAlsoSubagent": "Auch Subagent"
+      "agentsListAlsoSubagent": "Auch Subagent",
+      "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -21578,7 +21579,11 @@
         "excluded": "Ausgeschlossen",
         "noMatch": "Keine Treffer.",
         "noExcludedApps": "Keine App ist ausgeschlossen.",
-        "noExcludedSites": "Keine Website ist ausgeschlossen."
+        "noExcludedSites": "Keine Website ist ausgeschlossen.",
+        "commonApps": "Häufige Apps",
+        "commonSites": "Häufige Websites",
+        "showList": "Liste anzeigen",
+        "hideList": "Liste ausblenden"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "Wie lange Kortix Aufnahmen behält. 0 behält sie ohne Limit.",
@@ -21602,7 +21607,7 @@
       "experimentalTitle": "Experimentell",
       "experimentalHint": "Funktionen ausprobieren, die sich noch ändern können.",
       "privacyControls": "Datenschutz-Steuerung",
-      "privacyControlsHint": "Zeigt das Maskieren personenbezogener Daten und die Apps und Websites, die kein Computer aufnimmt. Ausschalten blendet sie aus; Eingestelltes gilt weiter.",
+      "privacyControlsHint": "Maskierung personenbezogener Daten anzeigen. Ausschalten blendet sie aus; was eingestellt ist, gilt weiter.",
       "maskingTitle": "Maskieren",
       "framesTitle": "Bildschirmbilder",
       "interval": "Ein Bild alle",
@@ -21613,10 +21618,10 @@
       "framesHint": "Ohne Vorgabe nutzt jeder Computer seine eigene Einstellung (alle 2 s ein Bild in 1440p). Mit Vorgabe gilt sie für jeden Computer und lässt sich dort nicht ändern. Klicks, Tippen und Scrollen werden bei jedem Abstand mit eigenen Screenshots aufgezeichnet.",
       "computerDecides": "Jeder Computer entscheidet",
       "included": {
-        "title": "Nur diese Apps und Websites aufnehmen",
-        "hint": "An: Jeder Computer in {org} nimmt nur auf, was hier steht. Alles andere wird geschwärzt und nie gespeichert. Personen können in Kortix Capture eigene hinzufügen; sie können dies nicht ausschalten oder diese entfernen.",
+        "title": "Apps und Websites",
+        "hint": "Legen Sie fest, was jeder Computer in {org} aufnimmt. Alles Übersprungene wird geschwärzt und nie gespeichert oder hochgeladen. Personen können in Kortix Capture eigene hinzufügen; sie können diese nicht entfernen und „Nur aufnehmen“ nicht ausschalten.",
         "switch": "Nur eingeschlossene Apps und Websites aufnehmen",
-        "switchHint": "Aus: Alles, was nicht ausgeschlossen ist, wird aufgenommen.",
+        "switchHint": "Aus: Alles außer „Nie aufnehmen“ wird aufgenommen.",
         "kindLabel": "Apps oder Websites",
         "apps": "Apps",
         "websites": "Websites",
@@ -21626,7 +21631,19 @@
         "addDomain": "{domain} einschließen",
         "included": "Eingeschlossen",
         "noApps": "Keine App eingeschlossen. Nur eingeschlossene Websites werden aufgenommen.",
-        "noSites": "Keine Website eingeschlossen. Browser werden nur aufgenommen, wenn die Browser-App eingeschlossen ist."
+        "noSites": "Keine Website eingeschlossen. Browser werden nur aufgenommen, wenn die Browser-App eingeschlossen ist.",
+        "switchHintOn": "An: Nur die Apps und Websites unten werden aufgenommen.",
+        "commonApps": "Häufige Apps",
+        "commonSites": "Häufige Websites",
+        "policyType": "Richtlinientyp",
+        "exclusionPolicy": "Ausschlussrichtlinie",
+        "exclusionPolicyHint": "Alles aufnehmen außer dem, was Sie ausschließen.",
+        "inclusionPolicy": "Einschlussrichtlinie",
+        "inclusionPolicyHint": "Nur aufnehmen, was Sie einschließen. Alles andere wird geschwärzt.",
+        "recordTitle": "Nur diese aufnehmen",
+        "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen",
+        "memberInclusions": "Personen können eigene Apps und Websites einschließen",
+        "memberInclusionsHint": "Aus: Computer nehmen nur die hier aufgeführten Apps und Websites auf. Personen können weiterhin Apps und Websites zum Überspringen hinzufügen."
       }
     },
     "area": {

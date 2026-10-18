@@ -20180,7 +20180,8 @@
       "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto.",
       "agentsListSubagentsTitle": "Subagentes",
       "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
-      "agentsListAlsoSubagent": "También subagente"
+      "agentsListAlsoSubagent": "También subagente",
+      "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -21578,7 +21579,11 @@
         "excluded": "Excluidos",
         "noMatch": "No hay coincidencias.",
         "noExcludedApps": "No hay ninguna app excluida.",
-        "noExcludedSites": "No hay ningún sitio web excluido."
+        "noExcludedSites": "No hay ningún sitio web excluido.",
+        "commonApps": "Apps comunes",
+        "commonSites": "Sitios web comunes",
+        "showList": "Mostrar lista",
+        "hideList": "Ocultar lista"
       },
       "remoteDays": "En Kortix",
       "remoteDaysHint": "Cuánto tiempo conserva Kortix las grabaciones. 0 las conserva sin límite.",
@@ -21602,7 +21607,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Prueba funciones que aún pueden cambiar.",
       "privacyControls": "Controles de privacidad",
-      "privacyControlsHint": "Muestra el enmascarado de datos personales y las apps y sitios que ningún equipo graba. Al desactivarlo se ocultan; lo configurado sigue aplicándose.",
+      "privacyControlsHint": "Mostrar el enmascaramiento de datos personales. Al desactivarlo se oculta; lo configurado sigue aplicándose.",
       "maskingTitle": "Enmascarado",
       "framesTitle": "Fotogramas de pantalla",
       "interval": "Un fotograma cada",
@@ -21613,10 +21618,10 @@
       "framesHint": "Sin valor, cada ordenador usa el suyo (una imagen cada 2 s a 1440p). Con valor, todos los ordenadores lo usan y nadie puede cambiarlo. Los clics, la escritura y el desplazamiento se graban con sus propias capturas con cualquier intervalo.",
       "computerDecides": "Cada ordenador decide",
       "included": {
-        "title": "Grabar solo estas apps y sitios web",
-        "hint": "Activado: cada equipo de {org} graba solo lo que aparece aquí. Todo lo demás se oculta en negro y nunca se guarda. Las personas pueden añadir los suyos en Kortix Capture; no pueden desactivarlo ni quitar estos.",
+        "title": "Apps y sitios web",
+        "hint": "Elige qué graba cada equipo de {org}. Lo omitido se oculta en negro y nunca se guarda ni se sube. Las personas pueden añadir los suyos en Kortix Capture; no pueden quitar estos ni desactivar Grabar solo.",
         "switch": "Grabar solo apps y sitios web incluidos",
-        "switchHint": "Desactivado: se graba todo lo que no está excluido.",
+        "switchHint": "Desactivado: se graba todo excepto Nunca grabar.",
         "kindLabel": "Apps o sitios web",
         "apps": "Apps",
         "websites": "Sitios web",
@@ -21626,7 +21631,19 @@
         "addDomain": "Incluir {domain}",
         "included": "Incluidos",
         "noApps": "Ninguna app incluida. Solo se graban los sitios web incluidos.",
-        "noSites": "Ningún sitio web incluido. Los navegadores solo se graban si la app del navegador está incluida."
+        "noSites": "Ningún sitio web incluido. Los navegadores solo se graban si la app del navegador está incluida.",
+        "switchHintOn": "Activado: solo se graban las apps y sitios web de abajo.",
+        "commonApps": "Apps comunes",
+        "commonSites": "Sitios web comunes",
+        "policyType": "Tipo de política",
+        "exclusionPolicy": "Política de exclusión",
+        "exclusionPolicyHint": "Grabar todo excepto lo que excluyas.",
+        "inclusionPolicy": "Política de inclusión",
+        "inclusionPolicyHint": "Grabar solo lo que incluyas. Todo lo demás se oculta en negro.",
+        "recordTitle": "Grabar solo estos",
+        "exceptTitle": "Nunca grabar, aunque estén incluidos",
+        "memberInclusions": "Las personas pueden incluir sus propias apps y sitios web",
+        "memberInclusionsHint": "Desactivado: los equipos graban solo las apps y sitios web de esta lista. Las personas aún pueden añadir apps y sitios web para omitir."
       }
     },
     "area": {

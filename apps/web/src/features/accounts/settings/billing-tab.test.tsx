@@ -124,13 +124,36 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     expect(renderPlan().toLowerCase()).not.toContain('trial');
   });
 
-  test('wallet-first view keeps the balance and adds the plan changer under it', () => {
+  // KRTX-2376 (dogfood): the hub's wallet-first view on Free showed
+  // "Available balance" with no way to fund it — the only top-up control in
+  // the product lives behind the subscribe dialog. The wallet blocks are for
+  // a wallet the plan can FUND, so on a plan that cannot purchase credits
+  // the pane leads with the plan card (which carries the monthly grant), and
+  // the balance returns the moment the plan allows purchases.
+  test('the hub wallet-first view on Free leads with the plan card, not a fundless wallet', () => {
     total = 2;
     accountStateData = freeState();
     const html = renderToStaticMarkup(
       createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
     );
-    expect(html).toContain('Subscribe for');
+    expect(html).not.toContain('Available balance');
+    expect(html).toContain('Current plan');
+    expect(html).toContain('>Free</p>');
+    expect(html).toContain('Subscribe for $200 / month');
+  });
+
+  test('the hub wallet-first view on a plan that can purchase credits keeps the balance and top-up', () => {
+    total = 100;
+    accountStateData = {
+      ...freeState(),
+      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
+      subscription: { status: 'active', subscription_id: 'sub_synthetic', can_purchase_credits: true },
+    };
+    const html = renderToStaticMarkup(
+      createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
+    );
+    expect(html).toContain('Available balance');
+    expect(html).toContain('Add credits');
   });
 });
 

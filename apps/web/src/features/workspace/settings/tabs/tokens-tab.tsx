@@ -179,7 +179,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
   const locale = useLocale();
-  const [renderedAt] = useState(() => Date.now());
+  const [mountAt] = useState(() => Date.now());
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
   const [detailRow, setDetailRow] = useState<ApiKeyRow | null>(null);
@@ -207,6 +207,15 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     enabled: !!accountId,
     staleTime: 30_000,
   });
+
+  // A stamp that lands after the pane mounted — a key used while this dialog
+  // is open — must not be aged against the mount-time clock: the past/future
+  // direction would flip and "Last used just now" would become a countdown
+  // for something that already happened. So the clock is the query's own
+  // fetch time once data has landed (it advances with every refetch), and the
+  // mount capture only covers the first paint, keeping SSR and hydration
+  // agreeing exactly as the plain `useState(() => Date.now())` did.
+  const renderedAt = tokensQuery.dataUpdatedAt || mountAt;
 
   // Names only — a project-scoped key shows the project it is limited to
   // rather than a raw uuid.

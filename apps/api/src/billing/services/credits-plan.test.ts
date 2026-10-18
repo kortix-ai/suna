@@ -104,6 +104,17 @@ describe('planForSubscription: the price decides', () => {
     expect(planForSubscription({ items: { data: [] } })).toBeNull();
   });
 
+  test.each(['plan_key', 'tier_key', 'tier'])(
+    'Enterprise %s metadata cannot assign an operator-owned plan',
+    (key) => {
+      const metadata = { [key]: 'enterprise' };
+      expect(planForSubscription(sub([{ id: 'price_unknown', unit: 2000 }], metadata))).toBe('credits');
+      expect(planForSubscription(sub([{ id: 'price_unknown', unit: 0 }], metadata))).toBeNull();
+      expect(planForSubscription(sub([{ id: CREDITS_PRICE }], metadata))).toBe('credits');
+      expect(planForSubscription(sub([{ id: 'price_1RIGvuG6l1KZGqIrw14abxeL' }], metadata))).toBe('free');
+    },
+  );
+
   test('billing period comes from the price', () => {
     expect(billingPeriodForSubscription(sub([{ id: CREDITS_PRICE }]))).toBe('monthly');
     expect(billingPeriodForSubscription(sub([{ id: 'price_1ReH9uG6l1KZGqIrsvMLHViC', interval: 'year' }]))).toBe('yearly');

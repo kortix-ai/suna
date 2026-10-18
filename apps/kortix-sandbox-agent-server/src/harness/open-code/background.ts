@@ -123,6 +123,7 @@ export function startOpenCodeBackground(
     formatStateTransition: formatOpenCodeResourceTransition,
     runtimeState: () => opencode.getState(),
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
+    diskCleanup: { workspaceRoot: cfg.workspace },
     guard: {
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       formatReason: formatOpenCodeMemoryGuardReason,

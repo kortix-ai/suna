@@ -2399,10 +2399,17 @@ fn refresh_policy(ctx: &Ctx) -> Result<bool> {
                 |c: Option<&super::policy::Cached>| c.map(|c| (c.source.clone(), c.policy.clone()));
             let before = super::policy::read(ctx.paths);
             super::policy::write(ctx.paths, cached.as_ref())?;
+            super::policy::mark_checked(ctx.paths);
             Ok(key(before.as_ref()) != key(cached.as_ref()))
         }
         Err(e) if classify(&e).halts() && classify(&e) != ErrorClass::Auth => Err(e),
         Err(e) => {
+            // The store answered (S3 says 403, not 404, for a missing key the credentials
+            // cannot list): the check is done. Only an unreachable store keeps a new
+            // computer waiting for its organization's policy.
+            if matches!(classify(&e), ErrorClass::Auth | ErrorClass::Config) {
+                super::policy::mark_checked(ctx.paths);
+            }
             tracing::warn!("sync: policy not applied (the last one stays): {e:#}");
             Ok(false)
         }

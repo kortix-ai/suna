@@ -11156,7 +11156,7 @@
       "text248f3bad646d": "The connector and the exact action called.",
       "text24984f203fd7": "is set by a project manager. You do not have permission to change it.",
       "text24a754cf2e81": "Attached group to project",
-      "text24b6bef25e6e": "Don",
+      "text24b6bef25e6e": "Don't",
       "text24ba36a8ec86": "Edit this agent's source in a chat?",
       "text24c56b85c01b": "Same rules",
       "text24c5c392057f": "Configure SAML step with the Single sign-on URL and Audience URI fields",
@@ -20191,7 +20191,8 @@
       "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
       "agentsListSubagentsTitle": "Subagents",
       "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
-      "agentsListAlsoSubagent": "Also a subagent"
+      "agentsListAlsoSubagent": "Also a subagent",
+      "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -21578,7 +21579,11 @@
         "excluded": "Excluded",
         "noMatch": "Nothing matches.",
         "noExcludedApps": "No app is excluded.",
-        "noExcludedSites": "No website is excluded."
+        "noExcludedSites": "No website is excluded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "showList": "Show list",
+        "hideList": "Hide list"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
@@ -21602,7 +21607,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Try features that may still change.",
       "privacyControls": "Privacy controls",
-      "privacyControlsHint": "Show personal-data masking and the apps and websites no computer records. Turning this off hides them; what is set keeps applying.",
+      "privacyControlsHint": "Show personal-data masking. Turning this off hides it; what is set keeps applying.",
       "maskingTitle": "Masking",
       "framesTitle": "Screen frames",
       "interval": "One frame every",
@@ -21613,10 +21618,10 @@
       "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
       "computerDecides": "Each computer decides",
       "included": {
-        "title": "Record only these apps and websites",
-        "hint": "On: every computer in {org} records only what is listed here. Everything else is blacked out and never saved. People can add their own in Kortix Capture; they cannot turn this off or remove these.",
+        "title": "Apps and websites",
+        "hint": "Choose what every computer in {org} records. Anything skipped is blacked out and never saved or uploaded. People can add their own in Kortix Capture; they cannot remove these or turn off Record only.",
         "switch": "Record only included apps and websites",
-        "switchHint": "Off: everything not excluded is recorded.",
+        "switchHint": "Off: everything except Never record is recorded.",
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
@@ -21626,7 +21631,19 @@
         "addDomain": "Include {domain}",
         "included": "Included",
         "noApps": "No app is included. Only included websites are recorded.",
-        "noSites": "No website is included. Browsers record only if the browser app is included."
+        "noSites": "No website is included. Browsers record only if the browser app is included.",
+        "switchHintOn": "On: only the apps and websites below are recorded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "policyType": "Policy type",
+        "exclusionPolicy": "Exclusion policy",
+        "exclusionPolicyHint": "Record everything except what you exclude.",
+        "inclusionPolicy": "Inclusion policy",
+        "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
+        "recordTitle": "Record only these",
+        "exceptTitle": "Never record, even if included",
+        "memberInclusions": "People can add their own included apps and websites",
+        "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
       }
     },
     "area": {

@@ -20180,7 +20180,8 @@
       "textced57bebd466": "重新开启此项目的定时任务和 Webhook。",
       "agentsListSubagentsTitle": "子代理",
       "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
-      "agentsListAlsoSubagent": "也可作为子代理"
+      "agentsListAlsoSubagent": "也可作为子代理",
+      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21578,7 +21579,11 @@
         "excluded": "已排除",
         "noMatch": "没有匹配项。",
         "noExcludedApps": "没有已排除的应用。",
-        "noExcludedSites": "没有已排除的网站。"
+        "noExcludedSites": "没有已排除的网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站",
+        "showList": "显示列表",
+        "hideList": "隐藏列表"
       },
       "remoteDays": "Kortix 中",
       "remoteDaysHint": "Kortix 保留录制的时长。0 表示不限时长。",
@@ -21602,7 +21607,7 @@
       "experimentalTitle": "实验功能",
       "experimentalHint": "试用仍可能变化的功能。",
       "privacyControls": "隐私控制",
-      "privacyControlsHint": "显示个人数据遮盖，以及所有电脑都不录制的应用和网站。关闭后会隐藏这些控制，已有设置继续生效。",
+      "privacyControlsHint": "显示个人数据遮盖。关闭后会隐藏此项；已设置的内容继续生效。",
       "maskingTitle": "遮盖",
       "framesTitle": "屏幕帧",
       "interval": "帧间隔",
@@ -21613,10 +21618,10 @@
       "framesHint": "未设置时，每台电脑使用自己的设置（1440p，每 2 秒一帧）。设置后，所有电脑都使用该值，用户无法更改。无论间隔多长，点击、输入和滚动都会连同各自的截图一起记录。",
       "computerDecides": "由每台电脑决定",
       "included": {
-        "title": "只录制这些应用和网站",
-        "hint": "开启：{org} 中的每台电脑只录制这里列出的内容。其他内容一律涂黑，从不保存。成员可以在 Kortix Capture 中添加自己的项目，但不能关闭此项，也不能移除这些项目。",
+        "title": "应用和网站",
+        "hint": "选择 {org} 中每台电脑录制什么。被跳过的内容一律涂黑，从不保存或上传。成员可以在 Kortix Capture 中添加自己的项目，但不能移除这些项目，也不能关闭“只录制”。",
         "switch": "只录制已包含的应用和网站",
-        "switchHint": "关闭：录制所有未排除的内容。",
+        "switchHint": "关闭：除“从不录制”外全部录制。",
         "kindLabel": "应用或网站",
         "apps": "应用",
         "websites": "网站",
@@ -21626,7 +21631,19 @@
         "addDomain": "包含 {domain}",
         "included": "已包含",
         "noApps": "未包含任何应用。只录制已包含的网站。",
-        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。"
+        "noSites": "未包含任何网站。只有包含了浏览器应用时才录制浏览器。",
+        "switchHintOn": "开启：只录制下方的应用和网站。",
+        "commonApps": "常用应用",
+        "commonSites": "常用网站",
+        "policyType": "策略类型",
+        "exclusionPolicy": "排除策略",
+        "exclusionPolicyHint": "录制除排除项以外的全部内容。",
+        "inclusionPolicy": "包含策略",
+        "inclusionPolicyHint": "只录制包含的内容。其他一律涂黑。",
+        "recordTitle": "只录制这些",
+        "exceptTitle": "即使已包含也从不录制",
+        "memberInclusions": "成员可以添加自己要包含的应用和网站",
+        "memberInclusionsHint": "关闭：电脑只录制这里列出的应用和网站。成员仍可添加要跳过的应用和网站。"
       }
     },
     "area": {

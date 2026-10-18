@@ -20180,7 +20180,8 @@
       "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
       "agentsListSubagentsTitle": "Подагенти",
       "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
-      "agentsListAlsoSubagent": "Такође подагент"
+      "agentsListAlsoSubagent": "Такође подагент",
+      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -21578,7 +21579,11 @@
         "excluded": "Izuzeto",
         "noMatch": "Nema poklapanja.",
         "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
-        "noExcludedSites": "Nijedan veb-sajt nije izuzet."
+        "noExcludedSites": "Nijedan veb-sajt nije izuzet.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "showList": "Prikaži listu",
+        "hideList": "Sakrij listu"
       },
       "remoteDays": "У Kortix-у",
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
@@ -21602,7 +21607,7 @@
       "experimentalTitle": "Експериментално",
       "experimentalHint": "Isprobaj funkcije koje se još mogu menjati.",
       "privacyControls": "Kontrole privatnosti",
-      "privacyControlsHint": "Prikazuje maskiranje ličnih podataka i aplikacije i sajtove koje nijedan računar ne snima. Isključivanje ih sakriva; podešeno i dalje važi.",
+      "privacyControlsHint": "Prikaži maskiranje ličnih podataka. Isključivanje ga sakriva; podešeno i dalje važi.",
       "maskingTitle": "Maskiranje",
       "framesTitle": "Snimci ekrana",
       "interval": "Jedan snimak svakih",
@@ -21613,10 +21618,10 @@
       "framesHint": "Bez vrednosti, svaki računar koristi svoju (jedan snimak na svake 2 s u 1440p). Sa vrednošću, svi računari je koriste i niko ne može da je promeni. Klikovi, kucanje i skrolovanje snimaju se sa sopstvenim snimcima ekrana pri bilo kom intervalu.",
       "computerDecides": "Svaki računar odlučuje",
       "included": {
-        "title": "Snimaj samo ove aplikacije i veb-sajtove",
-        "hint": "Uključeno: svaki računar u {org} snima samo ono što je ovde navedeno. Sve ostalo je zatamnjeno i nikad se ne čuva. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ovo isključiti niti ukloniti ove stavke.",
+        "title": "Aplikacije i veb-sajtovi",
+        "hint": "Izaberite šta svaki računar u {org} snima. Ono što se preskoči je zatamnjeno i nikad se ne čuva niti otprema. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ukloniti ove niti isključiti Snimaj samo.",
         "switch": "Snimaj samo uključene aplikacije i veb-sajtove",
-        "switchHint": "Isključeno: snima se sve što nije izuzeto.",
+        "switchHint": "Isključeno: snima se sve osim Nikad ne snimaj.",
         "kindLabel": "Aplikacije ili veb-sajtovi",
         "apps": "Aplikacije",
         "websites": "Veb-sajtovi",
@@ -21626,7 +21631,19 @@
         "addDomain": "Uključi {domain}",
         "included": "Uključeno",
         "noApps": "Nijedna aplikacija nije uključena. Snimaju se samo uključeni veb-sajtovi.",
-        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena."
+        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena.",
+        "switchHintOn": "Uključeno: snimaju se samo aplikacije i veb-sajtovi ispod.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "policyType": "Vrsta pravila",
+        "exclusionPolicy": "Pravilo izuzimanja",
+        "exclusionPolicyHint": "Snimaj sve osim onoga što izuzmete.",
+        "inclusionPolicy": "Pravilo uključivanja",
+        "inclusionPolicyHint": "Snimaj samo ono što uključite. Sve ostalo je zatamnjeno.",
+        "recordTitle": "Snimaj samo ove",
+        "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni",
+        "memberInclusions": "Ljudi mogu uključiti svoje aplikacije i veb-sajtove",
+        "memberInclusionsHint": "Isključeno: računari snimaju samo ovde navedene aplikacije i veb-sajtove. Ljudi i dalje mogu dodati aplikacije i veb-sajtove koje treba preskočiti."
       }
     },
     "area": {
