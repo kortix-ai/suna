@@ -50,10 +50,14 @@ const RUNTIME_UNAVAILABLE_MESSAGE_RE =
   /fetch failed|unable to connect|connection refused|socket connection was closed|the operation timed out|\[proxy\] no sandbox row for /i;
 
 export function isRuntimeUnavailableError(error: unknown): boolean {
-  // Any provider answer during endpoint resolution — the typed 409
-  // sandbox_not_running (Platinum auto-stop, expected by design), a gone
-  // box's 404, a 5xx — is the same family.
-  if (error instanceof PlatinumHttpError) return true;
+  // A typed provider answer during endpoint resolution: the expected states
+  // of a stopped, gone, or blipped box — the 409 sandbox_not_running (Platinum
+  // auto-stop, by design), a gone box's 404, a provider-side 5xx. Everything
+  // else the control plane answers — a 429 rate limit, a 401/403 auth
+  // failure — stays warn-worthy: the measured prod spikes were 409/404 only.
+  if (error instanceof PlatinumHttpError) {
+    return error.status === 404 || error.status === 409 || error.status >= 500;
+  }
   if (error instanceof TranscriptReadError) return RUNTIME_UNAVAILABLE_STATUSES.has(error.status);
   const err = error as { name?: unknown; message?: unknown } | null | undefined;
   if (RUNTIME_UNAVAILABLE_ERROR_NAMES.has(String(err?.name))) return true;

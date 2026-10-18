@@ -670,7 +670,8 @@ export function childReadFailureLog(
  *
  * Breadth-first from `references`, following each read's own sub-agents. At most
  * `cap` reads that return rows: a failed read and an empty one take no slot (the
- * capture's deadline bounds them), so neither starves the sub-agents after it.
+ * capture's deadline bounds them), so neither starves the sub-agents after it;
+ * only a runtime that cannot serve any transcript stops the walk early.
  *
  * `more`: sub-agents are left unread AND this capture read rows of one never saved
  * before. A sub-agent that reads empty, fails, or was saved already (an unsettled
@@ -714,12 +715,13 @@ export async function readChildTranscripts(input: {
       failures[kind] += 1;
       if (kind === 'other') failures.firstOther ??= messageOf(error);
       else failures.first ??= messageOf(error);
-      // An expected failure repeats for EVERY sibling — the runtime cannot
-      // serve transcripts at all, or a whole generation of sub-agent
-      // transcripts is gone. Walking on pays the same failure per child (one
-      // prod capture failed 60 reads in a row against a dying box). Stop and
-      // let the next capture, or the unread chain, take the rest.
-      if (kind !== 'other') break;
+      // A runtime that cannot serve ANY transcript repeats the same failure
+      // for every sibling — walking on pays it per child (one prod capture
+      // failed 60 reads in a row against a dying box). Stop only for that
+      // class and let the next capture, or the unread chain, take the rest;
+      // a missing transcript 404s per child, instantly, and one gone child
+      // must not starve the siblings after it.
+      if (kind === 'unavailable') break;
     }
   }
   const unread = queue.some((child) => !seen.has(child) && CHILD_SESSION_ID.test(child));

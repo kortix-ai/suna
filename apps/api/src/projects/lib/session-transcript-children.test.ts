@@ -141,9 +141,8 @@ describe('readChildTranscripts: which sub-agents one capture saves, and whether 
   });
 
   test('an expected runtime failure stops the walk: every sibling would fail the same way', async () => {
-    // A stopped box answers 503 through the proxy, and a box that came back
-    // without its sub-agent sessions answers 404 — both for EVERY child, not
-    // one. The walk stops at the first expected failure instead of paying the
+    // A stopped box answers 503 through the proxy for EVERY child, not one.
+    // The walk stops at the first unavailable failure instead of paying the
     // same failure per child (one prod capture failed 60 reads in a row).
     const stopped = box({});
     stopped.read = async (id) => {
@@ -154,15 +153,27 @@ describe('readChildTranscripts: which sub-agents one capture saves, and whether 
     expect(stopped.reads).toEqual(['ses_c0']);
     expect(out.children).toEqual([]);
     expect(out.failures).toEqual({ missing: 0, unavailable: 1, other: 0, first: 'Transcript read failed: HTTP 503' });
+  });
 
+  test('a missing child transcript does not stop the walk: the siblings after it still read', async () => {
+    // A 404 is per transcript, instant, and says nothing about the runtime:
+    // one gone child (the box came back without its sessions) must not starve
+    // the pending siblings after it — a running sub-agent's transcript lives
+    // there. Only the cannot-serve-anything class stops the walk.
     const replaced = box({});
     replaced.read = async (id) => {
       replaced.reads.push(id);
-      throw new TranscriptReadError(404);
+      if (id === ids(16)[2]) throw new TranscriptReadError(404);
+      return { rows: [message(id)], complete: true };
     };
-    const gone = await readChildTranscripts({ references: refs(ids(8)), stored: new Map(), cap: 12, read: replaced.read });
-    expect(replaced.reads).toEqual(['ses_c0']);
-    expect(gone.failures).toEqual({ missing: 1, unavailable: 0, other: 0, first: 'Transcript read failed: HTTP 404' });
+    const out = await readChildTranscripts({ references: refs(ids(16)), stored: new Map(), cap: 12, read: replaced.read });
+    // The 404 read takes no slot, so the walk keeps paying reads past it.
+    expect(replaced.reads).toEqual(ids(13));
+    expect(out.children.map((c) => c.opencodeSessionId)).toEqual(ids(13).filter((id) => id !== ids(16)[2]));
+    expect(out.failures).toEqual({ missing: 1, unavailable: 0, other: 0, first: 'Transcript read failed: HTTP 404' });
+    // The gone child is no progress: the siblings saved new rows, so the
+    // chain asks for one more capture to pick the rest up.
+    expect(out.more).toBe(true);
   });
 
   test('an expected transport failure (timeout, dead box) also stops the walk', async () => {

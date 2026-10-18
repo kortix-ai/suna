@@ -61,8 +61,19 @@ describe('isRuntimeUnavailableError: the expected states a fail-open transcript 
   test('the provider\'s own typed states are expected', () => {
     // 409 sandbox_not_running — Platinum auto-stops idle boxes by design.
     expect(isRuntimeUnavailableError(new PlatinumSandboxNotRunningError())).toBe(true);
-    // Any other provider answer (a gone box's 404, a 5xx) is the same family.
+    // A provider answer in the expected family: a gone box's 404, a provider
+    // 5xx blip during endpoint resolution.
     expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /x -> 404 gone', 404, '{}'))).toBe(true);
+    expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /x -> 503 overloaded', 503, '{}'))).toBe(true);
+  });
+
+  test('control-plane answers outside that family stay warn-worthy', () => {
+    // Measured in prod (inbox reads, 2026-10-14/15): expose -> 429 exists and
+    // must keep its warn — a rate limit is a real signal, not an idle-box
+    // state. So is an auth failure.
+    expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /v1/sandboxes/sbx_1/expose -> 429', 429, '{}'))).toBe(false);
+    expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /x -> 401 unauthorized', 401, '{}'))).toBe(false);
+    expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /x -> 403 forbidden', 403, '{}'))).toBe(false);
   });
 
   test('a transcript read that the runtime answered 404/502/503/504 is expected', () => {
