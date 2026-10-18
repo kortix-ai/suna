@@ -459,6 +459,7 @@ fn install(paths: &MemoryPaths, state: &Arc<Mutex<InstallState>>) -> Result<()> 
     let root = model_dir(paths);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(1800))
+        .user_agent(super::sync::user_agent())
         .build()?;
     for (name, hash) in ASSETS {
         download(
