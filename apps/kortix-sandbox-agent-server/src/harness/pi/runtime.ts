@@ -1773,23 +1773,18 @@ export class PiRuntime {
     return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
   }
 
-  /** The project's skill directories: the release's while a release runs, else the working tree's. Filtered to what exists. */
-  private async skillDirectories(): Promise<string[]> {
-    return (
+  private async loadSkills(): Promise<Skill[]> {
+    if (!this.coding) return []
+    const dirs = (
       this.v3()
         ? resolvePiV3SkillDirectories(this.compiled?.skills, this.projectRoot())
         : resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null)
     ).filter((dir) => existsSync(dir))
-  }
-
-  private async loadSkills(): Promise<Skill[]> {
-    if (!this.coding) return []
-    const resolved = await this.skillDirectories()
-    if (resolved.length === 0) return []
+    if (dirs.length === 0) return []
     try {
       // Two directories can carry the same skill (a project's OpenCode copy and the managed
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
-      const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: resolved, includeDefaults: false })
+      const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
       // The kortix-genui system skill exists only while the project's `genui` flag is on.
       return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)

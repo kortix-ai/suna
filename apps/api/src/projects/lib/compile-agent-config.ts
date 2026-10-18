@@ -70,7 +70,7 @@ import {
   type PermissionRuleV2,
   type RuntimeV2,
 } from '@kortix/manifest-schema';
-import { manifestRuntime, manifestSchemaVersion, selectSessionHarness } from '@kortix/shared/session-harness';
+import { manifestSchemaVersion } from '@kortix/shared/session-harness';
 import { parseAgentMarkdown } from './agent-markdown';
 import {
   isRepoFileNotFoundError,

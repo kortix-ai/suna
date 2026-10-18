@@ -189,8 +189,11 @@ export function projectCommands(payload: unknown, compiled?: Record<string, Comp
     const command = raw as Record<string, unknown>
     const name = str(command.name)
     if (!name) continue
-    const agents = compiled ? (v3CommandRowAgents(set, compiled, name, command.source) ?? []) : []
-    if (compiled && !Object.hasOwn(compiled, name) && !agents.length) continue
+    // `v3CommandRowAgents` returning null IS the drop decision: a compiled
+    // command keeps its (possibly empty) agent list, a granted skill keeps its
+    // agents, everything else drops.
+    const agents = compiled ? v3CommandRowAgents(set, compiled, name, command.source) : []
+    if (agents === null) continue
     out.push({
       name,
       description: str(command.description),
