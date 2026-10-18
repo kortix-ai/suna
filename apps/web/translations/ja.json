@@ -480,7 +480,6 @@
     },
     "rail": {
       "settings": "設定",
-      "projectTitle": "設定 — {projectName}",
       "backToApp": "アプリに戻る",
       "close": "閉じる",
       "docs": "ドキュメント",

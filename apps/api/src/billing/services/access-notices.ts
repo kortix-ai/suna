@@ -34,7 +34,7 @@ export function warningThreshold(left: number, thresholds: readonly number[]): n
   return due.length > 0 ? Math.min(...due) : null;
 }
 
-async function claimOnce(key: string): Promise<boolean> {
+export async function claimOnce(key: string): Promise<boolean> {
   const claimed = await db
     .insert(chatEventDedup)
     .values({ eventId: key, expiresAt: new Date(Date.now() + 120 * DAY_MS) })

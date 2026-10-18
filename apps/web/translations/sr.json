@@ -333,7 +333,6 @@
     },
     "rail": {
       "settings": "Подешавања",
-      "projectTitle": "Подешавања — {projectName}",
       "backToApp": "Назад у апликацију",
       "close": "Затвори",
       "docs": "Документација",

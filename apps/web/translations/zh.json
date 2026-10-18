@@ -480,7 +480,6 @@
     },
     "rail": {
       "settings": "设置",
-      "projectTitle": "设置 — {projectName}",
       "backToApp": "返回应用",
       "close": "关闭",
       "docs": "文档",

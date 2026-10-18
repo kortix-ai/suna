@@ -1508,3 +1508,90 @@ describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
     expect(noId.code).toBe(2);
   });
 });
+
+describe('kortix triggers add --apply — the webhook-secret 409 and the signing pointer', () => {
+  const base = `/v1/projects/${PROJECT}/triggers`;
+  const WEBHOOK_SECRET_409 = {
+    error: 'Webhook secret is not available to the connector consumer',
+    code: 'webhook_secret_delivery_mismatch',
+    remediation:
+      'Secret DOGFOOD_SECRET is stored with runtime scope; the webhook fires only with connector scope. Re-store it: kortix secrets set DOGFOOD_SECRET=<value> --scope connector.',
+  };
+  const WEBHOOK_URL = 'https://api.kortix.test/v1/webhooks/projects/proj_hook/dogfood-hook';
+  const CREATED_WEBHOOK: typeof WEBHOOK_TRIGGER = {
+    ...WEBHOOK_TRIGGER,
+    slug: 'dogfood-hook',
+    secret_env: 'DOGFOOD_SECRET',
+    webhook_url: WEBHOOK_URL,
+  };
+  let addAnswer: { status: number; body: unknown };
+
+  function startAddServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        if (url.pathname === base && req.method === 'POST') {
+          return Response.json(addAnswer.body, { status: addAnswer.status });
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}`;
+  }
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-add-live-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    addAnswer = { status: 409, body: WEBHOOK_SECRET_409 };
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  const addHook = (apiConfig: string) =>
+    runCli(
+      [
+        'triggers',
+        'add',
+        'dogfood-hook',
+        '--type',
+        'webhook',
+        '--secret-env',
+        'DOGFOOD_SECRET',
+        '--prompt',
+        'A webhook arrived: {{ body.run }}',
+        '--apply',
+        '--project',
+        PROJECT,
+      ],
+      apiConfig,
+    );
+
+  test('a webhook-secret 409 surfaces the server remediation naming the scope fix', async () => {
+    // The API's 409 body carries a remediation field naming the exact
+    // re-store command. The CLI used to print only "HTTP 409: <error>" and
+    // dropped it — an opaque 409 that sent the reader into `secrets --help`
+    // to find the fix.
+    const result = await addHook(writeConfig(startAddServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`HTTP 409: ${WEBHOOK_SECRET_409.error}`);
+    expect(result.stderr).toContain('kortix secrets set DOGFOOD_SECRET=<value> --scope connector');
+  });
+
+  test('a created webhook trigger prints the signing scheme next to the URL, not the bare URL', async () => {
+    // A bare URL is unsigned and unusable; the add output must name the
+    // signing header and where the signed sample lives (`triggers info`).
+    addAnswer = { status: 201, body: { triggers: [CREATED_WEBHOOK] } };
+    const result = await addHook(writeConfig(startAddServer()));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(WEBHOOK_URL);
+    expect(result.stdout).toContain('X-Kortix-Signature');
+    expect(result.stdout).toContain('triggers info dogfood-hook');
+  });
+});
