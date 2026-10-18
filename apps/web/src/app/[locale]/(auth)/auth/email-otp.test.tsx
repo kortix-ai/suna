@@ -21,7 +21,6 @@ let query = '';
 let calls: unknown[] = [];
 let failure: false | 'invalid' | 'missing' | 'network' = false;
 let destination = '';
-let ssoProbes = 0;
 let resolvedDestination: string | undefined;
 mock.module('@/lib/supabase/client', () => ({
   fetchSamlEnabled: async () => true,
@@ -35,14 +34,10 @@ mock.module('@/lib/supabase/client', () => ({
         return { data: { session: { access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' } }, error: null };
       },
       setSession: async (tokens: unknown) => { calls.push(tokens); return { error: null }; },
-      signInWithSSO: async () => {
-        ssoProbes += 1;
-        return { data: null, error: { message: 'SAML provider unavailable' } };
-      },
+      signInWithSSO: async () => ({ data: null, error: { message: 'SAML provider unavailable' } }),
     },
   }),
 }));
-const emailFailure: string | null = null;
 mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: 'unknown' }),
   sendEmailCode: async () => ({ success: true, email: 'synthetic@example.test', redirectTo: resolvedDestination }),
@@ -52,10 +47,7 @@ mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_TIMEOUT_MESSAGE: 'This is taking longer than expected. Please try again.',
   AUTH_NETWORK_MESSAGE: 'The request could not be sent. Please try again.',
   AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
-  submitAuthForm: async () =>
-    emailFailure
-      ? { ok: false, reason: 'server' as const, message: emailFailure }
-      : { ok: true, result: { success: true, email: 'synthetic@example.test', redirectTo: resolvedDestination } },
+  submitAuthForm: async () => ({ ok: true, result: { success: true, email: 'synthetic@example.test', redirectTo: resolvedDestination } }),
 }));
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
