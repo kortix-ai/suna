@@ -1397,6 +1397,60 @@ describe('normalized enums fold Unicode case equivalents (KRTX-2538)', () => {
   });
 });
 
+describe('generated patterns are ReDoS-safe and keep the blank grant sentinel (G9 item [B])', () => {
+  // An empty string inside the case-insensitive alternation becomes `(?:…|)`
+  // sitting between the leading `^\s*` and trailing `\s*`: matching a long
+  // whitespace-only grant then walks every split of the run across the two
+  // quantifiers — quadratic (8.2 s for 100 KB, measured by the reviewer).
+  // The empty-string enum member gets its own `^\s*$` arm instead, which is
+  // linear. These tests pin the mechanism and the acceptance it must keep.
+  const collectPatterns = (node: unknown, into: string[] = []): string[] => {
+    if (Array.isArray(node)) {
+      for (const item of node) collectPatterns(item, into);
+    } else if (node && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === 'pattern' && typeof value === 'string') into.push(value);
+        else collectPatterns(value, into);
+      }
+    }
+    return into;
+  };
+  const allPatterns = [
+    ...collectPatterns(KORTIX_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V1_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V2_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V3_JSON_SCHEMA),
+  ];
+  test('no generated pattern contains an empty alternation', () => {
+    const offenders = allPatterns.filter((p) => p.includes('|)') || p.includes('(|') || p.includes('||'));
+    expect(offenders).toEqual([]);
+  });
+  test('every pattern evaluates a 100 KB whitespace-only string in linear time', () => {
+    // Both shapes: pure whitespace matches fast even with the empty
+    // alternative (it succeeds on the first greedy pass); the quadratic
+    // blow-up needs a trailing character that forces the engine to walk
+    // every `\\s*` split — 16 s on 100 KB with the old pattern (measured).
+    // `padStart` builds the killer input without a string concatenation
+    // (biome lint/style/useTemplate).
+    for (const input of [' '.repeat(100_000), 'x'.padStart(100_001)]) {
+      for (const pattern of allPatterns) {
+        const started = performance.now();
+        new RegExp(pattern).test(input);
+        const elapsed = performance.now() - started;
+        // Headroom: the fixed patterns run < 100 ms; the quadratic
+        // predecessor took seconds on this input. 2 s fails only the
+        // regression.
+        expect(elapsed).toBeLessThan(2000);
+      }
+    }
+  }, 30_000);
+  test('a whitespace-only grant sentinel stays accepted by both sides', () => {
+    const input = { kortix_version: 2, default_agent: 'worker', agents: { worker: { connectors: '   ' } } };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(true);
+    expect(validateCombined(input)).toBe(true);
+  });
+});
+
 describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles them)', () => {
   test('kortix.v1.schema.json compiles', () => {
     expect(() =>

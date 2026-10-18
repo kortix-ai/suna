@@ -298,15 +298,23 @@ function caseInsensitiveLiteral(word: string): string {
   return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}${UNICODE_ASCII_FOLDS[ch.toLowerCase()] ?? ''}]`);
 }
 
-/** Preserve editor suggestions while matching the validator's trim/lowercase. */
+/** Preserve editor suggestions while matching the validator's trim/lowercase.
+ *  An empty-string member gets its OWN `^\s*$` arm instead of becoming an
+ *  empty pattern alternative: `(?:…|)` sitting between the leading `^\s*`
+ *  and the trailing `\s*` is quadratic on whitespace-only input followed by
+ *  any non-matching character (16 s for 100 KB, measured — G9 item [B]),
+ *  while the dedicated blank arm is linear. Acceptance is unchanged: the
+ *  validator's `trim().toLowerCase()` sends both `""` and `"   "` to `""`. */
 function normalizedEnumSchema(values: readonly string[]): JsonSchemaFragment {
-  return {
-    type: 'string',
-    anyOf: [
-      { enum: [...values] },
-      { pattern: `^\\s*(?:${values.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` },
-    ],
-  };
+  const words = values.filter((value) => value !== '');
+  const anyOf: JsonSchemaFragment[] = [{ enum: [...values] }];
+  if (words.length > 0) {
+    anyOf.push({ pattern: `^\\s*(?:${words.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` });
+  }
+  if (words.length !== values.length) {
+    anyOf.push({ pattern: '^\\s*$(?![\\s\\S])' });
+  }
+  return { type: 'string', anyOf };
 }
 
 const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'] as const;
