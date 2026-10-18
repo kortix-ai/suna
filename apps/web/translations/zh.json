@@ -21755,5 +21755,10 @@
       "showRevoked": "显示已撤销（{count}）",
       "hideRevoked": "隐藏已撤销"
     }
+  },
+  "downloadAppModal": {
+    "scan": "用手机扫描二维码打开应用商店。",
+    "qr": "打开{store}的二维码",
+    "preview": "Kortix 移动应用预览 {number}"
   }
 }

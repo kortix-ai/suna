@@ -27,9 +27,9 @@ export function DesktopCardImage() {
 }
 
 const MOBILE_SHOTS = [
-  '/images/mobile-app/app-1.png',
-  '/images/mobile-app/app-2.png',
-  '/images/mobile-app/app-3.png',
+  '/images/mobile-app/store-01.webp',
+  '/images/mobile-app/store-02.webp',
+  '/images/mobile-app/store-03.webp',
 ];
 
 /**

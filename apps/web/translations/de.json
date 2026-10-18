@@ -21755,5 +21755,10 @@
       "showRevoked": "Widerrufene anzeigen ({count})",
       "hideRevoked": "Widerrufene ausblenden"
     }
+  },
+  "downloadAppModal": {
+    "scan": "Scanne einen QR-Code mit deinem Handy, um den App-Store zu öffnen.",
+    "qr": "QR-Code zum Öffnen von {store}",
+    "preview": "Vorschau der Kortix-App {number}"
   }
 }

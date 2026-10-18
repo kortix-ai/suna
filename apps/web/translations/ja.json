@@ -21755,5 +21755,10 @@
       "showRevoked": "取り消し済みを表示 ({count})",
       "hideRevoked": "取り消し済みを隠す"
     }
+  },
+  "downloadAppModal": {
+    "scan": "スマートフォンでQRコードを読み取り、アプリストアを開きます。",
+    "qr": "{store}を開くQRコード",
+    "preview": "Kortixモバイルアプリのプレビュー {number}"
   }
 }

@@ -21755,5 +21755,10 @@
       "showRevoked": "Afficher les révoqués ({count})",
       "hideRevoked": "Masquer les révoqués"
     }
+  },
+  "downloadAppModal": {
+    "scan": "Scannez un code QR avec votre téléphone pour ouvrir sa boutique d’applications.",
+    "qr": "Code QR pour ouvrir {store}",
+    "preview": "Aperçu de l’application Kortix {number}"
   }
 }

@@ -21755,5 +21755,10 @@
       "showRevoked": "Прикажи опозване ({count})",
       "hideRevoked": "Сакриј опозване"
     }
+  },
+  "downloadAppModal": {
+    "scan": "Skenirajte QR kod telefonom da otvorite prodavnicu aplikacija.",
+    "qr": "QR kod za otvaranje {store}",
+    "preview": "Pregled Kortix mobilne aplikacije {number}"
   }
 }

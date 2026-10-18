@@ -21755,5 +21755,10 @@
       "showRevoked": "Show revoked ({count})",
       "hideRevoked": "Hide revoked"
     }
+  },
+  "downloadAppModal": {
+    "scan": "Scan a QR code with your phone to open its app store.",
+    "qr": "QR code to open {store}",
+    "preview": "Kortix mobile app preview {number}"
   }
 }
