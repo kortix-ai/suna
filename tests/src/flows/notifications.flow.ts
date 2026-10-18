@@ -625,6 +625,7 @@ flow(
   'NOTIF-4',
   {
     domain: 'notifications',
+    tags: ['deployed'],
     routes: [
       'GET /v1/notifications/web-push/key',
       'POST /v1/notifications/web-push/subscriptions',

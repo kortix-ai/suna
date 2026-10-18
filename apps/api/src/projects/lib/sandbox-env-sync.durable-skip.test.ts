@@ -50,6 +50,8 @@ let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
 /** The one fake row of durable state — this suite only ever exercises one
  *  session/sandbox, so a single mutable slot is enough. */
 let durableConfig: Record<string, unknown> | null = null;
+/** Who the session token acts for (`account_tokens.on_behalf_of_user_id`). */
+let tokenPerson: string | null = 'creator';
 let sandboxConfigReads = 0;
 
 /** Recover the raw JS values bound into an `env-sync-durable-state.ts` SQL
@@ -78,6 +80,11 @@ mock.module('../../shared/db', () => ({
     select: (columns: Record<string, unknown>) => ({
       from: () => ({
         where: () => {
+          if ('onBehalfOf' in columns) {
+            // The session token's person (sandbox-env-push.ts `sessionTokenPerson`).
+            const rows = [{ onBehalfOf: tokenPerson }];
+            return { limit: async () => rows };
+          }
           const wantsSession = 'createdBy' in columns;
           const wantsSandboxConfig = !wantsSession && Object.keys(columns).length === 1 && 'config' in columns;
           if (wantsSandboxConfig) sandboxConfigReads += 1;
@@ -178,6 +185,7 @@ beforeEach(() => {
   __resetBackgroundEnvRefreshForTests();
   posted = [];
   durableConfig = null;
+  tokenPerson = 'creator';
   sandboxConfigReads = 0;
   snapshotEnv = { EXAMPLE: 'v1' };
   snapshotNames = ['EXAMPLE'];
@@ -191,6 +199,36 @@ afterEach(async () => {
   // Drain anything a test scheduled in the background so it can never leak
   // fetch calls or unhandled rejections into the next test.
   await Promise.all(__pendingBackgroundEnvRefreshesForTests());
+});
+
+// A turn whose bind changed the session's person: the box may still hold the
+// previous person's personal secrets (a private session's creator, before an
+// admin or a Slack participant prompts it). The trusted fast path would forward
+// the prompt first and drop those secrets only one turn later.
+describe('syncSandboxEnvForPrompt — a change of person is never trusted', () => {
+  test('the same agent, same person, inside the window: the prompt is forwarded on the trusted memo', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    snapshotEnv = {}; // the previous person's personal secret is no longer theirs to read
+    snapshotNames = [];
+    snapshotRevision = 'rev-2';
+
+    await prompt();
+    expect(posted).toHaveLength(1); // forwarded before any push
+  });
+
+  test('the token now acts for another person: the env is resolved and pushed before the prompt is forwarded', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    tokenPerson = null; // another member prompted the creator's private session
+    snapshotEnv = {};
+    snapshotNames = [];
+    snapshotRevision = 'rev-2';
+
+    await prompt();
+    expect(posted).toHaveLength(2); // pushed before the prompt went on
+    expect(posted[1]!.revision).not.toBe(posted[0]!.revision); // the env without the secret
+  });
 });
 
 describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {

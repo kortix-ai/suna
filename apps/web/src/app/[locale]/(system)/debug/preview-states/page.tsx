@@ -122,6 +122,10 @@ const PROXY_CASES: Array<{ state: PreviewState; gaveUp?: boolean; note: string }
     note: 'After 40 reloads (~2 min) the load line stops and Try again appears.',
   },
   { state: 'signed-out', note: 'No credential yet. Offers sign-in.' },
+  {
+    state: 'unavailable',
+    note: 'The share link was revoked, expired or deleted. No sign-in, no retry.',
+  },
   { state: 'forbidden', note: 'Host claimed without the edge signature.' },
   { state: 'unknown', note: 'The sandbox behind the address no longer exists.' },
 ];

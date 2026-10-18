@@ -50,8 +50,38 @@ describe('GET /download/capture/<platform>', () => {
     for (const platform of ['windows', 'beos', 'ios']) {
       const res = await call(platform);
       expect(res.status).toBe(302);
-      expect(new URL(res.headers.get('location')!).pathname).toBe('/docs/capture');
-      expect(new URL(res.headers.get('location')!).hash).toBe('#install-kortix-capture');
+      expect(res.headers.get('location')).toBe('/docs/capture#install-kortix-capture');
+    }
+  });
+
+  test('the docs fallback never names the internal host the request arrived on', async () => {
+    assets = [asset('Kortix-1.0.0-universal.dmg')];
+    const res = await GET(
+      new NextRequest('http://ip-10-14-146-154.us-east-2.compute.internal:3000/download/capture/macos'),
+      { params: Promise.resolve({ platform: 'macos' }) },
+    );
+    expect(res.headers.get('location')).toBe('/docs/capture#install-kortix-capture');
+  });
+
+  test('the dev deployment (backend dev-api) serves the capture-dev-latest build', async () => {
+    const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
+    process.env.NEXT_PUBLIC_BACKEND_URL = 'https://dev-api.kortix.com/v1';
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      urls.push(String(url));
+      return Response.json({
+        name: 'Kortix Capture 0.13.58-dev.33',
+        tag_name: 'capture-dev-latest',
+        assets: [{ name: 'KortixCapture-universal.pkg', browser_download_url: 'https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-universal.pkg', size: 1 }],
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const res = await call('macos');
+      expect(res.headers.get('location')).toBe('https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-universal.pkg');
+      expect(urls.some((u) => u.endsWith('/releases/tags/capture-dev-latest'))).toBe(true);
+    } finally {
+      if (backend === undefined) delete process.env.NEXT_PUBLIC_BACKEND_URL;
+      else process.env.NEXT_PUBLIC_BACKEND_URL = backend;
     }
   });
 });

@@ -24,3 +24,10 @@ export type Uuid = string & { readonly __brand: 'Uuid' };
 export function isUuid(value: unknown): value is Uuid {
   return typeof value === 'string' && UUID_RE.test(value);
 }
+
+const UUID_IN_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Every UUID-shaped substring of `text`, in order (e.g. session ids in a git ref). */
+export function uuidsIn(text: string): string[] {
+  return text.match(UUID_IN_TEXT) ?? [];
+}

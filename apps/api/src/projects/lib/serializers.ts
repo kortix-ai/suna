@@ -320,7 +320,9 @@ export function serializeProject(
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename
     // them. SoT = ../../feature-flags/registry.
-    experimental: resolveFeatureFlags(row.metadata),
+    // `apps` graduated (registry.ts) but stays here as `true`: CLIs before
+    // v0.14.0 refuse every `kortix apps` command unless it reads true.
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);

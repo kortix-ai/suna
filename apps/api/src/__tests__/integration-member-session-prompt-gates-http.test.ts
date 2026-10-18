@@ -228,33 +228,38 @@ describe('project member — agents are deny-by-default', () => {
 });
 
 describe('project member — project.write is still withheld', () => {
-  // The fix must not have widened `member` into an editor. These routes gate on
-  // the project.write floor and must keep refusing exactly as before.
-  const WRITE_ROUTES: { name: string; method: string; path: string; body?: unknown }[] = [
+  // The fix must not have widened `member` into an editor. Since #10136 each
+  // route gates on its own IAM leaf (not the project.write floor); a member
+  // holds none of them and must keep getting a 403 that names the leaf.
+  const WRITE_ROUTES: { name: string; method: string; path: string; body?: unknown; leaf: string }[] = [
     {
       name: 'PATCH /onboarding',
       method: 'PATCH',
       path: `/v1/projects/${PROJECT}/onboarding`,
       body: { dismissed: true },
+      leaf: 'project.settings.write',
     },
     {
       name: 'POST /change-requests',
       method: 'POST',
       path: `/v1/projects/${PROJECT}/change-requests`,
       body: { head_ref: 'x', base_ref: 'main' },
+      leaf: 'project.gitops.push',
     },
     {
       name: 'POST /sessions/:sid/commit-push',
       method: 'POST',
       path: `${base}/commit-push`,
       body: { message: 'x' },
+      leaf: 'project.gitops.push',
     },
   ];
 
   for (const route of WRITE_ROUTES) {
     test(`${route.name} still refuses a member`, async () => {
       const res = await req(route.method, route.path, memberKey, route.body);
-      expect(await roleDenied(res)).toBe(true);
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain(`(${route.leaf})`);
     });
   }
 });

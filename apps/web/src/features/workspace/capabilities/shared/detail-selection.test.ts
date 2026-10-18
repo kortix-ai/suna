@@ -76,7 +76,7 @@ describe('detailSelection — only a confirmed deletion closes it', () => {
     });
     const withNull = detailSelection({ selection: 'slack', record: null, isSuccess: true });
 
-    expect(withUndefined).toEqual(withNull);
+    expect<unknown>(withUndefined).toEqual(withNull);
   });
 
   test('a present record is never missing and never resolving', () => {

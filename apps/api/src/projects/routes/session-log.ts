@@ -41,6 +41,7 @@ import {
   SessionLogManifestSchema,
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
+  SessionLogRestoreTooLargeSchema,
   SessionLogRestoreSchema,
   SessionLogSwitchPreflightRequestSchema,
   SessionLogSwitchPreflightSchema,
@@ -299,12 +300,15 @@ export function registerSessionLogRoutes(): void {
         'Session sandbox credential only, no body. Raises the session generation by 1 and answers `SessionLogRestore` ' +
         'at that generation: every thread with its live messages in seq order, the rev of every message (tombstones ' +
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
-        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed.',
+        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed. ' +
+        '413 `session_log_too_large`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES`; the claim stands and the answer ' +
+        'carries every thread, rev and seq but no message.',
       ...auth,
       request: { params },
       responses: {
         200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
         404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
+        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered without messages'),
         ...errors(403, 503),
       },
     }),
@@ -314,6 +318,7 @@ export function registerSessionLogRoutes(): void {
       if (!config.SESSION_LOG_RESTORE_ENABLED) return c.json({ error: 'Session log restore is off' }, 503);
       const restored = await claimSessionLog(scope);
       if (!restored) return c.json({ error: 'no_session_log' as const }, 404);
+      if ('error' in restored) return c.json(restored, 413);
       return c.json(restored, 200);
     },
   );

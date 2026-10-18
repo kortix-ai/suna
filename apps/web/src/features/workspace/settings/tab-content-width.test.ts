@@ -221,7 +221,7 @@ describe('settings tab content width', () => {
   // reason that has nothing to do with a tab picking its own width.
   test('no third width is in use across the whole panel', () => {
     const widths = new Set(
-      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter(Boolean),
+      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter((width): width is string => width !== null),
     );
     for (const width of widths) {
       expect(['max-w-2xl', 'max-w-4xl']).toContain(width);
@@ -320,7 +320,7 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  * until the gateway bar was cut from ten tabs to six; that file is deleted.)
  */
 const PANEL_SECTIONS_OWN_CONTAINER = [
-  'features/workspace/customize/migrate-to-v3/upgrade-view.tsx',
+  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
   // `components/projects/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
@@ -364,7 +364,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * Repositories folded INTO General as a "Git repo" section, so it dropped the
  * lookup and the container both — it is `general-tab.test.tsx`'s pane now.
  */
-const PANES_WITH_REGISTRY_LOOKUP = ['features/workspace/customize/migrate-to-v3/upgrade-view.tsx'];
+const PANES_WITH_REGISTRY_LOOKUP = ['features/workspace/customize/migrate-to-v2/upgrade-view.tsx'];
 
 /**
  * The mirror image: a pane no registry answers for, where `SettingsTabHeader`

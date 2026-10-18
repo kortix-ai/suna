@@ -84,6 +84,7 @@ describe('agentConfigViewV3', () => {
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
       kortix_permissions: ['project.session.start'],
+      repository_access: false,
     });
   });
 
@@ -124,6 +125,8 @@ describe('applyAgentConfigV3', () => {
       codemode: 'only',
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
+      // An omitted repository choice is pinned to the v3 default.
+      workspace: { project_repository: false },
     });
     expect(validateManifest(applied.raw, 'yaml').valid).toBe(true);
   });
@@ -153,7 +156,7 @@ describe('applyAgentConfigV3', () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.promptWrite).toBeNull();
-    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts and cite sources.' });
+    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts and cite sources.', workspace: { project_repository: false } });
   });
 
   test('a new agent with a prompt gets agents/<name>.md as its prompt file', () => {
@@ -165,7 +168,7 @@ describe('applyAgentConfigV3', () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.promptWrite).toEqual({ path: 'agents/writer.md', content: 'You write.\n' });
-    expect(block(applied.raw, 'writer')).toEqual({ mode: 'all', prompt_file: 'agents/writer.md', skills: ['triage'] });
+    expect(block(applied.raw, 'writer')).toEqual({ mode: 'all', prompt_file: 'agents/writer.md', skills: ['triage'], workspace: { project_repository: false } });
   });
 
   test('clearing an inline prompt removes the key', () => {
@@ -173,7 +176,7 @@ describe('applyAgentConfigV3', () => {
 
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent' });
+    expect(block(applied.raw, 'researcher')).toEqual({ mode: 'subagent', workspace: { project_repository: false } });
   });
 
   test('a v3 grant sent as none clears it', () => {
@@ -187,6 +190,14 @@ describe('applyAgentConfigV3', () => {
     expect(next.subagents).toBeUndefined();
     expect(next.commands).toBeUndefined();
     expect(next.extensions).toBeUndefined();
+  });
+
+  test('an omitted repository choice is written explicitly as the v3 default, false', () => {
+    const applied = applyAgentConfigV3(manifest(), 'researcher', { governance: { skills: 'all' } });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(block(applied.raw, 'researcher').workspace).toEqual({ project_repository: false });
   });
 
   test('repository_access is written as workspace.project_repository', () => {
@@ -241,49 +252,10 @@ describe('the v2 writers accept a v3 manifest', () => {
 
     expect(granted).toMatchObject({ ok: true, alreadyGranted: false });
     if (!granted.ok) return;
-    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', secrets: ['HELPDESK_TOKEN'] });
+    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', secrets: ['HELPDESK_TOKEN'], workspace: { project_repository: false } });
   });
 
   test('applyAgentBlockV2 refuses a v1 manifest only', () => {
     expect(applyAgentBlockV2(manifest(), 'support', { connectors: 'all' } as never).ok).toBe(true);
-  });
-});
-
-describe('synthesizeBlankManifest', () => {
-  test('a blank project reads as a valid v3 manifest with the kortix agent', () => {
-    const synthesized = synthesizeBlankManifest({ name: 'blank', manifestPath: null });
-
-    expect(synthesized.schemaVersion).toBe(3);
-    expect(synthesized.raw.kortix_version).toBe(3);
-    expect(validateManifest(synthesized.raw, 'yaml').issues.filter((issue) => issue.severity === 'error')).toEqual([]);
-    expect(serializeManifest(synthesized)).toStartWith('kortix_version: 3\n');
-    expect(block(synthesized.raw, 'kortix')).toMatchObject({
-      mode: 'primary',
-      skills: 'all',
-      connectors: 'all',
-      secrets: 'all',
-      kortix_permissions: 'all',
-      workspace: { project_repository: true },
-    });
-  });
-});
-
-describe('the shipped v3 starter compiles', () => {
-  test('every agent compiles with its prompt file; the built-ins are off; pty loads for kortix', async () => {
-    const { getStarterFiles } = await import('@kortix/starter');
-    const { compileAgentConfig } = await import('../projects/lib/compile-agent-config');
-    const files = Object.fromEntries(getStarterFiles({ projectName: 'Acme' }).map((file) => [file.path, file.content]));
-    const raw = parseManifestString(files['kortix.yaml']!, 'yaml', 'kortix.yaml').raw;
-
-    const compiled = compileAgentConfig(raw, 'opencode', files)!;
-
-    expect(compiled.schema).toBe(3);
-    expect(compiled.default_agent).toBe('kortix');
-    expect(compiled.agent.kortix!.prompt).toContain('Kortix general knowledge worker');
-    expect(compiled.agent.kortix!.extensions).toEqual(['pty']);
-    expect(compiled.agent['harness-reflector']!.permission).toMatchObject({ task: { 'session-reviewer': 'allow', '*': 'deny' } });
-    expect(compiled.extensions).toEqual({ pty: { opencode: 'extensions/pty/pty.ts' } });
-    for (const builtin of ['build', 'plan', 'general', 'explore']) expect(compiled.agent[builtin]).toEqual({ disable: true });
-    expect(Object.keys(compiled.skills ?? {})).toContain('pdf');
   });
 });

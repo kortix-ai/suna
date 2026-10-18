@@ -4,7 +4,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
-import { isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isRequestDeadlineHTTPException, isDeadlineOrphan, REQUEST_DEADLINE_CODE } from './middleware/request-deadline';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
@@ -17,6 +17,10 @@ import { SecretUndecryptableError } from './secrets/undecryptable';
 import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
+import {
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+  isDaytonaStateTransitionConflict,
+} from './shared/daytona-state-transition';
 import { isDaytonaTransientProviderError } from './shared/daytona-transient';
 import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
@@ -163,6 +167,45 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
         message: 'the repository rejected the push because of its branch protection or repository rules',
         status: 409,
         code: 'repository_push_rejected',
+      },
+      409,
+    );
+  }
+  return null;
+}
+
+function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: string, path: string): Response | null {
+  // Daytona answers HTTP 409 when a sandbox state transition is already in
+  // flight ("Sandbox state change in progress") — e.g. a second stop request
+  // arrives while the first is still settling. `apps.ts hosting.stop()`'s
+  // settle window expires and re-throws a plain Error whose cause is the
+  // original DaytonaConflictError; any call site without its own try/catch
+  // (the POST /v1/projects/:id/apps/:appId/stop route) forwarded it to the
+  // generic 500 → Sentry → Better Stack pattern `6bc03d7d…`. The in-flight
+  // transition is already doing what the caller asked, so this is an
+  // EXPECTED, self-resolving state: answer a typed 409
+  // `sandbox_state_change_in_progress` WITHOUT paging Sentry. The SDK
+  // classifies that code silent to onError and the web toast shows the
+  // retryable message. Other 409s (a DaytonaConflictError for a different
+  // reason, or an unrelated upstream) still fall through to the generic
+  // capture below. See shared/daytona-state-transition.ts.
+  if (isDaytonaStateTransitionConflict(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 409 [DaytonaConflictError:state-transition] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaConflictError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
+    return c.json(
+      {
+        error: true,
+        message: 'sandbox state change in progress; try again shortly',
+        code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+        status: 409,
       },
       409,
     );
@@ -442,6 +485,34 @@ function handleUnhandledError(err: Error, c: Context): Response {
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
+  // A request whose deadline already fired had its 503 (Retry-After) served
+  // while the handler kept running with no owner — see request-deadline.ts.
+  // When that orphan resumes it touches the served context (`c.header(...)`
+  // makes Hono recreate the sent Response from its consumed body stream, and
+  // Bun rejects that with `TypeError: Body object should not be disturbed or
+  // locked`), compose catches the throw at its dispatch level and calls
+  // onError a SECOND time with an error that can no longer reach any client.
+  // prod 2026-10-16 22:43:05, request mvbjzd4t-a8d: the manifest handler,
+  // orphaned for 675 ms behind a stalled DB pool, threw exactly that and was
+  // captured as a 500 (Better Stack pattern 235fd74b…).
+  //
+  // Classify it: warn (not error), no captureException, and a 503 body — the
+  // request already degraded as 503 and nobody reads this discarded response.
+  // MUST NOT call c.header/c.status here: on a served context those recreate
+  // the consumed body and would throw the very error this branch absorbs.
+  if (isDeadlineOrphan(c, err)) {
+    appLogger.warn(`${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`, {
+      method,
+      path,
+      errorType: 'deadline-orphan',
+      causeErrorType: errName,
+      causeMessage: err.message.slice(0, 200),
+    });
+    return c.json(
+      { error: true, message: 'Request deadline already exceeded', status: 503, code: REQUEST_DEADLINE_CODE },
+      503,
+    );
+  }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
@@ -452,6 +523,8 @@ function handleUnhandledError(err: Error, c: Context): Response {
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);
   if (pushRejected) return pushRejected;
+  const stateTransition = handleDaytonaStateTransitionConflict(err, c, method, path);
+  if (stateTransition) return stateTransition;
   const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
   if (daytonaTransient) return daytonaTransient;
   const composioTransient = handleComposioTransientProviderError(err, c, method, path);

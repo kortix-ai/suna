@@ -1,42 +1,42 @@
 # Agents, subagents and skills on pi
 
-## Agents
+## Agent files
 
-An agent is the same on both harnesses: one block under `agents` in
-`kortix.yaml` (`kortix_version: 3`). The block holds the prompt, the
-behavior and the grants (`../kortix/kortix-yaml.md`). There is no agent file
-and no pi agent directory.
+An agent is the same file on both harnesses: `agents/<name>.md`, named by
+`agents.<name>.file` in `kortix.yaml`. The frontmatter holds the behavior and
+the body is the system prompt. The manifest entry holds what the agent may
+access (`../kortix/kortix-yaml.md`).
 
-```yaml
-agents:
-  reviewer:
-    description: Reviews one change and reports problems.
-    mode: subagent
-    prompt: You review one change. Report each problem with its file and line.
-    permission:
-      edit: deny
-      bash:
-        "git diff *": allow
-        "*": ask
-    skills: [code-review]
+```markdown
+---
+description: "Reviews one change and reports problems."
+mode: subagent
+permission:
+  edit: deny
+  bash:
+    "git diff *": allow
+    "*": ask
+---
+
+You review one change. Report each problem with its file and line.
 ```
 
-pi applies these keys:
+pi applies these frontmatter fields:
 
-| Key | Effect on pi |
+| Field | Effect on pi |
 | --- | --- |
-| `prompt` or `prompt_file` | The system prompt. |
+| body | The system prompt. |
 | `description` | Shown to the agent that delegates with `task`. |
-| `mode` | `primary`, `subagent` or `all` (default). `subagent` and `all` make the agent a `task` target. |
+| `mode` | `primary`, `subagent` or `all`. `subagent` and `all` make the agent a `task` target. |
 | `model`, `variant` | The model and its reasoning tier. The session's own model choice wins. |
 | `temperature`, `top_p`, `steps` | Sampling and the maximum number of model steps in a turn. |
-| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. |
-| `permission` | The permission rules (`tools.md` → Permissions). Omitted: `allow`. |
-| `skills`, `subagents` | Compile to `permission.skill` and `permission.task` allowlists. |
-| `extensions` | The pi packages a session of this agent loads (`extensions.md`). |
-| `codemode` | `on` (default), `only` or `off`: pi's `codemode` tool. |
+| `tools` | `{ <tool>: false }` removes a built-in tool. |
+| `permission` | The permission rules (`tools.md` → Permissions). |
 
-pi does not apply `options` (provider options) or `color`.
+pi does not apply `options` (provider options).
+
+The manifest `skills:` grant of the agent decides which skills it sees. A
+skill outside the grant is absent from the system prompt.
 
 ## Subagents
 
@@ -44,10 +44,11 @@ The `task` tool runs one prompt in a child session and returns its final
 message. Arguments: `description`, `prompt`, `subagent_type`, and `task_id`
 to continue an earlier child.
 
-`subagent_type` is a declared agent that the calling agent's `subagents`
-grant lists. Each one is another agent with `mode: subagent` or `all`, with
-its own prompt, model and `permission`. A v3 project has no built-in
-`general` or `explore` subagent.
+| `subagent_type` | What it is |
+| --- | --- |
+| `general` | All tools except `question` and `task`. |
+| `explore` | Read-only: `bash`, `read`, `glob`, `grep`. |
+| `<agent name>` | Each project agent with `mode: subagent` or `mode: all`, with its own prompt, model and `permission`. |
 
 - A subagent cannot start another subagent.
 - A subagent cannot ask the user a question.
@@ -60,16 +61,14 @@ pi has no `skill` tool. The system prompt lists each skill the agent may use,
 with its description and the path of its `SKILL.md`. The agent reads the file
 with `read` when the description matches the task.
 
-pi loads exactly two sets of skills: the managed `kortix-*` skills, and the
-skills that `kortix.yaml` registers under `skills:` (name → folder). The
-agent's `skills` grant decides which of them it sees. Omitted, it sees none.
-A `SKILL.md` that no registry entry names is never visible.
+pi loads skills from these directories. The first skill of a name wins:
+
+1. the managed `kortix-*` skills, which the platform keeps current;
+2. `skills/` at the repository root;
+3. `skills/` in the pi config directory (`harnesses/pi/skills/`);
+4. `.kortix/opencode/skills/` (legacy projects).
 
 A prompt that starts with `/skill:<name>` loads that skill into the turn.
 
 The authoring rules are the same on both harnesses
 (`../authoring-skills.md`).
-
-Legacy: a `kortix_version` 1 or 2 project still reads `agents/<name>.md`
-files and skill folders, and pi still offers `general` and `explore` there.
-`kortix migrate` prints the v3 manifest; `kortix migrate --write` writes it.

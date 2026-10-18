@@ -156,7 +156,7 @@ describe('kortix migrate --write', () => {
       prompt_file: 'agents/lead.md',
       permission: { bash: 'ask' },
       // v2 dropped every Kortix tool the tools key did not list.
-      tools: { exclude: ['image_search', 'scrape_webpage', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] },
+      tools: { exclude: ['image_search', 'scrape_webpage', 'show'] },
       skills: 'all',
       subagents: 'all',
       commands: ['standup'],
@@ -165,6 +165,8 @@ describe('kortix migrate --write', () => {
       connectors: 'all',
       secrets: ['HELPDESK_TOKEN'],
       kortix_permissions: 'all',
+      // v2 cloned the repository when the key was omitted; v3 does not, so migrate pins it.
+      workspace: { project_repository: true },
     });
     // reviewer: its own permission wins; task deny → no subagents; its own plugin set.
     expect(manifest.agents.reviewer).toEqual({
@@ -172,7 +174,7 @@ describe('kortix migrate --write', () => {
       mode: 'subagent',
       prompt_file: 'agents/reviewer.md',
       permission: { edit: 'deny' },
-      tools: { exclude: ['image_search', 'scrape_webpage', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] },
+      tools: { exclude: ['image_search', 'scrape_webpage', 'show'] },
       skills: ['triage', 'kortix-system'],
       commands: ['weekly-report'],
       extensions: ['notes'],

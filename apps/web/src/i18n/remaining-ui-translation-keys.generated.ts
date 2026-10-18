@@ -215,7 +215,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
+  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
+    'textc3d1545dd522',
   Extensions: 'textfe3436af86b4',
+  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
   Failed: 'text031a8f0f659d',
   Favicon: 'text4295528943df',
   'Fetching deals updated ≤ 7d': 'text5bae674104b6',
@@ -306,8 +309,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Memory Search': 'text9993673dd585',
   Minimal: 'text057b5de48d7b',
   Mobile: 'textcbaad3cf4a65',
-  'Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.':
-    'text7823a1f3af93',
   'Mobile app': 'text429bbfa117e2',
   Models: 'textd17d2d78d76e',
   Modified: 'texte8ce5dcaf408',
@@ -510,7 +511,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Turns a prompt and your latest data into board decks and polished presentations.':
     'texte6b142b8b04d',
   'Unavailable — saving this would remove your own access.': 'text38b08d83da73',
-  'Upgrade manifest to v3 (kortix.yaml)': 'text08edd5b6dcdc',
   'Use an access token': 'texted1596a9787f',
   'Waiting for you': 'text9f760ab20739',
   'Waiting on you': 'text57dccc5db9b0',
@@ -870,7 +870,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Yes. Bring your own API key for any major provider, or sign in with the ChatGPT subscription you already pay for, or use the managed gateway and bring no key at all. The model is a line of configuration in your repo, so switching provider is a diff rather than a migration.':
     'text055026a9c10e',
   'What does it cost?': 'texte8dc9deba44c',
-  'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
+  'Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
     'text12836c0e435d',
   'Why we are building it': 'text7ee5a6d5e8ad',
   'Read the source': 'text625b22ba31d0',

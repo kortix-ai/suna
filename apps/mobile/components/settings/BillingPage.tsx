@@ -48,6 +48,7 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { useActiveAccount } from '@/hooks/useActiveAccount';
 import { billingKeys, useAccountState } from '@/lib/billing';
 import { openExternalUrl } from '@/lib/billing/checkout';
+import { canManageBilling } from '@/lib/billing/plan-action';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { getWebBillingUrl, getWebCreditsExplainedUrl } from '@/lib/billing/web-links';
 import { haptics } from '@/lib/haptics';
@@ -197,7 +198,9 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
 
   // iOS (App Store guideline 3.1.1): no external-purchase action, so Buy
   // credits / Change plan / Manage on kortix.com never render there.
-  const canPurchase = canShowExternalPurchase(Platform.OS);
+  // Buying, changing the plan and managing on web need the billing leaf: a
+  // member who cannot manage billing reads balance and plan only.
+  const canPurchase = canShowExternalPurchase(Platform.OS) && canManageBilling(accountState);
   const canBuyCredits = canPurchase && !!subscription?.can_purchase_credits;
 
   // One primary pill under the balance: buying credits when the plan allows

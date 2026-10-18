@@ -465,10 +465,20 @@ export function lintMigrationSequence(local: string[], merged: string[]): string
     );
 }
 
-/** Migration filenames on origin/main, or null when that ref is not available. */
-function mergedMigrationFiles(): string[] | null {
-  const git = Bun.spawnSync(['git', 'ls-tree', '--name-only', 'origin/main', '--', 'packages/db/migrations/'], {
-    cwd: join(import.meta.dir, '..', '..', '..'),
+/** Migration filenames on the trunk (the remote's default branch), or null when that ref is not available. */
+export function mergedMigrationFiles(opts: { repoRoot?: string } = {}): string[] | null {
+  const repoRoot = opts.repoRoot ?? join(import.meta.dir, '..', '..', '..');
+  // A fresh clone sets refs/remotes/origin/HEAD to the remote's default branch
+  // (here origin/dev). Resolving that ref instead of naming a branch is what
+  // keeps this gate alive across trunk renames — the main → dev rename made the
+  // old origin/main literal a dead ref in every checkout (issue #9276, #8846).
+  const head = Bun.spawnSync(['git', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], {
+    cwd: repoRoot,
+  });
+  if (head.exitCode !== 0) return null;
+  const ref = head.stdout.toString().trim();
+  const git = Bun.spawnSync(['git', 'ls-tree', '--name-only', ref, '--', 'packages/db/migrations/'], {
+    cwd: repoRoot,
   });
   if (git.exitCode !== 0) return null;
   return git.stdout

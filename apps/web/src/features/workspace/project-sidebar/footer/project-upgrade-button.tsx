@@ -1,5 +1,7 @@
 'use client';
 
+import { canManageBilling } from '@kortix/sdk';
+
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
@@ -45,9 +47,11 @@ function useSidebarUpgrade(accountId?: string) {
   }
 
   // The RESOLVED plan family (free = the keys `free` and `none`), exactly as
-  // the server's gates read it. A live subscription already pays.
+  // the server's gates read it. A live subscription already pays. A caller
+  // without `billing.write` cannot subscribe, so the offer is not theirs.
   const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
-  const show = isFreeOrNoPlan && !accountHasLiveSubscription(accountState);
+  const show =
+    isFreeOrNoPlan && !accountHasLiveSubscription(accountState) && canManageBilling(accountState);
 
   return { show, handleClick };
 }

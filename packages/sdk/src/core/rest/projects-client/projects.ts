@@ -698,6 +698,24 @@ export async function provisionProject(
 export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
 
 /**
+ * Stable error code `provisionProjectStream` (below) puts on the error it
+ * throws when the stream closes WITHOUT a terminal `done`/`error` frame
+ * (`/provision-stream`'s contract is "always a terminal frame", so this
+ * shape means the connection died mid-provision — a proxy idle timeout, a
+ * dropped socket).
+ *
+ * The close is an UNKNOWN result, deliberately NOT classed as a transport
+ * failure: the request demonstrably reached the server (the 200 headers
+ * arrived) and may still commit or roll back — only the response was lost.
+ * The host recovers it by replaying the SAME `idempotency_key` over the
+ * plain `POST /projects/provision` (the key exists for exactly that), which
+ * answers `409 provision_in_flight` until the first attempt commits, then
+ * `201` with the same project. Client-side only: the server never emits
+ * this string.
+ */
+export const PROVISION_STREAM_UNTERMINATED_CODE = 'provision_stream_unterminated';
+
+/**
  * One frame of `POST /projects/provision-stream`'s SSE body.
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
@@ -870,7 +888,20 @@ export async function provisionProjectStream(
   // A stream that closes without a terminal event is a failure, not a
   // success. Resolving here would hand the caller an undefined project id
   // and route a user to `/projects/undefined`.
-  if (!settled) throw new Error('Provision stream ended without a result');
+  //
+  // `ApiError` with a stable code, not a bare `Error`: the close means the
+  // create's result is UNKNOWN — the route's handler outlives a lost reader
+  // and may still commit or roll back — so a host cannot tell this apart
+  // from a real failure without sniffing the message. The code is what lets
+  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
+  // idempotency key over the plain route and recover the true outcome
+  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
+  // every existing reader.
+  if (!settled) {
+    throw new ApiError('Provision stream ended without a result', {
+      code: PROVISION_STREAM_UNTERMINATED_CODE,
+    });
+  }
   return settled;
 }
 

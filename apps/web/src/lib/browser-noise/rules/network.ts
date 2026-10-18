@@ -130,13 +130,7 @@ export function isConnectionClosedNoise(input: {
   filename?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and
-  // `<Word>Error: ` (e.g. `SyntaxError: `, `TypeError:`) but NOT a bare
-  // `Error: ` prefix (the regex requires ≥1 letter before `Error`). A bare
-  // `Error: Connection closed.` is the form an `onunhandledrejection` of an
-  // `Error` instance serializes to, so strip that leading `Error: ` too before
-  // anchoring on the library's exact canonical close string.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (!CONNECTION_CLOSED_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
@@ -260,7 +254,7 @@ export function isFailedToSendMessageNoise(input: {
   filename?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message));
   if (!FAILED_TO_SEND_MESSAGE_NOISE_PATTERN.test(stripped)) {
     return false;
   }

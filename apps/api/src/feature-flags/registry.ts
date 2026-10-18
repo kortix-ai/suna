@@ -324,7 +324,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region. If that copy fails, the session starts in the provider's home region instead.",
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it; until then they boot from the previous image. If that copy fails, the session starts in the provider's home region instead.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
@@ -451,8 +451,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'from the session log at boot when the store is missing or behind the log ' +
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
       'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
-      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). Not default-on in prod before the ' +
-      'restore memory is capped (harness/README.md).',
+      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
 ];
 

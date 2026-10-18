@@ -216,12 +216,19 @@ cannot retry: `retry` throws, and the item error carries code
 resolves at once. It deletes unbound storage best-effort and never rejects; a
 failed or refused DELETE leaves the object to the 24-hour expiry.
 `abort(localId)` cancels unfinished work. `dispose()` aborts listed work and
-deletes its uploads best-effort: no send holds them, and drafts keep no handle.
-Call it on non-React cleanup; the hook handles unmount and project changes.
-Unused uploads expire after 24 hours.
+deletes its uploads best-effort: no send holds them. Call it on non-React
+cleanup; the hook handles unmount and project changes. Unused uploads expire
+after 24 hours.
 
-Selections live in memory only. Never persist a File, blob URL, signed URL, or
-upload handle in a draft.
+A draft may keep a finished upload, so a reload or another composer brings the
+file back. Store its metadata (`item.attachment`: `attachment_id`, `filename`,
+`mime`, `size`, `expires_at`) and call `forget(ids)` before `dispose()`, so the
+upload is not deleted. Later, `restore([{ attachment, file? }])` lists it again
+as `ready` with no request, and returns its new id (`undefined` for an expired or
+invalid one). Send uses it like any ready upload. The server binds an attachment
+only for its own account, project and person, so the id grants nothing to
+anyone else. Never persist a File, a blob URL, or a signed URL: an unfinished
+upload cannot be kept.
 
 For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
 { signal, onProgress, onUpload, resume })`. The server selects the transport in the
@@ -587,7 +594,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
@@ -951,6 +958,8 @@ the root import — offers the same agents and models and sends the same pick.
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
 | `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
+| `sessionModelCandidates({ session, lastPromptModel, gatewayEnabled })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
+| `latestPromptModel(messages)` | transcript → the model of the newest user message that records one |
 
 The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
 never includes the ~7.6 MB models.dev snapshot, so a bundler that does not
@@ -1079,6 +1088,17 @@ interface KortixPlatformConfig {
   featureFlags?: KortixFeatureFlagOverrides; // per-flag overrides for non-Next.js hosts
 }
 ```
+
+`onNotify` receives the session events a host shows as notifications:
+`task-complete` (`sessionTitle`), `session-error` (`errorTitle`), `question`
+(`questionText`) and `permission` (`toolName`), each with `sessionId`.
+`useSession` raises them from its event stream. When its view unmounts with a
+turn still running, a watch follows the turn on the session's control stream
+(`kortix.control.turn`; `GET …/turn` while the stream is down) and raises
+`task-complete` or `session-error` itself, with `projectId`; `task-complete`
+also carries `watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
+view again ends the watch. Without `onNotify`, no watch runs. See
+`src/core/session/turn-end-watch.ts`.
 
 `onAccessRemedy` receives the code of a 403 the person can fix: `sso_required`
 (sign in again through the account's identity provider) or
@@ -1258,8 +1278,9 @@ per-release changes.
 
 ### Agent repository access
 
-Agent configuration accepts `repository_access?: boolean` (default `true`).
-The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository`.
+Agent configuration accepts `repository_access?: boolean`.
+The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository` and always writes the value.
+An omitted value defaults to `true` on `kortix_version` 1 and 2, and to `false` on 3. `GET` returns the resolved value.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.

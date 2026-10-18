@@ -336,7 +336,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound: turnIdentity, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;

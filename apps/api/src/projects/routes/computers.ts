@@ -4,8 +4,7 @@ import { connectors, tunnelConnections } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { attachComputerConnection } from '../../connectors/computers';
 import { ensureComputerConnector } from '../../connectors/sync';
-import { PROJECT_ACTIONS } from '../../iam';
-import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
+import { ACCOUNT_ACTIONS, actorOf, authorize, PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
@@ -102,13 +101,13 @@ export function registerComputersRoutes(): void {
         .where(eq(tunnelConnections.tunnelId, tunnelId))
         .limit(1);
       // An owner-less team machine can only become a SHARED account, and only
-      // through a manager of the account it belongs to.
+      // through a holder of account.write in the account it belongs to.
       const reachable =
         machine &&
         (machine.ownerUserId === userId ||
           (share === 'project' &&
             machine.ownerUserId === null &&
-            isAccountManagerRole(await accountRoleFor(machine.accountId, userId))));
+            (await authorize(await actorOf(c, machine.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed));
       if (!machine || !reachable) return c.json({ error: 'Computer not found' }, 404);
       // The owner's own machine joins any project they can read as a private
       // account: relay auth keys on the machine's account, not the project's.

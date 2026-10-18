@@ -165,6 +165,15 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
+  test('every starter agent declares its project repository explicitly', () => {
+    const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
+    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
+    // One explicit, uncommented line per agent: v3 defaults it to false.
+    expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
+  });
+
   test('ships scheduled starter automation disabled by default', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
       'kortix.yaml',
@@ -243,6 +252,8 @@ describe('getStarterFiles', () => {
       'pdf',
       'presentations',
       'xlsx',
+      // Platform front door.
+      'kortix-cli',
       // Computer basics — driving a real browser.
       'agent-browser',
       // Web artifacts, and the skill that puts them on a public URL.
@@ -252,21 +263,20 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter includes the pty extension but no tool copies or optional marketplace skills', () => {
+  test('minimal starter includes the runtime plugin but no tool copies or optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
     // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
-    expect([...paths].filter((path) => path.startsWith('tools/'))).toEqual([]);
-    // The whole `kortix-*` family, kortix-cli included, lives in
-    // `templates/managed/` and is injected at boot: a v3 project cannot register
-    // a `kortix-*` skill of its own.
-    expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(false);
+    expect([...paths].filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
+    // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
+    // `kortix-*` family lives in `templates/managed/` and is injected at boot.
+    expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
     expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('extensions/pty/pty.ts')).toBe(true);
-    expect(paths.has('extensions/pty/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('extensions/pty/lib/tool.ts')).toBe(true);
+    expect(paths.has('harnesses/opencode/plugins/pty.ts')).toBe(true);
+    expect(paths.has('harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('harnesses/opencode/plugins/lib/tool.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {
@@ -320,7 +330,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
    * `templates/marketplace/` for its entire life.
    *
    * `templates/managed/` now owns the family and `scripts/write-managed-skills.ts`
-   * walks it alongside the starter roots, so the
+   * walks it alongside the starter roots (which still carry `kortix-cli`), so the
    * gap is closed by construction. This test is the guard: adding a managed name
    * without putting its SKILL.md in a walked root fails here.
    */
@@ -343,10 +353,10 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   /**
    * The managed family is injected at boot (force-overwriting whatever the repo
    * holds), so committing a second copy into every new project bought nothing and
-   * padded the Skills UI with ~10 entries the user cannot meaningfully edit. A
-   * v3 project cannot register a `kortix-*` skill at all.
+   * padded the Skills UI with ~10 entries the user cannot meaningfully edit.
+   * `kortix-cli` is the deliberate exception — the visible front door to the rest.
    */
-  test('no managed skill is scaffolded into a new project', () => {
+  test('only kortix-cli is scaffolded into a new project', () => {
     const prefix = 'skills/';
     const scaffolded = new Set<string>();
     for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
@@ -354,8 +364,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       const name = f.path.slice(prefix.length).split('/')[0];
       if (name && isKortixManagedSkillName(name)) scaffolded.add(name);
     }
-    expect([...scaffolded]).toEqual([]);
-    expect(getManagedSkillFiles().some((f) => f.path === 'skills/kortix-cli/SKILL.md')).toBe(true);
+    expect([...scaffolded]).toEqual(['kortix-cli']);
   });
 });
 

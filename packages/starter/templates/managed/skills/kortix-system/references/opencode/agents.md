@@ -4,15 +4,6 @@
 
 Configure and use specialized agents.
 
-> **In a Kortix project (`kortix_version: 3`):** do not write `opencode.json`
-> or `.opencode/agents/*.md`. Each agent is one block under `agents` in
-> `kortix.yaml`, with the same behavior keys (`description`, `mode`, `model`,
-> `variant`, `temperature`, `top_p`, `steps`, `options`, `color`, `hidden`,
-> `permission`) plus `prompt` or `prompt_file`. `enabled: false` replaces
-> `disable`. OpenCode's built-in `build`, `plan`, `general` and `explore` are
-> off unless `kortix.yaml` declares that name. An agent starts only the
-> subagents its `subagents` grant lists. See `../kortix/kortix-yaml.md`.
-
 Agents are specialized AI assistants that can be configured for specific tasks and workflows. They allow you to create focused tools with custom prompts, models, and tool access.
 
 > Tip: Use the plan agent to analyze code and review suggestions without making any code changes.
@@ -530,7 +521,7 @@ This can take a glob pattern.
 }
 ```
 
-And you can also use the `*` wildcard to manage permissions for all commands. Since the last matching rule takes precedence, put the `*` wildcard first and specific rules after.
+And you can also use the `*` wildcard to manage permissions for all commands. In a Kortix session the most specific matching pattern wins, whatever order the keys are written in, so `*` is the fallback wherever it sits.
 
 ```json
 {
@@ -612,7 +603,7 @@ Control which subagents an agent can invoke via the Task tool with `permission.t
 
 When set to `deny`, the subagent is removed from the Task tool description entirely, so the model won't attempt to invoke it.
 
-> Tip: Rules are evaluated in order, and the **last matching rule wins**. In the example above, `orchestrator-planner` matches both `*` (deny) and `orchestrator-*` (allow), but since `orchestrator-*` comes after `*`, the result is `allow`.
+> Tip: In a Kortix session the **most specific matching rule wins**, whatever the key order. In the example above, `orchestrator-planner` matches both `*` (deny) and `orchestrator-*` (allow); `orchestrator-*` is longer, so the result is `allow`.
 
 > Tip: Users can always invoke any subagent directly via the `@` autocomplete menu, even if the agent's task permissions would deny it.
 

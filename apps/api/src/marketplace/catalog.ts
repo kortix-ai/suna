@@ -38,6 +38,7 @@ import {
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
+import { config } from "../config";
 import { safeEgressFetch } from "../shared/ssrf-guard";
 import { mapWithConcurrency } from "../shared/map-with-concurrency";
 
@@ -1009,6 +1010,15 @@ export function assertAllowedEndpointUrl(address: string): void {
       `Connector endpoint must be an absolute https URL: "${address}"`,
     );
   }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must not embed credentials.",
+    );
+  }
+  // A host the operator listed (self-host internal APIs, the local test stack's
+  // loopback) passes, as it does for the connector egress fetch itself.
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  if (config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.some((h) => h.toLowerCase() === host)) return;
   if (parsed.protocol !== "https:") {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
@@ -1017,11 +1027,6 @@ export function assertAllowedEndpointUrl(address: string): void {
   if (isPrivateHost(parsed.hostname)) {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
-    );
-  }
-  if (parsed.username || parsed.password) {
-    throw new AllowedSourceValidationError(
-      "Connector endpoints must not embed credentials.",
     );
   }
 }
