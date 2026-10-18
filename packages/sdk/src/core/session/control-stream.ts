@@ -35,6 +35,16 @@ import { platformConfig } from '../http/config';
 import type { SessionPrompt } from '../rest/projects-client/sessions';
 import type { RuntimeEvent } from '../stream/event-stream';
 import { platformEventTransport } from '../stream/platform-event-transport';
+import {
+  dispatchFrame,
+  each,
+  notifyConnectionListeners,
+  safely,
+  type FrameCursors,
+  type SharedStream,
+} from './control-stream-frames';
+
+export { subscribeSessionStreamConnections } from './control-stream-frames';
 
 /** The payload of a `kortix.control.queue` frame: the whole inbox. */
 export interface SessionControlQueue {
@@ -125,32 +135,6 @@ export interface SessionControlStreamHandle {
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 const LIVENESS_MS = 45_000;
 
-interface SharedStream {
-  subscribers: Set<SessionControlStreamOptions>;
-  connected: boolean;
-  lastQueue: SessionControlQueue | null;
-  latest: Map<string, SessionControlFrame>;
-  lastStatus: SessionRuntimeStatus | null;
-  lastHealth: Record<string, unknown> | null;
-  runtimeRefs: number;
-  /** The connection's channels, so a runtime subscriber can upgrade it. */
-  connectedWithRuntime: boolean;
-  /** Subscribers asking for `schema=v2`, and whether the connection carries it. */
-  logRefs: number;
-  connectedWithLog: boolean;
-  tabId: string | null;
-  /**
-   * The server owns session state (R5): it sent `kortix.control.session`. An
-   * API from before R5 never does, and against it the SDK keeps every poll.
-   */
-  authoritative: boolean;
-  /** The next connect must happen now: a subscriber changed the URL. */
-  reconnectNow: boolean;
-  /** Ends the current attempt only (an upgrade), not the stream. */
-  attempt: AbortController | null;
-  abort: AbortController;
-}
-
 // replica-local: one shared connection per session in this client.
 const streams = new Map<string, SharedStream>();
 
@@ -231,7 +215,7 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       if (streams.get(key) === target) streams.delete(key);
       if (target.connected) {
         target.connected = false;
-        for (const listener of [...connectionListeners]) safely(listener);
+        notifyConnectionListeners();
       }
     },
   };
@@ -251,43 +235,18 @@ export function sessionStreamConnected(projectId: string, sessionId: string): bo
 }
 
 // replica-local: listeners in this client, told when any stream connects or drops.
-const connectionListeners = new Set<() => void>();
-
-/** Called whenever any session stream connects or drops. Returns the unsubscribe. */
-export function subscribeSessionStreamConnections(listener: () => void): () => void {
-  connectionListeners.add(listener);
-  return () => {
-    connectionListeners.delete(listener);
-  };
-}
-
-function safely(fn: () => void): void {
-  try {
-    fn();
-  } catch {
-    // One subscriber must not break the stream for the others.
-  }
-}
-
-function each(shared: SharedStream, fn: (subscriber: SessionControlStreamOptions) => void): void {
-  for (const subscriber of [...shared.subscribers]) safely(() => fn(subscriber));
-}
-
 function setConnected(shared: SharedStream, connected: boolean): void {
   if (shared.connected === connected) return;
   shared.connected = connected;
   each(shared, (subscriber) => subscriber.onConnectionChange?.(connected));
-  for (const listener of [...connectionListeners]) safely(listener);
+  notifyConnectionListeners();
 }
 
 async function run(options: SessionControlStreamOptions, shared: SharedStream): Promise<void> {
   const backoff = options.timing?.backoffMs ?? BACKOFF_MS;
   const livenessMs = options.timing?.livenessMs ?? LIVENESS_MS;
   const stop = shared.abort.signal;
-  let cseq: number | null = null;
-  let cepoch: string | null = null;
-  let seq: number | null = null;
-  let epoch: string | null = null;
+  const cursors: FrameCursors = { seq: null, epoch: null, cseq: null, cepoch: null };
   let failures = 0;
 
   while (!stop.aborted) {
@@ -316,13 +275,13 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
       if (!withRuntime) url.searchParams.set('channels', 'control');
       if (withLog) url.searchParams.set('schema', 'v2');
       if (shared.tabId) url.searchParams.set('tab_id', shared.tabId);
-      if (withRuntime && seq !== null && epoch) {
-        url.searchParams.set('since', String(seq));
-        url.searchParams.set('epoch', epoch);
+      if (withRuntime && cursors.seq !== null && cursors.epoch) {
+        url.searchParams.set('since', String(cursors.seq));
+        url.searchParams.set('epoch', cursors.epoch);
       }
-      if (cseq !== null && cepoch) {
-        url.searchParams.set('since_control', String(cseq));
-        url.searchParams.set('cepoch', cepoch);
+      if (cursors.cseq !== null && cursors.cepoch) {
+        url.searchParams.set('since_control', String(cursors.cseq));
+        url.searchParams.set('cepoch', cursors.cepoch);
       }
       const messages = platformEventTransport({
         url: url.href,
@@ -341,87 +300,7 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
         }
         failures = 0;
         setConnected(shared, true);
-        const type = typeof frame.type === 'string' ? frame.type : '';
-
-        if (frame.channel === 'runtime') {
-          if (type === 'kortix.resync') {
-            // The box could not replay the gap. Nothing after it is lost, but
-            // what fell in the gap is: the view re-reads what it holds.
-            seq = null;
-            epoch = typeof frame.epoch === 'string' ? frame.epoch : null;
-            each(shared, (subscriber) => subscriber.onRuntimeResync?.());
-            continue;
-          }
-          if (typeof frame.epoch === 'string') epoch = frame.epoch;
-          if (typeof frame.seq === 'number') seq = frame.seq;
-          // Daemon bookkeeping (`kortix.hello`, `kortix.turn`, `kortix.heartbeat`,
-          // `kortix.boot`) is the server's to read, not the reducer's.
-          if (!type || type.startsWith('kortix.') || typeof frame.seq !== 'number') continue;
-          const event = {
-            // The dedupe key a redelivered delta must keep: stable across a
-            // replay, distinct across a daemon restart (the epoch).
-            id: `${epoch ?? ''}:${frame.seq}`,
-            type,
-            properties: frame.payload,
-          } as unknown as RuntimeEvent;
-          each(shared, (subscriber) => {
-            if (subscriber.runtime) subscriber.onRuntimeEvent?.(event);
-          });
-          continue;
-        }
-
-        if (type === 'kortix.stream.heartbeat') {
-          each(shared, (subscriber) => subscriber.onHeartbeat?.());
-          continue;
-        }
-        if (type === 'kortix.runtime.status') {
-          const status: SessionRuntimeStatus = {
-            state: frame.state === 'up' ? 'up' : 'down',
-            reason: typeof frame.reason === 'string' ? frame.reason : null,
-          };
-          shared.lastStatus = status;
-          each(shared, (subscriber) => {
-            if (subscriber.runtime) subscriber.onRuntimeStatus?.(status);
-          });
-          continue;
-        }
-        if (type === 'kortix.runtime.health') {
-          const health = (frame.health ?? null) as Record<string, unknown> | null;
-          if (!health) continue;
-          shared.lastHealth = health;
-          each(shared, (subscriber) => {
-            if (subscriber.runtime) subscriber.onRuntimeHealth?.(health);
-          });
-          continue;
-        }
-        if (type === 'kortix.control.resync') {
-          // The gap could not be replayed. The server sends every subsystem
-          // again; a reconnect before that must ask for it too.
-          cseq = null;
-          cepoch = typeof frame.cepoch === 'string' ? frame.cepoch : null;
-          continue;
-        }
-        if (frame.channel !== 'control' || typeof frame.cseq !== 'number') continue;
-        cseq = frame.cseq;
-        cepoch = typeof frame.cepoch === 'string' ? frame.cepoch : cepoch;
-        const control: SessionControlFrame = {
-          type,
-          cseq: frame.cseq,
-          cepoch: cepoch ?? '',
-          at: typeof frame.at === 'number' ? frame.at : Date.now(),
-          payload: frame.payload,
-        };
-        shared.latest.set(type, control);
-        if (type === 'kortix.control.session' && !shared.authoritative) {
-          shared.authoritative = true;
-          for (const listener of [...connectionListeners]) safely(listener);
-        }
-        each(shared, (subscriber) => subscriber.onControl?.(control));
-        const payload = frame.payload as SessionControlQueue | undefined;
-        if (type === 'kortix.control.queue' && payload?.known && Array.isArray(payload.prompts)) {
-          shared.lastQueue = payload;
-          each(shared, (subscriber) => subscriber.onQueue?.(payload));
-        }
+        dispatchFrame(shared, frame, cursors);
       }
     } catch {
       // A failed connect or a dropped body. The backoff below retries it.
