@@ -66,7 +66,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImagesContext: React.createContext(null),
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 
 const appRequire = createRequire(import.meta.url);
 const libraryRoot = realpathSync(join(appRequire.resolve('react-native-markdown-display/package.json'), '..'));

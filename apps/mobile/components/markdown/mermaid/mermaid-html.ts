@@ -185,7 +185,7 @@ const WEB_OVERRIDES = `
 .mermaid-container .edgePath { stroke: unset !important; }
 .mermaid-container .marker { fill: unset !important; }`;
 
-export interface DisplayHtmlOptions {
+interface DisplayHtmlOptions {
   /** Fullscreen: the diagram fits the screen and pinch zoom is on. */
   zoomable?: boolean;
 }

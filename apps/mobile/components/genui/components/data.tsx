@@ -27,7 +27,7 @@ const CELL = 'px-3 py-2';
 
 const strings = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
 
-export function trendOf(props: Record<string, unknown>): keyof typeof TREND | null {
+function trendOf(props: Record<string, unknown>): keyof typeof TREND | null {
   if (props.trend === 'up' || props.trend === 'down' || props.trend === 'flat') return props.trend;
   const sign = /^\s*([+\-−])\s?\S?\d/.exec(String(props.delta ?? ''))?.[1];
   return sign === '+' ? 'up' : sign ? 'down' : null;

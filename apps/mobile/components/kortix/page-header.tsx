@@ -41,9 +41,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
 import { Icon } from '@/components/ui/icon';
-import { CaretLeftIcon, DotsThreeIcon, PlusIcon } from '@/lib/icons';
+import { CaretLeftIcon, PlusIcon } from '@/lib/icons';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
@@ -66,21 +65,8 @@ interface PageHeaderProps {
    * `onOpenDrawer`), in the hamburger's place; beside the hamburger otherwise.
    */
   onBack?: () => void;
-  /** Right "···" more-button handler. Omit or combine with `hideRightDrawerToggle`. */
-  onOpenRightDrawer?: () => void;
-
-  /** Ignored: the hamburger is a static icon (Jay, 2026-09-16). Kept so the
-   *  pages that spread `pageChrome` still type-check. */
-  isDrawerOpen?: boolean;
-  /** Right-drawer state — the "···" icon rotates to X when true. */
-  isRightDrawerOpen?: boolean;
-
-  /** Extra `icon` ghost buttons in the right column, before `+` and `···`. */
+  /** Extra `icon` ghost buttons in the right column, before `+`. */
   rightActions?: React.ReactNode;
-  /** Hide the default apps-grid right button (for pages that don't have a
-   *  right drawer, or that want to fully control the right side via
-   *  `rightActions`). */
-  hideRightDrawerToggle?: boolean;
 
   /** Bottom padding below the row. `PageContent` adds 4pt more. */
   paddingBottom?: number;
@@ -104,22 +90,12 @@ export function PageHeader({
   addLabel = 'New',
   onOpenDrawer,
   onBack,
-  onOpenRightDrawer,
-  isRightDrawerOpen,
   rightActions,
-  hideRightDrawerToggle,
   paddingBottom = 0,
   fillTitle = false,
   className,
 }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  // AnimatedToggleIcon takes a raw `color` prop (Reanimated can't
-  // resolve a className), so the foreground token is read from THEME — the
-  // hex-free source of truth for exactly this "className can't reach it"
-  // case (see lib/theme-colors.ts's header comment for the same pattern).
-  const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   const titleNode =
     typeof title === 'string' ? (
@@ -129,8 +105,6 @@ export function PageHeader({
     ) : (
       title
     );
-
-  const showRightDrawer = !hideRightDrawerToggle && !!onOpenRightDrawer;
 
   return (
     <View style={{ paddingBottom }} className={`bg-background ${className ?? ''}`}>
@@ -170,22 +144,6 @@ export function PageHeader({
                 accessibilityLabel={addLabel}
                 hitSlop={{ top: 10, bottom: 10 }}>
                 <Icon as={PlusIcon} size={ICON_SIZE} className="text-foreground" />
-              </Button>
-            ) : null}
-            {showRightDrawer ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full"
-                onPress={onOpenRightDrawer}
-                accessibilityLabel="Project sections"
-                hitSlop={{ top: 10, bottom: 10, right: 10 }}>
-                <AnimatedToggleIcon
-                  open={!!isRightDrawerOpen}
-                  color={iconColor}
-                  icon={DotsThreeIcon}
-                  size={ICON_SIZE}
-                />
               </Button>
             ) : null}
           </View>

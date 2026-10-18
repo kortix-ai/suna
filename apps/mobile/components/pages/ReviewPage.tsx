@@ -92,9 +92,6 @@ interface ReviewPageProps {
   projectId: string;
   onOpenSession: (sessionId: string) => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const EMPTY_TITLE: Record<ReviewSegment, string> = {
@@ -108,9 +105,6 @@ export function ReviewPage({
   projectId,
   onOpenSession,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: ReviewPageProps) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -200,9 +194,6 @@ export function ReviewPage({
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         onAdd={
           canOpenChange
             ? () => {
