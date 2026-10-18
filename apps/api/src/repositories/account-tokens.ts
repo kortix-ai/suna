@@ -56,8 +56,8 @@ export interface AccountTokenValidationResult {
    *
    *  Account-only refusals (a personal PAT has no project) are attributed but
    *  the product's log readers are project-scoped — today that class of row is
-   *  visible in the store, not in any UI/CLI list. An account-scoped reader is
-   *  the deliberate follow-up, not this PR. */
+   *  intentionally DB-forensics-only (KRTX-2631), not in any UI/CLI list.
+   *  An account-scoped reader needs its own membership authorization contract. */
   refusedIdentity?: {
     accountId: string;
     userId: string;
@@ -367,6 +367,22 @@ export async function getAccountTokenOwner(
     userId: row.userId ?? null,
     personal: !row.sessionId && !row.serviceAccountId && !row.agentGrant,
   };
+}
+
+/** Permanently remove only revoked, hand-minted keys in the authorized account. */
+export async function deleteRevokedPersonalAccountToken(
+  tokenId: string,
+  accountId: string,
+): Promise<boolean> {
+  const rows = await db.delete(accountTokens).where(and(
+    eq(accountTokens.tokenId, tokenId),
+    eq(accountTokens.accountId, accountId),
+    eq(accountTokens.status, 'revoked'),
+    isNull(accountTokens.sessionId),
+    isNull(accountTokens.serviceAccountId),
+    isNull(accountTokens.agentGrant),
+  )).returning({ tokenId: accountTokens.tokenId });
+  return rows.length > 0;
 }
 
 export async function revokeAccountToken(
