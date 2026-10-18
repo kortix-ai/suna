@@ -377,6 +377,80 @@ export function applyAgentBlockV2(
   return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
 }
 
+export type RemoveAgentBlockResult =
+  | { ok: true; raw: Record<string, unknown>; /** Set only when the removed agent was `default_agent`. */ newDefaultAgent: string | null }
+  | { ok: false; error: string; issues?: ManifestIssue[] };
+
+/**
+ * Remove one agent's `agents.<name>` block (KRTX-2085: agent removal). Same
+ * "read whole file, mutate, validate, commit" shape as `applyAgentBlockV2`, so
+ * the RESULT is always a manifest the runtime accepts: a v2 manifest must keep
+ * at least one declared agent, and `default_agent` must keep resolving —
+ * removing the default reassigns it (`base` first, else the first remaining
+ * enabled agent), and the real `validateManifest` rejects a removal that would
+ * strand a trigger's `agent` reference or the default on a disabled agent.
+ * An agent the map does not declare is a no-op, not an error — the caller's
+ * 404 check (readAgentBlockV2) owns the not-found contract.
+ */
+export function removeAgentBlockV2(
+  manifest: ParsedManifest,
+  agentName: string,
+): RemoveAgentBlockResult {
+  if (manifest.schemaVersion < 2) {
+    return {
+      ok: false,
+      error:
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix.yaml (kortix_version 2 or later) to remove agents.',
+    };
+  }
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return { ok: false, error: agents.error };
+  const map = agents.map ?? {};
+  if (map[agentName] === undefined || map[agentName] === null) {
+    return { ok: true, raw: manifest.raw, newDefaultAgent: null };
+  }
+  const nextAgents: Record<string, unknown> = { ...map };
+  delete nextAgents[agentName];
+  const remaining = Object.keys(nextAgents);
+  if (remaining.length === 0) {
+    return {
+      ok: false,
+      error:
+        'A kortix_version 2 manifest must declare at least one agent — this is the last declared agent, so it cannot be removed. Add another agent first, or edit its configuration instead.',
+    };
+  }
+
+  const enabled = (name: string) => {
+    const block = nextAgents[name];
+    return !(typeof block === 'object' && block !== null && (block as Record<string, unknown>).enabled === false);
+  };
+  let newDefaultAgent: string | null = null;
+  if (typeof manifest.raw.default_agent === 'string' && manifest.raw.default_agent.trim() === agentName) {
+    const candidate = remaining.includes('base') && enabled('base') ? 'base' : remaining.find(enabled);
+    if (!candidate) {
+      return {
+        ok: false,
+        error:
+          `"${agentName}" is the default agent and every remaining agent is disabled — a default must resolve to an enabled agent. Enable one of the remaining agents first, then remove this one.`,
+      };
+    }
+    newDefaultAgent = candidate;
+  }
+
+  const nextRaw: Record<string, unknown> = { ...manifest.raw, agents: nextAgents };
+  if (newDefaultAgent) nextRaw.default_agent = newDefaultAgent;
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  if (errorIssues.length > 0) {
+    return {
+      ok: false,
+      error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      issues: errorIssues,
+    };
+  }
+  return { ok: true, raw: nextRaw, newDefaultAgent };
+}
+
 /**
  * Apply a secrets/connectors SCOPE edit to an `agents:` map manifest — the
  * counterpart of `applyAgentScope` in `../agents.ts` (which only handles the v1

@@ -21680,5 +21680,29 @@
       "showRevoked": "Show revoked ({count})",
       "hideRevoked": "Hide revoked"
     }
+  },
+  "agentsPages": {
+    "manualMenuDescription": "Give it a name, a description and its instructions. Kortix writes the entry to kortix.yaml.",
+    "createTitle": "Create an agent",
+    "createDescription": "The agent is committed to the project's kortix.yaml on create.",
+    "nameLabel": "Name",
+    "nameHint": "Lowercase letters, digits, dashes and underscores. This is the agent's identifier.",
+    "nameTaken": "An agent named \"{name}\" already exists.",
+    "nameInvalid": "Use lowercase letters, digits, dashes and underscores (must start with a letter or digit).",
+    "descriptionLabel": "Description",
+    "descriptionHint": "One line the agent picker shows. Optional.",
+    "promptLabel": "Instructions",
+    "promptHint": "The agent's system prompt — how it should behave.",
+    "createAction": "Create agent",
+    "created": "Agent \"{name}\" created",
+    "createFailed": "Could not create the agent",
+    "removeAction": "Remove agent",
+    "removeTitle": "Remove agent",
+    "removeDescription": "Remove \"{name}\" from this project? Its entry leaves kortix.yaml, its instructions file is deleted, and sessions can no longer start with it. This cannot be undone.",
+    "removeConfirm": "Remove",
+    "removed": "Agent \"{name}\" removed",
+    "removeFailed": "Could not remove the agent",
+    "removeLastAgent": "This is the project's last declared agent, so it cannot be removed.",
+    "cancel": "Cancel"
   }
 }

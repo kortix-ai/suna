@@ -68,6 +68,7 @@ import {
   normalizeRequiredConnectorAliases,
   resolveBehaviorDraft,
   readAgentBlockV2,
+  removeAgentBlockV2,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
@@ -237,6 +238,20 @@ function behaviorOf(md: { frontmatter: Record<string, unknown>; body: string }):
   const behavior = pickBehaviorFields(md.frontmatter);
   if (md.body.trim()) behavior.prompt = md.body;
   return behavior;
+}
+
+/** Does any remaining declared agent point its behavior/prompt file at `path`?
+ *  A removal deletes the agent's own file ONLY when no other agent shares it —
+ *  two agents may legitimately declare the same `.md`/`prompt_file`. */
+function agentFileReferencedByOthers(raw: Record<string, unknown>, path: string): boolean {
+  const agents = raw.agents;
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return false;
+  for (const block of Object.values(agents as Record<string, unknown>)) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+    const entry = block as Record<string, unknown>;
+    if (entry.file === path || entry.prompt_file === path) return true;
+  }
+  return false;
 }
 
 export function registerAgentConfigRoutes(): void {
@@ -600,6 +615,157 @@ export function registerAgentConfigRoutes(): void {
         agent: agentName,
         schema_version: manifest.schemaVersion,
         block: edit.responseBlock(manifest),
+      });
+    },
+  );
+
+  // DELETE /v1/projects/:projectId/agents/:agentName/config
+  // Remove a project agent (KRTX-2085): the kortix.yaml block leaves the
+  // manifest and the agent's behavior/prompt file leaves the repo in the SAME
+  // atomic commit — an orphaned .md would resurrect a half-configured agent
+  // when the name is recreated. A removed default agent's role moves to
+  // another declared agent (`removeAgentBlockV2`); the read-optimized
+  // metadata mirror follows it, exactly like PUT default-agent.
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/agents/{agentName}/config',
+      tags: ['projects'],
+      summary: "Remove a project agent",
+      ...auth,
+      request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
+      responses: {
+        200: json(
+          z.object({
+            ok: z.boolean(),
+            agent: z.string(),
+            default_agent: z.string().nullable(),
+          }),
+          'Removed',
+        ),
+        ...errors(400, 403, 404, 409, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const agentName = c.req.param('agentName');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+      );
+
+      let manifest;
+      try {
+        manifest = await loadManifestForEdit(loaded.row);
+      } catch (e) {
+        return c.json(
+          { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
+          400,
+        );
+      }
+      if (manifest.schemaVersion < 2) {
+        return c.json(
+          {
+            error:
+              'This project uses a kortix_version 1 manifest. Upgrade to kortix.yaml (kortix_version 2 or later) to remove agents.',
+            code: 'invalid_config',
+          },
+          400,
+        );
+      }
+      const read = readAgentBlockV2(manifest, agentName);
+      if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+      if (!read.block) return c.json({ error: `Agent "${agentName}" is not declared in this project.` }, 404);
+
+      // Resolve the agent's own file against the PRE-removal manifest: after
+      // the block leaves the map, its declared `file`/`prompt_file` is gone
+      // and the conventional-path fallback may miss a custom path.
+      const rawBefore = manifest.raw;
+      const removed = removeAgentBlockV2(manifest, agentName);
+      if (!removed.ok) {
+        return c.json(
+          { error: removed.error, code: 'invalid_config', issues: removed.issues },
+          400,
+        );
+      }
+      manifest.raw = removed.raw;
+      const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const deletes: string[] = [];
+      try {
+        if (manifest.schemaVersion === 2) {
+          const md = await readAgentMarkdownFile(gitProject, rawBefore, agentName, loaded.row.defaultBranch);
+          if (md.content !== null && !agentFileReferencedByOthers(manifest.raw, md.path)) {
+            deletes.push(md.path);
+          }
+        } else {
+          const promptFile = (read.block as Record<string, unknown>).prompt_file;
+          if (typeof promptFile === 'string' && promptFile && !agentFileReferencedByOthers(manifest.raw, promptFile)) {
+            await readRepoFile(gitProject, promptFile, loaded.row.defaultBranch);
+            deletes.push(promptFile);
+          }
+        }
+      } catch (err) {
+        if (!isRepoFileNotFoundError(err)) {
+          return c.json(
+            { error: `Failed to read the agent's files: ${(err as Error).message || String(err)}` },
+            502,
+          );
+        }
+      }
+
+      try {
+        const writes = manifestWrites(manifest, manifestPath);
+        await commitMultipleFilesToBranch(gitProject, {
+          files: writes.files,
+          alsoExpect: writes.alsoExpect,
+          deletes: deletes.length > 0 ? deletes : undefined,
+          message: `chore: remove agent ${agentName}`,
+          branch: loaded.row.defaultBranch,
+          expectedFileRevision:
+            manifest.revision === undefined
+              ? undefined
+              : {
+                  path: manifestPath,
+                  sha: manifest.revision,
+                  candidatePaths: manifest.candidatePaths,
+                },
+        });
+      } catch (err) {
+        if (err instanceof GitFileRevisionConflictError) {
+          return c.json({ error: err.message }, 409);
+        }
+        if (isRemotePushPolicyRejection(err)) {
+          return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
+        }
+        return c.json(
+          { error: `Failed to commit agent removal: ${(err as Error).message || String(err)}` },
+          502,
+        );
+      }
+
+      // The metadata mirror follows the manifest reassignment, so session
+      // creation (which reads the mirror) never resolves a removed agent.
+      if (removed.newDefaultAgent) {
+        await db
+          .update(projects)
+          .set({ metadata: metadataMerge({ default_agent: removed.newDefaultAgent }), updatedAt: new Date() })
+          .where(eq(projects.projectId, projectId));
+      }
+
+      return c.json({
+        ok: true,
+        agent: agentName,
+        default_agent:
+          removed.newDefaultAgent ??
+          (typeof manifest.raw.default_agent === 'string' ? manifest.raw.default_agent : null),
       });
     },
   );

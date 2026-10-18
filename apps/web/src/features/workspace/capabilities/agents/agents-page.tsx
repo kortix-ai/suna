@@ -1,7 +1,7 @@
 'use client';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useTranslations as useI18nTranslations, useTranslations } from '@/i18n/use-translations';
 import { useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +58,7 @@ import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 
 import { filterAgents } from './agent-filter';
+import { NewAgentDialog } from './new-agent-dialog';
 import { useSlashFocus } from '@/hooks/utils';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -85,6 +86,7 @@ type Agent = ProjectConfigSummary['agents'][number];
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentsPages = useTranslations('agentsPages');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -97,6 +99,11 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     true;
   const configure = useConfigureThread(projectId);
   const queryClient = useQueryClient();
+  // New → Set up manually opens the minimal create form (KRTX-1934). It used
+  // to deep-link to the read-only Files page with an instruction the user
+  // could not follow (KRTX-2086); the form IS the manual path now, and it
+  // writes the same kortix.yaml entry the instruction asked for.
+  const [newAgentOpen, setNewAgentOpen] = useState(false);
 
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -168,15 +175,23 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
-      <NewEntityMenu
-        label={label}
-        pending={configure.pending}
-        onChat={() => configure.start(newConfigPrompt('agent'))}
-        manual={{
-          description: tI18nComplete.raw('text5210c5acc2cd'),
-          href: `/projects/${projectId}/files`,
-        }}
-      />
+      <>
+        <NewEntityMenu
+          label={label}
+          pending={configure.pending}
+          onChat={() => configure.start(newConfigPrompt('agent'))}
+          manual={{
+            description: tAgentsPages('manualMenuDescription'),
+            onSelect: () => setNewAgentOpen(true),
+          }}
+        />
+        <NewAgentDialog
+          projectId={projectId}
+          open={newAgentOpen}
+          onOpenChange={setNewAgentOpen}
+          takenNames={agents.map((agent) => agent.name)}
+        />
+      </>
     ) : null;
 
   return (

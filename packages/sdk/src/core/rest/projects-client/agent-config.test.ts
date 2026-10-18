@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type AgentConfigBlock,
+  deleteAgentConfig,
   getAgentConfig,
   grantSecretToAgent,
   updateAgentConfig,
@@ -188,5 +189,24 @@ describe('repository access compatibility', () => {
     await expect(updateAgentConfig('project-1', 'support', { workspace: 'read' }))
       .rejects.toThrow('Set repository_access explicitly');
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('deleteAgentConfig (KRTX-2085)', () => {
+  test('sends DELETE to the agent config route with the name path-encoded', async () => {
+    nextBody = { ok: true, agent: 'support', default_agent: 'base' };
+    await deleteAgentConfig('project-1', 'support');
+    expect(calls[0]?.url).toContain('/projects/project-1/agents/support/config');
+  });
+
+  test('percent-encodes an agent name with special characters', async () => {
+    await deleteAgentConfig('project-1', 'a b');
+    expect(calls[0]?.url).toContain('/agents/a%20b/config');
+  });
+
+  test('unwraps the response body', async () => {
+    nextBody = { ok: true, agent: 'support', default_agent: 'base' };
+    const response = await deleteAgentConfig('project-1', 'support');
+    expect(response).toEqual({ ok: true, agent: 'support', default_agent: 'base' });
   });
 });

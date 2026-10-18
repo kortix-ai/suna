@@ -437,6 +437,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/access/pending-invites/:inviteId/resend': { action: 'project.invite.resend', title: 'Resent pending project invitation' },
   'GET /v1/projects/:projectId/agents/:agentName/config': { action: 'agent.config.read', title: 'Viewed agent configuration' },
   'PUT /v1/projects/:projectId/agents/:agentName/config': { action: 'agent.config.update', title: 'Updated agent configuration' },
+  'DELETE /v1/projects/:projectId/agents/:agentName/config': { action: 'agent.config.delete', title: 'Removed an agent' },
   'PUT /v1/projects/:projectId/agents/:agentName/scope': { action: 'agent.scope.update', title: 'Updated agent access scope' },
   'GET /v1/projects/:projectId/approvals': { action: 'connector.approval.list', title: 'Listed pending connector approvals' },
   'POST /v1/projects/:projectId/approvals/:executionId': { action: 'connector.approval.resolve', title: 'Resolved connector approval', events: ['connector.approval.approved', 'connector.approval.denied'] },

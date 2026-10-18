@@ -20,6 +20,7 @@ import {
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
+  removeAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
 import { extractAgents } from '../projects/agents';
@@ -410,5 +411,141 @@ describe('repository access', () => {
     const updated = extractAgents({ ...v2Manifest(), raw: resolved.raw });
     expect(updated.specs[0]?.legacyReadWorkspace).toBe(false);
     expect(updated.specs[0]?.repositoryAccess).toBe(false);
+  });
+});
+
+describe('removeAgentBlockV2 (agent removal, KRTX-2085)', () => {
+  const TWO_AGENTS = `
+kortix_version: 2
+default_agent: base
+agents:
+  base:
+    connectors: all
+  support:
+    connectors: [github]
+    file: agents/support.md
+`;
+
+  test('removes a declared agent and leaves the rest verbatim', () => {
+    const saved = removeAgentBlockV2(v2Manifest(TWO_AGENTS), 'support');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(Object.keys(saved.raw.agents as object)).toEqual(['base']);
+    // Removing a non-default agent never touches default_agent.
+    expect(saved.newDefaultAgent).toBeNull();
+    expect(saved.raw.default_agent).toBe('base');
+    // The result must be a manifest the runtime accepts.
+    const read = readAgentBlockV2({ ...v2Manifest(TWO_AGENTS), raw: saved.raw }, 'base');
+    expect(read.ok && read.block?.connectors).toBe('all');
+  });
+
+  test('a removed agent is gone from the runtime agent list', () => {
+    const saved = removeAgentBlockV2(v2Manifest(TWO_AGENTS), 'support');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    const agents = extractAgents({ ...v2Manifest(TWO_AGENTS), raw: saved.raw });
+    expect(agents.specs.map((s) => s.name).sort()).toEqual(['base']);
+  });
+
+  test('removing the default agent reassigns default_agent to the remaining agent', () => {
+    const saved = removeAgentBlockV2(v2Manifest(TWO_AGENTS), 'base');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.newDefaultAgent).toBe('support');
+    expect(saved.raw.default_agent).toBe('support');
+  });
+
+  test('reassignment prefers base over an earlier-sorted remaining name', () => {
+    const manifest = `
+kortix_version: 2
+default_agent: gone
+agents:
+  gone: {}
+  alpha: {}
+  base: {}
+`;
+    const saved = removeAgentBlockV2(v2Manifest(manifest), 'gone');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.newDefaultAgent).toBe('base');
+  });
+
+  test('reassignment skips a disabled agent and picks an enabled one', () => {
+    const manifest = `
+kortix_version: 2
+default_agent: gone
+agents:
+  gone: {}
+  first:
+    enabled: false
+  second: {}
+`;
+    const saved = removeAgentBlockV2(v2Manifest(manifest), 'gone');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.newDefaultAgent).toBe('second');
+  });
+
+  test('refuses to remove the last declared agent (the manifest must keep one)', () => {
+    const single = `
+kortix_version: 2
+default_agent: support
+agents:
+  support: {}
+`;
+    const saved = removeAgentBlockV2(v2Manifest(single), 'support');
+    expect(saved.ok).toBe(false);
+    if (saved.ok) return;
+    expect(saved.error).toMatch(/at least one agent/i);
+  });
+
+  test('refuses to remove the default agent when every remaining agent is disabled', () => {
+    const manifest = `
+kortix_version: 2
+default_agent: gone
+agents:
+  gone: {}
+  rest:
+    enabled: false
+`;
+    const saved = removeAgentBlockV2(v2Manifest(manifest), 'gone');
+    expect(saved.ok).toBe(false);
+    if (saved.ok) return;
+    expect(saved.error).toMatch(/enabled agent/i);
+  });
+
+  test('a trigger bound to the removed agent fails validation (the manifest must stay valid)', () => {
+    const manifest = `
+kortix_version: 2
+default_agent: base
+agents:
+  base: {}
+  helper: {}
+triggers:
+  - slug: nightly
+    type: schedule
+    cron: "0 9 * * *"
+    prompt: run
+    agent: helper
+`;
+    const saved = removeAgentBlockV2(v2Manifest(manifest), 'helper');
+    expect(saved.ok).toBe(false);
+    if (saved.ok) return;
+    expect(saved.error).toMatch(/does not match any declared agent/);
+  });
+
+  test('refuses a v1 manifest (the [[agents]] array has no map semantics here)', () => {
+    const saved = removeAgentBlockV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix');
+    expect(saved.ok).toBe(false);
+    if (saved.ok) return;
+    expect(saved.error).toMatch(/kortix_version 2 or later/);
+  });
+
+  test('an agent the manifest does not declare is a no-op, not an error', () => {
+    const saved = removeAgentBlockV2(v2Manifest(TWO_AGENTS), 'ghost');
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.raw.default_agent).toBe('base');
+    expect(saved.newDefaultAgent).toBeNull();
   });
 });

@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * /projects/[id]/agent/[name] — one agent, as a full-page editor. The core
  * screen of Customize.
@@ -50,6 +49,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { useTranslations as useI18nTranslations, useTranslations } from '@/i18n/use-translations';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -99,6 +99,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentConfigBlock,
+  deleteAgentConfig,
   getProjectDetail,
   type ProjectConfigSummary,
   readProjectFile,
@@ -123,6 +124,7 @@ import {
   RobotIcon,
   SlidersHorizontalIcon,
   StarIcon,
+  TrashIcon,
   TerminalWindowIcon,
   TimerIcon,
   TreeStructureIcon,
@@ -474,10 +476,17 @@ function AgentActions({
   canWrite: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentsPages = useTranslations('agentsPages');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const startSession = useNewProjectSession(projectId);
   const configure = useConfigureThread(projectId);
   const [confirmEditSource, setConfirmEditSource] = useState(false);
+  // The platform coordinator (meta) is not a manifest block of the user's
+  // project — its 404 would only read as a bug — so the platform agent and
+  // any manifest shadow of it never offer removal.
+  const removable = canWrite && !isMetaAgentName(agent.name) && agent.platform !== true;
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   const mode = agent.mode?.toLowerCase();
   const startBlocked =
@@ -496,6 +505,20 @@ function AgentActions({
       await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
     onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
+  });
+
+  // KRTX-2085: the removal affordance. The route is the same one the API-side
+  // delete contract owns; the list and every badge read project-detail, so
+  // one invalidation propagates the removal everywhere.
+  const removeAgent = useMutation({
+    mutationFn: () => deleteAgentConfig(projectId, agent.name),
+    onSuccess: async () => {
+      successToast(tAgentsPages('removed', { name: agent.name }));
+      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      setConfirmRemove(false);
+      router.push(capabilityTabHref(projectId, 'agent'));
+    },
+    onError: (error: Error) => errorToast(error.message || tAgentsPages('removeFailed')),
   });
 
   const pathname = usePathname();
@@ -550,6 +573,19 @@ function AgentActions({
             >
               {tI18nComplete.raw('text4930821dd07b')}
             </DropdownMenuItem>
+            {removable ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={removeAgent.isPending}
+                  onSelect={() => setConfirmRemove(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <TrashIcon className="size-4" />
+                  {tAgentsPages('removeAction')}
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -568,6 +604,22 @@ function AgentActions({
           configure.start(editConfigPrompt('agent', agent.name, agent.path));
         }}
       />
+
+      {/* Removal is destructive and irreversible (the entry leaves the repo)
+          — confirm first, with the consequence spelled out. */}
+      {removable ? (
+        <ConfirmDialog
+          open={confirmRemove}
+          onOpenChange={setConfirmRemove}
+          title={tAgentsPages('removeTitle')}
+          description={tAgentsPages('removeDescription', { name: agent.name })}
+          confirmLabel={tAgentsPages('removeConfirm')}
+          cancelLabel={tI18nComplete.raw('text19766ed6ccb2')}
+          confirmVariant="destructive"
+          isPending={removeAgent.isPending}
+          onConfirm={() => removeAgent.mutate()}
+        />
+      ) : null}
     </div>
   );
 }

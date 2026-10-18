@@ -213,3 +213,25 @@ export async function updateProjectDefaultAgent(projectId: string, agentName: st
     ),
   );
 }
+
+export interface DeleteAgentConfigResponse {
+  ok: boolean;
+  agent: string;
+  /** The manifest's `default_agent` after the removal — reassigned when the
+   *  removed agent was it, unchanged otherwise. */
+  default_agent: string | null;
+}
+
+/**
+ * Remove a project agent: its `agents.<name>` block leaves kortix.yaml, its
+ * `.md`/prompt file is deleted with it when no other agent shares the path,
+ * and a removed default agent's role moves to another declared agent.
+ * Manager-gated server-side (project.agent.write).
+ */
+export async function deleteAgentConfig(projectId: string, agentName: string) {
+  return unwrap(
+    await backendApi.delete<DeleteAgentConfigResponse>(
+      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+    ),
+  );
+}
