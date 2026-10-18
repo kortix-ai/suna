@@ -217,11 +217,10 @@
           },
           "agent": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "agent_name": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "enabled": {
             "oneOf": [
@@ -268,12 +267,10 @@
             ]
           },
           "session_id": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "sessionId": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt": {
             "type": "string"
@@ -353,6 +350,63 @@
         },
         "additionalProperties": true,
         "allOf": [
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "required": [
+                    "session_mode"
+                  ],
+                  "properties": {
+                    "session_mode": {
+                      "const": "pinned"
+                    }
+                  }
+                },
+                {
+                  "not": {
+                    "required": [
+                      "session_mode"
+                    ]
+                  },
+                  "required": [
+                    "sessionMode"
+                  ],
+                  "properties": {
+                    "sessionMode": {
+                      "const": "pinned"
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "if": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              },
+              "else": {
+                "required": [
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              }
+            }
+          },
           {
             "if": {
               "required": [

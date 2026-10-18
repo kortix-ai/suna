@@ -1281,6 +1281,24 @@ for (const blank of ['   ', '\t\n', '\u00a0']) {
 for (const image of ['', '   ', '\t\n', '\u00a0', 'python:3.12']) {
   FIXTURES.push({ name: `OCI image nonblank ${JSON.stringify(image)}`, format: 'yaml', valid: image === 'python:3.12', input: JSON.stringify({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, apps: { site: { type: 'oci_image', image, command: ['node'], port: 3000 } } }) });
 }
+// Trigger aliases use canonical-field precedence; pinned IDs alone must be nonblank.
+for (const version of [1, 2, 3]) {
+  const base = version === 1 ? {} : { default_agent: 'worker', agents: { worker: {} } };
+  const cases: Array<[string, object, boolean]> = [
+    ['blank agent', { agent: '   ' }, version === 1],
+    ['blank legacy agent', { agent_name: '   ' }, true],
+    ['blank unpinned ID', { session_id: '   ' }, true],
+    ['pinned missing ID', { session_mode: 'pinned' }, false],
+    ['pinned blank ID', { session_mode: 'pinned', session_id: '   ' }, false],
+    ['pinned blank alias ID', { sessionMode: 'pinned', sessionId: '\t\n' }, false],
+    ['canonical blank overrides ID alias', { session_mode: 'pinned', session_id: '   ', sessionId: 'synthetic-session' }, false],
+    ['canonical ID overrides blank alias', { session_mode: 'pinned', session_id: 'synthetic-session', sessionId: '   ' }, true],
+    ['canonical mode overrides pinned alias', { session_mode: 'fresh', sessionMode: 'pinned', session_id: '   ' }, true],
+  ];
+  for (const [name, fields, valid] of cases) {
+    FIXTURES.push({ name: `v${version} trigger ${name}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: version, ...base, triggers: [{ slug: 'tick', type: 'cron', cron: '0 9 * * *', prompt: 'Go', ...fields }] }) });
+  }
+}
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
   for (const fixture of FIXTURES) {
     test(`[${fixture.format}] ${fixture.name}`, () => {

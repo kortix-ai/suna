@@ -403,7 +403,7 @@ function sandboxSchema(): JsonSchemaFragment {
 }
 
 /** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
-function triggerSchema(): JsonSchemaFragment {
+function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
@@ -414,16 +414,16 @@ function triggerSchema(): JsonSchemaFragment {
       name: { type: 'string' },
       // Cross-field: must name a declared agent (or be omitted) — dynamic,
       // left to the imperative validator.
-      agent: { type: 'string', minLength: 1 },
-      agent_name: { type: 'string', minLength: 1 },
+      agent: version === 2 ? NON_BLANK_STRING : { type: 'string' },
+      agent_name: { type: 'string' },
       enabled: enabledValueSchema(),
       session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
       filter: { type: 'object', additionalProperties: { type: 'string' } },
       sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
-      session_id: { type: 'string', minLength: 1 },
-      sessionId: { type: 'string', minLength: 1 },
+      session_id: { type: 'string' },
+      sessionId: { type: 'string' },
       prompt: { type: 'string' },
       prompt_template: { type: 'string' },
       cron: { type: 'string', minLength: 1 },
@@ -457,6 +457,19 @@ function triggerSchema(): JsonSchemaFragment {
     },
     additionalProperties: true,
     allOf: [
+      {
+        if: {
+          anyOf: [
+            { required: ['session_mode'], properties: { session_mode: { const: 'pinned' } } },
+            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: { const: 'pinned' } } },
+          ],
+        },
+        then: {
+          if: { required: ['session_id'] },
+          then: { properties: { session_id: NON_BLANK_STRING } },
+          else: { required: ['sessionId'], properties: { sessionId: NON_BLANK_STRING } },
+        },
+      },
       // A prompt (or its alias) is always required, non-empty.
       {
         if: { required: ['prompt'] },
@@ -970,7 +983,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandbox: sandboxSchema(),
     // `[[sandboxes]]` was renamed — always a hard error, so forbid it.
     sandboxes: false,
-    triggers: { type: 'array', items: triggerSchema() },
+    triggers: { type: 'array', items: triggerSchema(connectorVersion) },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
