@@ -28,7 +28,7 @@ const COPY = {
     action: 'Add secret',
     fallback: 'Enter credentials',
     title: 'Add a project secret',
-    blurb: 'Stored encrypted. The agent can use it but never sees the value.',
+    blurb: 'Review where this secret will be used before saving.',
     /** Shown once the value has been submitted from this card. */
     doneStatus: 'Added',
   },

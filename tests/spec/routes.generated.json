@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 848,
+  "count": 849,
   "routes": [
     {
       "method": "GET",
@@ -3045,6 +3045,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/provision-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/quota"
     },
     {
       "method": "GET",

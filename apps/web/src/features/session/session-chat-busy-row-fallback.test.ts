@@ -236,6 +236,15 @@ describe('waiting on the user is not the agent working', () => {
     expect(turn).toContain('if (!agentWorking) return;');
   });
 
+  test('the clock also covers a silent turn (KRTX-1872): it never gates on the status phrase', () => {
+    // The status phrase stays empty until the turn's first assistant message,
+    // and the label used to be gated on it — a fresh account's first turn sat
+    // ~5 minutes on a bare "Thinking" with no clock and read as frozen. The
+    // phrase must stay a content claim; the clock runs on the agent alone.
+    const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).not.toContain('throttledStatus');
+  });
+
   test('`working` itself is untouched — the turn IS still open', () => {
     // Every structural decision below still reads it: which steps render, and
     // where answered questions go.

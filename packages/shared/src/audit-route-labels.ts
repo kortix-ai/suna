@@ -783,6 +783,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/github/repository-branches': { action: 'git.github.repository.branch.list', title: 'Listed GitHub repository branches' },
   'POST /v1/projects/link-repository': { action: 'project.repository.link', title: 'Linked repository as project' },
   'GET /v1/projects/managed-git/status': { action: 'git.managed_status.read', title: 'Viewed managed Git status' },
+  'GET /v1/projects/quota': { action: 'project.quota.read', title: 'Viewed project quota' },
   'POST /v1/projects/provision': { action: 'project.provision', title: 'Provisioned project' },
   'POST /v1/projects/provision-stream': 'POST /v1/projects/provision',
   'GET /v1/projects/suna-migration/eligibility': { action: 'project.suna_migration.eligibility.read', title: 'Viewed project migration eligibility' },

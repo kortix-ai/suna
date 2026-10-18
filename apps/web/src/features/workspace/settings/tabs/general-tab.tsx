@@ -1,121 +1,5 @@
 'use client';
 
-/**
- * The General tab — workspace name, icon, and Delete workspace. Split off
- * `settings-view.tsx`'s `SettingsView`, which used to render this content
- * alongside Repository, Automation, and the full Experimental feature list on
- * one page (Task 18's brief). Experimental now has its own tab — see
- * `experimental-tab.tsx` — and is NOT rendered here.
- *
- * **This tab does not mention sandboxes (2026-08-17).** It used to carry a
- * "Sandbox" sub-section holding `SandboxProviderRow` — the per-project
- * sandbox-provider pin, with `AUTO_PROVIDER` and the
- * `applySandboxProviderResult`/`pollSandboxProviderTransition` helpers it
- * drives. All of it is CUT to `sandbox-tab.tsx` (the Sandbox templates
- * section), where it renders above the template list, so everything sandbox
- * related lives on one page. Cut, not copied — there is exactly one
- * implementation, and its behavior is unchanged; only its host page moved.
- * See `sandbox-tab.tsx`'s header comment for the move and for why the pin is
- * now read from the project query there.
- *
- * **What moved here, verbatim, from `settings-view.tsx`:**
- * - The rename mutation (`GeneralWorkspaceCard` below) — same
- *   `useMutation`/`renameOnMutate`/`renameOnError`/`renameOnSettled` wiring
- *   as the old `GeneralProjectCard`, byte-identical apart from the name of
- *   the enclosing function.
- * - The Danger Zone (renamed "Delete workspace" per the task brief, to match
- *   the Profile tab's own "Delete account" section naming) — same
- *   `archiveProject` mutation. The mechanism is still an archive, NOT a row
- *   delete: no `deleteProject` exists anywhere in `@kortix/sdk` (checked:
- *   `grep -rn "deleteProject\b" packages/sdk/src apps/web/src` returns
- *   nothing).
- *
- *   **The copy used to say "recoverable". That was wrong, and it is fixed
- *   here.** The word described the DB row, not the product. Traced end to end
- *   (2026-08-12):
- *   - `archiveProject()` is `DELETE /v1/projects/:id`
- *     (`packages/sdk/src/core/rest/projects-client/projects.ts`), which sets
- *     `status: 'archived'` (`apps/api/src/projects/routes/project-settings.ts`).
- *   - `loadProjectForUser` — the gate in front of EVERY project-scoped route —
- *     returns `null` for an archived row
- *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
- *     integration and key under it 404s. This is not "hidden from a list".
- *   - Triggers and scheduled runs only fire for `status = 'active'`
- *     (`apps/api/src/projects/lib/triggers.ts`,
- *     `apps/api/src/projects/trigger-execution-store.ts`), so automation stops
- *     immediately.
- *   - Nothing in `apps/web` or `@kortix/sdk` can un-archive a project — there
- *     is no route, no SDK call, and no UI. Only the platform-admin surface can
- *     even list archived rows (`packages/sdk/src/react/use-admin-projects.ts`).
- *
- *   So from the user's side the loss is total and one-way, and the copy now
- *   says that. What it does NOT say is that the row is erased, because the DB
- *   row survives for support. And since KRTX-1692 the copy tells the truth
- *   about the Git repository: deleting the workspace deletes the
- *   Kortix-managed repository with it (`deleteManagedProjectRepo` runs on
- *   every delete, `apps/api/src/projects/routes/project-settings.ts`); a
- *   repository the user connected themselves is never touched. The
- *   consequences list names the managed-repo loss and the reassurance states
- *   the connected-repo survival — the one thing users would panic about.
- *
- *   Because the action is irreversible AND ambiguous (an account has several
- *   workspaces; the wrong one is one click away), the confirmation is
- *   `TypeToConfirmDialog` — the user types the workspace name — rather than the
- *   one-click `ConfirmDialog`. See `components/ui/type-to-confirm-dialog.tsx`
- *   for why that primitive exists and why the matcher is a separate pure
- *   function.
- *
- * **New: the icon field.** Reuses `ProjectIconField`
- * (`features/projects/modal/project-icon-field.tsx`) and
- * `buildProjectEditPatch`/`summarizeProjectEdit`
- * (`features/projects/modal/project-edit-patch.ts`) UNMODIFIED — the same
- * icon-diffing logic `EditProjectModal` uses, so the emoji/glyph mutual-
- * exclusion rules (see that module's header comment) can't drift between the
- * two write paths. The icon patch always sends `draft.name === project.name`
- * (the server-confirmed name, not the possibly-still-debouncing local draft),
- * so an icon pick can never accidentally also send a half-typed rename.
- *
- * **A field the task brief asked for that does not exist: workspace
- * description.** `KortixProject`/`ProjectInput` (`packages/sdk/src/core/rest/
- * projects-client/projects.ts`) have no `description` field — checked
- * directly against both interfaces. The `description` that DOES exist on
- * that file (`CreateProjectRepoInput.description`) is a GitHub-repo-creation
- * parameter, write-only at project creation, never stored back or
- * readable/editable afterward. There is nothing to wire up here without
- * inventing a field the backend doesn't have; this tab does not render one.
- *
- * **What did NOT move here: Repository and Automation.** The task brief
- * scoped this split to exactly "General" (name, icon, sandbox pin, delete)
- * and "Experimental" — it does not mention `RepositoryCard` (default branch,
- * manifest path, GitHub collaborator invite) or `TriggersActivationCard`
- * (the project-wide "pause all triggers" switch). Neither belongs on General
- * by that scope, but leaving them in the deleted `settings-view.tsx` would
- * have made both unreachable with no replacement — so they moved (cut, not
- * copied) to where a user would actually look for them instead:
- * `RepositoryCard` into `GitView` (`customize/sections/view/git-view.tsx`,
- * the Repositories tab) and `TriggersActivationCard` into `ScheduleView`
- * (`components/projects/schedule-view.tsx`, the Schedules tab). See each
- * file's own header comment for the move.
- *
- * `GeneralTabView` is the pure, props-only half — the one stateful piece
- * (`GeneralWorkspaceCard`'s name+icon mutations) owns its own hooks and can't
- * render under `renderToStaticMarkup` with no `QueryClientProvider`, so it is
- * threaded through as a slot — same reasoning as `connected-tab.tsx`'s
- * `githubAppSetupSlot`/`chatgptConnectSlot`. `GeneralTab` is the container:
- * every hook only runs once this tab is actually mounted, which
- * `SettingsTabPane` in `settings-panel.tsx` guarantees happens only while
- * this tab is active.
- *
- * **Layout: Linear's settings shape** (Jay's reference, 2026-08-11). Heading,
- * hairline rule, then rows — label left, control right, consecutive rows
- * sharing ONE bordered box (`SettingsRowGroup` / `SettingsRow`, see
- * `components/ui/settings-row.tsx`). Icon and Workspace name are one group;
- * Danger zone gets a plain section label above its own group. Delete
- * workspace is red TEXT, not a filled destructive button — the
- * `ConfirmDialog` behind it, and the `project.delete` gate in front of
- * it, are both unchanged.
- */
-
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -133,13 +17,13 @@ import {
   type ProjectIconValue,
 } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
-import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   renameOnError,
   renameOnMutate,
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -155,7 +39,6 @@ import {
 import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from '@/i18n/use-translations';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Asked for in ONE batched probe. `project.delete` and `project.write` are
@@ -165,27 +48,6 @@ const GENERAL_TAB_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_DELETE,
 ] as const;
 
-/**
- * What the user actually loses, in the order they will care about it.
- *
- * Module-level and exported on purpose. The dialog renders through a Radix
- * portal, so `renderToStaticMarkup` emits none of this copy (see
- * `general-tab.test.tsx`) and a test asserting on rendered output would be
- * unable to fail. Exporting the array gives the test something real to hold —
- * see `general-tab.delete-copy.test.ts`.
- *
- * Every line is a traced consequence of deleting the workspace, not a guess.
- * The trace, with file references, is in this file's header comment. Two
- * standing rules for editing this list:
- *
- * 1. **Never claim the row itself is erased.** It is not — the DB row
- *    survives for support. Claim the loss of access, which IS total:
- *    `loadProjectForUser` 404s every project-scoped route for an archived row.
- * 2. **Never drop the repository lines below.** The managed repo is deleted
- *    with the workspace and the user's own repositories are not: naming both
- *    is what keeps "permanent" from reading as "my code is gone" (for a
- *    connected repo) or "my code is safe" (for a managed one).
- */
 export const DELETE_WORKSPACE_CONSEQUENCES = [
   'Every session in this workspace, with its files, history, and outputs',
   'All scheduled runs and triggers — they stop firing straight away',
@@ -229,7 +91,6 @@ export interface GeneralTabViewProps {
    *  reason `generalFieldsSlot` is one — `GitView` owns its own
    *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
    *  with no providers. */
-  gitRepoSlot?: ReactNode;
   /** Whether the Delete-workspace section shows at all — gated on
    *  `project.delete`, NOT the broader `project.write` gate
    *  `generalFieldsSlot`'s fields use. Deleting and editing are separate
@@ -286,7 +147,6 @@ export function GeneralTabView({
   errorMessage = '',
   onRetry = () => {},
   generalFieldsSlot,
-  gitRepoSlot,
   canDelete = true,
   workspaceName = '',
   archiveOpen = false,
@@ -318,7 +178,6 @@ export function GeneralTabView({
       ) : (
         <>
           {generalFieldsSlot}
-          {gitRepoSlot}
           {canDelete ? (
             <section className="space-y-3">
               <SettingsSubsectionHeader title={copy.dangerZone} />
@@ -473,8 +332,7 @@ function GeneralWorkspaceCard({
     onSuccess: (updated) => {
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
-    onError: (error: Error) =>
-      errorToast(error.message || t('iconUpdateFailed')),
+    onError: (error: Error) => errorToast(error.message || t('iconUpdateFailed')),
     // The icon is read from THREE caches and this mutation used to write back
     // to one. `setQueryData` above repaints the sidebar switcher, which reads
     // `qk.project.summary`; the projects grid and ⌘K read a
@@ -606,8 +464,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
-    onError: (error: Error) =>
-      errorToast(error.message || t('archiveFailed')),
+    onError: (error: Error) => errorToast(error.message || t('archiveFailed')),
   });
 
   return (
@@ -638,7 +495,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       generalFieldsSlot={
         project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
       }
-      // No `gitRepoSlot`: Git repo is its own Settings section since
+      // No git-repo slot: Git repo is its own Settings section since
       // 2026-09-03 (`project-settings-sections.ts`).
       canDelete={canDelete}
       workspaceName={project?.name}

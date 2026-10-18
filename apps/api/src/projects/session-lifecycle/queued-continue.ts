@@ -18,7 +18,7 @@ import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessio
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
-import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationText } from './redelivery';
+import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationParts, interruptedTurnContinuationText } from './redelivery';
 import {
   armQuickQueueInterrupt,
   queuedContinueHasStagedRevert,
@@ -180,10 +180,14 @@ export async function executeQueuedContinue(
   const placement = await placeQueuedContinue(row, payload, tl);
   // A turn a runtime loss cut short gets its continuation, never the original
   // prompt a second time (KRTX-1732). The row keeps its own author and picks.
+  // The continuation is harness context, not a user prompt (KRTX-2597): its
+  // part is marked `synthetic` so the transcript renders it as a notice and
+  // never as a user bubble.
   const resume = 'outcome' in placement ? undefined : placement.resume;
   const outcome = 'outcome' in placement
     ? placement.outcome
-    : await deliverQueuedContinue(row, resume ? { ...payload, parts: undefined } : payload,
+    : await deliverQueuedContinue(row, resume
+      ? { ...payload, parts: interruptedTurnContinuationParts(resume) } : payload,
       resume ? interruptedTurnContinuationText(resume) : text, placement.wireMessageId,
       placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
   // Only a delivery marks the turn resumed. A placement outcome posted nothing:

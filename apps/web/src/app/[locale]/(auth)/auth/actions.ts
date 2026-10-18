@@ -217,6 +217,9 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     mobileState,
   });
 
+  // Resolve presentation before the irreversible send; it must not turn a
+  // delivered email into a failed submit.
+  const successMessage = tI18nComplete.raw('textd7eb7cdcff7d');
   const { error } = await settleWithin(
     supabase.auth.signInWithOtp({
       email: normalizedEmail,
@@ -251,14 +254,25 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   // non-httpOnly by design. The value is the ssr-encoded `base64-` payload
   // under the fixed unchunked `-code-verifier` cookie; the page writes it
   // back byte-identical.
-  const codeVerifier =
-    (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+  let codeVerifier: string | null = null;
+  try {
+    codeVerifier =
+      (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+  } catch {
+    // The cookie is a fallback for PKCE, not evidence of email delivery.
+    console.warn('[auth] could not read email code verifier after successful send');
+  }
 
   return {
     success: true,
-    message: tI18nComplete.raw('textd7eb7cdcff7d'),
+    message: successMessage,
     email: normalizedEmail,
+    redirectTo: returnUrl,
     codeVerifier,
+    // Which email GoTrue just minted: a new address got the signup
+    // confirmation ("Confirm your email"), an existing one the sign-in link.
+    // The link step names the email the mailbox actually receives (KRTX-2195).
+    mode: flowMode,
   };
 }
 

@@ -58,6 +58,7 @@ const SecretLinkErrors = errors(400, 404, 409, 410);
 const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
 
 const SecretLinkSchema = z.object({
+  scope: z.enum(['runtime', 'connector']),
   kind: z.literal('secret'),
   project_name: z.string(),
   requester: z.object({ label: z.string().nullable() }).nullable(),
@@ -233,6 +234,7 @@ setupLinksPublicApp.openapi(createRoute({
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
     kind: 'secret' as const,
+    scope: resolved.payload.scope,
     project_name: project.name,
     requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
