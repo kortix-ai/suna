@@ -17,7 +17,12 @@ import type {
   RuntimeQuestionAnswer,
   RuntimeQuestionRequest,
 } from '../runtime/transcript-types';
-import { createTranscriptReader, errorMessage, type TranscriptPage, type TranscriptReaderInput } from './runtime-transcript';
+import {
+  type TranscriptPage,
+  type TranscriptReaderInput,
+  createTranscriptReader,
+  errorMessage,
+} from './runtime-transcript';
 
 export type { TranscriptPage } from './runtime-transcript';
 
@@ -34,9 +39,13 @@ export interface PendingInteractions {
 /** A compatibility-route result as data, or an `ApiError`. */
 function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }, what: string): T {
   if (result.error === undefined) return result.data as T;
-  const error = result.error as { data?: { message?: string }; message?: string; error?: string } | string;
+  const error = result.error as
+    | { data?: { message?: string }; message?: string; error?: string }
+    | string;
   const detail =
-    typeof error === 'string' ? error : error?.data?.message || error?.message || error?.error || 'request failed';
+    typeof error === 'string'
+      ? error
+      : error?.data?.message || error?.message || error?.error || 'request failed';
   throw new ApiError(`${what}: ${detail}`, {
     ...(result.response ? { status: result.response.status, response: result.response } : {}),
   });
@@ -58,24 +67,45 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
         client.permission.list().then((r) => unwrap(r, 'Reading permission requests failed')),
         client.question.list().then((r) => unwrap(r, 'Reading questions failed')),
       ]);
-      return { statuses: statuses ?? {}, permissions: permissions ?? [], questions: questions ?? [] };
+      return {
+        statuses: statuses ?? {},
+        permissions: permissions ?? [],
+        questions: questions ?? [],
+      };
     },
 
     /** Answer a permission request: allow this call, allow the capability for the session, or deny. */
-    answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string): Promise<void> => {
+    answerPermission: async (
+      requestId: string,
+      reply: RuntimePermissionReply,
+      message?: string,
+    ): Promise<void> => {
       unwrap(
-        await client.permission.reply({ requestID: requestId, reply, ...(message !== undefined ? { message } : {}) }),
+        await client.permission.reply({
+          requestID: requestId,
+          reply,
+          ...(message !== undefined ? { message } : {}),
+        }),
         'Answering the permission request failed',
       );
     },
 
     /** Answer a question (one answer per question), or dismiss it with `null`. */
-    answerQuestion: async (requestId: string, answers: RuntimeQuestionAnswer[] | null): Promise<void> => {
+    answerQuestion: async (
+      requestId: string,
+      answers: RuntimeQuestionAnswer[] | null,
+    ): Promise<void> => {
       if (answers === null) {
-        unwrap(await client.question.reject({ requestID: requestId }), 'Dismissing the question failed');
+        unwrap(
+          await client.question.reject({ requestID: requestId }),
+          'Dismissing the question failed',
+        );
         return;
       }
-      unwrap(await client.question.reply({ requestID: requestId, answers }), 'Answering the question failed');
+      unwrap(
+        await client.question.reply({ requestID: requestId, answers }),
+        'Answering the question failed',
+      );
     },
 
     /**
@@ -83,20 +113,32 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
      * else the runtime's default model; throws an `ApiError` with code
      * `MODEL_REQUIRED` when neither names one. Resolves with the model it used.
      */
-    compact: async (model?: { providerID: string; modelID: string }): Promise<{ providerID: string; modelID: string }> => {
+    compact: async (model?: { providerID: string; modelID: string }): Promise<{
+      providerID: string;
+      modelID: string;
+    }> => {
       let chosen = model;
       if (!chosen) {
         // An unreadable config names no model: never guess one.
-        const config = await client.global.config.get().then((result) => (result.error === undefined ? result.data : null));
+        const config = await client.global.config
+          .get()
+          .then((result) => (result.error === undefined ? result.data : null));
         const reference = typeof config?.model === 'string' ? config.model : '';
         const slash = reference.indexOf('/');
         if (slash > 0 && slash < reference.length - 1) {
           chosen = { providerID: reference.slice(0, slash), modelID: reference.slice(slash + 1) };
         }
       }
-      if (!chosen) throw new ApiError('Cannot compact: no model is set for this session', { code: 'MODEL_REQUIRED' });
+      if (!chosen)
+        throw new ApiError('Cannot compact: no model is set for this session', {
+          code: 'MODEL_REQUIRED',
+        });
       unwrap(
-        await client.session.summarize({ sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID }),
+        await client.session.summarize({
+          sessionID: input.rootId,
+          providerID: chosen.providerID,
+          modelID: chosen.modelID,
+        }),
         'Compacting the session failed',
       );
       return chosen;

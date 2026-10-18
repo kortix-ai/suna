@@ -20,9 +20,10 @@ import {
 } from '@/components/ui/dialog';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
+import { SSO_REQUIRED_EVENT } from '@/lib/access-remedy-events';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 
-export const SSO_REQUIRED_EVENT = 'kortix:sso-required';
+export { SSO_REQUIRED_EVENT };
 
 export function SsoRequiredProvider({ children }: { children?: React.ReactNode }) {
   const t = useTranslations('ssoRequired');

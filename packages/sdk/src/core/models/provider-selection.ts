@@ -3,9 +3,9 @@ import {
   type ProviderAuthRequirement,
   autoSeedDefaultModel,
   bedrockInferenceProfileRank,
+  generationControlCapabilities,
   isProviderAuthSatisfied,
   providerAuthRequirement,
-  generationControlCapabilities,
 } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse as SdkProviderListResponse } from '../runtime/runtime-types';
 
@@ -95,9 +95,7 @@ export function providerListHasModels(providers: ProviderListResponse | undefine
 export function providerListHasGateway(providers: ProviderListResponse | undefined): boolean {
   if (!providers) return false;
   const normalized = normalizeProviderList(providers);
-  return (
-    normalized.connected.includes('kortix') || normalized.all.some((p) => p.id === 'kortix')
-  );
+  return normalized.connected.includes('kortix') || normalized.all.some((p) => p.id === 'kortix');
 }
 
 export function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
@@ -189,9 +187,18 @@ export function mergeProjectSecretConnectedProviders(
  *  auto-selectable release, `autoSeedDefaultModel`), never a curated id list —
  *  one pinned gpt-5.5 / claude-opus-4-8 for weeks after newer releases. */
 const NATIVE_PROVIDER_RANK = new Map(
-  ['anthropic', 'openai', 'google', 'x-ai', 'xai', 'deepseek', 'mistral', 'groq', 'perplexity', 'openrouter'].map(
-    (id, index) => [id, index],
-  ),
+  [
+    'anthropic',
+    'openai',
+    'google',
+    'x-ai',
+    'xai',
+    'deepseek',
+    'mistral',
+    'groq',
+    'perplexity',
+    'openrouter',
+  ].map((id, index) => [id, index]),
 );
 
 /** The catalog fields the pre-runtime picker source reads per model — a
@@ -548,7 +555,9 @@ export interface PickerProviderListInput {
  *
  * `undefined` = nothing loaded yet.
  */
-export function pickerProviderList(input: PickerProviderListInput): ProviderListResponse | undefined {
+export function pickerProviderList(
+  input: PickerProviderListInput,
+): ProviderListResponse | undefined {
   if (input.gatewayEnabled) {
     return input.modelPicker ? projectLlmCatalogToProviderList(input.modelPicker) : undefined;
   }

@@ -698,8 +698,16 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     };
   }
 
-  test('the coded MFA denial dispatches the step-up event', async () => {
-    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+  // KRTX-2729 move-response-error-remedy-dispatch: the core reports the
+  // remedy to the host sink only — the DOM dispatch (and its event names)
+  // belongs to the host (apps/web's access-remedy-events).
+  test('the coded MFA denial reports the remedy to the sink, never the DOM', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
     const restoreFetch = stubFetch403({
       error: 'mfa needed',
       code: 'account_mfa_required',
@@ -708,7 +716,8 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     try {
       const res = await backendApi.get('/accounts/abc/iam/groups');
       expect(res.success).toBe(false);
-      expect(win.dispatched).toContain('kortix:mfa-required');
+      expect(remedies).toEqual(['account_mfa_required']);
+      expect(win.dispatched).toEqual([]);
     } finally {
       win.restore();
       restoreFetch();
@@ -718,8 +727,13 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
   // The account enforces single sign-on and this credential is a password
   // (or other non-IdP) identity: the host asks the person to sign in again
   // through the IdP. A new sign-in, not a step-up, so a separate event.
-  test('the coded SSO denial dispatches kortix:sso-required, not the MFA step-up', async () => {
-    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+  test('the coded SSO denial reports sso_required to the sink, never the DOM', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
     const restoreFetch = stubFetch403({
       error: true,
       message: 'Your organization requires single sign-on.',
@@ -729,7 +743,8 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     try {
       const res = await backendApi.get('/accounts/abc');
       expect(res.success).toBe(false);
-      expect(win.dispatched).toEqual(['kortix:sso-required']);
+      expect(remedies).toEqual(['sso_required']);
+      expect(win.dispatched).toEqual([]);
     } finally {
       win.restore();
       restoreFetch();

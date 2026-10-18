@@ -169,7 +169,11 @@ export function createModelVisibility(input: {
   // Default to showing only the flagship; every other model is opt-in via
   // "Manage models". Providers that DO carry release dates keep the
   // newest-per-family "latest" behaviour handled above.
-  const curatedOrPinned = (model: ModelKey, key: string, state: 'show' | 'hide' | undefined): boolean => {
+  const curatedOrPinned = (
+    model: ModelKey,
+    key: string,
+    state: 'show' | 'hide' | undefined,
+  ): boolean => {
     if (state === 'show') return true;
     if (latestSet.has(key)) return true;
     const m = modelByKey.get(key);

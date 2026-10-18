@@ -8,6 +8,7 @@
  */
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
+import { dispatchAccessRemedyEvent } from '@/lib/access-remedy-events';
 import { kortixGetToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
@@ -55,6 +56,10 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
       enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
       enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
     },
+    // The SDK core reports coded 403 access remedies semantically; web owns
+    // the DOM dispatch its listeners (MfaStepUpProvider, SsoRequiredProvider)
+    // already speak.
+    onAccessRemedy: dispatchAccessRemedyEvent,
     onToast: (level, message, options) => {
       const opts = options as Parameters<typeof infoToast>[1];
       if (level === 'success') successToast(message, opts);

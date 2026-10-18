@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -26,8 +26,9 @@ function valueImports(file: string): string[] {
   const specs: string[] = [];
   for (const m of text.matchAll(/import\s+(type\s+)?(?:[\w*\s{},$]+)\s+from\s+'([^']+)'/g)) {
     if (m[1]) continue; // `import type` — no runtime edge
-    if (!m[2]!.startsWith('./working')) continue;
-    const name = m[2]!.slice(2);
+    const spec = m[2];
+    if (!spec || !spec.startsWith('./working')) continue;
+    const name = spec.slice(2);
     specs.push(name.endsWith('.ts') ? name : `${name}.ts`);
   }
   return specs;
@@ -37,7 +38,8 @@ function graphFrom(entry: string): Graph {
   const graph: Graph = new Map();
   const queue = [entry];
   while (queue.length > 0) {
-    const file = queue.shift()!;
+    const file = queue.shift();
+    if (file === undefined) break;
     if (graph.has(file)) continue;
     const imports = valueImports(file);
     graph.set(file, imports);
@@ -47,7 +49,9 @@ function graphFrom(entry: string): Graph {
 }
 
 function hasCycle(graph: Graph): string | null {
-  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const WHITE = 0;
+  const GRAY = 1;
+  const BLACK = 2;
   const color = new Map<string, number>();
   const visit = (file: string): string | null => {
     color.set(file, GRAY);

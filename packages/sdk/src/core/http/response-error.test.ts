@@ -22,12 +22,16 @@ function response(status: number, body: unknown): Response {
 }
 
 const errors: unknown[] = [];
+const remedies: string[] = [];
 
 configureKortix({
   backendUrl: 'http://127.0.0.1:1',
   getToken: async () => null,
   onError: (error) => {
     errors.push(error);
+  },
+  onAccessRemedy: (code) => {
+    remedies.push(code);
   },
 });
 
@@ -78,6 +82,8 @@ describe('handleErrorResponse · connectors_provider_unavailable 503', () => {
 });
 
 describe('handleErrorResponse · the coded 403 remedies', () => {
+  // The core emits the semantic event to the host sink only (KRTX-2729
+  // move-response-error-remedy-dispatch): the DOM dispatch is the host's.
   function stubWindow() {
     const dispatched: string[] = [];
     const g = globalThis as { window?: unknown };
@@ -98,8 +104,9 @@ describe('handleErrorResponse · the coded 403 remedies', () => {
   }
 
   for (const showErrors of [true, false]) {
-    test(`an account_mfa_required 403 returns the ApiError with its code and dispatches the step-up event (showErrors: ${showErrors})`, async () => {
+    test(`an account_mfa_required 403 reports the remedy to the host sink, never the DOM (showErrors: ${showErrors})`, async () => {
       errors.length = 0;
+      remedies.length = 0;
       const win = stubWindow();
       try {
         const result = await handleErrorResponse(
@@ -109,7 +116,8 @@ describe('handleErrorResponse · the coded 403 remedies', () => {
         );
         expect(result.success).toBe(false);
         expect((result.error as ApiError).code).toBe('account_mfa_required');
-        expect(win.dispatched).toEqual(['kortix:mfa-required']);
+        expect(remedies).toEqual(['account_mfa_required']);
+        expect(win.dispatched).toEqual([]);
         // The remedy codes are NOT in isExpectedResponse: a shown error still reports.
         expect(errors).toHaveLength(showErrors ? 1 : 0);
       } finally {
@@ -117,8 +125,9 @@ describe('handleErrorResponse · the coded 403 remedies', () => {
       }
     });
 
-    test(`an sso_required 403 returns the ApiError with its code and dispatches the SSO event (showErrors: ${showErrors})`, async () => {
+    test(`an sso_required 403 reports the remedy to the host sink, never the DOM (showErrors: ${showErrors})`, async () => {
       errors.length = 0;
+      remedies.length = 0;
       const win = stubWindow();
       try {
         const result = await handleErrorResponse(
@@ -128,7 +137,8 @@ describe('handleErrorResponse · the coded 403 remedies', () => {
         );
         expect(result.success).toBe(false);
         expect((result.error as ApiError).code).toBe('sso_required');
-        expect(win.dispatched).toEqual(['kortix:sso-required']);
+        expect(remedies).toEqual(['sso_required']);
+        expect(win.dispatched).toEqual([]);
         expect(errors).toHaveLength(showErrors ? 1 : 0);
       } finally {
         win.restore();
@@ -136,10 +146,17 @@ describe('handleErrorResponse · the coded 403 remedies', () => {
     });
   }
 
-  test('an ordinary 403 dispatches no remedy event', async () => {
+  test('an ordinary 403 reports no remedy at all', async () => {
+    errors.length = 0;
+    remedies.length = 0;
     const win = stubWindow();
     try {
-      await handleErrorResponse(response(403, { error: true, message: 'nope' }), signal, true);
+      await handleErrorResponse(
+        response(403, { error: true, message: 'forbidden', code: 'insufficient_permissions' }),
+        signal,
+        true,
+      );
+      expect(remedies).toEqual([]);
       expect(win.dispatched).toEqual([]);
     } finally {
       win.restore();

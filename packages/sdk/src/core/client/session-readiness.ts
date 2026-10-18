@@ -11,7 +11,6 @@ import {
   setSessionRuntime,
 } from '../session/session-runtime-registry';
 import { SessionNotReadyError } from './session-shared';
-import { inFlightSessionStarts } from './session-start';
 import { bindSessionStart } from './session-start';
 export function bindSessionReadiness(
   projectId: string,
@@ -76,33 +75,15 @@ export function bindSessionReadiness(
       return _ready;
     }
 
-    // Dedup concurrent starts for this (projectId, sessionId) — see
-    // `inFlightSessionStarts`'s doc comment. If another call (this handle or
-    // a different one) already kicked off `/start`, ride its result instead
-    // of issuing a second POST.
-    const key = `${projectId}\n${sessionId}`;
-    const inFlight = inFlightSessionStarts.get(key);
-    if (inFlight) {
-      _ready = await inFlight;
-      await previewConfig;
-      return _ready;
-    }
-
-    const startPromise = startRuntime(readyTimeoutMs);
-
-    inFlightSessionStarts.set(key, startPromise);
-    try {
-      _ready = await startPromise;
-      // Resolved concurrently with the boot above, so this is already
-      // settled — awaited here only so `previewUrl()` can never be reached
-      // before the deployment's preview addressing is known.
-      await previewConfig;
-      return _ready;
-    } finally {
-      if (inFlightSessionStarts.get(key) === startPromise) {
-        inFlightSessionStarts.delete(key);
-      }
-    }
+    // Concurrent starts for the same (projectId, sessionId) are deduped
+    // inside `startRuntime` (the single-flight lives beside the /start poll
+    // in session-start.ts) — this call just rides or registers the result.
+    _ready = await startRuntime(readyTimeoutMs);
+    // Resolved concurrently with the boot above, so this is already
+    // settled — awaited here only so `previewUrl()` can never be reached
+    // before the deployment's preview addressing is known.
+    await previewConfig;
+    return _ready;
   }
 
   /** Throw `SessionNotReadyError` if neither this handle nor the registry has resolved a runtime yet. */

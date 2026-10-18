@@ -36,17 +36,22 @@ import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix'
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
-import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { invalidateTokenCache } from '@/lib/auth-token';
-import { type AALResponse, mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
-import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
+import { invalidateTokenCache } from '@/lib/auth-token';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
+import { type AALResponse, mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
+import { cn } from '@/lib/utils';
 
-import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+import { MFA_REQUIRED_EVENT } from '@/lib/access-remedy-events';
+import {
+  MFA_VERIFIED_EVENT,
+  armPendingMfaAction,
+  clearPendingMfaAction,
+} from './mfa-pending-action';
 
-export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
+export { MFA_REQUIRED_EVENT };
 export { MFA_VERIFIED_EVENT };
 
 /**
@@ -76,7 +81,12 @@ interface MfaChallengeDialogProps {
   onVerified?: () => void;
 }
 
-export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }: MfaChallengeDialogProps) {
+export function MfaChallengeDialog({
+  open,
+  dismissible,
+  onDismiss,
+  onVerified,
+}: MfaChallengeDialogProps) {
   const t = useTranslations('mfaStepUp');
   const [code, setCode] = useState('');
   const queryClient = useQueryClient();
@@ -151,7 +161,11 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
             {noFactor ? t('noFactorTitle') : t('title')}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground mt-3 text-sm text-pretty">
-            {noFactor ? t('noFactorDescription') : dismissible ? t('actionDescription') : t('gateDescription')}
+            {noFactor
+              ? t('noFactorDescription')
+              : dismissible
+                ? t('actionDescription')
+                : t('gateDescription')}
           </DialogDescription>
 
           {factorsQuery.isLoading ? (
@@ -224,7 +238,12 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
               </Button>
             </div>
           ) : (
-            <Button type="button" variant="secondary" className="mt-10 self-start" onClick={() => void performSignOut()}>
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-10 self-start"
+              onClick={() => void performSignOut()}
+            >
               {t('signOut')}
             </Button>
           )}
@@ -268,7 +287,10 @@ function CodeCells({
           key={i}
           className="border-border flex h-15 w-13 items-center justify-center border-r font-mono text-2xl last:border-r-0"
         >
-          {code[i] ?? (i === active ? <span className="bg-foreground h-6 w-px animate-pulse motion-reduce:animate-none" /> : null)}
+          {code[i] ??
+            (i === active ? (
+              <span className="bg-foreground h-6 w-px animate-pulse motion-reduce:animate-none" />
+            ) : null)}
         </span>
       ))}
     </div>

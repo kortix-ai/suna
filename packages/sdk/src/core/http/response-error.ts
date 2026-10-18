@@ -160,15 +160,6 @@ export async function handleErrorResponse<T>(
     try {
       platformConfig().onAccessRemedy?.(remedyCode);
     } catch {}
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      try {
-        window.dispatchEvent(
-          new CustomEvent(
-            remedyCode === 'account_mfa_required' ? 'kortix:mfa-required' : 'kortix:sso-required',
-          ),
-        );
-      } catch {}
-    }
   }
   if (response.status === 431) {
     error = new RequestTooLargeError(431, {

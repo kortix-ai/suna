@@ -20,7 +20,7 @@ import { runtimeNotReadyMessage } from './session-shared';
 export const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
 
 export function bindSessionStart(projectId: string, sessionId: string) {
-  async function startRuntime(readyTimeoutMs: number): Promise<SessionRuntimeEntry> {
+  async function pollStartRuntime(readyTimeoutMs: number): Promise<SessionRuntimeEntry> {
     // Poll /start (each call long-polls up to 30s) until the runtime is
     // ready. `/start` returns `retriable: true` while the sandbox is still
     // provisioning/starting — a cold start can outlast a single long-poll —
@@ -76,6 +76,25 @@ export function bindSessionStart(projectId: string, sessionId: string) {
       runtimeUrl,
       sandboxId: externalId,
     };
+  }
+
+  // The single-flight lives HERE, beside the /start poll it dedupes: a caller
+  // that races another (this handle or a different one for the same session)
+  // rides the in-flight result instead of issuing a second POST. Cleared on
+  // settle so a transient failure doesn't wedge the key.
+  const key = `${projectId}\n${sessionId}`;
+  async function startRuntime(readyTimeoutMs: number): Promise<SessionRuntimeEntry> {
+    const inFlight = inFlightSessionStarts.get(key);
+    if (inFlight) return inFlight;
+    const startPromise = pollStartRuntime(readyTimeoutMs);
+    inFlightSessionStarts.set(key, startPromise);
+    try {
+      return await startPromise;
+    } finally {
+      if (inFlightSessionStarts.get(key) === startPromise) {
+        inFlightSessionStarts.delete(key);
+      }
+    }
   }
 
   return startRuntime;

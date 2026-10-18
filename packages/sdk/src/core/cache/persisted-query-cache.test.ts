@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 
 import {
+  type KeyValueStorage,
   createPersistedQueryCache,
   isPersistableQueryKey,
-  type KeyValueStorage,
 } from './persisted-query-cache';
 
 /**
@@ -136,7 +136,12 @@ describe('a reload renders the last known data, then refreshes it', () => {
 
     const after = new QueryClient();
     after.setQueryData(PROJECT_KEY, { name: 'new' }, { updatedAt: T0 });
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after);
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
 
     expect(dataOf(after, PROJECT_KEY)).toEqual({ name: 'new' });
   });
@@ -152,7 +157,12 @@ describe('what is kept', () => {
     await cache.flush();
 
     const after = new QueryClient();
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: () => true, now: () => T0 }).restore(after);
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: () => true,
+      now: () => T0,
+    }).restore(after);
     expect(dataOf(after, SESSIONS_KEY)).toEqual(sessionPages);
     expect(dataOf(after, MESSAGES_KEY)).toBeUndefined();
   });
@@ -162,14 +172,23 @@ describe('what is kept', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(PROJECT_KEY, { name: 'kept' }, { updatedAt: T0 });
     await client
-      .fetchQuery({ queryKey: PROJECT_KEY, queryFn: () => Promise.reject(new Error('502')), staleTime: 0 })
+      .fetchQuery({
+        queryKey: PROJECT_KEY,
+        queryFn: () => Promise.reject(new Error('502')),
+        staleTime: 0,
+      })
       .catch(() => undefined);
     expect(client.getQueryState(PROJECT_KEY)?.status).toBe('error');
     const { cache } = persistNow(storage, client);
     await cache.flush();
 
     const after = new QueryClient();
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after);
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
     expect(dataOf(after, PROJECT_KEY)).toEqual({ name: 'kept' });
   });
 
@@ -183,7 +202,12 @@ describe('what is kept', () => {
     await cache.flush();
 
     const after = new QueryClient();
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after);
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
     expect(dataOf(after, PROJECT_KEY)).toBeUndefined();
   });
 
@@ -206,7 +230,12 @@ describe('what is kept', () => {
     await cache.flush();
 
     const after = new QueryClient();
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after);
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
     expect(dataOf(after, ['kx', 'project', 'new', 'detail'])).toEqual({ big });
     expect(dataOf(after, ['kx', 'project', 'mid', 'detail'])).toEqual({ big });
     expect(dataOf(after, ['kx', 'project', 'old', 'detail'])).toBeUndefined();
@@ -229,14 +258,23 @@ describe('what is kept', () => {
     const client = new QueryClient();
     const big = 'x'.repeat(300);
     for (let i = 0; i < 4; i++) {
-      client.setQueryData(['kx', 'project', `p${i}`, 'detail'], { big }, { updatedAt: T0 - (4 - i) * 1_000 });
+      client.setQueryData(
+        ['kx', 'project', `p${i}`, 'detail'],
+        { big },
+        { updatedAt: T0 - (4 - i) * 1_000 },
+      );
     }
     const { cache } = persistNow(storage, client);
     await cache.flush();
 
     expect(refusals).toBeGreaterThan(0);
     const after = new QueryClient();
-    const restored = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after);
+    const restored = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
     expect(restored).toBeGreaterThan(0);
     expect(dataOf(after, ['kx', 'project', 'p3', 'detail'])).toEqual({ big });
   });
@@ -251,7 +289,12 @@ describe('whose cache, and how old', () => {
     await cache.flush();
 
     const other = new QueryClient();
-    const restored = createPersistedQueryCache({ storage, userId: 'user-b', shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(other);
+    const restored = createPersistedQueryCache({
+      storage,
+      userId: 'user-b',
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(other);
     expect(restored).toBe(0);
     expect(dataOf(other, PROJECT_KEY)).toBeUndefined();
   });
@@ -260,12 +303,25 @@ describe('whose cache, and how old', () => {
     const storage = memoryStorage();
     const client = new QueryClient();
     client.setQueryData(PROJECT_KEY, { v: 1 }, { updatedAt: T0 });
-    const writer = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, version: '1', throttleMs: 0, now: () => T0 });
+    const writer = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      version: '1',
+      throttleMs: 0,
+      now: () => T0,
+    });
     writer.persist(client);
     await writer.flush();
 
     const after = new QueryClient();
-    const reader = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, version: '2', now: () => T0 });
+    const reader = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      version: '2',
+      now: () => T0,
+    });
     expect(reader.restore(after)).toBe(0);
     expect(dataOf(after, PROJECT_KEY)).toBeUndefined();
     expect(storage.data.size).toBe(0);
@@ -302,13 +358,23 @@ describe('whose cache, and how old', () => {
 
     const after = new QueryClient();
     expect(
-      createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(after),
+      createPersistedQueryCache({
+        storage,
+        userId: USER,
+        shouldPersist: isPersistableQueryKey,
+        now: () => T0,
+      }).restore(after),
     ).toBe(0);
   });
 
   test('a corrupt entry is removed, not thrown', () => {
     const storage = memoryStorage();
-    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    });
     storage.setItem(cache.storageKey, '{not json');
     expect(cache.restore(new QueryClient())).toBe(0);
     expect(storage.data.has(cache.storageKey)).toBe(false);
@@ -319,7 +385,13 @@ describe('writes', () => {
   test('coalesces a burst of updates into one write', async () => {
     const storage = memoryStorage();
     const client = new QueryClient();
-    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, throttleMs: 50, now: () => T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 50,
+      now: () => T0,
+    });
     cache.persist(client);
     for (let i = 0; i < 10; i++) client.setQueryData(PROJECT_KEY, { i }, { updatedAt: T0 + i });
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -329,7 +401,13 @@ describe('writes', () => {
   test('ignores updates to queries it does not keep', async () => {
     const storage = memoryStorage();
     const client = new QueryClient();
-    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, throttleMs: 0, now: () => T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 0,
+      now: () => T0,
+    });
     cache.persist(client);
     client.setQueryData(MESSAGES_KEY, [{ id: 'msg_1' }], { updatedAt: T0 });
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -339,7 +417,13 @@ describe('writes', () => {
   test('the returned stop function ends the subscription', async () => {
     const storage = memoryStorage();
     const client = new QueryClient();
-    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, throttleMs: 0, now: () => T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 0,
+      now: () => T0,
+    });
     const stop = cache.persist(client);
     stop();
     client.setQueryData(PROJECT_KEY, { name: 'x' }, { updatedAt: T0 });
@@ -388,9 +472,12 @@ describe('a restored entry refetches once', () => {
     await cache.flush();
 
     const after = new QueryClient();
-    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(
-      after,
-    );
+    createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      now: () => T0,
+    }).restore(after);
 
     expect(after.getQueryState(PROJECT_KEY)?.isInvalidated).toBe(true);
     // Only what was restored: an entry the client already had is left as it is.
@@ -405,7 +492,13 @@ describe('flush', () => {
     const storage = memoryStorage();
     const client = new QueryClient();
     client.setQueryData(PROJECT_KEY, { name: 'x' }, { updatedAt: T0 });
-    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, throttleMs: 50, now: () => T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 50,
+      now: () => T0,
+    });
     cache.persist(client);
 
     await cache.flush();
@@ -421,11 +514,25 @@ describe('flush', () => {
 describe('isPersistableQueryKey — the session tree (KRTX-639)', () => {
   const P = ['kx', 'project', 'p1', 'sessions'] as const;
   test('keeps a filtered top-level list and a parent’s children, so the sidebar paints on reload', () => {
-    expect(isPersistableQueryKey([...P, 'list-paged', 'visible', { parent: 'root', startedBy: 'me', q: null }])).toBe(true);
+    expect(
+      isPersistableQueryKey([
+        ...P,
+        'list-paged',
+        'visible',
+        { parent: 'root', startedBy: 'me', q: null },
+      ]),
+    ).toBe(true);
     expect(isPersistableQueryKey([...P, 'list-children', 'parent-1', ''])).toBe(true);
   });
   test('never keeps a search: its text is the user’s, and its answer is momentary', () => {
-    expect(isPersistableQueryKey([...P, 'list-paged', 'visible', { parent: 'root', startedBy: null, q: 'rent' }])).toBe(false);
+    expect(
+      isPersistableQueryKey([
+        ...P,
+        'list-paged',
+        'visible',
+        { parent: 'root', startedBy: null, q: 'rent' },
+      ]),
+    ).toBe(false);
     expect(isPersistableQueryKey([...P, 'list-children', 'parent-1', 'rent'])).toBe(false);
   });
 });
