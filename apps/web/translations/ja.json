@@ -20155,7 +20155,17 @@
       "agentsListSubagentsTitle": "サブエージェント",
       "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
       "agentsListAlsoSubagent": "サブエージェントとしても使用",
-      "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。"
+      "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。",
+      "text51e6bc656528": "Telegram ボットからエージェントとチャットできます。",
+      "text00c7991f0490": "Telegram を接続",
+      "texta832efd235a7": "Telegram の @BotFather でボットを作成し、そのトークンをここに貼り付けてください。Kortix が Webhook を登録し、トークンはサーバーに保管されます。",
+      "text2c3059c25723": "許可されたユーザー",
+      "text71552d197b53": "許可する Telegram ユーザー ID",
+      "text1f7a451d4722": "数値 ID をカンマ区切りで入力します。ボットと話せるのはこの人たちだけです。それ以外の人には、その人の ID を示す返信が届きます。",
+      "text50fcd9c3c020": "ユーザー ID はカンマ区切りの数値で入力してください。",
+      "text815464994ec4": "Telegram を接続しました",
+      "textdfea5351a743": "Telegram の接続を解除しました",
+      "text2f95b1c9ee2b": "許可されたユーザーを保存しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

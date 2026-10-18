@@ -20155,7 +20155,17 @@
       "agentsListSubagentsTitle": "子代理",
       "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
       "agentsListAlsoSubagent": "也可作为子代理",
-      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。"
+      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。",
+      "text51e6bc656528": "通过 Telegram 机器人与你的代理聊天。",
+      "text00c7991f0490": "连接 Telegram",
+      "texta832efd235a7": "在 Telegram 中用 @BotFather 创建一个机器人，然后在此粘贴它的令牌。Kortix 会注册 webhook，并将令牌保存在服务器上。",
+      "text2c3059c25723": "允许的用户",
+      "text71552d197b53": "允许的 Telegram 用户 ID",
+      "text1f7a451d4722": "数字 ID，用逗号分隔。只有这些人可以与机器人对话；其他人会收到一条显示其 ID 的回复。",
+      "text50fcd9c3c020": "用户 ID 必须是用逗号分隔的数字。",
+      "text815464994ec4": "Telegram 已连接",
+      "textdfea5351a743": "Telegram 已断开连接",
+      "text2f95b1c9ee2b": "已保存允许的用户"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

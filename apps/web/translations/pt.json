@@ -20155,7 +20155,17 @@
       "agentsListSubagentsTitle": "Subagentes",
       "agentsListSubagentsHint": "Outros agentes os chamam durante uma sessão. Ninguém inicia um chat com eles.",
       "agentsListAlsoSubagent": "Também subagente",
-      "servedModelTurnRow": "{requested} falhou ({reason}) — alterado para {served}."
+      "servedModelTurnRow": "{requested} falhou ({reason}) — alterado para {served}.",
+      "text51e6bc656528": "Converse com seu agente a partir de um bot do Telegram.",
+      "text00c7991f0490": "Conectar Telegram",
+      "texta832efd235a7": "Crie um bot com o @BotFather no Telegram e cole o token dele aqui. O Kortix registra o webhook e mantém o token no servidor.",
+      "text2c3059c25723": "Usuários permitidos",
+      "text71552d197b53": "IDs de usuário do Telegram permitidos",
+      "text1f7a451d4722": "IDs numéricos separados por vírgulas. Só essas pessoas podem falar com o bot; qualquer outra recebe uma resposta com o próprio ID.",
+      "text50fcd9c3c020": "Os IDs de usuário devem ser números separados por vírgulas.",
+      "text815464994ec4": "Telegram conectado",
+      "textdfea5351a743": "Telegram desconectado",
+      "text2f95b1c9ee2b": "Usuários permitidos salvos"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

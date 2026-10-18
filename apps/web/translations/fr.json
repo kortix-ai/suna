@@ -20155,7 +20155,17 @@
       "agentsListSubagentsTitle": "Sous-agents",
       "agentsListSubagentsHint": "D'autres agents les appellent pendant une session. Personne ne démarre de chat avec eux.",
       "agentsListAlsoSubagent": "Aussi sous-agent",
-      "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}."
+      "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}.",
+      "text51e6bc656528": "Discutez avec votre agent depuis un bot Telegram.",
+      "text00c7991f0490": "Connecter Telegram",
+      "texta832efd235a7": "Créez un bot avec @BotFather dans Telegram, puis collez son jeton ici. Kortix enregistre le webhook et garde le jeton sur le serveur.",
+      "text2c3059c25723": "Utilisateurs autorisés",
+      "text71552d197b53": "Identifiants Telegram autorisés",
+      "text1f7a451d4722": "Identifiants numériques séparés par des virgules. Seules ces personnes peuvent parler au bot ; les autres reçoivent une réponse qui indique leur identifiant.",
+      "text50fcd9c3c020": "Les identifiants doivent être des nombres séparés par des virgules.",
+      "text815464994ec4": "Telegram connecté",
+      "textdfea5351a743": "Telegram déconnecté",
+      "text2f95b1c9ee2b": "Utilisateurs autorisés enregistrés"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
