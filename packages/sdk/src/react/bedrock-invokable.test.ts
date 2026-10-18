@@ -211,9 +211,11 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
 
   test("the fallback's \"first model of provider\" loop uses the auto-seedable set", () => {
     expect(source).toContain('const fallbackModel = modelResolution.fallback;');
+    // The fallback chain lives in `resolveFallbackModel` (same file, extracted
+    // from the old IIFE verbatim) — assert on the helper that owns the loop.
     const block = resolution.slice(
-      resolution.indexOf('const fallback ='),
-      resolution.indexOf('const explicit ='),
+      resolution.indexOf('function resolveFallbackModel('),
+      resolution.indexOf('export function resolveComposerModel'),
     );
     expect(block).toContain('autoSeedableModels');
   });
