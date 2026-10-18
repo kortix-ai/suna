@@ -44,7 +44,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import type { McpServerApp } from '../install/mcp-first';
-import { addMcpServer, mcpServerIdentity } from './add-mcp-server';
+import { addMcpServer, mcpAppIdentity, mcpServerIdentity } from './add-mcp-server';
 
 type Audience = Pick<NewAccountDraft, 'audience' | 'picked'>;
 
@@ -97,7 +97,14 @@ export function AddMcpServerDialog({
 
   const [url, setUrl] = useState(app?.url ?? '');
   const [audience, setAudience] = useState<Audience>({ audience: 'private', picked: NO_PICKS });
-  const identity = url.trim() ? mcpServerIdentity(url, takenSlugs) : null;
+  // The catalogue app's own server, unchanged: named after the app, and its
+  // sign-in is known to be one click (`mcpServerFor`).
+  const appServer = app !== null && url.trim() === app.url;
+  const identity = !url.trim()
+    ? null
+    : appServer
+      ? mcpAppIdentity(app.name, takenSlugs)
+      : mcpServerIdentity(url, takenSlugs);
   const urlInvalid = url.trim() !== '' && identity === null;
 
   const add = useMutation({
@@ -106,6 +113,7 @@ export function AddMcpServerDialog({
         projectId,
         {
           url,
+          ...(appServer ? { appName: app.name, signIn: true } : {}),
           audience: audience.audience,
           grantees: newAccountGrantees(audience.picked),
           takenSlugs,

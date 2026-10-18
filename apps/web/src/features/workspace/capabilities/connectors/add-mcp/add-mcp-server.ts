@@ -38,6 +38,20 @@ export function mcpServerIdentity(
   return { slug, name };
 }
 
+/**
+ * A catalogue app's connector is named after the app, not after its MCP host:
+ * `gmailmcp.googleapis.com` would name every Google app "Googleapis".
+ */
+export function mcpAppIdentity(
+  appName: string,
+  takenSlugs: readonly string[],
+): { slug: string; name: string } {
+  const root = normalizeConnectorConnectionSlug(appName) || 'mcp';
+  let slug = root;
+  for (let n = 2; takenSlugs.includes(slug); n++) slug = `${root}-${n}`;
+  return { slug, name: appName };
+}
+
 export type Grantee = { type: 'user' | 'group' | 'service_account'; id: string };
 
 export interface AddMcpServerDeps {
@@ -70,6 +84,11 @@ export async function addMcpServer(
   projectId: string,
   input: {
     url: string;
+    /** A catalogue app's own server: the connector is named after the app. */
+    appName?: string;
+    /** Sign in even when the server lists its tools without a credential
+     *  (Google's do): the caller already knows the sign-in is one click. */
+    signIn?: boolean;
     audience: 'private' | 'project' | 'members';
     /** Who "Specific people" picked. */
     grantees?: readonly Grantee[];
@@ -89,7 +108,9 @@ export async function addMcpServer(
   signInError: string | null;
   syncError: string | null;
 }> {
-  const identity = mcpServerIdentity(input.url, input.takenSlugs);
+  const identity = input.appName
+    ? mcpAppIdentity(input.appName, input.takenSlugs)
+    : mcpServerIdentity(input.url, input.takenSlugs);
   if (!identity) throw new Error('Enter the MCP server URL, starting with https://');
   const { slug, name } = identity;
   const created = await deps.createConnector(projectId, {
@@ -112,7 +133,7 @@ export async function addMcpServer(
   // server that sends no header can still publish its OAuth metadata at the
   // well-known URLs, which the sign-in discovery also tries.
   const challenged = created.syncError !== null && isAuthChallenge(created.syncError);
-  if (!created.signInPending && !challenged) {
+  if (!input.signIn && !created.signInPending && !challenged) {
     return { slug, name, connectionId, signInUrl: null, signInError: null, syncError: created.syncError };
   }
   // The connector and its account exist either way: a sign-in that cannot

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { addMcpServer, mcpServerIdentity, type AddMcpServerDeps } from './add-mcp-server';
+import {
+  addMcpServer,
+  mcpAppIdentity,
+  mcpServerIdentity,
+  type AddMcpServerDeps,
+} from './add-mcp-server';
 
 /**
  * KRTX-2185: adding an MCP server took 8 steps (New → custom connector → type
@@ -66,6 +71,18 @@ function fakes(
 }
 
 describe('addMcpServer', () => {
+  test('a catalogue app is named after the app and signs in even when its server lists tools without a 401', async () => {
+    const { deps, calls, drafts } = fakes({ signInPending: false });
+    const result = await addMcpServer(
+      'p1',
+      { url: 'https://gmailmcp.googleapis.com/mcp/v1', appName: 'Gmail', signIn: true, audience: 'private', takenSlugs: [], returnUrl: () => 'http://app/x' },
+      deps,
+    );
+    expect(drafts[0]).toMatchObject({ slug: 'gmail', name: 'Gmail', provider: 'mcp' });
+    expect(calls).toContain('sign-in:conn-me');
+    expect(result.signInUrl).not.toBeNull();
+  });
+
   test('"Only you" makes no shared account and signs in a private one', async () => {
     const { deps, calls, drafts } = fakes();
     const result = await addMcpServer(
@@ -190,5 +207,13 @@ describe('addMcpServer', () => {
       addMcpServer('p1', { url: 'not a url', audience: 'private', takenSlugs: [], returnUrl: () => 'x' }, deps),
     ).rejects.toThrow();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('mcpAppIdentity', () => {
+  test('a catalogue app is named after the app, not its MCP host, and never reuses a slug', () => {
+    expect(mcpServerIdentity('https://gmailmcp.googleapis.com/mcp/v1', [])?.name).not.toBe('Gmail');
+    expect(mcpAppIdentity('Gmail', [])).toEqual({ slug: 'gmail', name: 'Gmail' });
+    expect(mcpAppIdentity('Google Calendar', ['google-calendar']).slug).toBe('google-calendar-2');
   });
 });
