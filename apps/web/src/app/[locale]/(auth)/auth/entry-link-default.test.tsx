@@ -15,8 +15,8 @@
 // banner (role=alert) on screen after the toast expires, on the step that
 // produced it — password form included, since it re-offers the link.
 import { expect, mock, test } from 'bun:test';
-import { act, create, type ReactTestInstance } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
+import { type ReactTestInstance, act, create } from 'react-test-renderer';
 import messages from '../../../../../translations/en.json';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
