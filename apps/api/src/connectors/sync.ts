@@ -1066,9 +1066,29 @@ async function upsertConnector(
   // `ensureDefaultConnection` writes through its own connection. A computer
   // account is always one paired machine, so a computer connector never gets
   // a machine-less project default.
-  if (connectorId && spec.authorizationStrategy === 'project' && spec.provider !== 'computer') {
+  if (
+    connectorId &&
+    spec.authorizationStrategy === 'project' &&
+    spec.provider !== 'computer' &&
+    !(await skipsEmptyProjectAccount(projectId, spec))
+  ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
+}
+
+/**
+ * connectors_v2: an account is personal unless someone shares it, so sync seeds
+ * no empty "Everyone in project" account (KRTX-2317). A channel connector keeps
+ * its project account: the install token is the project's own identity.
+ */
+export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
+  if (spec.provider === 'channel') return false;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
 }
 
 /**
