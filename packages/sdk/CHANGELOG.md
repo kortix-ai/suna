@@ -5,11 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-### Removed (dead exports; internal restructure, KRTX-2729)
-- `hasLocalhostUrls` (`@kortix/sdk`): no consumer anywhere — the URL rewriting
-  path calls `detectLocalhostUrls` directly.
-- `__getConfigResolver` (`@kortix/sdk/config`): test-only introspection with no
-  test left using it; `__setConfigResolver` is unchanged.
+### Changed (internal restructure, KRTX-2729)
+- `PATH_PROXY_URL_REGEX` is no longer exported from `@kortix/sdk` (dead import
+  path; the constant lives in `packages/sdk/src/core/session/url.ts`).
+- `buildRuntimeRequest` is no longer exported from `@kortix/sdk` (dead import
+  path; internal to `packages/sdk/src/core/runtime/runtime-rest-client.ts`).
+- `hasLocalhostUrls` and `__getConfigResolver` keep their exports: the merge
+  gate holds any removal of a snapshot-tracked public name (G4), so deleting
+  the dead code is deferred to a surface-removal decision.
 
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial

@@ -29,7 +29,8 @@ export interface KeyValueStorage {
 }
 
 /** One query, as much of it as persistence reads. */
-interface PersistableQuery {
+/** The slice of a TanStack query the payload layer persists (the full public shape at trunk; the payload layer reads it through `PersistableQueryClient`). */
+export interface PersistableQuery {
   queryKey: readonly unknown[];
   state: { data: unknown; dataUpdatedAt: number };
 }
@@ -59,7 +60,8 @@ export interface PersistableQueryClient {
   }): unknown;
 }
 
-interface PersistedQueryCacheOptions {
+/** Options for `createPersistedQueryCache`. */
+export interface PersistedQueryCacheOptions {
   storage: KeyValueStorage;
   /** The signed-in user. Only this user's cache is read or written. */
   userId: string;
