@@ -1149,6 +1149,11 @@
     "tokens": {
       "keyRevoked": "API key revoked",
       "revokeFailed": "Could not revoke API key",
+      "deleteKey": "Delete key",
+      "deleteTitle": "Delete this API key?",
+      "deleteDescription": "{name} is already revoked. Deleting removes it from the list. This action cannot be undone.",
+      "keyDeleted": "API key deleted",
+      "deleteFailed": "Could not delete API key",
       "newKey": "New key",
       "confirmIdentity": "Confirm your identity",
       "verify": "Verify",

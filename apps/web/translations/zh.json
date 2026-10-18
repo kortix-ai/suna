@@ -1327,6 +1327,11 @@
     "tokens": {
       "keyRevoked": "API 密钥已撤销",
       "revokeFailed": "无法撤销 API 密钥",
+      "deleteKey": "删除密钥",
+      "deleteTitle": "删除此 API 密钥？",
+      "deleteDescription": "{name} 已被撤销。删除会将其从列表中移除。此操作无法撤消。",
+      "keyDeleted": "API 密钥已删除",
+      "deleteFailed": "无法删除 API 密钥",
       "newKey": "新建密钥",
       "confirmIdentity": "确认身份",
       "verify": "验证",

@@ -1327,6 +1327,11 @@
     "tokens": {
       "keyRevoked": "API キーを取り消しました",
       "revokeFailed": "API キーを取り消せませんでした",
+      "deleteKey": "キーを削除",
+      "deleteTitle": "このAPIキーを削除しますか？",
+      "deleteDescription": "{name} はすでに取り消されています。削除すると一覧から除かれます。この操作は元に戻せません。",
+      "keyDeleted": "APIキーを削除しました",
+      "deleteFailed": "APIキーを削除できませんでした",
       "newKey": "新しいキー",
       "confirmIdentity": "本人確認",
       "verify": "確認",

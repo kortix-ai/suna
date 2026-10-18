@@ -1327,6 +1327,11 @@
     "tokens": {
       "keyRevoked": "API-Schlüssel widerrufen",
       "revokeFailed": "API-Schlüssel konnte nicht widerrufen werden",
+      "deleteKey": "Schlüssel löschen",
+      "deleteTitle": "Diesen API-Schlüssel löschen?",
+      "deleteDescription": "{name} wurde bereits widerrufen. Das Löschen entfernt ihn aus der Liste. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "keyDeleted": "API-Schlüssel gelöscht",
+      "deleteFailed": "API-Schlüssel konnte nicht gelöscht werden",
       "newKey": "Neuer Schlüssel",
       "confirmIdentity": "Identität bestätigen",
       "verify": "Bestätigen",

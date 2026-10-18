@@ -1327,6 +1327,11 @@
     "tokens": {
       "keyRevoked": "Clé API révoquée",
       "revokeFailed": "Impossible de révoquer la clé API",
+      "deleteKey": "Supprimer la clé",
+      "deleteTitle": "Supprimer cette clé API ?",
+      "deleteDescription": "{name} est déjà révoquée. Sa suppression la retire de la liste. Cette action est irréversible.",
+      "keyDeleted": "Clé API supprimée",
+      "deleteFailed": "Impossible de supprimer la clé API",
       "newKey": "Nouvelle clé",
       "confirmIdentity": "Confirmez votre identité",
       "verify": "Vérifier",
