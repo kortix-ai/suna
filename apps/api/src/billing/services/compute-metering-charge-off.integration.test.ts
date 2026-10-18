@@ -57,6 +57,7 @@ const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** 2 vCPU / 4 GB / 20 GB for one hour, at list price. */
 const HOURLY = 0.10944109589041096;
 const TEN_MINUTES = HOURLY / 6;
+const SECOND = 1_000;
 const MINUTE = 60_000;
 const USER = '00000000-0000-4000-a000-000000009d02';
 
@@ -133,7 +134,12 @@ withDb('metering with charging off', () => {
   test('the tick accrues cost on the row and writes no ledger entry', async () => {
     const accountId = await account();
     const sandboxId = await sandbox(accountId);
-    const startedAt = iso(Date.now() - 10 * MINUTE);
+    // Five extra seconds: the tick bills from the backdated cursor to its own
+    // `now`, and cost_usd is numeric(12,6). A window of exactly ten minutes
+    // lands within one rounding step of the TEN_MINUTES floor below — settle
+    // runs are often <10ms and then the floor fails on rounding alone. Ten
+    // minutes plus five seconds keeps the floor deterministic.
+    const startedAt = iso(Date.now() - 10 * MINUTE - 5 * SECOND);
     const windowId = await startComputeSession({ sandboxId, accountId, spec: SPEC });
     expect(windowId).not.toBeNull();
 
@@ -147,9 +153,9 @@ withDb('metering with charging off', () => {
     expect(accrued.settled).toBeGreaterThanOrEqual(1);
 
     const [row] = await windowsOf(sandboxId);
-    // ~10 minutes of 2 vCPU / 4 GB / 20 GB at list price (the suite takes a few
-    // wall-clock milliseconds after the backdate, so the window is never
-    // shorter than ten minutes and never meaningfully longer).
+    // 10 min + a few wall-clock seconds of 2 vCPU / 4 GB / 20 GB at list
+    // price: always past the TEN_MINUTES floor (the extra backdate), never
+    // meaningfully past it (the settle runs right after the backdate).
     expect(row!.costUsd).toBeGreaterThan(TEN_MINUTES);
     expect(row!.costUsd).toBeLessThan(TEN_MINUTES + 0.001);
     // THE point: metering accrued, charging moved nothing.
