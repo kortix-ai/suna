@@ -23,6 +23,8 @@ import { describe, expect, test } from 'bun:test';
 // The module's OWN classifier, not a copy of it — a test that re-implements
 // the rule passes while the rule rots.
 import { unreachableCauseForThrow as causeForThrow } from './opencode-mapping';
+import { TranscriptReadError, isRuntimeUnavailableError } from './lib/runtime-read-failure';
+import { PlatinumHttpError, PlatinumSandboxNotRunningError } from '../shared/platinum';
 
 describe('the cause behind an unreachable', () => {
   test('a request budget overrun is timeout_or_network, not an endpoint error', () => {
@@ -49,5 +51,60 @@ describe('the cause behind an unreachable', () => {
       expect(cause).toBe(`http_${status}`);
       expect(Number(cause.slice('http_'.length))).toBe(status);
     }
+  });
+});
+
+describe('isRuntimeUnavailableError: the expected states a fail-open transcript read tolerates', () => {
+  // The inbox read and the transcript capture fail open on these; warning on
+  // them was the spike (a stopped box is the EXPECTED state of an idle
+  // session, not a platform fault).
+  test('the provider\'s own typed states are expected', () => {
+    // 409 sandbox_not_running — Platinum auto-stops idle boxes by design.
+    expect(isRuntimeUnavailableError(new PlatinumSandboxNotRunningError())).toBe(true);
+    // Any other provider answer (a gone box's 404, a 5xx) is the same family.
+    expect(isRuntimeUnavailableError(new PlatinumHttpError('platinum POST /x -> 404 gone', 404, '{}'))).toBe(true);
+  });
+
+  test('a transcript read that the runtime answered 404/502/503/504 is expected', () => {
+    for (const status of [404, 502, 503, 504]) {
+      expect(isRuntimeUnavailableError(new TranscriptReadError(status))).toBe(true);
+    }
+    // A 500 or a 401 from the daemon is NOT an expected state — it warns.
+    expect(isRuntimeUnavailableError(new TranscriptReadError(500))).toBe(false);
+    expect(isRuntimeUnavailableError(new TranscriptReadError(401))).toBe(false);
+  });
+
+  test('a request budget overrun or a dead connection is expected', () => {
+    const timeout = new Error('The operation timed out.');
+    timeout.name = 'TimeoutError';
+    expect(isRuntimeUnavailableError(timeout)).toBe(true);
+    const abort = new Error('The operation was aborted');
+    abort.name = 'AbortError';
+    expect(isRuntimeUnavailableError(abort)).toBe(true);
+    // Bun raises transport failures as plain messages, not codes.
+    expect(isRuntimeUnavailableError(new Error('Unable to connect'))).toBe(true);
+    expect(isRuntimeUnavailableError(new Error('socket connection was closed'))).toBe(true);
+    expect(isRuntimeUnavailableError(new TypeError('fetch failed'))).toBe(true);
+  });
+
+  test('an error-code shape alone is NOT expected: a Postgres outage must keep its warn', () => {
+    // The catches that use this classifier also wrap database work. Postgres
+    // sets `code` (ECONNRESET, ECONNREFUSED, 23505…) on its errors, so a
+    // code-based family would log a database outage as an expected runtime
+    // state. Codes never classify here — the measured runtime classes all
+    // arrive as a status, a name, or a message.
+    const pgDrop = new Error('connect ECONNREFUSED 127.0.0.1:5432');
+    (pgDrop as { code?: string }).code = 'ECONNREFUSED';
+    expect(isRuntimeUnavailableError(pgDrop)).toBe(false);
+    const pgReset = new Error('Connection terminated unexpectedly');
+    (pgReset as { code?: string }).code = 'ECONNRESET';
+    expect(isRuntimeUnavailableError(pgReset)).toBe(false);
+    expect(isRuntimeUnavailableError(Object.assign(new Error('relation "x" does not exist'), { code: '42P01' }))).toBe(false);
+  });
+
+  test('a sandbox whose row is gone is expected; a code bug is not', () => {
+    expect(isRuntimeUnavailableError(new Error('[proxy] no sandbox row for sbx_123'))).toBe(true);
+    expect(isRuntimeUnavailableError(new Error('Cannot read properties of undefined'))).toBe(false);
+    expect(isRuntimeUnavailableError('not an error at all')).toBe(false);
   });
 });
