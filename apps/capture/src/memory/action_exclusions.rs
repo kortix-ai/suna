@@ -138,10 +138,12 @@ impl ActionExclusions {
     /// Keep `event` (true) or drop it unwritten (false).
     pub fn admit(&self, event: &Value) -> bool {
         let s = self.settings();
-        let reason = self
-            .source
-            .latest()
+        let latest = self.source.latest();
+        // Record only included fails closed: an unknown front window is not included.
+        let unknown = (latest.is_none() && s.record_only_included).then_some("not_included");
+        let reason = latest
             .and_then(|f| excluded_reason(&s, &f))
+            .or(unknown)
             .or_else(|| {
                 // The frame may show what came to front while it was taken.
                 is_screenshot(event)
@@ -409,6 +411,30 @@ pub(crate) mod tests {
         let paths = library(&Settings::default());
         let gate = ActionExclusions::new(&paths, Arc::new(FakeFront::default()));
         assert!(gate.admit(&key("a")));
+        let _ = std::fs::remove_dir_all(&paths.root);
+    }
+
+    #[test]
+    fn record_only_included_keeps_actions_in_included_apps_and_sites_only() {
+        let mut s = Settings::default();
+        s.record_only_included = true;
+        s.included_bundle_ids = vec!["com.tinyspeck.slackmacgap".into()];
+        s.included_domains = vec!["github.com".into()];
+        let paths = library(&s);
+        let fake = Arc::new(FakeFront::default());
+        let gate = ActionExclusions::new(&paths, fake.clone());
+        assert!(!gate.admit(&key("a")), "an unknown front window is not included");
+        for (f, keep) in [
+            (front("com.tinyspeck.slackmacgap", None, "general"), true),
+            (front("com.google.Chrome", Some("https://github.com/kortix-ai"), "PR"), true),
+            (front("com.google.Chrome", Some("https://youtube.com/"), "Video"), false),
+            (front("com.spotify.client", None, "Spotify"), false),
+        ] {
+            *fake.now.lock() = Some(f.clone());
+            assert_eq!(gate.admit(&key("a")), keep, "{f:?}");
+        }
+        gate.flush();
+        assert_eq!(status(&paths)["last_reason"], json!("not_included"));
         let _ = std::fs::remove_dir_all(&paths.root);
     }
 

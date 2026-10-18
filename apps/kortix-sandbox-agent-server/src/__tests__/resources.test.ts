@@ -218,7 +218,7 @@ describe('readResourceSnapshot', () => {
     const s = await readResourceSnapshot({ daemonPid: process.pid, runtimePid: null, diskPaths: ['/', '/definitely/missing'] })
     expect(s.disks).toHaveLength(2)
     expect(s.disks[0]?.totalMb === null || (s.disks[0]?.totalMb as number) > 0).toBe(true)
-    expect(s.disks[1]).toEqual({ path: '/definitely/missing', totalMb: null, freeMb: null, usedPct: null })
+    expect(s.disks[1]).toEqual({ path: '/definitely/missing', totalMb: null, freeMb: null, usedPct: null, type: null })
     expect(s.runtime).toBeNull()
     expect(typeof s.at).toBe('string')
   })

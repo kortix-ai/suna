@@ -117,7 +117,6 @@ const page = (input: {
     projectId: input.project,
     accountId: ACCOUNT,
     userId: input.viewer,
-    effectiveRole: 'write' as never,
     scope: input.scope ?? 'visible',
     boundCredentialSessionId: null,
     probeManageCapability: async () => input.manager === true,

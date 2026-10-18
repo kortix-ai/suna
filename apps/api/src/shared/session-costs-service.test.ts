@@ -723,6 +723,29 @@ describe('getSessionCostRecord service', () => {
     expect(await getSessionCostRecord({ accountId, projectId, sessionId })).toBeNull();
     expect(queryRecords).toHaveLength(1);
   });
+
+  test('the model distinct excludes the empty provider/model pair the refusal rows carry', async () => {
+    // KRTX-1749: refusal rows (post-auth 4xx and attributed 401s) answer
+    // nothing — provider and resolved model are both empty. They must not
+    // make a refusal-only session report one "model".
+    resultForQuery = (fields, table) => {
+      // The aggregate query only runs after the scoped base session resolves.
+      if (table === projectSessions && 'projectName' in fields) return [baseSessionRow];
+      return [];
+    };
+    await getSessionCostRecord({ accountId, projectId, sessionId });
+    const agg = queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'llmCost' in query.fields,
+    );
+    if (!agg) throw new Error('the llm aggregate query was not recorded');
+    const dialect = new PgDialect();
+    const rendered = dialect.sqlToQuery(sql`${agg.fields.modelCount}`).sql;
+    expect(rendered).toContain('count(distinct');
+    // The filter is the fix: without it the refusal rows add one ('', '')
+    // pair to every session's distinct count.
+    expect(rendered).toContain('filter');
+    expect(rendered).toContain("<> ''");
+  });
 });
 
 describe('listProjectGatewaySessionSpend service', () => {

@@ -70,21 +70,36 @@ describe('validateGatewayKey', () => {
     expect(await validateGatewayKey(secretKey)).not.toBeNull();
   });
 
-  test('rejects a revoked key', async () => {
-    const { secretKey } = await seedKey({ status: 'revoked' });
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+  test('a revoked key is refused but keeps its identity (gateway trace attribution)', async () => {
+    const { secretKey, keyId } = await seedKey({ status: 'revoked' });
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId,
+      refused: 'revoked',
+    });
   });
 
-  test('rejects a key past its expiry', async () => {
+  test('a key past its expiry is refused but keeps its identity', async () => {
     const { secretKey } = await seedKey({ expiresAt: new Date(Date.now() - 1) });
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+    const result = await validateGatewayKey(secretKey);
+    expect(result).not.toBeNull();
+    expect(result?.refused).toBe('expired');
+    expect(result?.accountId).toBe(ACCOUNT);
   });
 
-  test('rejects exactly at the expiry boundary instant', async () => {
+  test('refuses exactly at the expiry boundary instant', async () => {
     const now = new Date();
     const { secretKey } = await seedKey({ expiresAt: now });
     await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId: expect.any(String),
+      refused: 'expired',
+    });
   });
 
   test('falls back userId to accountId when createdBy is null', async () => {
@@ -92,7 +107,7 @@ describe('validateGatewayKey', () => {
     expect((await validateGatewayKey(secretKey))?.userId).toBe(ACCOUNT);
   });
 
-  test('rejects an unknown secret', async () => {
+  test('an unknown secret matches nothing and stays unattributed', async () => {
     expect(await validateGatewayKey(`kortix_gw_${crypto.randomUUID()}`)).toBeNull();
   });
 

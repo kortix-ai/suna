@@ -27,7 +27,11 @@ import {
   selectPoliciesForRead,
 } from './policy';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
-import { ensureComputerConnector, setMaterializedComputerConnectorPolicies } from './sync';
+import {
+  ensureComputerConnector,
+  rematerializeCatalogAfterCredentialUpdate,
+  setMaterializedComputerConnectorPolicies,
+} from './sync';
 import {
   authOf,
   baseUrlOf,
@@ -88,7 +92,15 @@ export async function setConnectorSecretBinding(
     .update(connectors)
     .set({ authSecret: secretIdentifier, updatedAt: new Date() })
     .where(eq(connectors.connectorId, connector.connectorId));
-  return { ok: true as const };
+  // Same as storing a credential: an MCP connector re-lists its tools with it now.
+  const sync = await rematerializeCatalogAfterCredentialUpdate({
+    projectId,
+    accountId: connector.accountId,
+    provider: connector.providerType,
+    ownerType: 'project',
+    isDefault: true,
+  });
+  return { ok: true as const, ...(sync ? { sync } : {}) };
 }
 
 /**

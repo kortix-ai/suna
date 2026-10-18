@@ -62,7 +62,6 @@ const list = (filter: SessionListFilter, opts: { limit?: number; cursor?: string
     projectId: PROJECT,
     accountId: ACCOUNT,
     userId: VIEWER,
-    effectiveRole: 'write' as never,
     scope: opts.manager ? 'project' : 'visible',
     boundCredentialSessionId: null,
     probeManageCapability: async () => opts.manager === true,

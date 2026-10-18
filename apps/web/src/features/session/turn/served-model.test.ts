@@ -7,7 +7,6 @@ const models = [
   { providerID: 'kortix', providerName: 'Kortix', modelID: 'glm-5.3-flash', modelName: 'GLM 5.3 Flash' },
   { providerID: 'anthropic', providerName: 'Anthropic', modelID: 'claude-sonnet-5-5', modelName: 'Claude Sonnet 5.5' },
 ];
-const requested = { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' };
 const fallback: SessionModelUsage = {
   latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
   billed_cost: 0.875,
@@ -37,27 +36,19 @@ describe('modelNameOfWire', () => {
 
 describe('servedModelNotice', () => {
   // Incident 2026-10-02: the composer named the selected ChatGPT model while a
-  // Kortix model answered every request of the session.
-  test('a fallback answer for the selected model is named', () => {
-    expect(servedModelNotice(fallback, requested, models)).toEqual({
+  // Kortix model answered every request of the session. The notice now feeds
+  // the session modal; the composer strip is gone (KRTX-2685).
+  test('a fallback answer is named', () => {
+    expect(servedModelNotice(fallback, models)).toEqual({
       served: 'GLM 5.3 Flash',
       fallbackFrom: 'GPT-6.1 Sol (ChatGPT)',
     });
   });
 
-  test('no notice when the selected model answered, or before any answer', () => {
-    expect(servedModelNotice(direct, requested, models)).toBeNull();
-    expect(servedModelNotice({ latest: null, billed_cost: 0, turns: {} }, requested, models)).toBeNull();
-    expect(servedModelNotice(undefined, requested, models)).toBeNull();
-  });
-
-  test('no notice once the composer selects another model: the next request does not use the one that failed', () => {
-    expect(servedModelNotice(fallback, { providerID: 'kortix', modelID: 'glm-5.3-flash' }, models)).toBeNull();
-    expect(servedModelNotice(fallback, { providerID: 'anthropic', modelID: 'claude-sonnet-5-5' }, models)).toBeNull();
-  });
-
-  test('with no selection resolved yet, the fallback is still named', () => {
-    expect(servedModelNotice(fallback, null, models)?.served).toBe('GLM 5.3 Flash');
+  test('no notice when the session asked for the model that answered, or before any answer', () => {
+    expect(servedModelNotice(direct, models)).toBeNull();
+    expect(servedModelNotice({ latest: null, billed_cost: 0, turns: {} }, models)).toBeNull();
+    expect(servedModelNotice(undefined, models)).toBeNull();
   });
 });
 
@@ -66,11 +57,13 @@ describe('turnServedModel', () => {
     expect(turnServedModel(fallback, 'msg_a', models)).toEqual({
       models: ['GLM 5.3 Flash', 'GPT-6.1 Sol (ChatGPT)'],
       fallbackFrom: 'GPT-6.1 Sol (ChatGPT)',
+      fallbacks: [],
       billedCost: 0.75,
     });
     expect(turnServedModel(fallback, 'msg_b', models)).toEqual({
       models: ['GPT-6.1 Sol (ChatGPT)'],
       fallbackFrom: null,
+      fallbacks: [],
       billedCost: 0,
     });
   });
@@ -94,7 +87,7 @@ describe('turnServedModelResolver', () => {
       turns: { ...fallback.turns, msg_b: { served_models: ['glm-5.3-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.5 } },
     };
     expect(resolve(refetched, 'msg_a')).toBe(first);
-    expect(resolve(refetched, 'msg_b')).toEqual({ models: ['GLM 5.3 Flash'], fallbackFrom: 'GPT-6.1 Sol (ChatGPT)', billedCost: 0.5 });
+    expect(resolve(refetched, 'msg_b')).toEqual({ models: ['GLM 5.3 Flash'], fallbackFrom: 'GPT-6.1 Sol (ChatGPT)', fallbacks: [], billedCost: 0.5 });
     expect(resolve(refetched, 'msg_b')).not.toBe(resolve(fallback, 'msg_b'));
     expect(resolve(undefined, 'msg_a')).toBeUndefined();
   });

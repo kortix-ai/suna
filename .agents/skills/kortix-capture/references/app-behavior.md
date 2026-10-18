@@ -612,8 +612,13 @@ timeline and search over those recordings. Sync to Kortix is the default.
   earlier ones stay on this computer (`local_only` in the database). Signing out of Kortix
   turns sync off, keeps the recordings, and keeps recording.
 - **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Settings…", the
-  pauses (1 hour, until tomorrow, until resumed) or "Resume". There is no Quit. A managed
-  computer shows the organization and has no pauses.
+  pauses (1 hour, until tomorrow, until resumed) or "Resume", then "Restart Kortix
+  Capture" and "Quit Kortix Capture". Quit (`kortix-capture quit`) stops the background
+  service, the recorders and the icon until the app opens again or the next login
+  (`launchctl bootout` of the agent, `systemctl --user stop`, `schtasks /End`); it stays
+  installed and on at login. Restart (`kortix-capture restart`) ends the supervisor and
+  the OS starts it again (KeepAlive, `Restart=always`, the task's loop). A managed
+  computer shows the organization and has no pauses, Restart or Quit.
 - **Errors** in the window are one short sentence. The detail is in the log
   (Settings, About, Open logs).
 
@@ -813,6 +818,30 @@ channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
   subdomain, case-insensitively (`chase.com` covers `secure.chase.com`;
   `notchase.com` stays visible). It is best-effort: add missing banks under
   `excluded_domains`.
+- Cloud vs local: the organization's policy (account settings ▸ Kortix Capture ▸
+  Apps and websites) reaches every signed-in or enrolled computer within ~1 min and
+  shows locked; the person's own entries live in their settings and never upload.
+  The effective rules are the union; Never record wins. `privacy.member_inclusions`
+  false ignores the person's own inclusions (never their exclusions). A computer
+  synced to Kortix with no cached `policy.json` records nothing (`policy_pending`,
+  tray "Waiting for <org>'s settings") until the first fetch, so a new computer
+  starts under the organization's policy from its first frame.
+- Settings ▸ **Apps and websites** (always shown): "What to record" (everything
+  except Never record, or only included apps and websites), the Included list
+  and the Never record list. Adding one suggests installed apps (macOS,
+  `/api/installed-apps`), recorded apps and recorded websites. The policy's
+  `experimental.privacy_controls` now shows or hides personal-data masking only.
+- Record only included (`record_only_included`, `included_bundle_ids`,
+  `included_domains`; the policy's `privacy.*` of the same names turn it on and
+  add to the lists, and the person cannot turn it off). A window is recorded
+  only when its app is included or its page's website is (a website pattern
+  covers its subdomains, in any browser). Exclusions win. Both engines hide
+  every other window (`plan_displays` / `planDisplays`), a display with no
+  included window writes no frame, and the front-app checks and the action
+  recorder skip with `not_included`. On macOS an app with no visible included
+  window is hidden whole, so its panels and notifications stay out. A browser
+  window behind the focused one has no URL on Windows/Linux, so only an
+  included browser app keeps it visible. Audio is not filtered by app.
 - The login window, screen saver and lock screen never record, on every
   platform: macOS skips a locked session and always excludes
   `com.apple.loginwindow` and the screen saver; Windows always excludes

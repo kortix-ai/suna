@@ -56,6 +56,25 @@ export function isKortixInitiatedRemoval(row: Pick<RuntimeIdentityRow, 'status' 
   );
 }
 
+/**
+ * Stamp the intent BEFORE Kortix asks the provider to remove the box. The
+ * provider's `removed` webhook can land within seconds of the remove call and
+ * must not read as a lost runtime. Keyed by sandbox id — a metadata merge, so
+ * a concurrent park write loses nothing. Every caller that removes a box
+ * stamps first; a stopped row removed without this stamp is neither archived
+ * nor stamped, so the webhook classifies the teardown as lost work.
+ */
+export async function markKortixRemovalIntent(sandboxId: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
 type RecoverableRuntimeIdentityRow = typeof sessionSandboxes.$inferSelect;
 
 const RECOVERY_LEASE_MS = 10 * 60 * 1000;

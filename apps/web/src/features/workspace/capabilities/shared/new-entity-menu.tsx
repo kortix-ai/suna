@@ -20,9 +20,9 @@ import type { ComponentType } from 'react';
  * the title is ink at 550, the description one step down and muted, `mt-0.5`
  * under it.
  */
-const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
+export const RICH_ROW_CLASS = 'items-start gap-2.5 py-2';
 
-function RichRowBody({
+export function RichRowBody({
   icon: Glyph,
   title,
   description,
@@ -62,6 +62,8 @@ function RichRowBody({
 export function NewEntityMenu({
   label = 'New',
   size = 'sm',
+  variant = 'secondary',
+  caret = true,
   pending = false,
   onChat,
   manual,
@@ -69,6 +71,10 @@ export function NewEntityMenu({
 }: {
   label?: string;
   size?: 'sm' | 'default';
+  /** `default` is the filled primary, for a page whose create action is its one primary (Triggers). */
+  variant?: 'secondary' | 'default';
+  /** The ⌄ after the label. Off inside a toolbar group (Triggers), where the menu still opens. */
+  caret?: boolean;
   /** A configure session is being created — the trigger shows a spinner. */
   pending?: boolean;
   onChat: () => void;
@@ -88,13 +94,7 @@ export function NewEntityMenu({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (!manual) {
     return (
-      <Button
-        variant="secondary"
-        size={size}
-        className="gap-1.5"
-        disabled={pending}
-        onClick={onChat}
-      >
+      <Button variant={variant} size={size} className="gap-1.5" disabled={pending} onClick={onChat}>
         {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
         {label}
       </Button>
@@ -107,10 +107,10 @@ export function NewEntityMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="secondary" size={size} className="gap-1.5" disabled={pending}>
+        <Button variant={variant} size={size} className="gap-1.5" disabled={pending}>
           {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
           {label}
-          <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
+          {caret ? <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" /> : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-76">
