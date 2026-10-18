@@ -20782,8 +20782,7 @@
     "removeDescription": "Rimuovere «{name}» da questo progetto? La sua voce esce da kortix.yaml, il suo file di istruzioni viene eliminato e le sessioni non potranno più avviarsi con esso. Questa azione non può essere annullata.",
     "removeConfirm": "Rimuovi",
     "removed": "Agente «{name}» rimosso",
-    "removeFailed": "Impossibile rimuovere l'agente",
-    "removeLastAgent": "Questo è l'ultimo agente dichiarato del progetto, quindi non può essere rimosso."
+    "removeFailed": "Impossibile rimuovere l'agente"
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",

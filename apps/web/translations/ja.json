@@ -20782,8 +20782,7 @@
     "removeDescription": "このプロジェクトから「{name}」を削除しますか？ kortix.yaml から項目が取り除かれ、指示ファイルは削除され、セッションでこれを使えなくなります。この操作は元に戻せません。",
     "removeConfirm": "削除",
     "removed": "エージェント「{name}」を削除しました",
-    "removeFailed": "エージェントを削除できませんでした",
-    "removeLastAgent": "これはプロジェクトで宣言された最後のエージェントのため、削除できません。"
+    "removeFailed": "エージェントを削除できませんでした"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",

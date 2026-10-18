@@ -20782,8 +20782,7 @@
     "removeDescription": "„{name}“ aus diesem Projekt entfernen? Sein Eintrag verlässt kortix.yaml, seine Anweisungsdatei wird gelöscht und Sitzungen können nicht mehr damit starten. Das kann nicht rückgängig gemacht werden.",
     "removeConfirm": "Entfernen",
     "removed": "Agent „{name}“ entfernt",
-    "removeFailed": "Agent konnte nicht entfernt werden",
-    "removeLastAgent": "Das ist der letzte deklarierte Agent des Projekts, daher kann er nicht entfernt werden."
+    "removeFailed": "Agent konnte nicht entfernt werden"
   },
   "connectMcp": {
     "title": "Kortix über MCP verbinden",

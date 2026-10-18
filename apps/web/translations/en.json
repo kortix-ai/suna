@@ -21776,7 +21776,6 @@
     "removeDescription": "Remove \"{name}\" from this project? Its entry leaves kortix.yaml, its instructions file is deleted, and sessions can no longer start with it. This cannot be undone.",
     "removeConfirm": "Remove",
     "removed": "Agent \"{name}\" removed",
-    "removeFailed": "Could not remove the agent",
-    "removeLastAgent": "This is the project's last declared agent, so it cannot be removed."
+    "removeFailed": "Could not remove the agent"
   }
 }

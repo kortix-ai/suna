@@ -658,6 +658,14 @@ flow(
         if ((await kortixBlock()).includes('temporary:')) {
           throw new Error('kortix.yaml still declares the removed agent');
         }
+        // The route deletes the agent's own .md in the SAME commit (an orphaned
+        // .md would resurrect a half-configured agent if the name were
+        // recreated), and no other agent shares it here — so the file must be
+        // gone from the repository, not just the manifest.
+        const md = await owner.get('/v1/projects/:projectId/files/content', {
+          params: { projectId: project.id }, query: { path: 'agents/temporary.md' },
+        });
+        md.status(404).body().has('$.error', 'File not found');
       },
     );
     await ctx.step('removing the last declared agent → 400; the agent survives', async () => {
@@ -671,7 +679,7 @@ flow(
       read.status(200);
     });
     await ctx.step('a member with no project grant cannot remove an agent → 403', async () => {
-      const bare = await team.addMember('remover');
+      const bare = await team.addMember('member');
       const r = await ctx.client.as(bare).del(removePath, removeParams('kortix'));
       r.status(403);
     });

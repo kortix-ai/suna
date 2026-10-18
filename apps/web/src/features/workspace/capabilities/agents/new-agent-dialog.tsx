@@ -5,6 +5,7 @@ import {
   updateAgentConfig,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { SLUG_RE } from '@kortix/manifest-schema';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -27,11 +28,11 @@ import { agentHref } from '@/features/workspace/capabilities/shared/capability-t
 import { useTranslations, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 
 /**
- * The agent name's slug rule — the manifest validator's (`SLUG_RE`), so a name
- * the form accepts is a name `applyAgentBlockV2` accepts. The API is the
+ * The agent name's slug rule — the manifest validator's own `SLUG_RE`, so a
+ * name the form accepts is a name `applyAgentBlockV2` accepts. The API is the
  * authority; this only keeps impossible names off the wire.
  */
-export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+export const AGENT_NAME_RE = SLUG_RE;
 
 /** Why the create form refuses a candidate name: empty, not a slug, or
  *  already declared. Null = the API would accept it. Exported pure so the

@@ -20782,8 +20782,7 @@
     "removeDescription": "Supprimer « {name} » de ce projet ? Son entrée quitte kortix.yaml, son fichier d'instructions est supprimé et les sessions ne peuvent plus le démarrer. Cette action est irréversible.",
     "removeConfirm": "Supprimer",
     "removed": "Agent « {name} » supprimé",
-    "removeFailed": "Impossible de supprimer l'agent",
-    "removeLastAgent": "C'est le dernier agent déclaré du projet ; il ne peut donc pas être supprimé."
+    "removeFailed": "Impossible de supprimer l'agent"
   },
   "connectMcp": {
     "title": "Connecter Kortix via MCP",

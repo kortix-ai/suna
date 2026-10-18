@@ -20782,8 +20782,7 @@
     "removeDescription": "¿Eliminar «{name}» de este proyecto? Su entrada sale de kortix.yaml, su archivo de instrucciones se borra y las sesiones ya no podrán iniciarlo. Esto no se puede deshacer.",
     "removeConfirm": "Eliminar",
     "removed": "Agente «{name}» eliminado",
-    "removeFailed": "No se pudo eliminar el agente",
-    "removeLastAgent": "Es el último agente declarado del proyecto, por lo que no se puede eliminar."
+    "removeFailed": "No se pudo eliminar el agente"
   },
   "connectMcp": {
     "title": "Conecta Kortix por MCP",

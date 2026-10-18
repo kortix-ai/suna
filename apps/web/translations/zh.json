@@ -20782,8 +20782,7 @@
     "removeDescription": "要从该项目中移除“{name}”吗？它的条目将从 kortix.yaml 中删除，其指令文件会被删除，会话也无法再用它启动。此操作无法撤销。",
     "removeConfirm": "移除",
     "removed": "智能体“{name}”已移除",
-    "removeFailed": "无法移除该智能体",
-    "removeLastAgent": "这是项目最后一个声明的智能体，因此无法移除。"
+    "removeFailed": "无法移除该智能体"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",
