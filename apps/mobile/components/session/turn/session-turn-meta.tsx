@@ -22,7 +22,8 @@ import { Text } from '@/components/ui/text';
 import { DotsThreeIcon } from '@/lib/icons';
 import { turnMetaRows, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
-import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 
 /** Web ticks the relative "Finished" row every 15s while the panel is open. */
 const TICK_MS = 15_000;

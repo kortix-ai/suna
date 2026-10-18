@@ -1,4 +1,3 @@
-import { useColorScheme } from 'nativewind';
 import { DarkTheme, DefaultTheme, type Theme } from 'expo-router/react-navigation';
 
 /**
@@ -78,19 +77,6 @@ export function toHexColor(hslColor: string, alpha?: number): string {
   return `#${channel(r)}${channel(g)}${channel(b)}${alpha === undefined ? '' : channel(alpha)}`;
 }
 
-/** The THEME keys, derived from the color scheme: `useTone()` returns one. */
-export type Tone = 'light' | 'dark';
-
-/**
- * The active THEME key as a hook — the `colorScheme === 'dark' ? 'dark' :
- * 'light'` normalization every theme-consuming component hand-rolled.
- * `useColorScheme()`'s value is `null | 'light' | 'dark'`; null (unknown)
- * maps to light, the default scheme.
- */
-export function useTone(): Tone {
-  const { colorScheme } = useColorScheme();
-  return colorScheme === 'dark' ? 'dark' : 'light';
-}
 
 /**
  * Every value here is a transcription of the matching token in global.css.

@@ -23,7 +23,8 @@ import { KortixBottomSheetModal, SheetBackdrop, useSheetHandle, type SheetRef } 
 import { LOGO_PALETTES, logoPaletteSwatch } from '@/lib/effects/logo-palette';
 import { LOGO_STYLES } from '@/lib/effects/logo-style';
 import { haptics } from '@/lib/haptics';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { useLogoPaletteStore } from '@/stores/logo-palette-store';
 
 /** The row's leading swatch: `SettingsRow`'s 20pt slot. */

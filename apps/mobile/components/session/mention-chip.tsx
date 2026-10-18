@@ -17,7 +17,8 @@
 import { Pressable, View } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
-import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { chipAccessibilityLabel, chipText, type ChipKind } from '@/lib/session/mention-segments';
 import { webSpace } from '@/lib/session/user-message';
 import { usePressScale } from './use-press-scale';

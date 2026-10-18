@@ -37,7 +37,8 @@ import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { useRuntimeThread } from '@/components/session/SessionRuntime';
 import {
   deriveSessionFiles,

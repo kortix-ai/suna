@@ -16,7 +16,8 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 import { Progress } from '@/components/ui/progress';
 import { Text } from '@/components/ui/text';
-import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import {
   CheckCircleIcon,
   DotsThreeCircleIcon,

@@ -1,4 +1,4 @@
-import { useTone } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 /**
  * Unified diffs under a tool row.
  *

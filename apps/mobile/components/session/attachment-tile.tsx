@@ -35,7 +35,8 @@ import {
   splitFilenameForTile,
 } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
-import { useTone, MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { monoFont } from '@/components/session/tool/shared/styles';
 import { usePressScale } from './use-press-scale';
 

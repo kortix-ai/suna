@@ -24,7 +24,8 @@ import {
   SparkleIcon as Sparkle,
 } from '@/lib/icons';
 import type { AppIcon } from '@/lib/icons';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import type { MentionItem } from './useMentions';
 
 /** About five rows, then the list scrolls. */

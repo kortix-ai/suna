@@ -29,7 +29,8 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { allowBrowserNavigation, isTrustedProxyUrl } from '@/lib/utils/html-embed';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { useToolPreviewStore } from '@/stores/tool-preview-store';
 
 export function SandboxPreviewSheet() {

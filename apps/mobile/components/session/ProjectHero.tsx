@@ -34,7 +34,8 @@ import { LogoPaletteSheet } from '@/components/session/LogoPaletteSheet';
 import { LOGO_PALETTES, logoFrontColor, logoPaletteColors } from '@/lib/effects/logo-palette';
 import { haptics } from '@/lib/haptics';
 import { HERO_KEYBOARD_SCALE, heroLogoSize } from '@/lib/session/project-hero';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { useLogoPaletteStore } from '@/stores/logo-palette-store';
 
 /** How long the symbol must be held before the colour sheet opens. */

@@ -1,4 +1,4 @@
-import { useTone } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 /**
  * Code and markdown payloads under a tool row.
  *

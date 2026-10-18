@@ -22,7 +22,8 @@ import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import { ArrowUpIcon, CheckIcon } from '@/lib/icons';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
-import { useTone, THEME } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import {
   pickQuestionOption,
   questionStepAnswer,

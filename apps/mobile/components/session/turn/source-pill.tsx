@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/button';
 import { Sheet, type SheetRef } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
-import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import { webSpace } from '@/lib/session/user-message';
 
 /** The pill's text: web `text-xs` at the mobile meta size. */
