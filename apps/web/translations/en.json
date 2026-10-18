@@ -8941,7 +8941,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Connect an app",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Your Kortix agent wants to connect this app on your behalf. Authorize it in one click — no keys are pasted into chat or stored in the repo.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Add a project secret",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Your Kortix agent needs this to continue. Enter the value below — it’s encrypted and the agent never sees it.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "We couldn't load this shared page. Try again, or reload if it keeps happening.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Share link unavailable",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Public share",
@@ -9675,7 +9674,6 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067": "Loading…",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Saved securely",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "You can close this. The agent will pick it up — tell it “done” to continue.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Encrypted at rest. Only this project can read it. The agent never sees the value.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Enter a sandbox port, e.g. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Type a port or app URL",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Preview browser",
@@ -20225,7 +20223,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Encrypted at rest. Delivery follows the scope shown above.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Enter the requested value below. Check its delivery scope before saving. The value is encrypted at rest."
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding reset",

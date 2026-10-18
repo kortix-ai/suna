@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Verbinden Sie eine App",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Ihr Kortix-Agent möchte diese App in Ihrem Namen verbinden. Autorisieren Sie es mit einem Klick – es werden keine Schlüssel in den Chat eingefügt oder im Repo gespeichert.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Fügen Sie ein Projektgeheimnis hinzu",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Ihr Kortix-Agent benötigt dies, um fortfahren zu können. Geben Sie den Wert unten ein – er ist verschlüsselt und der Agent sieht ihn nie.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Wir konnten diese geteilte Seite nicht laden. Versuchen Sie es erneut oder laden Sie neu, wenn das Problem weiterhin auftritt.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Link zum Teilen nicht verfügbar",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Öffentlicher Anteil",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— keine Schlüssel werden in den Chat eingefügt oder im Repository gespeichert.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Sicher gespeichert",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Sie können dies schließen. Der Agent wird es abholen – sagen Sie ihm „erledigt“, um fortzufahren.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Im Ruhezustand verschlüsselt. Nur dieses Projekt kann es lesen. Der Agent sieht den Wert nie.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Geben Sie einen Sandbox-Port ein, z.B. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Geben Sie eine Port- oder App-URL ein",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Vorschau-Browser",
@@ -20214,7 +20212,12 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Zustellung: Runtime – der echte Wert wird in die Sandbox-Umgebung geladen. Agent-Code kann ihn lesen.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Zustellung: Connector – nur serverseitig. Der Wert gelangt nie in die Sandbox-Umgebung.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Der Zustellungsbereich ist nicht verfügbar. Fragen Sie den Agenten, wo dieser Wert verwendet wird, bevor Sie ihn speichern.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Im Ruhezustand verschlüsselt. Die Zustellung folgt dem oben angezeigten Bereich.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Geben Sie den angeforderten Wert unten ein. Prüfen Sie seinen Zustellungsbereich, bevor Sie ihn speichern. Der Wert ist im Ruhezustand verschlüsselt."
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding-Reset",

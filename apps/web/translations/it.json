@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Connetti un'app",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Il tuo agente Kortix desidera connettere questa app per tuo conto. Autorizzalo con un clic: nessuna chiave viene incollata nella chat o archiviata nel repository.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Aggiungi un segreto del progetto",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Il tuo agente Kortix ne ha bisogno per continuare. Inserisci il valore di seguito: è crittografato e l'agente non lo vedrà mai.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Non è stato possibile caricare questa pagina condivisa. Riprova o ricarica se il problema persiste.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Collegamento di condivisione non disponibile",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Quota pubblica",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— nessuna chiave viene incollata nella chat o memorizzata nel repository.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Salvato in modo sicuro",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Puoi chiuderlo. L'agente lo raccoglierà: digli \"fatto\" per continuare.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Crittografato a riposo. Solo questo progetto può leggerlo. L'agente non vede mai il valore.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Inserisci una porta sandbox, ad es. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Digita una porta o l'URL dell'app",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Anteprima del browser",
@@ -20214,7 +20212,12 @@
       "title": "Salvato, ma {agent} non può ancora leggerlo",
       "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
       "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Consegna: runtime — il valore reale viene caricato nell’ambiente sandbox. Il codice dell’agente può leggerlo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Consegna: connector — solo lato server. Il valore non entra mai nell’ambiente sandbox.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "L’ambito di consegna non è disponibile. Chiedi all’agente di confermare dove verrà usato questo valore prima di salvarlo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Crittografato a riposo. La consegna segue l’ambito mostrato sopra.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Inserisci il valore richiesto qui sotto. Controlla il suo ambito di consegna prima di salvarlo. Il valore è crittografato a riposo."
   },
   "projectOnboarding": {
     "resetSuccess": "Reimpostazione dell'onboarding",

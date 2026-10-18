@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Conecte um aplicativo",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Seu agente Kortix deseja conectar este aplicativo em seu nome. Autorize com um clique – nenhuma chave é colada no chat ou armazenada no repositório.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Adicione um segredo do projeto",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Seu agente Kortix precisa disso para continuar. Insira o valor abaixo – ele está criptografado e o agente nunca o vê.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Não foi possível carregar esta página compartilhada. Tente novamente ou recarregue se isso continuar acontecendo.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Link de compartilhamento indisponível",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Compartilhamento público",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— nenhuma chave é colada no chat nem armazenada no repositório.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Salvo com segurança",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Você pode fechar isso. O agente irá buscá-lo – diga “pronto” para continuar.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Criptografado em repouso. Somente este projeto pode lê-lo. O agente nunca vê o valor.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Insira uma porta sandbox, por exemplo. 3.000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Digite uma porta ou URL de aplicativo",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Visualizar navegador",
@@ -20214,7 +20212,12 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Entrega: runtime — o valor real é carregado no ambiente do sandbox. O código do agente pode lê-lo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — apenas no servidor. O valor nunca entra no ambiente do sandbox.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "O escopo de entrega não está disponível. Peça ao agente para confirmar onde este valor será usado antes de salvá-lo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Criptografado em repouso. A entrega segue o escopo mostrado acima.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso."
   },
   "projectOnboarding": {
     "resetSuccess": "Redefinição de integração",

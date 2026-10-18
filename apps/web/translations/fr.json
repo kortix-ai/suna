@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Connecter une application",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Votre agent Kortix souhaite connecter cette application en votre nom. Autorisez-le en un clic : aucune clé n'est collée dans le chat ou stockée dans le dépôt.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Ajouter un secret de projet",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Votre agent Kortix en a besoin pour continuer. Entrez la valeur ci-dessous : elle est cryptée et l’agent ne la voit jamais.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Nous n'avons pas pu charger cette page partagée. Réessayez ou rechargez si cela continue.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Lien de partage indisponible",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Partage public",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— aucune clé n’est collée dans le chat ni stockée dans le dépôt.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Enregistré en toute sécurité",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Vous pouvez fermer ceci. L’agent le récupérera – dites-lui « terminé » pour continuer.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Chiffré au repos. Seul ce projet peut le lire. L'agent ne voit jamais la valeur.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Entrez un port sandbox, par ex. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Saisissez l'URL d'un port ou d'une application",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Navigateur d'aperçu",
@@ -20214,7 +20212,12 @@
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Livraison : runtime — la vraie valeur est chargée dans l’environnement du sandbox. Le code de l’agent peut la lire.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Livraison : connector — côté serveur uniquement. La valeur n’entre jamais dans l’environnement du sandbox.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Le périmètre de livraison est indisponible. Demandez à l’agent de confirmer où cette valeur sera utilisée avant de l’enregistrer.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Chiffré au repos. La livraison suit le périmètre affiché ci-dessus.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Saisissez la valeur demandée ci-dessous. Vérifiez son périmètre de livraison avant de l’enregistrer. La valeur est chiffrée au repos."
   },
   "projectOnboarding": {
     "resetSuccess": "Réinitialisation de l'intégration",

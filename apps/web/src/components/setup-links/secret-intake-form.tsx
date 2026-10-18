@@ -283,7 +283,9 @@ export function SecretIntakeForm({
   const footnote = [
     compact
       ? null
-      : 'Encrypted at rest. Delivery follows the scope shown above.',
+      : tI18nHardcoded.raw(
+          'autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213',
+        ),
     expiresIn ? tI18nHardcoded('i18nComplete.textefb48f76e65a', { value0: expiresIn }) : null,
   ]
     .filter(Boolean)
@@ -293,10 +295,16 @@ export function SecretIntakeForm({
     <div className="space-y-5">
       <p className="text-muted-foreground text-xs text-pretty">
         {info?.scope === 'runtime'
-          ? 'Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.'
+          ? tI18nHardcoded.raw(
+              'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931',
+            )
           : info?.scope === 'connector'
-            ? 'Delivery: connector — server-side only. The value never enters the sandbox environment.'
-            : 'Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.'}
+            ? tI18nHardcoded.raw(
+                'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055',
+              )
+            : tI18nHardcoded.raw(
+                'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686',
+              )}
       </p>
       <FieldGroup className="gap-5">
         {fields.map((f) => (

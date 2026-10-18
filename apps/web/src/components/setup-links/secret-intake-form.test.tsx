@@ -22,3 +22,14 @@ test.each(['connector', 'runtime', undefined] as const)('shows %s delivery befor
   if (scope === 'runtime') expect(html).toContain('Agent code can read it');
   if (scope === 'connector') expect(html).toContain('never enters the sandbox environment');
 });
+
+test('the full form points the encryption promise at the disclosed delivery scope', async () => {
+  globalThis.fetch = Object.assign(async () => Response.json({
+    project_name: 'Synthetic project', fields: [{ name: 'DEMO_KEY', label: null, description: null }],
+    expires_at: '2099-01-01T00:00:00Z', scope: 'connector',
+  }), { preconnect: originalFetch.preconnect });
+  await act(async () => { renderer = create(<SecretIntakeForm token="synthetic-token" />); });
+  const html = JSON.stringify(renderer?.toJSON());
+  expect(html).toContain('Encrypted at rest. Delivery follows the scope shown above.');
+  expect(html).toContain('Delivery: connector');
+});

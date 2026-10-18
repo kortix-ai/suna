@@ -851,6 +851,14 @@ describe('kortix secrets request', () => {
       : 'real value in the sandbox environment');
   });
 
+  test('an API without the resolved scope asks the human to confirm delivery', async () => {
+    mintExtra = { scope: undefined };
+    expect(await runSecrets(['request', 'TEST_KEY'])).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('Delivery scope is unavailable');
+    expect(out).not.toContain('Delivery: undefined');
+  });
+
   test('warns, with the fix, when this agent will not receive a requested name', async () => {
     mintExtra = {
       agent: 'analyst',

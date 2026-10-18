@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "连接应用程序",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "您的 Kortix 代理希望代表您连接此应用程序。一键授权 - 不会将密钥粘贴到聊天中或存储在存储库中。",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "添加项目秘密",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "您的 Kortix 代理需要此操作才能继续。输入下面的值 - 它已加密，代理永远不会看到它。",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "我们无法加载此共享页面。再试一次，或者如果持续发生则重新加载。",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "分享链接不可用",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "公开分享",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— 不会将密钥粘贴到聊天中或存储在仓库中。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "安全保存",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "你可以关闭这个。代理将接起它——告诉它“完成”以继续。",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "静态时加密。只有这个项目可以读取它。代理人永远看不到价值。",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "输入沙箱端口，例如3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "输入端口或应用程序 URL",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "预览浏览器",
@@ -20214,7 +20212,12 @@
       "title": "已保存，但 {agent} 暂时无法读取",
       "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
       "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "交付：runtime — 真实值会加载到沙箱环境中。代理代码可以读取它。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "交付：connector — 仅在服务器端。该值绝不会进入沙箱环境。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "交付范围不可用。保存前，请让代理确认该值将在何处使用。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "静态时加密。交付遵循上方显示的范围。",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "在下方输入所需的值。保存前，请检查它的交付范围。该值在静态时加密。"
   },
   "projectOnboarding": {
     "resetSuccess": "入职重置",

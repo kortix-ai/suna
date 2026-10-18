@@ -9061,7 +9061,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "アプリを接続する",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Kortix エージェントが、あなたの代わりにこのアプリに接続したいと考えています。ワンクリックで認証します。キーがチャットに貼り付けられたり、リポジトリに保存されたりすることはありません。",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "プロジェクトのシークレットを追加する",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Kortix エージェントが続行するにはこれが必要です。以下の値を入力してください。この値は暗号化されており、エージェントには決して表示されません。",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "この共有ページを読み込めませんでした。もう一度試すか、繰り返し発生する場合はリロードしてください。",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "共有リンクは使用できません",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "公開シェア",
@@ -9695,7 +9694,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— キーがチャットに貼り付けられたり、リポジトリに保存されたりすることはありません。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "安全に保存されました",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "これを閉じることができます。エージェントがそれを受け取ります。続行するには「完了」と伝えます。",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "保存時は暗号化されます。このプロジェクトのみが読み取ることができます。エージェントがその値を確認することはありません。",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "サンドボックスのポートを入力します。 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "ポートまたはアプリの URL を入力します",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "プレビューブラウザ",
@@ -20214,7 +20212,12 @@
       "title": "保存しましたが、{agent} はまだ読み取れません",
       "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
       "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "配信: runtime — 実際の値はサンドボックス環境に読み込まれます。エージェントのコードが読み取れます。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "配信スコープを取得できません。保存する前に、この値がどこで使われるかエージェントに確認してください。",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "保存時は暗号化されます。配信は上に表示されたスコープに従います。",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。"
   },
   "projectOnboarding": {
     "resetSuccess": "オンボーディングのリセット",
