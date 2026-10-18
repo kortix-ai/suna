@@ -312,7 +312,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
   // the same fetch and the same fail-closed semantics — `projectQuery` stays
   // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
-  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
+  // `connectors_v2`: the catalogue is Kortix's own MCP apps, on the Discover routes.
+  const mcpApps = useFeatureFlag(projectId, 'connectors_v2').enabled;
+  const discoverEnabled =
+    useFeatureFlag(projectId, 'connectors_api_discover').enabled || mcpApps;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   // One catalogue: managed apps for browsing, plus API/MCP apps in search
@@ -394,6 +397,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
     discoverEnabled,
+    mcpApps,
     computers: computersEnabled,
   });
 
