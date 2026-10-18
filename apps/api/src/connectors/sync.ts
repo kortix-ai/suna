@@ -76,6 +76,7 @@ import {
 import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
+import { mcpAppForUrl } from './mcp-apps';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
@@ -331,6 +332,11 @@ export async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
+  // A catalogue app Kortix signs in to with its own OAuth client takes a
+  // bearer token, even when its server lists tools without one (Google's do).
+  if (provider === 'mcp' && mcpAppForUrl(endpoint)?.auth.kind === 'kortix_client') {
+    return discoverHttpAuthChallenge('Bearer', 'mcp endpoint');
+  }
   assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
