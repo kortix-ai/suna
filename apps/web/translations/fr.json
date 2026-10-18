@@ -2743,7 +2743,9 @@
       "link": {
         "title": "Consultez votre boîte e-mail",
         "description": "Nous avons envoyé un lien à <address>{email}</address>. Ouvrez-le pour continuer.",
+        "confirmDescription": "Nous avons envoyé un e-mail de confirmation à <address>{email}</address>. Confirmez votre adresse e-mail pour continuer.",
         "notReceived": "Vous n’avez pas reçu le lien ?",
+        "confirmNotReceived": "Vous n’avez pas reçu l’e-mail de confirmation ?",
         "resendIn": "Renvoyer dans {seconds}",
         "resend": "Renvoyer"
       },

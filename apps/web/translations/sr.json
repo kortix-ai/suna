@@ -2743,7 +2743,9 @@
       "link": {
         "title": "Проверите имејл",
         "description": "Послали смо линк на <address>{email}</address>. Отворите га да наставите.",
+        "confirmDescription": "Послали смо имејл за потврду на <address>{email}</address>. Потврдите свој имејл да наставите.",
         "notReceived": "Нисте добили линк?",
+        "confirmNotReceived": "Нисте добили имејл за потврду?",
         "resendIn": "Поново пошаљи за {seconds}",
         "resend": "Пошаљи поново"
       },

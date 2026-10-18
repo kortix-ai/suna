@@ -2743,7 +2743,9 @@
       "link": {
         "title": "E-Mail prüfen",
         "description": "Wir haben einen Link an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "confirmDescription": "Wir haben eine Bestätigungs-E-Mail an <address>{email}</address> gesendet. Bestätige deine E-Mail, um fortzufahren.",
         "notReceived": "Keinen Link erhalten?",
+        "confirmNotReceived": "Keine Bestätigungs-E-Mail erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"
       },

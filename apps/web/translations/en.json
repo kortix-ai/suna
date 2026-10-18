@@ -2743,7 +2743,9 @@
       "link": {
         "title": "Check your email",
         "description": "We sent a link to <address>{email}</address>. Open it to continue.",
+        "confirmDescription": "We sent a confirmation email to <address>{email}</address>. Confirm your email to continue.",
         "notReceived": "Didn't receive the link?",
+        "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
       },

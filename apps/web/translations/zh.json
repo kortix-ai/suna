@@ -2743,7 +2743,9 @@
       "link": {
         "title": "查看您的邮箱",
         "description": "我们已向 <address>{email}</address> 发送链接。打开链接即可继续。",
+        "confirmDescription": "我们已向 <address>{email}</address> 发送确认邮件。请确认您的邮箱以继续。",
         "notReceived": "未收到链接？",
+        "confirmNotReceived": "未收到确认邮件？",
         "resendIn": "{seconds} 秒后重新发送",
         "resend": "重新发送"
       },

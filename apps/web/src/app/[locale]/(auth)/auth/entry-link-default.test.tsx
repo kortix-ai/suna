@@ -40,6 +40,9 @@ mock.module('@/lib/supabase/client', () => ({
 let resolvedMode = 'unknown';
 let emailCodeSends = 0;
 let emailFailure: string | null = null;
+// The mode the send action answers with (the server-side existence check that
+// decides which email GoTrue mints). Null = an older action answer without it.
+let emailCodeMode: string | null = null;
 mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: resolvedMode }),
 }));
@@ -52,7 +55,14 @@ mock.module('@/lib/auth/submit-auth', () => ({
     emailCodeSends += 1;
     return emailFailure
       ? { ok: true, result: { message: emailFailure } }
-      : { ok: true, result: { success: true, email: 'synthetic@example.test' } };
+      : {
+          ok: true,
+          result: {
+            success: true,
+            email: 'synthetic@example.test',
+            ...(emailCodeMode ? { mode: emailCodeMode } : {}),
+          },
+        };
   },
 }));
 mock.module('@/lib/env-config', () => ({
@@ -140,6 +150,7 @@ test('the password form stays one explicit choice away from the link step', asyn
 test('every resolution hands off to the link action — the server gates closed and SSO', async () => {
   for (const mode of ['signup', 'unknown', 'closed']) {
     resolvedMode = mode;
+    emailCodeMode = null;
     emailCodeSends = 0;
     const root = await continueWithEmail(`${mode}@example.test`);
     try {
@@ -148,6 +159,39 @@ test('every resolution hands off to the link action — the server gates closed 
     } finally {
       await act(async () => root.unmount());
     }
+  }
+});
+
+// KRTX-2195: a NEW address receives GoTrue's signup email ("Confirm your
+// email"), so the link step must say the same thing the mail says — a user
+// told to expect "a link" read the confirmation mail as the wrong message.
+test('a new address is told a confirmation email is on its way, not a link', async () => {
+  resolvedMode = 'signup';
+  emailCodeMode = 'signup';
+  emailCodeSends = 0;
+  const root = await continueWithEmail('new-account@example.test');
+  try {
+    expect(emailCodeSends).toBe(1);
+    expect(JSON.stringify(root.toJSON())).toContain('We sent a confirmation email to');
+    expect(JSON.stringify(root.toJSON())).toContain('Confirm your email to continue');
+    expect(JSON.stringify(root.toJSON())).not.toContain('We sent a link');
+  } finally {
+    emailCodeMode = null;
+    await act(async () => root.unmount());
+  }
+});
+
+test('a returning account keeps the sign-in link copy the mailbox matches', async () => {
+  resolvedMode = 'signin';
+  emailCodeMode = 'signin';
+  emailCodeSends = 0;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    expect(JSON.stringify(root.toJSON())).toContain('We sent a link to');
+    expect(JSON.stringify(root.toJSON())).not.toContain('confirmation email');
+  } finally {
+    emailCodeMode = null;
+    await act(async () => root.unmount());
   }
 });
 

@@ -3,6 +3,7 @@
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
+import type { EmailFlowMode } from '@/lib/auth/unified-auth-flow';
 import { m, useReducedMotion } from 'motion/react';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
@@ -15,6 +16,10 @@ export function EmailLinkStep({
   pending,
   pendingAction,
   passwordEnabled,
+  /** The flow mode the send action resolved: 'signup' when GoTrue minted the
+   * signup confirmation email ("Confirm your email"), anything else when the
+   * email kind is unknown (the generic link copy, KRTX-2516's fail-open). */
+  mode,
   onResend,
   onChangeEmail,
   onPassword,
@@ -26,11 +31,16 @@ export function EmailLinkStep({
   pending: boolean;
   pendingAction: 'continue' | 'link' | 'resend' | 'password' | 'sso' | null;
   passwordEnabled: boolean;
+  mode?: EmailFlowMode;
   onResend: () => void;
   onChangeEmail: () => void;
   onPassword: () => void;
 }) {
   const t = useTranslations('auth.unified');
+  // The copy must name the email the mailbox receives (KRTX-2195): a signup
+  // gets the confirmation email, so "a link" read the mail as the wrong
+  // message. Unknown mode keeps the generic link copy.
+  const confirmed = mode === 'signup';
   const prefersReducedMotion = useReducedMotion();
   const rise = (delay = 0) => ({
     initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
@@ -42,7 +52,7 @@ export function EmailLinkStep({
       <m.div {...rise(0)}>
         <StepHeader
           title={t('link.title')}
-          description={t.rich('link.description', {
+          description={t.rich(confirmed ? 'link.confirmDescription' : 'link.description', {
             email: sentEmail ?? '',
             address: (chunks) => (
               <span className="text-foreground font-medium wrap-break-word">{chunks}</span>
@@ -57,7 +67,7 @@ export function EmailLinkStep({
 
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">
           <p>
-            {t('link.notReceived')}{' '}
+            {confirmed ? t('link.confirmNotReceived') : t('link.notReceived')}{' '}
             {resendIn > 0 ? (
               <span className="tabular-nums">{t('link.resendIn', { seconds: resendIn })}</span>
             ) : (

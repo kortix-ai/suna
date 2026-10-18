@@ -310,6 +310,10 @@ function AuthCardForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
+  // The flow mode the send action resolved — which email GoTrue minted: the
+  // signup confirmation for a new address, the sign-in link otherwise. Drives
+  // the link step's copy so it names the mail the mailbox receives (KRTX-2195).
+  const [linkMode, setLinkMode] = useState<EmailFlowMode>('unknown');
   const [resendIn, setResendIn] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
 
@@ -486,10 +490,12 @@ function AuthCardForm({
         success?: boolean;
         email?: string;
         message?: string;
+        mode?: EmailFlowMode;
       };
 
       if (result.success) {
         setSentEmail(result.email || target);
+        setLinkMode(result.mode ?? 'unknown');
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
         // The action's Set-Cookie does not always reach this browser (on the
@@ -969,6 +975,7 @@ function AuthCardForm({
     return (
       <EmailLinkStep
         sentEmail={sentEmail}
+        mode={linkMode}
         errorMessage={errorMessage}
         info={info}
         resendIn={resendIn}

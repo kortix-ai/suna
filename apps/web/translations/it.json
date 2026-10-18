@@ -2743,7 +2743,9 @@
       "link": {
         "title": "Controlla la tua email",
         "description": "Abbiamo inviato un link a <address>{email}</address>. Aprilo per continuare.",
+        "confirmDescription": "Abbiamo inviato un'email di conferma a <address>{email}</address>. Conferma la tua email per continuare.",
         "notReceived": "Non hai ricevuto il link?",
+        "confirmNotReceived": "Non hai ricevuto l'email di conferma?",
         "resendIn": "Invia di nuovo tra {seconds}",
         "resend": "Invia di nuovo"
       },

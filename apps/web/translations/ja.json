@@ -2743,7 +2743,9 @@
       "link": {
         "title": "メールを確認してください",
         "description": "<address>{email}</address> にリンクを送信しました。リンクを開いて続行してください。",
+        "confirmDescription": "<address>{email}</address> に確認メールを送信しました。メールを確認して続行してください。",
         "notReceived": "リンクが届きませんか？",
+        "confirmNotReceived": "確認メールが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
         "resend": "再送信"
       },

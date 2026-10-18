@@ -2743,7 +2743,9 @@
       "link": {
         "title": "Revisa tu correo electrónico",
         "description": "Enviamos un enlace a <address>{email}</address>. Ábrelo para continuar.",
+        "confirmDescription": "Enviamos un correo de confirmación a <address>{email}</address>. Confirma tu correo para continuar.",
         "notReceived": "¿No recibiste el enlace?",
+        "confirmNotReceived": "¿No recibiste el correo de confirmación?",
         "resendIn": "Reenviar en {seconds}",
         "resend": "Reenviar"
       },
