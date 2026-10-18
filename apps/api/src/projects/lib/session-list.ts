@@ -212,6 +212,10 @@ export interface SessionListViewer {
   canManageProject: boolean;
   /** `hasAccountSessionOversight`. Applied to the `project` scope only. */
   accountSessionOversight: boolean;
+  /** The open gate (project-read-view) still opens a soft-deleted session —
+   *  its tombstone still holds the caller's work. A list never reads a
+   *  deleted row. */
+  allowDeleted?: boolean;
 }
 
 /**
@@ -225,7 +229,13 @@ export interface SessionListViewer {
 export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   const t = projectSessions;
   const bound = viewer.boundCredentialSessionId;
-  const tombstone = sql`${liveSessionSql} and (${warmSessionSql}) is not true`;
+  // A list hides deleted rows and unused warm drafts in every scope
+  // (KRTX-2647). The open gate keeps a soft-deleted session reachable —
+  // its tombstone still holds the caller's work; only a deleted warm draft
+  // holds nothing to open.
+  const tombstone = viewer.allowDeleted
+    ? sql`not ((${t.metadata} ? 'deletedAt') is true and (${warmSessionSql}) is true)`
+    : sql`${liveSessionSql} and (${warmSessionSql}) is not true`;
   // A session-bound credential reaches its own session and the ones it spawned.
   const own = bound === null
     ? undefined

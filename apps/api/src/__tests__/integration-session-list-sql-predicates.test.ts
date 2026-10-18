@@ -300,6 +300,32 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
     expect(requests).toBe(1);
   });
 
+  test('the open gate still opens soft-deleted sessions and unused warm drafts (project-read-view)', async () => {
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, PROJECT_B),
+          eq(projectSessions.accountId, ACCOUNT),
+          sessionListViewerSql({
+            scope: 'project',
+            viewerId: OWNER,
+            boundCredentialSessionId: null,
+            agentPrincipal: false,
+            canManageProject: false,
+            accountSessionOversight: false,
+            allowDeleted: true,
+          }),
+        ),
+      );
+    const ids = rows.map((r) => short(r.sessionId));
+    // The tombstone still holds the caller's work: a soft-deleted session
+    // stays open by id even though every list hides it.
+    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(1500);
+    expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(20);
+  });
+
   test('the visible page walks idx_project_sessions_project_live in list order, with no sort, with and without a generic plan', async () => {
     const query = db
       .select({ sessionId: projectSessions.sessionId })
