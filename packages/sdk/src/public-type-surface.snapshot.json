@@ -1290,6 +1290,7 @@
     "StepLabel",
     "StepStartPart",
     "StepTier",
+    "StreamSubscriber",
     "StructuredOutputError",
     "SubdomainUrlOptions",
     "SubscriptionMutationResult",
@@ -5696,6 +5697,7 @@
     "OpenCodeEvent",
     "OpenEventStreamOptions",
     "RuntimeEvent",
+    "StreamSubscriber",
     "heartbeatGapEvent",
     "narrowChatEvent",
     "openEventStream"

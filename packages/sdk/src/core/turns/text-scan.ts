@@ -417,8 +417,3 @@ export function urlError(s: string, url: string): string | null {
   }
   return null;
 }
-
-/** Test support: `fold` itself, for the canonicalization test. */
-function foldForTest(s: string): string {
-  return fold(s);
-}
