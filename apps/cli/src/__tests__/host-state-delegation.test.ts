@@ -37,6 +37,18 @@ function projectRow(projectId: string, name: string, accountId: string) {
   };
 }
 
+const otherAssignments = [
+  {
+    id: 'as_1',
+    role_key: 'owner',
+    principal_type: 'user',
+    principal_id: 'user_1',
+    scope_type: 'project',
+    scope_id: 'proj_other',
+    source: 'direct',
+  },
+];
+
 let tmp: string;
 let named: FakeApi;
 let other: FakeApi;
@@ -64,6 +76,9 @@ beforeEach(() => {
     }
     if (req.method === 'DELETE' && url.pathname === '/v1/projects/proj_other') {
       return Response.json({ ok: true, archived: true, repo_deleted: false });
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/accounts/account_other/iam/assignments') {
+      return Response.json({ assignments: otherAssignments });
     }
     return undefined;
   });
@@ -186,7 +201,10 @@ test('token --json and whoami --json carry the stored host default project', asy
     const result = await run([cmd, '--json']);
     expect(result.code).toBe(0);
     const json = JSON.parse(result.stdout);
-    expect(json.host).toBe('test');
+    // KRTX-2290: the label names the identity the command acts as — under the
+    // delegated env that is the synthetic `sandbox` host, while the persisted
+    // default project below comes from the stored host (KRTX-1804).
+    expect(json.host).toBe('sandbox');
     expect(json.default_project).toEqual({
       project_id: 'proj_1',
       account_id: 'account_1',
@@ -214,6 +232,20 @@ test('projects rm -y --host purges the named host own default without an id', as
   expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
     'GET /v1/projects/proj_other',
     'DELETE /v1/projects/proj_other',
+  ]);
+});
+
+test('access assignments --host resolves the named host project, not the ambient session project', async () => {
+  // The env pins KORTIX_PROJECT_ID=proj_env: without the --host wiring the
+  // scope probe would fetch the ambient project against the other host's
+  // credential and 404. With it, the scope is the other host's own default
+  // project and the IAM list is read from that host's account.
+  const result = await run(['access', 'assignments', '--host', 'other', '--json']);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ assignments: otherAssignments });
+  expect(other.requests.map((r) => `${r.method} ${r.path}${r.query}`)).toEqual([
+    'GET /v1/projects/proj_other?account_id=account_other',
+    'GET /v1/accounts/account_other/iam/assignments?scope_type=project&scope_id=proj_other&account_id=account_other',
   ]);
 });
 
@@ -309,10 +341,10 @@ describe('resolveProjectId with a named host', () => {
   });
 
   it('resolves the named host stored default over the ambient chain', () => {
-    expect(resolveProjectId(undefined, { hostScoped: false, hostName: 'other' })).toBe(
+    expect(resolveProjectId(undefined, { hostScoped: false, hostArg: 'other' })).toBe(
       'proj-other-default',
     );
-    expect(resolveProjectId(undefined, { hostScoped: false, hostName: 'home' })).toBe(
+    expect(resolveProjectId(undefined, { hostScoped: false, hostArg: 'home' })).toBe(
       'proj-home-default',
     );
   });
@@ -331,9 +363,9 @@ describe('resolveProjectId with a named host', () => {
       );
     };
     link('other', 'proj-link-other');
-    expect(resolveProjectId(undefined, { hostName: 'other' })).toBe('proj-link-other');
+    expect(resolveProjectId(undefined, { hostArg: 'other' })).toBe('proj-link-other');
     link('home', 'proj-link-home');
-    expect(resolveProjectId(undefined, { hostName: 'other' })).toBe('proj-other-default');
+    expect(resolveProjectId(undefined, { hostArg: 'other' })).toBe('proj-other-default');
   });
 
   it('returns null when the named host has neither a link nor a default (no ambient leak)', () => {
@@ -341,7 +373,7 @@ describe('resolveProjectId with a named host', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     delete config.hosts.other.default_project;
     writeFileSync(configPath, JSON.stringify(config));
-    expect(resolveProjectId(undefined, { hostName: 'other' })).toBeNull();
+    expect(resolveProjectId(undefined, { hostArg: 'other' })).toBeNull();
   });
 
   it('without a host name the ambient chain is unchanged: the env project id wins', () => {
