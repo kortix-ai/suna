@@ -56,8 +56,8 @@ export interface AccountTokenValidationResult {
    *
    *  Account-only refusals (a personal PAT has no project) are attributed but
    *  the product's log readers are project-scoped — today that class of row is
-   *  visible in the store, not in any UI/CLI list. An account-scoped reader is
-   *  the deliberate follow-up, not this PR. */
+   *  intentionally DB-forensics-only (KRTX-2631), not in any UI/CLI list.
+   *  An account-scoped reader needs its own membership authorization contract. */
   refusedIdentity?: {
     accountId: string;
     userId: string;

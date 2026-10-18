@@ -574,8 +574,12 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
 
 /** Persist a request trace to gateway_request_logs (skips unauthenticated traces). */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
-  // Pre-auth failures (401) carry no accountId — nothing useful to attribute.
+  // Unknown credentials carry no accountId — nothing useful to attribute.
   if (!trace.accountId) return;
+  // KRTX-2631: account-only refusals intentionally remain DB-forensics-only.
+  // Persist their real accountId with projectId = null; do not infer a project.
+  // Product list/detail readers stay project-scoped. An account-scoped reader
+  // needs a separate account-membership authorization contract.
   await recordGatewayTrace({
     requestId: trace.requestId,
     accountId: trace.accountId,
