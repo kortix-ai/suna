@@ -276,6 +276,12 @@ describe('control-plane active-turn state', () => {
     expect(executed[0]).toContain('FOR UPDATE OF s');
     expect(executed[0]).toContain('AS turn');
   });
+
+  test('abandon fails closed when the database driver returns an unknown result shape', async () => {
+    executeResults = [{ unsupported: true }];
+
+    expect(await abandonSandboxTurn({ externalId: 'ext-1' }, 'turn-token')).toBe(false);
+  });
 });
 
 describe('terminal turn handling', () => {
