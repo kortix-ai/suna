@@ -107,7 +107,7 @@ let root: Root | undefined;
 // Cross-realm DOM: happy-dom's HTMLElement tree is structurally narrower
 // than lib.dom's, so the container keeps its own minimal shape and the
 // createRoot argument casts through unknown.
-let container: { innerHTML: string } | undefined;
+let container: { innerHTML: string; remove(): void } | undefined;
 
 /** Opens the mobile sheet on mount: its content only exists while open. */
 function MobileOpenHarness({ projectId }: { projectId: string }) {
