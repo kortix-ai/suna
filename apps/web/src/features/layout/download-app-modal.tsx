@@ -5,6 +5,7 @@ import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTit
 import { localizedDownloadContent } from '@/features/marketing/download/content';
 import { DESKTOP_ORDER, MOBILE_ORDER } from '@/features/marketing/download/detect-os';
 import Image from 'next/image';
+import { TerminalBlock } from '@/features/marketing/download/terminal-block';
 import { useTranslations } from '@/i18n/use-translations';
 
 /** Explicitly opened from the workspace menu; never tied to promo dismissal. */
@@ -54,6 +55,7 @@ export function DownloadAppModal({ open, onOpenChange }: {
                 ))}
               </div>
             </section>
+            <TerminalBlock />
           </div>
         </ModalBody>
       </ModalContent>
