@@ -12,6 +12,7 @@ import {
 } from '@kortix/sdk';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
+import type { AdminConnector } from '@kortix/sdk';
 
 import { useDebounce } from '@/hooks/use-debounce';
 
@@ -25,8 +26,10 @@ import {
   type BrowseSectionsPage,
 } from './browse-sections';
 import {
+  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  catalogEntryFromProject,
   computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
@@ -262,6 +265,10 @@ export function useCatalog(
     discoverEnabled: boolean;
     /** Show the native Computer card: this deployment can connect computers. */
     computers?: boolean;
+    /** The project's own connector rows (KRTX-2531): they lead the All grid
+     *  when the catalogues do not list them, so the tab shows everything the
+     *  project can call. */
+    projectConnectors?: AdminConnector[];
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -351,6 +358,7 @@ export function useCatalog(
         tI18nComplete,
         discoverPages: discoverQuery.data?.pages,
         managedPages: easyConnectQuery.data?.pages,
+        projectConnectors: opts.projectConnectors,
       }),
     [
       searchDirect,
@@ -360,6 +368,7 @@ export function useCatalog(
       source,
       easyConnectQuery.data?.pages,
       discoverQuery.data?.pages,
+      opts.projectConnectors,
     ],
   );
 
@@ -414,7 +423,9 @@ export function useCatalog(
   const reportedTotal =
     source === 'discover' ? discoverQuery.data?.pages[0]?.total : easyConnectPage?.total;
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
-  const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
+  const projectCount = entries.filter((entry) => entry.source === 'project').length;
+  const total =
+    typeof reportedTotal === 'number' ? reportedTotal + nativeCount + projectCount : entries.length;
 
   // A failed sections request on the browse page is an error, not an empty
   // catalogue — without this the grid would say "no connectors" over an outage.
@@ -458,6 +469,7 @@ export function assembleCatalogEntries({
   tI18nComplete,
   discoverPages,
   managedPages,
+  projectConnectors,
 }: {
   source: CatalogSource;
   computers: boolean;
@@ -466,6 +478,7 @@ export function assembleCatalogEntries({
   tI18nComplete: Parameters<typeof computersCatalogEntry>[0];
   discoverPages?: Awaited<ReturnType<typeof listDiscoverConnectors>>[];
   managedPages?: Awaited<ReturnType<typeof listConnectCatalogPage>>[];
+  projectConnectors?: AdminConnector[];
 }) {
   const native = computersCatalogEntry(tI18nComplete);
   // The native Computers card is ours, not the catalogue's, so it is matched
@@ -477,6 +490,56 @@ export function assembleCatalogEntries({
         .toLowerCase()
         .includes(activeQuery.toLowerCase()));
   const nativeEntries = includeComputers ? [native] : [];
+
+  // The project's own connectors lead the grid (KRTX-2531): the tab must list
+  // what the project can call, and a kortix.yaml-declared MCP or a channel row
+  // is in NEITHER remote catalogue. Cards for connectors the catalogue also
+  // lists are dropped — the catalogue card already shows the Added badge
+  // through the same lenient join (`catalogEntryConnectors`), so one match
+  // decides both facts and the two cannot disagree. The native Computers card
+  // covers the computer provider. A search filters these locally, like the
+  // computer card.
+  const catalog = assembleRemote({
+    source,
+    nativeEntries,
+    activeQuery,
+    searchDirect,
+    discoverPages,
+    managedPages,
+  });
+  const covered = new Set<string>();
+  if (projectConnectors?.length) {
+    for (const entry of catalog) {
+      for (const connector of catalogEntryConnectors(projectConnectors, entry)) {
+        covered.add(connector.slug);
+      }
+    }
+  }
+  const own = (projectConnectors ?? [])
+    .filter((c) => c.provider !== 'computer' && !covered.has(c.slug))
+    .filter(
+      (c) =>
+        !activeQuery || `${c.name} ${c.slug}`.toLowerCase().includes(activeQuery.toLowerCase()),
+    )
+    .map(catalogEntryFromProject);
+  return [...own, ...catalog];
+}
+
+function assembleRemote({
+  source,
+  nativeEntries,
+  activeQuery,
+  searchDirect,
+  discoverPages,
+  managedPages,
+}: {
+  source: CatalogSource;
+  nativeEntries: CatalogEntry[];
+  activeQuery: string;
+  searchDirect: boolean;
+  discoverPages?: Awaited<ReturnType<typeof listDiscoverConnectors>>[];
+  managedPages?: Awaited<ReturnType<typeof listConnectCatalogPage>>[];
+}): CatalogEntry[] {
   if (source === 'discover') {
     return nativeEntries.concat(
       (discoverPages ?? []).flatMap((page) => page.items.map(catalogEntryFromDiscover)),

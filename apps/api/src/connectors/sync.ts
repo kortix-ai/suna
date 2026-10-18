@@ -20,6 +20,7 @@ import {
  * never failing the whole sweep.
  */
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { countListedConnectors } from './db-deps-rows';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
@@ -574,7 +575,6 @@ async function syncProjectConnectorsFenced(
   );
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
-  let synced = 0;
   for (const sourceSpec of specs) {
     if (
       opts.onlyConnectorId &&
@@ -671,7 +671,6 @@ async function syncProjectConnectorsFenced(
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
@@ -714,7 +713,15 @@ async function syncProjectConnectorsFenced(
   // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
   if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
-  return { synced, errors };
+  // The summary counts what `connectors ls` lists — the listing's own hide
+  // rules over the rows this sync just reconciled — not how many specs the
+  // loop materialized: the loop also re-materializes platform built-ins the
+  // listing hides (a machineless computer connector), and that counter printed
+  // "Synced 2 connectors" over a list of 1 (KRTX-2669).
+  return {
+    synced: await countListedConnectors(projectId, opts.onlyConnectorId ?? null),
+    errors,
+  };
 }
 
 export async function reconcileEmailConnections(

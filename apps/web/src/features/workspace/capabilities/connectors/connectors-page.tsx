@@ -395,6 +395,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     enabled: catalogActive,
     discoverEnabled,
     computers: computersEnabled,
+    projectConnectors: connectors,
   });
 
   const filtered = useMemo(
@@ -409,6 +410,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const computerConnector = connectors.find((connector) => connector.provider === 'computer');
   const catalogHref = useCallback(
     (entry: CatalogEntry) => {
+      // The project's own card links the connector's page, not an add flow —
+      // it already exists (KRTX-2531).
+      if (entry.source === 'project') return connectorHref(projectId, entry.connector.slug);
       const app = appRefFromEntry(entry);
       if (app) return appHref(projectId, app);
       return computerConnector ? connectorHref(projectId, computerConnector.slug) : null;

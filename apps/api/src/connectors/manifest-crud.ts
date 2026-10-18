@@ -670,6 +670,14 @@ export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /**
+   * Per-connector rule counts, from the SAME manifest read (KRTX-2527):
+   * `connectors policy <slug> set` commits rules into that connector's entry,
+   * and `policy ls` reported only the top-level list — "No explicit project
+   * policies" right after a successful set. One entry per connector that
+   * carries rules, in manifest order.
+   */
+  connectorRules: Array<{ slug: string; rules: number }>;
 }
 
 /** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
@@ -679,12 +687,17 @@ export async function getProjectPoliciesFromManifest(
   const row = await loadRow(projectId);
   if (!row) return null;
   const manifest = await loadManifestForEdit(row).catch(() => null);
-  if (!manifest) return { policies: [], defaultMode: 'allow_all', errors: [] };
+  if (!manifest)
+    return { policies: [], defaultMode: 'allow_all', errors: [], connectorRules: [] };
   const parsed = extractProjectPolicies(manifest);
+  const connectorRules = extractConnectors(manifest).specs
+    .filter((spec) => spec.policies.length > 0)
+    .map((spec) => ({ slug: spec.slug, rules: spec.policies.length }));
   return {
     policies: parsed.policies,
     defaultMode: parsed.settings.defaultMode,
     errors: parsed.errors,
+    connectorRules,
   };
 }
 

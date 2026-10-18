@@ -7,7 +7,7 @@ import {
   projectSecrets,
   projectSessions,
 } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { principalMayUseConnector } from './principal-access';
 import {
   canonicalConnectorAlias,
@@ -41,6 +41,7 @@ import {
   authOf,
   channelPlatform,
   connectorConnected,
+  hideMachinelessComputers,
   loadConnectorPoliciesForMany,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
@@ -220,41 +221,6 @@ export async function listCatalog(
     };
   });
   return resolved.filter((entry): entry is CatalogConnector => entry !== null);
-}
-
-/**
- * A computer connector with no machine — no `connector_connections` row bound
- * to a tunnel — has nothing to manage and no call it could answer, so it is
- * not a connected connector and stays out of the admin list (KRTX-1492: a
- * fresh project's Connected tab listed the machineless built-in `computer`
- * connector as connected while its own dialog said "No account yet"). The
- * catalogue's native Computers card carries the Connect CTA instead, and the
- * row reappears the moment a machine is paired.
- */
-async function hideMachinelessComputers<
-  T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
->(
-  rows: T[],
-): Promise<T[]> {
-  const computers = rows.filter((row) => row.providerType === 'computer');
-  if (computers.length === 0) return rows;
-  const computerIds = computers.map((row) => row.connectorId);
-  const withMachine = new Set(
-    (
-      await db
-        .selectDistinct({ connectorId: connectorConnections.connectorId })
-        .from(connectorConnections)
-        .where(
-          and(
-            inArray(connectorConnections.connectorId, computerIds),
-            isNotNull(connectorConnections.tunnelId),
-          ),
-        )
-    ).map((row) => row.connectorId),
-  );
-  return rows.filter(
-    (row) => row.providerType !== 'computer' || withMachine.has(row.connectorId),
-  );
 }
 
 /**

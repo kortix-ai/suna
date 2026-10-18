@@ -113,6 +113,10 @@ interface PolicyRule {
 interface ProjectPoliciesView {
   policies: PolicyRule[];
   defaultMode: 'risk' | 'allow_all';
+  errors?: Array<{ path: string; error: string }>;
+  /** Per-connector rule counts from the same manifest read (KRTX-2527).
+   *  Optional: older gateways do not send it. */
+  connectorRules?: Array<{ slug: string; rules: number }>;
 }
 
 /** One record in the direct-connector catalogue (integrations.sh). */
@@ -1388,19 +1392,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
             emitJson(resp);
             return 0;
           }
-          process.stdout.write(
-            `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
-          );
-          if (resp.policies.length === 0) {
-            process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
-            return 0;
-          }
-          for (const p of resp.policies) {
-            process.stdout.write(
-              `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
-            );
-          }
-          process.stdout.write('\n');
+          process.stdout.write(formatProjectPolicyLs(resp));
           return 0;
         }
 
@@ -1887,6 +1879,36 @@ function connectorRmLocal(slug: string | undefined): number {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 1;
   }
+}
+
+/**
+ * Render `connectors policy ls` — default mode, the top-level policy list and
+ * the per-connector rule counts the same manifest carries (KRTX-2527:
+ * `policy <slug> set` commits into the connector entry, and the project view
+ * used to print "No explicit project policies" right after a successful set).
+ */
+export function formatProjectPolicyLs(resp: ProjectPoliciesView): string {
+  const connectorRules = resp.connectorRules ?? [];
+  const lines: string[] = [''];
+  lines.push(`  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}`);
+  if (resp.policies.length === 0 && connectorRules.length === 0) {
+    lines.push(`  ${C.dim}No explicit project policies.${C.reset}`);
+    lines.push('');
+    return lines.join('\n');
+  }
+  for (const p of resp.policies) {
+    lines.push(`  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}`);
+  }
+  if (connectorRules.length > 0) {
+    lines.push(`  ${C.dim}per-connector rules (see: connectors policy <slug> ls):${C.reset}`);
+    for (const r of connectorRules) {
+      lines.push(
+        `    ${C.cyan}${r.slug}${C.reset} → ${r.rules} rule${r.rules === 1 ? '' : 's'}`,
+      );
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 function policySetLocal(mode: string | undefined): number {

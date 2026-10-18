@@ -38,9 +38,10 @@ export interface CatalogInstall {
 }
 
 /** The Install control is offered only where the caller may add the app, and
- *  never on the computer card: a computer is paired, not installed. */
+ *  never on the computer card (a computer is paired, not installed) or a
+ *  project card — it already exists; its card links its own page. */
 function canInstallEntry(entry: CatalogEntry, install: CatalogInstall): boolean {
-  return install.canWrite && entry.source !== 'computer';
+  return install.canWrite && (entry.source === 'discover' || entry.source === 'easy-connect');
 }
 
 /**

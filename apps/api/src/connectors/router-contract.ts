@@ -143,6 +143,10 @@ export interface ProjectPoliciesViewResponse {
   policies: ProjectPolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /** Per-connector rule counts from the same manifest read (KRTX-2527) —
+   *  `connectors policy <slug> set` commits rules into the connector entry,
+   *  and the view must show them, not just the top-level list. */
+  connectorRules: Array<{ slug: string; rules: number }>;
 }
 
 export interface ListCatalogOptions {

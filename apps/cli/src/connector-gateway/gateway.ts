@@ -12,66 +12,70 @@
  *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
-import { loadAuth, loadEnvAuth } from '../api/auth.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import type { Auth } from '../api/auth.ts';
+import { type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
-import { resolveProjectId } from '../project-link.ts';
+import { resolveProjectContext } from '../command-helpers.ts';
 import { CliError, stringValue } from './io.ts';
 
 /**
- * The Connector gateway client — runs tool calls as the launching user.
+ * The project context behind BOTH connector faces — tool calls and management
+ * — resolved exactly the way every other project-scoped command resolves it
+ * (`resolveProjectContext`: `--host` → the cwd link's host + its stored
+ * credentials → the injected env token → the active host; project: `--project`
+ * → the link → `KORTIX_PROJECT_ID` → the host default).
  *
- * Resolves auth from ONE place, pinned to the injected session identity:
- * `loadEnvAuth()` (the sandbox delegation env) wins, `loadAuth()` (the stored
- * login) is only the fallback when nothing is injected. That keeps it
- * identical in both worlds — and immune to an in-sandbox `hosts use`
- * selection (KRTX-1705): a session only ever invokes `kortix connectors`,
- * so the data plane always acts as the launching
- * user, whatever the config file says.
- * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
- * When a project is known we hit the project-explicit gateway routes (which
- * accept a plain user token), so `kortix connectors` is the SAME locally and in
- * the cloud. Without a project we fall back to the legacy flat routes, which
- * need a scoped session token (the in-sandbox case).
+ * That sameness IS the fix (KRTX-2529): the gateway face used to pin auth to
+ * the injected env token and the project to `KORTIX_PROJECT_ID`, so inside a
+ * directory linked to a non-session project, `connectors call denies-connector
+ * ls` answered as the sandbox session ("active") while `connectors ls`
+ * answered as the link ("no connector") — two faces, two answers. Resolving
+ * through the one function the admin face uses makes a disagreement
+ * impossible: a link (or `--host`) supplies BOTH the project and the
+ * credential that can act on it, and a session with no link keeps the
+ * injected env identity (KRTX-1705), now via resolveProjectAuth's env
+ * fallback.
+ */
+export async function connectorContext(
+  projectOverride?: string,
+  hostArg?: string,
+): Promise<{ client: ApiClient; projectId: string; auth: Auth }> {
+  const ctx = await resolveProjectContext({ projectArg: projectOverride, hostArg, envPin: true });
+  if (!ctx) {
+    throw new CliError(
+      'no project context — run `kortix login`, then `kortix projects link` (or pass --project / --host).',
+      'NO_PROJECT_CONTEXT',
+    );
+  }
+  return ctx;
+}
+
+/**
+ * The Connector gateway client — runs tool calls. Project-explicit routes
+ * (which accept a plain user token), so `kortix connectors` is the SAME
+ * locally and in the cloud.
  */
 export type ConnectorClient = Kortix['connectors'];
 
-export function connectorClient(projectOverride?: string): ConnectorClient {
-  // The session's data plane always acts as the launching user: the injected
-  // KORTIX_TOKEN wins even over an in-sandbox `hosts use` selection
-  // (loadEnvAuth, KRTX-1705) — these routes serve the session's project on
-  // the launching deployment.
-  const auth = loadEnvAuth() ?? loadAuth();
-  if (!auth?.token) {
-    throw new CliError(
-      'not authenticated — run `kortix login` (or set KORTIX_TOKEN in a sandbox).',
-      'MISSING_ENV',
-    );
-  }
-  // --project > KORTIX_PROJECT_ID > .kortix/link.json (resolveProjectId order).
-  const projectId = resolveProjectId(projectOverride);
-  const kortix = kortixFromAuth(auth);
-  return projectId ? kortix.project(projectId).connectors : kortix.connectors;
+export async function connectorClient(
+  projectOverride?: string,
+  hostArg?: string,
+): Promise<ConnectorClient> {
+  const ctx = await connectorContext(projectOverride, hostArg);
+  const kortix = kortixFromAuth(ctx.auth);
+  return kortix.project(ctx.projectId).connectors;
 }
 
 /**
  * The project-scoped kortix API client (NOT the gateway) — for connector
- * management + setup-link minting. Resolves the sandbox env-token host
- * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
+ * management + setup-link minting. Same context resolution as tool calls.
  */
-export function connectorProjectContext(projectOverride?: string): {
-  client: ApiClient;
-  projectId: string;
-} {
-  // Same env-token pin as connectorClient: the management + setup-link
-  // routes belong to the launching deployment, not a selected host.
-  const auth = loadEnvAuth() ?? loadAuth();
-  if (!auth?.token) {
-    throw new CliError('not authenticated — KORTIX_TOKEN is missing.', 'MISSING_ENV');
-  }
-  const projectId = resolveProjectId(projectOverride);
-  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
-  return { client: clientFromAuth(auth), projectId };
+export async function connectorProjectContext(
+  projectOverride?: string,
+  hostArg?: string,
+): Promise<{ client: ApiClient; projectId: string }> {
+  const ctx = await connectorContext(projectOverride, hostArg);
+  return { client: ctx.client, projectId: ctx.projectId };
 }
 
 /**
@@ -135,6 +139,7 @@ export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
   projectOverride?: string;
+  hostArg?: string;
   /**
    * WHO the account this link creates belongs to: `me` (the human who opens
    * the link, the server-side default) or `project` (shared with every member,
@@ -153,7 +158,7 @@ export async function mintConnectLink(opts: {
   label?: string;
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
-  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const { client, projectId } = await connectorProjectContext(opts.projectOverride, opts.hostArg);
   try {
     const link = await client.post<{ url?: string; app?: string | null; expires_at?: string }>(
       `/projects/${projectId}/connect-requests`,
@@ -213,8 +218,9 @@ export async function mintConnectLink(opts: {
 export async function addConnector(
   draft: Record<string, unknown>,
   projectOverride?: string,
+  hostArg?: string,
 ): Promise<{ ok: boolean; sync?: unknown }> {
-  const { client, projectId } = connectorProjectContext(projectOverride);
+  const { client, projectId } = await connectorProjectContext(projectOverride, hostArg);
   return client.post<{ ok: boolean; sync?: unknown }>(
     `/connectors/projects/${projectId}/connectors`,
     draft,
@@ -222,7 +228,11 @@ export async function addConnector(
 }
 
 /** Remove a connector from the project (kortix.yaml on main + catalog). */
-export async function removeConnector(slug: string, projectOverride?: string): Promise<void> {
-  const { client, projectId } = connectorProjectContext(projectOverride);
+export async function removeConnector(
+  slug: string,
+  projectOverride?: string,
+  hostArg?: string,
+): Promise<void> {
+  const { client, projectId } = await connectorProjectContext(projectOverride, hostArg);
   await client.delete(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);
 }

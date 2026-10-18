@@ -1,6 +1,8 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
+import { providerLabel } from '../provider-label';
+
 import { POPULAR_SECTION } from './connector-categories';
 
 /**
@@ -10,7 +12,7 @@ import { POPULAR_SECTION } from './connector-categories';
  * managed OAuth app via Pipedream (`easyConnectInstallTarget`). The two build
  * different connectors and cannot be swapped.
  */
-export type CatalogSource = 'discover' | 'easy-connect';
+export type CatalogSource = 'discover' | 'easy-connect' | 'project';
 
 interface CatalogEntryFields {
   /** Stable React key. Prefixed by source, because the two catalogues are
@@ -46,7 +48,8 @@ export type CatalogEntry =
       source: 'easy-connect';
       app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
     })
-  | (CatalogEntryFields & { source: 'computer' });
+  | (CatalogEntryFields & { source: 'computer' })
+  | (CatalogEntryFields & { source: 'project'; connector: AdminConnector });
 
 /** Native platform provider. Each member's paired machine is one of its accounts. */
 export function computersCatalogEntry(tI18nComplete: UiTranslator): CatalogEntry {
@@ -93,6 +96,26 @@ export function catalogEntryFromEasyConnect(
 }
 
 /**
+ * The project's own connector as a card (KRTX-2531). Neither remote catalogue
+ * lists what kortix.yaml declares — a hand-declared MCP URL, a channel row —
+ * and the All tab used to hide exactly those. The card links the connector's
+ * own page, never an install flow: it already exists.
+ */
+export function catalogEntryFromProject(connector: AdminConnector): CatalogEntry {
+  return {
+    source: 'project',
+    connector,
+    key: `project:${connector.slug}`,
+    slug: connector.slug,
+    name: connector.name,
+    description: null,
+    icon: connector.iconUrl ?? null,
+    categories: [],
+    popularity: null,
+  };
+}
+
+/**
  * The one fact that varies between cards: HOW this entry connects. Short
  * nouns, shown as the card's quiet line under the title — every card gets
  * one, so the rows scan as a consistent column.
@@ -112,6 +135,7 @@ export function appNameKey(name: string): string {
 
 export function catalogEntryKindLabel(entry: CatalogEntry): string {
   if (entry.source === 'computer') return 'Native';
+  if (entry.source === 'project') return providerLabel(entry.connector.provider);
   // An app with both ways to connect names both.
   if (entry.source === 'easy-connect') return entry.app?.directId ? 'App · MCP' : 'App';
   if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · App';
@@ -188,6 +212,7 @@ export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
+  if (entry.source === 'project') return true;
   if (entry.source === 'computer') return connectedKeys.has('provider:computer');
   return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
 }
@@ -218,6 +243,9 @@ export function catalogEntryConnectors(
   connectors: readonly AdminConnector[],
   entry: CatalogEntry,
 ): AdminConnector[] {
+  if (entry.source === 'project') {
+    return connectors.filter((connector) => connector.slug === entry.connector.slug);
+  }
   if (entry.source === 'computer') {
     return connectors.filter((connector) => connector.provider === 'computer');
   }
