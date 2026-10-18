@@ -32,6 +32,10 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
+import { agentNotDeclaredError } from '../agents';
+import { readAgentBlockV2 } from '../lib/agent-config-v2';
+import { loadManifestForEdit } from '../lib/triggers';
+import type { ProjectRow } from '../lib/serializers';
 
 const LLM_GATEWAY_DISABLED = {
   error: 'LLM gateway is disabled for this project',
@@ -70,7 +74,7 @@ const ModelDefaultBody = z.object({
 async function loadModelDefaultsWriter(
   c: any,
   projectId: string,
-): Promise<Response | { ownerAccountId: string; userId: string }> {
+): Promise<Response | { ownerAccountId: string; userId: string; row: ProjectRow }> {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(
@@ -81,7 +85,7 @@ async function loadModelDefaultsWriter(
     PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
   );
   if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
-  return { ownerAccountId: loaded.row.accountId, userId: loaded.userId };
+  return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
 }
 
 export function registerModelsRoutes(): void {
@@ -470,6 +474,29 @@ export function registerModelsRoutes(): void {
           { error: 'agentName is required for scope=agent', code: 'agent_name_required' },
           400,
         );
+      }
+
+      if (scope === 'agent') {
+        // The pin's subject must exist: an agent name the manifest does not
+        // declare would store an orphan pin no gateway resolution ever reads
+        // ("Pins without an agent" in `agents ls`) — same 409 class the
+        // unknown-model-id path below answers with (KRTX-2535). DELETE stays
+        // lenient: clearing a stale pin for a removed agent is the cleanup path.
+        let manifest;
+        try {
+          manifest = await loadManifestForEdit(writer.row);
+        } catch (e) {
+          return c.json(
+            { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
+            400,
+          );
+        }
+        const read = readAgentBlockV2(manifest, agentName!);
+        if (!read.ok) {
+          return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+        }
+        const notDeclared = agentNotDeclaredError(manifest, agentName!);
+        if (notDeclared) return c.json(notDeclared, 409);
       }
 
       const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));

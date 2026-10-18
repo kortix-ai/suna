@@ -1,4 +1,5 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
+import { WEBHOOK_SIGNATURE_ALGORITHM, WEBHOOK_SIGNATURE_HEADER } from '@kortix/shared';
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectTriggerEvent, ProjectTriggersResponse } from '../api/types.ts';
 import {
@@ -392,5 +393,10 @@ function reportWebhookUrl(resp: ProjectTriggersResponse, slug: string): void {
   const created = resp.triggers?.find((t) => t.slug === slug);
   if (created?.webhook_url) {
     process.stdout.write(`  ${C.dim}webhook ${C.reset}${created.webhook_url}\n`);
+    // A bare URL is unsigned and unusable — name the signing header and where
+    // the full scheme + copy-paste sample lives (`triggers info`).
+    process.stdout.write(
+      `  ${C.dim}sign with ${C.reset}${WEBHOOK_SIGNATURE_HEADER} ${C.dim}(${WEBHOOK_SIGNATURE_ALGORITHM}) — sample: kortix triggers info ${slug}${C.reset}\n`,
+    );
   }
 }

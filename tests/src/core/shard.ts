@@ -66,17 +66,37 @@ export interface ShardPlan {
 }
 
 /** Parse `CURRENT/TOTAL`. Throws on anything that is not a usable shard spec. */
-export function parseShardSpec(value: string): ShardSpec {
+/**
+ * The one CURRENT/TOTAL shard grammar. `parseShardSpec` (--shard) and the lane
+ * flags (--browser-shard/--api-shard) share the regex and the
+ * 1 <= CURRENT <= TOTAL bounds; they differ in the floor for TOTAL (1 for a
+ * run that may not be sharded, 2 for a flag that only exists when sharding)
+ * and in their error wording, which the tests pin.
+ */
+export function parseShardBounds(
+  value: string,
+  minTotal: number,
+): { current: number; total: number; matched: boolean; inBounds: boolean } {
   const match = value.match(/^(\d+)\/(\d+)$/);
   const current = Number(match?.[1]);
   const total = Number(match?.[2]);
-  if (!match || !Number.isInteger(current) || !Number.isInteger(total)) {
+  return {
+    current,
+    total,
+    matched: !!match && Number.isInteger(current) && Number.isInteger(total),
+    inBounds: !!match && total >= minTotal && current >= 1 && current <= total,
+  };
+}
+
+export function parseShardSpec(value: string): ShardSpec {
+  const parsed = parseShardBounds(value, 1);
+  if (!parsed.matched) {
     throw new Error(`--shard must use CURRENT/TOTAL, received "${value}"`);
   }
-  if (total < 1 || current < 1 || current > total) {
+  if (!parsed.inBounds) {
     throw new Error(`--shard must satisfy 1 <= CURRENT <= TOTAL, received "${value}"`);
   }
-  return { current, total };
+  return { current: parsed.current, total: parsed.total };
 }
 
 export function flowWeightMs(flow: RegisteredFlow): number {
@@ -92,10 +112,36 @@ export function isPinnedToFirstShard(flow: RegisteredFlow): boolean {
  * Assign every flow to a shard and return the ids belonging to `spec.current`.
  * Total across all shards is a partition: every input flow appears exactly once.
  */
+/**
+ * Longest-processing-time greedy bin packing, the one load-balance algorithm
+ * both shard planners share: items arrive heaviest-first and each lands in the
+ * least-loaded bin (first-lowest wins ties, so every shard computing this
+ * agrees with no coordination). `startBin` skips reserved bins (the serial
+ * tail's shard 1); `initialLoads` carries the weight already assigned there.
+ */
+export function packLeastLoaded(
+  items: ReadonlyArray<{ id: string; weight: number }>,
+  binCount: number,
+  startBin = 0,
+  initialLoads?: number[],
+): { bins: string[][]; loads: number[] } {
+  const loads = initialLoads ? [...initialLoads] : new Array<number>(binCount).fill(0);
+  const bins: string[][] = Array.from({ length: binCount }, () => []);
+  for (const item of items) {
+    let target = startBin;
+    for (let i = startBin + 1; i < binCount; i++) {
+      if (loads[i] < loads[target]) target = i;
+    }
+    bins[target].push(item.id);
+    loads[target] += item.weight;
+  }
+  return { bins, loads };
+}
+
 export function planShard(flows: RegisteredFlow[], spec: ShardSpec): ShardPlan {
-  const loads = new Array<number>(spec.total).fill(0);
   const assigned = new Array<string[]>(spec.total);
   for (let i = 0; i < spec.total; i++) assigned[i] = [];
+  const loads = new Array<number>(spec.total).fill(0);
 
   const pinned = flows.filter(isPinnedToFirstShard);
   for (const flow of pinned) {
@@ -117,19 +163,18 @@ export function planShard(flows: RegisteredFlow[], spec: ShardSpec): ShardPlan {
       return delta !== 0 ? delta : a.id.localeCompare(b.id, undefined, { numeric: true });
     });
 
-  for (const flow of parallel) {
-    let target = packStart;
-    for (let i = packStart + 1; i < spec.total; i++) {
-      if (loads[i] < loads[target]) target = i;
-    }
-    assigned[target].push(flow.id);
-    loads[target] += flowWeightMs(flow);
-  }
+  const packed = packLeastLoaded(
+    parallel.map((flow) => ({ id: flow.id, weight: flowWeightMs(flow) })),
+    spec.total,
+    packStart,
+    loads,
+  );
+  for (let i = packStart; i < spec.total; i++) assigned[i].push(...packed.bins[i]);
 
   return {
     ids: assigned[spec.current - 1].sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true }),
     ),
-    loads,
+    loads: packed.loads,
   };
 }

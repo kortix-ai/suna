@@ -10,8 +10,10 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * The trigger shows the workspace, not you: its icon (an emoji if one is set,
  * otherwise the initials `EntityAvatar` derives from the name) and its name, the
  * same treatment the rows inside the switcher use, so the thing you are in looks
- * like the things you can move to. No account name, no email, no avatar — you
- * already know who you are; what a sidebar has to tell you is where you are.
+ * like the things you can move to. You are one menu open away, though: the menu
+ * opens on the signed-in identity (KRTX-1810) — the shell's only
+ * "who am I" surface since the old footer user menu was folded into this
+ * control — and keeps the account rows below it.
  *
  * User settings opens the same settings surface the header `UserMenu` opens,
  * on the same `profile` tab — but by a different mechanism, and the difference
@@ -44,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
@@ -63,6 +66,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Download } from '@/features/icon/icons/download';
+import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
@@ -95,8 +99,14 @@ import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tNewWorkspace = useI18nTranslations('newWorkspace');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user } = useAuth();
+  // The identity line the account top bar shows on /projects and /new — same
+  // precedence, same fallback — so the shell's menu says who is signed in the
+  // same way those pages do (KRTX-1810).
+  const identity = user?.user_metadata?.name?.trim() || user?.email || null;
 
   // Seeds `selectedAccountId` for a brand-new sign-in. Pre-merge this ran here
   // by way of a `UserMenu` in the project sidebar's FOOTER. That footer menu no
@@ -227,6 +237,20 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               sideOffset={6}
               className="border-foreground/10 w-[15rem] space-y-0.5 overflow-hidden shadow-lg"
             >
+              {/* The identity header: the same "Logged in as" treatment as the
+                  account top bar (`account-top-bar.tsx`), two lines — the copy
+                  above the name or email. A label, not a row: it is not focusable
+                  and does nothing, it just tells you which session the rows below
+                  (Settings, Log out) would act on. */}
+              <DropdownMenuLabel className="flex min-w-0 flex-col gap-0.5 font-normal">
+                <span className="text-muted-foreground text-xs">
+                  {tNewWorkspace('account.loggedInAs')}
+                </span>
+                <span className="text-foreground max-w-56 truncate text-sm">
+                  {identity ?? tNewWorkspace('account.label')}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ArrowsLeftRightIcon weight="fill" />
