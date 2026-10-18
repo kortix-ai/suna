@@ -128,11 +128,29 @@ export async function getNextCrNumber(projectId: string): Promise<number> {
   return (row?.max ?? 0) + 1;
 }
 
+/** A UUID (the canonical cr_id) or a bare per-project number ("233", "#233"
+ *  — the number the UI and the CLI display). Anything else can never match:
+ *  returning null instead of handing Postgres a non-UUID is what keeps a
+ *  malformed id a 404 rather than a 500 (prod, 2026-10-18: a caller passed
+ *  the CR number to the merge route and the uuid cast 500-ed).
+ */
+const CR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getCrById(crId: string, projectId: string) {
+  const ref = crId.replace(/^#/, '');
+  const byNumber = /^\d+$/.test(ref);
+  if (!CR_UUID_RE.test(ref) && !byNumber) return null;
   const [row] = await db
     .select()
     .from(changeRequests)
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    .where(
+      and(
+        eq(changeRequests.projectId, projectId),
+        // The (project_id, number) unique index serves the number lookup; a
+        // number can never be a UUID, so the two shapes never collide.
+        byNumber ? eq(changeRequests.number, Number(ref)) : eq(changeRequests.crId, ref),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
