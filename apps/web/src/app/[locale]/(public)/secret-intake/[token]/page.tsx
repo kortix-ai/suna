@@ -17,9 +17,7 @@ export default function SecretIntakePage() {
       <Rise>
         <StepHeader
           title={tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a')}
-          description={tI18nHardcoded.raw(
-            'autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee',
-          )}
+          description="Enter the requested value below. Check its delivery scope before saving. The value is encrypted at rest."
         />
       </Rise>
       <Rise delay={0.06}>

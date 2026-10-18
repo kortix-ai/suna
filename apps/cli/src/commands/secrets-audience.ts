@@ -176,6 +176,7 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
   process.stdout.write(
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
+      `  ${C.dim}Delivery: ${resp.scope} — ${resp.scope === 'runtime' ? 'real value in the sandbox environment' : 'server-side only; never in the sandbox environment'}.${C.reset}\n` +
       `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link.${C.reset}\n` +
       `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
       `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
