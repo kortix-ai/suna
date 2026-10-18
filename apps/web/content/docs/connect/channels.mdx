@@ -341,6 +341,7 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.
 - **Groups run in Telegram's privacy mode by default:** the bot receives only commands, replies to it and mentions. Send `/setprivacy` to @BotFather, or make the bot a group admin, to let it read every message.
 - **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session.
+- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When the chat's first session is still starting, the bot says so and asks you to send the message again.
 - Connecting needs `project.connector.write`.
 
 | API | What it does |
