@@ -101,14 +101,15 @@ const render = async (props: Record<string, unknown>): Promise<ReactTestRenderer
   const ref = React.createRef<{ open: () => void; close: () => void }>();
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the fakes are untyped hosts
-    renderer = create(React.createElement(mod.ModelPickerSheet as any, { ...props, ref }));
+    // The real component's props include sheet internals the fakes don't model.
+    const Comp = mod.ModelPickerSheet as unknown as React.ComponentType<Record<string, unknown>>;
+    renderer = create(React.createElement(Comp, { ...props, ref }));
   });
   return Object.assign(renderer as ReactTestRenderer, { ref });
 };
 
 const pickerProps = (r: ReactTestRenderer) => {
-  const node = r.root.find((n: any) => n.type === 'picker-sheet');
+  const node = r.root.find((n: { type: unknown }) => n.type === 'picker-sheet');
   return node.props as Record<string, unknown> & { children?: unknown[] };
 };
 

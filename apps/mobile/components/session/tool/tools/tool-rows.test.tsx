@@ -194,8 +194,7 @@ const call = (tool: string, state: Record<string, unknown>) =>
 
 const texts = (renderer: ReactTestRenderer): string[] =>
   renderer.root
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- host fakes are untyped strings
-    .findAll((node: any) => node.type === 'text' || node.type === 'rn-text')
+    .findAll((node: { type: unknown }) => node.type === 'text' || node.type === 'rn-text')
     .flatMap((node) => {
       const children = node.props?.children;
       return Array.isArray(children) ? children.filter((c): c is string => typeof c === 'string') : typeof children === 'string' ? [children] : [];
@@ -252,8 +251,10 @@ describe('read rows', () => {
     const t = texts(r).join('\n');
     expect(t).toContain('/a.ts');
     expect(t).toContain('/b.ts');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- host fakes are untyped strings
-    const rows = r.root.findAll((n: any) => n.type === 'pressable' && n.props.accessibilityRole === 'link');
+    const rows = r.root.findAll(
+      (n: { type: unknown; props: { accessibilityRole?: unknown } }) =>
+        n.type === 'pressable' && n.props.accessibilityRole === 'link',
+    );
     expect(rows.length).toBe(2);
     await act(async () => rows[0].props.onPress());
     expect(openFile).toHaveBeenCalled();
