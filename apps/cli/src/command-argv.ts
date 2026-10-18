@@ -10,6 +10,45 @@
 const isHelpArg = (arg: string) => arg === '-h' || arg === '--help';
 
 /**
+ * The per-invocation flags that may lead the line (KRTX-2603): the same
+ * `--host` / `--project` every command documents under its own Global
+ * options. `liftLeadingGlobalFlags` moves them after the command token, so
+ * `kortix --host <name> sessions ls` reaches `sessions` instead of reporting
+ * `unknown command "--host"`. Anything else flag-shaped in command position
+ * stays untouched for the caller to name in its error.
+ */
+const LEADING_GLOBAL_FLAGS = new Set(['--host', '--project']);
+
+export function liftLeadingGlobalFlags(argv: readonly string[]): string[] {
+  const lifted: string[] = [];
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) break;
+    const eq = arg.indexOf('=');
+    const name = eq < 0 ? arg : arg.slice(0, eq);
+    if (!LEADING_GLOBAL_FLAGS.has(name)) break;
+    if (eq < 0) {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('-')) break;
+      lifted.push(name, value);
+      i += 2;
+    } else {
+      lifted.push(arg);
+      i += 1;
+    }
+  }
+  const command = argv[i];
+  // No documented flag led the line, or only flags follow: leave argv alone —
+  // a help flag in command position is the root help, an unknown flag is the
+  // caller's option error.
+  if (lifted.length === 0 || command === undefined || command.startsWith('-')) {
+    return [...argv];
+  }
+  return [command, ...argv.slice(i + 1), ...lifted];
+}
+
+/**
  * Help for a command with subcommands (`kortix <cmd> <subcommand> …`). The
  * root help promises `kortix <cmd> <subcommand> --help`, so `-h` / `--help`
  * anywhere in argv prints `help` to stdout and returns 0. A bare `kortix <cmd>`

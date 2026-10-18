@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { loadAuth } from './api/auth.ts';
 import { printBanner } from './banner.ts';
+import { liftLeadingGlobalFlags } from './command-argv.ts';
 import { type Command, TIERS } from './command-table.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
@@ -51,7 +52,7 @@ import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
-import { runWhoami } from './commands/whoami.ts';
+import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
@@ -215,7 +216,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   logout: (rest) => runLogout(rest),
   whoami: (rest) => runWhoami(rest),
   doctor: (rest) => runDoctor(rest),
-  token: (rest) => runWhoami(['--token-only', ...rest]),
+  token: (rest) => runToken(rest),
   hosts: (rest) => runHosts(rest),
   accounts: (rest) => runAccounts(rest),
   members: (rest) => runMembers(rest),
@@ -283,6 +284,10 @@ async function main(rawArgv: string[]): Promise<number> {
     ];
   }
   if (process.env.KORTIX_DEBUG === '1') loadAuth();
+  // A per-invocation global flag may lead the line (KRTX-2603):
+  // `kortix --host <name> sessions ls` is `sessions ls --host <name>`.
+  // With a `--` separator the position IS the meaning — leave argv alone.
+  if (separator < 0) argv = liftLeadingGlobalFlags(argv);
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
   // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
@@ -296,9 +301,30 @@ async function main(rawArgv: string[]): Promise<number> {
   // for to READ something, and it must never block on a question. Bare
   // `kortix` must ALWAYS land here — the interactive session picker is an
   // explicit verb (`kortix connect`), never the front door.
+  //
+  // `kortix help <topic>` prints the topic's own help (the git/npm/gh
+  // convention, KRTX-2604): a known command's usage, `version`'s version,
+  // an unknown topic's suggestion. Bare `help` and a flag-shaped or absent
+  // topic stay the landing screen.
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding({ offerUpdate: argv.length === 0 });
-    return 0;
+    const topic = argv[0] === 'help' ? argv[1] : undefined;
+    if (!topic || topic.startsWith('-')) {
+      await printLanding({ offerUpdate: argv.length === 0 });
+      return 0;
+    }
+    if (topic === 'version') {
+      printVersion();
+      return 0;
+    }
+    const topicHandler = COMMAND_HANDLERS[topic];
+    if (topicHandler) return topicHandler(['--help'], topic);
+    const topicSuggestion = closestCommand(topic);
+    const topicLines = [`${C.red}kortix:${C.reset} unknown help topic \`${topic}\``];
+    if (topicSuggestion)
+      topicLines.push(`       Did you mean ${C.cyan}kortix help ${topicSuggestion}${C.reset}?`);
+    topicLines.push(`       Run ${C.cyan}kortix --help${C.reset} for the full list.`);
+    process.stderr.write(`${topicLines.join('\n')}\n`);
+    return 2;
   }
   if (argv[0] === 'version') {
     printVersion();
@@ -320,6 +346,18 @@ async function main(rawArgv: string[]): Promise<number> {
   if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
+  }
+  // A flag is never a command name (KRTX-2603): after the lift, anything
+  // still leading the line flag-shaped was never a documented global flag —
+  // name the option instead of reporting `unknown command`.
+  if (argv[0].startsWith('-')) {
+    const lines = [
+      `${C.red}kortix:${C.reset} unknown option \`${argv[0]}\` in command position`,
+      '       Global flags (--host <name>, --project <id>) work before the command too.',
+      `       Run ${C.cyan}kortix --help${C.reset} for the command list.`,
+    ];
+    process.stderr.write(`${lines.join('\n')}\n`);
+    return 2;
   }
   // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
   // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→

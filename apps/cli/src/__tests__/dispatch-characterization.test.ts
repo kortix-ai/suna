@@ -77,10 +77,15 @@ describe('root dispatch characterization (KRTX-1341)', () => {
     });
   }
 
-  test('`token --help` routes through the whoami adapter (--token-only argv preserved)', async () => {
+  test('`token --help` prints the token command\u2019s own usage (KRTX-1802)', async () => {
     const result = await runCli(['token', '--help']);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('Usage: kortix whoami');
+    expect(result.stdout).toContain('Usage: kortix token');
+  });
+
+  test('`token` bare no longer prints the whoami usage (KRTX-1802)', async () => {
+    const result = await runCli(['token']);
+    expect(result.stdout).not.toContain('Usage: kortix whoami');
   });
 
   test('`remind --help` routes through the reminders adapter with the add-verb default', async () => {

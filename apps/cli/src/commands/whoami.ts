@@ -32,6 +32,32 @@ export async function runWhoami(argv: string[]): Promise<number> {
   return performWhoami(flags);
 }
 
+/**
+ * `kortix token` (KRTX-1802): the whoami command's token-only view under its
+ * own name, with its own --help. Bare `kortix token` prints exactly what
+ * `kortix whoami --token-only` prints.
+ */
+const TOKEN_HELP = help`Usage: kortix token [options]
+
+Print only the active token context on the selected host: the kind of
+credential in use and its project/session/agent grants — never the
+secret value itself. Same as \`kortix whoami --token-only\`.
+
+Options:
+  --host <name>     Read the token context of a specific host (default: active).
+  --json            Print the full identity JSON instead (same as \`kortix whoami --json\`).
+  -h, --help        Show this help.
+`;
+
+export async function runToken(argv: string[]): Promise<number> {
+  const flags = takeFlags(argv, TOKEN_HELP, (rest) => ({
+    host: takeFlagValue(rest, ['--host']),
+    json: takeFlagBool(rest, ['--json']),
+  }));
+  if (typeof flags === 'number') return flags;
+  return performWhoami({ ...flags, tokenOnly: !flags.json });
+}
+
 interface PerformWhoamiOptions {
   /** Probe a specific host (default: active). */
   host?: string;
