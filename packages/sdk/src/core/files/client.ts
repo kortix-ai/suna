@@ -98,6 +98,30 @@ async function fetchDaemonJson<T>(relUrl: string, baseUrl?: string): Promise<T> 
   return response.json() as Promise<T>;
 }
 
+/** POST/DELETE a daemon JSON-write endpoint, surfacing the server's error as
+ *  `<label> failed (<status>): ...` (the labels byte-match the previous
+ *  per-function messages). */
+async function daemonWrite(
+  relUrl: string,
+  method: 'POST' | 'DELETE',
+  body: unknown,
+  label: string,
+  baseUrl?: string,
+): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}${relUrl}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(`${label} failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
+  }
+  return res.json() as Promise<boolean>;
+}
+
 /**
  * Sandbox filesystem roots the daemon serves (mirrors DEFAULT_ALLOWED_ROOTS in
  * kortix-sandbox-agent-server). The daemon re-validates every path server-side;
@@ -154,13 +178,8 @@ export async function listFiles(dirPath: string, baseUrl?: string): Promise<File
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
 export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
-  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${base}/file/content?path=${encodeURIComponent(daemonPath)}`);
-  if (!response.ok) {
-    throw new ApiError(await errorMessage(response), { status: response.status, response });
-  }
-  return response.json() as Promise<FileContent>;
+  return fetchDaemonJson<FileContent>(`/file/content?path=${encodeURIComponent(daemonPath)}`, baseUrl);
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
@@ -496,7 +515,18 @@ export async function uploadFile(
     notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
     return result;
   }
+  return uploadFileChunked(file, targetPath, name, base, options);
+}
 
+/** The large-file path: reserve the collision-safe destination, then append
+ *  chunks under it, cleaning up the partial upload on any failure. */
+async function uploadFileChunked(
+  file: File | Blob,
+  targetPath: string | undefined,
+  name: string,
+  base: string,
+  options: UploadFileOptions | undefined,
+): Promise<UploadResult[]> {
   // Reserve the collision-safe destination with the daemon's existing upload
   // semantics. The returned path is authoritative when the requested name
   // already exists.
@@ -829,28 +859,12 @@ async function placeUpload(
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
 export async function deleteFile(filePath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: filePath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file', 'DELETE', { path: filePath }, 'Delete', baseUrl);
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
 export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/mkdir`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: dirPath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file/mkdir', 'POST', { path: dirPath }, 'Mkdir', baseUrl);
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
@@ -860,15 +874,13 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
 
 /** Daemon `POST /file/rename`. `overwrite: false` asks for create-only (409 when taken). */
 async function moveFile(from: string, to: string, base: string, overwrite: boolean): Promise<boolean> {
-  const res = await authenticatedFetch(`${base}/file/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(overwrite ? { from, to } : { from, to, overwrite: false }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite(
+    '/file/rename',
+    'POST',
+    overwrite ? { from, to } : { from, to, overwrite: false },
+    'Rename',
+    base,
+  );
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────
