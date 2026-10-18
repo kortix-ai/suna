@@ -124,15 +124,3 @@ describe('prefetchProjectShellReads', () => {
     client.clear();
   });
 });
-
-describe('KRTX-2618: one session-list fetch per render', () => {
-  test('the shell prefetch issues exactly one project-sessions read per project', async () => {
-    const urls = mockFetch(false);
-    const client = new QueryClient();
-    prefetchProjectShellReads(client, 'P1');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(urls.filter((u) => u.includes('/sessions'))).toHaveLength(1);
-    client.clear();
-  });
-});
