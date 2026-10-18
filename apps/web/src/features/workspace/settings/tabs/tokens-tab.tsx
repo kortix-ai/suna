@@ -168,25 +168,29 @@ export function apiKeyMetaParts(
   return parts;
 }
 
+/**
+ * The pane's relative-time voice: the shared helper's ladder, but a stamp
+ * younger than a minute reads "this minute" ("Last used this minute") rather
+ * than the helper's "just now", and `now` is fixed per render so a list does
+ * not re-render with drifting labels.
+ */
 export function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
   const then = typeof input === 'string' ? new Date(input).getTime() : input;
   if (!Number.isFinite(then)) return '';
-  const elapsedMinutes = Math.max(0, Math.floor((now - then) / 60_000));
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' });
-  if (elapsedMinutes < 1) return formatter.format(0, 'minute');
-  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute');
-  const hours = Math.floor(elapsedMinutes / 60);
-  if (hours < 24) return formatter.format(-hours, 'hour');
-  const days = Math.floor(hours / 24);
-  if (days < 30) return formatter.format(-days, 'day');
-  return new Date(then).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  if (then <= now && now - then < 60_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' }).format(
+      0,
+      'minute',
+    );
+  }
+  return relativeTime(input, locale, now);
 }
 
 export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
   const locale = useLocale();
-  const [renderedAt] = useState(() => Date.now());
+  const [mountAt] = useState(() => Date.now());
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
   const [detailRow, setDetailRow] = useState<ApiKeyRow | null>(null);
@@ -214,6 +218,15 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     enabled: !!accountId,
     staleTime: 30_000,
   });
+
+  // A stamp that lands after the pane mounted — a key used while this dialog
+  // is open — must not be aged against the mount-time clock: the past/future
+  // direction would flip and "Last used just now" would become a countdown
+  // for something that already happened. So the clock is the query's own
+  // fetch time once data has landed (it advances with every refetch), and the
+  // mount capture only covers the first paint, keeping SSR and hydration
+  // agreeing exactly as the plain `useState(() => Date.now())` did.
+  const renderedAt = tokensQuery.dataUpdatedAt || mountAt;
 
   // Names only — a project-scoped key shows the project it is limited to
   // rather than a raw uuid.

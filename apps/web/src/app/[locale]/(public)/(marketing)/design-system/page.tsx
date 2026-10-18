@@ -4123,7 +4123,6 @@ export default function BrandPage() {
                   <div>
                     <p className="text-muted-foreground mb-4 text-xs font-medium">
                       {tI18nHardcoded.raw('i18nComplete.text24b6bef25e6e')}
-                      {"'"}t
                     </p>
                     {[
                       tI18nHardcoded.raw('i18nComplete.textb2a0575f2c15'),

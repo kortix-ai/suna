@@ -84,11 +84,31 @@ const TIERS: Record<FreshnessTier, { staleTime: number }> = {
 const ERROR_SELF_HEAL_BASE_MS = 2_000;
 const ERROR_SELF_HEAL_CAP_MS = 30_000;
 
+/**
+ * A gone answer is FINAL: the server looked and said the entity does not exist
+ * (404) or is permanently gone (410). No retry can change that answer, so
+ * every retry the fail-safe would schedule is pure waste — reported 2026-10-15
+ * (KRTX-2436): the gone-project screen re-asked a dead project every 30 s
+ * forever, one CORS preflight and one console warning per ask. Every other
+ * status stays transient: 5xx and network blips recover, 401 is the auth
+ * session still publishing, 403 recovers when an access request is approved —
+ * those keep the fail-safe and the mount retry exactly as before.
+ */
+function isFinalGoneError(error: unknown): boolean {
+  const status = (error as { status?: number } | null | undefined)?.status;
+  return status === 404 || status === 410;
+}
+
 function errorSelfHealRefetchInterval(query: {
   state: { status: string; data?: unknown; errorUpdateCount: number };
 }): number | false {
   const { status, data, errorUpdateCount } = query.state;
   if (status !== 'error' || data !== undefined) return false;
+  // The error is read through a narrowed access rather than a field of the
+  // structural parameter: an `error?: unknown` field here unifies TanStack's
+  // `TError` generic with `unknown` at every `useQuery` that spreads a
+  // contract (the same reason `retryOnMount` below narrows inside the body).
+  if (isFinalGoneError((query as { state?: { error?: unknown } }).state?.error)) return false;
   return Math.min(
     ERROR_SELF_HEAL_BASE_MS * 2 ** Math.max(0, errorUpdateCount - 1),
     ERROR_SELF_HEAL_CAP_MS,
@@ -106,6 +126,22 @@ export function contract(tier: FreshnessTier) {
      * unconditional poll below, which already re-fires an errored entry.
      */
     refetchInterval: errorSelfHealRefetchInterval,
+    /**
+     * TanStack's default `retryOnMount: true` re-fires the fetch for EVERY new
+     * observer subscribing to an entry that settled as error without data — six
+     * observers mounting in 20 ms on the gone-project screen became six
+     * duplicate 404s (KRTX-2436). A gone answer never changes on a retry, so
+     * remounting onto it costs nothing; a transient error keeps the instant
+     * mount retry, which is how a page revisited after a blip heals at once
+     * instead of waiting out the interval. The parameter stays `unknown` and is
+     * narrowed inside: a structural `error` field in the parameter type would
+     * unify TanStack's `TError` generic with `unknown` at every `useQuery`
+     * that spreads this contract.
+     */
+    retryOnMount: (query: unknown) => {
+      const state = (query as { state?: { error?: unknown } } | null | undefined)?.state;
+      return !isFinalGoneError(state?.error);
+    },
     ...(tier === 'directory'
       ? {
           refetchInterval: 10_000,

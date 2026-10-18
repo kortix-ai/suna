@@ -261,6 +261,10 @@ details.adv .row:last-child { border-bottom: 0; }
 .perm-line .btn { height: calc(var(--spacing) * 6); }
 /* never record: one list, locked entries first */
 .never .row .lab { display: flex; flex-direction: column; }
+.never .members { display: block; max-height: calc(var(--spacing) * 40); overflow-y: auto; margin-top: calc(var(--spacing) * 1.5); color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs-line-height); }
+.never .link-btn { font-size: inherit; }
+.never .sub-h { padding: calc(var(--spacing) * 4) 0 calc(var(--spacing) * 1); color: var(--muted-foreground); font-size: var(--text-xs); font-weight: 500; border-bottom: 1px solid var(--border); }
+.never select { max-width: 60%; }
 .never .row .name { display: flex; align-items: center; gap: calc(var(--spacing) * 1.5); }
 .never .row .name.mono { font-family: var(--font-mono-system); font-size: var(--text-xs); }
 .never .lock { color: var(--muted-foreground); width: calc(var(--spacing) * 3.5); height: calc(var(--spacing) * 3.5); }

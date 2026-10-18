@@ -195,6 +195,7 @@ describe('policy and status', () => {
       record_only_included: false,
       included_bundle_ids: [],
       included_domains: [],
+      member_inclusions: true,
     });
     const set = PolicySchema.parse({
       privacy: {

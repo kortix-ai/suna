@@ -69,6 +69,11 @@ export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
 
+// The stamp the removal gate reads: mark a teardown as Kortix-initiated BEFORE
+// the provider call so its `removed` webhook cannot read as a lost runtime
+// (consumed by ../billing/services account deletion).
+export { markKortixRemovalIntent } from './runtime-identity';
+
 // Offboarding pauses the reminders a departed member set (consumed by
 // ../accounts/core/offboard-member).
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
