@@ -131,7 +131,7 @@ function startRequest(body: Record<string, unknown>): void {
 afterEach(async () => {
   for (const key of Object.values(g)) key.release();
   if (pending) {
-    await pending.catch(() => undefined);
+    await Promise.resolve(pending).catch(() => undefined);
     pending = null;
   }
   calls.length = 0;
