@@ -696,6 +696,7 @@
     "kortixPty",
     "kortixToken",
     "latestPromptModel",
+    "latestUserPrompt",
     "leaveAccount",
     "linkCaptureDevice",
     "linkGitHubInstallation",

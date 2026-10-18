@@ -190,7 +190,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '@/ui';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestUserPrompt, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -804,7 +804,10 @@ export function SessionChat({
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   // The composer opens on the model the session already runs (its pin, or its
   // last prompt's model), so a session set from the CLI, the SDK or Slack does
-  // not switch model on its first web message.
+  // not switch model on its first web message. The prompt's agent rides
+  // along: the history fallback holds only under the agent that ran it, so a
+  // composer opened on another agent keeps that agent's own default.
+  const lastUserPrompt = useMemo(() => latestUserPrompt(messages), [messages]);
   const local = useSessionModelSelection({
     agents,
     providers,
@@ -813,7 +816,8 @@ export function SessionChat({
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     projectSession: projectSessionRow,
-    lastPromptModel: latestPromptModel(messages),
+    lastPromptModel: lastUserPrompt?.model,
+    lastPromptAgent: lastUserPrompt?.agent,
   });
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
@@ -3577,7 +3581,10 @@ export function SessionChat({
   );
 
   const handleVariantChange = useCallback(
-    (v: string | null | undefined) => local.model.variant.set(v ?? undefined),
+    // Passed through unmapped: `null` is the reasoning menu's explicit Auto
+    // (send no variant), `undefined` is the footer's Reset (agent default).
+    // Mapping either to the other would make Auto and Reset identical.
+    (v: string | null | undefined) => local.model.variant.set(v),
     [local.model.variant],
   );
 

@@ -35,18 +35,38 @@ export function resolveModelDefault(
  * The model of the newest user message that records one: what the session
  * last ran on. Pass it to `sessionModelCandidates` as `lastPromptModel`.
  */
+/** The newest user prompt that records a model: what the session last ran
+ *  on, plus the agent that ran it (when the transcript attributes one). */
+export function latestUserPrompt(
+  messages:
+    | ReadonlyArray<{
+        role: string;
+        agent?: string | null;
+        model?: { provider?: string; model?: string } | null;
+      }>
+    | null
+    | undefined,
+): { model: ModelKey; agent?: string } | undefined {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const message = messages![i]!;
+    const { provider, model } = message.model ?? {};
+    if (message.role !== 'user' || !provider || !model) continue;
+    const found: { model: ModelKey; agent?: string } = {
+      model: { providerID: provider, modelID: model },
+    };
+    if (message.agent) found.agent = message.agent;
+    return found;
+  }
+  return undefined;
+}
+
 export function latestPromptModel(
   messages:
     | ReadonlyArray<{ role: string; model?: { provider?: string; model?: string } | null }>
     | null
     | undefined,
 ): ModelKey | undefined {
-  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
-    const message = messages![i]!;
-    const { provider, model } = message.model ?? {};
-    if (message.role === 'user' && provider && model) return { providerID: provider, modelID: model };
-  }
-  return undefined;
+  return latestUserPrompt(messages)?.model;
 }
 
 /** Pin sources that record a choice: a person's (CLI, SDK, Slack, `PUT /model`),

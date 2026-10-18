@@ -37,7 +37,9 @@ interface UserEntry extends ModelKey {
 interface ComposerPreference {
   model?: ModelKey;
   reset?: boolean;
-  variants?: Record<string, string | undefined>;
+  /** Per-model reasoning variant. A string names the variant; `null` is an
+   *  explicit Auto (send none); absence inherits the agent default. */
+  variants?: Record<string, string | null | undefined>;
 }
 
 interface ModelStore {
@@ -132,7 +134,7 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
       if (isObj(value.variants)) {
         preference.variants = {};
         for (const [key, variant] of Object.entries(value.variants)) {
-          if (typeof variant === 'string') preference.variants[key] = variant;
+          if (variant === null || typeof variant === 'string') preference.variants[key] = variant;
         }
       }
       out.composerPreferences[scope] = preference;

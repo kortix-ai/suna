@@ -302,7 +302,9 @@ export function ComposerChatInput({
       modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
-      onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
+      // Through unmapped: `null` is the reasoning menu's explicit Auto,
+      // `undefined` the footer's Reset — they are different picks.
+      onVariantChange={(v) => local.model.variant.set(v)}
       commands={commands || []}
       commandsResolved={commands !== undefined}
       draftScope={draftScope}

@@ -611,6 +611,7 @@ export {
 } from './core/models/provider-selection';
 export {
   latestPromptModel,
+  latestUserPrompt,
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,

@@ -9,6 +9,7 @@ import type {
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
 import {
   latestPromptModel,
+  latestUserPrompt,
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
@@ -433,6 +434,31 @@ describe('sessionModelCandidates', () => {
         gatewayEnabled: false,
       }),
     ).toEqual([{ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }]);
+  });
+});
+
+describe('latestUserPrompt', () => {
+  test('reads the newest user prompt with its model and owning agent', () => {
+    expect(
+      latestUserPrompt([
+        { role: 'user', agent: 'worker', model: { provider: 'kortix', model: 'model-a' } },
+        { role: 'assistant', agent: 'worker', model: { provider: 'kortix', model: 'model-a' } },
+        { role: 'user', agent: 'reviewer', model: { provider: 'kortix', model: 'model-b' } },
+        // Assistant rows never own the prompt.
+        { role: 'assistant', agent: 'reviewer', model: { provider: 'kortix', model: 'model-z' } },
+      ]),
+    ).toEqual({ model: { providerID: 'kortix', modelID: 'model-b' }, agent: 'reviewer' });
+  });
+
+  test('a prompt without an owning agent omits it', () => {
+    expect(
+      latestUserPrompt([{ role: 'user', model: { provider: 'kortix', model: 'model-b' } }]),
+    ).toEqual({ model: { providerID: 'kortix', modelID: 'model-b' } });
+  });
+
+  test('a transcript with no user model has none', () => {
+    expect(latestUserPrompt([])).toBeUndefined();
+    expect(latestUserPrompt(undefined)).toBeUndefined();
   });
 });
 

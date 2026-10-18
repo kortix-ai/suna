@@ -234,7 +234,14 @@ export function ComposerCard({
               {reasoningOnDefault ? 'Reasoning · Agent default' : 'Reasoning override'}
             </span>
             {!reasoningOnDefault && onVariantChange && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => onVariantChange(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                // Reset returns to the agent default (`undefined`), not the
+                // menu's explicit Auto (`null`) — two different picks.
+                onClick={() => onVariantChange(undefined)}
+              >
                 Reset reasoning
               </Button>
             )}

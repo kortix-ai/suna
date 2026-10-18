@@ -71,6 +71,10 @@ export interface UseRuntimeLocalOptions {
   projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** The model of the session's newest user message, from its transcript. */
   lastPromptModel?: ModelKey;
+  /** The agent that produced that newest user message (`lastPromptModel`).
+   *  The history fallback holds only under its own agent: a prompt run by
+   *  one agent must not hold another agent's composer on that model. */
+  lastPromptAgent?: string;
 }
 
 export interface RuntimeLocalAgent {
@@ -113,7 +117,9 @@ export interface RuntimeLocalModel {
     /** True when reasoning inherits the agent default. */
     onDefault: boolean;
     list: string[];
-    set: (value: string | undefined) => void;
+    /** `null` pins an explicit Auto (send no variant); `undefined` resets to
+     *  the agent default; a string names the variant to send. */
+    set: (value: string | null | undefined) => void;
     cycle: () => void;
   };
 }
@@ -279,6 +285,7 @@ export function useRuntimeLocal({
   resolveServerDefault,
   projectSession,
   lastPromptModel,
+  lastPromptAgent,
 }: UseRuntimeLocalOptions): RuntimeLocal {
   // ---- Flatten models from providers (shared with the chat input). The
   // filter follows the provider MODE: gateway mode keeps the kortix-only
@@ -401,12 +408,19 @@ export function useRuntimeLocal({
   const composerPreference = modelStore.getComposerPreference(composerScope);
 
   // What the server says this session runs on. A new object each render from
-  // the caller must not recompute the resolution, so key it by value.
+  // the caller must not recompute the resolution, so key it by value. The
+  // history fallback ranks only under the agent that produced it: a prompt
+  // run by one agent must not hold another agent's composer on that model.
+  // An unattributed transcript keeps the fallback (nothing proves a
+  // mismatch); an attributed one from a different agent drops it.
   const sessionModels = useMemo(
     () =>
       sessionModelCandidates({
         session: projectSession,
-        lastPromptModel,
+        lastPromptModel:
+          lastPromptAgent === undefined || lastPromptAgent === currentAgent?.name
+            ? lastPromptModel
+            : undefined,
         gatewayEnabled: providerMode === 'gateway',
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,6 +429,8 @@ export function useRuntimeLocal({
       projectSession?.metadata?.opencode_model_source,
       lastPromptModel?.providerID,
       lastPromptModel?.modelID,
+      lastPromptAgent,
+      currentAgent?.name,
       providerMode,
     ],
   );
@@ -655,8 +671,13 @@ export function useRuntimeLocal({
     ? `${currentModelKey.providerID}/${currentModelKey.modelID}`
     : '';
   const storedVariantOverride = composerPreference?.variants?.[variantKey];
+  // `null` is an explicit Auto: the user picked "Auto" in the reasoning menu,
+  // so no variant is sent even when the agent configures one. A string must
+  // name a variant of the current model. Anything else inherits.
+  const variantAuto = storedVariantOverride === null;
   const variantOverride =
-    storedVariantOverride &&
+    !variantAuto &&
+    typeof storedVariantOverride === 'string' &&
     currentModel?.variants &&
     Object.hasOwn(currentModel.variants, storedVariantOverride)
       ? storedVariantOverride
@@ -666,6 +687,7 @@ export function useRuntimeLocal({
   const variantCurrent = useMemo<string | undefined>(() => {
     if (!currentModel) return undefined;
     if (agentDefaults) {
+      if (variantAuto) return undefined;
       const value = variantOverride ?? currentAgent?.variant;
       return value && currentModel.variants && Object.hasOwn(currentModel.variants, value)
         ? value
@@ -675,7 +697,7 @@ export function useRuntimeLocal({
       providerID: currentModel.providerID,
       modelID: currentModel.modelID,
     });
-  }, [agentDefaults, variantOverride, currentAgent?.variant, currentModel, modelStore]);
+  }, [agentDefaults, variantAuto, variantOverride, currentAgent?.variant, currentModel, modelStore]);
 
   const variantList = useMemo<string[]>(() => {
     if (!currentModel?.variants) return [];
@@ -683,18 +705,24 @@ export function useRuntimeLocal({
   }, [currentModel]);
 
   const setVariant = useCallback(
-    (value: string | undefined) => {
+    (value: string | null | undefined) => {
       if (!currentModel) return;
       if (agentDefaults) {
+        // `undefined` resets to the agent default; `null` pins an explicit
+        // Auto — two different choices, both stored, both surviving reload.
+        const nextVariants = { ...composerPreference?.variants };
+        if (value === undefined) delete nextVariants[variantKey];
+        else nextVariants[variantKey] = value;
         modelStore.setComposerPreference(composerScope, {
           ...composerPreference,
-          variants: { ...composerPreference?.variants, [variantKey]: value },
+          variants: nextVariants,
         });
         return;
       }
+      // Legacy mode has no agent default to inherit: Auto and Reset both clear.
       modelStore.setVariant(
         { providerID: currentModel.providerID, modelID: currentModel.modelID },
-        value,
+        value ?? undefined,
       );
     },
     [agentDefaults, composerScope, composerPreference, variantKey, currentModel, modelStore],
@@ -749,7 +777,8 @@ export function useRuntimeLocal({
       hasSessionModel,
       variant: {
         current: variantCurrent,
-        onDefault: agentDefaults ? variantOverride === undefined : variantCurrent === undefined,
+        onDefault:
+          agentDefaults ? variantOverride === undefined && !variantAuto : variantCurrent === undefined,
         list: variantList,
         set: setVariant,
         cycle: cycleVariant,

@@ -171,6 +171,52 @@ test.each(['constructor', 'toString', 'missing'])(
   },
 );
 
+test('history fallback holds only under the agent that produced it', () => {
+  const agents = [
+    ...(options.agents ?? []),
+    {
+      name: 'reviewer',
+      mode: 'primary',
+      options: {},
+      permission: [],
+      model: key('b'),
+      variant: 'low',
+    } satisfies NonNullable<UseRuntimeLocalOptions['agents']>[number],
+  ];
+  // The session's last prompt ran under `worker` on model a. The composer
+  // opens on it, and switching agents must follow the NEW agent's model.
+  mount({ ...options, agents, lastPromptModel: key('a'), lastPromptAgent: 'worker' });
+  expect(local().model.sendKey).toEqual(key('a'));
+  act(() => local().agent.set('reviewer'));
+  expect(local().model.sendKey).toEqual(key('b'));
+  expect(local().model.onDefault).toBe(true);
+  expect(local().model.variant.current).toBe('low');
+  // The fallback still holds under its own agent: opening `worker` again
+  // keeps running the model the session last prompted with.
+  act(() => local().agent.set('worker'));
+  expect(local().model.sendKey).toEqual(key('a'));
+  expect(local().model.onDefault).toBe(false);
+});
+
+test('explicit Auto sends no variant; Reset restores the agent default', () => {
+  mount();
+  act(() => local().model.variant.set('low'));
+  expect(local().model.variant.current).toBe('low');
+  // The reasoning menu's Auto item: the model's own default applies.
+  act(() => local().model.variant.set(null));
+  expect(local().model.variant.current).toBeUndefined();
+  expect(local().model.variant.onDefault).toBe(false);
+  // The pick is durable: a reload keeps sending no variant.
+  act(() => root?.unmount());
+  mount();
+  expect(local().model.variant.current).toBeUndefined();
+  expect(local().model.variant.onDefault).toBe(false);
+  // The footer's Reset reasoning button: back under the agent default.
+  act(() => local().model.variant.set(undefined));
+  expect(local().model.variant.current).toBe('high');
+  expect(local().model.variant.onDefault).toBe(true);
+});
+
 test('route provider isolates composer preferences by project and restores them on return', () => {
   const tree = (projectId: string) =>
     createElement(KortixProjectProvider, { projectId }, createElement(Probe, options));

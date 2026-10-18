@@ -58,4 +58,19 @@ describe('sanitizeModelStore', () => {
     expect(s.user).toHaveLength(1);
     expect(s.recent).toHaveLength(1);
   });
+
+  test('an explicit Auto variant (null) and a real variant survive per model', () => {
+    const s = sanitizeModelStore({
+      ...base,
+      composerPreferences: {
+        'gateway:s1:worker': {
+          variants: { 'kortix/model-a': null, 'kortix/model-b': 'high' },
+        },
+      },
+    });
+    expect(s.composerPreferences?.['gateway:s1:worker']?.variants).toEqual({
+      'kortix/model-a': null,
+      'kortix/model-b': 'high',
+    });
+  });
 });
