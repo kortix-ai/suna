@@ -17,7 +17,7 @@ import { ConnectionSection } from '@/features/workspace/customize/sections/conne
 import { isManagedConnectorProvider } from '../provider-label';
 import { connectorRunsOver } from './connector-status';
 
-export interface ConnectorSettingsProps {
+interface ConnectorSettingsProps {
   projectId: string;
   connector: AdminConnector;
   displayName: string;
@@ -166,9 +166,7 @@ export function ConnectorSettings({
               <p className="text-foreground text-sm font-medium">
                 {t('removeTitle', { name: displayName })}
               </p>
-              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                {t('removeHelp')}
-              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{t('removeHelp')}</p>
             </div>
             <Button
               size="sm"

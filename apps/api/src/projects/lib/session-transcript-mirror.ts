@@ -71,6 +71,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isRecord } from '@kortix/shared/guards';
 import { jsonbSafeValue } from './jsonb-safe';
+import { TranscriptReadError, isRuntimeUnavailableError } from './runtime-read-failure';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -611,13 +612,66 @@ export function childSessionsToCapture(input: {
 /** Only an OpenCode session id may reach a URL or a row. */
 const CHILD_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
 
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/**
+ * How one capture's sub-agent reads failed, classified.
+ *
+ * The classes are the expected states a fail-open capture tolerates — a
+ * stopped box (502/503/504 through the proxy, a transport timeout) and a
+ * runtime that no longer serves a referenced transcript (404, a box that
+ * came back without its sub-agent sessions) — plus everything else.
+ * `readInboxTranscriptState` and the capture share
+ * `isRuntimeUnavailableError` for the same distinction.
+ */
+export interface ChildReadFailures {
+  /** The runtime answers 404 for this transcript: re-reading changes nothing. */
+  missing: number;
+  /** The runtime stopped serving transcripts mid-walk. Every further read
+   *  would fail the same way, so the walk stops at the first one. */
+  unavailable: number;
+  /** Anything else — the only class a capture still warns about. */
+  other: number;
+  /** The first failure of the expected classes, for the info line. */
+  first?: string;
+  /** The first unexpected failure, for the warn line. */
+  firstOther?: string;
+}
+
+/**
+ * The one log line a capture's failed sub-agent reads earn.
+ *
+ * Expected states (a stopped box, gone transcripts) log info — warning on
+ * them was a 637-line spike over four days, every line an expected fail-open
+ * degrade. Only an unexpected failure warns, with the count of unexpected
+ * ones. Null when nothing failed.
+ */
+export function childReadFailureLog(
+  failures: ChildReadFailures,
+): { level: 'warn' | 'info'; message: string; context: Record<string, unknown> } | null {
+  if (failures.missing + failures.unavailable + failures.other === 0) return null;
+  if (failures.other > 0) {
+    return {
+      level: 'warn',
+      message: '[transcript-mirror] sub-agent reads failed',
+      context: { count: failures.other, first: failures.firstOther ?? failures.first },
+    };
+  }
+  return {
+    level: 'info',
+    message: '[transcript-mirror] sub-agent reads deferred',
+    context: { missing: failures.missing, unavailable: failures.unavailable, first: failures.first },
+  };
+}
+
 /**
  * The sub-agent transcripts one capture saves, read through `read`, and whether
  * another capture saves more.
  *
  * Breadth-first from `references`, following each read's own sub-agents. At most
  * `cap` reads that return rows: a failed read and an empty one take no slot (the
- * capture's deadline bounds them), so neither starves the sub-agents after it.
+ * capture's deadline bounds them), so neither starves the sub-agents after it;
+ * only a runtime that cannot serve any transcript stops the walk early.
  *
  * `more`: sub-agents are left unread AND this capture read rows of one never saved
  * before. A sub-agent that reads empty, fails, or was saved already (an unsettled
@@ -630,12 +684,13 @@ export async function readChildTranscripts(input: {
   /** The root: never read as a sub-agent. */
   root?: string;
   read: (id: string) => Promise<{ rows: unknown[]; complete: boolean }>;
-  onError?: (id: string, error: unknown) => void;
 }): Promise<{
   children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }>;
   more: boolean;
+  failures: ChildReadFailures;
 }> {
   const children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }> = [];
+  const failures: ChildReadFailures = { missing: 0, unavailable: 0, other: 0 };
   const seen = new Set(input.root ? [input.root] : []);
   const queue = childSessionsToCapture(input);
   let savedNew = false;
@@ -650,11 +705,27 @@ export async function readChildTranscripts(input: {
       children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
       savedNew ||= walk.complete && !input.stored.has(child);
     } catch (error) {
-      input.onError?.(child, error);
+      // 404 is its own class: re-reading a transcript the runtime no longer
+      // serves changes nothing, while a stopped box may come back.
+      const kind = error instanceof TranscriptReadError && error.status === 404
+        ? 'missing'
+        : isRuntimeUnavailableError(error)
+          ? 'unavailable'
+          : 'other';
+      failures[kind] += 1;
+      if (kind === 'other') failures.firstOther ??= messageOf(error);
+      else failures.first ??= messageOf(error);
+      // A runtime that cannot serve ANY transcript repeats the same failure
+      // for every sibling — walking on pays it per child (one prod capture
+      // failed 60 reads in a row against a dying box). Stop only for that
+      // class and let the next capture, or the unread chain, take the rest;
+      // a missing transcript 404s per child, instantly, and one gone child
+      // must not starve the siblings after it.
+      if (kind === 'unavailable') break;
     }
   }
   const unread = queue.some((child) => !seen.has(child) && CHILD_SESSION_ID.test(child));
-  return { children, more: unread && savedNew };
+  return { children, more: unread && savedNew, failures };
 }
 
 /**

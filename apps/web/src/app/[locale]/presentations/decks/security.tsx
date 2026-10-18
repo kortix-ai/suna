@@ -52,6 +52,7 @@ import {
   PrincipalDiagram,
 } from '../engine/diagram';
 import { Dim, Panel, Rise, Shot, Slide, Spine } from '../engine/parts';
+import { useSecurityDiagramContent } from './security-diagram-content';
 
 /** The whole deck, in four words. Nothing here is decoration — see the header. */
 const CHAPTERS = ['Isolation', 'Credentials', 'The gate', 'The record'] as const;
@@ -97,6 +98,7 @@ function Chapter({ n, title, children }: { n: number; title: ReactNode; children
 }
 
 export function useSlides(): SlideDef[] {
+  const diagramContent = useSecurityDiagramContent();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const answers = useLocalizedUiCatalog(ANSWERS);
   const { broker } = getLocalizedConnectorsContent(tI18nComplete);
@@ -180,7 +182,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={0} title={tI18nComplete.raw('text9045e34e96f2')}>
-          <IsolationDiagram step={step} />
+          <IsolationDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -199,7 +201,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={1} title={broker.title}>
-          <BrokerDiagram step={step} />
+          <BrokerDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -239,7 +241,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={2} title={tI18nComplete.raw('text74d1f5c328ca')}>
-          <ChangeRequestDiagram step={step} />
+          <ChangeRequestDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -283,7 +285,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={3} title={tI18nComplete.raw('textbc346bfb5269')}>
-          <PrincipalDiagram step={step} />
+          <PrincipalDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -301,7 +303,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={3} title={tI18nComplete.raw('text7387eb9a3a98')}>
-          <LedgerDiagram step={step} />
+          <LedgerDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },

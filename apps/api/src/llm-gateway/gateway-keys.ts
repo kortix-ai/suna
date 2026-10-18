@@ -48,6 +48,11 @@ export async function createGatewayKey(params: {
 }
 
 export async function listGatewayKeys(projectId: string) {
+  // The list is the surface that names live credentials — the CLI reads
+  // `keys ls` with the same meaning `tokens ls --mine` applies to PATs
+  // ("keys that still authenticate"), and the settings card has no action for
+  // a dead key either. A revoked row keeps its identity for refusal
+  // attribution (`validateGatewayKey`), it just stops being listed.
   return db
     .select({
       keyId: gatewayApiKeys.keyId,
@@ -58,7 +63,7 @@ export async function listGatewayKeys(projectId: string) {
       createdAt: gatewayApiKeys.createdAt,
     })
     .from(gatewayApiKeys)
-    .where(eq(gatewayApiKeys.projectId, projectId))
+    .where(and(eq(gatewayApiKeys.projectId, projectId), eq(gatewayApiKeys.status, 'active')))
     .orderBy(desc(gatewayApiKeys.createdAt));
 }
 

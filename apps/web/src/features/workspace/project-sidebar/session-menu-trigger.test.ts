@@ -25,7 +25,7 @@ function spacingRem(): number {
 
 const TOUCH_CLASS = between(listSource, 'const SESSION_MENU_TRIGGER_TOUCH_CLASS', '\n);');
 
-const TOUCH_VARIANTS = ['max-md:', '[@media(hover:none)]:', '[@media(pointer:coarse)]:'] as const;
+const TOUCH_VARIANTS = ['max-md:', '[@media(hover:none)]:', 'pointer-coarse:'] as const;
 
 describe('session row menu trigger on touch', () => {
   test('splits the visible square from the touch target', () => {
