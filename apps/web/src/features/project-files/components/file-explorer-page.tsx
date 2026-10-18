@@ -633,7 +633,7 @@ export function FileExplorerPage({ embedded = false, tabs }: { embedded?: boolea
                 confirmDelete();
               }}
               disabled={deleteMutation.isPending}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              variant="destructive"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
