@@ -69,7 +69,7 @@ The 2026-09-24 probe included Morph. The reduced OpenRouter pools were probed wi
 DeepSeek V4.1 Flash moved to the 1017 snapshot (`deepseek/deepseek-v4.1-flash-1017`) on 2026-10-18. CoreWeave does not serve that snapshot. Probe results for the new pool:
 
 - `deepinfra/fp8` and `deepinfra/fp8/priority` declare `provider_region: "us"`. Both are in the ZDR feed. Both returned a tool call and read a test image correctly.
-- `morph/fp8`: Morph lists US headquarters and US datacenters, and the endpoint is in the ZDR feed. It reads images but serves no tool calls: OpenRouter answers a tool request pinned to it with "No endpoints found that support tool use". OpenRouter skips it for agent turns.
+- `morph/fp8`: Morph lists US headquarters and US datacenters, and the endpoint is in the ZDR feed. It returned a tool call and read a test image correctly. Early on 2026-10-18 its OpenRouter metadata omitted `tools`, and OpenRouter refused tool requests pinned to it ("No endpoints found that support tool use"). The metadata was corrected the same day.
 - `deepinfra/fp8/flex` is excluded. OpenRouter keeps it out of standard routing (8.9 s first token, 89.9% 1-day uptime).
 - Excluded without a declared US location: `inference-net/fp8`, `cloudflare`, `baseten`, `parasail/fp8`, `relace`. Excluded as non-US and non-ZDR: `deepseek` (CN).
 

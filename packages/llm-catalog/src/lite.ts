@@ -589,7 +589,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 65_536 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
-      // morph/fp8 serves no tool calls; OpenRouter skips it for agent turns.
       only: ['deepinfra/fp8', 'deepinfra/fp8/priority', 'morph/fp8'],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.3, completion: 1.2 },
