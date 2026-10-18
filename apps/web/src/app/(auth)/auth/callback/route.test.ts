@@ -4,8 +4,9 @@ import { NextRequest } from 'next/server';
 // Only the Supabase transport is replaced; redirect and identity policy run for real.
 mock.module('server-only', () => ({}));
 const user = { id: '11111111-1111-4111-8111-111111111111', created_at: '2020-01-01', app_metadata: {}, user_metadata: {} };
-const verifyOtp = mock(async (_args: unknown): Promise<any> => ({ data: { user }, error: null }));
-const exchangeCodeForSession = mock(async (_code: string): Promise<any> => ({ data: { user }, error: null }));
+type AuthResult = { data: { user?: typeof user }; error: { message?: string; code?: string; status?: number } | null };
+const verifyOtp = mock(async (_args: unknown): Promise<AuthResult> => ({ data: { user }, error: null }));
+const exchangeCodeForSession = mock(async (_code: string): Promise<AuthResult> => ({ data: { user }, error: null }));
 const updateUser = mock(async (_args: unknown) => ({ error: null }));
 mock.module('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: {
   verifyOtp, exchangeCodeForSession, updateUser,
@@ -14,7 +15,11 @@ mock.module('@/lib/supabase/server', () => ({ createClient: async () => ({ auth:
 const { GET } = await import('./route');
 const { AUTH_BOUNCE_COOKIE } = await import('@/lib/onboarding/landing-destination');
 const request = (query: string, cookie = '') => new NextRequest(`http://localhost:13000/auth/callback?${query}`, { headers: { cookie } });
-const location = (response: Response) => new URL(response.headers.get('location')!);
+const location = (response: Response) => {
+  const url = response.headers.get('location');
+  if (!url) throw new Error('expected a redirect response');
+  return new URL(url);
+};
 beforeEach(() => {
   verifyOtp.mockClear(); exchangeCodeForSession.mockClear(); updateUser.mockClear();
   verifyOtp.mockImplementation(async () => ({ data: { user }, error: null }));

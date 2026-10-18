@@ -118,15 +118,16 @@ export async function GET(request: NextRequest) {
     ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email'].some(
       (allowed) => allowed === value,
     );
-  if (token && !isEmailOtpType(type)) {
+  const otpType = isEmailOtpType(type) ? type : null;
+  if (token && !otpType) {
     return NextResponse.redirect(`${baseUrl}/auth?error=invalid_otp_type`);
   }
 
   // Both exchanges establish the identity used by the same success path below.
   if (code || token) {
     try {
-      const exchange = token
-        ? await supabase.auth.verifyOtp({ token_hash: token, type })
+      const exchange = token && otpType
+        ? await supabase.auth.verifyOtp({ token_hash: token, type: otpType })
         : code
           ? await supabase.auth.exchangeCodeForSession(code)
           : null;
