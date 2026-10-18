@@ -1,6 +1,5 @@
 'use client';
 
-import { useActiveSection } from '@/hooks/use-active-section';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 

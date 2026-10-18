@@ -76,7 +76,9 @@ function mount(ids: string[]): void {
     root = createRoot(host);
   });
   act(() => {
-    root!.render(<Harness ids={ids} rootMargin="-96px 0px -55% 0px" />);
+    const mounted = root;
+    if (!mounted) throw new Error('the React root was not created');
+    mounted.render(<Harness ids={ids} rootMargin="-96px 0px -55% 0px" />);
   });
 }
 
@@ -105,15 +107,14 @@ describe('useActiveSection', () => {
     await fire({ isIntersecting: true, target: beta });
     expect(activeSection()).toBe('alpha');
 
-    // A scroll moves alpha above the reader (its rect changes without any new
-    // intersection event). The next decision must read alpha's CURRENT top,
-    // not the offset its entering entry carried.
+    // Layout moves alpha below beta without a new alpha intersection event.
+    // Cached entry offsets still pick alpha; live positions must pick beta.
     Object.defineProperty(alpha, 'getBoundingClientRect', {
-      value: () => ({ top: 50 }),
+      value: () => ({ top: 600 }),
       configurable: true,
     });
     await fire({ isIntersecting: true, target: beta });
-    expect(activeSection()).toBe('alpha');
+    expect(activeSection()).toBe('beta');
   });
 
   test('membership ends on exit, so the remaining member takes over', async () => {

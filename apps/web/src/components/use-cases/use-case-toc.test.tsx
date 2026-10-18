@@ -68,7 +68,9 @@ function mountToc(items: TocItem[]): void {
     root = createRoot(host);
   });
   act(() => {
-    root!.render(<UseCaseToc items={items} />);
+    const mounted = root;
+    if (!mounted) throw new Error('the React root was not created');
+    mounted.render(<UseCaseToc items={items} />);
   });
 }
 
@@ -101,11 +103,11 @@ describe('UseCaseToc scroll-spy', () => {
 
     // Beta enters while alpha is still in the band. The reader is still inside
     // alpha (the topmost member), so the highlight must not move to beta.
-    await act(async () => spy!.callback([{ isIntersecting: true, target: beta }]));
+    await act(async () => spy.callback([{ isIntersecting: true, target: beta }]));
     expect(activeId(ids)).toBe('alpha');
 
     // Alpha leaves the band: the highlight follows beta.
-    await act(async () => spy!.callback([{ isIntersecting: false, target: alpha }]));
+    await act(async () => spy.callback([{ isIntersecting: false, target: alpha }]));
     expect(activeId(ids)).toBe('beta');
   });
 
