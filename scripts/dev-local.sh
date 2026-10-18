@@ -838,12 +838,17 @@ fi
 
 }
 
-# Job control assigns the single worker its own process group. Turn it off
-# inside the worker so nested pipelines inherit that group (also on Bash 3.2).
+# Job control assigns the single worker its own process group — the group
+# cleanup() kills. Turn it off inside the worker so nested pipelines inherit
+# that group (also on Bash 3.2). Wait for the worker with `wait`, never `fg`:
+# bash defers a trapped signal until `fg`'s foreground job ends, so a TERM
+# sent to this script while the stack runs would hang the script until the
+# worker exits on its own. `wait` is the one wait bash interrupts the moment
+# a trapped signal arrives, so the traps below run at signal time.
 set -m
 run_dev_local "$@" <&0 &
 STACK_PID=$!
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-fg %1
+wait "$STACK_PID"

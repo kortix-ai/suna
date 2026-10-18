@@ -34,11 +34,16 @@ exec /bin/sleep 120`);
 *llm-gateway-server*) ${record}; /bin/sleep 120 & echo "$!" >> "$STATE/pids"; wait ;;
 *next*build*) touch "$STATE/ready"; /bin/sleep 0.1; exit 7 ;;
 *kortix-api*dev*)
-  if [[ -f "$STATE/rotated" ]]; then
-    touch "$STATE/ready"
-    [[ "$MODE" == normal ]] && exit 0
-  fi
-  /bin/sleep 0.1 ;;
+  # Deterministic fixture ordering (the supervised loop breaks as soon as an
+  # API call returns without $TUNNEL_URL_FILE.rotated, so a call that returns
+  # before the stubbed watchdog's rotation lands makes ready unreachable):
+  # the first API call BLOCKS until the rotation has landed ($STATE/rotated),
+  # and in signal mode it stays alive until the test's signal — the script
+  # cannot exit before the milestone in either mode, in any interleaving.
+  until [[ -f "$STATE/rotated" ]]; do /bin/sleep 0.02; done
+  touch "$STATE/ready"
+  if [[ "$MODE" == normal ]]; then exit 0; fi
+  exec /bin/sleep 120 ;;
 esac`);
     writeFileSync(script, readFileSync(join(root, 'scripts/dev-local.sh'), 'utf8')
       .replace('if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then', 'if false; then')
