@@ -42,7 +42,10 @@ const LIST_FILES = [
 describe('sidebar prefetch contract', () => {
   for (const file of LIST_FILES) {
     test(`${file} routes navigation through HoverPrefetchLink, not next/link`, () => {
-      const code = strip(read(file));
+      const code = strip(
+        read(file) + (file === 'project-session-list.tsx' ? '' : read('project-nav-row.tsx')),
+      );
+      if (file !== 'project-session-list.tsx') expect(read(file)).toContain('<ProjectNavRow');
       expect(code).not.toContain("from 'next/link'");
       expect(code).not.toMatch(/<Link[\s>]/);
       expect(code).toContain('HoverPrefetchLink');

@@ -11,23 +11,31 @@ import { db } from '../../shared/db';
 import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from '../../shared/llm-spend';
 
 export interface ServedModel {
-  /** Route id of the model that answered, as the model picker names it. */
+  /** Route id recorded for the request — the model that answered it, or on an
+   *  unanswered request the model it was being served by. */
   served_model: string;
-  /** The model the request was routed to, when a fallback model answered in its place. */
+  /** The model the request was rerouted to after a failed attempt, whether or
+   *  not the fallback answered. */
   fallback_from: string | null;
   at: string;
+  /** How the request ended: `answered` (a model answered it), `client_aborted`
+   *  (the caller canceled it) or `error` (it failed outright). A cancel is not
+   *  a model failure — the UI must not present one as such (KRTX-2572). */
+  outcome: 'answered' | 'client_aborted' | 'error';
 }
 
 export interface TurnModelUsage {
   /** Route ids of the models that answered in this turn, most requests first. */
   served_models: string[];
   fallback_from: string | null;
+  /** Successful fallback requests in chronological order. No raw provider errors. */
+  fallbacks?: { requested_model: string; served_model: string; error_code: string }[];
   /** What Kortix debited for this turn's model calls, in USD. */
   billed_cost: number;
 }
 
 export interface SessionModelUsage {
-  /** The newest answered request. Null before the first answer. */
+  /** The newest request and how it ended. Null before the first request. */
   latest: ServedModel | null;
   billed_cost: number;
   /** Keyed by the runtime message id of the prompt that started the turn. */
@@ -52,16 +60,43 @@ const fallbackFromSql = sql<string | null>`case
     then ${logs.requestedModel}
 end`;
 
+// Provider codes are untrusted too: only known public categories may leave the ledger.
+function publicFailureCode(failures: unknown, requested: string): string {
+  const failure = Array.isArray(failures)
+    ? failures.find((value) => value && typeof value === 'object' && value.routeModel === requested)
+    : undefined;
+  const code: unknown = failure?.code;
+  if (code === 429) return 'rate_limit_exceeded';
+  if (code === 401 || code === 403) return 'authentication_error';
+  switch (code) {
+    case 'provider_pool_rate_limited':
+    case 'provider_reauth_required':
+    case 'provider_not_connected':
+    case 'model_busy':
+    case 'model_unavailable':
+    case 'rate_limit_exceeded':
+    case 'context_length_exceeded':
+    case 'upstream_timeout':
+    case 'upstream_inactivity_timeout':
+    case 'upstream_incomplete_stream':
+    case 'upstream_stream_error':
+      return code;
+    default:
+      return 'upstream_error';
+  }
+}
+
 export async function sessionModelUsage(session: {
   sessionId: string;
   projectId: string;
 }): Promise<SessionModelUsage> {
   const ofSession = and(eq(logs.projectId, session.projectId), eq(logs.sessionId, session.sessionId));
-  const [[latest], [total], perTurn] = await Promise.all([
+  const [[latest], [total], perTurn, fallbackRequests] = await Promise.all([
+    // Include canceled requests so latest cannot stay pinned to an older answer.
     db
-      .select({ served: servedModelSql, fallbackFrom: fallbackFromSql, at: logs.createdAt })
+      .select({ served: servedModelSql, fallbackFrom: fallbackFromSql, at: logs.createdAt, ok: logs.ok, errorCode: logs.errorCode })
       .from(logs)
-      .where(and(ofSession, eq(logs.ok, true)))
+      .where(ofSession)
       .orderBy(desc(logs.createdAt))
       .limit(1),
     db.select({ cost: kortixBilledSpendSql }).from(logs).where(ofSession),
@@ -88,6 +123,25 @@ export async function sessionModelUsage(session: {
       group by turn.message_id, served
       order by answered desc
     `),
+    // Keep route pairs on the same successful request, not on independent
+    // aggregates. Use the same turn attribution as spend, including late logs.
+    db.execute<{ message_id: string; requested: string; served: string; failures: unknown }>(sql`
+      select turn.message_id, ${fallbackFromSql} as requested,
+             ${servedModelSql} as served, ${logs.metadata}->'attemptFailures' as failures
+      from ${logs}
+      cross join lateral (
+        select ${sessionTurns.messageId} as message_id
+        from ${sessionTurns}
+        where ${sessionTurns.sessionId} = ${logs.sessionId}
+          and ${sessionTurns.messageId} is not null
+          and ${sessionTurns.startedAt} <= ${logs.createdAt}
+        order by ${sessionTurns.startedAt} desc
+        limit 1
+      ) turn
+      where ${ofSession} and ${logs.ok}
+        and ${fallbackFromSql} is not null
+      order by ${logs.createdAt}, ${logs.requestId}
+    `),
   ]);
 
   const turns: Record<string, TurnModelUsage> = {};
@@ -98,9 +152,23 @@ export async function sessionModelUsage(session: {
     turn.fallback_from ??= row.fallback_from;
     turn.billed_cost = Number((turn.billed_cost + Number(row.cost)).toFixed(10));
   }
+  for (const row of fallbackRequests) {
+    const turn = turns[row.message_id];
+    if (!turn) continue;
+    (turn.fallbacks ??= []).push({
+      requested_model: row.requested,
+      served_model: row.served,
+      error_code: publicFailureCode(row.failures, row.requested),
+    });
+  }
   return {
     latest: latest
-      ? { served_model: latest.served, fallback_from: latest.fallbackFrom ?? null, at: latest.at.toISOString() }
+      ? {
+          served_model: latest.served,
+          fallback_from: latest.fallbackFrom ?? null,
+          at: latest.at.toISOString(),
+          outcome: latest.ok ? 'answered' : latest.errorCode === 'client_aborted' ? 'client_aborted' : 'error',
+        }
       : null,
     billed_cost: Number(total?.cost ?? 0),
     turns,

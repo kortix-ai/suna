@@ -31,12 +31,12 @@ export const DEFAULT_COMPUTE_HOURLY_PRICE_USD =
  * returns the same ladder); `POST /v1/billing/plan` answers 400 outside them.
  */
 export const CREDITS_PLAN_MIN_USD = 50;
-export const CREDITS_PLAN_MAX_USD = 10_000;
+export const CREDITS_PLAN_MAX_USD = 50_000;
 
 /** The Free plan's monthly grant, in credits. */
-export const FREE_MONTHLY_CREDITS = 200;
+export const FREE_MONTHLY_CREDITS = 500;
 
-export type CreditTierGroup = 'small' | 'growing' | 'scale';
+export type CreditTierGroup = 'small' | 'growing' | 'scale' | 'large';
 
 export interface CreditTier {
   monthlyUsd: number;
@@ -48,21 +48,33 @@ export interface CreditTier {
 /** The tier ladder, smallest first. Mirrors `PLAN_PRESETS` in apps/api. */
 export const CREDIT_TIERS: readonly CreditTier[] = [
   { monthlyUsd: 50, group: 'small' },
+  { monthlyUsd: 75, group: 'small' },
   { monthlyUsd: 100, group: 'small' },
   { monthlyUsd: 200, group: 'small', popular: true },
   { monthlyUsd: 300, group: 'growing' },
+  { monthlyUsd: 400, group: 'growing' },
   { monthlyUsd: 500, group: 'growing' },
   { monthlyUsd: 750, group: 'growing' },
   { monthlyUsd: 1_000, group: 'growing' },
   { monthlyUsd: 1_500, group: 'growing' },
   { monthlyUsd: 2_000, group: 'growing' },
   { monthlyUsd: 3_000, group: 'scale' },
+  { monthlyUsd: 4_000, group: 'scale' },
   { monthlyUsd: 5_000, group: 'scale' },
   { monthlyUsd: 7_500, group: 'scale' },
   { monthlyUsd: 10_000, group: 'scale' },
+  { monthlyUsd: 12_500, group: 'large' },
+  { monthlyUsd: 15_000, group: 'large' },
+  { monthlyUsd: 20_000, group: 'large' },
+  { monthlyUsd: 25_000, group: 'large' },
+  { monthlyUsd: 30_000, group: 'large' },
+  { monthlyUsd: 35_000, group: 'large' },
+  { monthlyUsd: 40_000, group: 'large' },
+  { monthlyUsd: 45_000, group: 'large' },
+  { monthlyUsd: 50_000, group: 'large' },
 ];
 
-export const CREDIT_TIER_GROUPS: readonly CreditTierGroup[] = ['small', 'growing', 'scale'];
+export const CREDIT_TIER_GROUPS: readonly CreditTierGroup[] = ['small', 'growing', 'scale', 'large'];
 
 /** The tier a page opens on: the most popular one. */
 export const DEFAULT_TIER_USD = CREDIT_TIERS.find((tier) => tier.popular)!.monthlyUsd;

@@ -49,7 +49,7 @@ const CREDIT_PRESETS = [25, 100, 250, 1000] as const;
 /** Minimum custom top-up. Stripe rejects sub-$0.50 charges; $5 keeps the
  *  checkout worthwhile and matches the smallest amount worth a card round-trip. */
 const CUSTOM_MIN_USD = 5;
-const CUSTOM_MAX_USD = 10000;
+const CUSTOM_MAX_USD = 50_000;
 
 /**
  * Everything the control says about the amount currently chosen, in one place:

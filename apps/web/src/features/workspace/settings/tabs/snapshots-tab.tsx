@@ -1,76 +1,7 @@
 'use client';
 
-/**
- * The Snapshots tab — what Kortix prepared for this project, and when.
- *
- * **The problem this layout solves.** The pane used to open on a bare "Build
- * log" of `kortix-tpl-…` strings, provider names and raw stderr. Nothing on
- * screen said what a snapshot was or whether the project was currently fine —
- * so a reader who is not a platform engineer had no way in. Every fact below is
- * still here; the difference is that the plain-language answer is on the
- * surface and the jargon is one click down.
- *
- * The shape, top to bottom:
- *
- *  1. **The heading answers "what is this page".** The description lives in
- *     `rail.ts` beside the label (see `type.ts`), as does `docsHref` — which is
- *     why the Docs button in the heading is not built here.
- *  2. **One status surface, always.** `SandboxStatusBanner` when a failure
- *     still bites (`blocked` / `degraded`), `EnvironmentSummary` otherwise.
- *     A healthy project used to get nothing at all, so "is my project OK?"
- *     could only be answered by reading a log. `unknown` state and an absent
- *     `status` still render nothing — the API could not observe the providers,
- *     and inventing an answer is worse than none (see `SandboxRuntimeState`).
- *  3. **Every build row is a disclosure**, not only failed ones. Collapsed: the
- *     template name, a status badge, and one plain sentence saying what the row
- *     means. Expanded: the facts — trigger, start, duration, provider, image id
- *     (copyable), and for a failure the category, what it means in plain words,
- *     and the raw log.
- *  4. **"How this works"** — three questions that the pane provoked and never
- *     answered, including the one that matters most: a red row is not
- *     automatically a live outage.
- *
- * **Why the row body is `BuildDetails`, exported.** `DisclosureContent`
- * unmounts its children while closed (`disclosure.tsx` — `AnimatePresence`
- * with `{open && …}`), so a collapsed `BuildRow` renders none of them. A test
- * asserting "the provider is never named on Automatic" against a collapsed row
- * therefore passes no matter what the body does — it is structurally unable to
- * fail. `BuildDetails` is a separate exported component so that contract has
- * something real to assert against.
- *
- * **`describeBuildOutcome` is pure and exported** for the same reason
- * `resolveDisclosureToggle` is: it is the whole vocabulary decision — which
- * words a row uses for its state — and it should be testable without a DOM.
- *
- * **What the stale-failure badges became.** `superseded` / `resolved` /
- * `retrying` were `Badge`s whose meaning sat behind a `Hint`, i.e. a jargon
- * word with its explanation hidden on hover. They are now the row's summary
- * sentence ("Didn't finish, but a newer setup replaced it"). The tile logic is
- * unchanged and still load-bearing: a failure that no longer blocks anything
- * does not get a red tile, which is how an 11-day-old error once passed for a
- * live outage.
- *
- * **Provenance.** Split from `sandbox-view.tsx` per JAY-508; the template list,
- * create, edit and delete live in `sandbox-tab.tsx`. `snapshots` stays
- * deliberately absent from `ACCOUNT_SCOPED_SETTINGS_TABS` in
- * `settings-panel.tsx` — this tab is project-scoped only, same as `sandbox`,
- * and takes no `ACCOUNT_TAB_PERMISSION` entry.
- *
- * **Gate.** `canManage` probes `project.sandbox.write` — the leaf the rebuild
- * route asserts, and the same leaf `sandbox-tab.tsx` gates template CRUD on. It
- * gates only the status banner's Rebuild button; "Fix with agent" gates
- * separately on `status.fix_with_agent_available`, unchanged.
- *
- * **`listProjectSnapshots` — shared endpoint, split rendering.** Both tabs call
- * the identical `useQuery({ queryKey: qk.project.snapshots(projectId) })`
- * against one backend endpoint; this tab reads only the builds/status-shaped
- * fields, and its `refetchInterval` polls only while a BUILD is `building`.
- *
- * `SnapshotsTabView` is the pure, props-only half — no slots are needed, since
- * every component below takes plain props. `SnapshotsTab` is the container:
- * every hook only runs once this tab is mounted, which `SettingsTabPane` in
- * `settings-panel.tsx` guarantees.
- */
+import { LONG_AGO, relativeTime } from '@/lib/relative-time';
+import { FactCell } from './fact-cell';
 
 import type { ComponentType } from 'react';
 
@@ -88,15 +19,16 @@ import Loading from '@/components/ui/loading';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import {
   type FailedBuildRelevance,
   describeFailedBuild,
   formatSandboxProvider,
   formatSandboxProviders,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/sandbox-health';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -123,10 +55,9 @@ import {
   XCircleIcon as XCircleSolid,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { snapshotsQueryRetry } from './snapshots-query';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
+import { snapshotsQueryRetry } from './snapshots-query';
 
 /** Build-status tile icons render solid/fill — a filled status glyph inside
  *  the colored tile, distinct from the app's default outline weight. */
@@ -136,55 +67,6 @@ const CheckCircleFilled = ({ className }: { className?: string }) => (
 const XCircleFilled = ({ className }: { className?: string }) => (
   <XCircleSolid className={className} weight="fill" />
 );
-
-export const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
-  quota: 'Snapshot quota reached',
-  dockerfile: 'Dockerfile build failed',
-  layer: 'Kortix runtime layer failed',
-  git: 'Repository access failed',
-  tunnel: 'Sandbox callback unreachable',
-  provider: 'Sandbox provider error',
-  timeout: 'Build timed out',
-  runtime: 'Runtime artifact missing',
-  unknown: 'Build failed',
-};
-
-/**
- * What the category means, and what to do about it — one sentence each, no
- * jargon, addressed to whoever is reading the pane rather than to the engineer
- * who wrote the category.
- *
- * `CATEGORY_LABEL` alone names the failure without explaining it: "Kortix
- * runtime layer failed" tells a reader nothing they can act on. Every place
- * that shows a category now shows this line under it.
- */
-export const CATEGORY_HELP: Record<SnapshotErrorCategory, string> = {
-  quota:
-    'This workspace has stored as many prepared machines as its plan allows. Delete a sandbox template you no longer use, or raise the limit, then build again.',
-  dockerfile:
-    'A command in this project’s Dockerfile returned an error. The log below ends on the command that failed.',
-  layer:
-    'The image built, but Kortix could not install its own tools on top of it. This is usually temporary — try building again.',
-  git: 'Kortix could not read this project’s repository. Check that the repository connection is still authorised, then build again.',
-  tunnel:
-    'The new machine could not call back to Kortix while it was being set up. This is usually temporary — try building again.',
-  provider:
-    'The company that runs the machine returned an error. Nothing is wrong with your project — try building again.',
-  timeout:
-    'Preparing the machine took longer than the time limit allows. Move slow steps out of the Dockerfile, or try again when the provider is less busy.',
-  runtime:
-    'The machine was prepared, but a file Kortix needs at start-up was missing from it. Build again; if it repeats, the template’s base image is the place to look.',
-  unknown: 'The build stopped on an error Kortix could not classify. The full log is below.',
-};
-
-export const BUILD_SOURCE_LABEL: Record<NonNullable<ProjectSnapshotBuild['source']>, string> = {
-  'session-start': 'Session start',
-  'project-create': 'Project created',
-  'cr-merge': 'Code review merge',
-  manual: 'Manual rebuild',
-  background: 'Background sync',
-  startup: 'Startup',
-};
 
 const BUILD_STATUS_TILE: Record<
   ProjectSnapshotStatus,
@@ -219,46 +101,6 @@ const BUILD_STATUS_TILE: Record<
   },
 };
 
-export interface SnapshotsCopy {
-  locale: string;
-  categoryLabels: Record<SnapshotErrorCategory, string>;
-  categoryHelp: Record<SnapshotErrorCategory, string>;
-  sourceLabels: Record<NonNullable<ProjectSnapshotBuild['source']>, string>;
-  statusLabels: Record<ProjectSnapshotStatus, string>;
-  stale: Record<Exclude<FailedBuildRelevance, 'blocking'>, string>;
-  outcomes: { ready: string; building: string; blocked: string; failed: string };
-  facts: {
-    triggeredBy: string;
-    started: string;
-    took: string;
-    stillRunning: string;
-    runsOn: string;
-    imageId: string;
-    unknown: string;
-  };
-  duration: {
-    underMinute: string;
-    minutes: (count: number) => string;
-    hours: (count: number) => string;
-  };
-  environment: Record<'ready' | 'building' | 'not_built', { title: string; body: string }>;
-  banner: {
-    blockedTitle: string;
-    degradedTitle: string;
-    blockedBody: string;
-    degradedBody: (ready: string, failed: string) => string;
-  };
-  actions: { fix: string; rebuild: string };
-  faq: { title: string; items: readonly { question: string; answer: string }[] };
-  view: {
-    loadFailed: string;
-    retry: string;
-    logTitle: string;
-    logDescription: string;
-    empty: string;
-  };
-}
-
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   if (!provider) return null;
   return (
@@ -271,7 +113,7 @@ function ProviderBadge({ provider }: { provider: string | null | undefined }) {
 function formatBuildDuration(
   startedAt: string,
   finishedAt: string | null,
-  copy = DEFAULT_SNAPSHOTS_COPY.duration,
+  copy: SnapshotMessages['duration'],
 ): string | null {
   if (!finishedAt) return null;
   const start = new Date(startedAt).getTime();
@@ -282,20 +124,6 @@ function formatBuildDuration(
   if (minutes < 60) return copy.minutes(minutes);
   const hours = Math.round(minutes / 60);
   return copy.hours(hours);
-}
-
-function formatRelative(input: string | null | undefined, locale = 'en'): string {
-  if (!input) return '—';
-  const then = new Date(input).getTime();
-  if (!Number.isFinite(then)) return '—';
-  const minutes = Math.trunc((Date.now() - then) / 60_000);
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  if (minutes < 60) return formatter.format(-Math.max(minutes, 0), 'minute');
-  const hours = Math.trunc(minutes / 60);
-  if (hours < 24) return formatter.format(-hours, 'hour');
-  const days = Math.trunc(hours / 24);
-  if (days < 30) return formatter.format(-days, 'day');
-  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(then);
 }
 
 /** The exact moment, for the detail grid — "how long ago" is already on the
@@ -343,7 +171,15 @@ export interface BuildOutcome {
 export function describeBuildOutcome(
   build: ProjectSnapshotBuild,
   relevance?: FailedBuildRelevance | null,
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy: Pick<SnapshotMessages, 'outcomes' | 'stale'> = {
+    stale: STALE_FAILURE_SUMMARY,
+    outcomes: {
+      ready: 'Ready for new sessions',
+      building: 'Being prepared now',
+      blocked: 'New sessions can’t start on this',
+      failed: 'Didn’t finish',
+    },
+  },
 ): BuildOutcome {
   const title = build.slug;
   const stale = relevance && relevance !== 'blocking' ? relevance : null;
@@ -364,51 +200,17 @@ export function describeBuildOutcome(
   };
 }
 
-/** One label/value cell in a build's detail grid. Shape-matched to
- *  `TemplateFact` in `sandbox-tab.tsx` so the two halves of the split read as
- *  one system; duplicated rather than imported, exactly like `formatRelative`,
- *  to keep this tab's chunk free of that file's mutations and modals. */
-function BuildFact({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5">
-        <Icon className="text-muted-foreground size-4 shrink-0" />
-        <span className="truncate text-sm" title={value}>
-          {value}
-        </span>
-      </dd>
-    </div>
-  );
-}
-
-/**
- * Everything technical about one build — the half that used to be on the row
- * itself, now one click down.
- *
- * Exported because `DisclosureContent` unmounts while closed, so this is the
- * only way to assert its contract (see this file's header comment). The
- * provider rule is the reason that matters: a project on Automatic must never
- * be told which provider a build resolved to, and testing that through a
- * collapsed row would assert nothing.
- */
 export function BuildDetails({
   build,
   providerMode = 'automatic',
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy: copyOverride,
 }: {
   build: ProjectSnapshotBuild;
   providerMode?: SandboxProviderMode;
-  copy?: SnapshotsCopy;
+  copy?: SnapshotMessages;
 }) {
+  const translatedCopy = useSnapshotMessages();
+  const copy = copyOverride ?? translatedCopy;
   const duration = formatBuildDuration(build.started_at, build.finished_at, copy.duration);
   const category = build.error_category ?? 'unknown';
   // Only a project that has explicitly pinned a provider gets told which one a
@@ -422,23 +224,23 @@ export function BuildDetails({
           digits repeated down every open row, and proportional figures make
           them wander. Matches `sandbox-tab.tsx`'s spec grid. */}
       <dl className="grid grid-cols-2 gap-x-4 gap-y-4 tabular-nums sm:grid-cols-3">
-        <BuildFact
+        <FactCell
           icon={LightningIcon}
           label={copy.facts.triggeredBy}
           value={build.source ? copy.sourceLabels[build.source] : copy.facts.unknown}
         />
-        <BuildFact
+        <FactCell
           icon={CalendarBlankIcon}
           label={copy.facts.started}
           value={formatStartedAt(build.started_at, copy.locale)}
         />
-        <BuildFact
+        <FactCell
           icon={TimerIcon}
           label={copy.facts.took}
           value={duration ?? (build.status === 'building' ? copy.facts.stillRunning : '—')}
         />
         {provider ? (
-          <BuildFact
+          <FactCell
             icon={HardDrivesIcon}
             label={copy.facts.runsOn}
             value={formatSandboxProvider(provider)}
@@ -473,15 +275,17 @@ export function BuildRow({
   build,
   providerMode,
   relevance,
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy: copyOverride,
 }: {
   build: ProjectSnapshotBuild;
   /** Only reveal the resolved provider when the project has explicitly pinned one. */
   providerMode: SandboxProviderMode;
   /** How this build relates to the image the project boots today. */
   relevance?: FailedBuildRelevance | null;
-  copy?: SnapshotsCopy;
+  copy?: SnapshotMessages;
 }) {
+  const translatedCopy = useSnapshotMessages();
+  const copy = copyOverride ?? translatedCopy;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const status = localizeUiCatalog(BUILD_STATUS_TILE, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS)[
     build.status
@@ -489,7 +293,12 @@ export function BuildRow({
   const { Icon } = status;
   const outcome = describeBuildOutcome(build, relevance, copy);
   const stale = outcome.stale;
-  const timestamp = formatRelative(build.finished_at ?? build.started_at, copy.locale);
+  const timestamp = relativeTime(
+    build.finished_at ?? build.started_at,
+    copy.locale,
+    Date.now(),
+    LONG_AGO,
+  );
 
   return (
     <li>
@@ -558,23 +367,12 @@ function InlinePanelEmpty({ message }: { message: string }) {
   );
 }
 
-/**
- * The calm half of the status pair: what a reader sees when nothing is wrong.
- *
- * The pane used to show a banner ONLY when a failure still bit, which meant a
- * healthy project opened onto a log with no verdict anywhere on it — the one
- * question a non-technical reader has ("is my project OK?") was answerable only
- * by interpreting rows. `blocked` and `degraded` still belong to
- * `SandboxStatusBanner`; `unknown` and an absent status render nothing, because
- * the API is telling us it could not observe the providers and a confident
- * "everything's fine" would be a fabrication.
- */
 function EnvironmentSummary({
   status,
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy,
 }: {
   status: SandboxRuntimeStatus;
-  copy?: SnapshotsCopy;
+  copy: SnapshotMessages;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const summary = localizeUiCatalog(
@@ -617,8 +415,6 @@ const ENVIRONMENT_SUMMARY: Partial<
   Record<
     SandboxRuntimeStatus['state'],
     {
-      title: string;
-      body: string;
       tileBg: string;
       iconColor: string;
       Icon: ComponentType<{ className?: string }>;
@@ -626,15 +422,11 @@ const ENVIRONMENT_SUMMARY: Partial<
   >
 > = {
   ready: {
-    title: 'This project’s environment is ready',
-    body: 'New sessions start on the prepared machine right away. There is nothing to do on this page.',
     tileBg: 'bg-kortix-green/15',
     iconColor: 'text-kortix-green',
     Icon: CheckCircleFilled,
   },
   building: {
-    title: 'Preparing this project’s environment',
-    body: 'A new machine is being prepared. Sessions started now wait for it to finish — they don’t fail.',
     tileBg: 'bg-kortix-yellow/15',
     iconColor: 'text-kortix-yellow',
     Icon: Loading,
@@ -643,24 +435,12 @@ const ENVIRONMENT_SUMMARY: Partial<
   // same outlined treatment a stale build row gets rather than borrowing a
   // status colour it has not earned.
   not_built: {
-    title: 'Nothing prepared yet',
-    body: 'Kortix prepares a machine the first time you start a session here. Nothing needs to be set up in advance.',
     tileBg: 'border-border border',
     iconColor: 'text-muted-foreground',
     Icon: StackIcon,
   },
 };
 
-/**
- * Shown only when a failure still bites — i.e. the API's derived state is
- * `blocked` (nothing bootable anywhere this project routes) or `degraded` (some
- * routable providers are fine, others aren't).
- *
- * It deliberately never renders the newest failed row on its own. A build row is
- * a record of one past attempt against one image identity; presenting it as the
- * present tense is what showed "Latest build failed" for eleven days while a
- * ready image was serving every session.
- */
 function SandboxStatusBanner({
   status,
   canManage,
@@ -668,7 +448,7 @@ function SandboxStatusBanner({
   isRetryPending,
   onFix,
   onRetry,
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy: copyOverride,
 }: {
   status: SandboxRuntimeStatus;
   canManage: boolean;
@@ -676,13 +456,15 @@ function SandboxStatusBanner({
   isRetryPending: boolean;
   onFix: () => void;
   onRetry: () => void;
-  copy?: SnapshotsCopy;
+  copy?: SnapshotMessages;
 }) {
+  const translatedCopy = useSnapshotMessages();
+  const copy = copyOverride ?? translatedCopy;
   const failure = status.current_failure;
   const blocked = status.state === 'blocked';
   const showFixAction = canManage && status.fix_with_agent_available;
   const failedAt = failure
-    ? formatRelative(failure.finished_at ?? failure.started_at, copy.locale)
+    ? relativeTime(failure.finished_at ?? failure.started_at, copy.locale, Date.now(), LONG_AGO)
     : null;
 
   return (
@@ -788,87 +570,8 @@ function SandboxStatusBanner({
  * a returning reader wants the log, and a first-time reader has the heading's
  * one-liner and the status panel before they get here.
  */
-const HOW_IT_WORKS: readonly { question: string; answer: string }[] = [
-  {
-    question: 'What is a snapshot?',
-    answer:
-      'A snapshot is a machine that has already been set up: this project’s repository, its dependencies, and the Kortix tools, all installed ahead of time. Starting a session copies that prepared machine instead of installing everything from scratch, which is why a session is ready in seconds rather than minutes.',
-  },
-  {
-    question: 'Why do new rows keep appearing?',
-    answer:
-      'Kortix prepares a new machine whenever the recipe changes — a new sandbox template, an edited Dockerfile, or a merged change — and each attempt gets its own row. Older rows are kept as a record. They are history, not a list of things to deal with.',
-  },
-  {
-    question: 'One of them failed. Is that a problem?',
-    answer:
-      'Usually not. A failed attempt only matters while no working machine is left, and when that happens a banner appears at the top of this page with a Rebuild button. A failed row with no banner above it has already been replaced by one that worked.',
-  },
-];
 
-export const DEFAULT_SNAPSHOTS_COPY: SnapshotsCopy = {
-  locale: 'en',
-  categoryLabels: CATEGORY_LABEL,
-  categoryHelp: CATEGORY_HELP,
-  sourceLabels: BUILD_SOURCE_LABEL,
-  statusLabels: { ready: 'ready', building: 'building', failed: 'failed' },
-  stale: STALE_FAILURE_SUMMARY,
-  outcomes: {
-    ready: 'Ready for new sessions',
-    building: 'Being prepared now',
-    blocked: 'New sessions can’t start on this',
-    failed: 'Didn’t finish',
-  },
-  facts: {
-    triggeredBy: 'Triggered by',
-    started: 'Started',
-    took: 'Took',
-    stillRunning: 'Still running',
-    runsOn: 'Runs on',
-    imageId: 'Image ID',
-    unknown: 'Unknown',
-  },
-  duration: {
-    underMinute: 'under 1m',
-    minutes: (count) => `${count}m`,
-    hours: (count) => `${count}h`,
-  },
-  environment: {
-    ready: {
-      title: 'This project’s environment is ready',
-      body: 'New sessions start on the prepared machine right away. There is nothing to do on this page.',
-    },
-    building: {
-      title: 'Preparing this project’s environment',
-      body: 'A new machine is being prepared. Sessions started now wait for it to finish — they don’t fail.',
-    },
-    not_built: {
-      title: 'Nothing prepared yet',
-      body: 'Kortix prepares a machine the first time you start a session here. Nothing needs to be set up in advance.',
-    },
-  },
-  banner: {
-    blockedTitle: 'Sessions can’t start',
-    degradedTitle: 'Some sessions won’t start',
-    blockedBody:
-      'The machine this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.',
-    degradedBody: (ready, failed) =>
-      `The machine is ready on ${ready} but failing on ${failed}. Sessions routed there won’t start.`,
-  },
-  actions: { fix: 'Fix with agent', rebuild: 'Rebuild' },
-  faq: { title: 'How this works', items: HOW_IT_WORKS },
-  view: {
-    loadFailed: 'Failed to load sandbox snapshots:',
-    retry: 'Retry',
-    logTitle: 'Build log',
-    logDescription:
-      'One row for every time Kortix prepared a machine for this project. Open a row for the details.',
-    empty:
-      'No builds recorded yet. The platform default builds once globally; custom templates build on first use.',
-  },
-};
-
-function HowItWorks({ copy = DEFAULT_SNAPSHOTS_COPY }: { copy?: SnapshotsCopy }) {
+function HowItWorks({ copy }: { copy: SnapshotMessages }) {
   return (
     <section className="space-y-4">
       <SettingsSubsectionHeader title={copy.faq.title} />
@@ -922,7 +625,7 @@ export interface SnapshotsTabViewProps {
   onRetryBuild?: () => void;
   providerMode?: SandboxProviderMode;
   templateBuilds?: ProjectSnapshotBuild[];
-  copy?: SnapshotsCopy;
+  copy?: SnapshotMessages;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -943,8 +646,10 @@ export function SnapshotsTabView({
   onRetryBuild = () => {},
   providerMode = 'automatic',
   templateBuilds = [],
-  copy = DEFAULT_SNAPSHOTS_COPY,
+  copy: copyOverride,
 }: SnapshotsTabViewProps) {
+  const translatedCopy = useSnapshotMessages();
+  const copy = copyOverride ?? translatedCopy;
   // Only these two states mean a user is actually affected right now.
   // Everything else — including a failed build whose image the provider has
   // since brought up — belongs in the log below, not in a banner. Same
@@ -989,7 +694,6 @@ export function SnapshotsTabView({
                 isRetryPending={isRetryPending}
                 onFix={onFix}
                 onRetry={onRetryBuild}
-                copy={copy}
               />
             ) : status ? (
               <EnvironmentSummary status={status} copy={copy} />
@@ -1012,7 +716,6 @@ export function SnapshotsTabView({
                       build={b}
                       providerMode={providerMode}
                       relevance={describeFailedBuild(b, status)}
-                      copy={copy}
                     />
                   ))}
                 </ul>
@@ -1063,6 +766,29 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
   const templateBuilds = builds;
   const status = data?.status ?? null;
+
+  return (
+    <SnapshotsTabView
+      isLoading={snapshotsQuery.isLoading}
+      isError={snapshotsQuery.isError}
+      errorMessage={(snapshotsQuery.error as Error)?.message ?? ''}
+      onRetry={() => snapshotsQuery.refetch()}
+      status={status}
+      canManage={canManage}
+      isFixPending={fixWithAgent.isPending}
+      isRetryPending={retry.isPending}
+      onFix={() => fixWithAgent.mutate()}
+      onRetryBuild={() => retry.mutate(status?.current_failure?.template_slug)}
+      providerMode={providerMode}
+      templateBuilds={templateBuilds}
+    />
+  );
+}
+
+type SnapshotMessages = ReturnType<typeof useSnapshotMessages>;
+function useSnapshotMessages() {
+  const t = useTranslations('settings.snapshots');
+  const locale = useLocale();
   const categories = [
     'quota',
     'dockerfile',
@@ -1091,7 +817,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
   const sourceLabels = Object.fromEntries(
     sources.map((key) => [key, t(`sources.${key}`)]),
   ) as Record<NonNullable<ProjectSnapshotBuild['source']>, string>;
-  const copy: SnapshotsCopy = {
+  const copy = {
     locale,
     categoryLabels,
     categoryHelp,
@@ -1123,8 +849,8 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     },
     duration: {
       underMinute: t('duration.underMinute'),
-      minutes: (count) => t('duration.minutes', { count }),
-      hours: (count) => t('duration.hours', { count }),
+      minutes: (count: number) => t('duration.minutes', { count }),
+      hours: (count: number) => t('duration.hours', { count }),
     },
     environment: {
       ready: { title: t('environment.ready.title'), body: t('environment.ready.body') },
@@ -1135,7 +861,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
       blockedTitle: t('banner.blockedTitle'),
       degradedTitle: t('banner.degradedTitle'),
       blockedBody: t('banner.blockedBody'),
-      degradedBody: (ready, failed) => t('banner.degradedBody', { ready, failed }),
+      degradedBody: (ready: string, failed: string) => t('banner.degradedBody', { ready, failed }),
     },
     actions: { fix: t('actions.fix'), rebuild: t('actions.rebuild') },
     faq: {
@@ -1154,21 +880,5 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     },
   };
 
-  return (
-    <SnapshotsTabView
-      isLoading={snapshotsQuery.isLoading}
-      isError={snapshotsQuery.isError}
-      errorMessage={(snapshotsQuery.error as Error)?.message ?? ''}
-      onRetry={() => snapshotsQuery.refetch()}
-      status={status}
-      canManage={canManage}
-      isFixPending={fixWithAgent.isPending}
-      isRetryPending={retry.isPending}
-      onFix={() => fixWithAgent.mutate()}
-      onRetryBuild={() => retry.mutate(status?.current_failure?.template_slug)}
-      providerMode={providerMode}
-      templateBuilds={templateBuilds}
-      copy={copy}
-    />
-  );
+  return copy;
 }

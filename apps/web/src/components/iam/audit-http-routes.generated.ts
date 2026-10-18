@@ -760,6 +760,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|managed-git|status",
   "POST|v1|projects|provision",
   "POST|v1|projects|provision-stream",
+  "GET|v1|projects|quota",
   "GET|v1|projects|suna-migration|eligibility",
   "POST|v1|projects|suna-migration|start",
   "GET|v1|projects|suna-migration|status",

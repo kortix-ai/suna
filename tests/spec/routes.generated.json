@@ -3036,6 +3036,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/quota"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/suna-migration/eligibility"
     },
     {

@@ -35,7 +35,7 @@ second credential profile under the same key.
 
 Each secret has one EXPOSURE — can agent code read the value?
 
-  environment  THE DEFAULT. The real value loads into the sandbox env. Required
+  environment  The default for \`set\`. The real value loads into the sandbox env. Required
                for a credential the code must COMPUTE with (AWS SigV4, HMAC
                webhook signing, JWT assertions, SSH/PEM keys) and for anything
                that is not HTTPS.
@@ -83,6 +83,9 @@ Subcommands:
                                     while one is unexpired. Warns when this
                                     session's agent will not receive a name.
                                     --scope runtime|connector  --expires <min>
+                                    connector by default: server-side only,
+                                    never in the sandbox env. Use runtime
+                                    explicitly to expose the real value.
   sync                              Re-push secrets into sandboxes. In an agent
                                     session: pulls THIS session's secrets and
                                     grant now (the per-prompt sync, on

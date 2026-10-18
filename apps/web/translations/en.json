@@ -1161,6 +1161,11 @@
     "tokens": {
       "keyRevoked": "API key revoked",
       "revokeFailed": "Could not revoke API key",
+      "deleteKey": "Delete key",
+      "deleteTitle": "Delete this API key?",
+      "deleteDescription": "{name} is already revoked. Deleting removes it from the list. This action cannot be undone.",
+      "keyDeleted": "API key deleted",
+      "deleteFailed": "Could not delete API key",
       "newKey": "New key",
       "confirmIdentity": "Confirm your identity",
       "verify": "Verify",
@@ -1991,6 +1996,9 @@
       "fullTextDownload": "Download full text ({size})",
       "fullTextError": "Could not load the full text.",
       "fullTextRetry": "Try again"
+    },
+    "turn": {
+      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
     }
   },
   "agents": {
@@ -2296,7 +2304,8 @@
         "groups": {
           "small": "Small teams",
           "growing": "Growing teams",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Large organizations"
         }
       }
     },
@@ -2466,10 +2475,11 @@
         "free": {
           "name": "Free",
           "note": "Start with real sandbox credits.",
-          "f1": "200 credits / month, no card needed",
-          "f2": "1 project",
-          "f3": "Bring your own API key for any premium model",
-          "f4": "Connect your ChatGPT subscription"
+          "f1": "500 credits / month, no card needed",
+          "f2": "Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference",
+          "f3": "1 project",
+          "f4": "Bring your own API key for any premium model",
+          "f5": "Connect your ChatGPT subscription"
         },
         "credits": {
           "name": "Credits",
@@ -2479,7 +2489,7 @@
           "f2": "Unlimited members, one shared credit pool",
           "f3": "Unused credits roll over one month",
           "f4": "Top up any time. Top-ups never expire",
-          "f5": "Managed models and every feature",
+          "f5": "Up to 200 projects and higher model rate limits",
           "f6": "Support via email"
         },
         "enterprise": {
@@ -2497,7 +2507,7 @@
       "faq": {
         "free": {
           "question": "What does Free include?",
-          "answer": "Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium models. Managed models on Kortix keys need a paid plan."
+          "answer": "Free includes 500 credits each month, managed models and every feature, for 1 project. Credits pay for the agent computer and for Kortix models. Bring your own API key or connect your ChatGPT subscription for any other model."
         },
         "credit": {
           "question": "What does a credit buy?",
@@ -2505,7 +2515,7 @@
         },
         "amounts": {
           "question": "How much do I pay each month?",
-          "answer": "Pick a tier from $50 a month (5,000 credits) to $10,000 a month (1,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $10,000 a month, talk to sales."
+          "answer": "Pick a tier from $50 a month (5,000 credits) to $50,000 a month (5,000,000 credits). Every tier buys credits at the same rate: 100 credits per dollar. For more than $50,000 a month, talk to sales."
         },
         "members": {
           "question": "Do I pay for members?",
@@ -2753,7 +2763,9 @@
       "link": {
         "title": "Check your email",
         "description": "We sent a link to <address>{email}</address>. Open it to continue.",
+        "confirmDescription": "We sent a confirmation email to <address>{email}</address>. Confirm your email to continue.",
         "notReceived": "Didn't receive the link?",
+        "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
       },
@@ -8951,7 +8963,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Connect an app",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Your Kortix agent wants to connect this app on your behalf. Authorize it in one click — no keys are pasted into chat or stored in the repo.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Add a project secret",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Your Kortix agent needs this to continue. Enter the value below — it’s encrypted and the agent never sees it.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "We couldn't load this shared page. Try again, or reload if it keeps happening.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Share link unavailable",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Public share",
@@ -9685,7 +9696,6 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067": "Loading…",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Saved securely",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "You can close this. The agent will pick it up — tell it “done” to continue.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Encrypted at rest. Only this project can read it. The agent never sees the value.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Enter a sandbox port, e.g. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Type a port or app URL",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Preview browser",
@@ -11166,7 +11176,7 @@
       "text248f3bad646d": "The connector and the exact action called.",
       "text24984f203fd7": "is set by a project manager. You do not have permission to change it.",
       "text24a754cf2e81": "Attached group to project",
-      "text24b6bef25e6e": "Don",
+      "text24b6bef25e6e": "Don't",
       "text24ba36a8ec86": "Edit this agent's source in a chat?",
       "text24c56b85c01b": "Same rules",
       "text24c5c392057f": "Configure SAML step with the Single sign-on URL and Audience URI fields",
@@ -20039,7 +20049,7 @@
       "text146aaf3c71fa": "Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also billed through a paid plan, so the Stripe reconciliation cannot strip them.",
       "text517105fd13ce": "Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions. The free welcome grant is $2.",
       "text2f1d17f50af8": "Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan is unchanged.",
-      "text12836c0e435d": "Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text12836c0e435d": "Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this account.",
       "text49fd64c206dd": "Your plan is active. Credits are ready.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",
@@ -20131,6 +20141,41 @@
       "text02b242fd11cd": "An offer is open. Withdraw it first.",
       "text451c4b7d695d": "A contract is active. End it first, or create a Card offer.",
       "text06bdc1c507f1": "SSO grace until {date}",
+      "textac8710553475": "Trial extended",
+      "text0bad4daa3f0d": "Days left / ends",
+      "text5f2d23caa972": "Extend trial",
+      "texta88fdf3e2772": "Granting the plan already on trial moves its end date (Extend).",
+      "textfdd57ee91bdc": "One credit grant at the start, expiring with the trial. Leave the amount empty for the default: ${amount} for Enterprise, $0 for Credits.",
+      "text05700b032dac": "A dated grant of a plan. When it ends the account returns to <tier>{plan}</tier>.",
+      "text94ddcfbb2f30": "A denied call is a row too. What did not happen is as much a part of the record as what did.",
+      "text89faa819e995": "What it never gets is the reach of whoever created it. There is no inheritance edge here to walk up.",
+      "text6a51a65a11f4": "Starting a session cuts a branch and boots one machine for it. The database will not let a second session have that machine.",
+      "catalogExcludedNoActions": "{count, plural, one {1 app matches but publishes no actions an agent can call.} other {{count} apps match but publish no actions an agent can call.}}",
+      "text08cadd4156a5": "A sandbox is a real Linux machine the model can run anything on. So the only credential in it is one Kortix token, scoped to the project.",
+      "textc7d878b8738e": "Account actions land in the same place — membership, roles, policies, tokens, groups.",
+      "text5b70d52b009e": "The third-party API sees an ordinary authenticated request. The answer goes back to the agent. The credential stays behind.",
+      "text7a570559b1e0": "A person acts through the roles they were granted, evaluated against the resource they are reaching for.",
+      "text8f0f0d2cd359": "Nothing merges itself: work reaches main through a change request a person approves, unless an admin granted the merge capability.",
+      "text10fd874b68da": "write",
+      "textafeac15c27a6": "Kortix checks that this agent may use this connector, applies the policy, and decrypts the credential on its own side of the wall.",
+      "text6fb8ad227c23": "Recording is never the thing you pay for. Every plan writes this. The plan decides who may read, export, or stream it.",
+      "textdb3871e22b38": "A second session gets its own branch and its own machine. Nothing crosses between them — same project, same team, or another customer.",
+      "textc8fc6bf296fa": "ran",
+      "text0913fabeeba4": "Session work reaches main through a change request.",
+      "text8c6976e5b541": "admin",
+      "text1b933329d22a": "destructive",
+      "text28ef515dd5b9": "When the session wants to keep something, it opens a change request.",
+      "textd26b162f1b6a": "So what a session can actually touch is the intersection: what the person may do, and what the agent was declared to be allowed. Never the union.",
+      "textc19146bd7bd6": "The agent calls a tool by name. It has no URL, no host and no key — it cannot construct the request itself.",
+      "text6973dddd3ef9": "blocked",
+      "text66d3cd60b831": "A service account is a principal of its own. Policies attach to it directly, and its request is evaluated purely against those policies.",
+      "textcf072fa71675": "These four never cross into the machine the model is driving. Turning the connector off takes effect on the next call — with nothing in the sandbox to rotate.",
+      "text2687f86ed678": "approved",
+      "text1eddfe2fbb7a": "A project is a repo. main is the only thing everyone shares.",
+      "text0c983266f830": "trust boundary",
+      "text4c6aaca6d645": "Each session has its own isolated machine and branch.",
+      "textc610d5d19d2b": "The machine is disposable. A bad install goes away with it. Only what the session commits survives, and it survives as a change request.",
+      "text8e97f02e6f34": "Every call an agent makes through a connector is a row. The gateway that resolves the credential is the thing that writes it.",
       "textd6ea513221b7": "Enterprise · demo",
       "text5a22403ec082": "Enterprise · licensed",
       "text87feb882165d": "Licensed",
@@ -20164,7 +20209,11 @@
       "text08e6480e9b78": "{value0} added",
       "text6241684827b2": "This site does not allow Kortix to show it here.",
       "textdae75dce541f": "Pauses every schedule and webhook in this project.",
-      "textced57bebd466": "Turns this project’s schedules and webhooks back on."
+      "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
+      "agentsListSubagentsTitle": "Subagents",
+      "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
+      "agentsListAlsoSubagent": "Also a subagent",
+      "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20232,7 +20281,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Encrypted at rest. Delivery follows the scope shown above.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Enter the requested value below. Check its delivery scope before saving. The value is encrypted at rest."
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding reset",
@@ -21551,7 +21605,11 @@
         "excluded": "Excluded",
         "noMatch": "Nothing matches.",
         "noExcludedApps": "No app is excluded.",
-        "noExcludedSites": "No website is excluded."
+        "noExcludedSites": "No website is excluded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "showList": "Show list",
+        "hideList": "Hide list"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "How long Kortix keeps recordings. 0 keeps them without a limit.",
@@ -21575,7 +21633,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Try features that may still change.",
       "privacyControls": "Privacy controls",
-      "privacyControlsHint": "Show personal-data masking and the apps and websites no computer records. Turning this off hides them; what is set keeps applying.",
+      "privacyControlsHint": "Show personal-data masking. Turning this off hides it; what is set keeps applying.",
       "maskingTitle": "Masking",
       "framesTitle": "Screen frames",
       "interval": "One frame every",
@@ -21586,10 +21644,10 @@
       "framesHint": "Unset, each computer uses its own (one frame every 2 s at 1440p). Set, every computer uses it and people cannot change it. Clicks, typing and scrolling are recorded with their own screenshots at any interval.",
       "computerDecides": "Each computer decides",
       "included": {
-        "title": "Record only these apps and websites",
-        "hint": "On: every computer in {org} records only what is listed here. Everything else is blacked out and never saved. People can add their own in Kortix Capture; they cannot turn this off or remove these.",
+        "title": "Apps and websites",
+        "hint": "Choose what every computer in {org} records. Anything skipped is blacked out and never saved or uploaded. People can add their own in Kortix Capture; they cannot remove these or turn off Record only.",
         "switch": "Record only included apps and websites",
-        "switchHint": "Off: everything not excluded is recorded.",
+        "switchHint": "Off: everything except Never record is recorded.",
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
@@ -21599,7 +21657,19 @@
         "addDomain": "Include {domain}",
         "included": "Included",
         "noApps": "No app is included. Only included websites are recorded.",
-        "noSites": "No website is included. Browsers record only if the browser app is included."
+        "noSites": "No website is included. Browsers record only if the browser app is included.",
+        "switchHintOn": "On: only the apps and websites below are recorded.",
+        "commonApps": "Common apps",
+        "commonSites": "Common websites",
+        "policyType": "Policy type",
+        "exclusionPolicy": "Exclusion policy",
+        "exclusionPolicyHint": "Record everything except what you exclude.",
+        "inclusionPolicy": "Inclusion policy",
+        "inclusionPolicyHint": "Record only what you include. Everything else is blacked out.",
+        "recordTitle": "Record only these",
+        "exceptTitle": "Never record, even if included",
+        "memberInclusions": "People can add their own included apps and websites",
+        "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
       }
     },
     "area": {

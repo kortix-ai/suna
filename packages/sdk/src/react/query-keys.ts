@@ -205,6 +205,15 @@ export const qk = {
 
     /** Every project the account can see. `undefined` means the active account. */
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
+
+    /** `getProjectQuota({ accountId })` — the account's project-cap state, as
+     *  the /new create form reads it before the first submit. Like `list`,
+     *  `undefined` (`'default'`) is the server-resolved default account slot,
+     *  a SIBLING of every named account — never a prefix of one. Creating a
+     *  project invalidates the `scope()` prefix, so a form remounting on the
+     *  same key refetches a fresh answer. */
+    quota: (accountId?: string) =>
+      [...qk.projects.scope(), 'quota', accountId ?? 'default'] as const,
   },
 
   /**

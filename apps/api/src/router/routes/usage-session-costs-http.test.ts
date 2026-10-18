@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
 import * as realAuthorize from '../../iam/authorize';
+import * as realDirectoryVisibility from '../../iam/directory-visibility';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -119,6 +120,20 @@ mock.module('../../projects/lib/access', () => ({
   },
 }));
 
+// #10113 routes session costs through `visibleDirectory`, whose real `authorize`
+// consults the action catalog in `kortix.permissions` — a database read the
+// hermetic suite cannot serve. Stub the dependency at its boundary. The full
+// view keeps this file's pre-#10113 expectations (every owner visible); the
+// narrowed view is characterized below.
+let directoryView: 'full' | 'own-only' = 'full';
+mock.module('../../iam/directory-visibility', () => ({
+  ...realDirectoryVisibility,
+  visibleDirectory: async () =>
+    directoryView === 'full'
+      ? { userIds: null, groupIds: null, projectIds: null }
+      : { userIds: new Set([USER_ID]), groupIds: new Set(), projectIds: new Set() },
+}));
+
 mock.module('../../shared/session-costs', () => ({
   listSessionCosts: async (input: Record<string, unknown>) => {
     listInput = input;
@@ -161,6 +176,7 @@ function createTestApp() {
 beforeEach(() => {
   authType = 'supabase';
   sandboxId = null;
+  directoryView = 'full';
   listInput = null;
   detailInput = null;
   detailFound = true;
@@ -261,6 +277,33 @@ describe('GET /v1/usage/session-costs', () => {
 
     expect(response.status).toBe(200);
     expect(listInput).toMatchObject({ ownerId: USER_ID });
+  });
+
+  // #10113: a caller without `member.read` sees only their own sessions.
+  // The stubbed boundary above supplies that narrowed view; these pin the
+  // route's branch: a foreign `owner_id` is a 403, no `owner_id` filters to
+  // the caller, and the caller's own `owner_id` still forwards.
+  test('a narrowed directory confines the list to the caller', async () => {
+    directoryView = 'own-only';
+
+    const narrowed = await createTestApp().request('/v1/usage/session-costs');
+
+    expect(narrowed.status).toBe(200);
+    expect(listInput).toMatchObject({ ownerId: USER_ID });
+  });
+
+  test('a narrowed directory 403s a foreign owner_id', async () => {
+    directoryView = 'own-only';
+
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?owner_id=${SECONDARY_ACCOUNT_ID}`,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: 'You can read only your own session costs',
+    });
+    expect(listInput).toBeNull();
   });
 
   test('infers the account from an accessible project when account_id is omitted', async () => {

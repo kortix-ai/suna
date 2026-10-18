@@ -61,6 +61,11 @@ export interface CapturePolicy {
     included_bundle_ids?: string[];
     /** Websites recorded, in any browser, while `record_only_included` is on. */
     included_domains?: string[];
+    /**
+     * False: members cannot add their own included apps and websites (only the
+     * organization's are recorded). Their own exclusions always apply. Absent: true.
+     */
+    member_inclusions?: boolean;
   };
   /** `remote_days` 0 keeps indexed data until it is deleted. */
   retention: { local_hours: number; remote_days: number };

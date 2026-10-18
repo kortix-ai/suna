@@ -1339,6 +1339,11 @@
     "tokens": {
       "keyRevoked": "API кључ је опозван",
       "revokeFailed": "API кључ није могао да се опозове",
+      "deleteKey": "Обриши кључ",
+      "deleteTitle": "Обрисати овај API кључ?",
+      "deleteDescription": "{name} је већ опозван. Брисање га уклања са списка. Ова радња се не може опозвати.",
+      "keyDeleted": "API кључ је обрисан",
+      "deleteFailed": "API кључ није могао да се обрише",
       "newKey": "Нови кључ",
       "confirmIdentity": "Потврдите свој идентитет",
       "verify": "Потврди",
@@ -1991,6 +1996,9 @@
       "fullTextDownload": "Преузми цео текст ({size})",
       "fullTextError": "Цео текст није могао да се учита.",
       "fullTextRetry": "Покушај поново"
+    },
+    "turn": {
+      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке."
     }
   },
   "agents": {
@@ -2296,7 +2304,8 @@
         "groups": {
           "small": "Мали тимови",
           "growing": "Тимови у расту",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Велике организације"
         }
       }
     },
@@ -2466,10 +2475,11 @@
         "free": {
           "name": "Free",
           "note": "Почните са стварним sandbox кредитима.",
-          "f1": "200 кредита / месец, без картице",
-          "f2": "1 пројекат",
-          "f3": "Користите сопствени API кључ за било који премијум модел",
-          "f4": "Повежите своју ChatGPT претплату"
+          "f1": "500 кредита / месец, без картице",
+          "f2": "Управљани модели: Kimi, DeepSeek, GLM. Нулто задржавање података, инференција у САД",
+          "f3": "1 пројекат",
+          "f4": "Користите сопствени API кључ за било који премијум модел",
+          "f5": "Повежите своју ChatGPT претплату"
         },
         "credits": {
           "name": "Кредити",
@@ -2479,7 +2489,7 @@
           "f2": "Неограничен број чланова, један заједнички фонд кредита",
           "f3": "Неискоришћени кредити преносе се месец дана",
           "f4": "Допуњавајте кад год желите. Допуне никада не истичу",
-          "f5": "Управљани модели и све функције",
+          "f5": "До 200 пројеката и виша ограничења брзине модела",
           "f6": "Подршка путем е-поште"
         },
         "enterprise": {
@@ -2497,7 +2507,7 @@
       "faq": {
         "free": {
           "question": "Шта укључује Free?",
-          "answer": "Free укључује 200 кредита месечно за рачунарску снагу sandbox-а и 1 пројекат. Користите сопствени API кључ или повежите ChatGPT претплату за премијум моделе. Управљани модели на Kortix кључевима захтевају плаћени план."
+          "answer": "Free укључује 500 кредита месечно, управљане моделе и све функције, за 1 пројекат. Кредити плаћају рачунар агента и Kortix моделе. Користите сопствени API кључ или повежите ChatGPT претплату за било који други модел."
         },
         "credit": {
           "question": "Шта може да се купи једним кредитом?",
@@ -2505,7 +2515,7 @@
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
-          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 10.000 $ месечно (1.000.000 кредита). Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 10.000 $ месечно обратите се продаји."
+          "answer": "Изаберите ниво од 50 $ месечно (5.000 кредита) до 50.000 $ месечно (5.000.000 кредита). Сваки ниво даје кредите по истој стопи: 100 кредита по долару. За више од 50.000 $ месечно обратите се продаји."
         },
         "members": {
           "question": "Да ли плаћам чланове?",
@@ -2753,7 +2763,9 @@
       "link": {
         "title": "Проверите имејл",
         "description": "Послали смо линк на <address>{email}</address>. Отворите га да наставите.",
+        "confirmDescription": "Послали смо имејл за потврду на <address>{email}</address>. Потврдите свој имејл да наставите.",
         "notReceived": "Нисте добили линк?",
+        "confirmNotReceived": "Нисте добили имејл за потврду?",
         "resendIn": "Поново пошаљи за {seconds}",
         "resend": "Пошаљи поново"
       },
@@ -8940,7 +8952,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Повежите апликацију",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Ваш Kortix агент жели да повеже ову апликацију у ваше име. Овластите га једним кликом — ниједан кључ се не лепи у ћаскање нити се чува у репо-у.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Додајте тајну пројекта",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Вашем Kortix агенту је ово потребно да би наставио. Enter вредност испод — шифрована је и агент је никада не види.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Нисмо могли да учитамо ову дељену страницу. Покушајте поново или поново учитајте ако се то настави.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Линк за дељење није доступан",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Јавно удео",
@@ -9674,7 +9685,6 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067": "Учитавање…",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Сигурно сачувано",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Можете затворити ово. Агент ће то подићи - реците да је „готово“ да бисте наставили.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Шифровано у мировању. Само овај пројекат може да га прочита. Агент никада не види вредност.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Enter порт за сандбок, нпр. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Унесите порт или апликацију URL",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Преглед прегледача",
@@ -20028,7 +20038,7 @@
       "text146aaf3c71fa": "Одржава SSO, SCIM, RBAC и ревизију омогућеним за потписани Enterprise налог који се такође наплаћује преко плаћеног плана, како их Stripe усклађивање не би уклонило.",
       "text517105fd13ce": "Кредити финансирају рачунарску снагу sandbox-а — чак и BYOK пробни период захтева стање у новчанику за покретање сесија. Бесплатни уводни износ је 2 $.",
       "text2f1d17f50af8": "Enterprise омогућава SAML SSO, SCIM синхронизацију директоријума, RBAC и приступ ревизији за овај налог. Наплаћени план се не мења.",
-      "text12836c0e435d": "Free је 0 $ — један пројекат и 200 кредита месечно за рачунарску снагу sandbox-а, са вашим кључем за било који премијум модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
+      "text12836c0e435d": "Free је 0 $ — један пројекат, 500 кредита месечно, управљани модели и све функције, са вашим кључем за било који други модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
       "text5dffd4db88c5": "План, кредити и обрачун за овај налог.",
       "text49fd64c206dd": "Ваш план је активан. Кредити су спремни.",
       "textad828837ddd8": "чланови члан радни простор приступ сарадници људи колеге списак ко може да види дозволе додели дели",
@@ -20120,6 +20130,41 @@
       "text02b242fd11cd": "Понуда је отворена. Прво је повуците.",
       "text451c4b7d695d": "Уговор је активан. Прво га окончајте или креирајте понуду картицом.",
       "text06bdc1c507f1": "SSO грејс период до {date}",
+      "textac8710553475": "Пробни период је продужен",
+      "text0bad4daa3f0d": "Преостало дана / истиче",
+      "text5f2d23caa972": "Продужи пробни период",
+      "texta88fdf3e2772": "Одобравање плана који је већ на пробном периоду помера његов датум завршетка (Продужи).",
+      "textfdd57ee91bdc": "Једно одобрење кредита на почетку, које истиче са пробним периодом. Оставите износ празним за подразумевану вредност: ${amount} за Enterprise, $0 за Кредите.",
+      "text05700b032dac": "Датирано одобравање плана. Када истекне, налог се враћа на <tier>{plan}</tier>.",
+      "text94ddcfbb2f30": "Одбијени позив је такође спор. Оно што се није догодило је део записа колико и оно што се догодило.",
+      "text89faa819e995": "Оно што никада не добија је домет онога ко га је створио. Овде нема ивице наслеђа да се напредује.",
+      "text6a51a65a11f4": "Покретање сесије пресеца грану и покреће једну машину за њу. База података неће дозволити да друга сесија има ту машину.",
+      "catalogExcludedNoActions": "{count, plural, one {1 апликација се подудара, али не објављује радње које агент може да позове.} few {# апликације се подударају, али не објављују радње које агент може да позове.} other {{count} апликација се подудара, али не објављују радње које агент може да позове.}}",
+      "text08cadd4156a5": "Пешчаник је права Линук машина на којој модел може да покрене било шта. Дакле, једини акредитив у њему је један Кортик токен, обухваћен пројектом.",
+      "textc7d878b8738e": "Радње налога долазе на исто место — чланство, улоге, политике, токени, групе.",
+      "text5b70d52b009e": "АПИ треће стране види обичан захтев са аутентификацијом. Одговор се враћа агенту. Акредитив остаје иза.",
+      "text7a570559b1e0": "Особа делује кроз улоге које су јој додељене, процењене у односу на ресурс за којим посеже.",
+      "text8f0f0d2cd359": "Ништа се не спаја само од себе: посао стиже до главног преко захтева за промену који особа одобри, осим ако администратор не одобри могућност спајања.",
+      "text10fd874b68da": "писати",
+      "textafeac15c27a6": "Кортик проверава да ли овај агент може да користи овај конектор, примењује смернице и дешифрује акредитиве на сопственој страни зида.",
+      "text6fb8ad227c23": "Снимање никада није ствар коју плаћате. Сваки план пише ово. План одлучује ко може да га чита, извози или стримује.",
+      "textdb3871e22b38": "Друга сесија добија сопствену грану и сопствену машину. Ништа се не укршта између њих — исти пројекат, исти тим или други купац.",
+      "textc8fc6bf296fa": "ран",
+      "text0913fabeeba4": "Рад на сесији стиже до главног преко захтева за промену.",
+      "text8c6976e5b541": "админ",
+      "text1b933329d22a": "деструктивне",
+      "text28ef515dd5b9": "Када сесија жели да задржи нешто, отвара захтев за промену.",
+      "textd26b162f1b6a": "Дакле, оно што сесија заправо може да дотакне јесте пресек: шта особа може да ради и шта је агенту проглашено дозвољеним. Никад синдикат.",
+      "textc19146bd7bd6": "Агент назива алат по имену. It has no URL, no host and no key — it cannot construct the request itself.",
+      "text6973dddd3ef9": "блокиран",
+      "text66d3cd60b831": "Услужни налог је сам по себи принципал. Политике се директно везују за њу, а њен захтев се оцењује искључиво у односу на те политике.",
+      "textcf072fa71675": "Ова четворица никада не прелазе у машину коју модел вози. Искључивање конектора ступа на снагу при следећем позиву — без ничега у сандбоку за ротирање.",
+      "text2687f86ed678": "одобрено",
+      "text1eddfe2fbb7a": "Пројекат је репо. главно је једино што сви деле.",
+      "text0c983266f830": "граница поверења",
+      "text4c6aaca6d645": "Свака сесија има своју изоловану машину и грану.",
+      "textc610d5d19d2b": "Машина је за једнократну употребу. Лоша инсталација нестаје са тим. Опстаје само оно што сесија обавеже, и то као захтев за промену.",
+      "text8e97f02e6f34": "Сваки позив који агент обави преко конектора је ред. Гатеваи који решава акредитив је оно што га записује.",
       "textd6ea513221b7": "Enterprise · демо",
       "text5a22403ec082": "Enterprise · лиценцирано",
       "text87feb882165d": "Лиценцирано",
@@ -20153,7 +20198,11 @@
       "text08e6480e9b78": "{value0} je dodata",
       "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
       "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
-      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта."
+      "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
+      "agentsListSubagentsTitle": "Подагенти",
+      "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
+      "agentsListAlsoSubagent": "Такође подагент",
+      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20221,7 +20270,12 @@
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
       "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Испорука: runtime — стварна вредност се учитава у sandbox окружење. Код агента може да ја прочита.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Испорука: connector — само на серверу. Вредност никада не улази у sandbox окружење.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Обим испоруке није доступан. Питајте агента где ће се ова вредност користити пре чувања.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Шифровано у мировању. Испорука следи обим приказан изнад.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Унесите тражену вредност испод. Проверите њен обим испоруке пре чувања. Вредност је шифрована у мировању."
   },
   "projectOnboarding": {
     "resetSuccess": "Уводно подешавање је враћено",
@@ -21551,7 +21605,11 @@
         "excluded": "Izuzeto",
         "noMatch": "Nema poklapanja.",
         "noExcludedApps": "Nijedna aplikacija nije izuzeta.",
-        "noExcludedSites": "Nijedan veb-sajt nije izuzet."
+        "noExcludedSites": "Nijedan veb-sajt nije izuzet.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "showList": "Prikaži listu",
+        "hideList": "Sakrij listu"
       },
       "remoteDays": "У Kortix-у",
       "remoteDaysHint": "Koliko dugo Kortix čuva snimke. 0 ih čuva bez ograničenja.",
@@ -21575,7 +21633,7 @@
       "experimentalTitle": "Експериментално",
       "experimentalHint": "Isprobaj funkcije koje se još mogu menjati.",
       "privacyControls": "Kontrole privatnosti",
-      "privacyControlsHint": "Prikazuje maskiranje ličnih podataka i aplikacije i sajtove koje nijedan računar ne snima. Isključivanje ih sakriva; podešeno i dalje važi.",
+      "privacyControlsHint": "Prikaži maskiranje ličnih podataka. Isključivanje ga sakriva; podešeno i dalje važi.",
       "maskingTitle": "Maskiranje",
       "framesTitle": "Snimci ekrana",
       "interval": "Jedan snimak svakih",
@@ -21586,10 +21644,10 @@
       "framesHint": "Bez vrednosti, svaki računar koristi svoju (jedan snimak na svake 2 s u 1440p). Sa vrednošću, svi računari je koriste i niko ne može da je promeni. Klikovi, kucanje i skrolovanje snimaju se sa sopstvenim snimcima ekrana pri bilo kom intervalu.",
       "computerDecides": "Svaki računar odlučuje",
       "included": {
-        "title": "Snimaj samo ove aplikacije i veb-sajtove",
-        "hint": "Uključeno: svaki računar u {org} snima samo ono što je ovde navedeno. Sve ostalo je zatamnjeno i nikad se ne čuva. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ovo isključiti niti ukloniti ove stavke.",
+        "title": "Aplikacije i veb-sajtovi",
+        "hint": "Izaberite šta svaki računar u {org} snima. Ono što se preskoči je zatamnjeno i nikad se ne čuva niti otprema. Ljudi mogu dodati svoje u Kortix Capture; ne mogu ukloniti ove niti isključiti Snimaj samo.",
         "switch": "Snimaj samo uključene aplikacije i veb-sajtove",
-        "switchHint": "Isključeno: snima se sve što nije izuzeto.",
+        "switchHint": "Isključeno: snima se sve osim Nikad ne snimaj.",
         "kindLabel": "Aplikacije ili veb-sajtovi",
         "apps": "Aplikacije",
         "websites": "Veb-sajtovi",
@@ -21599,7 +21657,19 @@
         "addDomain": "Uključi {domain}",
         "included": "Uključeno",
         "noApps": "Nijedna aplikacija nije uključena. Snimaju se samo uključeni veb-sajtovi.",
-        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena."
+        "noSites": "Nijedan veb-sajt nije uključen. Pregledači se snimaju samo ako je aplikacija pregledača uključena.",
+        "switchHintOn": "Uključeno: snimaju se samo aplikacije i veb-sajtovi ispod.",
+        "commonApps": "Česte aplikacije",
+        "commonSites": "Česti veb-sajtovi",
+        "policyType": "Vrsta pravila",
+        "exclusionPolicy": "Pravilo izuzimanja",
+        "exclusionPolicyHint": "Snimaj sve osim onoga što izuzmete.",
+        "inclusionPolicy": "Pravilo uključivanja",
+        "inclusionPolicyHint": "Snimaj samo ono što uključite. Sve ostalo je zatamnjeno.",
+        "recordTitle": "Snimaj samo ove",
+        "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni",
+        "memberInclusions": "Ljudi mogu uključiti svoje aplikacije i veb-sajtove",
+        "memberInclusionsHint": "Isključeno: računari snimaju samo ovde navedene aplikacije i veb-sajtove. Ljudi i dalje mogu dodati aplikacije i veb-sajtove koje treba preskočiti."
       }
     },
     "area": {
