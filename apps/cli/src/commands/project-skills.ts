@@ -18,45 +18,8 @@
  */
 
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { skillBySegment, type ProjectSkillSummary } from '@kortix/shared/skill-resolve';
 import { C, help, status, stripAnsi } from '../style.ts';
-
-/** One entry of the project detail's `config.skills` scan. */
-export interface ProjectSkillSummary {
-  name: string;
-  /** Repository-relative path of the skill's `SKILL.md`. */
-  path: string;
-  description: string | null;
-}
-
-/**
- * The skill-directory segment of a scan path — the segment right before the
- * trailing `SKILL.md`. The v2 layout scans as `skills/<slug>/SKILL.md`; the
- * legacy OpenCode layout as `.opencode/skill/<slug>/SKILL.md`. A path that
- * does not name a SKILL.md (or has no folder around it) has no slug.
- */
-export function slugFromSkillPath(path: string): string | null {
-  const segments = path.split('/').filter((segment) => segment.length > 0);
-  if (segments.length < 2) return null;
-  if (segments[segments.length - 1] !== 'SKILL.md') return null;
-  return segments[segments.length - 2];
-}
-
-/**
- * Resolve a `skills get <segment>` argument to one scanned skill: by its
- * scan name first, then by the folder the SKILL.md lives in (the URL segment
- * the web detail page and the REST layer key on). Case-insensitive on both,
- * because a skill's frontmatter name may carry capitals its folder never did.
- */
-export function skillBySegment(
-  skills: readonly ProjectSkillSummary[],
-  segment: string,
-): ProjectSkillSummary | undefined {
-  const wanted = segment.toLowerCase();
-  return (
-    skills.find((skill) => skill.name.toLowerCase() === wanted) ??
-    skills.find((skill) => slugFromSkillPath(skill.path)?.toLowerCase() === wanted)
-  );
-}
 
 /**
  * One line per skill: the name, then its description — or, when the frontmatter

@@ -51,7 +51,7 @@ import { deleteProjectSkill } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrashIcon } from '@phosphor-icons/react';
 import { filterSkills, type SkillScope } from './skill-scope';
-import { skillFolderSlug } from './skill-resolve';
+import { skillFolderSlug } from '@kortix/shared/skill-resolve';
 import { useSlashFocus } from '@/hooks/utils';
 
 type ScopeFilter = SkillScope | 'all';

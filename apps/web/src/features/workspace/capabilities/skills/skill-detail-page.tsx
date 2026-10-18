@@ -13,7 +13,7 @@ import { EntityFilePane } from '@/features/workspace/capabilities/shared/entity/
 import { getProjectDetail, readProjectFile } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
-import { skillBySegment } from './skill-resolve';
+import { skillBySegment } from '@kortix/shared/skill-resolve';
 
 /**
  * `/projects/<id>/customize/skills/<name>` — one skill, as a page.

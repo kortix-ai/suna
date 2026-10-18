@@ -9,7 +9,8 @@ import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import { commandRefusal, compiledV3, sessionAgentName } from './manifest-v3'
-import { registeredSkillAgents } from './opencode-projection'
+import { registeredSkillAgents } from '../permission-policy'
+import { v3CommandRowAgents } from './opencode-projection'
 import {
   abortTargetOf,
   loopStartTargetOf,
@@ -175,7 +176,7 @@ export function createOpenCodeProxyService(
         const agent = typeof fields.agent === 'string' && fields.agent.trim() ? fields.agent.trim() : sessionAgentName(v3, process.env)
         const configured = agent ? v3.agent?.[agent] : undefined
         const runnable = configured && !configured.disable && configured.mode !== 'subagent'
-        const skillAllowed = !Object.hasOwn(v3.commands ?? {}, command) && agent && registeredSkillAgents(v3, command).includes(agent)
+        const skillAllowed = agent !== null && !Object.hasOwn(v3.commands ?? {}, command) && registeredSkillAgents(v3, command).includes(agent)
         const refusal = runnable && skillAllowed ? null : commandRefusal(v3, process.env, parsed)
         const rejected = !runnable ? { error: 'command_not_enabled', command, agent } : refusal
         if (rejected) {
@@ -244,9 +245,8 @@ export function createOpenCodeProxyService(
               (Array.isArray(listed) ? listed : [])
                 .flatMap((command) => {
                   if (typeof command?.name !== 'string') return []
-                  if (Object.hasOwn(commands, command.name)) return [{ ...command, agents: commands[command.name]!.agents }]
-                  const agents = command.source === 'skill' ? registeredSkillAgents(v3, command.name) : []
-                  return agents.length ? [{ ...command, agents }] : []
+                  const agents = v3CommandRowAgents(v3, commands, command.name, command.source)
+                  return agents ? [{ ...command, agents }] : []
                 }),
             ),
           }

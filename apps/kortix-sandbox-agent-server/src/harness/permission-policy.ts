@@ -1,4 +1,5 @@
 import type { RuntimePermissionCapability } from '@kortix/api-contract/transcript'
+import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { comparePatterns } from '@kortix/api-contract/permission-rules'
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
@@ -132,5 +133,18 @@ export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: 
  */
 export function skillGranted(policy: PermissionPolicy, name: string): boolean {
   return resolvePolicyRule(policy, 'skill', { name }) !== 'deny'
+}
+
+/**
+ * The agents that may run one manifest-registered skill as a slash command:
+ * the runnable ones (`disable` off, not a subagent) whose `permission.skill`
+ * grants it. Only manifest-registered skills are slash commands in v3, so a
+ * name outside `set.skills` has no agents at all.
+ */
+export function registeredSkillAgents(set: Partial<CompiledAgentSet> | undefined, name: string): string[] {
+  if (!set || !Object.hasOwn(set.skills ?? {}, name)) return []
+  return Object.entries(set.agent ?? {})
+    .filter(([, agent]) => !agent.disable && agent.mode !== 'subagent' && skillGranted(compilePermissionPolicy(agent.permission), name))
+    .map(([name]) => name)
 }
 

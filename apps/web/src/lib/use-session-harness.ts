@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 
-import { selectSessionHarness, type RuntimeV2 } from '@kortix/shared/session-harness';
+import { selectSessionHarness } from '@kortix/shared/session-harness';
 import { useProjectConfig } from '@kortix/sdk/react';
 
 import { useProjectFeatureFlags } from './use-project-feature-flags';
@@ -23,7 +23,7 @@ export function useSessionHarness(projectId: string | null | undefined): 'openco
     () =>
       selectSessionHarness({
         piHarnessFlag: flags.pi_harness === true,
-        runtime: (projectConfig?.runtime ?? null) as RuntimeV2 | null,
+        runtime: projectConfig?.runtime ?? null,
         llmGateway: flags.llm_gateway === true,
       }),
     [flags.pi_harness, flags.llm_gateway, projectConfig?.runtime],

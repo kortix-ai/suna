@@ -36,7 +36,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, registeredSkillAgents, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
@@ -932,16 +932,16 @@ export class PiRuntime {
         hints: hints(command.template),
         agents: command.agents,
       }))
-      const agents = Object.entries(this.compiled?.agent ?? {})
-        .filter(([, agent]) => !agent.disable && agent.mode !== 'subagent')
-        .map(([name, agent]) => ({ name, policy: compilePermissionPolicy(agent.permission) }))
+      // The same registered-skill rule OpenCode's projection applies: only a
+      // manifest-registered skill is a slash command, and its rows list the
+      // runnable agents whose `permission.skill` grant allows it.
       const skills = this.skills.map((skill) => ({
         name: skill.name,
         description: skill.description,
         source: 'skill' as const,
         template: '',
         hints: [],
-        agents: agents.filter((agent) => skillGranted(agent.policy, skill.name)).map((agent) => agent.name),
+        agents: registeredSkillAgents(this.compiled ?? undefined, skill.name),
       })).filter((skill) => skill.agents.length > 0 && !Object.hasOwn(this.compiled?.commands ?? {}, skill.name))
       return [...commands, ...skills]
     }

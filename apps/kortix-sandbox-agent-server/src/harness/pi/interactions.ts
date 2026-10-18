@@ -18,7 +18,7 @@ import type { RuntimeFrame } from './transcript'
 
 export type PermissionReply = RuntimePermissionReply
 
-export { compilePermissionPolicy, wildcardMatch, permissionSubject, toolCapability, resolvePolicyRule, skillGranted } from '../permission-policy'
+export { compilePermissionPolicy, wildcardMatch, permissionSubject, toolCapability, registeredSkillAgents, resolvePolicyRule, skillGranted } from '../permission-policy'
 export type { PermissionRule, PermissionRuleConfig, PermissionPolicy } from '../permission-policy'
 
 export class PermissionBroker {

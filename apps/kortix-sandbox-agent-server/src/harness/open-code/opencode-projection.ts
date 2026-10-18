@@ -35,7 +35,7 @@
  *    in-VM took 276 ms. The cost was entirely the bytes leaving.
  */
 import type { CompiledAgentSet, CompiledCommand } from '@kortix/api-contract/runtime-relay'
-import { compilePermissionPolicy, skillGranted } from '../permission-policy'
+import { registeredSkillAgents } from '../permission-policy'
 import { compiledV3 } from './manifest-v3'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 
@@ -161,12 +161,24 @@ export function projectAgents(payload: unknown): AgentProjection[] {
   return out
 }
 
-/** Only manifest-registered skills are slash commands in v3. */
-export function registeredSkillAgents(set: CompiledAgentSet, name: string): string[] {
-  if (!Object.hasOwn(set.skills ?? {}, name)) return []
-  return Object.entries(set.agent ?? {})
-    .filter(([, agent]) => !agent.disable && agent.mode !== 'subagent' && skillGranted(compilePermissionPolicy(agent.permission), name))
-    .map(([name]) => name)
+/** The agents one listed v3 command row carries — the keep-decision both the
+ * projection (`projectCommands`) and the proxy's `/command` rewrite share: a
+ * compiled command keeps its own agents; a skill-source row carries the
+ * registered skill's granted agents; anything else, or a skill no agent
+ * grants, is dropped (`null`). */
+export function v3CommandRowAgents(
+  set: CompiledAgentSet | null,
+  compiled: Record<string, CompiledCommand>,
+  name: string,
+  source: unknown,
+): string[] | null {
+  if (Object.hasOwn(compiled, name)) return compiled[name]!.agents
+  if (!set) return null
+  if (source === 'skill') {
+    const agents = registeredSkillAgents(set, name)
+    return agents.length ? agents : null
+  }
+  return null
 }
 
 export function projectCommands(payload: unknown, compiled?: Record<string, CompiledCommand>): CommandProjection[] {
@@ -177,7 +189,7 @@ export function projectCommands(payload: unknown, compiled?: Record<string, Comp
     const command = raw as Record<string, unknown>
     const name = str(command.name)
     if (!name) continue
-    const agents = compiled && Object.hasOwn(compiled, name) ? compiled[name]!.agents : set && command.source === 'skill' ? registeredSkillAgents(set, name) : []
+    const agents = compiled ? (v3CommandRowAgents(set, compiled, name, command.source) ?? []) : []
     if (compiled && !Object.hasOwn(compiled, name) && !agents.length) continue
     out.push({
       name,

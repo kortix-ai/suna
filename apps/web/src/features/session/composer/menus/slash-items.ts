@@ -1,6 +1,6 @@
 import type { Command } from '@kortix/sdk/react';
 
-import { skillFolderSlug, type ProjectConfigSkill } from '@/features/workspace/capabilities/skills/skill-resolve';
+import { skillFolderSlug, type ProjectSkillSummary } from '@kortix/shared/skill-resolve';
 import { filterSlashActions, SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import { filterSlashFiles, type SlashFile } from './slash-files';
 
@@ -67,7 +67,7 @@ function bucketFor(command: Command): CommandBucket {
  * Config inventory is only a fallback for a draft without a runtime. */
 export function mergeProjectSkillCommands(
   runtime: Command[] | undefined,
-  configSkills: readonly ProjectConfigSkill[] | undefined,
+  configSkills: readonly ProjectSkillSummary[] | undefined,
 ): Command[] | undefined {
   if (runtime !== undefined) return runtime;
   const skills = configSkills ?? [];
@@ -76,10 +76,12 @@ export function mergeProjectSkillCommands(
   const commands: Command[] = [];
   const known = new Set<string>();
   for (const skill of skills) {
+    const name = skill.name.toLowerCase();
     const slug = skillFolderSlug(skill.path)?.toLowerCase();
-    if (known.has(skill.name.toLowerCase()) || (slug !== undefined && known.has(slug))) continue;
+    if (known.has(name) || (slug !== undefined && known.has(slug))) continue;
     commands.push({ name: skill.name, description: skill.description ?? '', template: '', hints: [], source: 'skill' });
-    known.add(skill.name.toLowerCase());
+    known.add(name);
+    if (slug !== undefined) known.add(slug);
   }
   return commands;
 }

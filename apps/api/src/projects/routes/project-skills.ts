@@ -23,7 +23,7 @@ import type { AppEnv } from '../../types';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
-import { isRepoFileNotFoundError, listRepoFiles, readRepoFile } from '../git/files';
+import { listRepoFiles } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import { PROJECT_SKILL_SLUG_PATTERN, skillFolderFilePaths } from '../lib/project-resources';
 import {
@@ -127,29 +127,23 @@ export function registerProjectSkillsRoutes(): void {
     }
     try {
       const files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+      // The tree listing is complete (`git ls-tree -r`): a folder at this slug
+      // means the slug is taken. The create itself stays race-safe through the
+      // manifest revision conflict below.
       if (skillFolderFilePaths(files, slug).length > 0) {
         return c.json({ error: `A skill named "${slug}" already exists`, code: 'skill_exists' }, 409);
       }
-      await readRepoFile(gitProject, path);
-      // The file reads back: this slug is taken.
-      return c.json(
-        { error: `A skill named "${slug}" already exists`, code: 'skill_exists' },
-        409,
-      );
     } catch (err) {
-      // Only a missing file means the slug is free. Any other read error is a
-      // repo problem: failing open here would let a transient mirror error
-      // turn the create into a silent overwrite of an existing skill.
-      if (!isRepoFileNotFoundError(err)) {
-        return c.json(
-          {
-            error: `Failed to read the project repo: ${(err as Error).message || String(err)}`,
-            code: 'repo_read',
-          },
-          502,
-        );
-      }
-      // Not there — the normal case.
+      // Fail closed: any repo read error is a repo problem. Failing open here
+      // would let a transient mirror error turn the create into a silent
+      // overwrite of an existing skill.
+      return c.json(
+        {
+          error: `Failed to read the project repo: ${(err as Error).message || String(err)}`,
+          code: 'repo_read',
+        },
+        502,
+      );
     }
 
     try {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { skillBySegment, skillFolderSlug } from '@kortix/shared/skill-resolve';
 import { stripAnsi } from '../style.ts';
-import { renderSkillDetail, renderSkillRows, skillBySegment, slugFromSkillPath } from './project-skills.ts';
+import { renderSkillDetail, renderSkillRows } from './project-skills.ts';
 
 const skill = (name: string, path: string, description: string | null = 'Ship the release') => ({
   name,
@@ -8,15 +9,15 @@ const skill = (name: string, path: string, description: string | null = 'Ship th
   description,
 });
 
-describe('slugFromSkillPath', () => {
+describe('skillFolderSlug (the segment the CLI shares with the web detail URL)', () => {
   test('reads the folder that owns the SKILL.md, v2 and legacy alike', () => {
-    expect(slugFromSkillPath('skills/dogfood-skill/SKILL.md')).toBe('dogfood-skill');
-    expect(slugFromSkillPath('.opencode/skill/release-notes/SKILL.md')).toBe('release-notes');
+    expect(skillFolderSlug('skills/dogfood-skill/SKILL.md')).toBe('dogfood-skill');
+    expect(skillFolderSlug('.opencode/skill/release-notes/SKILL.md')).toBe('release-notes');
   });
 
   test('a path with no skill folder segment answers null', () => {
-    expect(slugFromSkillPath('SKILL.md')).toBeNull();
-    expect(slugFromSkillPath('agents/x.md')).toBeNull();
+    expect(skillFolderSlug('SKILL.md')).toBeNull();
+    expect(skillFolderSlug('agents/x.md')).toBeNull();
   });
 });
 
