@@ -106,6 +106,7 @@ const DEV_TOOLS: {
 interface SessionSiteHeaderProps {
   sessionId: string;
   sessionTitle: string;
+  onOpenTrajectory?: () => void;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
   /** A subsession's parent: rendered as a "Home" breadcrumb before the name. */
@@ -115,6 +116,7 @@ interface SessionSiteHeaderProps {
 export function SessionSiteHeader({
   sessionId,
   sessionTitle,
+  onOpenTrajectory,
   isMobileView,
   leadingAction,
   parent,
@@ -447,6 +449,10 @@ export function SessionSiteHeader({
             </DropdownMenuItem>
           )}
         </>
+      )}
+
+      {onOpenTrajectory && (
+        <DropdownMenuItem onClick={onOpenTrajectory}>Trajectory</DropdownMenuItem>
       )}
 
       {outOfContextPresent && (

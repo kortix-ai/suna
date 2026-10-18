@@ -4116,6 +4116,7 @@ export function SessionChat({
             sessionTitle={session?.title || 'Untitled'}
             leadingAction={headerLeadingAction}
             parent={parentCrumb}
+            onOpenTrajectory={handleContextClick}
           />
         )}
 

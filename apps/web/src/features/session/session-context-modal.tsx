@@ -33,6 +33,7 @@ import {
 import { getSessionContextMetrics } from './session-context-metrics';
 import type { ServedModelNotice } from './turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
+import { SessionTrajectory } from './session-trajectory';
 
 // ============================================================================
 // Context breakdown estimation
@@ -318,6 +319,7 @@ function SessionContextModalBody({
       </ModalHeader>
 
       <ModalBody className="space-y-6">
+        <SessionTrajectory messages={log} />
         {/* Overview — three naked stats, typography only, no boxes. Context
             usage lives in the section below instead of duplicating here. */}
         <div className="flex flex-wrap items-start gap-x-12 gap-y-4">
