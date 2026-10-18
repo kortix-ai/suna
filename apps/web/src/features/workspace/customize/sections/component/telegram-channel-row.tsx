@@ -105,6 +105,7 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
 
   return (
     <form
+      className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (!ids) return;
@@ -168,6 +169,7 @@ function TelegramUsersForm({
 
   return (
     <form
+      className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (!ids) return;
