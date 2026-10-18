@@ -37,6 +37,9 @@ const EMPTY_AGENTS: Agent[] = [];
  */
 export interface ComposerUnderbarProps {
   onAttachClick: () => void;
+  agentFooter?: React.ReactNode;
+  agentControlsOpen?: boolean;
+  onAgentControlsClose?: () => void;
 
   /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
    *  composer.tsx) — this component does no further filtering. */
@@ -71,6 +74,9 @@ export interface ComposerUnderbarProps {
 
 export function ComposerUnderbar({
   onAttachClick,
+  agentFooter,
+  agentControlsOpen,
+  onAgentControlsClose,
   agents,
   selectedAgent,
   onAgentChange,
@@ -143,6 +149,9 @@ export function ComposerUnderbar({
         </Hint>
 
         <AgentSelector
+          footer={agentFooter}
+          controlsOpen={agentControlsOpen}
+          onControlsClose={onAgentControlsClose}
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
           onSelect={onAgentChange ?? NO_AGENT_SELECT}

@@ -34,7 +34,14 @@ interface UserEntry extends ModelKey {
   favorite?: boolean;
 }
 
+interface ComposerPreference {
+  model?: ModelKey;
+  reset?: boolean;
+  variants?: Record<string, string | undefined>;
+}
+
 interface ModelStore {
+  composerPreferences?: Record<string, ComposerPreference>;
   user: UserEntry[];
   recent: ModelKey[];
   variant: Record<string, string | undefined>;
@@ -98,11 +105,39 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
     recent: objArray<ModelKey>(raw.recent),
     variant: isObj(raw.variant) ? (raw.variant as ModelStore['variant']) : {},
   };
-  if (isObj(raw.selectedModel)) out.selectedModel = raw.selectedModel as ModelStore['selectedModel'];
-  if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
+  if (isObj(raw.selectedModel))
+    out.selectedModel = raw.selectedModel as ModelStore['selectedModel'];
+  if (isObj(raw.sessionAgentName))
+    out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
   if (typeof raw.lastAgentName === 'string') out.lastAgentName = raw.lastAgentName;
   if (isObj(raw.sessionModel)) out.sessionModel = raw.sessionModel as ModelStore['sessionModel'];
-  if (isObj(raw.globalDefault)) out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
+  if (isObj(raw.globalDefault))
+    out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
+  if (isObj(raw.composerPreferences)) {
+    out.composerPreferences = {};
+    for (const [scope, value] of Object.entries(raw.composerPreferences)) {
+      if (!isObj(value)) continue;
+      const preference: ComposerPreference = {};
+      if (value.reset === true) preference.reset = true;
+      if (
+        isObj(value.model) &&
+        typeof value.model.providerID === 'string' &&
+        typeof value.model.modelID === 'string'
+      ) {
+        preference.model = {
+          providerID: value.model.providerID,
+          modelID: value.model.modelID,
+        };
+      }
+      if (isObj(value.variants)) {
+        preference.variants = {};
+        for (const [key, variant] of Object.entries(value.variants)) {
+          if (typeof variant === 'string') preference.variants[key] = variant;
+        }
+      }
+      out.composerPreferences[scope] = preference;
+    }
+  }
   return out;
 }
 
@@ -129,6 +164,7 @@ function getStore(): ModelStore {
 function setStore(next: ModelStore) {
   const capped = {
     ...next,
+    composerPreferences: capSessionMap(next.composerPreferences),
     sessionModel: capSessionMap(next.sessionModel),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
@@ -192,7 +228,11 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
 
 // The default-visibility rule is framework-free (`createModelVisibility`), so
 // every host resolves the picker's default view identically.
-export { computeLatestSet, hasUsableModel, isDefaultVisible } from '../core/models/model-visibility';
+export {
+  computeLatestSet,
+  hasUsableModel,
+  isDefaultVisible,
+} from '../core/models/model-visibility';
 
 // ============================================================================
 // Hook
@@ -388,7 +428,19 @@ export function useModelStore(
     });
   }, []);
 
+  const getComposerPreference = (scope: string): ComposerPreference | undefined =>
+    store.composerPreferences?.[scope];
+  const setComposerPreference = (scope: string, value: ComposerPreference) => {
+    const s = getStore();
+    setStore({
+      ...s,
+      composerPreferences: { ...s.composerPreferences, [scope]: value },
+    });
+  };
+
   return {
+    getComposerPreference,
+    setComposerPreference,
     isVisible,
     isLatest,
     setVisibility,

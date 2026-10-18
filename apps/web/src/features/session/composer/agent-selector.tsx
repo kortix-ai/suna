@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, SparkleIcon } from '@phosphor-icons/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
 /**
@@ -55,7 +55,13 @@ export function AgentSelector({
   disabled = false,
   triggerLabelClassName,
   unavailableHint,
+  footer,
+  controlsOpen = false,
+  onControlsClose,
 }: {
+  footer?: ReactNode;
+  controlsOpen?: boolean;
+  onControlsClose?: () => void;
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -72,7 +78,12 @@ export function AgentSelector({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
-  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const open = menuOpen || controlsOpen;
+  const setOpen = (next: boolean) => {
+    setMenuOpen(next);
+    if (!next) onControlsClose?.();
+  };
   const [search, setSearch] = useState('');
 
   const primaryAgents = useMemo(() => composerSelectableAgents(agents), [agents]);
@@ -335,6 +346,7 @@ export function AgentSelector({
             </div>
           )}
         </CommandList>
+        {footer && <div className="border-border border-t p-2">{footer}</div>}
       </CommandPopoverContent>
     </CommandPopover>
   );

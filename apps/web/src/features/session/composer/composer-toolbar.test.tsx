@@ -41,12 +41,6 @@ function render(
       >
         <TooltipProvider>
           <ComposerToolbar
-            models={[]}
-            selectedModel={null}
-            modelRequired={false}
-            variants={[]}
-            selectedVariant={null}
-            projectId={undefined}
             toolbarSlot={toolbarSlot}
             rewind={rewind}
             isSending={false}

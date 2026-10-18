@@ -295,6 +295,8 @@ export function ComposerChatInput({
       onAgentChange={(name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
+      modelOnDefault={local.model.onDefault}
+      reasoningOnDefault={local.model.variant.onDefault}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
       modelRequired
       modelsLoading={providersLoading}

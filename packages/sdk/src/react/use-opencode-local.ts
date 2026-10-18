@@ -11,15 +11,15 @@
  * - Variant persistence via useModelStore
  */
 
-import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
 import { resolveComposerModel, sessionModelCandidates } from '../core/models/composer-model';
 import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
-import { useKortixRouteProjectId } from './route-project';
 import { healBedrockModelKey } from './bedrock-invokable';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { normalizeProviderList } from './provider-selection';
+import { useKortixRouteProjectId } from './route-project';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -29,6 +29,8 @@ export type { ModelKey };
 // ============================================================================
 
 export interface UseRuntimeLocalOptions {
+  /** Opt into agent-inherited defaults with scoped, resettable composer overrides. */
+  agentDefaults?: boolean;
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
@@ -108,6 +110,8 @@ export interface RuntimeLocalModel {
   /** Variant management */
   variant: {
     current: string | undefined;
+    /** True when reasoning inherits the agent default. */
+    onDefault: boolean;
     list: string[];
     set: (value: string | undefined) => void;
     cycle: () => void;
@@ -265,6 +269,7 @@ export function resolveCurrentAgentName(input: {
 // ============================================================================
 
 export function useRuntimeLocal({
+  agentDefaults = false,
   agents: rawAgents,
   providers,
   config,
@@ -313,8 +318,7 @@ export function useRuntimeLocal({
   // when the project paradigm is off; their bodies reference project
   // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
-    () =>
-      composerSelectableAgents(rawAgents, { includeSubagents: true }),
+    () => composerSelectableAgents(rawAgents, { includeSubagents: true }),
     [rawAgents],
   );
 
@@ -335,9 +339,7 @@ export function useRuntimeLocal({
     name: string | undefined;
   }>({ scope: '', name: undefined });
   const explicitAgentName =
-    explicitAgentSelection.scope === agentSelectionScope
-      ? explicitAgentSelection.name
-      : undefined;
+    explicitAgentSelection.scope === agentSelectionScope ? explicitAgentSelection.name : undefined;
   const currentAgentName = resolveCurrentAgentName({
     sessionId,
     sessionAgentName,
@@ -370,12 +372,7 @@ export function useRuntimeLocal({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      sessionId,
-      agentSelectionScope,
-      modelStore.setSessionAgentName,
-      modelStore.setLastAgentName,
-    ],
+    [sessionId, agentSelectionScope, modelStore.setSessionAgentName, modelStore.setLastAgentName],
   );
 
   // Resolve current agent (matching SolidJS: find by name or fall back to first)
@@ -395,6 +392,13 @@ export function useRuntimeLocal({
     () => agentScopedModelSelectionKey(providerMode, currentAgent?.name),
     [providerMode, currentAgent?.name],
   );
+
+  const composerScope = JSON.stringify([
+    providerMode,
+    agentSelectionScope,
+    currentAgent?.name ?? '',
+  ]);
+  const composerPreference = modelStore.getComposerPreference(composerScope);
 
   // What the server says this session runs on. A new object each render from
   // the caller must not recompute the resolution, so key it by value.
@@ -428,30 +432,47 @@ export function useRuntimeLocal({
     () =>
       resolveComposerModel({
         models: flatModels,
-        picks: [
-          // Per-session model (user's explicit choice in this session — survives reload)
-          scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
-          // Back-compat: the old unscoped slot, only if valid in the current mode.
-          sessionId ? modelStore.getSessionModel(sessionId) : undefined,
-          // The model the session already runs on, from the server. Above the
-          // per-agent slots: those are this browser's picks for OTHER sessions.
-          ...sessionModels,
-          // Per-agent model (persisted across sessions for this agent, or in the
-          // agent-less slot when the caller has access to no agent at all).
-          modelStore.getSelectedModel(agentModelSlotKey),
-          currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
-        ],
+        picks: agentDefaults
+          ? [
+              composerPreference?.model,
+              ...(composerPreference?.reset
+                ? []
+                : [
+                    scopedSessionModelKey
+                      ? modelStore.getSessionModel(scopedSessionModelKey)
+                      : undefined,
+                    sessionId ? modelStore.getSessionModel(sessionId) : undefined,
+                    ...sessionModels,
+                  ]),
+            ]
+          : [
+              // Per-session model (user's explicit choice in this session — survives reload)
+              scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
+              // Back-compat: the old unscoped slot, only if valid in the current mode.
+              sessionId ? modelStore.getSessionModel(sessionId) : undefined,
+              // The model the session already runs on, from the server. Above the
+              // per-agent slots: those are this browser's picks for OTHER sessions.
+              ...sessionModels,
+              // Per-agent model (persisted across sessions for this agent, or in the
+              // agent-less slot when the caller has access to no agent at all).
+              modelStore.getSelectedModel(agentModelSlotKey),
+              currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
+            ],
         // The gateway-configured default for the current agent (agent -> project
         // -> account -> platform), when the host supplies a resolver.
-        serverDefault: resolveServerDefault?.(currentAgent?.name),
+        serverDefault: agentDefaults
+          ? (currentAgent?.model ?? resolveServerDefault?.(currentAgent?.name))
+          : resolveServerDefault?.(currentAgent?.name),
         globalDefault: modelStore.globalDefault,
-        agentModel: currentAgent?.model as ModelKey | undefined,
+        agentModel: currentAgent?.model,
         configModel: config?.model,
-        recent: modelStore.recent,
+        recent: agentDefaults ? [] : modelStore.recent,
         providers,
       }),
     [
       flatModels,
+      agentDefaults,
+      composerPreference,
       scopedSessionModelKey,
       sessionId,
       agentModelSlotKey,
@@ -492,6 +513,16 @@ export function useRuntimeLocal({
   // ---- Model set (persists selection to localStorage) ----
   const setModel = useCallback(
     (model: ModelKey | undefined, options?: { recent?: boolean; autoSeed?: boolean }) => {
+      if (agentDefaults) {
+        if (options?.autoSeed) return;
+        modelStore.setComposerPreference(composerScope, {
+          ...composerPreference,
+          model,
+          reset: true,
+        });
+        if (options?.recent && model) modelStore.pushRecent(model);
+        return;
+      }
       // When auto-seeding from a message and globalDefault is set, skip —
       // the user's setup wizard choice takes precedence over message-seeded models.
       if (options?.autoSeed && modelStore.globalDefault && isModelValid(modelStore.globalDefault)) {
@@ -519,7 +550,16 @@ export function useRuntimeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
+    [
+      agentDefaults,
+      composerScope,
+      composerPreference,
+      agentModelSlotKey,
+      scopedSessionModelKey,
+      fallbackModel,
+      modelStore,
+      isModelValid,
+    ],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -556,21 +596,21 @@ export function useRuntimeLocal({
       const value = visibleAgents[next];
       if (!value) return;
       setCurrentAgentName(value.name);
-      if (value.model) {
+      if (!agentDefaults && value.model) {
         setModelRef.current({
           providerID: value.model.providerID,
           modelID: value.model.modelID,
         });
       }
     },
-    [visibleAgents, currentAgentName, setCurrentAgentName],
+    [agentDefaults, visibleAgents, currentAgentName, setCurrentAgentName],
   );
 
   // ---- When agent changes externally (via setAgent), auto-set model if agent has one ----
   // Only applies when there's no persisted selection for this agent yet AND no global default.
   const prevAgentRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!currentAgent) return;
+    if (agentDefaults || !currentAgent) return;
     if (prevAgentRef.current === currentAgent.name) return;
     prevAgentRef.current = currentAgent.name;
     // Don't override if user already has a persisted selection for this agent
@@ -591,7 +631,7 @@ export function useRuntimeLocal({
     }
     // Only trigger on agent change — intentionally exclude setModel/modelStore from deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentAgent?.name, isModelValid]);
+  }, [agentDefaults, currentAgent?.name, isModelValid]);
 
   // ---- Cycle through recent models (matching SolidJS local.tsx:142-163) ----
   const cycleModel = useCallback(
@@ -611,14 +651,31 @@ export function useRuntimeLocal({
     [currentModel, recentModels, setModel],
   );
 
+  const variantKey = currentModelKey
+    ? `${currentModelKey.providerID}/${currentModelKey.modelID}`
+    : '';
+  const storedVariantOverride = composerPreference?.variants?.[variantKey];
+  const variantOverride =
+    storedVariantOverride &&
+    currentModel?.variants &&
+    Object.hasOwn(currentModel.variants, storedVariantOverride)
+      ? storedVariantOverride
+      : undefined;
+
   // ---- Variant management (matching SolidJS local.tsx:186-217) ----
   const variantCurrent = useMemo<string | undefined>(() => {
     if (!currentModel) return undefined;
+    if (agentDefaults) {
+      const value = variantOverride ?? currentAgent?.variant;
+      return value && currentModel.variants && Object.hasOwn(currentModel.variants, value)
+        ? value
+        : undefined;
+    }
     return modelStore.getVariant({
       providerID: currentModel.providerID,
       modelID: currentModel.modelID,
     });
-  }, [currentModel, modelStore]);
+  }, [agentDefaults, variantOverride, currentAgent?.variant, currentModel, modelStore]);
 
   const variantList = useMemo<string[]>(() => {
     if (!currentModel?.variants) return [];
@@ -628,12 +685,19 @@ export function useRuntimeLocal({
   const setVariant = useCallback(
     (value: string | undefined) => {
       if (!currentModel) return;
+      if (agentDefaults) {
+        modelStore.setComposerPreference(composerScope, {
+          ...composerPreference,
+          variants: { ...composerPreference?.variants, [variantKey]: value },
+        });
+        return;
+      }
       modelStore.setVariant(
         { providerID: currentModel.providerID, modelID: currentModel.modelID },
         value,
       );
     },
-    [currentModel, modelStore],
+    [agentDefaults, composerScope, composerPreference, variantKey, currentModel, modelStore],
   );
 
   const cycleVariant = useCallback(() => {
@@ -652,9 +716,10 @@ export function useRuntimeLocal({
 
   // ---- Per-session model exists check ----
   const hasSessionModel = useMemo<boolean>(() => {
+    if (agentDefaults) return !!composerPreference?.model;
     if (!scopedSessionModelKey) return false;
     return !!modelStore.getSessionModel(scopedSessionModelKey);
-  }, [scopedSessionModelKey, modelStore]);
+  }, [agentDefaults, composerPreference, scopedSessionModelKey, modelStore]);
 
   // ---- Assemble return value ----
   return {
@@ -684,6 +749,7 @@ export function useRuntimeLocal({
       hasSessionModel,
       variant: {
         current: variantCurrent,
+        onDefault: agentDefaults ? variantOverride === undefined : variantCurrent === undefined,
         list: variantList,
         set: setVariant,
         cycle: cycleVariant,

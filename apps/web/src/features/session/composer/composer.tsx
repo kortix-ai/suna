@@ -4,6 +4,7 @@ import { errorToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
+import { type SessionLogMessage } from '@kortix/sdk';
 import type {
   Agent,
   Command,
@@ -12,15 +13,13 @@ import type {
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
-import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
-import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
-import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
+import {
+  newPastedContentId, type PastedContent, splitPastedContent, trimPastedText,
+} from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
-  lazy,
   memo,
-  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -32,49 +31,41 @@ import {
 } from 'react';
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
-import { resolveComposerResetOnSend, type ComposerSendReset } from '../composer-reset';
-import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
+import { type ComposerSendReset, resolveComposerResetOnSend } from '../composer-reset';
 import {
   isModelRequiredButUnavailable,
+  modelRejectingAttachedImages,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
-  modelRejectingAttachedImages,
 } from '../model-availability';
-import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import { type ModelDefaultControls } from '../model-selector';
+import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import { ComposerAboveCard, type ComposerAboveCardDerived } from './ComposerAboveCard';
+import { ComposerCard, type ComposerCardDerived } from './ComposerCard';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
-import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
+import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads,
+} from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
-import {
-  ComposerAboveCard,
-  type ComposerAboveCardDerived,
-} from './ComposerAboveCard';
-import { ComposerCard, type ComposerCardDerived } from './ComposerCard';
-
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { handleBillingError } from '@/lib/error-handler';
 import {
   attachedFileUploadId,
   attachmentsBlockSend,
+  type AttachmentSubmission,
   captureAttachmentSubmission,
   dispatchLatched,
   type DispatchOutcome,
+  heldTraySizes,
   planAttachmentReplacement,
   refusedFilesToast,
   runComposerSend,
-  heldTraySizes,
   splitComposerFiles,
   stageComposerFiles,
   takeNewBillingRefusals,
-  type AttachmentSubmission,
 } from './attachment-submission';
-import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
   planCommandAttachments,
@@ -84,33 +75,29 @@ import {
 import {
   appendComposerQuote,
   classifyPaste,
-  isUndoKey,
-  popPasteUndo,
   type ComposerQuote,
   extractReplyQuotes,
+  isUndoKey,
   nextPastedTextFileName,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
   planQuoteRequests,
+  popPasteUndo,
   type QuoteRequest,
   removeComposerQuote,
   resolveEditorPlaceholder,
   restoreComposerQuotes,
   shouldApplyPrefill,
-  shouldFocusEditorFromPadding,
   shouldSubmitPrefill,
   textToDocument,
 } from './composer-logic';
-import { ComposerToolbar } from './composer-toolbar';
-import { ComposerUnderbar } from './composer-underbar';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
-import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -240,6 +227,8 @@ export interface SessionChatInputProps {
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   modelDefaultControls?: ModelDefaultControls;
+  modelOnDefault?: boolean;
+  reasoningOnDefault?: boolean;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;

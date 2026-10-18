@@ -15,6 +15,9 @@ import type {
 } from 'react';
 import { lazy, Suspense, useRef } from 'react';
 
+import { Button } from '@/components/ui/button';
+import { ModelSelector } from '../model-selector';
+import { reasoningEffortChoices, ReasoningEffortSelector } from '../reasoning-effort-selector';
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { AttachmentTiles } from './attachment-tiles';
@@ -172,6 +175,8 @@ export function ComposerCard({
   modelRequired = false,
   onModelChange,
   modelDefaultControls,
+  modelOnDefault = true,
+  reasoningOnDefault = true,
   providers,
   variants = EMPTY_VARIANTS,
   selectedVariant = null,
@@ -191,6 +196,61 @@ export function ComposerCard({
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const inlineUnderbar = underbarPlacement === 'inline';
+  const agentFooter = (
+    <div className="space-y-2">
+      <p className="text-muted-foreground text-xs">
+        {modelOnDefault && reasoningOnDefault ? 'Agent defaults' : 'Session overrides'}
+      </p>
+      {(models.length > 0 || modelRequired) && onModelChange && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs">
+              {modelOnDefault ? 'Model · Agent default' : 'Model override'}
+            </span>
+            {!modelOnDefault && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => onModelChange(null)}>
+                Reset model
+              </Button>
+            )}
+          </div>
+          <ModelSelector
+            models={models}
+            modelsLoading={modelsLoading}
+            selectedModel={availableSelectedModel}
+            onSelect={onModelChange}
+            providers={providers}
+            defaultControls={modelDefaultControls}
+            projectId={projectId}
+            offerChatGptAccounts
+            open={modelMenuOpen}
+            onOpenChange={setModelMenuOpen}
+          />
+        </div>
+      )}
+      {(reasoningEffortChoices(variants, !!onVariantChange).length > 0 || !reasoningOnDefault) && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs">
+              {reasoningOnDefault ? 'Reasoning · Agent default' : 'Reasoning override'}
+            </span>
+            {!reasoningOnDefault && onVariantChange && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => onVariantChange(null)}>
+                Reset reasoning
+              </Button>
+            )}
+          </div>
+          <ReasoningEffortSelector
+            variants={variants}
+            selectedVariant={selectedVariant}
+            onVariantChange={onVariantChange}
+            open={reasoningMenuOpen}
+            onOpenChange={setReasoningMenuOpen}
+          />
+        </div>
+      )}
+    </div>
+  );
+
 
   return (
     <>
@@ -358,6 +418,12 @@ export function ComposerCard({
             leading={
               inlineUnderbar ? (
                 <ComposerUnderbar
+                  agentFooter={agentFooter}
+                  agentControlsOpen={modelMenuOpen || reasoningMenuOpen}
+                  onAgentControlsClose={() => {
+                    setModelMenuOpen(false);
+                    setReasoningMenuOpen(false);
+                  }}
                   variant="inline"
                   onAttachClick={handleAttachClick}
                   agents={primaryAgents}
@@ -371,21 +437,6 @@ export function ComposerCard({
                 />
               ) : null
             }
-            modelsLoading={modelsLoading}
-            models={models}
-            selectedModel={availableSelectedModel}
-            onModelChange={onModelChange}
-            modelDefaultControls={modelDefaultControls}
-            providers={providers}
-            modelRequired={modelRequired}
-            modelMenuOpen={modelMenuOpen}
-            onModelMenuOpenChange={setModelMenuOpen}
-            reasoningMenuOpen={reasoningMenuOpen}
-            onReasoningMenuOpenChange={setReasoningMenuOpen}
-            variants={variants}
-            selectedVariant={selectedVariant}
-            onVariantChange={onVariantChange}
-            projectId={projectId}
             // Inline placement has no under-row, so the slot (the session
             // overrides gear, meta indicator) rides the toolbar itself. With
             // the 'below' placement the ComposerUnderbar further down renders
@@ -441,6 +492,12 @@ export function ComposerCard({
     */}
     {inlineUnderbar ? null : (
       <ComposerUnderbar
+        agentFooter={agentFooter}
+        agentControlsOpen={modelMenuOpen || reasoningMenuOpen}
+        onAgentControlsClose={() => {
+          setModelMenuOpen(false);
+          setReasoningMenuOpen(false);
+        }}
         onAttachClick={handleAttachClick}
         agents={primaryAgents}
         selectedAgent={selectedAgent}

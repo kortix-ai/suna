@@ -45,10 +45,9 @@ import {
   CaretDownIcon,
   StackIcon as Layers,
 } from '@phosphor-icons/react';
-import { m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -75,10 +74,7 @@ import { useQueuedPromptEdit } from './queued-prompt-edit';
 import { createQueueUndoAction } from './queued-message-restore';
 import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
 import { chatPlanAnchorId } from './turn/plan-anchor';
-import { ThrottledMarkdown } from './turn/throttled-markdown';
-import { TurnViewport } from './turn/turn-viewport';
 import { PastedTextBody, PastedTextCopy, PastedTextMeta } from './pasted-text';
-import { UserMessage } from './turn/user-message';
 import {
   fallbackBusyRowAfterTurnId,
   freshSendHint,
@@ -116,7 +112,6 @@ import { inboxHoldsLivePrompt } from '@/features/session/inbox-live-prompt';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
-import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
@@ -133,7 +128,6 @@ import {
   type AttachmentSubmission,
 } from '@/features/session/composer/attachment-submission';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import {
   editResendAttachments,
   type AttachmentUploadStatus,
@@ -4718,6 +4712,8 @@ export function SessionChat({
                 onHoldCommand={handleHoldCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
+                modelOnDefault={local.model.onDefault}
+                reasoningOnDefault={local.model.variant.onDefault}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
                 variants={local.model.variant.list}
