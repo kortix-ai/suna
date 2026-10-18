@@ -206,7 +206,7 @@ const DESKTOP_ALLOWED_ROUTES = [
 ];
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
@@ -474,6 +474,8 @@ export async function middleware(request: NextRequest) {
   const pathSegments = pathname.split('/').filter(Boolean);
   const firstSegment = pathSegments[0];
 
+  let explicitLocale: Locale | undefined;
+
   // Check if first segment is a locale (e.g., /de, /it)
   if (firstSegment && locales.includes(firstSegment as Locale)) {
     const locale = firstSegment as Locale;
@@ -505,12 +507,16 @@ export async function middleware(request: NextRequest) {
 
       return finalizeEnvironmentAccess(response);
     }
+
+    explicitLocale = locale;
+    pathname = remainingPath;
   }
 
   // Every unprefixed page URL is rewritten onto app/[locale] (see the
   // cookieLocale definition above for where the locale comes from).
   const rewriteToLocale = (locale: Locale, base?: NextResponse) => {
     const requestHeaders = new Headers(request.headers);
+    locale = explicitLocale ?? locale;
     requestHeaders.set('x-locale', locale);
     requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
     const target = request.nextUrl.clone();
