@@ -13,11 +13,8 @@
  *   for content when a panel activation exists;
  * - body: nothing for a finished show with no artifact; a quiet "Preview
  *   unavailable — title" row (with "Open link") when the artifact failed to
- *   load; else the carousel, the preview card, or `ShowContentRenderer`, with a
+ *   load; else the carousel, the preview row, or `ShowContentRenderer`, with a
  *   description footer when there is no title.
- *
- * Panel surface (`ToolSurfaceContext` 'panel'): the body fills the pane with no
- * card, as on web. Mobile hosts only the inline surface today.
  *
  * Mobile keeps its open actions (`navigation.tsx`): previews open the Browser
  * tab, files open the app's file sheet (`FilePreviewSheet`), links open
@@ -34,11 +31,10 @@ import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
-import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { ArrowSquareOutIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
+import { ArrowSquareOutIcon, MonitorIcon } from '@/lib/icons';
 import {
   SHOW_IMAGE_EXT_RE,
   parseShowItems,
@@ -59,12 +55,11 @@ import {
   InlineServicePreview,
   RunningLoader,
   ServicePreviewActions,
-  ServicePreviewViewport,
+  ServicePreviewRow,
   ToolIconSlot,
   ToolRunningContext,
   ToolDetailContext,
   ToolEmptyState,
-  ToolSurfaceContext,
   partInput,
   useServicePreview,
   useToolNavigation,
@@ -85,7 +80,7 @@ const ActiveServicePreviewContext = createContext<ServicePreviewState | null>(nu
 
 function CarouselServicePreview({ url, label }: { url: string; label?: string }) {
   const preview = useContext(ActiveServicePreviewContext);
-  if (preview) return <ServicePreviewViewport preview={preview} />;
+  if (preview) return <ServicePreviewRow preview={preview} url="" />;
   return <InlineServicePreview url={url} label={label} />;
 }
 
@@ -94,7 +89,6 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   const { colorScheme } = useColorScheme();
   const input = partInput(call);
   const running = useContext(ToolRunningContext);
-  const fill = useContext(ToolSurfaceContext) === 'panel';
   const detailBody = useContext(ToolDetailContext) === 'body';
   const activate = useContext(BoundActivateContext);
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -147,7 +141,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     navigationEnabled,
   });
   const fileActions =
-    toolbarKind === 'file' ? <ShowFileActions path={activePath} inPanel={fill} onRefresh={bumpRefresh} /> : undefined;
+    toolbarKind === 'file' ? <ShowFileActions path={activePath} onRefresh={bumpRefresh} /> : undefined;
 
   let inlineToolbar: ReactNode = null;
   if (toolbarKind === 'preview') inlineToolbar = <ServicePreviewActions preview={preview} />;
@@ -214,25 +208,13 @@ export function ShowTool({ call, sessionId }: ToolProps) {
 
   let body: ReactNode;
   if (bodyKind === 'loading') {
-    // Only the panel needs the loading card; inline, the header carries the loader.
-    body = fill ? (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap3, paddingHorizontal: webSpace(5), paddingVertical: webSpace(4) }}>
-          <RunningLoader size={TURN_SPACE.icon} />
-          <TextShimmer duration={1} spread={2} style={TURN_TYPE.sm}>
-            Preparing output...
-          </TextShimmer>
-        </View>
-      </View>
-    ) : null;
+    // Inline, the header carries the loader.
+    body = null;
   } else if (bodyKind === 'unavailable') {
     // Never vanish: a quiet note keeps the action in the transcript.
     body = (
       <View
-        style={[
-          { flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, paddingHorizontal: webSpace(4), paddingVertical: webSpace(3) },
-          fill && { flex: 1, justifyContent: 'center' },
-        ]}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, paddingHorizontal: webSpace(4), paddingVertical: webSpace(3) }}
       >
         <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 1, color: palette.mutedForeground }]}>
           {showUnavailableLabel(displayTitle)}
@@ -246,43 +228,18 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     );
   } else {
     body = (
-      <View style={fill ? { flex: 1 } : undefined}>
-        {isWebsitePreview && fill ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: TURN_SPACE.gap3,
-              paddingHorizontal: webSpace(4),
-              paddingVertical: webSpace(1),
-              borderBottomWidth: 1,
-              borderBottomColor: palette.border,
-            }}
-          >
-            <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}>
-              <GlobeIcon size={TURN_SPACE.caret} color={palette.muted50} />
-              <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.xs, { flex: 1, color: palette.foreground80 }]}>
-                {preview.displayLabel}
-              </Text>
-            </View>
-            <ServicePreviewActions preview={preview} />
-          </View>
-        ) : null}
-
+      <View>
         {isCarousel ? (
           <ActiveServicePreviewContext.Provider value={isWebsitePreview ? preview : null}>
             <ShowCarousel
               items={items}
               LocalhostPreview={CarouselServicePreview}
               onIndexChange={setCarouselIndex}
-              fill={fill}
-              toolbarActions={fill ? fileActions : undefined}
               refreshKey={refreshNonce}
             />
           </ActiveServicePreviewContext.Provider>
         ) : isWebsitePreview ? (
-          <ServicePreviewViewport preview={preview} />
+          <ServicePreviewRow preview={preview} url={resolvedPreviewUrl} />
         ) : (
           <>
             <ShowContentRenderer
@@ -296,9 +253,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
               language={language}
               aspectRatio={aspectRatio}
               LocalhostPreview={InlineServicePreview}
-              fill={fill}
               onStatusChange={setContentStatus}
-              toolbarActions={fill ? fileActions : undefined}
             />
             {description && !title ? (
               <View style={{ paddingHorizontal: webSpace(5), paddingVertical: webSpace(3), borderTopWidth: 1, borderTopColor: palette.border10 }}>
@@ -313,13 +268,11 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     );
   }
 
-  if (fill) return <>{body}</>;
-
   // ── The transcript's surface: one row per output (COR-107, option B) ──
   //
   // A row names the output and opens it in the file sheet; the payload is
-  // never embedded in the bubble. The panel and the activity sheet's detail
-  // body keep the full renderer above.
+  // never embedded in the bubble. The activity sheet's detail body keeps the
+  // full renderer above.
   if (!detailBody && rows.length > 0 && bodyKind === 'content') {
     return (
       <SettingsGroup parentClassName='rounded-lg'>

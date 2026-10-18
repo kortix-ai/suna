@@ -478,6 +478,30 @@ export interface SheetRef {
   close: () => void;
 }
 
+/**
+ * The `ref` half of a sheet component: the modal ref plus the
+ * `useImperativeHandle({ open, close })` wiring every sheet hand-rolls.
+ * `onOpen` runs before the sheet presents (reset-to-tab, fresh timestamps).
+ */
+export function useSheetHandle(
+  ref: React.ForwardedRef<SheetRef>,
+  onOpen?: () => void,
+): React.RefObject<BottomSheetModal | null> {
+  const modalRef = React.useRef<BottomSheetModal>(null);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      open: () => {
+        onOpen?.();
+        modalRef.current?.present();
+      },
+      close: () => modalRef.current?.dismiss(),
+    }),
+    [onOpen],
+  );
+  return modalRef;
+}
+
 export { useCloseThen } from './use-close-then';
 
 interface SheetProps {

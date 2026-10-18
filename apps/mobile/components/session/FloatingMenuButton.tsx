@@ -7,11 +7,12 @@
  *
  * `fade` adds a header strip behind the button, for a screen whose content
  * scrolls under it (the thread). The strip is the page background: solid from
- * the screen edge to the bottom of the button (the header row), then a 24pt
- * gradient to transparent below it, ending at `FLOATING_MENU_CLEARANCE`.
+ * the screen edge to the bottom of the button (the header row), then an
+ * 18pt gradient to transparent below it, ending at `FLOATING_MENU_CLEARANCE`
+ * (66pt below the safe-area edge).
  * Content that rests at that clearance is never dimmed; content that scrolls
  * above it fades out, then is hidden behind the header row and the status
- * bar. The mirror of the 24pt fade above the chat input.
+ * bar. The mirror of the 18pt fade above the chat input.
  *
  * `title` (COR-140) is the thread's `SessionThreadTitle` (the session name),
  * centred on the SCREEN, not in the gap between the hamburger and `children`
@@ -45,7 +46,7 @@ const FADE_HEIGHT = 18;
 
 /**
  * Space below the safe-area edge that the header strip takes: 8pt offset +
- * 40pt button + 24pt fade. Scrolling content starts here, where the fade ends.
+ * 40pt button + 18pt fade. Scrolling content starts here, where the fade ends.
  */
 export const FLOATING_MENU_CLEARANCE = BUTTON_TOP + BUTTON_SIZE + FADE_HEIGHT;
 

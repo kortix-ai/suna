@@ -29,9 +29,7 @@ import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
 import { SettingsRow } from '@/components/kortix/settings-list';
 import { webSpace } from '@/lib/session/user-message';
 import { TURN_SPACE, useTurnPalette } from './styles';
-import { useProxyUrl, useServicePreview, useToolNavigation, ServicePreviewViewport } from './navigation';
-
-export { ServicePreviewViewport, useServicePreview };
+import { useProxyUrl, useToolNavigation } from './navigation';
 
 export function useShowOpenInTab(props: { type: string; url: string; path: string; title: string }) {
   const { type, url, path, title } = props;

@@ -14,7 +14,6 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -23,7 +22,7 @@ import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import { ArrowUpIcon, CheckIcon } from '@/lib/icons';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 import {
   pickQuestionOption,
   questionStepAnswer,
@@ -43,8 +42,8 @@ interface QuestionPromptProps {
 }
 
 export function QuestionPrompt({ request, onReply, onReject, autoFocus }: QuestionPromptProps) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const tone = useTone();
+  const colors = THEME[tone];
 
   const questions = request.questions;
   const [step, setStep] = useState(0);

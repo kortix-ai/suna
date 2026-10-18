@@ -16,9 +16,8 @@
 
 import { Pressable, View } from 'react-native';
 import Reanimated from 'react-native-reanimated';
-import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
 import { chipAccessibilityLabel, chipText, type ChipKind } from '@/lib/session/mention-segments';
 import { webSpace } from '@/lib/session/user-message';
 import { usePressScale } from './use-press-scale';
@@ -47,8 +46,8 @@ export interface MentionChipProps {
 }
 
 export function MentionChip({ kind, label, onPress }: MentionChipProps) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const tone = useTone();
+  const colors = THEME[tone];
   const { onPressIn, onPressOut, animatedStyle } = usePressScale(0.97, 150);
 
   const surface = {

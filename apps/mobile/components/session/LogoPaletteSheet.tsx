@@ -15,16 +15,15 @@
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal, SheetBackdrop, type SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, SheetBackdrop, useSheetHandle, type SheetRef } from '@/components/kortix/sheet';
 import { LOGO_PALETTES, logoPaletteSwatch } from '@/lib/effects/logo-palette';
 import { LOGO_STYLES } from '@/lib/effects/logo-style';
 import { haptics } from '@/lib/haptics';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 import { useLogoPaletteStore } from '@/stores/logo-palette-store';
 
 /** The row's leading swatch: `SettingsRow`'s 20pt slot. */
@@ -35,20 +34,14 @@ type BackdropProps = React.ComponentProps<typeof SheetBackdrop>;
 const PreviewBackdrop = (props: BackdropProps) => <SheetBackdrop {...props} opacity={0.2} />;
 
 export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
-  const modalRef = React.useRef<BottomSheetModal>(null);
+  const modalRef = useSheetHandle(ref);
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const { colorScheme } = useColorScheme();
-  const tone = colorScheme === 'dark' ? 'dark' : 'light';
+  const tone = useTone();
   const styleId = useLogoPaletteStore((s) => s.styleId);
   const setStyleId = useLogoPaletteStore((s) => s.setStyleId);
   const paletteId = useLogoPaletteStore((s) => s.paletteId);
   const setPaletteId = useLogoPaletteStore((s) => s.setPaletteId);
-
-  React.useImperativeHandle(ref, () => ({
-    open: () => modalRef.current?.present(),
-    close: () => modalRef.current?.dismiss(),
-  }));
 
   return (
     <KortixBottomSheetModal

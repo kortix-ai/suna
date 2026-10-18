@@ -14,7 +14,7 @@ import { withAlpha } from '@/lib/utils/theme';
 /** The drawer fade's height above the safe-area inset: 16pt gap + 44pt controls + 36pt above them. */
 const DRAWER_FADE_HEIGHT = 16 + 44 + 36;
 /** The composer fade: a quarter of the drawer's, plus 15%. */
-export const COMPOSER_FADE_SCALE = 0.2875;
+const COMPOSER_FADE_SCALE = 0.2875;
 
 export function ComposerBottomFade({
   background,

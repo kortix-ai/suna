@@ -23,7 +23,6 @@ import type { ReactNode } from 'react';
 import { Image, Pressable, View, type ImageSourcePropType } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
-import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,7 +35,7 @@ import {
   splitFilenameForTile,
 } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
-import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone, MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import { monoFont } from '@/components/session/tool/shared/styles';
 import { usePressScale } from './use-press-scale';
 
@@ -190,8 +189,7 @@ export function AttachmentTile({
  * popover-coloured gradient fades the bottom of the text.
  */
 function PastePage({ preview, corner }: { preview: string; corner?: ReactNode }) {
-  const { colorScheme } = useColorScheme();
-  const popover = THEME[colorScheme === 'dark' ? 'dark' : 'light'].popover;
+  const popover = THEME[useTone()].popover;
   const text = preview.slice(0, PASTE_PREVIEW_CHARS);
   const breakAt = text.indexOf('\n');
   const head = breakAt === -1 ? text : text.slice(0, breakAt);
@@ -304,6 +302,30 @@ export function AttachmentOverflowTile({ count, onPress }: { count: number; onPr
 }
 
 /**
+ * The tile + its corner remove dot: the composer's removable attachment.
+ * A sibling wrapper (position-relative), never a child of the tile: the tile
+ * clips, and the dot sits half outside its edge.
+ */
+export function RemovableAttachmentTile({
+  filename,
+  disabled,
+  onRemove,
+  children,
+}: {
+  filename: string;
+  onRemove: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <View style={{ position: 'relative' }}>
+      {children}
+      <AttachmentRemoveButton filename={filename} disabled={disabled} onRemove={onRemove} />
+    </View>
+  );
+}
+
+/**
  * The composer's corner remove dot. A sibling of the tile, never a child: the
  * tile clips, and the dot sits half outside its edge. Web: `absolute -top-1.5
  * -right-1.5 size-5 rounded-full border-2 border-card bg-foreground
@@ -347,8 +369,7 @@ export function AttachmentRemoveButton({
  * `muted-foreground`, started at 12 o'clock.
  */
 export function UploadProgressRing({ value }: { value: number }) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const colors = THEME[useTone()];
   const r = 7;
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, value));

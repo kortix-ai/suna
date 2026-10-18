@@ -27,7 +27,6 @@ import * as React from 'react';
 import { Keyboard, Pressable, useWindowDimensions } from 'react-native';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, { interpolate, useAnimatedStyle } from 'react-native-reanimated';
-import { useColorScheme } from 'nativewind';
 
 import { MetalKortixLogo } from '@/components/kortix/MetalKortixLogo';
 import type { SheetRef } from '@/components/kortix/sheet';
@@ -35,7 +34,7 @@ import { LogoPaletteSheet } from '@/components/session/LogoPaletteSheet';
 import { LOGO_PALETTES, logoFrontColor, logoPaletteColors } from '@/lib/effects/logo-palette';
 import { haptics } from '@/lib/haptics';
 import { HERO_KEYBOARD_SCALE, heroLogoSize } from '@/lib/session/project-hero';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 import { useLogoPaletteStore } from '@/stores/logo-palette-store';
 
 /** How long the symbol must be held before the colour sheet opens. */
@@ -47,8 +46,7 @@ const LOGO_SHEET_HOLD_MS = 5_000;
  * inputs: theme, window width, keyboard, and the palette store.
  */
 export const ProjectHero = React.memo(function ProjectHero() {
-  const { colorScheme } = useColorScheme();
-  const tone = colorScheme === 'dark' ? 'dark' : 'light';
+  const tone = useTone();
   const { width } = useWindowDimensions();
   const { progress } = useReanimatedKeyboardAnimation();
   const sheetRef = React.useRef<SheetRef>(null);

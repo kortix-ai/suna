@@ -13,7 +13,6 @@
 
 import * as React from 'react';
 import { View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,7 @@ import { Text } from '@/components/ui/text';
 import { DotsThreeIcon } from '@/lib/icons';
 import { turnMetaRows, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
 
 /** Web ticks the relative "Finished" row every 15s while the panel is open. */
 const TICK_MS = 15_000;
@@ -52,8 +51,7 @@ export function SessionTurnMeta({
   durationMs: number | null;
   cost: TurnMetaCost | null | undefined;
 }) {
-  const { colorScheme } = useColorScheme();
-  const scheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const scheme = useTone();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = React.useState(false);
   const [now, setNow] = React.useState<number | null>(null);

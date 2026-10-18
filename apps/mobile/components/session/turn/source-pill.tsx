@@ -11,14 +11,13 @@
  */
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Sheet, type SheetRef } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone, THEME, withAlpha } from '@/lib/utils/theme';
 import { webSpace } from '@/lib/session/user-message';
 
 /** The pill's text: web `text-xs` at the mobile meta size. */
@@ -59,8 +58,8 @@ export function SourcePill({
   /** One primary pill under the rows (Open session). */
   action?: { label: string; onPress: () => void };
 }) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const tone = useTone();
+  const colors = THEME[tone];
   const insets = useSafeAreaInsets();
   const sheetRef = React.useRef<SheetRef>(null);
   const shown = rows.filter((row) => row.value);

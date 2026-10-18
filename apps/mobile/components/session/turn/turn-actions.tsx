@@ -18,7 +18,6 @@ import * as React from 'react';
 import { View } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
-import { useColorScheme } from 'nativewind';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { Button } from '@/components/ui/button';
@@ -26,7 +25,7 @@ import { Icon } from '@/components/ui/icon';
 import { CheckIcon, CopyIcon } from '@/lib/icons';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { turnDurationMs, turnEndedAt, type TurnMetaCost } from '@/lib/session/turn-meta';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 
 import { SessionTurnMeta, TURN_ACTION_HIT_SLOP, TURN_ACTION_ICON_SIZE } from './session-turn-meta';
 
@@ -59,8 +58,8 @@ export function TurnActions({ response, turn, costInfo }: TurnActionsProps) {
 }
 
 function CopyResponseButton({ response }: { response: string }) {
-  const { colorScheme } = useColorScheme();
-  const color = THEME[colorScheme === 'dark' ? 'dark' : 'light'].mutedForeground;
+  const tone = useTone();
+  const color = THEME[tone].mutedForeground;
   const [copied, setCopied] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   // 0 = Copy showing, 1 = Check showing. Starts settled: web `initial={false}`.

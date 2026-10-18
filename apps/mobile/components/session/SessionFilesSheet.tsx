@@ -28,17 +28,16 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilePreviewSheet } from '@/components/files/FilePreviewSheet';
-import { KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useSheetHandle, type SheetRef } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 import { useRuntimeThread } from '@/components/session/SessionRuntime';
 import {
   deriveSessionFiles,
@@ -53,7 +52,7 @@ import { showFileTypeIcon } from './tool/shared/tool-icons';
 const SNAP_POINTS = ['100%'];
 /** How long Copy shows its check. */
 
-export interface SessionFilesSheetProps {
+interface SessionFilesSheetProps {
   sessionId: string | null | undefined;
   /** The session's sandbox: where a file's preview loads from. */
   sandboxUrl: string | undefined;
@@ -64,23 +63,15 @@ export interface SessionFilesSheetProps {
 /** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
 export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
-    const modalRef = React.useRef<BottomSheetModal>(null);
     const previewSheetRef = React.useRef<SheetRef>(null);
     const insets = useSafeAreaInsets();
-    const { colorScheme } = useColorScheme();
-    const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+      const tone = useTone();
+      const pageBackground = THEME[tone].background;
     const [open, setOpen] = React.useState(false);
     const [previewFile, setPreviewFile] = React.useState<SessionFile | null>(null);
+    const modalRef = useSheetHandle(ref, () => setOpen(true));
     // The previewed file's text, once it has loaded: what the title row's Copy copies.
     const [copyText, setCopyText] = React.useState('');
-
-    React.useImperativeHandle(ref, () => ({
-      open: () => {
-        setOpen(true);
-        modalRef.current?.present();
-      },
-      close: () => modalRef.current?.dismiss(),
-    }));
 
     return (
       <>

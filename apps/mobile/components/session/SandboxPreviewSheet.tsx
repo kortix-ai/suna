@@ -20,7 +20,6 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authenticatedRequest } from '@kortix/sdk';
@@ -30,7 +29,7 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { allowBrowserNavigation, isTrustedProxyUrl } from '@/lib/utils/html-embed';
-import { THEME } from '@/lib/utils/theme';
+import { useTone, THEME } from '@/lib/utils/theme';
 import { useToolPreviewStore } from '@/stores/tool-preview-store';
 
 export function SandboxPreviewSheet() {
@@ -39,14 +38,14 @@ export function SandboxPreviewSheet() {
   const closePreview = useToolPreviewStore((s) => s.closePreview);
   const modalRef = React.useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
   // The store is the source of truth: a tap sets the URL, which presents the
   // sheet; the sheet's dismiss clears it.
   React.useEffect(() => {
     if (url) modalRef.current?.present();
   }, [url]);
 
-  const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  const tone = useTone();
+  const pageBackground = THEME[tone].background;
 
   const loading = (
     <View className="flex-1 items-center justify-center bg-background">
