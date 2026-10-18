@@ -184,10 +184,9 @@ export function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
   <div id="error">Failed to load PDF</div>
   <div id="container"></div>
   <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    
     async function renderPDF() {
       try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const base64 = '${base64Data}';
         const binaryData = atob(base64);
         const bytes = new Uint8Array(binaryData.length);
@@ -228,7 +227,16 @@ export function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
       }
     }
     
-    renderPDF();
+    if (typeof pdfjsLib !== 'undefined') {
+      renderPDF();
+    } else {
+      window.onload = function() {
+        if (typeof pdfjsLib !== 'undefined') return renderPDF();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').textContent = 'Failed to load PDF library';
+        document.getElementById('error').style.display = 'block';
+      };
+    }
   </script>
 </body>
 </html>`;
