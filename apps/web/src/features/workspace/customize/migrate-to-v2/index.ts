@@ -15,5 +15,5 @@ export {
   type ProjectUpgradeContext,
 } from './upgrade-defs';
 export { UpgradesView, UpgradesViewContent } from './upgrade-view';
-export { buildMigrateToV2Stash, useMigrateToV2, type MigrateToV2 } from './use-migrate-to-v2';
-export { buildUpgradeStash, useRunUpgrade, type RunUpgrade } from './use-run-upgrade';
+export { useMigrateToV2, type MigrateToV2 } from './use-migrate-to-v2';
+export { useRunUpgrade, type RunUpgrade } from './use-run-upgrade';

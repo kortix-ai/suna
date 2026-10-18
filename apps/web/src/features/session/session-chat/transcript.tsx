@@ -60,6 +60,7 @@ import { TurnWorkAccordion } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
+import { TurnFallbackRows } from '../turn/fallback-row';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   queuedBubbleTone,
@@ -477,6 +478,10 @@ interface SessionTurnProps {
   onOpenPastedContent?: (id: string, text: string) => void;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
+  /** How many models the account can pick (`local.model.list`, enablement
+   *  applied) — lets a provider-failure row drop its "choose another model"
+   *  hint when no other model exists (KRTX-2598). */
+  modelOptions?: number;
   /** Map of user message IDs to command info for rendering command pills */
   commandMessages?: Map<string, { name: string; args?: string }>;
   /** Available commands for template prefix matching (page refresh detection) */
@@ -1147,8 +1152,14 @@ const statusPhrase =
   throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
     ? throttledStatus.replace(/(\.\.\.|…)$/, '')
     : throttledStatus;
+// The clock also covers the silent start of a turn (KRTX-1872). The status
+// phrase stays empty until the turn's first assistant message, and the label
+// used to be gated on it — so the provisioning/queue phase of a fresh
+// account's first turn, which can hold ~5 minutes, kept a bare "Thinking"
+// with no clock and read as frozen. The phrase stays empty (it must not
+// claim content exists); the elapsed label runs on `agentWorking` alone.
 const statusElapsedLabel =
-  throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
+  agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
     ? formatDuration(statusElapsedMs)
     : undefined;
   return { statusPhrase, statusElapsedLabel };
@@ -1907,10 +1918,22 @@ function TurnStoppedBy({ name }: { name: string }) {
   );
 }
 
+/** The automatic retries an ended failure chain ran, under its terminal row
+ *  (KRTX-2597): the transcript renders one failure row, not one per retry,
+ *  and this quiet line records what the harness already spent on it. */
+function TurnAutoRetryNote({ count }: { count: number }) {
+  const t = useTranslations('sessionUi.turn');
+  return (
+    <p className="text-muted-foreground mt-1 text-xs" data-auto-retry-note>
+      {t('autoRetried', { count })}
+    </p>
+  );
+}
+
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1924,7 +1947,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy, modelOptions,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1939,15 +1962,25 @@ function TurnFooter(
         turnError={turnError}
         tHardcodedUi={tHardcodedUi}
       />
-    {/* ── Error (abort / failure banner) ── */}
-    {turnErrorRow.text && (
+    {/* ── Error (abort / failure banner) ──
+        An automatic provider-error recovery chain (KRTX-2597) renders ONE
+        terminal row: a turn whose failure the harness already continued
+        (`turn.autoRetry?.continued`) yields its row to the continuation's
+        outcome, and the chain's end annotates how many automatic retries
+        already ran. */}
+    {turnErrorRow.text && !turn.autoRetry?.continued && (
       <TurnErrorDisplay
         errorText={turnErrorRow.text}
         errorDetails={turnErrorRowDetails}
         errorRaw={turnErrorRaw}
         isAbort={turnErrorRow.isAbort}
+        modelOptions={modelOptions}
       />
     )}
+    {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
+      <TurnAutoRetryNote count={turn.autoRetry.retries} />
+    )}
+    <TurnFallbackRows working={working} events={servedModel?.fallbacks ?? []} />
     {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
     {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──

@@ -635,6 +635,7 @@ describe('kortix triggers — monitors', () => {
 describe('kortix triggers fire — reports the run outcome', () => {
   const SESSION_ID = 'b3f0c2a1-0000-4000-8000-000000000001';
   const FAILURE_TEXT = 'Payment Required: Insufficient credits. Balance: $-0.06';
+  const FIRE_RUN_ID = 'b3f0c2a1-0000-4000-8000-0000000000aa';
 
   interface FireState {
     triggers: Record<string, unknown>[];
@@ -716,6 +717,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
               session_id: state.fireStatus === 'fired' ? SESSION_ID : null,
               command_id: null,
               deduped: false,
+              run_id: FIRE_RUN_ID,
             },
             { status: 202 },
           );
@@ -788,7 +790,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
       apiConfig,
     );
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain(SESSION_ID);
+    expect(result.stdout).toContain(`Fired dogfood-cron → run ${FIRE_RUN_ID} → session ${SESSION_ID}`);
     expect(result.stdout).toContain('no failure');
     expect(state.deletedSessions).toEqual([]);
   });
@@ -1277,5 +1279,232 @@ describe('eventNextStep on an error', () => {
   test('a provider rejection still points at the config', () => {
     const { lines } = eventNextStep(errored({ source: 'composio', provider: 'composio', error: 'repo is required' }));
     expect(lines.join('\n')).toContain('kortix triggers set pr-review --config <key>=<value>');
+  });
+});
+
+/**
+ * Run history (KRTX-1743): `runs`, `fire --payload/--dry-run`, `replay`, as a
+ * real process against a served API. Each case asserts the exit code, the
+ * output, and the HTTP request the CLI sent.
+ */
+describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
+  const base = `/v1/projects/${PROJECT}/triggers`;
+  const RUN_ID = '11111111-0000-4000-8000-000000000001';
+  const NEW_RUN_ID = '11111111-0000-4000-8000-000000000002';
+  const SESSION_ID = '22222222-0000-4000-8000-000000000001';
+  let requests: Array<{ method: string; path: string; search: string; body: unknown }>;
+  let replayAnswer: { status: number; body: unknown };
+  let emptyPage: boolean;
+
+  const run = (over: Record<string, unknown> = {}) => ({
+    run_id: RUN_ID,
+    slug: 'tickets',
+    source: 'webhook',
+    status: 'fired',
+    run_status: 'succeeded',
+    error: null,
+    run_error: null,
+    session_id: SESSION_ID,
+    command_id: null,
+    replay_of: null,
+    payload_verified: true,
+    payload: { body: { ticket: 'T-9' } },
+    scheduled_for: null,
+    created_at: '2026-10-16T18:03:54.382Z',
+    started_at: '2026-10-16T18:03:54.382Z',
+    ended_at: '2026-10-16T18:08:54.382Z',
+    duration_ms: 300_000,
+    cost_usd: 0.25,
+    ...over,
+  });
+
+  function startRunsServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        const text = await req.text();
+        requests.push({
+          method: req.method,
+          path: url.pathname,
+          search: url.search,
+          body: text ? JSON.parse(text) : null,
+        });
+        if (url.pathname === `${base}/tickets/runs` && req.method === 'GET') {
+          if (emptyPage) return Response.json({ runs: [], next_cursor: 'c-older' });
+          return Response.json({
+            runs: [run(), run({ run_id: NEW_RUN_ID, status: 'failed', run_status: null, error: 'Insufficient credits', session_id: null, duration_ms: null, cost_usd: null, replay_of: RUN_ID })],
+            next_cursor: 'c-next',
+          });
+        }
+        if (url.pathname === `${base}/tickets/fire` && req.method === 'POST') {
+          const body = text ? JSON.parse(text) : {};
+          if (body.dry_run) {
+            return Response.json({ dry_run: true, rendered_prompt: 'Ticket T-1 from manual', filter_matches: false, session_key: 'T-1', payload: body.payload ?? {} });
+          }
+          return Response.json({ status: 'queued', reason: 'busy', session_id: null, command_id: null, deduped: false, run_id: NEW_RUN_ID }, { status: 202 });
+        }
+        if (url.pathname === `${base}/tickets/runs/${RUN_ID}/replay` && req.method === 'POST') {
+          return Response.json(replayAnswer.body, { status: replayAnswer.status });
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}`;
+  }
+
+  const sent = (method: string, suffix: string) =>
+    requests.filter((r) => r.method === method && r.path === `${base}${suffix}`);
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-runs-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    requests = [];
+    emptyPage = false;
+    replayAnswer = { status: 202, body: { status: 'fired', session_id: SESSION_ID, command_id: null, deduped: false, run_id: NEW_RUN_ID } };
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('runs prints the table, newest first, and the next-page hint; --limit and --status reach the query', async () => {
+    const result = await runCli(
+      ['triggers', 'runs', 'tickets', '--limit', '2', '--status', 'fired', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const lines = result.stdout.split('\n');
+    const header = lines.find((l) => l.includes('STARTED'))!;
+    expect(header.trim().startsWith('RUN ')).toBe(true);
+    for (const col of ['SOURCE', 'STATUS', 'RUN STATUS', 'DURATION', 'COST', 'SESSION']) expect(header).toContain(col);
+    const first = lines.findIndex((l) => l.includes(SESSION_ID));
+    const second = lines.findIndex((l) => l.includes('webhook (replay)'));
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(lines[first]).toContain('5m 0s');
+    expect(lines[first]!.trim().startsWith(RUN_ID)).toBe(true);
+    expect(lines[second]!.trim().startsWith(NEW_RUN_ID)).toBe(true);
+    expect(lines[first]).toContain('$0.25');
+    // Local time of the CLI process (bun test pins its own TZ to UTC, the child keeps the machine's).
+    expect(lines[first]).toMatch(/2026/);
+    expect(result.stdout).toContain('Insufficient credits');
+    expect(result.stdout).toContain('--cursor c-next');
+    const [get] = sent('GET', '/tickets/runs');
+    expect(new URLSearchParams(get!.search).get('limit')).toBe('2');
+    expect(new URLSearchParams(get!.search).get('status')).toBe('fired');
+  });
+
+  test('runs --json prints the raw list; --cursor is passed through', async () => {
+    const result = await runCli(
+      ['triggers', 'runs', 'tickets', '--cursor', 'c-next', '--json', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const list = JSON.parse(result.stdout);
+    expect(list.runs.map((r: { run_id: string }) => r.run_id)).toEqual([RUN_ID, NEW_RUN_ID]);
+    expect(list.next_cursor).toBe('c-next');
+    expect(new URLSearchParams(sent('GET', '/tickets/runs')[0]!.search).get('cursor')).toBe('c-next');
+  });
+
+  test('runs rejects an unknown --status and a bad --limit before any HTTP call', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const bad = await runCli(['triggers', 'runs', 'tickets', '--status', 'succeeded', '--project', PROJECT], apiConfig);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('--status');
+    const limit = await runCli(['triggers', 'runs', 'tickets', '--limit', '101', '--project', PROJECT], apiConfig);
+    expect(limit.code).toBe(2);
+    expect(limit.stderr).toContain('--limit must be an integer from 1 to 100');
+    expect(sent('GET', '/tickets/runs')).toEqual([]);
+  });
+
+  test('runs: an empty page with a next_cursor still prints the --cursor hint', async () => {
+    emptyPage = true;
+    const result = await runCli(['triggers', 'runs', 'tickets', '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('No runs of tickets on this page');
+    expect(result.stdout).toContain('--cursor c-older');
+  });
+
+  test('fire --dry-run sends {dry_run, payload} and prints the prompt, the filter verdict and the session key', async () => {
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-1","kind":"bug"}}', '--dry-run', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Ticket T-1 from manual');
+    expect(result.stdout).toContain('does not match');
+    expect(result.stdout).toContain('T-1');
+    expect(sent('POST', '/tickets/fire').map((r) => r.body)).toEqual([
+      { dry_run: true, payload: { body: { ticket: 'T-1', kind: 'bug' } } },
+    ]);
+  });
+
+  test('fire --dry-run --json prints the raw response; @file reads the payload from disk', async () => {
+    writeFileSync(join(tmp, 'event.json'), JSON.stringify({ body: { ticket: 'T-7' } }));
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '@event.json', '--dry-run', '--json', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const out = JSON.parse(result.stdout);
+    expect(out).toMatchObject({ dry_run: true, rendered_prompt: 'Ticket T-1 from manual', filter_matches: false, session_key: 'T-1' });
+    expect(sent('POST', '/tickets/fire')[0]!.body).toEqual({ dry_run: true, payload: { body: { ticket: 'T-7' } } });
+  });
+
+  test('fire --payload without --dry-run sends {payload}; a non-object payload exits 2 with no HTTP call', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-3"}}', '--wait', '0', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(`Queued tickets → run ${NEW_RUN_ID}`);
+    expect(sent('POST', '/tickets/fire').map((r) => r.body)).toEqual([{ payload: { body: { ticket: 'T-3' } } }]);
+    for (const bad of ['[1]', 'not json', '@missing.json']) {
+      const r = await runCli(['triggers', 'fire', 'tickets', '--payload', bad, '--dry-run', '--project', PROJECT], apiConfig);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain('--payload');
+    }
+    expect(sent('POST', '/tickets/fire')).toHaveLength(1);
+  });
+
+  test('replay posts {} and prints the new run; --confirm-unverified posts confirm_unverified', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const plain = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], apiConfig);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout).toContain(`run ${RUN_ID} → run ${NEW_RUN_ID}`);
+    const confirmed = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--confirm-unverified', '--project', PROJECT], apiConfig);
+    expect(confirmed.code).toBe(0);
+    expect(sent('POST', `/tickets/runs/${RUN_ID}/replay`).map((r) => r.body)).toEqual([{}, { confirm_unverified: true }]);
+  });
+
+  test('replay of an unverified run → 409: exit 1 with a message that names --confirm-unverified', async () => {
+    replayAnswer = { status: 409, body: { error: 'payload is unverified', code: 'payload_unverified' } };
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('--confirm-unverified');
+  });
+
+  test('replay of a run still in progress → 409 run_in_progress: exit 1 with its own message', async () => {
+    replayAnswer = { status: 409, body: { error: 'run in progress', code: 'run_in_progress' } };
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('is still in progress');
+    expect(result.stderr).not.toContain('--confirm-unverified');
+  });
+
+  test('replay of a truncated payload → 422: exit 1 with the reason; a missing run id exits 2', async () => {
+    replayAnswer = { status: 422, body: { error: 'payload truncated', code: 'payload_truncated' } };
+    const apiConfig = writeConfig(startRunsServer());
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], apiConfig);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('64 KiB');
+    const noId = await runCli(['triggers', 'replay', 'tickets', '--project', PROJECT], apiConfig);
+    expect(noId.code).toBe(2);
   });
 });

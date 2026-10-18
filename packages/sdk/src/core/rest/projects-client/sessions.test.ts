@@ -10,6 +10,7 @@ import type {
   SessionConfigRelease,
   SessionListState,
   SessionManagedCatalogState,
+  SessionModelUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
@@ -1860,11 +1861,14 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
-  const body = {
-    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  const body: SessionModelUsage = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
     billed_cost: 0.875,
     turns: {
-      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75, fallbacks: [
+        { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'provider_pool_rate_limited' },
+        { requested_model: 'openai/gpt-5.4', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+      ] },
       msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
     },
   };

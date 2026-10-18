@@ -48,7 +48,7 @@
       "properties": {
         "config_dir": {
           "type": "string",
-          "minLength": 1,
+          "pattern": "\\S",
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
           },
@@ -97,17 +97,8 @@
               "entrypoint": {
                 "type": "string"
               },
-              "image": {
-                "type": "string",
-                "minLength": 1
-              },
-              "dockerfile": {
-                "type": "string",
-                "minLength": 1,
-                "not": {
-                  "pattern": "^/|(^|/)\\.\\.($|/)"
-                }
-              },
+              "image": {},
+              "dockerfile": {},
               "cpu": {
                 "type": "integer",
                 "minimum": 1
@@ -129,20 +120,47 @@
                 "required": [
                   "image"
                 ],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
                 "not": {
                   "required": [
                     "dockerfile"
-                  ]
+                  ],
+                  "properties": {
+                    "dockerfile": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               },
               {
                 "required": [
                   "dockerfile"
                 ],
+                "properties": {
+                  "dockerfile": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  }
+                },
                 "not": {
                   "required": [
                     "image"
-                  ]
+                  ],
+                  "properties": {
+                    "image": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
                 }
               }
             ]
@@ -150,7 +168,7 @@
         },
         "default": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S"
         }
       },
       "additionalProperties": true
@@ -182,12 +200,10 @@
             "type": "string"
           },
           "agent": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "agent_name": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "enabled": {
             "oneOf": [
@@ -205,11 +221,18 @@
           },
           "session_mode": {
             "type": "string",
-            "enum": [
-              "fresh",
-              "reuse",
-              "pinned",
-              "keyed"
+            "anyOf": [
+              {
+                "enum": [
+                  "fresh",
+                  "reuse",
+                  "pinned",
+                  "keyed"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+              }
             ]
           },
           "session_key": {
@@ -226,28 +249,31 @@
           },
           "sessionMode": {
             "type": "string",
-            "enum": [
-              "fresh",
-              "reuse",
-              "pinned",
-              "keyed"
+            "anyOf": [
+              {
+                "enum": [
+                  "fresh",
+                  "reuse",
+                  "pinned",
+                  "keyed"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+              }
             ]
           },
           "session_id": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "sessionId": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "prompt_template": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "cron": {
             "type": "string",
@@ -268,6 +294,10 @@
           "timezone": {
             "type": "string"
           },
+          "max_lateness": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+          },
           "secret_env": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -278,7 +308,6 @@
           },
           "run": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 1024
           },
           "mode": {
@@ -298,19 +327,19 @@
           },
           "connector": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "account": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "source": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "event": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "config": {
             "type": "object"
@@ -319,18 +348,107 @@
         "additionalProperties": true,
         "allOf": [
           {
-            "anyOf": [
-              {
+            "if": {
+              "anyOf": [
+                {
+                  "required": [
+                    "session_mode"
+                  ],
+                  "properties": {
+                    "session_mode": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "pinned"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "not": {
+                    "required": [
+                      "session_mode"
+                    ]
+                  },
+                  "required": [
+                    "sessionMode"
+                  ],
+                  "properties": {
+                    "sessionMode": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "pinned"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "if": {
                 "required": [
-                  "prompt"
+                  "session_id"
                 ]
               },
-              {
+              "then": {
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              },
+              "else": {
                 "required": [
-                  "prompt_template"
-                ]
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
               }
-            ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "prompt"
+              ]
+            },
+            "then": {
+              "properties": {
+                "prompt": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "prompt_template"
+              ],
+              "properties": {
+                "prompt_template": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              }
+            }
           },
           {
             "if": {
@@ -402,6 +520,10 @@
                 "mode"
               ],
               "properties": {
+                "run": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
                 "cron": false,
                 "schedule": false,
                 "run_at": false,
@@ -469,6 +591,27 @@
             "if": {
               "properties": {
                 "type": {
+                  "enum": [
+                    "webhook",
+                    "monitor",
+                    "event"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "max_lateness": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
                   "const": "monitor"
                 },
                 "mode": {
@@ -523,19 +666,26 @@
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "provider": {
             "type": "string",
-            "enum": [
-              "pipedream",
-              "composio",
-              "mcp",
-              "openapi",
-              "postman",
-              "graphql",
-              "http",
-              "channel"
+            "anyOf": [
+              {
+                "enum": [
+                  "pipedream",
+                  "composio",
+                  "mcp",
+                  "openapi",
+                  "postman",
+                  "graphql",
+                  "http",
+                  "channel"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+              }
             ]
           },
           "app": {
@@ -555,9 +705,16 @@
           },
           "transport": {
             "type": "string",
-            "enum": [
-              "http",
-              "sse"
+            "anyOf": [
+              {
+                "enum": [
+                  "http",
+                  "sse"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
+              }
             ]
           },
           "spec": {
@@ -565,18 +722,32 @@
           },
           "platform": {
             "type": "string",
-            "enum": [
-              "slack",
-              "teams",
-              "email"
+            "anyOf": [
+              {
+                "enum": [
+                  "slack",
+                  "teams",
+                  "email"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+              }
             ]
           },
           "credential": {},
           "authorization_strategy": {
             "type": "string",
-            "enum": [
-              "project",
-              "user"
+            "anyOf": [
+              {
+                "enum": [
+                  "project",
+                  "user"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
+              }
             ],
             "default": "project"
           },
@@ -589,16 +760,23 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": [
-                  "bearer",
-                  "basic",
-                  "custom",
-                  "api_key",
-                  "oauth1",
-                  "hmac",
-                  "aws_sigv4",
-                  "mtls",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "bearer",
+                      "basic",
+                      "custom",
+                      "api_key",
+                      "oauth1",
+                      "hmac",
+                      "aws_sigv4",
+                      "mtls",
+                      "none"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  }
                 ]
               },
               "secret": false
@@ -629,14 +807,21 @@
               "properties": {
                 "match": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 },
                 "action": {
                   "type": "string",
-                  "enum": [
-                    "always_run",
-                    "require_approval",
-                    "block"
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "always_run",
+                        "require_approval",
+                        "block"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+                    }
                   ]
                 }
               }
@@ -656,7 +841,17 @@
             "then": {
               "properties": {
                 "provider": {
-                  "const": "channel"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             }
@@ -672,7 +867,17 @@
             "then": {
               "properties": {
                 "provider": {
-                  "const": "channel"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             }
@@ -688,7 +893,17 @@
             "then": {
               "properties": {
                 "provider": {
-                  "const": "channel"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             }
@@ -704,7 +919,17 @@
             "then": {
               "properties": {
                 "provider": {
-                  "const": "computer"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "computer"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][oO][mM][pP][uU][tT][eE][rR])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             }
@@ -713,7 +938,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "pipedream"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pipedream"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             },
@@ -727,7 +962,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "mcp"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "mcp"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[mM][cC][pP])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             },
@@ -741,7 +986,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "graphql"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "graphql"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[gG][rR][aA][pP][hH][qQ][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             },
@@ -755,7 +1010,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "http"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "http"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[hH][tT][tT][pP])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             },
@@ -778,7 +1043,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "channel"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               }
             },
@@ -792,7 +1067,17 @@
             "if": {
               "properties": {
                 "provider": {
-                  "const": "channel"
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -804,7 +1089,17 @@
                 "auth": {
                   "properties": {
                     "type": {
-                      "const": "none"
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "none"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        }
+                      ]
                     }
                   }
                 }
@@ -834,15 +1129,26 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "*",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
                 ]
               }
             ]
@@ -924,10 +1230,21 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "*",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
                 ]
               }
             ]
@@ -1009,10 +1326,21 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "*",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
                 ]
               }
             ],
@@ -1025,15 +1353,26 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "*",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
                 ]
               }
             ]
@@ -1045,15 +1384,26 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "\\S"
                 }
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "*",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
                 ]
               }
             ]
@@ -1072,7 +1422,7 @@
         "properties": {
           "platform": {
             "type": "string",
-            "minLength": 1
+            "pattern": "\\S"
           },
           "enabled": {
             "oneOf": [

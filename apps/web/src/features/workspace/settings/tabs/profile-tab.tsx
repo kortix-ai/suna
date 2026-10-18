@@ -1,5 +1,7 @@
 'use client';
 
+import { localizedCopy } from './localized-copy';
+
 /**
  * The Profile tab — profile picture, email, display name, the organizations
  * you belong to, and account deletion.
@@ -52,8 +54,8 @@
  * the active one — so opening the panel never fires this tab's fetches.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -588,58 +590,11 @@ export function ProfileTab() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.profile');
   const locale = useLocale();
-  const copy = useMemo<ProfileTabCopy>(
-    () => ({
-      profilePicture: t('profilePicture'),
-      profilePictureDescription: t('profilePictureDescription'),
-      remove: t('remove'),
-      uploadProfilePicture: t('uploadProfilePicture'),
-      email: t('email'),
-      emailDescription: t('emailDescription'),
-      name: t('name'),
-      nameDescription: t('nameDescription'),
-      namePlaceholder: t('namePlaceholder'),
-      save: t('save'),
-      organizations: {
-        title: t('organizations.title'),
-        description: t('organizations.description'),
-        fallbackAccountName: t('organizations.fallbackAccountName'),
-        owner: t('organizations.owner'),
-        admin: t('organizations.admin'),
-        member: t('organizations.member'),
-        manage: t('organizations.manage'),
-      },
-      dangerZone: t('dangerZone'),
-      deleteAccount: t('deleteAccount'),
-      deletionUnavailable: t('deletionUnavailable'),
-      deletionStatusCheckFailed: t('deletionStatusCheckFailed'),
-      scheduledForDeletionOn: t.raw('scheduledForDeletionOn'),
-      scheduledForDeletion: t('scheduledForDeletion'),
-      cancelBeforeDeletion: t('cancelBeforeDeletion'),
-      deletionDescription: t('deletionDescription'),
-      unavailable: t('unavailable'),
-      retry: t('retry'),
-      keepMyAccount: t('keepMyAccount'),
-      deleteDialogTitle: t('deleteDialogTitle'),
-      immediateWarning: t('immediateWarning'),
-      gracePeriodWarning: t('gracePeriodWarning'),
-      whenDeleted: t('whenDeleted'),
-      agentsDeleted: t('agentsDeleted'),
-      threadsDeleted: t('threadsDeleted'),
-      credentialsDeleted: t('credentialsDeleted'),
-      subscriptionCancelled: t('subscriptionCancelled'),
-      billingHistoryRemoved: t('billingHistoryRemoved'),
-      chooseWhen: t('chooseWhen'),
-      gracePeriodLabel: t('gracePeriodLabel'),
-      gracePeriodDescription: t('gracePeriodDescription'),
-      immediateLabel: t('immediateLabel'),
-      immediateDescription: t('immediateDescription'),
-      typeDeleteToConfirm: t('typeDeleteToConfirm'),
-      keepAccount: t('keepAccount'),
-      processing: t('processing'),
-      keepAccountTitle: t('keepAccountTitle'),
-      keepAccountDescription: t('keepAccountDescription'),
-    }),
+  const copy = useMemo(
+    () =>
+      localizedCopy(DEFAULT_PROFILE_TAB_COPY, (key) =>
+        key === 'scheduledForDeletionOn' ? t.raw(key) : t(key),
+      ),
     [t],
   );
   const supabase = createClient();
@@ -699,8 +654,7 @@ export function ProfileTab() {
       successToast(tI18nComplete('text84cbdb460e07'));
       queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
     },
-    onError: (error: Error) =>
-      errorToast(error.message || tI18nComplete('textafee7aaea8e6')),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete('textafee7aaea8e6')),
   });
 
   const uploadAvatarMutation = useMutation({
@@ -743,8 +697,7 @@ export function ProfileTab() {
       successToast(tI18nComplete('text2fd3b5709d0d'));
       queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
     },
-    onError: (error: Error) =>
-      errorToast(error.message || tI18nComplete('texta505da26f529')),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete('texta505da26f529')),
   });
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

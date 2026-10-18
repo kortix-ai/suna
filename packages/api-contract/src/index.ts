@@ -1524,6 +1524,78 @@ export const TriggerListSchema = z.object({
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
+/**
+ * One run of a trigger (KRTX-1743): one fire from any source, its outcome, and
+ * the agent turn it started. `payload` is display-redacted: every value under a
+ * credential-named key reads `[redacted]`. A payload over 64 KiB reads
+ * `{ truncated: true, bytes }` and cannot be replayed.
+ */
+export const TriggerRunSchema = z.object({
+  run_id: z.string(),
+  slug: z.string(),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  /** The fire's outcome. `fired` = a session was started or prompted. */
+  status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: z.enum(['running', 'succeeded', 'failed']).nullable(),
+  /** Why the fire failed, was skipped or was rejected. */
+  error: z.string().nullable(),
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: z.string().nullable(),
+  session_id: z.string().nullable(),
+  command_id: z.string().nullable(),
+  /** The run this one replayed, or null. */
+  replay_of: z.string().nullable(),
+  /** False for a webhook delivery refused before its signature verified. */
+  payload_verified: z.boolean(),
+  payload: z.record(z.string(), z.unknown()),
+  scheduled_for: z.string(),
+  created_at: z.string(),
+  started_at: z.string(),
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: z.number().nullable(),
+});
+export type TriggerRun = z.infer<typeof TriggerRunSchema>;
+
+/** `GET …/triggers/:slug/runs` and `GET …/trigger-runs`: newest first, keyset-paged. */
+export const TriggerRunListSchema = z.object({
+  runs: z.array(TriggerRunSchema),
+  /** Pass as `cursor` for the next page; null on the last page. A page can hold fewer than `limit` runs. */
+  next_cursor: z.string().nullable(),
+});
+export type TriggerRunList = z.infer<typeof TriggerRunListSchema>;
+
+/** Optional body of `POST …/triggers/:slug/fire`. No body = a plain manual fire. */
+export const TriggerFireRequestSchema = z.object({
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload: z.record(z.string(), z.unknown()).optional(),
+  /** Render and evaluate only: no session, no command, no run row. */
+  dry_run: z.boolean().optional(),
+});
+export type TriggerFireRequest = z.infer<typeof TriggerFireRequestSchema>;
+
+/** `POST …/fire` with `dry_run: true`: what a real fire would send, with nothing written. */
+export const TriggerDryRunResultSchema = z.object({
+  dry_run: z.literal(true),
+  rendered_prompt: z.string(),
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: z.boolean(),
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type TriggerDryRunResult = z.infer<typeof TriggerDryRunResultSchema>;
+
+/** Optional body of `POST …/triggers/:slug/runs/:run_id/replay`. */
+export const TriggerReplayRequestSchema = z.object({
+  /** Required to replay a payload whose webhook signature never verified. */
+  confirm_unverified: z.boolean().optional(),
+});
+export type TriggerReplayRequest = z.infer<typeof TriggerReplayRequestSchema>;
+
 // ─── Session reads: transcript, turn, prompt queue, snapshot ────────────────
 // The wire shapes of the routes a session view reads on every open. apps/api
 // builds them through these types; the SDK's own interfaces are checked

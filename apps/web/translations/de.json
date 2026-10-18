@@ -1326,6 +1326,11 @@
     "tokens": {
       "keyRevoked": "API-Schlüssel widerrufen",
       "revokeFailed": "API-Schlüssel konnte nicht widerrufen werden",
+      "deleteKey": "Schlüssel löschen",
+      "deleteTitle": "Diesen API-Schlüssel löschen?",
+      "deleteDescription": "{name} wurde bereits widerrufen. Das Löschen entfernt ihn aus der Liste. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "keyDeleted": "API-Schlüssel gelöscht",
+      "deleteFailed": "API-Schlüssel konnte nicht gelöscht werden",
       "newKey": "Neuer Schlüssel",
       "confirmIdentity": "Identität bestätigen",
       "verify": "Bestätigen",
@@ -1978,6 +1983,9 @@
       "fullTextDownload": "Vollständigen Text herunterladen ({size})",
       "fullTextError": "Der vollständige Text konnte nicht geladen werden.",
       "fullTextRetry": "Erneut versuchen"
+    },
+    "turn": {
+      "autoRetried": "Kortix hat das Modell vor diesem Fehler {count, plural, one {einmal} other {#-mal}} automatisch wiederholt."
     }
   },
   "agents": {
@@ -2283,7 +2291,8 @@
         "groups": {
           "small": "Kleine Teams",
           "growing": "Wachsende Teams",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Große Organisationen"
         }
       }
     },
@@ -2453,10 +2462,11 @@
         "free": {
           "name": "Free",
           "note": "Starte mit echten Sandbox-Credits.",
-          "f1": "200 Credits / Monat, keine Karte nötig",
-          "f2": "1 Projekt",
-          "f3": "Eigener API-Schlüssel für jedes Premium-Modell",
-          "f4": "Verbinde dein ChatGPT-Abo"
+          "f1": "500 Credits / Monat, keine Karte nötig",
+          "f2": "Verwaltete Modelle: Kimi, DeepSeek, GLM. Keine Datenspeicherung, Inferenz in den USA",
+          "f3": "1 Projekt",
+          "f4": "Eigener API-Schlüssel für jedes Premium-Modell",
+          "f5": "Verbinde dein ChatGPT-Abo"
         },
         "credits": {
           "name": "Credits",
@@ -2466,7 +2476,7 @@
           "f2": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
           "f3": "Ungenutzte Credits werden einen Monat übertragen",
           "f4": "Jederzeit aufladen. Aufladungen verfallen nie",
-          "f5": "Verwaltete Modelle und alle Funktionen",
+          "f5": "Bis zu 200 Projekte und höhere Modell-Ratenlimits",
           "f6": "Support per E-Mail"
         },
         "enterprise": {
@@ -2484,7 +2494,7 @@
       "faq": {
         "free": {
           "question": "Was enthält Free?",
-          "answer": "Free enthält jeden Monat 200 Credits für Sandbox-Rechenzeit und 1 Projekt. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für Premium-Modelle. Verwaltete Modelle mit Kortix-Schlüsseln erfordern einen kostenpflichtigen Plan."
+          "answer": "Free enthält jeden Monat 500 Credits, verwaltete Modelle und alle Funktionen, für 1 Projekt. Credits bezahlen den Agent-Computer und Kortix-Modelle. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für jedes andere Modell."
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
@@ -2492,7 +2502,7 @@
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
-          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 10.000 $ pro Monat (1.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 10.000 $ pro Monat sprich mit dem Vertrieb."
+          "answer": "Wähle eine Stufe von 50 $ pro Monat (5.000 Credits) bis 50.000 $ pro Monat (5.000.000 Credits). Jede Stufe liefert Credits zum selben Satz: 100 Credits pro Dollar. Für mehr als 50.000 $ pro Monat sprich mit dem Vertrieb."
         },
         "members": {
           "question": "Zahle ich für Mitglieder?",
@@ -2740,7 +2750,9 @@
       "link": {
         "title": "E-Mail prüfen",
         "description": "Wir haben einen Link an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "confirmDescription": "Wir haben eine Bestätigungs-E-Mail an <address>{email}</address> gesendet. Bestätige deine E-Mail, um fortzufahren.",
         "notReceived": "Keinen Link erhalten?",
+        "confirmNotReceived": "Keine Bestätigungs-E-Mail erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"
       },
@@ -9058,7 +9070,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Verbinden Sie eine App",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Ihr Kortix-Agent möchte diese App in Ihrem Namen verbinden. Autorisieren Sie es mit einem Klick – es werden keine Schlüssel in den Chat eingefügt oder im Repo gespeichert.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Fügen Sie ein Projektgeheimnis hinzu",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Ihr Kortix-Agent benötigt dies, um fortfahren zu können. Geben Sie den Wert unten ein – er ist verschlüsselt und der Agent sieht ihn nie.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Wir konnten diese geteilte Seite nicht laden. Versuchen Sie es erneut oder laden Sie neu, wenn das Problem weiterhin auftritt.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Link zum Teilen nicht verfügbar",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Öffentlicher Anteil",
@@ -9692,7 +9703,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— keine Schlüssel werden in den Chat eingefügt oder im Repository gespeichert.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Sicher gespeichert",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Sie können dies schließen. Der Agent wird es abholen – sagen Sie ihm „erledigt“, um fortzufahren.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Im Ruhezustand verschlüsselt. Nur dieses Projekt kann es lesen. Der Agent sieht den Wert nie.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Geben Sie einen Sandbox-Port ein, z.B. 3000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Geben Sie eine Port- oder App-URL ein",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Vorschau-Browser",
@@ -17407,6 +17417,54 @@
       "textd84b8be91e7b": "Kortix — Präsentationen",
       "textd84ee1e1e08b": "Versuche kortix init oder / für Befehle",
       "textd85a383e851d": "Manifest auf v2 migrieren (kortix.yaml)",
+      "text848f54e89660": "Läufe",
+      "textb098a09c78aa": "Mit Payload testen",
+      "text99733344956d": "Payload",
+      "text4309aba52556": "Prompt-Vorschau",
+      "text98ee1ca163c3": "Mit diesem Payload ausführen",
+      "text920ed46028e8": "Gib gültiges JSON ein.",
+      "text6ea4fcc31727": "Gib ein JSON-Objekt ein.",
+      "text2631c2f64174": "Filter trifft zu",
+      "text2319ec274750": "Sitzungsschlüssel",
+      "text398d270b036a": "Läufe konnten nicht geladen werden.",
+      "text4c2e1df4570b": "Monitor",
+      "text31757bbfa17e": "Erinnerung",
+      "text12698ce1ea5c": "Übersprungen",
+      "text9daf8e05c684": "Unsigniert",
+      "text7f2b8f3a675c": "Die Webhook-Signatur wurde nicht verifiziert.",
+      "text98c78fbb22fe": "Lauf wiederholen",
+      "texta9cd409ba9ca": "Diesen unsignierten Lauf wiederholen?",
+      "text776bb15115b3": "Die Signatur wurde nicht verifiziert. Eine Wiederholung sendet denselben Payload erneut an den Agenten.",
+      "text2f1b3ba06cfb": "Lauf konnte nicht wiederholt werden",
+      "textff2c3559cd6b": "Zeige den Prompt, den dieser Payload erzeugt, oder führe den Trigger damit aus.",
+      "text15e8856d4d77": "Startet eine echte Sitzung. Es fallen Kosten an.",
+      "text858e4ba7a29f": "Pausieren",
+      "texte0ab721ade45": "{count, plural, one {Lauf} other {Läufe}}",
+      "textf1a06b0cb2ca": "mittlere Dauer",
+      "textfa14066e0399": "Mittlere Dauer",
+      "text26735edf00f9": "Keine Läufe",
+      "textd2c58b300c07": "Läufe im Zeitverlauf",
+      "text6de3a7d8e5db": "Keine Läufe in diesem Zeitraum",
+      "text84b05fbb7f76": "Bei Ereignis",
+      "text27a2c8b3a0d2": "nächster {value0}",
+      "textd47d7cb0e4f8": "Mehr",
+      "textc8dae6371b33": "Wiederholen",
+      "text4aaee10f3594": "Sitzungs-ID kopiert",
+      "text4001631320f1": "{count, plural, other {fehlgeschlagen}}",
+      "textd835122c9dd1": "{count, plural, one {Credit} other {Credits}}",
+      "text72a85758b69c": "Noch keine Läufe.",
+      "text75c4316dcad4": "Noch keine Läufe. Dieser Trigger ist pausiert.",
+      "textdf86da65c421": "Noch keine Läufe. Der erste startet {value0}.",
+      "text1cc5b0d9628f": "{count, plural, other {# ausgewählt}}",
+      "text6363885af551": "Pausiere {done} von {total}…",
+      "text4cc2a4d3a49a": "Setze fort {done} von {total}…",
+      "text6e24bb562ab0": "Lösche {done} von {total}…",
+      "textd845c8702b04": "{ok, plural, other {# pausiert}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "texte57e0a07011b": "{ok, plural, other {# fortgesetzt}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "text1412a8506003": "{ok, plural, other {# gelöscht}}{failed, plural, =0 {} other {, # fehlgeschlagen}}",
+      "textd142c482800c": "{count, plural, one {# Trigger} other {# Trigger}} löschen?",
+      "text75af4531ed17": "Sie werden aus dem Projektmanifest entfernt. Das lässt sich nicht rückgängig machen.",
+      "textc9e9d972eda2": "In diesem Projekt läuft gerade nichts von selbst. Du kannst einen Trigger weiterhin von Hand starten.",
       "textd861cc0af73c": "kortix init erstellt das Grundgerüst, kortix ship schaltet es live. Es ist dasselbe Repo, das dasselbe tut – lokale Entwicklung und Live-System gehören damit nicht mehr zu unterschiedlichen Kategorien.",
       "textd864380a766f": "Die Sandbox enthält ein auf das Projekt begrenztes Kortix-Token und keine Drittanbieter-Schlüssel. Deine Zugangsdaten für Tracker und Helpdesk werden serverseitig entschlüsselt und an den ausgehenden Aufruf angehängt.",
       "textd8707d411d99": "Geheimnisse",
@@ -19729,6 +19787,9 @@
       "texta7a8d2a5fb25": "Bitte einen Agenten, eine zu bauen.",
       "text42cf267578ad": "Ereignistypen für Trigger aufgelistet",
       "text631b422403db": "Apps mit auslösbaren Ereignissen aufgelistet",
+      "text104b83c048f9": "Trigger-Läufe aufgelistet",
+      "text7823ec680410": "Trigger-Lauf erneut ausgeführt",
+      "text7ecaa37e9cf6": "Trigger-Läufe des Projekts aufgelistet",
       "text5d5b7c17acf0": "App-Ereignis empfangen",
       "textd919fde889e9": "Verbindung erforderlich",
       "textd7b77185afd1": "Wird aktiviert",
@@ -19963,7 +20024,7 @@
       "text146aaf3c71fa": "Hält SSO, SCIM, RBAC und Audit für ein unterzeichnetes Enterprise-Konto freigeschaltet, das zusätzlich über einen kostenpflichtigen Plan abgerechnet wird, damit der Stripe-Abgleich sie nicht entziehen kann.",
       "text517105fd13ce": "Credits finanzieren Sandbox-Rechenzeit – auch eine BYOK-Testphase braucht Guthaben, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $.",
       "text2f1d17f50af8": "Enterprise schaltet SAML-SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für dieses Konto frei. Der abgerechnete Plan bleibt unverändert.",
-      "text12836c0e435d": "Free kostet 0 $ – ein Projekt und 200 Credits pro Monat für Sandbox-Rechenzeit, mit deinem eigenen Schlüssel für jedes Premium-Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
+      "text12836c0e435d": "Free kostet 0 $ – ein Projekt, 500 Credits pro Monat, verwaltete Modelle und alle Funktionen, mit deinem eigenen Schlüssel für jedes andere Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
       "text5dffd4db88c5": "Dein Plan, deine Credits und die Abrechnung für dieses Konto.",
       "text49fd64c206dd": "Dein Plan ist aktiv. Die Credits sind bereit.",
       "textad828837ddd8": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen",
@@ -20055,6 +20116,41 @@
       "text02b242fd11cd": "Es ist ein Angebot offen. Ziehe es zuerst zurück.",
       "text451c4b7d695d": "Ein Vertrag ist aktiv. Beende ihn zuerst oder erstelle ein Kartenangebot.",
       "text06bdc1c507f1": "SSO-Nachfrist bis {date}",
+      "textac8710553475": "Testphase verlängert",
+      "text0bad4daa3f0d": "Verbleibende Tage / Ende",
+      "text5f2d23caa972": "Testphase verlängern",
+      "texta88fdf3e2772": "Wird der Plan gewährt, der bereits als Testphase läuft, verschiebt sich sein Enddatum (Verlängern).",
+      "textfdd57ee91bdc": "Eine Credit-Gutschrift zu Beginn, die mit der Testphase abläuft. Lass den Betrag leer für den Standardwert: ${amount} für Enterprise, $0 für Credits.",
+      "text05700b032dac": "Eine befristete Gewährung eines Plans. Nach Ablauf kehrt das Konto zu <tier>{plan}</tier> zurück.",
+      "text94ddcfbb2f30": "Auch ein abgelehnter Anruf ist ein Streit. Was nicht passiert ist, ist ebenso Teil der Aufzeichnungen wie das, was passiert ist.",
+      "text89faa819e995": "Was es nie erreicht, ist die Reichweite desjenigen, der es geschaffen hat. Es gibt hier keine Vererbungskante, die man hochgehen kann.",
+      "text6a51a65a11f4": "Beim Starten einer Sitzung wird ein Zweig abgeschnitten und eine Maschine dafür gestartet. Die Datenbank lässt keine zweite Sitzung auf diesem Computer zu.",
+      "catalogExcludedNoActions": "{count, plural, one {1 App stimmt überein, veröffentlicht jedoch keine Aktionen, die ein Agent aufrufen kann.} other {{count} Apps stimmen überein, veröffentlichen jedoch keine Aktionen, die ein Agent aufrufen kann.}}",
+      "text08cadd4156a5": "Eine Sandbox ist eine echte Linux-Maschine, auf der das Modell alles ausführen kann. Der einzige darin enthaltene Berechtigungsnachweis ist also ein Kortix-Token, der auf das Projekt beschränkt ist.",
+      "textc7d878b8738e": "Kontoaktionen landen am selben Ort – Mitgliedschaft, Rollen, Richtlinien, Token, Gruppen.",
+      "text5b70d52b009e": "Die Drittanbieter-API sieht eine normale authentifizierte Anfrage. Die Antwort geht zurück an den Agenten. Der Ausweis bleibt zurück.",
+      "text7a570559b1e0": "Eine Person handelt anhand der ihr zugewiesenen Rollen, bewertet anhand der Ressource, nach der sie greift.",
+      "text8f0f0d2cd359": "Nichts führt von selbst zusammen: Die Arbeit gelangt durch eine Änderungsanforderung, die eine Person genehmigt, in den Hauptbereich, es sei denn, ein Administrator hat die Möglichkeit zur Zusammenführung gewährt.",
+      "text10fd874b68da": "schreiben",
+      "textafeac15c27a6": "Kortix prüft, ob dieser Agent diesen Connector verwenden darf, wendet die Richtlinie an und entschlüsselt die Anmeldeinformationen auf seiner eigenen Seite der Wall.",
+      "text6fb8ad227c23": "Die Aufnahme ist nie das, wofür Sie bezahlen. Jeder Plan schreibt dies. Der Plan entscheidet darüber, wer es lesen, exportieren oder streamen darf.",
+      "textdb3871e22b38": "Eine zweite Sitzung erhält einen eigenen Zweig und eine eigene Maschine. Es gibt keine Überschneidungen zwischen ihnen – dasselbe Projekt, dasselbe Team oder ein anderer Kunde.",
+      "textc8fc6bf296fa": "rannte",
+      "text0913fabeeba4": "Die Sitzungsarbeit gelangt über eine Änderungsanforderung in den Mittelpunkt.",
+      "text8c6976e5b541": "Administrator",
+      "text1b933329d22a": "destruktiv",
+      "text28ef515dd5b9": "Wenn die Sitzung etwas behalten möchte, öffnet sie eine Änderungsanforderung.",
+      "textd26b162f1b6a": "Was eine Sitzung also tatsächlich berühren kann, ist die Schnittstelle: was die Person tun darf und was dem Agenten erlaubt wurde. Niemals die Gewerkschaft.",
+      "textc19146bd7bd6": "Der Agent ruft ein Werkzeug beim Namen auf. Es hat keine URL, keinen Host und keinen Schlüssel – es kann die Anfrage nicht selbst erstellen.",
+      "text6973dddd3ef9": "blockiert",
+      "text66d3cd60b831": "Ein Dienstkonto ist ein eigener Prinzipal. Richtlinien sind direkt damit verbunden, und seine Anfrage wird ausschließlich anhand dieser Richtlinien bewertet.",
+      "textcf072fa71675": "Diese vier gelangen niemals in die Maschine, die das Modell fährt. Das Ausschalten des Connectors wird beim nächsten Aufruf wirksam – es gibt nichts in der Sandbox, das rotiert werden könnte.",
+      "text2687f86ed678": "genehmigt",
+      "text1eddfe2fbb7a": "Ein Projekt ist ein Repo. main ist das Einzige, was jeder teilt.",
+      "text0c983266f830": "Vertrauensgrenze",
+      "text4c6aaca6d645": "Jede Sitzung verfügt über eine eigene isolierte Maschine und einen eigenen Zweig.",
+      "textc610d5d19d2b": "Die Maschine ist ein Einweggerät. Eine fehlerhafte Installation ist damit erledigt. Nur das, was die Sitzung festschreibt, bleibt bestehen, und zwar als Änderungsanforderung.",
+      "text8e97f02e6f34": "Jeder Anruf, den ein Agent über einen Connector tätigt, ist eine Zeile. Das Gateway, das die Anmeldeinformationen auflöst, ist das, was sie schreibt.",
       "textd6ea513221b7": "Enterprise · Demo",
       "text5a22403ec082": "Enterprise · lizenziert",
       "text87feb882165d": "Lizenziert",
@@ -20086,7 +20182,13 @@
       "text68cf13547e38": "App per URL hinzufügen",
       "text46bc646c9bfe": "Zeige eine beliebig gehostete Website in diesem Projekt. Kortix öffnet sie direkt hier, neben den Apps, die es betreibt.",
       "text08e6480e9b78": "{value0} hinzugefügt",
-      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen."
+      "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
+      "textdae75dce541f": "Pausiert alle Zeitpläne und Webhooks in diesem Projekt.",
+      "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
+      "agentsListSubagentsTitle": "Subagenten",
+      "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
+      "agentsListAlsoSubagent": "Auch Subagent",
+      "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20154,7 +20256,12 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Zustellung: Runtime – der echte Wert wird in die Sandbox-Umgebung geladen. Agent-Code kann ihn lesen.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Zustellung: Connector – nur serverseitig. Der Wert gelangt nie in die Sandbox-Umgebung.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Der Zustellungsbereich ist nicht verfügbar. Fragen Sie den Agenten, wo dieser Wert verwendet wird, bevor Sie ihn speichern.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Im Ruhezustand verschlüsselt. Die Zustellung folgt dem oben angezeigten Bereich.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Geben Sie den angeforderten Wert unten ein. Prüfen Sie seinen Zustellungsbereich, bevor Sie ihn speichern. Der Wert ist im Ruhezustand verschlüsselt."
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding-Reset",
@@ -21484,7 +21591,11 @@
         "excluded": "Ausgeschlossen",
         "noMatch": "Keine Treffer.",
         "noExcludedApps": "Keine App ist ausgeschlossen.",
-        "noExcludedSites": "Keine Website ist ausgeschlossen."
+        "noExcludedSites": "Keine Website ist ausgeschlossen.",
+        "commonApps": "Häufige Apps",
+        "commonSites": "Häufige Websites",
+        "showList": "Liste anzeigen",
+        "hideList": "Liste ausblenden"
       },
       "remoteDays": "In Kortix",
       "remoteDaysHint": "Wie lange Kortix Aufnahmen behält. 0 behält sie ohne Limit.",
@@ -21508,7 +21619,7 @@
       "experimentalTitle": "Experimentell",
       "experimentalHint": "Funktionen ausprobieren, die sich noch ändern können.",
       "privacyControls": "Datenschutz-Steuerung",
-      "privacyControlsHint": "Zeigt das Maskieren personenbezogener Daten und die Apps und Websites, die kein Computer aufnimmt. Ausschalten blendet sie aus; Eingestelltes gilt weiter.",
+      "privacyControlsHint": "Maskierung personenbezogener Daten anzeigen. Ausschalten blendet sie aus; was eingestellt ist, gilt weiter.",
       "maskingTitle": "Maskieren",
       "framesTitle": "Bildschirmbilder",
       "interval": "Ein Bild alle",
@@ -21519,10 +21630,10 @@
       "framesHint": "Ohne Vorgabe nutzt jeder Computer seine eigene Einstellung (alle 2 s ein Bild in 1440p). Mit Vorgabe gilt sie für jeden Computer und lässt sich dort nicht ändern. Klicks, Tippen und Scrollen werden bei jedem Abstand mit eigenen Screenshots aufgezeichnet.",
       "computerDecides": "Jeder Computer entscheidet",
       "included": {
-        "title": "Nur diese Apps und Websites aufnehmen",
-        "hint": "An: Jeder Computer in {org} nimmt nur auf, was hier steht. Alles andere wird geschwärzt und nie gespeichert. Personen können in Kortix Capture eigene hinzufügen; sie können dies nicht ausschalten oder diese entfernen.",
+        "title": "Apps und Websites",
+        "hint": "Legen Sie fest, was jeder Computer in {org} aufnimmt. Alles Übersprungene wird geschwärzt und nie gespeichert oder hochgeladen. Personen können in Kortix Capture eigene hinzufügen; sie können diese nicht entfernen und „Nur aufnehmen“ nicht ausschalten.",
         "switch": "Nur eingeschlossene Apps und Websites aufnehmen",
-        "switchHint": "Aus: Alles, was nicht ausgeschlossen ist, wird aufgenommen.",
+        "switchHint": "Aus: Alles außer „Nie aufnehmen“ wird aufgenommen.",
         "kindLabel": "Apps oder Websites",
         "apps": "Apps",
         "websites": "Websites",
@@ -21532,7 +21643,19 @@
         "addDomain": "{domain} einschließen",
         "included": "Eingeschlossen",
         "noApps": "Keine App eingeschlossen. Nur eingeschlossene Websites werden aufgenommen.",
-        "noSites": "Keine Website eingeschlossen. Browser werden nur aufgenommen, wenn die Browser-App eingeschlossen ist."
+        "noSites": "Keine Website eingeschlossen. Browser werden nur aufgenommen, wenn die Browser-App eingeschlossen ist.",
+        "switchHintOn": "An: Nur die Apps und Websites unten werden aufgenommen.",
+        "commonApps": "Häufige Apps",
+        "commonSites": "Häufige Websites",
+        "policyType": "Richtlinientyp",
+        "exclusionPolicy": "Ausschlussrichtlinie",
+        "exclusionPolicyHint": "Alles aufnehmen außer dem, was Sie ausschließen.",
+        "inclusionPolicy": "Einschlussrichtlinie",
+        "inclusionPolicyHint": "Nur aufnehmen, was Sie einschließen. Alles andere wird geschwärzt.",
+        "recordTitle": "Nur diese aufnehmen",
+        "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen",
+        "memberInclusions": "Personen können eigene Apps und Websites einschließen",
+        "memberInclusionsHint": "Aus: Computer nehmen nur die hier aufgeführten Apps und Websites auf. Personen können weiterhin Apps und Websites zum Überspringen hinzufügen."
       }
     },
     "area": {

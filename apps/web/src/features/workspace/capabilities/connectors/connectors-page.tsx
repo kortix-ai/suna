@@ -266,55 +266,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
 
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  // `?c=<slug>` named the open connector before connectors had pages, and an
-  // OAuth grant started then returns to that URL. Forward it, result intact.
-  const legacyHref = legacyDetailRedirect(projectId, search);
-  useEffect(() => {
-    if (legacyHref) router.replace(legacyHref);
-  }, [legacyHref, router]);
-
-  const replaceParams = useCallback(
-    (mutate: (params: URLSearchParams) => void) => {
-      const params = new URLSearchParams(search?.toString() ?? '');
-      mutate(params);
-      const suffix = params.toString();
-      router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-    },
-    [pathname, router, search],
-  );
-
-  // Which scope the strip is on, held in the URL rather than in state.
-  //
-  // It has to be addressable: `/projects/<id>/channels` was a real route until
-  // Channels folded into this page, and every bookmark and every legacy nav id
-  // pointing at it now redirects to `?scope=channels`. A tab that only local
-  // state can reach is a tab nothing can link to.
-  //
-  // All is the landing scope and writes NO param — see the `SCOPES`
-  // block for why it is constant rather than derived. Omitting it keeps the
-  // bare URL bare, so the common case still shares as `…/connectors`.
-  const setScope = useCallback(
-    (next: ConnectorScope) =>
-      replaceParams((params) =>
-        next === 'all' ? params.delete('scope') : params.set('scope', next),
-      ),
-    [replaceParams],
-  );
-
-  // Global rules — project-wide connector approval policy. Held in `?rules=1`
-  // rather than component state: this is the one deep-linkable surface on the
-  // page (`proj-connectors-policies` in `menu-registry.ts` navigates straight
-  // to it).
-  const rulesOpen = search?.get('rules') === '1';
-  const setRulesOpen = useCallback(
-    (open: boolean) =>
-      replaceParams((params) => (open ? params.set('rules', '1') : params.delete('rules'))),
-    [replaceParams],
-  );
+  const { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen } =
+    useConnectorNavigation(projectId);
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -718,4 +671,58 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       </SplitSheetContent>
     </SplitSheet>
   );
+}
+
+function useConnectorNavigation(projectId: string) {
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // `?c=<slug>` named the open connector before connectors had pages, and an
+  // OAuth grant started then returns to that URL. Forward it, result intact.
+  const legacyHref = legacyDetailRedirect(projectId, search);
+  useEffect(() => {
+    if (legacyHref) router.replace(legacyHref);
+  }, [legacyHref, router]);
+
+  const replaceParams = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(search?.toString() ?? '');
+      mutate(params);
+      const suffix = params.toString();
+      router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+    },
+    [pathname, router, search],
+  );
+
+  // Which scope the strip is on, held in the URL rather than in state.
+  //
+  // It has to be addressable: `/projects/<id>/channels` was a real route until
+  // Channels folded into this page, and every bookmark and every legacy nav id
+  // pointing at it now redirects to `?scope=channels`. A tab that only local
+  // state can reach is a tab nothing can link to.
+  //
+  // All is the landing scope and writes NO param — see the `SCOPES`
+  // block for why it is constant rather than derived. Omitting it keeps the
+  // bare URL bare, so the common case still shares as `…/connectors`.
+  const setScope = useCallback(
+    (next: ConnectorScope) =>
+      replaceParams((params) =>
+        next === 'all' ? params.delete('scope') : params.set('scope', next),
+      ),
+    [replaceParams],
+  );
+
+  // Global rules — project-wide connector approval policy. Held in `?rules=1`
+  // rather than component state: this is the one deep-linkable surface on the
+  // page (`proj-connectors-policies` in `menu-registry.ts` navigates straight
+  // to it).
+  const rulesOpen = search?.get('rules') === '1';
+  const setRulesOpen = useCallback(
+    (open: boolean) =>
+      replaceParams((params) => (open ? params.set('rules', '1') : params.delete('rules'))),
+    [replaceParams],
+  );
+
+  return { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen };
 }

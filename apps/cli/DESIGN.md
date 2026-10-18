@@ -152,6 +152,9 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix sessions archive/unarchive <session-id>...` | Take sessions out of your own list, or put them back; archiving unpins | `PUT /v1/projects/:id/sessions/:sid/archive`                    |
 | `kortix triggers ls`                            | List triggers                                                        | `GET /v1/projects/:id/triggers`                                     |
 | `kortix triggers fire <slug>`                   | Manually fire, wait for the run outcome, exit non-zero on failure     | `POST /v1/projects/:id/triggers/:slug/fire`                         |
+| `kortix triggers fire <slug> --payload <json> [--dry-run]` | Fire with a payload, or render the fire without running it | `POST /v1/projects/:id/triggers/:slug/fire` `{payload, dry_run}` |
+| `kortix triggers runs <slug>`                   | List the trigger's runs, newest first                                | `GET /v1/projects/:id/triggers/:slug/runs`                          |
+| `kortix triggers replay <slug> <run_id>`        | Fire again with a run's stored payload                               | `POST /v1/projects/:id/triggers/:slug/runs/:run_id/replay`          |
 | `kortix triggers enable/disable <slug>`         | Flip `enabled` in manifest                                           | `PATCH /v1/projects/:id/triggers/:slug`                             |
 | `kortix triggers events --apps / --app <app> / --connector <slug> [--event <TYPE>]` | List event-capable apps, a connector's events, or one event's config and payload | `GET /v1/projects/:id/triggers/event-apps`, `…/event-types`         |
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |

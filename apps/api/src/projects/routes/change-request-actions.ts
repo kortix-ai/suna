@@ -123,7 +123,8 @@ export function registerChangeRequestActionsRoutes(): void {
             cr: cr.number,
             error: err instanceof Error ? err.message : String(err),
           });
-          c.header('Retry-After', '5');
+          // Header inline, never `c.header(...)` first — same race as the
+          // journal 429 (KRTX-2737): the deadline may have answered already.
           return c.json(
             {
               error:
@@ -133,6 +134,7 @@ export function registerChangeRequestActionsRoutes(): void {
               action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
             },
             503,
+            { 'Retry-After': '5' },
           );
         }
         for (const action of change.required) {

@@ -1,3 +1,28 @@
+import enMessages from '../../../../../translations/en.json';
+
+const SNAPSHOT_MESSAGES = {
+  locale: 'en',
+  facts: enMessages.settings.snapshots.facts,
+  sourceLabels: enMessages.settings.snapshots.sources,
+  duration: {
+    underMinute: enMessages.settings.snapshots.duration.underMinute,
+    minutes: (count: number) => `${count}m`,
+    hours: (count: number) => `${count}h`,
+  },
+  categoryLabels: Object.fromEntries(
+    Object.entries(enMessages.settings.snapshots.categories).map(([key, value]) => [
+      key,
+      value.label,
+    ]),
+  ),
+  categoryHelp: Object.fromEntries(
+    Object.entries(enMessages.settings.snapshots.categories).map(([key, value]) => [
+      key,
+      value.help,
+    ]),
+  ),
+};
+
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -8,13 +33,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import type { FailedBuildRelevance } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
-import {
-  BuildDetails,
-  BuildRow,
-  DEFAULT_SNAPSHOTS_COPY,
-  SnapshotsTabView,
-  describeBuildOutcome,
-} from './snapshots-tab';
+import { BuildDetails, BuildRow, SnapshotsTabView, describeBuildOutcome } from './snapshots-tab';
 
 /**
  * Carries forward ALL of `sandbox-view.test.tsx`'s coverage (deleted — see
@@ -181,19 +200,23 @@ describe('every build row can be opened', () => {
 describe('BuildDetails', () => {
   test('renders injected Serbian facts and locale-aware dates', () => {
     const copy = {
-      ...DEFAULT_SNAPSHOTS_COPY,
+      ...SNAPSHOT_MESSAGES,
       locale: 'sr',
       facts: {
-        ...DEFAULT_SNAPSHOTS_COPY.facts,
+        ...SNAPSHOT_MESSAGES.facts,
         triggeredBy: 'Покренуто од',
         started: 'Почетак',
         took: 'Трајање',
         imageId: 'ID слике',
       },
-      sourceLabels: { ...DEFAULT_SNAPSHOTS_COPY.sourceLabels, manual: 'Ручна изградња' },
+      sourceLabels: { ...SNAPSHOT_MESSAGES.sourceLabels, manual: 'Ручна изградња' },
     };
     const html = renderToStaticMarkup(
-      <BuildDetails build={build()} providerMode="automatic" copy={copy} />,
+      <BuildDetails
+        build={build()}
+        providerMode="automatic"
+        copy={copy as NonNullable<React.ComponentProps<typeof BuildDetails>['copy']>}
+      />,
     );
     expect(html).toContain('Покренуто од');
     expect(html).toContain('Ручна изградња');

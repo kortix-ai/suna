@@ -1,6 +1,11 @@
 import { writeFile } from 'node:fs/promises';
 import { type SessionCostSort, fetchCostExportCsv } from '@kortix/sdk';
-import { dollarsToCredits, formatCreditsWithSign, formatDollarsAsCredits } from '@kortix/shared';
+import {
+  CREDITS_PER_DOLLAR,
+  dollarsToCredits,
+  formatCreditsWithSign,
+  formatDollarsAsCredits,
+} from '@kortix/shared';
 
 import { withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
@@ -29,8 +34,8 @@ const HELP = help`Usage: kortix billing <subcommand> [options]
 
 Read the active account's plan, credits and spend. Read-only: plan changes,
 top-ups and payment methods are dashboard flows.
-Human credit output uses 100 credits per USD, matching the web.
---json preserves API credit amounts in USD; costs always use USD.
+Credit balances and transaction amounts use 100 credits per USD, including --json.
+Prices, fields named *_usd, and costs JSON/CSV remain in USD.
 
 Subcommands:
   status                            Plan, credits, subscription. --json.
@@ -150,7 +155,16 @@ export async function runBilling(argv: string[]): Promise<number> {
 // ── Reads ───────────────────────────────────────────────────────────────────
 
 interface AccountStateView {
-  credits?: { total?: number; daily?: number; monthly?: number; extra?: number; can_run?: boolean };
+  credits?: {
+    total?: number;
+    daily?: number;
+    monthly?: number;
+    extra?: number;
+    lifetime_granted?: number;
+    lifetime_purchased?: number;
+    lifetime_used?: number;
+    can_run?: boolean;
+  };
   billing_state?: string;
   plan?: { label?: string; key?: string; family?: string; monthly_usd?: number | null };
   subscription?: {
@@ -168,13 +182,26 @@ interface AccountStateView {
   usage_this_period?: { compute_usd?: number; llm_usd?: number; total_usd?: number } | null;
 }
 
+// Convert only monetary credit fields; preserve prices, counts and optional values.
+function creditAmounts<T extends object>(data: T, keys: readonly (keyof T)[]): T {
+  const result = { ...data };
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === 'number') {
+      Object.assign(result, { [key]: value * CREDITS_PER_DOLLAR });
+    }
+  }
+  return result;
+}
+
 function row(label: string, value: string): string {
   return `  ${C.dim}${pad(label, 16)}${C.reset}${value}\n`;
 }
 
 /** `Credits · 2,000 credits/month`, or the plan label (Free, Enterprise). Credits only, no dollar price. */
 function planLine(state: AccountStateView): string {
-  const label = state.plan?.label ?? state.tier?.display_name ?? state.subscription?.tier_key ?? '—';
+  const label =
+    state.plan?.label ?? state.tier?.display_name ?? state.subscription?.tier_key ?? '—';
   const monthlyUsd = state.plan?.monthly_usd;
   return state.plan?.family === 'credits' && typeof monthlyUsd === 'number'
     ? `${label} · ${credits(monthlyUsd)}/month`
@@ -184,7 +211,21 @@ function planLine(state: AccountStateView): string {
 async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
   const state = await ctx.client.get<AccountStateView>('/billing/account-state');
   if (f.json) {
-    emitJson(state);
+    emitJson({
+      ...state,
+      ...(state.credits && {
+        credits: creditAmounts(state.credits, [
+          'total',
+          'daily',
+          'monthly',
+          'extra',
+          'lifetime_granted',
+          'lifetime_purchased',
+          'lifetime_used',
+        ]),
+      }),
+      ...(state.auto_topup && { auto_topup: creditAmounts(state.auto_topup, ['threshold']) }),
+    });
     return 0;
   }
   const plan = planLine(state);
@@ -237,7 +278,7 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
     const path = f.summary ? '/billing/transactions/summary' : '/billing/usage-history';
     const data = await ctx.client.get<Record<string, unknown>>(`${path}${query({ days })}`);
     if (f.json) {
-      emitJson(data);
+      emitJson(creditAmounts(data, ['totalCredits', 'totalDebits']));
       return 0;
     }
     process.stdout.write(
@@ -254,7 +295,7 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
   if (f.breakdown) {
     const data = await ctx.client.get<Record<string, number>>('/billing/credit-breakdown');
     if (f.json) {
-      emitJson(data);
+      emitJson(creditAmounts(data, ['total', 'expiring', 'non_expiring', 'daily']));
       return 0;
     }
     process.stdout.write(`\n  ${C.bold}Credit breakdown${C.reset}\n\n`);
@@ -274,7 +315,10 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
     })}`,
   );
   if (f.json) {
-    emitJson(page);
+    emitJson({
+      ...page,
+      transactions: page.transactions.map((t) => creditAmounts(t, ['amount', 'balance_after'])),
+    });
     return 0;
   }
   if (page.transactions.length === 0) {
