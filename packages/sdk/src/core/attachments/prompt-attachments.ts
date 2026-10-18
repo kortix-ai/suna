@@ -134,6 +134,57 @@ function completedMetadata(value: PromptAttachment): PromptAttachment {
   };
 }
 
+/** The upload progress throttle: a whole-percent change only, at most one
+ *  snapshot per interval. Returns the transport chain's `onProgress` /
+ *  `onProcessing` handlers plus the `clear` for the settle path. */
+function progressHandlers(
+  entry: { item: PromptAttachmentItem },
+  current: () => boolean,
+  emit: () => void,
+): {
+  onProgress: (receivedBytes: number) => void;
+  onProcessing: () => void;
+  clear: () => void;
+} {
+  let unseenBytes: number | undefined;
+  let seenAt = 0;
+  let progressTimer: ReturnType<typeof setTimeout> | undefined;
+  const showProgress = () => {
+    progressTimer = undefined;
+    if (!current() || entry.item.status !== 'uploading' || unseenBytes === undefined) return;
+    entry.item = { ...entry.item, receivedBytes: unseenBytes };
+    unseenBytes = undefined;
+    seenAt = Date.now();
+    emit();
+  };
+  const percent = (bytes: number) => Math.floor((bytes * 100) / entry.item.size);
+  const clearTimer = () => {
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = undefined;
+  };
+  return {
+    onProgress: (receivedBytes) => {
+      if (!current() || percent(receivedBytes) === percent(entry.item.receivedBytes)) return;
+      unseenBytes = receivedBytes;
+      if (progressTimer) return;
+      const wait = seenAt + PROGRESS_INTERVAL_MS - Date.now();
+      if (wait <= 0) return showProgress();
+      progressTimer = setTimeout(showProgress, wait);
+      if (typeof progressTimer === 'object' && 'unref' in progressTimer) progressTimer.unref();
+    },
+    onProcessing: () => {
+      // Every byte is sent. A throttled percent still waiting would be stale.
+      clearTimer();
+      unseenBytes = undefined;
+      if (current()) {
+        entry.item = { ...entry.item, status: 'processing', receivedBytes: entry.item.size };
+        emit();
+      }
+    },
+    clear: clearTimer,
+  };
+}
+
 /** Own one composer selection. Plain-object methods also preserve createScopedKortix isolation. */
 export function createPromptAttachmentController(
   projectId: string | null | undefined,
@@ -248,19 +299,7 @@ export function createPromptAttachmentController(
       (!disposed || entry.handedOff === true) &&
       entries.get(entry.item.id) === entry &&
       entry.generation === generation;
-    // Progress snapshots: a whole-percent change only, at most one per interval.
-    let unseenBytes: number | undefined;
-    let seenAt = 0;
-    let progressTimer: ReturnType<typeof setTimeout> | undefined;
-    const showProgress = () => {
-      progressTimer = undefined;
-      if (!current() || entry.item.status !== 'uploading' || unseenBytes === undefined) return;
-      entry.item = { ...entry.item, receivedBytes: unseenBytes };
-      unseenBytes = undefined;
-      seenAt = Date.now();
-      emit();
-    };
-    const percent = (bytes: number) => Math.floor((bytes * 100) / entry.item.size);
+    const progress = progressHandlers(entry, current, emit);
     void uploadPromptAttachment(projectId!, file, {
       resume: entry.upload,
       signal: abort.signal,
@@ -274,25 +313,7 @@ export function createPromptAttachmentController(
           deleteAfterRemoval(entry, upload.attachment_id);
         }
       },
-      onProgress: (receivedBytes) => {
-        if (!current() || percent(receivedBytes) === percent(entry.item.receivedBytes)) return;
-        unseenBytes = receivedBytes;
-        if (progressTimer) return;
-        const wait = seenAt + PROGRESS_INTERVAL_MS - Date.now();
-        if (wait <= 0) return showProgress();
-        progressTimer = setTimeout(showProgress, wait);
-        if (typeof progressTimer === 'object' && 'unref' in progressTimer) progressTimer.unref();
-      },
-      onProcessing: () => {
-        // Every byte is sent. A throttled percent still waiting would be stale.
-        if (progressTimer) clearTimeout(progressTimer);
-        progressTimer = undefined;
-        unseenBytes = undefined;
-        if (current()) {
-          entry.item = { ...entry.item, status: 'processing', receivedBytes: entry.item.size };
-          emit();
-        }
-      },
+      ...progress,
     })
       .then((attachment) => {
         if (current()) {
@@ -316,7 +337,7 @@ export function createPromptAttachmentController(
           };
       })
       .finally(() => {
-        if (progressTimer) clearTimeout(progressTimer);
+        progress.clear();
         if (entry.abort === abort) entry.abort = undefined;
         // After dispose this settles waiters and starts the next handed-off upload.
         onSettled();
