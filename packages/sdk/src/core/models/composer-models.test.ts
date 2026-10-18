@@ -204,6 +204,32 @@ describe('createModelVisibility', () => {
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
+  test('a hide pin still hides a platform-managed model (the pin outranks the managed rule)', () => {
+    const gateway = [
+      flat('kortix', 'glm-5.3-flash'),
+      flat('kortix', PLATFORM_DEFAULT_MODEL_ID),
+    ];
+    const isVisible = createModelVisibility({
+      catalogModels: gateway,
+      pins: [
+        { providerID: 'kortix', modelID: 'glm-5.3-flash', visibility: 'hide' },
+        { providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID, visibility: 'hide' },
+      ],
+    });
+    expect(isVisible({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
+    expect(isVisible({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(false);
+  });
+
+  test('a show pin never bypasses the managed entitlement (free tier stays curated)', () => {
+    const gateway = [flat('kortix', 'glm-5.3-flash')];
+    const free = createModelVisibility({
+      catalogModels: gateway,
+      freeTier: true,
+      pins: [{ providerID: 'kortix', modelID: 'glm-5.3-flash', visibility: 'show' }],
+    });
+    expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
+  });
+
   test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
     expect(
       hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
@@ -361,6 +387,37 @@ describe('resolveComposerModel', () => {
       resolveComposerModel({ models, providers: { ...providers, default: {} } }).fallback,
     ).toEqual(key('anthropic', 'claude-opus-4-8'));
     expect(resolveComposerModel({ models: [] }).model).toBeUndefined();
+  });
+
+  test('fallback precedence when TWO sources are present: config > recent > provider defaults', () => {
+    // Config beats an otherwise-valid recent entry.
+    expect(
+      resolveComposerModel({
+        models,
+        providers,
+        configModel: 'anthropic/claude-opus-4-8',
+        recent: [key('openai', 'gpt-5.5')],
+      }).fallback,
+    ).toEqual(key('anthropic', 'claude-opus-4-8'));
+    // Recent beats the connected providers' configured defaults.
+    expect(
+      resolveComposerModel({
+        models,
+        providers,
+        recent: [key('openai', 'gpt-5.5')],
+      }).fallback,
+    ).toEqual(key('openai', 'gpt-5.5'));
+  });
+
+  test('a fallback with no valid candidate at all resolves to undefined, never a guess', () => {
+    const resolved = resolveComposerModel({
+      models,
+      configModel: 'unoffered/model',
+      recent: [key('anthropic', 'claude-off')],
+      providers: { all: [], connected: [], default: {} } as unknown as ProviderListResponse,
+    });
+    expect(resolved.fallback).toBeUndefined();
+    expect(resolved.model).toBeUndefined();
   });
 
   test('a bare Bedrock id heals to its inference-profile twin', () => {

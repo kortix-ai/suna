@@ -74,3 +74,79 @@ describe('handleErrorResponse · connectors_provider_unavailable 503', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+describe('handleErrorResponse · the coded 403 remedies', () => {
+  function stubWindow() {
+    const dispatched: string[] = [];
+    const g = globalThis as { window?: unknown };
+    const original = g.window;
+    g.window = {
+      dispatchEvent: (e: { type: string }) => {
+        dispatched.push(e.type);
+        return true;
+      },
+    };
+    return {
+      dispatched,
+      restore: () => {
+        if (original === undefined) delete g.window;
+        else g.window = original;
+      },
+    };
+  }
+
+  for (const showErrors of [true, false]) {
+    test(
+      `an account_mfa_required 403 returns the ApiError with its code and dispatches the step-up event (showErrors: ${showErrors})`,
+      async () => {
+        errors.length = 0;
+        const win = stubWindow();
+        try {
+          const result = await handleErrorResponse(
+            response(403, { error: true, message: 'MFA required', code: 'account_mfa_required' }),
+            signal,
+            showErrors,
+          );
+          expect(result.success).toBe(false);
+          expect((result.error as ApiError).code).toBe('account_mfa_required');
+          expect(win.dispatched).toEqual(['kortix:mfa-required']);
+          // The remedy codes are NOT in isExpectedResponse: a shown error still reports.
+          expect(errors).toHaveLength(showErrors ? 1 : 0);
+        } finally {
+          win.restore();
+        }
+      },
+    );
+
+    test(
+      `an sso_required 403 returns the ApiError with its code and dispatches the SSO event (showErrors: ${showErrors})`,
+      async () => {
+        errors.length = 0;
+        const win = stubWindow();
+        try {
+          const result = await handleErrorResponse(
+            response(403, { error: true, message: 'SSO required', code: 'sso_required' }),
+            signal,
+            showErrors,
+          );
+          expect(result.success).toBe(false);
+          expect((result.error as ApiError).code).toBe('sso_required');
+          expect(win.dispatched).toEqual(['kortix:sso-required']);
+          expect(errors).toHaveLength(showErrors ? 1 : 0);
+        } finally {
+          win.restore();
+        }
+      },
+    );
+  }
+
+  test('an ordinary 403 dispatches no remedy event', async () => {
+    const win = stubWindow();
+    try {
+      await handleErrorResponse(response(403, { error: true, message: 'nope' }), signal, true);
+      expect(win.dispatched).toEqual([]);
+    } finally {
+      win.restore();
+    }
+  });
+});
