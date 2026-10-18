@@ -23,8 +23,9 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ProjectFilesSkeleton } from './project-files-skeleton';
 import { resolveFilesRef } from './resolve-files-ref';
+import type { ProjectPageHeaderTab } from './project-page-header';
 
-export function ProjectFilesView({ projectId }: { projectId: string }) {
+export function ProjectFilesView({ projectId, tabs }: { projectId: string; tabs?: ProjectPageHeaderTab[] }) {
   const t = useTranslations('projectHome');
   // `qk.project.summary(id)` is the canonical getProject cache slot — the
   // same one `useProjectCan` reads (lib/use-project-can.ts:55). The sidebar's
@@ -72,7 +73,7 @@ export function ProjectFilesView({ projectId }: { projectId: string }) {
     <ProjectFilesProvider value={{ projectId, ref, defaultBranch }}>
       <FileExplorerSourceProvider value={gitRefExplorerSource}>
         <FilesStoreProvider>
-          <FileExplorerPage />
+          <FileExplorerPage tabs={tabs} />
         </FilesStoreProvider>
       </FileExplorerSourceProvider>
     </ProjectFilesProvider>

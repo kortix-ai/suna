@@ -75,7 +75,9 @@ export function AppDetailModal({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appCopy = localizedAppCopy(tI18nComplete);
   const apps = useProjectApps(projectId);
-  const deployments = useAppDeployments(projectId, app.app_id);
+  // Releases, logs, machines and volumes are operations data: the API answers
+  // them only with `deploy`. No id, no request for anyone else.
+  const deployments = useAppDeployments(projectId, canDeploy ? app.app_id : null);
   const preview = appCan(app, 'preview');
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess && preview });
@@ -269,7 +271,7 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {appCan(viewed, 'preview') && viewed.active_deployment_id ? (
+                {appCan(viewed, 'preview') && (viewed.active_deployment_id || viewed.external_url) ? (
                   <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
                     <Button
                       size="icon"
@@ -283,7 +285,7 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {appCan(viewed, 'preview') ? (
+                {appCan(viewed, 'preview') || viewed.external_url ? (
                   <Hint
                     label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
                     side="bottom"
@@ -319,12 +321,15 @@ export function AppDetailModal({
                       cannot undo. Every row leads with its glyph so the labels
                       share one left edge. */}
                   <DropdownMenuContent align="end" className="w-60">
-                    <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
-                      <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-                      {versionsOpen
-                        ? tI18nComplete.raw('text26b1a7703eac')
-                        : tI18nComplete.raw('text401dc1a55cb9')}
-                    </DropdownMenuItem>
+                    {/* An external App has no versions: Kortix never deploys it. */}
+                    {app.external_url || !canDeploy ? null : (
+                      <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
+                        <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
+                        {versionsOpen
+                          ? tI18nComplete.raw('text26b1a7703eac')
+                          : tI18nComplete.raw('text401dc1a55cb9')}
+                      </DropdownMenuItem>
+                    )}
                     {/* Capability items: only the Apps that offer them list them. */}
                     {appCan(app, 'member_tokens') ? (
                       <DropdownMenuItem onClick={() => setOverlay('connect')}>
@@ -385,7 +390,7 @@ export function AppDetailModal({
               drawer under it: the App narrows and stays live, and the list
               gets the full height to scroll. */}
           <SplitSheet
-            open={versionsOpen}
+            open={versionsOpen && canDeploy}
             onOpenChange={setVersionsOpen}
             size="lg"
             className="h-auto min-h-0 flex-1"
@@ -400,7 +405,7 @@ export function AppDetailModal({
                 interactive
                 className="absolute inset-0 size-full"
               />
-            ) : preview ? (
+            ) : preview || app.external_url ? (
               <AppPreview
                 key={app.active_deployment_id ?? app.app_id}
                 app={app}

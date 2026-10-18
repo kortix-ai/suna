@@ -38,6 +38,7 @@ import { ChangeRequestsPanel } from './change-requests-panel';
 import { CheckpointsPanel } from './checkpoints-panel';
 import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
+import type { ProjectPageHeaderTab } from '@/features/workspace/project-layout/project-page-header';
 import { DriveListView } from './drive-list-view';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
@@ -55,7 +56,7 @@ const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
  * instead of a share button; the honest signature is no prop at all. The
  * in-session explorer threads share context through `DriveExplorer` instead.
  */
-export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = {}) {
+export function FileExplorerPage({ embedded = false, tabs }: { embedded?: boolean; tabs?: ProjectPageHeaderTab[] } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -418,6 +419,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   return (
     <div className="bg-background relative flex h-full flex-col">
       <DriveHeader
+        tabs={tabs}
         offsetForSidebarToggle={!embedded}
         historyToggle={{
           open: rightPanel === 'history',

@@ -34,11 +34,12 @@
     "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.0.0"
   }
 }

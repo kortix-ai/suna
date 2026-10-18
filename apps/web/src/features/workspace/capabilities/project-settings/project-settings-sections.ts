@@ -36,7 +36,7 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * `general-tab.tsx`'s `gitRepoSlot`); it was never its own top-level concept,
  * just a workspace detail. Marketplace was removed from this surface outright
  * (not relocated) at the product owner's explicit request. Voice was removed
- * later, and Review became a capability tab with no flag. Sandbox templates
+ * later, and Review now lives in the merged Repo page (`reviewHref`). Sandbox templates
  * and Snapshots were merged into one `sandbox` section — a snapshot IS the
  * build history of a sandbox template, not a separate concept.
  *
@@ -151,7 +151,7 @@ const PROJECT_SETTINGS_SOURCE = {
 /**
  * The sub-nav: the static sections, then Feature flags and Upgrades. No row is
  * flag-gated any more. Marketplace and Voice were removed from the product;
- * Review is a capability tab of its own and graduated out of the flag system.
+ * Review lives in the merged Repo page and graduated out of the flag system.
  */
 export function projectSettingsSections(
   tI18nComplete?: UiTranslator,
@@ -160,9 +160,8 @@ export function projectSettingsSections(
     ? localizeUiCatalog(PROJECT_SETTINGS_SOURCE, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
     : PROJECT_SETTINGS_SOURCE;
   const sections = [...source.staticSections];
-  // Review is NOT a section here any more: it is a capability tab of its own
-  // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
-  // as a Settings section — was the leftover of restoring this page.
+  // Review is NOT a section here any more: it lives in the merged Repo page
+  // (`reviewHref` in `capability-tab-routes.ts`).
   // `REVIEW_SECTION` stays exported for the legacy `?section=review` redirect
   // target and the pane switch.
   sections.push(source.featureFlagsSection, source.upgradesSection);

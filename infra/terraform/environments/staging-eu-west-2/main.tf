@@ -188,7 +188,6 @@ module "api" {
   max_capacity               = 8
   use_fargate_spot           = false
   force_new_deployment       = true
-  container_insights         = true
   cpu_target                 = 55
   memory_target              = 65
   requests_per_target_target = 600
@@ -225,7 +224,6 @@ module "gateway" {
   max_capacity               = 20
   use_fargate_spot           = false
   force_new_deployment       = true
-  container_insights         = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

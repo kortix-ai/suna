@@ -852,6 +852,13 @@ function scanFile(file) {
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
         catalogRoot === 'USE_CASE_OPTIONS';
+      // The foreign-harness sample payloads (Codex / Claude Code session-log
+      // fixtures) are synthetic DATA, not UI copy: they render as sample tool
+      // content in tests and /debug/session-fixture, and translating what a
+      // foreign harness sent would falsify the fixture.
+      const coveredForeignToolFixture =
+        file === path.join(srcDir, 'features/session/tool/foreign-tool-calls.ts') &&
+        catalogRoot === 'FOREIGN_TOOL_CALLS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -1000,10 +1007,10 @@ function scanFile(file) {
         (file ===
           path.join(srcDir, 'features/workspace/customize/sections/view/grant-mode-field.tsx') &&
           catalogRoot === 'GRANT_MODES') ||
-        (file === path.join(srcDir, 'features/workspace/customize/migrate-to-v3/upgrade-defs.ts') &&
+        (file === path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-defs.ts') &&
           catalogRoot === 'PROJECT_UPGRADES') ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/migrate-to-v3/upgrade-view.tsx') &&
+          path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-view.tsx') &&
           catalogRoot === 'DEFAULT_UPGRADES_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/account-memberships.tsx') &&
           catalogRoot === 'DEFAULT_ACCOUNT_MEMBERSHIPS_COPY') ||
@@ -1117,6 +1124,7 @@ function scanFile(file) {
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
         !coveredOnboardingProfileFixture &&
+        !coveredForeignToolFixture &&
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&

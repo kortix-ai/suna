@@ -179,11 +179,15 @@ export async function resolveMcpCatalogCredential(
   overrides: ReadonlyMap<string, string> | undefined,
   resolve: typeof resolveCredentialValue = resolveCredentialValue,
   resolveMember: typeof resolveFirstMemberCredential = resolveFirstMemberCredential,
+  resolveBoundSecret: () => Promise<string | null> = async () => null,
 ): Promise<{ value: string | null; member: boolean }> {
   const override = overrides?.get(connectorId);
   if (override) return { value: override, member: false };
   const project = await resolve(connectorId, null);
   if (project) return { value: project, member: false };
+  // A project secret bound with `kortix connectors secret` is project-wide too.
+  const bound = await resolveBoundSecret();
+  if (bound) return { value: bound, member: false };
   const member = await resolveMember(connectorId);
   return { value: member, member: member !== null };
 }
@@ -552,6 +556,7 @@ async function syncProjectConnectorsFenced(
       manifestHash: connectors.manifestHash,
       status: connectors.status,
       providerType: connectors.providerType,
+      authSecret: connectors.authSecret,
     })
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
@@ -634,19 +639,24 @@ async function syncProjectConnectorsFenced(
       let catalogCredentialError: string | null = null;
       if (!catalogUnchanged && spec.provider === 'mcp') {
         try {
+          // The binding `kortix connectors secret` writes lives on the row, not
+          // in kortix.yaml: read both, or tools/list goes out unauthenticated.
+          const boundSecret = spec.auth.secret ?? ex?.authSecret ?? null;
+          const resolveBoundSecret = async () =>
+            boundSecret
+              ? getProjectSecretValueForConsumer({ projectId, accountId, name: boundSecret, consumer: 'connector' })
+              : null;
           const resolved = ex
-            ? await resolveMcpCatalogCredential(ex.connectorId, opts.mcpCredentialOverrides)
-            : null;
-          catalogCredential = resolved?.value ?? null;
-          memberPublished = resolved?.member ?? false;
-          if (catalogCredential === null && spec.auth.secret) {
-            catalogCredential = await getProjectSecretValueForConsumer({
-              projectId,
-              accountId,
-              name: spec.auth.secret,
-              consumer: 'connector',
-            });
-          }
+            ? await resolveMcpCatalogCredential(
+                ex.connectorId,
+                opts.mcpCredentialOverrides,
+                undefined,
+                undefined,
+                resolveBoundSecret,
+              )
+            : { value: await resolveBoundSecret(), member: false };
+          catalogCredential = resolved.value;
+          memberPublished = resolved.member;
         } catch (error) {
           catalogCredentialError = mcpCatalogCredentialError(error);
         }

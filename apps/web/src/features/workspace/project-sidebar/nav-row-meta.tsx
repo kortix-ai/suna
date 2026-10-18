@@ -1,16 +1,13 @@
 'use client';
 
-import {
-  capabilityTabHref,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { filesRow } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import {
   CustomizeGlyph,
-  useCapabilityTab,
+  useProjectNavRows,
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan, useProjectPageCans } from '@/lib/use-project-can';
 import type { SidebarNavItemId } from '@/stores/sidebar-nav-store';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import {
@@ -36,24 +33,17 @@ export interface NavRowMeta {
 export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemId, NavRowMeta>> {
   const t = useTranslations('sidebar');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const customizeTab = useCapabilityTab(projectId);
+  const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
+  const appsVisible = useAppsRowVisible(projectId);
   const reminders = useFeatureFlag(projectId, 'reminders');
   const volumes = useFeatureFlag(projectId, 'drives');
-  // KRTX-2444: Review merged into the Repo page, so there is no Review row.
-  // The Repo row opens for a review-only viewer too — `project.file.read` is
-  // editor-tier, but plain members hold `project.review.read` (floor-tier)
-  // and land on the merged page's review section. Optimistic while the files
-  // probe loads, like every row.
-  const canReview = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
-  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  const filesLabel = repoNavLabel(volumes.enabled);
-  const filesListed = canReadFiles.allowed || canReadFiles.isLoading || canReview;
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
     const base = `/projects/${projectId}`;
+    const files = filesTarget ? filesRow(projectId, filesTarget, volumes.enabled) : null;
     return {
       ...(customizeTab
         ? {
@@ -64,20 +54,24 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      apps: {
-        label: tI18nComplete.raw('text89dd748442c1'),
-        icon: <AppWindowIcon />,
-        href: `${base}/apps`,
-      },
+      ...(appsVisible
+        ? {
+            apps: {
+              label: tI18nComplete.raw('text89dd748442c1'),
+              icon: <AppWindowIcon />,
+              href: `${base}/apps`,
+            },
+          }
+        : {}),
       ...(reminders.enabled
         ? { reminders: { label: t('reminders'), icon: <AlarmIcon />, href: `${base}/reminders` } }
         : {}),
-      ...(filesListed
+      ...(files
         ? {
             files: {
-              label: t(filesLabel),
-              icon: filesLabel === 'repo' ? <GitBranchIcon /> : <FoldersIcon />,
-              href: `${base}/files`,
+              label: t(files.label),
+              icon: files.label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />,
+              href: files.href,
             },
           }
         : {}),
@@ -87,10 +81,9 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
     tI18nComplete,
     projectId,
     customizeTab,
+    appsVisible,
     reminders.enabled,
-    filesListed,
-    filesLabel,
-    // `canReview` rides in through `filesListed`; listing it here too would be
-    // an unnecessary dep (eslint react-hooks/exhaustive-deps).
+    filesTarget,
+    volumes.enabled,
   ]);
 }

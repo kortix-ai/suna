@@ -143,7 +143,12 @@ describe('prompt', () => {
       }
       expect({ code: segment.code, proseSince: proseSince >= 20 }).toEqual({ code: segment.code, proseSince: true });
       proseSince = 0;
-      photos.push(...(segment.code.match(/https:\/\/example\.com\/photos\/[\w.-]+/g) ?? []));
+      photos.push(
+        ...(segment.code.match(/https:\/\/[^\s"')]+/g) ?? []).filter((url) => {
+          const { host, pathname } = new URL(url);
+          return host === 'example.com' && pathname.startsWith('/photos/');
+        }),
+      );
     }
     expect(photos.length).toBeGreaterThan(10);
     expect(photos.filter((url, i) => photos.indexOf(url) !== i)).toEqual([]);

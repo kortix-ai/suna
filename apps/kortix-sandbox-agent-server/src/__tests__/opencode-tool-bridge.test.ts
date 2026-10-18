@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { openCodeAction } from './helpers/opencode-permission'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -81,7 +82,7 @@ describe('the hosted tools bridge plugin', () => {
     expect(list.url).toBe(`http://127.0.0.1:${r.port}/kortix/tools/`)
     expect(list.key).toBe(toolBridgeKey(r.env))
     expect(statSync(path.replace(/\.js$/, '.json')).mode & 0o777).toBe(0o600)
-    expect(list.tools.map((tool: { name: string }) => tool.name)).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'lookup_order'])
+    expect(list.tools.map((tool: { name: string }) => tool.name)).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order'])
   })
 
   test('a Kortix tool the project does not list is not in the plugin, and the daemon refuses a call to it', async () => {
@@ -103,7 +104,7 @@ describe('the hosted tools bridge plugin', () => {
     const path = join(dir, 'home/.config/kortix-tools.js')
     await writeToolBridge(path, { env: r.env, daemonPort: r.port, projectRoot: r.project, configDir: r.configDir })
     const hooks = await bridge(path)
-    expect(Object.keys(hooks.tool)).toEqual(['image_search', 'scrape_webpage', 'show', 'kortix-connectors_call', 'kortix-connectors_describe', 'lookup_order'])
+    expect(Object.keys(hooks.tool)).toEqual(['image_search', 'scrape_webpage', 'show', 'lookup_order'])
   })
 
   test('each tool runs on the daemon; the model sees the tool’s own JSON Schema', async () => {
@@ -199,7 +200,8 @@ describe('the composed OpenCode config', () => {
     expect(config.agent.researcher.permission).toMatchObject({ '*': 'deny', read: 'allow', web_search: 'allow' })
     expect(config.agent.researcher.permission.bash).toBeUndefined()
     expect(config.agent.builder.permission).toMatchObject({ bash: 'deny', 'pty_*': 'deny' })
-    expect(Object.keys(config.agent.builder.permission).slice(-2)).toEqual(['bash', 'pty_*'])
+    // `capabilityToolRules` gave each pty tool `bash: allow`; removing `bash` takes those rules too.
+    for (const tool of ['bash', 'pty_spawn', 'pty_write']) expect(openCodeAction([config.agent.builder.permission], tool, 'x')).toBe('deny')
     expect(config.agent.open.permission).toBeUndefined()
   })
 })

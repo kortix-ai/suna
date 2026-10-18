@@ -23,7 +23,7 @@ test('opens the selected account billing tab without putting highlight in the UR
 });
 
 test('defaults to billing and sends an unselected account to the hub list', () => {
-  expect(accountSettingsTarget({ accountId: null })).toEqual({ accountId: null });
+  expect<{ accountId: string | null }>(accountSettingsTarget({ accountId: null })).toEqual({ accountId: null });
   openAccountSettings();
   expect(openAccountPanel).toHaveBeenCalledWith({ accountId: 'synthetic-account', tab: 'billing' });
 });

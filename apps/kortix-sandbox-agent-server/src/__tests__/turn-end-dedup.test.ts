@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '@/harness/open-code/boot'
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import { setRelayRetryStepMsForTests } from '@/harness/open-code/turn-relay'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
@@ -13,6 +14,9 @@ import {
 // session.idle, the reconcile-on-subscribe backstop, or a duplicate idle from
 // opencode, the turn-end is relayed to apps/api EXACTLY ONCE. A genuinely new
 // turn (new completed timestamp) relays again.
+
+// The relay retries after 1 s, 2 s and 3 s in the product; the attempt counts are what these tests read.
+setRelayRetryStepMsForTests(10)
 
 const ROOT = 'ses_root'
 const WORKSPACE = '/workspace'

@@ -7,8 +7,9 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { ROTATION_BATCH_SIZE } from './rotation-batch';
 import { wallet } from '../wallet';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { getTier } from './tiers';
 
-const FREE_TIER_MONTHLY_CREDITS_USD = 2;
+const FREE_TIER_MONTHLY_CREDITS_USD = getTier('free').monthlyCredits;
 
 function rotationMonth(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;

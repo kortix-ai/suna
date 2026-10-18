@@ -46,7 +46,7 @@ import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
-import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { markKortixRemovalIntent } from '../../projects/runtime-identity';
 import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
@@ -413,17 +413,6 @@ export async function reclaimableAccountIds(
  * Best-effort per box: one provider failure must never block deletion, abort
  * the remaining boxes, or leave the row claiming to be alive.
  */
-async function markRemovalIntent(sandboxId: string): Promise<void> {
-  await db
-    .update(sessionSandboxes)
-    .set({
-      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
-        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
-      })}::jsonb`,
-    })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
-}
-
 async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxReclaimSummary> {
   const summary: SandboxReclaimSummary = {
     accounts: accountIds.length,
@@ -472,7 +461,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           // Stamp the intent BEFORE the provider call: its `removed` webhook can
           // arrive before this request settles the row, and must not read as a
           // lost runtime.
-          await markRemovalIntent(row.sandboxId).catch((err) =>
+          await markKortixRemovalIntent(row.sandboxId).catch((err) =>
             logger.warn(
               `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
             ),

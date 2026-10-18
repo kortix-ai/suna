@@ -25,8 +25,15 @@ export type AppHostingType = 'sandbox' | 'static';
  * `hostingType`: the active deployment's. A server App runs machines (it
  * sleeps when idle, scales and runs commands); a static App is served from
  * storage. `hasVolumes`: the App has volumes (snapshots come with them).
+ * `external`: the App is hosted elsewhere (`external_url`).
  */
-export function appCapabilities(hostingType: AppHostingType | null, hasVolumes = false): AppCapability[] {
+export function appCapabilities(
+  hostingType: AppHostingType | null,
+  hasVolumes = false,
+  external: { frameable: boolean } | null = null,
+): AppCapability[] {
+  // An external App is only a URL: Kortix frames it when the site allows that, and runs nothing.
+  if (external) return external.frameable ? ['preview'] : [];
   const out: AppCapability[] = ['deployments', 'rollback', 'preview', 'member_tokens'];
   if (hostingType === 'sandbox') out.push('sleep', 'machines', 'scale', 'exec');
   if (hostingType === 'static') out.push('static');

@@ -5,6 +5,7 @@ import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
   FEATURE_FLAG_KEYS,
+  PROVISION_STREAM_UNTERMINATED_CODE,
   type ExperimentalFeatureKey,
   type ExperimentalFeatureView,
   type FeatureFlagKey,
@@ -693,6 +694,40 @@ describe('provisionProjectStream', () => {
     await expect(
       provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([]) }),
     ).rejects.toThrow();
+  });
+
+  // The bare close is an UNKNOWN result, not a known failure: the server may
+  // still be provisioning (the route's handler outlives a lost reader and the
+  // client cannot tell a commit from a rollback). KRTX-1754's host recovers
+  // exactly this case by replaying the same idempotency key over the plain
+  // route — which requires TELLING the bare close apart from every real
+  // failure. A plain `Error` cannot carry that distinction, so the close is
+  // an `ApiError` tagged with a stable code. The message is unchanged: every
+  // existing reader keeps reading the same text.
+  test('tags the no-terminal-event close with PROVISION_STREAM_UNTERMINATED_CODE', async () => {
+    const error = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([]),
+    }).then(
+      () => null,
+      (e) => e,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe(PROVISION_STREAM_UNTERMINATED_CODE);
+    expect((error as ApiError).message).toBe('Provision stream ended without a result');
+  });
+
+  test('a stream that delivered phases and then closed still carries the unterminated code', async () => {
+    const body = 'data: {"type":"phase","phase":"validating"}\n\n';
+    const error = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([body]),
+    }).then(
+      () => null,
+      (e) => e,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe(PROVISION_STREAM_UNTERMINATED_CODE);
   });
 
   // Not in the brief's draft, added for robustness: the parser must be

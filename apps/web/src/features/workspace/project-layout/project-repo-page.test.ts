@@ -1,71 +1,59 @@
 import { describe, expect, test } from 'bun:test';
+import type { CanResult } from '@/lib/use-project-can';
+import { repoPageSection, repoPageTabs } from './project-repo-page';
 
-import { repoPageSection, repoPageTabs, type RepoPageSection } from './project-repo-page';
+const allow: CanResult = { allowed: true, isLoading: false, isError: false, reason: null };
+const deny: CanResult = { ...allow, allowed: false };
+const loading: CanResult = { ...allow, isLoading: true };
+const error: CanResult = { ...allow, isError: true };
 
-/**
- * The merged Repo page (KRTX-2444): one git-focused surface at /files whose
- * two sections are the repo file browser and the Review Center inbox. These
- * tests pin the navigation rules that decide which sections a viewer gets,
- * because one of them is a real stranding hazard: the repo read leaf
- * (`project.file.read`) is editor-tier, while the review inbox has always
- * been open to plain members (`project.review.read` is floor-tier). A merge
- * that gated the whole page on the files read would erase Review for every
- * plain member.
- */
-describe('repoPageSection', () => {
-  test('the repo section shows the file browser to a caller who may read files', () => {
-    expect(repoPageSection('repo', true)).toBe('repo');
+describe('merged Repo permission boundary', () => {
+  test('repo-only callers cannot open Review, including a direct review route', () => {
+    expect(repoPageSection('repo', allow, allow, deny)).toBe('repo');
+    expect(repoPageSection('review', allow, allow, deny)).toBe('denied');
   });
 
-  test('the review section shows the inbox regardless of the files read', () => {
-    expect(repoPageSection('review', true)).toBe('review');
-    expect(repoPageSection('review', false)).toBe('review');
+  test('Review requires both READ and ACT', () => {
+    expect(repoPageSection('review', deny, allow, allow)).toBe('review');
+    expect(repoPageSection('review', deny, deny, allow)).toBe('denied');
+    expect(repoPageSection('review', deny, allow, deny)).toBe('denied');
   });
 
-  test('a viewer without project.file.read gets the review inbox, not a broken repo body', () => {
-    // The old /files page showed its own empty/error state to a plain member;
-    // the member never saw that page (the row hid). Now the row opens for
-    // them too, so the body must fall back to the section they can use.
-    expect(repoPageSection('repo', false)).toBe('review');
+  test('review-only callers fall back from repo; neither permission denies', () => {
+    expect(repoPageSection('repo', deny, allow, allow)).toBe('review');
+    expect(repoPageSection('repo', deny, deny, deny)).toBe('denied');
   });
-});
 
-describe('repoPageTabs', () => {
-  const TABS = (section: RepoPageSection, repoOpen: boolean) =>
-    repoPageTabs({
-      projectId: 'p1',
-      section,
-      repoOpen,
-      repoLabel: 'Repo',
-      reviewLabel: 'Review',
+  test('loading and failed probes never open protected bodies, even with stale allows', () => {
+    expect(repoPageSection('repo', loading, allow, allow)).toBe('loading');
+    expect(repoPageSection('repo', error, allow, allow)).toBe('error');
+    for (const pending of [loading, error]) {
+      expect(repoPageSection('review', allow, pending, allow)).toBe(pending.isError ? 'error' : 'loading');
+      expect(repoPageSection('review', allow, allow, pending)).toBe(pending.isError ? 'error' : 'loading');
+      expect(repoPageSection('repo', deny, allow, pending)).toBe(pending.isError ? 'error' : 'loading');
+    }
+  });
+
+  test('a denial counts only once its probe settles (receivedDenial rule)', () => {
+    // The trunk gate's settled-only rule: a probe in flight or a failed probe
+    // is never a denial. It holds the page or reports the failure — it must
+    // not fall back to the review section while its own answer is unknown.
+    expect(repoPageSection('repo', { ...deny, isLoading: true }, allow, allow)).toBe('loading');
+    expect(repoPageSection('repo', { ...deny, isError: true }, allow, allow)).toBe('error');
+  });
+
+  test('tabs list only authorized sections and preserve route and active selection', () => {
+    const tabs = (repoOpen: boolean, reviewOpen: boolean) => repoPageTabs({
+      projectId: 'p1', section: 'review', repoOpen, reviewOpen,
+      repoLabel: 'Repo', reviewLabel: 'Review',
     });
-
-  test('both sections show for a caller who may read files, repo first', () => {
-    const tabs = TABS('repo', true);
-    expect(tabs.map((t) => t.label)).toEqual(['Repo', 'Review']);
-    expect(tabs.map((t) => t.href)).toEqual(['/projects/p1/files', '/projects/p1/files/review']);
-    expect(tabs.find((t) => t.key === 'repo')?.active).toBe(true);
-    expect(tabs.find((t) => t.key === 'review')?.active).toBe(false);
-  });
-
-  test('the active tab follows the section, not the permission', () => {
-    const tabs = TABS('review', true);
-    expect(tabs.find((t) => t.key === 'repo')?.active).toBe(false);
-    expect(tabs.find((t) => t.key === 'review')?.active).toBe(true);
-  });
-
-  test('a review-only viewer sees one tab, and it is the active one', () => {
-    // Composed exactly as the page calls them: the fallback section decides
-    // the body AND the bar.
-    const section = repoPageSection('repo', false);
-    const tabs = repoPageTabs({
-      projectId: 'p1',
-      section,
-      repoOpen: false,
-      repoLabel: 'Repo',
-      reviewLabel: 'Review',
-    });
-    expect(tabs.map((t) => t.label)).toEqual(['Review']);
-    expect(tabs[0]?.active).toBe(true);
+    expect(tabs(true, false).map((tab) => tab.key)).toEqual(['repo']);
+    expect(tabs(false, false)).toEqual([]);
+    expect(tabs(false, true)).toEqual([
+      { key: 'review', label: 'Review', href: '/projects/p1/files/review', active: true },
+    ]);
+    expect(tabs(true, true).map((tab) => [tab.href, tab.active])).toEqual([
+      ['/projects/p1/files', false], ['/projects/p1/files/review', true],
+    ]);
   });
 });

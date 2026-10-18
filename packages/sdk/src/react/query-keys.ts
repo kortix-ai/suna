@@ -506,6 +506,14 @@ export const qk = {
     /** `listProjectTriggerEventApps` — the apps that can trigger events. */
     triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
 
+    /** `listTriggerRuns` pages — one trigger's run history. Under `triggers`,
+     *  so a fire or replay that invalidates the listing refreshes it too. */
+    triggerRuns: (id: string, slug: string) => [...qk.project.triggers(id), 'runs', slug] as const,
+
+    /** `listProjectTriggerRuns` pages — every run of the project, one slot per status filter. */
+    projectTriggerRuns: (id: string, status?: string | null) =>
+      [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
+
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */

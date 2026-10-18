@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   SIDEBAR_NAV_DEFAULTS,
+  type SidebarNavEntry,
   moveSidebarNavItem,
   normalizeSidebarNav,
   resolveSidebarNav,
@@ -17,27 +18,13 @@ describe('normalizeSidebarNav', () => {
   });
 
   test('keeps a saved order and visibility', () => {
-    const saved = [
+    const saved: SidebarNavEntry[] = [
       { id: 'files', visibility: 'never' },
-      { id: 'customize', visibility: 'always' },
       { id: 'reminders', visibility: 'active' },
+      { id: 'customize', visibility: 'always' },
       { id: 'apps', visibility: 'always' },
     ];
     expect(normalizeSidebarNav(saved)).toEqual(saved);
-  });
-
-  test('drops the retired Review row from a layout saved before the merge', () => {
-    // KRTX-2444: Review merged into the Repo page, so the sidebar has no
-    // Review row any more. A layout saved while it existed must lose the row
-    // cleanly, not render a dead entry.
-    const saved = [
-      { id: 'customize', visibility: 'always' },
-      { id: 'review', visibility: 'always' },
-      { id: 'apps', visibility: 'never' },
-      { id: 'files', visibility: 'always' },
-    ];
-    expect(ids(normalizeSidebarNav(saved))).toEqual(['customize', 'apps', 'reminders', 'files']);
-    expect(normalizeSidebarNav(saved).find((e) => e.id === 'apps')?.visibility).toBe('never');
   });
 
   test('drops unknown ids and duplicates, and re-adds missing rows at their default slot', () => {
@@ -48,6 +35,19 @@ describe('normalizeSidebarNav', () => {
     ]);
     expect(ids(out)).toEqual(['customize', 'apps', 'reminders', 'files']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
+  });
+
+  test('a layout saved while Review was a sidebar row drops it', () => {
+    const out = normalizeSidebarNav([
+      { id: 'review', visibility: 'always' },
+      { id: 'apps', visibility: 'never' },
+    ]);
+    expect(out).toEqual([
+      { id: 'customize', visibility: 'always' },
+      { id: 'apps', visibility: 'never' },
+      { id: 'reminders', visibility: 'active' },
+      { id: 'files', visibility: 'always' },
+    ]);
   });
 
   test('a row without an activity signal cannot be "active"', () => {
@@ -97,7 +97,7 @@ describe('resolveSidebarNav', () => {
   ]);
 
   test('the account layout wins over the local one and is not pushed back', () => {
-    const remote = [{ id: 'files', visibility: 'never' }];
+    const remote = [{ id: 'reminders', visibility: 'never' }];
     expect(resolveSidebarNav(remote, custom)).toEqual({
       items: normalizeSidebarNav(remote),
       push: false,

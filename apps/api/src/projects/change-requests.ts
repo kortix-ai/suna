@@ -13,7 +13,7 @@
  * what.
  */
 
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
@@ -68,6 +68,8 @@ export interface ListChangeRequestsForProjectOptions {
   limit?: number;
   /** A previous page's `next_cursor`: the rows numbered below it. */
   cursor?: number;
+  /** The caller's read filter (`ProjectReadView.where`); absent reads every row. */
+  visibleTo?: SQL;
 }
 
 /** A list cursor is the number of the last row of the page (rows are unique by
@@ -95,6 +97,7 @@ export async function listChangeRequestsForProject(
   if (options.cursor != null) {
     whereClauses.push(lt(changeRequests.number, options.cursor));
   }
+  if (options.visibleTo) whereClauses.push(options.visibleTo);
   const limit = Math.min(
     options.limit ?? CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
     CHANGE_REQUEST_LIST_MAX_LIMIT,

@@ -80,6 +80,7 @@ import {
   type ConnectorScope,
 } from './connector-filter';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
+import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
 
 /**
@@ -258,6 +259,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState<Panel | null>(null);
+  // The catalogue app whose own MCP server the MCP dialog connects. Null for
+  // a server the user pastes (New → MCP server).
+  const [mcpApp, setMcpApp] = useState<McpServerApp | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
@@ -326,7 +330,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
-  const { installEntry, pendingKey } = useInstall(projectId);
+  const { installEntry, pendingKey } = useInstall(projectId, {
+    onMcpServer: (server) => {
+      setMcpApp(server);
+      setPanel('mcp');
+    },
+  });
   const catalogInstall = useMemo(
     () => ({
       // `connectors` is `[]` until the list loads, and an install run against
@@ -505,7 +514,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   icon: PlugsConnectedIcon,
                   label: tPages('addMcpMenu'),
                   description: tPages('addMcpMenuHint'),
-                  onSelect: () => setPanel('mcp'),
+                  onSelect: () => {
+                    setMcpApp(null);
+                    setPanel('mcp');
+                  },
                 }}
                 manual={{
                   label: tI18nComplete.raw('text90ccaee30bdc'),
@@ -659,7 +671,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           />
 
           <AddMcpServerDialog
+            key={mcpApp?.url ?? 'paste'}
             projectId={projectId}
+            app={mcpApp}
             open={panel === 'mcp'}
             onOpenChange={(open) => setPanel(open ? 'mcp' : null)}
             takenSlugs={connectors.map((connector) => connector.slug)}

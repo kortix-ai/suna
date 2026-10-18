@@ -8,34 +8,28 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { CountBadge } from '@/components/ui/count-badge';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useProjectNavRows } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useIsMobile } from '@/hooks/utils';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProject } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
 
-import { repoNavLabel } from './files-nav-label';
+import { filesRow } from './files-nav-label';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useProjectPageCans } from '@/lib/use-project-can';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
 /**
- * Top-level repo browser entry: Repo when the project has Volumes on (the
- * shared folders are then Files, a tab under Customize), Files otherwise.
- * It opens the merged Repo page (KRTX-2444): the file browser and, as its
- * review section, the Review Center inbox.
- *
- * The row lists when the caller may read files OR reviews. `project.file.read`
+ * Top-level Files entry, decided by `useProjectNavRows` (the same rule the
+ * More menu and the Customize row read). For a caller with `project.file.read`
+ * it is the repo browser: Repo when the project has Volumes on (the shared
+ * folders are then Files, a tab under Customize), Files otherwise. That leaf
  * is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
- * `member` role), but Review merged into this page and its inbox is open to
- * plain members (`project.review.read` is floor-tier): hiding the row from
- * them would strand the inbox. A review-only viewer lands on the merged
- * page's review section (the repo section falls back for them there).
- * Optimistic while the files probe loads — the entry only disappears on an
- * explicit deny of both leaves.
- *
- * The badge counts the SAME unified `needs_you` set the per-session row dots
- * read (`use-review-session-summary.ts`), so the row and the dots agree on
- * one number — the badge the standalone Review row used to carry.
+ * `member` role), so a plain member never gets the repo browser: with Volumes
+ * on, this row opens their shared folders instead, and carries their conflict
+ * count. Absent until the probe answers.
  *
  * A real `<Link prefetch>`, not `router.push`. The button form could not be
  * prefetched, so every click paid for the route's RSC payload AND its JS chunk
@@ -61,17 +55,26 @@ export function ProjectFilesNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  // One batched permission read for both gates (the always-mounted project
-  // contract: singular probes would double the request).
-  const cans = useProjectPageCans(projectId);
-  const canReadFiles = cans[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  const canReview = cans[PROJECT_ACTIONS.PROJECT_REVIEW_READ].allowed === true;
-  const count = useReviewSessionSummary(projectId, { enabled: canReview }).totalNeedsYou;
-  const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
+  const target = useProjectNavRows(projectId).files;
+  const caps = useProjectPageCans(projectId);
+  const readReview = caps[PROJECT_ACTIONS.PROJECT_REVIEW_READ];
+  const actReview = caps[PROJECT_ACTIONS.PROJECT_REVIEW_ACT];
+  const reviewHere = (target === 'repo' || target === 'review') &&
+    readReview?.allowed === true && !readReview.isLoading && !readReview.isError &&
+    actReview?.allowed === true && !actReview.isLoading && !actReview.isError;
+  const needsYou = useReviewSessionSummary(projectId ?? '', { enabled: !!projectId && reviewHere }).totalNeedsYou;
+  const reviewCount = reviewHere ? needsYou : 0;
   const queryClient = useQueryClient();
   // Volumes on for the project (its derived `drives` flag).
   const volumes = useFeatureFlag(projectId, 'drives');
-  const label = repoNavLabel(volumes.enabled);
+  const tDrives = useTranslations('drives');
+  const drive = useProjectDrive(projectId, target === 'folders');
+  const conflicts = target === 'folders' ? (drive.data?.openConflicts ?? 0) : 0;
+  const isActive =
+    !!pathname &&
+    (target === 'folders'
+      ? activeCapabilityTab(pathname) === 'files'
+      : /^\/projects\/[^/]+\/files(\/|$)/.test(pathname));
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -89,20 +92,18 @@ export function ProjectFilesNavItem() {
   // mounts. Same key + same `contract('config')` options as that view's own
   // query, so this warms one cache slot rather than issuing a second fetch.
   const prefetchSummary = useCallback(() => {
-    // A review-only viewer's hover should not warm the repo's ref resolution:
-    // their body is the review section.
-    if (!projectId || !(canReadFiles.allowed || canReadFiles.isLoading)) return;
+    if (!projectId || target !== 'repo') return;
     void queryClient.prefetchQuery({
       queryKey: qk.project.summary(projectId),
       queryFn: () => getProject(projectId),
       ...contract('config'),
     });
-  }, [projectId, canReadFiles.allowed, canReadFiles.isLoading, queryClient]);
+  }, [projectId, queryClient, target]);
 
-  if (!canReadFiles.allowed && !canReadFiles.isLoading && !canReview) return null;
   // No project id means no valid href. The old onClick already no-op'd in this
   // case, so rendering a dead button was never useful.
-  if (!projectId) return null;
+  if (!target || !projectId) return null;
+  const { label, href } = filesRow(projectId, target, volumes.enabled);
 
   return (
     <SidebarMenuItem>
@@ -113,7 +114,7 @@ export function ProjectFilesNavItem() {
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink
-          href={`/projects/${projectId}/files`}
+          href={href}
           prefetch
           onClick={handleClick}
           onMouseEnter={prefetchSummary}
@@ -121,12 +122,15 @@ export function ProjectFilesNavItem() {
           onTouchStart={prefetchSummary}
         >
           {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
-          <span className="truncate">{t(label)}</span>
-          {count > 0 ? (
+          {t(label)}
+          {conflicts > 0 || reviewCount > 0 ? (
             <span className="ml-auto flex shrink-0 items-center gap-1">
-              {/* Pending, not done. An amber count says "N waiting" without
-                  claiming the green this system uses for "finished". */}
-              <CountBadge count={count} tone="waiting" />
+              {reviewCount > 0 ? <CountBadge count={reviewCount} tone="waiting" /> : null}
+              {conflicts > 0 ? <CountBadge
+                count={conflicts}
+                tone="conflict"
+                aria-label={tDrives('conflictCount', { count: conflicts })}
+              /> : null}
             </span>
           ) : null}
         </HoverPrefetchLink>

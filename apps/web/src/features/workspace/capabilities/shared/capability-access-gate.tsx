@@ -1,46 +1,22 @@
 'use client';
 
-import { LockKeyIcon } from '@phosphor-icons/react';
-import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
-import { useTranslations } from '@/i18n/use-translations';
-import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 
-import { activeCapabilityTab, type CapabilityTab } from './capability-tab-routes';
-
-/** True only for a verdict the engine actually returned. A probe in flight or
- *  a failed probe is not a denial: the page renders, and the API still
- *  refuses anything the caller may not read. */
-export function receivedDenial(result: CanResult | undefined): boolean {
-  return !!result && !result.isLoading && !result.isError && !result.allowed;
-}
+import { CapabilitiesSkeleton } from './capability-skeleton';
+import { activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
 
 /**
- * Whether the caller is denied the tab `key`: the tab's own read leaf, from
- * `TAB_PREFERENCE` so the sidebar row and this gate never disagree. There is
- * no surface-wide leaf — permissions decide, so a project member who holds
- * `project.agent.read` opens Agents and is denied Connectors.
- */
-export function capabilityTabDenied(
-  caps: Record<string, CanResult>,
-  key: CapabilityTab['key'],
-): boolean {
-  const pref = TAB_PREFERENCE.find((tab) => tab.key === key);
-  return !!pref && receivedDenial(caps[pref.action]);
-}
-
-/**
- * Permission gate for the body of a Customize tab — never for the tab bar.
+ * Permission gate for the body of a Customize tab.
  *
- * The bar is static: it paints every tab on the first frame, so nothing in it
- * moves when the probe lands. Access is decided here, one level down, in the
- * content area only. The page renders while the probe is in flight (the
- * verdict is usually already cached by the sidebar, which reads the same
- * `PROJECT_PAGE_ACTIONS` batch), and is replaced by a no-access state only on
- * a denial the engine returned.
+ * The page renders only once `capabilityAccess()` has settled AND lists the
+ * tab. A tab the caller may not open never renders — not even for the beat
+ * before the probe lands, which used to be long enough for the page's own
+ * requests to 403 into a "No access" card. A typed or bookmarked URL to such a
+ * tab is replaced with the first tab the caller may open, or the project home
+ * when there is none: no dead end (KRTX-2144).
  */
 export function CapabilityAccessGate({
   projectId,
@@ -50,20 +26,18 @@ export function CapabilityAccessGate({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const caps = useProjectPageCans(projectId);
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useRouter();
+  const { settled, tabs } = useCapabilityAccess(projectId);
   const key = activeCapabilityTab(pathname);
+  const allowed = !key || tabs.includes(key);
 
-  if (!key || !capabilityTabDenied(caps, key)) return children;
+  useEffect(() => {
+    if (!settled || allowed) return;
+    router.replace(tabs[0] ? capabilityTabHref(projectId, tabs[0]) : `/projects/${projectId}`);
+  }, [settled, allowed, tabs, projectId, router]);
 
-  return (
-    <div className="flex min-h-0 flex-1" data-slot="capability-no-access">
-      <EmptyState
-        size="sm"
-        icon={LockKeyIcon}
-        title={tI18nComplete.raw('textabb84be05cfa')}
-        description={tI18nComplete.raw('text516f7c6c91fd')}
-      />
-    </div>
-  );
+  // `/customize` itself (no tab) is a redirect page that waits on its own.
+  if (!key) return children;
+  if (settled && allowed) return children;
+  return <CapabilitiesSkeleton />;
 }

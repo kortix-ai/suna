@@ -4,7 +4,7 @@ import { CountBadge } from '@/components/ui/count-badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
+import { ProjectPageHeader, type ProjectPageHeaderTab } from '@/features/workspace/project-layout/project-page-header';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ import { DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { VersionSelector } from './version-selector';
 
 interface DriveHeaderProps {
+  tabs?: ProjectPageHeaderTab[];
   historyToggle: { open: boolean; onToggle: () => void };
   reviewsToggle: { open: boolean; onToggle: () => void; openCount?: number };
   /** `⋯` menu wiring — the page owns the queries these act on. */
@@ -78,6 +79,7 @@ export function driveHeaderClass(offsetForSidebarToggle: boolean) {
  * two review panels, then everything rare behind `⋯`.
  */
 export function DriveHeader({
+  tabs,
   historyToggle,
   reviewsToggle,
   onRefresh,
@@ -165,7 +167,7 @@ export function DriveHeader({
       repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
-        <ProjectPageHeader title={title}>
+        <ProjectPageHeader title={title} tabs={tabs}>
           {actions}
         </ProjectPageHeader>
         <DrivePathBar rootLabel={title} as="row" />

@@ -37,6 +37,7 @@ import {
   triggersRmLocal,
   triggersToggle,
 } from './triggers-manifest.ts';
+import { parsePayloadFlag, triggersDryRun, triggersReplay, triggersRuns } from './triggers-runs.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
@@ -71,6 +72,21 @@ Subcommands:
                            [--wait <dur>]  How long to watch for the outcome
                            (default 90s; 0 returns as soon as the fire is
                            accepted).
+                           [--payload <json|@file>]  A JSON object merged over
+                           the manual payload, e.g. '{"body":{"ticket":"T-1"}}'
+                           or @event.json. Test a webhook or event prompt.
+                           [--dry-run]  Fire nothing: print the rendered
+                           prompt, the filter verdict, and the session key.
+                           --json prints the raw response.
+  runs <slug> [--status <s>] [--limit N] [--cursor <c>] [--json]
+                           List the trigger's runs, newest first: run id,
+                           started, source, status, run status, duration,
+                           cost, session. --status: queued, running, fired, failed,
+                           skipped, rejected. --limit 1-100 (default 25).
+  replay <slug> <run_id> [--confirm-unverified] [--json]
+                           Fire the trigger again with that run's stored
+                           payload. A run whose webhook signature did not
+                           verify needs --confirm-unverified.
   enable <slug> [--apply]  Set enabled = true on a trigger.
   disable <slug> [--apply] Set enabled = false on a trigger.
   pause                    Deactivate ALL of this project's triggers server-side
@@ -198,7 +214,17 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let configJson: string | undefined;
   let apps = false;
   let eventsApp: string | undefined;
+  let dryRun = false;
+  let confirmUnverified = false;
+  let payloadFlag: string | undefined;
+  const rf: { status?: string; limit?: string; cursor?: string } = {};
   try {
+    dryRun = takeFlagBool(rest, ['--dry-run']);
+    confirmUnverified = takeFlagBool(rest, ['--confirm-unverified']);
+    payloadFlag = takeFlagValue(rest, ['--payload']);
+    rf.status = takeFlagValue(rest, ['--status']);
+    rf.limit = takeFlagValue(rest, ['--limit']);
+    rf.cursor = takeFlagValue(rest, ['--cursor']);
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
     projectFlag = takeFlagValue(rest, ['--project']);
@@ -271,8 +297,18 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return applyRemote
         ? triggersRmLive(positional[0], ctxOpts, json)
         : triggersRmLocal(positional[0]);
-    case 'fire':
-      return triggersFire(positional[0], tf.wait, ctxOpts);
+    case 'fire': {
+      const parsed = payloadFlag === undefined ? undefined : parsePayloadFlag(payloadFlag);
+      if (parsed && 'error' in parsed) return fail(parsed.error);
+      const payload = parsed?.value;
+      return dryRun
+        ? triggersDryRun(positional[0], payload, ctxOpts, json)
+        : triggersFire(positional[0], tf.wait, ctxOpts, payload);
+    }
+    case 'runs':
+      return triggersRuns(positional[0], rf, ctxOpts, json);
+    case 'replay':
+      return triggersReplay(positional[0], positional[1], confirmUnverified, ctxOpts, json);
     case 'enable':
       return applyRemote
         ? triggersToggleLive(positional[0], true, ctxOpts, json)
@@ -414,6 +450,7 @@ async function triggersFire(
   slug: string | undefined,
   waitFlag: string | undefined,
   opts: CtxOpts,
+  payload?: Record<string, unknown>,
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
@@ -423,6 +460,7 @@ async function triggersFire(
   try {
     resp = await ctx.client.post<TriggerFireResponse>(
       `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
+      payload ? { payload } : undefined,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -491,16 +529,17 @@ async function triggersFire(
   } else if (watch?.outcome === 'unwatched') {
     note = ` ${C.dim}— could not watch the run outcome (${watch.reason}); \`kortix triggers ls\` shows it.${C.reset}`;
   }
+  const run = resp.run_id ? ` → run ${resp.run_id}` : '';
   if (fired && resp.session_id) {
     process.stdout.write(
-      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset}${run} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
     );
   } else if (!fired) {
     process.stdout.write(
-      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${run}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
     );
   } else {
-    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
+    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}${run}`)}\n`);
   }
   return 0;
 }

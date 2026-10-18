@@ -26,8 +26,7 @@ export type ConnectorSetupStatus =
   /** An MCP server asked for sign-in (401/403) and nobody has signed in yet. */
   | 'pending'
   | 'needs_setup'
-  | 'no_auth'
-  | 'user_managed';
+  | 'no_auth';
 
 export function connectorConnectionQueryKeys(projectId: string) {
   return [
@@ -77,12 +76,11 @@ export function connectorSetupStatus(
   // connected account and no GitHub tool call had ever run.
   if (connector.status === 'needs_auth') return 'needs_setup';
   if (!connector.authSecret) return 'no_auth';
-  // `authorizationStrategy` is no longer a mode anyone sets — it is a derived
-  // summary the API computes from the connector's accounts (`'user'` = it has
-  // member-owned accounts and no project-owned one). Read here it still answers
-  // the grid's question: this connector runs on per-person accounts, so a
-  // missing project credential is not a setup gap.
-  if (connector.authorizationStrategy === 'user') return 'user_managed';
+  // A per-person connector (`authorizationStrategy: 'user'`) has no project
+  // credential to check. Its `status` is computed for the caller: `active`
+  // means the caller's own account holds one, `needs_auth` (above) that it
+  // does not. So it is connected here.
+  if (connector.authorizationStrategy === 'user') return 'connected';
   return connector.secretSet ? 'connected' : 'needs_setup';
 }
 

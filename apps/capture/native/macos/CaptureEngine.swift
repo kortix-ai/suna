@@ -190,6 +190,23 @@ func domainMatches(_ host: String, _ patterns: [String]) -> Bool {
     patterns.contains { p in !p.isEmpty && (host == p || host.hasSuffix("." + p)) }
 }
 
+/// Record only included apps and websites (`only_included`, `include_bundle_ids`,
+/// `include_domains` of the request). Off: everything not excluded is recorded.
+struct Include {
+    var on = false
+    var apps: Set<String> = []
+    var domains: [String] = []
+    init(_ req: JSON) {
+        on = req["only_included"] as? Bool ?? false
+        apps = Set(((req["include_bundle_ids"] as? [String]) ?? []).map { $0.lowercased() })
+        domains = ((req["include_domains"] as? [String]) ?? []).map { $0.lowercased() }
+    }
+    /// The app is included, or the page's website is. Off: always true.
+    func allows(_ bundle: String, _ url: String?) -> Bool {
+        !on || apps.contains(bundle.lowercased()) || (hostOf(url).map { domainMatches($0, domains) } ?? false)
+    }
+}
+
 /// `_domain_match`: the rule above against the shared vectors (tests only).
 func domainMatchCommand(_ req: JSON) -> JSON {
     let host = hostOf(req["url"] as? String)
@@ -524,6 +541,8 @@ func capture(_ req: JSON) -> JSON {
     }
     if excludePrivate && looksPrivate(title: title) { res["skipped"] = "private_browsing"; return res }
     if let host = hostOf(url), domainMatches(host, excludedDomains) { res["skipped"] = "excluded_domain"; return res }
+    let include = Include(req)
+    if !include.allows(bundleId, url) { res["skipped"] = "not_included"; return res }
 
     res["windows"] = windowList(focusedPid: front.processIdentifier, focusedFrame: focusedFrame, focusedURL: url)
     guard let out else { return res }
@@ -533,7 +552,11 @@ func capture(_ req: JSON) -> JSON {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard !content.displays.isEmpty else { throw NSError(domain: "engine", code: 3, userInfo: [NSLocalizedDescriptionKey: "no_display"]) }
             let (display, via) = activeDisplay(content.displays, focusedFrame: focusedFrame, frontPid: frontPid)
-            let hide = content.applications.filter { excludedBundles.contains($0.bundleIdentifier.lowercased()) || isOwn($0.bundleIdentifier, []) }
+            // Record only included: every other app is hidden too; the front app passed the check above.
+            let hide = content.applications.filter {
+                excludedBundles.contains($0.bundleIdentifier.lowercased()) || isOwn($0.bundleIdentifier, [])
+                    || (include.on && $0.processID != frontPid && !include.apps.contains($0.bundleIdentifier.lowercased()))
+            }
             let filter: SCContentFilter
             if let testPid = req["_test_window_pid"] as? Int {
                 // The synthetic verification harness scopes screenshots to
@@ -619,16 +642,17 @@ func jsonRect(_ w: JSON) -> CGRect {
 /// excluded website), whether a hidden window fully covers a display (no frame of
 /// it), and each display's top visible window (its app, title and URL name the frame).
 func planDisplays(windows: [JSON], displays: [(id: Int, rect: CGRect)], excludedBundles: Set<String>,
-                  excludedDomains: [String], excludePrivate: Bool, recordUnknown: Bool, own: Set<String> = [])
+                  excludedDomains: [String], excludePrivate: Bool, recordUnknown: Bool, own: Set<String> = [],
+                  include: Include = Include([:]))
     -> (hidden: Set<Int>, covered: Set<Int>, top: [Int: JSON]) {
     func isHidden(_ w: JSON) -> Bool {
         let bundle = (w["bundle_id"] as? String ?? "").lowercased()
-        if bundle.isEmpty { return !recordUnknown }
+        if bundle.isEmpty { return !recordUnknown || include.on }
         if isOwn(bundle, own) { return true }
         if excludedBundles.contains(bundle) { return true }
         if excludePrivate && looksPrivate(title: w["title"] as? String) { return true }
         if let host = hostOf(w["url"] as? String), domainMatches(host, excludedDomains) { return true }
-        return false
+        return !include.allows(bundle, w["url"] as? String)
     }
     var hidden = Set<Int>()
     var covered = Set<Int>()
@@ -646,6 +670,8 @@ func planDisplays(windows: [JSON], displays: [(id: Int, rect: CGRect)], excluded
             }
             if top[d.id] == nil { top[d.id] = w }
         }
+        // Record only included: a display with no included window writes no frame.
+        if include.on && top[d.id] == nil { covered.insert(d.id) }
     }
     return (hidden, covered, top)
 }
@@ -658,7 +684,7 @@ func planDisplaysCommand(_ req: JSON) -> JSON {
         excludedBundles: Set(((req["exclude_bundle_ids"] as? [String]) ?? []).map { $0.lowercased() }),
         excludedDomains: (req["exclude_domains"] as? [String]) ?? [],
         excludePrivate: req["exclude_private"] as? Bool ?? true, recordUnknown: req["record_unknown"] as? Bool ?? false,
-        own: Set(((req["own_bundle_ids"] as? [String]) ?? []).map { $0.lowercased() }))
+        own: Set(((req["own_bundle_ids"] as? [String]) ?? []).map { $0.lowercased() }), include: Include(req))
     return ["ok": true, "hidden": Array(plan.hidden), "displays": displays.map { d -> JSON in
         var out: JSON = ["id": d.id, "covered": plan.covered.contains(d.id)]
         if let t = plan.top[d.id] { out["top"] = ["bundle_id": t["bundle_id"] ?? "", "title": t["title"] ?? "", "url": t["url"] ?? NSNull()] as JSON }
@@ -686,6 +712,7 @@ func captureAll(_ req: JSON) -> JSON {
     let unchanged = (req["unchanged"] as? [String: String]) ?? [:]
     let isPrivate = req["cmd"] as? String == "capture_private"
     let own = Set(((req["own_bundle_ids"] as? [String]) ?? []).map { $0.lowercased() })
+    let include = Include(req)
 
     let idle = idleSeconds()
     var res: JSON = ["idle_seconds": idle]
@@ -717,6 +744,7 @@ func captureAll(_ req: JSON) -> JSON {
     }
     let focusedHidden = frontExcluded || (excludePrivate && looksPrivate(title: title))
         || (hostOf(url).map { domainMatches($0, excludedDomains) } ?? false)
+        || !include.allows(frontBundle, url)
     if !focusedHidden, let front {
         res["app"] = ["pid": Int(frontPid), "bundle_id": frontBundle, "name": front.localizedName ?? frontBundle,
                       "version": appVersion(front), "is_user_app": front.activationPolicy == .regular] as JSON
@@ -751,12 +779,16 @@ func captureAll(_ req: JSON) -> JSON {
             : content.displays.filter { $0.displayID != focusedDisplay.displayID })
         let plan = planDisplays(windows: allWindows, displays: ordered.map { (id: Int($0.displayID), rect: CGDisplayBounds($0.displayID)) },
                                 excludedBundles: excludedBundles, excludedDomains: excludedDomains,
-                                excludePrivate: excludePrivate, recordUnknown: recordUnknown, own: own)
+                                excludePrivate: excludePrivate, recordUnknown: recordUnknown, own: own, include: include)
         // Hidden windows never reach a frame, and neither do their titles or URLs.
         res["windows"] = allWindows.filter { !plan.hidden.contains($0["window_id"] as? Int ?? -1) }
+        // Record only included: an app with no visible (included) window is hidden whole,
+        // so its panels, popovers and notifications never reach a frame either.
+        let visiblePids = Set(allWindows.filter { !plan.hidden.contains($0["window_id"] as? Int ?? -1) }.compactMap { $0["pid"] as? Int })
         let hideApps = content.applications.filter {
             excludedBundles.contains($0.bundleIdentifier.lowercased()) || isOwn($0.bundleIdentifier, own)
                 || (!recordUnknown && $0.bundleIdentifier.isEmpty)
+                || (include.on && !include.apps.contains($0.bundleIdentifier.lowercased()) && !visiblePids.contains(Int($0.processID)))
         }
         let hideAppPids = Set(hideApps.map { $0.processID })
         let hiddenSC = content.windows.filter {

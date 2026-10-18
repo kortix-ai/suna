@@ -182,7 +182,7 @@ describe('managed OpenRouter descriptor', () => {
       tier: 'balanced',
       vision: true,
       limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+      openrouterProvider: { only: ['morph/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     })).toEqual([expect.objectContaining({
       provider: 'openrouter',
       kind: 'openai-compat',
@@ -196,7 +196,7 @@ describe('managed OpenRouter descriptor', () => {
         cachedInputPerMillion: 0.006,
         outputPerMillion: 0.6,
       }),
-      bodyExtras: { provider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
+      bodyExtras: { provider: { only: ['morph/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
     })]);
   });
 });

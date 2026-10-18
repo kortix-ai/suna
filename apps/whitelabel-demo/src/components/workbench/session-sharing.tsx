@@ -210,14 +210,20 @@ export function SessionSharing({
   const qc = useQueryClient();
   const session = kortix.session(projectId, sessionId);
 
-  const [sharingMode, setSharingMode] = useState<string>('project');
+  const sessionQuery = useQuery({
+    queryKey: qk.session(projectId, sessionId),
+    queryFn: () => session.get({ showErrors: false }),
+  });
+  const sharingMode = sessionQuery.data?.sharing?.mode ?? '';
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {
-      const opt = SHARING_OPTIONS.find((o) => o.value === value) ?? SHARING_OPTIONS[0];
+      const opt = SHARING_OPTIONS.find((o) => o.value === value);
+      if (!opt) throw new Error('Unsupported sharing mode');
       return session.setSharing(opt.intent);
     },
-    onSuccess: (_data, value) => {
-      setSharingMode(value);
+    onSuccess: (data) => {
+      qc.setQueryData(qk.session(projectId, sessionId), data);
+      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
       qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
       toast.success('Sharing updated');
     },
@@ -232,12 +238,15 @@ export function SessionSharing({
       <Select
         value={sharingMode}
         onValueChange={(v) => setSharingMut.mutate(v)}
-        disabled={setSharingMut.isPending}
+        disabled={setSharingMut.isPending || !sessionQuery.data}
       >
         <SelectTrigger className="h-8 w-[200px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="private" disabled className="text-xs">
+            Private
+          </SelectItem>
           {SHARING_OPTIONS.map((o) => (
             <SelectItem key={o.value} value={o.value} className="text-xs">
               {o.label}

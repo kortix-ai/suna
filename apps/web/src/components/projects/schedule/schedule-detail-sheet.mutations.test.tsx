@@ -56,6 +56,15 @@ mock.module('@/components/ui/sheet', () => ({
   SheetTitle: Passthrough,
 }));
 mock.module('@/components/ui/hint', () => ({ default: Passthrough }));
+// Radix Tabs schedules a requestAnimationFrame this DOM-less renderer lacks. The
+// subject is the Settings tab, so only its content renders.
+mock.module('@/components/ui/tabs', () => ({
+  Tabs: Passthrough,
+  TabsList: Passthrough,
+  TabsTrigger: Passthrough,
+  TabsContent: ({ value, children }: { value: string; children?: ReactNode }) =>
+    value === 'settings' ? createElement('div', null, children) : null,
+}));
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: Passthrough,
   DropdownMenuContent: Passthrough,
