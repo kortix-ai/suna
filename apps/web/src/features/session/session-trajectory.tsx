@@ -5,11 +5,22 @@ import { Button } from '@/components/ui/button';
 import { CountBadge } from '@/components/ui/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import type { SessionLogBlock, SessionLogMessage } from '@kortix/sdk';
+import { downloadBlob } from '@/lib/utils/download';
+import {
+  fetchSessionAttachment,
+  sessionLogReferencedTexts,
+  type SessionLogBlock,
+  type SessionLogMessage,
+} from '@kortix/sdk';
+import { useState } from 'react';
+
+const previewText = (item: { text: string; ref?: string; bytes?: number }) =>
+  item.ref ? `${item.text}\n[Preview · ${item.bytes ?? 'unknown'} bytes total]` : item.text;
 
 export function trajectoryText(block: SessionLogBlock): string {
   switch (block.type) {
     case 'text':
+      return previewText(block);
     case 'reasoning':
       return block.text;
     case 'tool_call':
@@ -17,8 +28,9 @@ export function trajectoryText(block: SessionLogBlock): string {
         'Input',
         JSON.stringify(block.input, null, 2),
         'Result',
-        ...(block.result?.content.map((item) => (item.type === 'text' ? item.text : item.mime)) ??
-          []),
+        ...(block.result?.content.map((item) =>
+          item.type === 'text' ? previewText(item) : item.mime,
+        ) ?? []),
         block.result?.error?.message,
       ]
         .filter(Boolean)
@@ -34,6 +46,31 @@ export function trajectoryText(block: SessionLogBlock): string {
     case 'harness':
       return JSON.stringify(block.data, null, 2);
   }
+}
+
+export function TrajectoryFullText({ message }: { message: SessionLogMessage }) {
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const refs = sessionLogReferencedTexts([message]);
+  if (!refs.length) return null;
+  const download = async () => {
+    setState('loading');
+    try {
+      const blobs = await Promise.all(refs.map(({ ref }) => fetchSessionAttachment(ref)));
+      blobs.forEach((blob, index) => downloadBlob(blob, `full-text-${index + 1}.txt`));
+      setState('idle');
+    } catch {
+      setState('error');
+    }
+  };
+  return (
+    <Button size="sm" variant="outline" disabled={state === 'loading'} onClick={download}>
+      {state === 'loading'
+        ? 'Loading full text…'
+        : state === 'error'
+          ? 'Retry full-text download'
+          : 'Download full text'}
+    </Button>
+  );
 }
 
 /** Uses the same canonical log as the transcript: no second event stream or polling. */
@@ -88,6 +125,7 @@ export function SessionTrajectory({ messages }: { messages: readonly SessionLogM
                     {message.error && (
                       <p className="text-sm wrap-anywhere">{message.error.message}</p>
                     )}
+                    <TrajectoryFullText message={message} />
                     {message.blocks.map((block) => (
                       <div key={block.id} className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
