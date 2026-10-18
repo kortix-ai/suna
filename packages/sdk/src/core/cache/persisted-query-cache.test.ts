@@ -429,3 +429,76 @@ describe('isPersistableQueryKey — the session tree (KRTX-639)', () => {
     expect(isPersistableQueryKey([...P, 'list-children', 'parent-1', 'rent'])).toBe(false);
   });
 });
+
+describe('a full store: the writer halves its payload until the write fits', () => {
+  /** Storage with a serialized-size cap: `setItem` throws the quota error while the payload is over it. */
+  function cappedStorage(cap: number): KeyValueStorage & { data: Map<string, string> } {
+    const data = new Map<string, string>();
+    return {
+      data,
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (value.length > cap) throw new Error('quota exceeded');
+        data.set(key, value);
+      },
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
+    };
+  }
+
+  const keys = [
+    ['kx', 'project', 'p1', 'detail'] as const,
+    ['kx', 'project', 'p1', 'summary'] as const,
+    ['kx', 'project', 'p2', 'detail'] as const,
+    ['kx', 'project', 'p2', 'summary'] as const,
+  ];
+
+  test('the newest entries are the ones a tight budget keeps', async () => {
+    const storage = cappedStorage(300);
+    const client = new QueryClient();
+    keys.forEach((key, i) => {
+      client.setQueryData(key, { n: i, pad: 'x'.repeat(40) }, { updatedAt: T0 + i * 1_000 });
+    });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 0,
+      now: () => T0,
+    });
+    cache.persist(client);
+    await cache.flush();
+
+    const raw = storage.data.get(`kortix.query-cache:${USER}`);
+    expect(raw).toBeDefined();
+    const stored = JSON.parse(raw!) as { queries: Array<{ k: readonly unknown[]; t: number }> };
+    expect(stored.queries.length).toBeGreaterThanOrEqual(1);
+    expect(stored.queries.length).toBeLessThan(keys.length);
+    // Newest first, and the newest is THE one the first halving keeps.
+    expect(stored.queries[0]!.t).toBe(T0 + (keys.length - 1) * 1_000);
+    for (let i = 1; i < stored.queries.length; i++) {
+      expect(stored.queries[i]!.t).toBeLessThan(stored.queries[i - 1]!.t);
+    }
+  });
+
+  test('a store that refuses every write shrinks the payload to empty and never rejects', async () => {
+    const storage = cappedStorage(0);
+    const client = new QueryClient();
+    client.setQueryData(SESSIONS_KEY, sessionPages, { updatedAt: T0 });
+    const cache = createPersistedQueryCache({
+      storage,
+      userId: USER,
+      shouldPersist: isPersistableQueryKey,
+      throttleMs: 0,
+      now: () => T0,
+    });
+    cache.persist(client);
+    // The halving loop bottoms out at zero entries and the write gives up — resolved, not rejected.
+    await cache.flush();
+    expect(storage.data.size).toBe(0);
+    // And a later flush is still clean.
+    await cache.flush();
+    expect(storage.data.size).toBe(0);
+  });
+});

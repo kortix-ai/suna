@@ -29,7 +29,7 @@ export interface KeyValueStorage {
 }
 
 /** One query, as much of it as persistence reads. */
-export interface PersistableQuery {
+interface PersistableQuery {
   queryKey: readonly unknown[];
   state: { data: unknown; dataUpdatedAt: number };
 }
@@ -53,7 +53,7 @@ export interface PersistableQueryClient {
   }): unknown;
 }
 
-export interface PersistedQueryCacheOptions {
+interface PersistedQueryCacheOptions {
   storage: KeyValueStorage;
   /** The signed-in user. Only this user's cache is read or written. */
   userId: string;
@@ -88,6 +88,18 @@ export interface PersistedQueryCache {
   clear(): Promise<void>;
 }
 
+import {
+  apply,
+  fit,
+  forget,
+  isPromise,
+  settle,
+  snapshot,
+  write,
+  type PayloadConfig,
+  type StoredCache,
+} from './persisted-query-cache-payload';
+
 /** Bump when a persisted query's data shape changes incompatibly. */
 export const PERSISTED_QUERY_CACHE_VERSION = '1';
 
@@ -95,30 +107,6 @@ const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_BYTES = 1_000_000;
 const DEFAULT_THROTTLE_MS = 1_000;
 const DEFAULT_NAMESPACE = 'kortix.query-cache';
-
-interface StoredEntry {
-  /** Query key. */
-  k: readonly unknown[];
-  /** Data. */
-  d: unknown;
-  /** `dataUpdatedAt`. */
-  t: number;
-}
-
-interface StoredCache {
-  v: string;
-  user: string;
-  at: number;
-  queries: StoredEntry[];
-}
-
-function isPromise<T>(value: unknown): value is Promise<T> {
-  return !!value && typeof (value as { then?: unknown }).then === 'function';
-}
-
-function settle(value: void | Promise<void>): Promise<void> {
-  return isPromise<void>(value) ? value : Promise.resolve();
-}
 
 /**
  * The SDK query keys that are safe and useful to keep across a reload: the
@@ -170,85 +158,9 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let writing: Promise<void> = Promise.resolve();
 
-  const forget = (): Promise<void> => {
-    try {
-      return settle(storage.removeItem(storageKey)).catch(() => undefined);
-    } catch {
-      return Promise.resolve();
-    }
-  };
-
-  const apply = (client: PersistableQueryClient, raw: string | null): number => {
-    if (!raw) return 0;
-    let stored: StoredCache;
-    try {
-      stored = JSON.parse(raw) as StoredCache;
-    } catch {
-      void forget();
-      return 0;
-    }
-    if (
-      !stored ||
-      stored.v !== version ||
-      stored.user !== userId ||
-      !Array.isArray(stored.queries) ||
-      now() - stored.at > maxAgeMs
-    ) {
-      void forget();
-      return 0;
-    }
-    let restored = 0;
-    for (const entry of stored.queries) {
-      if (!entry || !Array.isArray(entry.k) || entry.d === undefined) continue;
-      if (typeof entry.t !== 'number' || now() - entry.t > maxAgeMs) continue;
-      if (!shouldPersist(entry.k)) continue;
-      const current = client.getQueryState(entry.k);
-      if (current && current.data !== undefined && current.dataUpdatedAt >= entry.t) continue;
-      client.setQueryData(entry.k, entry.d, { updatedAt: entry.t });
-      // Its age alone does not make it stale: a gate cached for 5 minutes and
-      // restored 1 minute later would never refetch.
-      void client.invalidateQueries?.({ queryKey: entry.k, exact: true, refetchType: 'none' });
-      restored += 1;
-    }
-    return restored;
-  };
-
-  const snapshot = (client: PersistableQueryClient): StoredEntry[] =>
-    client
-      .getQueryCache()
-      .getAll()
-      .filter((query) => query.state.data !== undefined && shouldPersist(query.queryKey))
-      .map((query) => ({ k: query.queryKey, d: query.state.data, t: query.state.dataUpdatedAt }))
-      .sort((a, b) => b.t - a.t);
-
-  /** Newest first, up to `budget` code units of serialized entries. */
-  const fit = (entries: StoredEntry[], budget: number): StoredEntry[] => {
-    const kept: StoredEntry[] = [];
-    let used = 0;
-    for (const entry of entries) {
-      const size = JSON.stringify(entry).length + 1;
-      if (used + size > budget) continue;
-      kept.push(entry);
-      used += size;
-    }
-    return kept;
-  };
-
-  const write = async (client: PersistableQueryClient): Promise<void> => {
-    let entries = fit(snapshot(client), maxBytes);
-    // A full store refuses the write. Halve the payload, newest kept, until it
-    // fits or nothing is left to keep.
-    while (true) {
-      const payload: StoredCache = { v: version, user: userId, at: now(), queries: entries };
-      try {
-        await settle(storage.setItem(storageKey, JSON.stringify(payload)));
-        return;
-      } catch {
-        if (entries.length === 0) return;
-        entries = entries.slice(0, Math.floor(entries.length / 2));
-      }
-    }
-  };
+  // The payload layer reads exactly this — the (de)serialization and budget
+  // functions take it explicitly instead of closing over the factory.
+  const payload: PayloadConfig = { storage, storageKey, version, userId, maxAgeMs, maxBytes, shouldPersist, now };
 
   const cancelTimer = () => {
     if (timer === null) return;
@@ -264,7 +176,7 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
     // not re-serialize the whole cache.
     if (!client || !dirty) return writing;
     dirty = false;
-    writing = writing.then(() => write(client)).catch(() => undefined);
+    writing = writing.then(() => write(payload, client)).catch(() => undefined);
     return writing;
   };
 
@@ -288,9 +200,9 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
         return 0;
       }
       if (isPromise<string | null>(raw)) {
-        return raw.then((value) => apply(client, value)).catch(() => 0);
+        return raw.then((value) => apply(payload, client, value)).catch(() => 0);
       }
-      return apply(client, raw);
+      return apply(payload, client, raw);
     },
 
     persist(client) {
@@ -320,7 +232,7 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
       attached = null;
       dirty = false;
       await writing;
-      await forget();
+      await forget(payload);
     },
   };
 }
