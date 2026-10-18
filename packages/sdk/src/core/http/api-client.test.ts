@@ -666,7 +666,7 @@ describe('makeRequest keeps request deadlines silent to the global host error ha
   });
 });
 
-describe('account_mfa_required 403 → kortix:mfa-required browser event', () => {
+describe('the coded 403 access remedies → the host sink, never the DOM', () => {
   function stubFetch403(body: Record<string, unknown>) {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
