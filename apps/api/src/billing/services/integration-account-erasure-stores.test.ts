@@ -10,11 +10,12 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accounts, creditAccounts } from '@kortix/db';
+import { accounts, creditAccounts, sessionSandboxes } from '@kortix/db';
 
 /** The `session-attachments` bucket: `<project_id>/<session_id>/<attachment_id>`. */
 const bucket = new Set<string>();
 const removedBoxes: string[] = [];
+const intentAtRemove = new Map<string, boolean>();
 const cancelledSubscriptions: string[] = [];
 const deletedRepos: string[] = [];
 let failBoxRemove = false;
@@ -64,6 +65,17 @@ mock.module('../../platform/providers', () => ({
     stop: async () => undefined,
     remove: async (externalId: string) => {
       if (failBoxRemove) throw new Error('provider unavailable');
+      // KRTX-2671: the provider's `removed` webhook reads the row as the box
+      // goes. Recorded at remove time — the rows are gone after the flow.
+      const [row] = await db
+        .select({ metadata: sessionSandboxes.metadata })
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.externalId, externalId))
+        .limit(1);
+      intentAtRemove.set(
+        externalId,
+        ((row?.metadata as Record<string, unknown> | null) ?? {}).kortixRemovalIntentAt != null,
+      );
       removedBoxes.push(externalId);
     },
   }),
@@ -120,6 +132,7 @@ const accountExists = async (accountId: string) =>
 
 beforeEach(() => {
   removedBoxes.length = 0;
+  intentAtRemove.clear();
   cancelledSubscriptions.length = 0;
   deletedRepos.length = 0;
   failBoxRemove = false;
@@ -146,6 +159,25 @@ describe('account erasure empties the stores outside the database', () => {
     expect(deletedRepos).toEqual([`repo-${managed}`]);
     expect(await accountExists(accountId)).toBe(false);
     bucket.delete(neighbor);
+  });
+
+  test('a parked box this step removes is stamped with the removal intent at remove time', async () => {
+    const { accountId, boxes } = await seed();
+
+    await deleteAccountImmediately(accountId, accountId);
+
+    // The provider's `removed` webhook reads the row as the box goes (KRTX-2671:
+    // the reported occurrence landed 931 ms after the reclaim summary, whose
+    // select never sees a parked row). A parked box removed without the stamp
+    // classifies its teardown as a lost runtime. The stamp must be committed
+    // before the remove call resolves.
+    const stopped = boxes.find((b) => b.status === 'stopped')!;
+    const archived = boxes.find((b) => b.status === 'archived')!;
+    expect(intentAtRemove.get(stopped.externalId)).toBe(true);
+    expect(intentAtRemove.get(archived.externalId)).toBe(true);
+    // The running box: the reclaim pass already stamps it.
+    const active = boxes.find((b) => b.status === 'active')!;
+    expect(intentAtRemove.get(active.externalId)).toBe(true);
   });
 
   test('a box the provider will not remove keeps the account, its files and its repo; the retry finishes', async () => {

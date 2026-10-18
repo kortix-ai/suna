@@ -842,6 +842,23 @@ describe('kortix secrets ls — inside an agent session', () => {
 });
 
 describe('kortix secrets request', () => {
+  test.each(['connector', 'runtime'])('discloses the resolved %s delivery', async (scope) => {
+    mintExtra = { scope };
+    expect(await runSecrets(['request', 'TEST_KEY'])).toBe(0);
+    expect(stripAnsi(stdout)).toContain(`Delivery: ${scope}`);
+    expect(stripAnsi(stdout)).toContain(scope === 'connector'
+      ? 'server-side only; never in the sandbox environment'
+      : 'real value in the sandbox environment');
+  });
+
+  test('an API without the resolved scope asks the human to confirm delivery', async () => {
+    mintExtra = { scope: undefined };
+    expect(await runSecrets(['request', 'TEST_KEY'])).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('Delivery scope is unavailable');
+    expect(out).not.toContain('Delivery: undefined');
+  });
+
   test('warns, with the fix, when this agent will not receive a requested name', async () => {
     mintExtra = {
       agent: 'analyst',

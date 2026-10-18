@@ -221,6 +221,12 @@ afterEach(() => {
 });
 
 describe('GET /secret/:token', () => {
+  test.each(['connector', 'runtime'] as const)('discloses signed %s scope before intake', async (scope) => {
+    const res = await setupLinksPublicApp.request(`/secret/${mintToken({ scope })}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ scope });
+  });
+
   for (const status of ['archived', 'missing']) {
     test(`${status} project makes the destination unavailable`, async () => {
       projectRows = status === 'missing' ? [] : [{ name: 'Deleted project', status }];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionRetryDisplay, TurnErrorDisplay, describeTurnErrorRow } from './session-error-banner';
+import { SessionRetryDisplay, TurnErrorDisplay, actionableSuggestion, describeTurnErrorRow } from './session-error-banner';
 
 describe('SessionRetryDisplay', () => {
   test('renders the gateway source, request id, and ordered candidate failures', () => {
@@ -198,6 +198,55 @@ describe('TurnErrorDisplay checkpoint row', () => {
     );
     expect(html).toContain('data-slot="item"');
     expect(html).not.toContain('chat.completion.chunk');
+  });
+});
+
+// KRTX-2598: the gateway writes its hint per request and never knows the
+// account's lineup, so "choose another model" can reach a one-model account.
+// `modelOptions` (the models the account can pick) rewrites exactly that hint.
+describe('actionableSuggestion', () => {
+  const SWITCH_HINT = 'Retry in a few seconds, or choose another model from the current lineup.';
+
+  test('a one-model account cannot switch, so the hint names the wait instead', () => {
+    expect(actionableSuggestion(SWITCH_HINT, 1)).toBe(
+      'The model is temporarily unavailable. Wait a moment, then retry.',
+    );
+  });
+
+  test('a multi-model account keeps the switch hint — the move exists', () => {
+    expect(actionableSuggestion(SWITCH_HINT, 4)).toBe(SWITCH_HINT);
+  });
+
+  test('an unknown lineup (0/undefined) leaves the hint untouched', () => {
+    expect(actionableSuggestion(SWITCH_HINT, 0)).toBe(SWITCH_HINT);
+    expect(actionableSuggestion(SWITCH_HINT, undefined)).toBe(SWITCH_HINT);
+  });
+
+  test('every other suggestion (key, connect, plan) names its real fix on any account', () => {
+    expect(actionableSuggestion('Add a provider API key in Models, then retry.', 1)).toBe(
+      'Add a provider API key in Models, then retry.',
+    );
+  });
+
+  test('no suggestion renders none', () => {
+    expect(actionableSuggestion(undefined, 1)).toBeUndefined();
+  });
+
+  test('the one-model row shows the wait, not the switch, end to end', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay
+        errorText="gpt-5.6-sol is temporarily unavailable."
+        errorDetails={{
+          provider: 'kortix',
+          code: 'upstream_error',
+          requestId: 'req_single',
+          suggestion: SWITCH_HINT,
+        }}
+        modelOptions={1}
+      />,
+    );
+    expect(html).toContain('Wait a moment, then retry.');
+    expect(html).not.toContain('choose another model');
   });
 });
 

@@ -341,7 +341,11 @@ function deriveThread(input: {
           const part = pool.take('text')
           const display = typeof part?.text === 'string' ? part.text : c.text
           const modelText = sent ? (sent[i]?.type === 'text' ? sent[i].text : '') : c.text
-          m.blocks.push({ type: 'text', id: (part?.id as string | undefined) ?? `${id}-n${i}`, text: display, ...(modelText !== display ? { model_text: modelText } : {}) })
+          // Harness context survives the projection (KRTX-2597): a synthetic
+          // prompt part stays synthetic, so the turn model reads the prompt
+          // as an internal continuation and the transcript never renders it
+          // as a user bubble.
+          m.blocks.push({ type: 'text', id: (part?.id as string | undefined) ?? `${id}-n${i}`, text: display, ...(modelText !== display ? { model_text: modelText } : {}), ...(part?.synthetic === true ? { synthetic: true } : {}) })
         } else if (c.type === 'image') {
           const part = pool.take('file', (p) => String(p.mime).startsWith('image/'))
           const block: J = { type: 'attachment', id: (part?.id as string | undefined) ?? `${id}-n${i}`, ...attachment(c, input.images), ...(part?.filename ? { name: part.filename } : {}) }

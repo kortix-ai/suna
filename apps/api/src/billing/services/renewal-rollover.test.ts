@@ -151,15 +151,15 @@ describe('monthly renewal on the credits plan', () => {
     expect(resets[0].amount).toBe(20);
   });
 
-  test('the free plan resets to its $2 with no carry', async () => {
+  test('the free plan resets to its $5 with no carry', async () => {
     subscription = sub(FREE_PRICE, 1);
     account = { accountId: 'acct-1', tier: 'free', planType: 'monthly' };
     expiringNow = 1.5;
 
     await processStripeWebhook('{}', 'sig');
 
-    expect(resets[0].amount).toBe(2);
-    expect(resets[0].description).toBe('Monthly renewal: 200 credits');
+    expect(resets[0].amount).toBe(5);
+    expect(resets[0].description).toBe('Monthly renewal: 500 credits');
   });
 
   test('the first renewal after activation is granted (Stripe dates a cycle invoice by the period that ended)', async () => {

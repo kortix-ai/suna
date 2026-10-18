@@ -32,6 +32,7 @@ mock.module('@/lib/supabase/client', () => ({
 let emailFailure: string | null = null;
 mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: 'unknown' }),
+  sendEmailCode: async () => ({ success: true, email: 'synthetic@example.test', redirectTo: null }),
 }));
 mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_SUBMIT_TIMEOUT_MS: 30_000,
@@ -91,7 +92,8 @@ test('unavailable SSO still permits the supported email sign-in link', async () 
   expect(ssoProbes).toBe(1);
   expect(text).toContain('We sent a link to');
   expect(text).toContain('Open it to continue');
-  expect(root.root.findAllByType('input').filter((input) => input.props.inputMode === 'numeric')).toHaveLength(0);
-  expect(text).not.toContain('one-time-code');
+  // KRTX-2096: the link step also presents the six-digit code form, so the
+  // emailed code works even when the link itself never reaches the browser.
+  expect(text).toContain('one-time-code');
   await act(async () => root.unmount());
 });

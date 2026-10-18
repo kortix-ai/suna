@@ -5,7 +5,7 @@ test('quotes only enabled routes and includes the customer markup', () => {
   const quotes = managedPricingRoutes(['deepseek-v4.1-flash'], 1.2, true);
   expect(quotes['deepseek-v4.1-flash']).toEqual([
     { route: 'morph', role: 'preferred', input: 0.18, cacheRead: 0.0036, output: 0.72 },
-    { route: 'coreweave/fp8', role: 'eligible', input: 0.24, cacheRead: 0.036, output: 0.78 },
+    { route: 'morph/fp8', role: 'eligible', input: 0.108, cacheRead: 0.0096, output: 0.66 },
   ]);
   expect(quotes['glm-5.3-flash']).toEqual([
     { route: 'decart/fp4', role: 'eligible', input: 0.153, cacheRead: 0.0306, output: 0.51 },

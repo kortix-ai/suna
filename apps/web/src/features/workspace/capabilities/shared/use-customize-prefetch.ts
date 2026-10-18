@@ -36,9 +36,9 @@ import {
   listProjectTriggers,
   listReviewItems,
 } from '@kortix/sdk';
-import { contract, FRESHNESS, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, FRESHNESS, qk } from '@kortix/sdk/react';
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
@@ -62,7 +62,6 @@ export interface CustomizePrefetchGates {
   membersManage: boolean;
   /** The project's `llm_gateway` flag: Models reads gateway-only routes. */
   llmGateway: boolean;
-  discoverEnabled: boolean;
 }
 
 type CatalogQueries = Pick<
@@ -279,32 +278,48 @@ export function useCustomizePrefetch(projectId: string): void {
     ...contract('config'),
   });
   const caps = useProjectPageCans(projectId);
-  const discover = useFeatureFlag(projectId, 'connectors_api_discover');
 
   const allowed = (action: string) => caps[action]?.allowed === true;
   const settled = Object.values(caps).every((probe) => !probe.isLoading);
   const ready = !!projectId && detail.isSuccess && settled;
-  const gates: CustomizePrefetchGates = {
-    agentRead: allowed(PROJECT_ACTIONS.PROJECT_AGENT_READ),
-    sandboxWrite: allowed(PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE),
-    modelRead: allowed(PROJECT_ACTIONS.PROJECT_MODEL_READ),
-    connectorRead: allowed(PROJECT_ACTIONS.PROJECT_CONNECTOR_READ),
-    triggerRead: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_READ),
-    secretRead: allowed(PROJECT_ACTIONS.PROJECT_SECRET_READ),
-    reviewRead: allowed(PROJECT_ACTIONS.PROJECT_REVIEW_READ),
-    membersManage: allowed(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE),
-    // Same read as `projectDetailLlmGatewayEnabled` in @kortix/sdk/react.
-    llmGateway: detail.data?.project?.experimental?.llm_gateway === true,
-    discoverEnabled: discover.enabled,
-  };
-  // One primitive key, so a re-render with equal gates never re-schedules.
-  const gateKey = ready ? JSON.stringify(gates) : null;
+  const agentRead = allowed(PROJECT_ACTIONS.PROJECT_AGENT_READ);
+  const sandboxWrite = allowed(PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
+  const modelRead = allowed(PROJECT_ACTIONS.PROJECT_MODEL_READ);
+  const connectorRead = allowed(PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
+  const triggerRead = allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
+  const secretRead = allowed(PROJECT_ACTIONS.PROJECT_SECRET_READ);
+  const reviewRead = allowed(PROJECT_ACTIONS.PROJECT_REVIEW_READ);
+  const membersManage = allowed(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  const llmGateway = detail.data?.project?.experimental?.llm_gateway === true;
+  const gates = useMemo<CustomizePrefetchGates>(
+    () => ({
+      agentRead,
+      sandboxWrite,
+      modelRead,
+      connectorRead,
+      triggerRead,
+      secretRead,
+      reviewRead,
+      membersManage,
+      llmGateway,
+    }),
+    [
+      agentRead,
+      sandboxWrite,
+      modelRead,
+      connectorRead,
+      triggerRead,
+      secretRead,
+      reviewRead,
+      membersManage,
+      llmGateway,
+    ],
+  );
 
   useEffect(() => {
-    if (!gateKey) return;
-    const parsed = JSON.parse(gateKey) as CustomizePrefetchGates;
+    if (!ready) return;
     return whenIdle(() => {
-      void prefetchCustomize(queryClient, projectId, parsed);
+      void prefetchCustomize(queryClient, projectId, gates);
     });
-  }, [gateKey, projectId, queryClient]);
+  }, [ready, gates, projectId, queryClient]);
 }

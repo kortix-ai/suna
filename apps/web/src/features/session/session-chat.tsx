@@ -847,6 +847,14 @@ export function SessionChat({
   // the explicit pick. Always send this — not currentKey, which is for display.
   const localModelSendKey = local.model.sendKey;
   const localModelList = local.model.list;
+  // How many models the account can actually pick (KRTX-2598): the same
+  // flattened list the picker derives, filtered by the same enablement
+  // predicate `isOfferedModel` uses. 1 means "choose another model" has no
+  // move to name — the error row says to wait instead.
+  const modelOptions = useMemo(
+    () => localModelList.filter((m) => m.enabled !== false).length,
+    [localModelList],
+  );
   const localModelSet = local.model.set;
   const localModelVisible = local.model.visible;
   const localVariantSet = local.model.variant.set;
@@ -1176,13 +1184,10 @@ export function SessionChat({
     const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
     return () => clearTimeout(timer);
   }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
-  const servedNotice = useMemo(
-    () => servedModelNotice(modelUsage, local.model.currentKey, local.model.list),
-    [modelUsage, local.model.currentKey, local.model.list],
-  );
-  // Not gated on the composer's selection: the modal reports the session.
+  // Not gated on the composer's selection: the session modal reports the
+  // session, not what the composer will send next.
   const sessionServedModel = useMemo(
-    () => servedModelNotice(modelUsage, null, local.model.list),
+    () => servedModelNotice(modelUsage, local.model.list),
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
@@ -4390,6 +4395,7 @@ export function SessionChat({
                               // hover state survives, nothing jumps).
                               key={turnRenderKeys.get(turn.id)}
                               turnId={turn.id}
+                              modelOptions={modelOptions}
                               suppressed={suppressedFailedCompaction}
                               continuedWith={harnessSwitches.get(turn.id)?.harness}
                               fullTextState={loaded.state[turn.id] ?? 'idle'}
@@ -4569,6 +4575,7 @@ export function SessionChat({
                       <TurnErrorDisplay
                         error={commandError}
                         isAbort={isAbortError(commandError.cause)}
+                        modelOptions={modelOptions}
                         className="mt-2"
                       />
                     )}
@@ -4755,7 +4762,6 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
-                servedModel={servedNotice}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

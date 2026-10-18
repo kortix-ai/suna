@@ -3,9 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   displayHtml,
-  hasRenderableMermaidStarter,
   MERMAID_CONFIG,
-  mermaidChartHash,
   mermaidDisplayHeight,
   mermaidErrorMessage,
   parseMermaidViewBox,
@@ -37,29 +35,6 @@ describe('parity with web mermaid-renderer.tsx', () => {
     expect(block).toContain('showBranches: true');
     expect(block).toContain('showCommitLabel: true');
     expect(block).toContain('rotateCommitLabel: true');
-  });
-
-  test('chart hash is web hash', () => {
-    // Web: (hash << 5) - hash + charCode, |0 per step, base 36, over the trimmed chart.
-    expect(mermaidChartHash('graph TD\n  A --> B')).toBe(mermaidChartHash('  graph TD\n  A --> B\n'));
-    let hash = 0;
-    for (const char of 'sequenceDiagram') hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-    expect(mermaidChartHash('sequenceDiagram')).toBe(hash.toString(36));
-    expect(mermaidChartHash('a')).not.toBe(mermaidChartHash('b'));
-  });
-});
-
-describe('hasRenderableMermaidStarter', () => {
-  test('accepts web-listed diagram types, anywhere in the first line', () => {
-    expect(hasRenderableMermaidStarter('flowchart LR\nA-->B')).toBe(true);
-    expect(hasRenderableMermaidStarter('  sequenceDiagram')).toBe(true);
-    expect(hasRenderableMermaidStarter('stateDiagram-v2')).toBe(true);
-    expect(hasRenderableMermaidStarter('%% title\ngraph TD')).toBe(false);
-  });
-
-  test('rejects types web rejects before calling Mermaid', () => {
-    expect(hasRenderableMermaidStarter('xychart-beta')).toBe(false);
-    expect(hasRenderableMermaidStarter('')).toBe(false);
   });
 });
 

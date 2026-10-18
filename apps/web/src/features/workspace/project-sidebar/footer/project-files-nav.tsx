@@ -1,17 +1,16 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { ProjectNavRow } from '@/features/workspace/project-sidebar/project-nav-row';
+
 import { useTranslations } from '@/i18n/use-translations';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { CountBadge } from '@/components/ui/count-badge';
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useProjectNavRows } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useProjectDrive } from '@/hooks/drives/use-drives';
-import { useIsMobile } from '@/hooks/utils';
 import { getProject } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
@@ -50,8 +49,6 @@ export function ProjectFilesNavItem() {
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
   const target = useProjectNavRows(projectId).files;
   const queryClient = useQueryClient();
   // Volumes on for the project (its derived `drives` flag).
@@ -64,10 +61,6 @@ export function ProjectFilesNavItem() {
     (target === 'folders'
       ? activeCapabilityTab(pathname) === 'files'
       : /^\/projects\/[^/]+\/files(\/|$)/.test(pathname));
-
-  const handleClick = useCallback(() => {
-    if (isMobile) setOpenMobile(false);
-  }, [isMobile, setOpenMobile]);
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,
   // `project-layout/resolve-files-ref.ts`) until it knows the project's
@@ -95,34 +88,27 @@ export function ProjectFilesNavItem() {
   const { label, href } = filesRow(projectId, target, volumes.enabled);
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={isActive}
-        tooltip={t(label)}
-        className="group/menu-button text-sidebar-foreground relative"
-      >
-        <HoverPrefetchLink
-          href={href}
-          prefetch
-          onClick={handleClick}
-          onMouseEnter={prefetchSummary}
-          onFocus={prefetchSummary}
-          onTouchStart={prefetchSummary}
-        >
-          {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
-          {t(label)}
-          {conflicts > 0 ? (
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              <CountBadge
-                count={conflicts}
-                tone="conflict"
-                aria-label={tDrives('conflictCount', { count: conflicts })}
-              />
-            </span>
-          ) : null}
-        </HoverPrefetchLink>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+    <ProjectNavRow
+      active={isActive}
+      label={t(label)}
+      href={href}
+      prefetch
+
+      onMouseEnter={prefetchSummary}
+      onFocus={prefetchSummary}
+      onTouchStart={prefetchSummary}
+    >
+      {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
+      {t(label)}
+      {conflicts > 0 ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <CountBadge
+            count={conflicts}
+            tone="conflict"
+            aria-label={tDrives('conflictCount', { count: conflicts })}
+          />
+        </span>
+      ) : null}
+    </ProjectNavRow>
   );
 }

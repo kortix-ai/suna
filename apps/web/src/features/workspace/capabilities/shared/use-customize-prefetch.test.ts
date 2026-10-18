@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
 import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
 
 import {
   CUSTOMIZE_PREFETCH_GC_MS,
@@ -21,7 +21,6 @@ const ALL: CustomizePrefetchGates = {
   reviewRead: true,
   membersManage: true,
   llmGateway: true,
-  discoverEnabled: false,
 };
 
 function fakeApi(calls: string[]): CustomizePrefetchApi {
@@ -47,17 +46,18 @@ function fakeApi(calls: string[]): CustomizePrefetchApi {
     listProjectSnapshots: read('listProjectSnapshots'),
     listProjectTriggers: read('listProjectTriggers'),
     listReviewItems: read('listReviewItems'),
-    loadCatalogQueries: async () => ({
-      connectStatusQuery: { queryKey: ['connect-status', 'composio-first-v2'] as const },
-      catalogSectionsQuery: (projectId: string, catalogue: string | null) => ({
-        queryKey: ['catalog-sections', projectId, catalogue] as const,
-        queryFn: async () => {
-          calls.push(`sections:${catalogue}`);
-          return { sections: [] } as never;
-        },
-        staleTime: 5 * 60_000,
-      }),
-    }) as never,
+    loadCatalogQueries: async () =>
+      ({
+        connectStatusQuery: { queryKey: ['connect-status', 'composio-first-v2'] as const },
+        catalogSectionsQuery: (projectId: string, catalogue: string | null) => ({
+          queryKey: ['catalog-sections', projectId, catalogue] as const,
+          queryFn: async () => {
+            calls.push(`sections:${catalogue}`);
+            return { sections: [] } as never;
+          },
+          staleTime: 5 * 60_000,
+        }),
+      }) as never,
   };
 }
 
@@ -143,11 +143,11 @@ describe('prefetchCustomize', () => {
     expect(second.filter((name) => name !== 'listReviewItems')).toEqual([]);
   });
 
-  test('prefetches managed discovery even when direct discovery is enabled', async () => {
+  test('prefetches managed discovery independently of direct discovery', async () => {
     const client = new QueryClient();
     const calls: string[] = [];
 
-    await prefetchCustomize(client, PROJECT, { ...ALL, discoverEnabled: true }, fakeApi(calls));
+    await prefetchCustomize(client, PROJECT, ALL, fakeApi(calls));
 
     expect(calls).not.toContain('sections:discover');
     expect(calls).toContain('getConnectStatus');

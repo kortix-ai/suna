@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -51,6 +51,7 @@ function projectRow() {
 
 let tmp: string;
 let apiBase = '';
+let requests: string[] = [];
 let server: ReturnType<typeof Bun.serve> | null = null;
 
 function startApi() {
@@ -58,6 +59,7 @@ function startApi() {
     port: 0,
     fetch(req) {
       const url = new URL(req.url);
+      requests.push(`${req.method} ${url.pathname}`);
       if (url.pathname === `/v1/projects/${PROJECT_ID}`) {
         if (req.headers.get('authorization') === `Bearer ${HOST_TOKEN}`) {
           return Response.json(projectRow());
@@ -73,10 +75,16 @@ function seedWorkspace(): void {
   writeFileSync(
     join(tmp, 'config.json'),
     JSON.stringify({
-      active: HOST_NAME,
+      active: 'ambient',
       hosts: {
+        ambient: {
+          url: apiBase,
+          token: HOST_TOKEN,
+          default_project: { project_id: 'ambient-default', account_id: ACCOUNT_ID },
+        },
         [HOST_NAME]: {
           url: apiBase,
+          default_project: { project_id: PROJECT_ID, account_id: ACCOUNT_ID },
           token: HOST_TOKEN,
           user_id: 'user_1',
           user_email: 'user@example.test',
@@ -101,7 +109,7 @@ async function runCli(args: string[], envProjectId?: string) {
       KORTIX_CONFIG_FILE: join(tmp, 'config.json'),
       KORTIX_API_URL: apiBase,
       KORTIX_TOKEN: HOST_TOKEN,
-      ...(envProjectId ? { KORTIX_PROJECT_ID: envProjectId } : {}),
+      KORTIX_PROJECT_ID: envProjectId ?? '',
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -116,6 +124,7 @@ async function runCli(args: string[], envProjectId?: string) {
 }
 
 beforeEach(() => {
+  requests = [];
   tmp = mkdtempSync(join(tmpdir(), 'kortix-projects-info-'));
   server = startApi();
   apiBase = `http://127.0.0.1:${server.port}`;
@@ -155,3 +164,51 @@ test('human output is unchanged (no id key injected into the table)', async () =
   expect(stdout).not.toMatch(/^\s*id\s/);
   expect(stdout.trim().startsWith('{')).toBe(false);
 });
+
+for (const linkHost of [undefined, 'ambient', HOST_NAME]) {
+  test(`explicit host info ignores ambient identity with link host ${linkHost}`, async () => {
+    if (linkHost) {
+      mkdirSync(join(tmp, '.kortix'));
+      writeFileSync(
+        join(tmp, '.kortix', 'link.json'),
+        JSON.stringify({
+          host: linkHost,
+          project_id: linkHost === HOST_NAME ? PROJECT_ID : 'foreign-link',
+        }),
+      );
+    }
+    const result = await runCli(['projects', 'info', '--host', HOST_NAME, '--json'], 'foreign-env');
+    expect(result.stderr).toBe('');
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
+    expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`]);
+  });
+}
+
+test('explicit project wins over the named host default and link', async () => {
+  mkdirSync(join(tmp, '.kortix'));
+  writeFileSync(
+    join(tmp, '.kortix', 'link.json'),
+    JSON.stringify({ host: HOST_NAME, project_id: 'other-link' }),
+  );
+  const result = await runCli(
+    ['projects', 'info', PROJECT_ID, '--host', HOST_NAME, '--json'],
+    'foreign-env',
+  );
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
+  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`]);
+});
+
+for (const command of ['info', 'clone', 'open', 'rm']) {
+  test(`explicit host ${command} prefers the same-host link`, async () => {
+    mkdirSync(join(tmp, '.kortix'));
+    writeFileSync(
+      join(tmp, '.kortix', 'link.json'),
+      JSON.stringify({ host: HOST_NAME, project_id: 'selected-link' }),
+    );
+    const result = await runCli(['projects', command, '--host', HOST_NAME], 'foreign-env');
+    expect(result.code).toBe(1);
+    expect(requests).toEqual(['GET /v1/projects/selected-link']);
+  });
+}

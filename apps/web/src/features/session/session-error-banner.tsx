@@ -388,6 +388,35 @@ export function describeTurnErrorRow({
 }
 
 /**
+ * The suggestion a provider-failure row shows, adjusted for what the account
+ * can actually do (KRTX-2598). The gateway writes its hint per request —
+ * it never knows the account's lineup — so "choose another model" can reach
+ * an account with exactly one usable model, where no such move exists.
+ *
+ * `modelOptions` is the count of models the account can pick; `0` or
+ * `undefined` means "unknown" (an empty/unloaded catalog) and leaves the hint
+ * untouched. Only a hint that names the model switch is rewritten (every
+ * other suggestion — key, connect, plan — names a fix that works on any
+ * account): on a one-model account the switch hint becomes the wait it
+ * actually stands for.
+ *
+ * Pure — pinned by `session-error-banner.test.ts`.
+ */
+const MODEL_SWITCH_HINT = /choose (another|a different) model/i;
+export function actionableSuggestion(
+  suggestion: string | undefined,
+  modelOptions: number | undefined,
+): string | undefined {
+  if (!suggestion) return undefined;
+  // `0` is the boot-race empty catalog — "unknown", not "none"; only a loaded
+  // one-model catalog rewrites the hint.
+  if (modelOptions === 1 && MODEL_SWITCH_HINT.test(suggestion)) {
+    return 'The model is temporarily unavailable. Wait a moment, then retry.';
+  }
+  return suggestion;
+}
+
+/**
  * A failed turn, as a checkpoint row in the activity lane — the same lane,
  * glyph slot, type and caret as "Thought for 1s", through the same
  * `ChainOfThoughtStep` disclosure. Closed, it says what happened. Open, it
@@ -401,6 +430,7 @@ function TurnErrorCheckpoint({
   raw,
   defaultOpen,
   action,
+  modelOptions,
   className,
 }: {
   text: string;
@@ -409,11 +439,16 @@ function TurnErrorCheckpoint({
   defaultOpen?: boolean;
   /** The fix, when the reader can make it here; stays visible like the hint. */
   action?: ReactNode;
+  /** Models the account can pick — rewrites a "choose another model" hint the
+   *  composer cannot honor (see `actionableSuggestion`). */
+  modelOptions?: number;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const suggestion =
-    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  const suggestion = actionableSuggestion(
+    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined,
+    modelOptions,
+  );
   const failures = gateway?.attemptFailures ?? [];
   const canOpen = describeTurnErrorRow({ text, gateway, raw }).expandable;
 
@@ -544,6 +579,9 @@ interface TurnErrorDisplayProps {
    * text sniff (over `text`) is used then.
    */
   isAbort?: boolean;
+  /** Models the account can pick — lets the row drop a "choose another model"
+   *  hint the composer cannot honor (KRTX-2598). */
+  modelOptions?: number;
   className?: string;
 }
 
@@ -560,6 +598,7 @@ export function TurnErrorDisplay({
   defaultDetailsOpen,
   error,
   isAbort,
+  modelOptions,
   className,
 }: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
@@ -618,6 +657,7 @@ export function TurnErrorDisplay({
       raw={errorRaw}
       defaultOpen={defaultDetailsOpen}
       action={chatGpt ? <ChatGptConnectionSlot action={chatGpt} /> : undefined}
+      modelOptions={modelOptions}
       className={className}
     />
   );
