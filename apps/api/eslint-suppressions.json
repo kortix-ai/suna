@@ -1974,7 +1974,7 @@
   },
   "src/projects/reaping/stop-box.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/reaping/stuck-provisioning.ts": {
