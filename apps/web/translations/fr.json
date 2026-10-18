@@ -1979,6 +1979,9 @@
       "fullTextDownload": "Télécharger le texte complet ({size})",
       "fullTextError": "Impossible de charger le texte complet.",
       "fullTextRetry": "Réessayer"
+    },
+    "turn": {
+      "autoRetried": "Kortix a automatiquement réessayé le modèle {count, plural, one {une fois} other {# fois}} avant cet échec."
     }
   },
   "agents": {

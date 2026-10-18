@@ -1979,6 +1979,9 @@
       "fullTextDownload": "Vollständigen Text herunterladen ({size})",
       "fullTextError": "Der vollständige Text konnte nicht geladen werden.",
       "fullTextRetry": "Erneut versuchen"
+    },
+    "turn": {
+      "autoRetried": "Kortix hat das Modell vor diesem Fehler {count, plural, one {einmal} other {#-mal}} automatisch wiederholt."
     }
   },
   "agents": {

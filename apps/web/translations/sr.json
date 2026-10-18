@@ -1979,6 +1979,9 @@
       "fullTextDownload": "Преузми цео текст ({size})",
       "fullTextError": "Цео текст није могао да се учита.",
       "fullTextRetry": "Покушај поново"
+    },
+    "turn": {
+      "autoRetried": "Kortix је аутоматски поново покушао са моделом {count, plural, one {једном} other {# пута}} пре ове грешке."
     }
   },
   "agents": {

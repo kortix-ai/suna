@@ -1979,6 +1979,9 @@
       "fullTextDownload": "全文をダウンロード（{size}）",
       "fullTextError": "全文を読み込めませんでした。",
       "fullTextRetry": "再試行"
+    },
+    "turn": {
+      "autoRetried": "Kortix はこの失敗の前にモデルを自動で {count, plural, other {# 回}}再試行しました。"
     }
   },
   "agents": {
