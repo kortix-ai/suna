@@ -41,9 +41,10 @@ async function telegramContext(c: Context<AppEnv>, write: boolean) {
   return { response: null, projectId } as const;
 }
 
-async function reconcile(projectId: string): Promise<void> {
-  // Awaited, not fire-and-forget: the connector row must exist when the UI re-reads the list.
-  await reconcileChannelConnectors(projectId).catch((error) =>
+function reconcileInBackground(projectId: string): void {
+  // Not awaited: on a real project the reconcile reads the repo and can outlast
+  // the 25 s request deadline (the Teams install does the same).
+  void reconcileChannelConnectors(projectId).catch((error) =>
     logger.warn('[telegram] channel connector reconcile failed', { projectId, error: String(error) }),
   );
 }
@@ -122,7 +123,7 @@ export function registerChannelTelegramRoutes(): void {
         webhookSecret,
       });
       if (allowed?.success) await setTelegramAllowedUserIds(ctx.projectId, allowed.data);
-      await reconcile(ctx.projectId);
+      reconcileInBackground(ctx.projectId);
       return c.json(installBody(await loadTelegramInstall(ctx.projectId)));
     },
   );
@@ -173,7 +174,7 @@ export function registerChannelTelegramRoutes(): void {
       // Best effort: a revoked token cannot remove its webhook, and the install goes either way.
       if (token) await telegramCall(token, 'deleteWebhook').catch(() => undefined);
       await deleteTelegramInstall(ctx.projectId);
-      await reconcile(ctx.projectId);
+      reconcileInBackground(ctx.projectId);
       return c.json({ ok: true });
     },
   );
