@@ -501,35 +501,12 @@ kill_dev_ports() {
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
-
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-    wait "$FRONTEND_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${GATEWAY_PID:-}" ]] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    wait "$GATEWAY_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    kill "$TUNNEL_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
-    kill "$STRIPE_PID" 2>/dev/null || true
-  fi
-  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
-
+  # The worker and all its pipelines share this private group, including
+  # tunnels rotated by its watchdog. Never match another checkout by name.
+  kill -TERM -- "-$STACK_PID" 2>/dev/null || true
+  /bin/sleep 0.2
+  kill -KILL -- "-$STACK_PID" 2>/dev/null || true
+  wait "$STACK_PID" 2>/dev/null || true
   exit "$exit_code"
 }
 
@@ -717,7 +694,8 @@ EOF
   KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev:envfile
 }
 
-trap cleanup EXIT INT TERM
+run_dev_local() {
+set +m
 
 if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
   run_sandbox_dev
@@ -867,3 +845,15 @@ else
     echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
   done
 fi
+
+}
+
+# Job control assigns the single worker its own process group. Turn it off
+# inside the worker so nested pipelines inherit that group (also on Bash 3.2).
+set -m
+run_dev_local "$@" <&0 &
+STACK_PID=$!
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+fg %1
