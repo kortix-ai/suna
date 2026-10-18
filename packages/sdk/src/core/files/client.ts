@@ -515,7 +515,18 @@ export async function uploadFile(
     notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
     return result;
   }
+  return uploadFileChunked(file, targetPath, name, base, options);
+}
 
+/** The large-file path: reserve the collision-safe destination, then append
+ *  chunks under it, cleaning up the partial upload on any failure. */
+async function uploadFileChunked(
+  file: File | Blob,
+  targetPath: string | undefined,
+  name: string,
+  base: string,
+  options: UploadFileOptions | undefined,
+): Promise<UploadResult[]> {
   // Reserve the collision-safe destination with the daemon's existing upload
   // semantics. The returned path is authoritative when the requested name
   // already exists.
