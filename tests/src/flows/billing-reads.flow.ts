@@ -12,10 +12,19 @@
  * apps/api/src/billing/routes/.
  */
 import { flow } from "../core/flow";
+import type { FlowContext } from "../core/types";
 
 // OWNER reads succeed (200) on a billing-enabled deployment; 404 when the
 // billing internal gate is disabled (self-hosted / local).
 const OWNER_READ = [200, 404];
+
+// ANON hits a billing route and is refused: supabaseAuth gates every billing
+// route before the billing gate runs. The step stays at the call site so the
+// catalog's static step parse sees its title.
+const anonRead = async (ctx: FlowContext, path: string): Promise<void> => {
+  const r = await ctx.client.as(ctx.P.ANON).get(path);
+  r.status(401);
+};
 
 flow(
   "BILL-5",
@@ -32,10 +41,7 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/transactions", { query: { limit: "5" } });
       r.status(OWNER_READ);
     });
-    await ctx.step("ANON cannot read transactions → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/transactions");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read transactions → 401", async () => anonRead(ctx, "/v1/billing/transactions"));
 
     await ctx.step("purchase-credits with no amount → 400 (or gate 404)", async () => {
       // Missing/invalid amount → BillingError(400). A valid amount would build a
@@ -62,10 +68,7 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/auto-topup/settings");
       r.status(OWNER_READ);
     });
-    await ctx.step("ANON cannot read auto-topup settings → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/auto-topup/settings");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read auto-topup settings → 401", async () => anonRead(ctx, "/v1/billing/auto-topup/settings"));
 
     await ctx.step("OWNER reads auto-topup setup status", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/auto-topup/setup-status");
@@ -114,19 +117,13 @@ flow(
       if (r.statusCode !== 200) return;
       r.body().has("$.total", 0).has("$.expiring", 0).has("$.non_expiring", 0).has("$.daily", 0);
     });
-    await ctx.step("ANON cannot read the credit breakdown → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/credit-breakdown");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read the credit breakdown → 401", async () => anonRead(ctx, "/v1/billing/credit-breakdown"));
 
     await ctx.step("OWNER reads a page of credit-usage records", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/credit-usage", { query: { limit: "5" } });
       r.status(OWNER_READ);
     });
-    await ctx.step("ANON cannot read credit-usage → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/credit-usage");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read credit-usage → 401", async () => anonRead(ctx, "/v1/billing/credit-usage"));
 
     await ctx.step("OWNER reads the credits tier ladder ($50 … $50,000, 25 tiers) and the $50–$50,000 bounds", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
@@ -143,28 +140,19 @@ flow(
         .has("$.min_monthly_usd", 50)
         .has("$.max_monthly_usd", 50000);
     });
-    await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/tier-configurations");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => anonRead(ctx, "/v1/billing/tier-configurations"));
 
     await ctx.step("OWNER reads the transaction summary window", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/transactions/summary", { query: { days: "30" } });
       r.status(OWNER_READ);
     });
-    await ctx.step("ANON cannot read the transaction summary → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/transactions/summary");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read the transaction summary → 401", async () => anonRead(ctx, "/v1/billing/transactions/summary"));
 
     await ctx.step("OWNER reads the credit usage history summary", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/usage-history", { query: { days: "30" } });
       r.status(OWNER_READ);
     });
-    await ctx.step("ANON cannot read usage-history → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/usage-history");
-      r.status(401);
-    });
+    await ctx.step("ANON cannot read usage-history → 401", async () => anonRead(ctx, "/v1/billing/usage-history"));
   },
 );
 

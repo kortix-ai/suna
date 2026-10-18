@@ -9,7 +9,8 @@
 import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
-import { serveFixtureRepoLocally } from '../fixtures/local-git';
+import { gitWithAuth, mintAccountToken, serveFixtureRepoLocally } from '../fixtures/local-git';
+import type { FlowContext } from '../core/types';
 
 // ── AUD-7: every inbound request is audited, whoever it names ────────────────
 // The Git proxy authenticates its own credential, so the old request audit
@@ -43,6 +44,36 @@ function required<T>(value: T | null | undefined, label: string): T {
   return value;
 }
 
+// The audit write is an asynchronous queue, and a deployed target runs several
+// API tasks: poll the account log until the queried rows are there (shared by
+// AUD-7, AUD-8 and AUD-CRED).
+const pollAuditRows = <T>(
+  ctx: FlowContext,
+  accountId: string,
+  query: Record<string, string>,
+  description: string,
+  opts: { send?: () => Promise<unknown>; timeoutMs?: number } = {},
+): Promise<T[]> =>
+  waitFor(
+    async () => {
+      if (opts.send) await opts.send();
+      return ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        params: { accountId },
+        query,
+      });
+    },
+    {
+      until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
+      timeoutMs: opts.timeoutMs ?? 20_000,
+      intervalMs: 500,
+      description,
+      retryOnError: isKe2eRetryableError,
+    },
+  ).then((res) => {
+    res.status(200);
+    return res.json<{ events: T[] }>().events;
+  });
+
 flow(
   'AUD-7',
   {
@@ -61,10 +92,7 @@ flow(
     const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
     const { Client: PgClient } = await import('pg');
-    const exec = promisify(execFile);
     const team = await ctx.fixtures.team({ enterprise: true });
     const outsider = await team.addMember('member');
     const projectMember = await team.addMember('member');
@@ -86,54 +114,22 @@ flow(
     const remoteUrl = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
 
     const personalToken = async (identity: typeof ctx.P.OWNER, label: string) => {
-      const created = await ctx.client.as(identity).post('/v1/accounts/tokens', {
-        name: `AUD-7 ${label}`, account_id: team.id,
-      });
-      created.status(201);
-      const body = created.json<{ token_id: string; secret_key: string }>();
-      tokenIds.push(body.token_id);
-      return body;
+      const minted = await mintAccountToken(ctx.client, identity, `AUD-7 ${label}`, team.id);
+      tokenIds.push(minted.tokenId);
+      return minted;
     };
-    const git = async (secret: string, args: string[], expected: 'ok' | 'rejected') => {
-      let code = 0;
-      let output = '';
-      try {
-        const result = await exec('git', args, { cwd: root, timeout: 60_000,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
-        output = result.stdout + result.stderr;
-      } catch (error) {
-        const failed = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
-        code = typeof failed.code === 'number' ? failed.code : -1;
-        output = String(failed.stdout ?? '') + String(failed.stderr ?? '');
-      }
-      if ((expected === 'ok') !== (code === 0)) {
-        throw new Error(`git ${args[0]}: expected ${expected}, got exit ${code}: ${output.replaceAll(secret, '[redacted]')}`);
-      }
-      return output;
-    };
+    const git = (secret: string, args: string[], expected: 'ok' | 'rejected') =>
+      gitWithAuth(secret, args, root, expected);
     // Audit writes are an asynchronous queue, and a deployed target runs
     // several API tasks; poll the account log until the row is there.
     const auditRows = (query: Record<string, string>, description: string, send?: () => Promise<unknown>) =>
-      waitFor(
-        async () => {
-          if (send) await send();
-          return ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
-            params: { accountId: team.id },
-            query: { project_id: project.id, limit: '50', ...query },
-          });
-        },
-        {
-          until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
-          timeoutMs: 20_000,
-          intervalMs: 500,
-          description,
-          retryOnError: isKe2eRetryableError,
-        },
-      ).then((res) => {
-        res.status(200);
-        return res.json<{ events: AuditRow[] }>().events;
-      });
+      pollAuditRows<AuditRow>(
+        ctx,
+        team.id,
+        { project_id: project.id, limit: '50', ...query },
+        description,
+        { send },
+      );
     const expectRow = (row: AuditRow | undefined, expected: Partial<AuditRow>, label: string): AuditRow => {
       if (!row) throw new Error(`${label}: no row`);
       for (const [key, value] of Object.entries(expected)) {
@@ -148,12 +144,12 @@ flow(
       localGitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'AUD-7');
       const remote = remoteUrl;
       const owner = await personalToken(ctx.P.OWNER, 'owner');
-      ownerSecret = owner.secret_key;
+      ownerSecret = owner.secretKey;
       const outsiderToken = await personalToken(outsider, 'account member');
       const memberToken = await personalToken(projectMember, 'project member');
 
       await ctx.step('the owner clones through the Git proxy; a git.clone row names the owner and the token', async () => {
-        await git(owner.secret_key, ['clone', remote, '.'], 'ok');
+        await git(owner.secretKey, ['clone', remote, '.'], 'ok');
         const rows = await auditRows({ action: 'git.clone', actor: ownerId }, 'the owner’s git.clone row');
         const row = expectRow(rows[0], {
           account_id: team.id,
@@ -167,21 +163,21 @@ flow(
           resource_id: project.id,
           http_status: 200,
         }, 'git.clone');
-        if (row.metadata.auth?.kind !== 'git' || row.metadata.auth?.token_id !== owner.token_id) {
+        if (row.metadata.auth?.kind !== 'git' || row.metadata.auth?.token_id !== owner.tokenId) {
           throw new Error(`git.clone must name the token, never its secret: ${JSON.stringify(row.metadata)}`);
         }
         if (!/git-upload-pack$/.test(String(row.metadata.http))) {
           throw new Error(`git.clone must keep its HTTP identity: ${JSON.stringify(row.metadata)}`);
         }
-        if (JSON.stringify(row).includes(owner.secret_key)) throw new Error('the row contains the token secret');
+        if (JSON.stringify(row).includes(owner.secretKey)) throw new Error('the row contains the token secret');
       });
 
       await ctx.step('the owner pushes a new branch; a git.push row records the ref it created', async () => {
         await writeFile(join(root, 'aud7.txt'), 'audited push\n');
-        await git(owner.secret_key, ['add', 'aud7.txt'], 'ok');
-        await git(owner.secret_key, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'AUD-7 probe'], 'ok');
-        const head = (await git(owner.secret_key, ['rev-parse', 'HEAD'], 'ok')).trim();
-        await git(owner.secret_key, ['push', remote, `HEAD:${branch}`], 'ok');
+        await git(owner.secretKey, ['add', 'aud7.txt'], 'ok');
+        await git(owner.secretKey, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'AUD-7 probe'], 'ok');
+        const head = (await git(owner.secretKey, ['rev-parse', 'HEAD'], 'ok')).trim();
+        await git(owner.secretKey, ['push', remote, `HEAD:${branch}`], 'ok');
         branchPushed = true;
         const rows = await auditRows(
           { action: 'git.push', actor: ownerId, outcome: 'success' },
@@ -196,7 +192,7 @@ flow(
       });
 
       await ctx.step('the owner deletes the branch; its git.push row records the delete', async () => {
-        await git(owner.secret_key, ['push', remote, `:${branch}`], 'ok');
+        await git(owner.secretKey, ['push', remote, `:${branch}`], 'ok');
         branchPushed = false;
         const rows = await waitFor(
           () => auditRows({ action: 'git.push', actor: ownerId, outcome: 'success' }, 'the owner’s git.push rows'),
@@ -212,7 +208,7 @@ flow(
       });
 
       await ctx.step('an account member with no project role is refused, and the refusal names them', async () => {
-        const read = await git(outsiderToken.secret_key, ['ls-remote', remote], 'rejected');
+        const read = await git(outsiderToken.secretKey, ['ls-remote', remote], 'rejected');
         if (!/403|not authorized/i.test(read)) throw new Error(`expected a 403 refusal, got: ${read}`);
         const rows = await auditRows(
           { actor: outsiderId, outcome: 'denied' },
@@ -228,13 +224,13 @@ flow(
         if (row.metadata.http !== 'GET /v1/git/:project/info/refs') {
           throw new Error(`the refusal keeps its HTTP identity: ${JSON.stringify(row.metadata)}`);
         }
-        if (row.metadata.auth?.token_id !== outsiderToken.token_id) {
+        if (row.metadata.auth?.token_id !== outsiderToken.tokenId) {
           throw new Error(`the refusal must name the refused token: ${JSON.stringify(row.metadata)}`);
         }
       });
 
       await ctx.step('a project member without gitops.push is refused a push, and the refusal names them', async () => {
-        await git(memberToken.secret_key, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
+        await git(memberToken.secretKey, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
         const rows = await auditRows(
           { actor: projectMemberId, outcome: 'denied' },
           'the project member’s denied push row',
@@ -323,19 +319,7 @@ flow(
     let groupId: string | null = null;
     let forwardedGroupId: string | null = null;
     const auditRows = (query: Record<string, string>, description: string) =>
-      waitFor(
-        () => owner.get('/v1/accounts/:accountId/audit', { params, query: { limit: '50', ...query } }),
-        {
-          until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
-          timeoutMs: 20_000,
-          intervalMs: 500,
-          description,
-          retryOnError: isKe2eRetryableError,
-        },
-      ).then((res) => {
-        res.status(200);
-        return res.json<{ events: AuditRow[] }>().events;
-      });
+      pollAuditRows<AuditRow>(ctx, team.id, { limit: '50', ...query }, description);
 
     try {
       await ctx.step('the owner reads the project; its row is `project.read`, with the route in metadata.http', async () => {
@@ -466,23 +450,14 @@ flow(
     ): Promise<Row> => {
       const correlationId = ctx.fixtures.name(`audit-cred-${label}`);
       (await send(correlationId)).status(200);
-      const r = await waitFor(
-        async () =>
-          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
-            params: { accountId: team.id },
-            query: { project_id: project.id, correlation_id: correlationId, action: 'project.read' },
-          }),
-        {
-          until: (res) =>
-            res.statusCode === 200 &&
-            (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
-          timeoutMs: 15_000,
-          intervalMs: 500,
-          description: `the ${label} audit event for ${correlationId}`,
-          retryOnError: isKe2eRetryableError,
-        },
+      const rows = await pollAuditRows<Row>(
+        ctx,
+        team.id,
+        { project_id: project.id, correlation_id: correlationId, action: 'project.read' },
+        `the ${label} audit event for ${correlationId}`,
+        { timeoutMs: 15_000 },
       );
-      return r.json<{ events: Row[] }>().events[0]!;
+      return rows[0]!;
     };
 
     let patSecret = '';

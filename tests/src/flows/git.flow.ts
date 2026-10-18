@@ -18,7 +18,7 @@
  */
 import { flow } from "../core/flow";
 import { withTransientGitRetry } from "../fixtures/git-transient";
-import { serveFixtureRepoLocally } from "../fixtures/local-git";
+import { gitWithAuth, mintAccountToken, serveFixtureRepoLocally } from "../fixtures/local-git";
 import { withDb } from "../fixtures/chat";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
@@ -473,10 +473,7 @@ flow(
     const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
     const { Client: PgClient } = await import('pg');
-    const exec = promisify(execFile);
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
     const project = await team.project({ managedGit: true });
@@ -492,11 +489,7 @@ flow(
       const userId = identity.userId!;
       const sessionId = randomUUID();
       sessions.push(sessionId);
-      const created = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
-        name: 'GH-17 session fixture',
-      });
-      created.status(201);
-      const { token_id: tokenId, secret_key: secret } = created.json<{ token_id: string; secret_key: string }>();
+      const { tokenId, secretKey: secret } = await mintAccountToken(ctx.client, ctx.P.OWNER, 'GH-17 session fixture');
       await db.query(`INSERT INTO kortix.project_sessions
         (session_id, account_id, project_id, branch_name, created_by, metadata)
         VALUES ($1, $2, $3, $1, $4, '{"workspace_mode":"branch"}'::jsonb)`,
@@ -516,23 +509,10 @@ flow(
         JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
       return { secret, sessionId };
     };
-    const git = async (secret: string, args: string[], expected = 0) => {
-      let code = 0;
-      let output = '';
-      try {
-        const result = await withTransientGitRetry(args, () => exec('git', args, { cwd: root, timeout: 60_000,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } }));
-        output = result.stdout + result.stderr;
-      } catch (error: any) {
-        code = typeof error.code === 'number' ? error.code : -1;
-        output = String(error.stdout ?? '') + String(error.stderr ?? '');
-      }
-      if ((expected === 0 && code !== 0) || (expected !== 0 && code === 0)) {
-        throw new Error(`git ${args[0]}: expected ${expected === 0 ? 'success' : 'rejection'}, got ${code}: ${output.replaceAll(secret, '[redacted]')}`);
-      }
-      return output;
-    };
+    // On deployed staging the edge answers git with transient 5xx (CFG-2,
+    // CFG-11, GH-17, REM-1): the same retry wraps the shared authenticated exec.
+    const git = (secret: string, args: string[], expected: 'ok' | 'rejected' = 'ok') =>
+      withTransientGitRetry(args, () => gitWithAuth(secret, args, root, expected));
     try {
       localGitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'GH-17');
       const owner = await mint(ctx.P.OWNER);
@@ -552,7 +532,7 @@ flow(
           ['push', 'origin', 'HEAD:refs/heads/gh17-member-forbidden'],
           ['push', 'origin', '--delete', 'gh17-shared'],
         ]) {
-          const output = await git(memberSession.secret, args, 1);
+          const output = await git(memberSession.secret, args, 'rejected');
           if (!output.includes('[remote rejected]')) throw new Error('expected a Git ref-policy rejection');
         }
         const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared', 'gh17-member-forbidden']);
@@ -966,10 +946,7 @@ flow(
     const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
     const { Client: PgClient } = await import('pg');
-    const exec = promisify(execFile);
     const team = await ctx.fixtures.team();
     const outsider = await team.addMember('member');
     const projectMember = await team.addMember('member');
@@ -983,31 +960,12 @@ flow(
     const tokenIds: string[] = [];
     let localGitServer: import('node:http').Server | null = null;
     const personalToken = async (identity: typeof ctx.P.OWNER, label: string) => {
-      const created = await ctx.client.as(identity).post('/v1/accounts/tokens', {
-        name: `GH-19 ${label}`, account_id: team.id,
-      });
-      created.status(201);
-      const body = created.json<{ token_id: string; secret_key: string }>();
-      tokenIds.push(body.token_id);
-      return body.secret_key;
+      const minted = await mintAccountToken(ctx.client, identity, `GH-19 ${label}`, team.id);
+      tokenIds.push(minted.tokenId);
+      return minted.secretKey;
     };
-    const git = async (secret: string, args: string[], expected: 'ok' | 'rejected') => {
-      let code = 0;
-      let output = '';
-      try {
-        const result = await exec('git', args, { cwd: root, timeout: 60_000,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
-        output = result.stdout + result.stderr;
-      } catch (error: any) {
-        code = typeof error.code === 'number' ? error.code : -1;
-        output = String(error.stdout ?? '') + String(error.stderr ?? '');
-      }
-      if ((expected === 'ok') !== (code === 0)) {
-        throw new Error(`git ${args[0]}: expected ${expected}, got exit ${code}: ${output.replaceAll(secret, '[redacted]')}`);
-      }
-      return output;
-    };
+    const git = (secret: string, args: string[], expected: 'ok' | 'rejected') =>
+      gitWithAuth(secret, args, root, expected);
     try {
       localGitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'GH-19');
       const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;

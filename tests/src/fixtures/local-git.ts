@@ -1,7 +1,10 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import type { Client } from "../core/client";
+import type { Principal } from "../core/types";
 
 export interface LocalGitRepository {
   repoUrl: string;
@@ -181,4 +184,63 @@ export async function serveFixtureRepoLocally(
   await db.query('UPDATE kortix.projects SET repo_url = $1 WHERE project_id = $2',
     [`http://127.0.0.1:${port}`, projectId]);
   return localGitServer;
+}
+
+/**
+ * Mint a personal account token through the real route — the git-proxy flows
+ * (AUD-7, GH-17, GH-19) share this kit. The caller records `tokenId` for its
+ * teardown; the secret key is returned once and never persisted by the fixture.
+ */
+export async function mintAccountToken(
+  client: Client,
+  identity: Principal,
+  name: string,
+  accountId?: string,
+): Promise<{ tokenId: string; secretKey: string }> {
+  const created = await client
+    .as(identity)
+    .post("/v1/accounts/tokens", accountId ? { name, account_id: accountId } : { name });
+  created.status(201);
+  const body = created.json<{ token_id: string; secret_key: string }>();
+  return { tokenId: body.token_id, secretKey: body.secret_key };
+}
+
+/**
+ * One git invocation authenticated with a bearer credential — the git-proxy
+ * flows share this kit. `expected` says whether the command must succeed
+ * ("ok") or must be refused ("rejected"); the output is always returned with
+ * the credential redacted.
+ */
+export async function gitWithAuth(
+  secret: string,
+  args: string[],
+  cwd: string,
+  expected: "ok" | "rejected" = "ok",
+): Promise<string> {
+  let code = 0;
+  let output = "";
+  try {
+    const result = await promisify(execFile)("git", args, {
+      cwd,
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`,
+      },
+    });
+    output = result.stdout + result.stderr;
+  } catch (error) {
+    const failed = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
+    code = typeof failed.code === "number" ? failed.code : -1;
+    output = String(failed.stdout ?? "") + String(failed.stderr ?? "");
+  }
+  if ((expected === "ok") !== (code === 0)) {
+    throw new Error(
+      `git ${args[0]}: expected ${expected}, got exit ${code}: ${output.replaceAll(secret, "[redacted]")}`,
+    );
+  }
+  return output;
 }

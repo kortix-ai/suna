@@ -14,6 +14,22 @@
  * reachable for a project editor / account owner/admin.
  */
 import { flow } from '../core/flow';
+import type { Res } from '../core/client';
+import type { FlowContext, Principal } from '../core/types';
+
+const FEATURES = '/v1/projects/:projectId/features';
+const EXPERIMENTAL = '/v1/projects/:projectId/experimental';
+
+// One feature-flag PATCH through either route (the deprecated /experimental
+// alias registers the same handler). Returns the raw response for the step's
+// assertions.
+const patchFeature = (
+  ctx: FlowContext,
+  identity: Principal,
+  route: typeof FEATURES | typeof EXPERIMENTAL,
+  body: Record<string, unknown>,
+  projectId: string,
+): Promise<Res> => ctx.client.as(identity).patch(route, body, { params: { projectId } });
 
 flow(
   'EXP-1',
@@ -29,65 +45,29 @@ flow(
     const p = await ctx.fixtures.project();
 
     await ctx.step('OWNER enables connectors_api_discover via /features → 200 + catalog in body', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, FEATURES, { feature: 'connectors_api_discover', enabled: true }, p.id);
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
     });
 
     await ctx.step('the deprecated /experimental alias writes the same state → 200', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/experimental',
-          { feature: 'connectors_api_discover', enabled: false },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, EXPERIMENTAL, { feature: 'connectors_api_discover', enabled: false }, p.id);
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
     });
 
     await ctx.step('OWNER clears the override (enabled: null) → 200', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: null },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, FEATURES, { feature: 'connectors_api_discover', enabled: null }, p.id);
       r.status(200);
     });
 
     await ctx.step('agent_tunnel graduated (computers need no flag) → 400 unknown feature', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature: 'agent_tunnel', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, FEATURES, { feature: 'agent_tunnel', enabled: true }, p.id);
       r.status(400);
     });
 
     await ctx.step('pi_worker withdrawn (pi runs only in the sandbox) → 400, absent from the catalog', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature: 'pi_worker', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, FEATURES, { feature: 'pi_worker', enabled: true }, p.id);
       r.status(400);
-      const project = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature: 'pi_harness', enabled: null },
-          { params: { projectId: p.id } },
-        );
+      const project = await patchFeature(ctx, ctx.P.OWNER, FEATURES, { feature: 'pi_harness', enabled: null }, p.id);
       project.status(200);
       const body = project.json<{
         experimental: Record<string, boolean>;
@@ -103,46 +83,22 @@ flow(
     });
 
     await ctx.step('unknown feature → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/experimental',
-          { feature: 'not_a_feature', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, EXPERIMENTAL, { feature: 'not_a_feature', enabled: true }, p.id);
       r.status(400);
     });
 
     await ctx.step('non-bool enabled → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: 'yes' },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.OWNER, EXPERIMENTAL, { feature: 'monitors', enabled: 'yes' }, p.id);
       r.status(400);
     });
 
     await ctx.step('NONMEMBER → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .patch(
-          '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.NONMEMBER, EXPERIMENTAL, { feature: 'monitors', enabled: true }, p.id);
       r.status([403, 404]);
     });
 
     await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .patch(
-          '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
-          { params: { projectId: p.id } },
-        );
+      const r = await patchFeature(ctx, ctx.P.ANON, EXPERIMENTAL, { feature: 'monitors', enabled: true }, p.id);
       r.status(401);
     });
   },

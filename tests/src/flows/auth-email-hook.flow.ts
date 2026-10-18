@@ -45,6 +45,20 @@ flow(
   async (ctx) => {
     const secret = hookSecret();
 
+    // One signed webhook POST: Standard Webhooks HMAC over the raw body, sent
+    // pre-serialized (see the file header).
+    const signedPost = (rawBody: string, id: string) => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      return ctx.client.as(ctx.P.ANON).post(ROUTE, rawBody, {
+        headers: {
+          "content-type": "application/json",
+          "webhook-id": id,
+          "webhook-timestamp": timestamp,
+          "webhook-signature": signBody(rawBody, id, timestamp, secret),
+        },
+      });
+    };
+
     await ctx.step("unsigned request → 401 (never 200)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).post(ROUTE, magicLinkPayload("nobody@example.test"), {
         headers: { "content-type": "application/json" },
@@ -57,16 +71,7 @@ flow(
     await ctx.step("valid signature over a tampered body → 401", async () => {
       if (!secret) return;
       const signed = magicLinkPayload("victim@example.test");
-      const id = "ke2e-tamper";
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const r = await ctx.client.as(ctx.P.ANON).post(ROUTE, `${signed} `, {
-        headers: {
-          "content-type": "application/json",
-          "webhook-id": id,
-          "webhook-timestamp": timestamp,
-          "webhook-signature": signBody(signed, id, timestamp, secret),
-        },
-      });
+      const r = await signedPost(`${signed} `, "ke2e-tamper");
       r.status(401);
     });
 
@@ -77,16 +82,7 @@ flow(
       if (!secret) return;
       const recipient = `ke2e-auth-hook-${Date.now()}@example.test`;
       const rawBody = magicLinkPayload(recipient);
-      const id = `ke2e-${Date.now()}`;
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const r = await ctx.client.as(ctx.P.ANON).post(ROUTE, rawBody, {
-        headers: {
-          "content-type": "application/json",
-          "webhook-id": id,
-          "webhook-timestamp": timestamp,
-          "webhook-signature": signBody(rawBody, id, timestamp, secret),
-        },
-      });
+      const r = await signedPost(rawBody, `ke2e-${Date.now()}`);
       r.status(200);
     });
 
@@ -96,16 +92,7 @@ flow(
         user: { email: "user@example.test" },
         email_data: { email_action_type: "telepathy", token_hash: "x" },
       });
-      const id = `ke2e-bad-${Date.now()}`;
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const r = await ctx.client.as(ctx.P.ANON).post(ROUTE, rawBody, {
-        headers: {
-          "content-type": "application/json",
-          "webhook-id": id,
-          "webhook-timestamp": timestamp,
-          "webhook-signature": signBody(rawBody, id, timestamp, secret),
-        },
-      });
+      const r = await signedPost(rawBody, `ke2e-bad-${Date.now()}`);
       r.status(400);
     });
   },

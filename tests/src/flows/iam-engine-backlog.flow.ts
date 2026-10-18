@@ -50,6 +50,8 @@
  */
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
+import type { Res } from '../core/client';
+import type { FlowContext, Principal } from '../core/types';
 
 // Path templates passed to the client (.get/.post take a path, not a key).
 const EFFECTIVE = '/v1/accounts/:accountId/iam/members/:userId/effective';
@@ -68,6 +70,52 @@ const R_GROUPS_POST = `POST ${GROUPS}`;
 const R_GROUP_MEMBERS_POST = `POST ${GROUP_MEMBERS}`;
 const R_PROJECT_GRANTS_POST = `POST ${PROJECT_GRANTS}`;
 
+// One effective-probe request: every ALLOW/DENY verdict in this file reads the
+// engine's decision through this one surface.
+const probeEffective = (
+  ctx: FlowContext,
+  identity: Principal,
+  accountId: string,
+  userId: string,
+  query: { action: string; resourceType?: string; resourceId?: string },
+) =>
+  ctx.client.as(identity).get(EFFECTIVE, {
+    params: { accountId, userId },
+    query,
+  });
+
+// The IAM verdict cache is process-local with a 15s TTL and staging runs 6 API
+// tasks (see IAM-12): poll until the task serving THIS request sees the new
+// verdict. One shared 30s budget for every verdict poll in this file.
+const pollVerdict = (request: () => Promise<Res>, until: (res: Res) => boolean, description: string) =>
+  waitFor(request, { until, timeoutMs: 30_000, intervalMs: 2_500, description });
+
+// The IAM-10/IAM-13 group seeding: one group, the member in it, Manager on the
+// project. Returns the group id.
+const seedGroupManagerGrant = async (
+  ctx: FlowContext,
+  team: Awaited<ReturnType<FlowContext['fixtures']['team']>>,
+  projectId: string,
+  member: Principal,
+): Promise<string> => {
+  const g = await ctx.client
+    .as(ctx.P.OWNER)
+    .post(GROUPS, { name: ctx.fixtures.name('grp') }, { params: { accountId: team.id } });
+  g.status(201);
+  const groupId = g.json<{ group_id: string }>().group_id;
+
+  const add = await ctx.client
+    .as(ctx.P.OWNER)
+    .post(GROUP_MEMBERS, { userId: member.userId! }, { params: { accountId: team.id, groupId } });
+  add.status(200).body().has('$.added', 1);
+
+  const grant = await ctx.client
+    .as(ctx.P.OWNER)
+    .post(PROJECT_GRANTS, { group_id: groupId, role: 'manager' }, { params: { projectId } });
+  grant.status(201).body().has('$.role', 'manager');
+  return groupId;
+};
+
 // ─── IAM-4: default (no custom role bound) → effective is the read surface ─
 // `…/iam/policies` CRUD now exists (custom-roles.ts) but is Enterprise-gated
 // and additive: with no custom role bound to this member, their
@@ -80,28 +128,19 @@ flow('IAM-4', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
   const member = await team.addMember('member');
 
   await ctx.step("member's account.read is allowed via their account-scope role", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: member.userId! },
-      query: { action: 'account.read' },
-    });
+    const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, { action: 'account.read' });
     r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
 
   await ctx.step("member's account.write is denied (no policy can grant it)", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: member.userId! },
-      query: { action: 'account.write' },
-    });
+    const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, { action: 'account.write' });
     r.status(200).body().has('$.allowed', false).has('$.reason', 'account_role_insufficient');
   });
 
   await ctx.step(
     'a user can self-probe their own effective set (no MEMBER_READ needed)',
     async () => {
-      const r = await ctx.client.as(member).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: member.userId! },
-        query: { action: 'account.read' },
-      });
+      const r = await probeEffective(ctx, member, team.id, member.userId!, { action: 'account.read' });
       r.status(200).body().exists('$.allowed');
     },
   );
@@ -119,26 +158,17 @@ flow('IAM-5', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
   const admin = await team.addMember('admin');
 
   await ctx.step('admin role grants account.write; member role does not', async () => {
-    const a = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: admin.userId! },
-      query: { action: 'account.write' },
-    });
+    const a = await probeEffective(ctx, ctx.P.OWNER, team.id, admin.userId!, { action: 'account.write' });
     a.status(200).body().has('$.allowed', true).has('$.reason', 'role');
 
-    const m = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: member.userId! },
-      query: { action: 'account.write' },
-    });
+    const m = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, { action: 'account.write' });
     m.status(200).body().has('$.allowed', false);
   });
 
   await ctx.step(
     "response echoes the action's resource_type (the only 'catalog' signal)",
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: admin.userId! },
-        query: { action: 'account.read' },
-      });
+      const r = await probeEffective(ctx, ctx.P.OWNER, team.id, admin.userId!, { action: 'account.read' });
       r.status(200).body().has('$.resource_type', 'account');
     },
   );
@@ -160,18 +190,20 @@ flow('IAM-6', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
   await ctx.step(
     'admin → implicit Manager → project.delete allowed (manager action set)',
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: admin.userId! },
-        query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
+      const r = await probeEffective(ctx, ctx.P.OWNER, team.id, admin.userId!, {
+        action: 'project.delete',
+        resourceType: 'project',
+        resourceId: project.id,
       });
       r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
   );
 
   await ctx.step('member with no project path → project.delete denied', async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: member.userId! },
-      query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
+    const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+      action: 'project.delete',
+      resourceType: 'project',
+      resourceId: project.id,
     });
     r.status(200).body().has('$.allowed', false).has('$.reason', 'no_project_membership');
   });
@@ -190,8 +222,9 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const subject = await team.addMember('admin');
-    const subjectId = subject.userId;
-    if (!subjectId) throw new Error('run-scoped IAM-9 admin has no userId');
+    // team.addMember fails loudly when the add does not commit, so the id is
+    // always present here.
+    const subjectId = subject.userId!;
 
     await ctx.step('promote the run-scoped admin to super-admin', async () => {
       const promoted = await ctx.client
@@ -247,10 +280,7 @@ flow(
     await ctx.step('revoked admin converges to account_role across API replicas', async () => {
       const result = await waitFor(
         async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-            params: { accountId: team.id, userId: subjectId },
-            query: { action: 'account.write' },
-          });
+          const r = await probeEffective(ctx, ctx.P.OWNER, team.id, subjectId, { action: 'account.write' });
           r.status(200);
           return r.json<{ allowed?: boolean; reason?: string }>();
         },
@@ -298,38 +328,17 @@ flow(
     await ctx.step(
       'create a group, add the member, grant the group Manager on the project',
       async () => {
-        const g = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(GROUPS, { name: ctx.fixtures.name('grp') }, { params: { accountId: team.id } });
-        g.status(201);
-        groupId = g.json<any>().group_id;
-
-        const add = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            GROUP_MEMBERS,
-            { userId: member.userId! },
-            { params: { accountId: team.id, groupId } },
-          );
-        add.status(200).body().has('$.added', 1);
-
-        const grant = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            PROJECT_GRANTS,
-            { group_id: groupId, role: 'manager' },
-            { params: { projectId: project.id } },
-          );
-        grant.status(201).body().has('$.role', 'manager');
+        groupId = await seedGroupManagerGrant(ctx, team, project.id, member);
       },
     );
 
     await ctx.step(
       'max-role-wins: project.delete allowed (Manager grant overrides the lower User; nothing denies)',
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: member.userId! },
-          query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
+        const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+          action: 'project.delete',
+          resourceType: 'project',
+          resourceId: project.id,
         });
         r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
       },
@@ -352,10 +361,7 @@ flow('IAM-11', { domain: 'iam', routes: [R_EFFECTIVE, R_EFFECTIVE_BATCH] }, asyn
   await ctx.step(
     'minter (super-admin OWNER) effective = super_admin — a PAT inherits this, not a policy subset',
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: ownerId },
-        query: { action: 'account.write' },
-      });
+      const r = await probeEffective(ctx, ctx.P.OWNER, team.id, ownerId, { action: 'account.write' });
       // PARTIAL: the engine has no token dimension on this endpoint, so we
       // assert the inherited (minter) decision the PAT would carry. There is
       // no narrowing-policy state to construct and contrast against.
@@ -399,7 +405,7 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
       // for up to one TTL window (runs 32353592362 attempts 2-3; steady-state
       // probes are correct on every task). Poll until the grant is visible on
       // the task answering THIS request, then assert the full verdict strictly.
-      const r = await waitFor(
+      const r = await pollVerdict(
         () =>
           ctx.client.as(ctx.P.OWNER).post(
             EFFECTIVE_BATCH,
@@ -412,12 +418,8 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
             },
             { params: { accountId: team.id, userId: member.userId! } },
           ),
-        {
-          until: (res) => res.statusCode === 200 && res.json<any>()?.results?.[0]?.allowed === true,
-          timeoutMs: 30_000,
-          intervalMs: 2_500,
-          description: 'member account.read verdict visible on the serving task',
-        },
+        (res) => res.statusCode === 200 && res.json<{ results?: Array<{ allowed?: boolean }> }>().results?.[0]?.allowed === true,
+        'member account.read verdict visible on the serving task',
       );
       r.status(200)
         .body()
@@ -431,18 +433,10 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
 
   await ctx.step('admin bridges to Administrator-level set: account.write allowed', async () => {
     // Same cross-task cache window as the member probe above.
-    const r = await waitFor(
-      () =>
-        ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: admin.userId! },
-          query: { action: 'account.write' },
-        }),
-      {
-        until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
-        timeoutMs: 30_000,
-        intervalMs: 2_500,
-        description: 'admin account.write verdict visible on the serving task',
-      },
+    const r = await pollVerdict(
+      () => probeEffective(ctx, ctx.P.OWNER, team.id, admin.userId!, { action: 'account.write' }),
+      (res) => res.statusCode === 200 && res.json<{ allowed?: boolean }>().allowed === true,
+      'admin account.write verdict visible on the serving task',
     );
     r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
@@ -452,18 +446,15 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
     async () => {
       await team.grantProjectRole(project.id, member.userId!, 'manager');
       // Same cross-task cache window: the grant busts only the serving task.
-      const r = await waitFor(
+      const r = await pollVerdict(
         () =>
-          ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-            params: { accountId: team.id, userId: member.userId! },
-            query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
+          probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+            action: 'project.write',
+            resourceType: 'project',
+            resourceId: project.id,
           }),
-        {
-          until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
-          timeoutMs: 30_000,
-          intervalMs: 2_500,
-          description: 'project manager verdict visible on the serving task',
-        },
+        (res) => res.statusCode === 200 && res.json<{ allowed?: boolean }>().allowed === true,
+        'project manager verdict visible on the serving task',
       );
       r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
@@ -490,37 +481,16 @@ flow(
 
     let groupId = '';
     await ctx.step('create group, add member, grant group Manager on project A only', async () => {
-      const g = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(GROUPS, { name: ctx.fixtures.name('grp') }, { params: { accountId: team.id } });
-      g.status(201);
-      groupId = g.json<any>().group_id;
-
-      const add = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          GROUP_MEMBERS,
-          { userId: member.userId! },
-          { params: { accountId: team.id, groupId } },
-        );
-      add.status(200).body().has('$.added', 1);
-
-      const grant = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          PROJECT_GRANTS,
-          { group_id: groupId, role: 'manager' },
-          { params: { projectId: projectA.id } },
-        );
-      grant.status(201);
+      groupId = await seedGroupManagerGrant(ctx, team, projectA.id, member);
     });
 
     await ctx.step(
       'matching scope (project A) → project.delete allowed via project_role',
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: member.userId! },
-          query: { action: 'project.delete', resourceType: 'project', resourceId: projectA.id },
+        const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+          action: 'project.delete',
+          resourceType: 'project',
+          resourceId: projectA.id,
         });
         r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
       },
@@ -529,9 +499,10 @@ flow(
     await ctx.step(
       'non-matching scope (project B, no grant) → denied no_project_membership',
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: member.userId! },
-          query: { action: 'project.delete', resourceType: 'project', resourceId: projectB.id },
+        const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+          action: 'project.delete',
+          resourceType: 'project',
+          resourceId: projectB.id,
         });
         r.status(200).body().has('$.allowed', false).has('$.reason', 'no_project_membership');
       },
@@ -542,9 +513,8 @@ flow(
       async () => {
         // With no resourceType the engine treats target as account; a
         // project.* action then fails project_target_required.
-        const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: member.userId! },
-          query: { action: 'project.delete' },
+        const r = await probeEffective(ctx, ctx.P.OWNER, team.id, member.userId!, {
+          action: 'project.delete',
         });
         r.status(200).body().has('$.allowed', false);
       },
