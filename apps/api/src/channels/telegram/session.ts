@@ -25,6 +25,7 @@ import {
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from '../core/threads';
+import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { telegramCall } from './api';
 import { loadTelegramBotToken, loadTelegramInstall } from './installs';
 
@@ -177,10 +178,19 @@ export async function handleTelegramEvent(event: IntegrationEvent): Promise<void
       },
     },
   });
-  if (result.error) {
-    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, claimKey));
-    throw new Error(`telegram createSession failed: ${result.error.status}`);
+  if (!result.error) return;
+  // A create that went back to the lifecycle queue belongs to its drain: the
+  // drain binds the thread and delivers the prompt when the session starts.
+  // The claim stays, so a second message in this chat waits for that thread.
+  if (result.requeued) {
+    await reply('Kortix is still starting a session for this chat. The agent replies here when it is ready.');
+    return;
   }
+  // Any other failure is final for this message: say why, and free the chat
+  // so a corrected re-send starts at once (the Slack and Teams behavior).
+  logger.warn('[telegram] createSession failed', { status: result.error.status, projectId: event.projectId });
+  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, claimKey));
+  await reply(startErrorMessage(result.error.status, result.error.body, TELEGRAM_START_ERROR_COMMANDS));
 }
 
 async function sendTelegramReply(token: string, message: TelegramMessage, text: string): Promise<void> {

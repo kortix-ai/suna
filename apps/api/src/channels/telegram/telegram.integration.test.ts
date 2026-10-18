@@ -41,6 +41,7 @@ const fake = Bun.serve({
 
 const created: Array<Record<string, any>> = [];
 const delivered: Array<Record<string, any>> = [];
+let createResult: Record<string, unknown> = {};
 let updateId = 1;
 
 function update(text: string, from = ALLOWED, chatId = 777) {
@@ -76,7 +77,7 @@ beforeAll(async () => {
     resolveProjectAutomationActor: async () => ACTOR,
     createSession: (async (input: Record<string, any>) => {
       created.push(input);
-      return {};
+      return createResult;
     }) as never,
     deliverThroughQueue: (async (command: Record<string, any>) => {
       delivered.push(command);
@@ -89,6 +90,7 @@ beforeEach(() => {
   calls.length = 0;
   created.length = 0;
   delivered.length = 0;
+  createResult = {};
 });
 
 afterAll(async () => {
@@ -152,6 +154,23 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     const [thread] = await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '888')));
     expect(thread).toBeUndefined();
     expect(calls.at(-1)?.method).toBe('sendMessage');
+  });
+
+  test('a create the lifecycle requeued keeps the chat claimed; a final failure says why and frees it', async () => {
+    const claim = (chat: number) =>
+      db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `telegram:threadcreate:${BOT_ID}:${chat}`));
+
+    createResult = { status: 'failed', retryable: true, requeued: true, error: { status: 503, body: { error: 'clone failed' } } };
+    await handleTelegramEvent(update('first try', ALLOWED, 901));
+    expect(calls.map((c) => c.method)).toEqual(['sendChatAction', 'sendMessage']);
+    expect(String(calls[1]!.body.text)).toContain('still starting a session');
+    expect(await claim(901)).toHaveLength(1);
+
+    calls.length = 0;
+    createResult = { status: 'failed', retryable: false, error: { status: 402, body: { error: 'no credits' } } };
+    await handleTelegramEvent(update('second try', ALLOWED, 902));
+    expect(String(calls.at(-1)!.body.text)).toContain('out of credits');
+    expect(await claim(902)).toHaveLength(0);
   });
 
   test('with connectors_v2 off the consumer does nothing', async () => {
