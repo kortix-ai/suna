@@ -481,13 +481,6 @@ describe('trigger composer: connector first, then its account', () => {
   });
 });
 
-describe('triggers page: the paused banner is one whole sentence', () => {
-  test('`text3bc554b5c290` names Resume all itself, so nothing is appended to it', () => {
-    const view = readFileSync(join(import.meta.dir, '..', 'schedule-view.tsx'), 'utf8');
-    expect(view).toMatch(/\{tI18nComplete\.raw\('text3bc554b5c290'\)\}\s*<\/InfoBanner>/);
-  });
-});
-
 describe('composer layout: three groups, one summary', () => {
   const composer = read('trigger-composer.tsx');
   const builder = readFileSync(

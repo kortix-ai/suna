@@ -22,6 +22,39 @@ function stripComments(src: string): string {
 const page = stripComments(pageSource);
 const hook = stripComments(hookSource);
 
+/**
+ * The page renders two `role="alert"` regions — the post-submit error block
+ * (the retry affordance lives here) and the upfront plan-cap block (KRTX-2495,
+ * gated on `capState && status === 'idle'`). These guards must anchor on the
+ * RETRY region specifically, so resolve it by its own gate instead of "the
+ * first alert in the file", which the cap block would otherwise satisfy.
+ */
+function alertIndices(): number[] {
+  const indices: number[] = [];
+  let at = page.indexOf('role="alert"');
+  while (at !== -1) {
+    indices.push(at);
+    at = page.indexOf('role="alert"', at + 1);
+  }
+  return indices;
+}
+
+function errorAlertIndex(): number {
+  const found = alertIndices().find((at) => {
+    const guardStart = page.lastIndexOf('{', at);
+    return page.slice(guardStart, at).includes("status === 'error'");
+  });
+  expect(found).toBeDefined();
+  return found as number;
+}
+
+function errorAlertRegion(): string {
+  const alertStart = errorAlertIndex();
+  const containerStart = page.lastIndexOf('<div', alertStart);
+  expect(containerStart).toBeGreaterThan(0);
+  return page.slice(containerStart, page.indexOf('</form>', alertStart));
+}
+
 describe('/new failure states: pre-existing coverage (regression pin)', () => {
   // Raw source (comments intact) on purpose for this block, matching the
   // brief's own draft: these are simple positive pins on documented facts —
@@ -60,7 +93,7 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
   });
 
   test('the retry control sits inside the role="alert" region and calls retry(), not create() again', () => {
-    const alertStart = page.indexOf('role="alert"');
+    const alertStart = errorAlertIndex();
     expect(alertStart).toBeGreaterThan(0);
     // The nearest enclosing element's opening tag.
     const containerStart = page.lastIndexOf('<div', alertStart);
@@ -79,9 +112,7 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
   });
 
   test('the retry control is gated on canRetry so the 503 case (see below) can suppress it', () => {
-    const alertStart = page.indexOf('role="alert"');
-    const containerStart = page.lastIndexOf('<div', alertStart);
-    const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
+    const region = errorAlertRegion();
 
     // Must be a real conditional on canRetry, not just the word floating
     // nearby in a comment or unrelated prop.
@@ -95,7 +126,7 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // hover:text-foreground". The retry control must match that exact
     // color/weight treatment rather than inventing another style (e.g. a
     // full-contrast button).
-    const alertStart = page.indexOf('role="alert"');
+    const alertStart = errorAlertIndex();
     expect(alertStart).toBeGreaterThan(0);
     const containerStart = page.lastIndexOf('<div', alertStart);
     const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
@@ -113,11 +144,21 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     expect(bar).toContain('backPillClass(');
   });
 
-  test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
-    const alertIndex = page.indexOf('role="alert"');
-    const guardStart = page.lastIndexOf('{', alertIndex);
-    const guard = page.slice(guardStart, alertIndex);
-    expect(guard).toContain("status === 'error'");
+  test('the retry control does not appear when status !== "error" — every alert region is status-gated', () => {
+    // The page has two alert regions, each with its own gate: the post-submit
+    // error block on `status === 'error'` and the upfront plan-cap block on
+    // `capState && status === 'idle'` (KRTX-2495). Neither may render outside
+    // its status, and no alert may exist ungated — a new alert without a
+    // status condition fails here.
+    const gates = alertIndices().map((at) => {
+      const guardStart = page.lastIndexOf('{', at);
+      // The guard runs from the condition's `{` up to the element it opens;
+      // compare on the condition text itself.
+      return page.slice(guardStart + 1, at).replace(/\s+/g, ' ').trim();
+    });
+    expect(gates).toHaveLength(2);
+    expect(gates.some((g) => g.includes("capState && status === 'idle'"))).toBe(true);
+    expect(gates.some((g) => g.includes("status === 'error'"))).toBe(true);
   });
 });
 
@@ -131,8 +172,16 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
     expect(hook).not.toContain('is not configured on this server');
   });
 
-  test('messageFor gives 502 the retryable generic message, unchanged', () => {
-    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
+  // KRTX-1754: a 502/503 that carries the API's real reason shows it — the
+  // API's own middleware preserves the body across its 502→503 rewrite, and
+  // the stream route carries the reason in-band. The generic retry line is
+  // for the reason-less shapes only (see the two placeholder tests below).
+  test('messageFor gives a 502 with a server reason the reason, not the generic', () => {
+    expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe('Bad Gateway');
+  });
+
+  test('messageFor keeps the generic retry hint when the 502 body was lost (a proxy replaced it)', () => {
+    expect(messageFor(new ApiError('Provision failed: HTTP 503', { status: 503 }))).toBe(
       'Could not create the workspace. Try again.',
     );
   });

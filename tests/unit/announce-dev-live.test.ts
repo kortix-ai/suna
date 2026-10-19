@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'scripts/ci/announce-dev-live.sh');
@@ -66,6 +66,7 @@ interface Fixture {
 
 function run(fixture: Fixture) {
   const dir = mkdtempSync(join(tmpdir(), 'announce-dev-live-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const fixtures = join(dir, 'gh');
   writeFileSync(join(dir, 'gh.log'), '');
   writeFileSync(join(dir, 'writes.log'), '');

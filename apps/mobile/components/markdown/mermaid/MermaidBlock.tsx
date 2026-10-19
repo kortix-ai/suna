@@ -41,7 +41,7 @@ import { MermaidRendererPortal } from './MermaidRendererHost';
 const CARD_MIN_HEIGHT = 200;
 const ORIGIN_WHITELIST = ['*'];
 
-export interface MermaidBlockProps {
+interface MermaidBlockProps {
   chart: string;
   /** The fence language as written (`mermaid`, or empty for a detected diagram). */
   language: string;

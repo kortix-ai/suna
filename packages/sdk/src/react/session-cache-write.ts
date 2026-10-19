@@ -46,14 +46,21 @@ function isSessionCacheKey(projectId: string, query: Query): boolean {
   return rest.length === 1 && typeof rest[0] === 'string';
 }
 
-type ListFilters = { parent: string | null; startedBy: string | null; q: string | null };
+type ListFilters = {
+  parent: string | null;
+  startedBy: string | null;
+  q: string | null;
+  view?: 'pinned' | 'archived';
+};
 
 /**
  * May a NEW session appear in this cached list? Unfiltered lists take every
  * session. A searched list is never seeded (whether the row matches is the
  * server's call). A root list takes top-level sessions whose starter matches;
  * a children list takes only that parent's children. The viewer id is not known
- * here, so "mine" is `is_owner !== false` on a member-started row.
+ * here, so "mine" is `is_owner !== false` on a member-started row. A pinned
+ * or archived view takes only a row the viewer pinned or archived: a new
+ * session is neither, so it never shows under Pinned.
  */
 function sessionBelongsInList(projectId: string, query: Query, session: ProjectSession): boolean {
   const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
@@ -62,6 +69,8 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   const filters = rest[0] === 'list-paged' ? (rest[2] as ListFilters | undefined) : undefined;
   if (!filters) return true;
   if (filters.q) return false;
+  if (filters.view === 'pinned' && !session.pinned_at) return false;
+  if (filters.view === 'archived' && !session.archived_at) return false;
   if (filters.parent === 'root' && parentId !== null) return false;
   if (filters.parent && filters.parent !== 'root') return parentId === filters.parent;
   if (!filters.startedBy) return true;

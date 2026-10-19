@@ -283,7 +283,9 @@ export function SecretIntakeForm({
   const footnote = [
     compact
       ? null
-      : tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88'),
+      : tI18nHardcoded.raw(
+          'autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213',
+        ),
     expiresIn ? tI18nHardcoded('i18nComplete.textefb48f76e65a', { value0: expiresIn }) : null,
   ]
     .filter(Boolean)
@@ -291,6 +293,19 @@ export function SecretIntakeForm({
 
   return (
     <div className="space-y-5">
+      <p className="text-muted-foreground text-xs text-pretty">
+        {info?.scope === 'runtime'
+          ? tI18nHardcoded.raw(
+              'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931',
+            )
+          : info?.scope === 'connector'
+            ? tI18nHardcoded.raw(
+                'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055',
+              )
+            : tI18nHardcoded.raw(
+                'autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686',
+              )}
+      </p>
       <FieldGroup className="gap-5">
         {fields.map((f) => (
           <Field key={f.name} className="space-y-2">

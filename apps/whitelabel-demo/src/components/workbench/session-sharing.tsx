@@ -6,36 +6,37 @@
  * their mutations; PreviewPanel keeps only the preview surface itself.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+} from '@kortix/ui/select';
+import { Separator } from '@kortix/ui/separator';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { resolvePublicShareUrl } from '@kortix/sdk';
 import type { SessionPreviewCandidate, SessionPublicShare } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Plus, Share2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { CopyIcon, PlusIcon, ShareNetworkIcon, TrashIcon } from '@phosphor-icons/react';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -47,9 +48,9 @@ const SHARING_OPTIONS = [
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
+    successToast('Copied to clipboard');
   } catch {
-    toast.error('Could not copy');
+    errorToast('Could not copy');
   }
 }
 
@@ -87,33 +88,33 @@ function CreateShareDialog({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
-      toast.success('Public share created');
+      successToast('Public share created');
       setCreateOpen(false);
       setShareLabel('');
     },
     onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to create share'),
+      errorToast(err instanceof Error ? err.message : 'Failed to create share'),
   });
 
   return (
-    <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-      <DialogTrigger asChild>
+    <Modal open={createOpen} onOpenChange={setCreateOpen}>
+      <ModalTrigger asChild>
         <Button variant="secondary" size="sm" className="ml-auto h-8 gap-1.5" disabled={!selected}>
-          <Plus className="size-3.5" />
+          <PlusIcon className="size-3.5" />
           Create public share
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create public share</DialogTitle>
-          <DialogDescription>
+      </ModalTrigger>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Create public share</ModalTitle>
+          <ModalDescription>
             Mint a public link for{' '}
             <span className="font-mono text-foreground">
               {selected ? `:${selected.port}${selected.path ?? ''}` : 'the preview'}
             </span>
             .
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <CreateShareForm
           selected={selected}
           shareLabel={shareLabel}
@@ -123,8 +124,8 @@ function CreateShareDialog({
           setCreateOpen={setCreateOpen}
           createMut={createMut}
         />
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -148,7 +149,7 @@ function CreateShareForm({
 }) {
   return (
     <>
-      <div className="space-y-3 py-1">
+      <ModalBody className="space-y-3">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Label</label>
           <Input
@@ -174,8 +175,8 @@ function CreateShareForm({
             </SelectContent>
           </Select>
         </div>
-      </div>
-      <DialogFooter>
+      </ModalBody>
+      <ModalFooter>
         <Button
           variant="ghost"
           size="sm"
@@ -190,10 +191,10 @@ function CreateShareForm({
           onClick={() => createMut.mutate()}
           disabled={createMut.isPending || !selected}
         >
-          {createMut.isPending ? <Loading className="size-3.5" /> : <Share2 className="size-3.5" />}
+          {createMut.isPending ? <Loading className="size-3.5" /> : <ShareNetworkIcon className="size-3.5" />}
           Create link
         </Button>
-      </DialogFooter>
+      </ModalFooter>
     </>
   );
 }
@@ -210,34 +211,43 @@ export function SessionSharing({
   const qc = useQueryClient();
   const session = kortix.session(projectId, sessionId);
 
-  const [sharingMode, setSharingMode] = useState<string>('project');
+  const sessionQuery = useQuery({
+    queryKey: qk.session(projectId, sessionId),
+    queryFn: () => session.get({ showErrors: false }),
+  });
+  const sharingMode = sessionQuery.data?.sharing?.mode ?? '';
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {
-      const opt = SHARING_OPTIONS.find((o) => o.value === value) ?? SHARING_OPTIONS[0];
+      const opt = SHARING_OPTIONS.find((o) => o.value === value);
+      if (!opt) throw new Error('Unsupported sharing mode');
       return session.setSharing(opt.intent);
     },
-    onSuccess: (_data, value) => {
-      setSharingMode(value);
+    onSuccess: (data) => {
+      qc.setQueryData(qk.session(projectId, sessionId), data);
+      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
       qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
-      toast.success('Sharing updated');
+      successToast('Sharing updated');
     },
     onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to update sharing'),
+      errorToast(err instanceof Error ? err.message : 'Failed to update sharing'),
   });
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
-      <Share2 className="size-4 shrink-0 text-muted-foreground" />
+      <ShareNetworkIcon className="size-4 shrink-0 text-muted-foreground" />
       <span className="text-xs text-muted-foreground">Session visibility</span>
       <Select
         value={sharingMode}
         onValueChange={(v) => setSharingMut.mutate(v)}
-        disabled={setSharingMut.isPending}
+        disabled={setSharingMut.isPending || !sessionQuery.data}
       >
         <SelectTrigger className="h-8 w-[200px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="private" disabled className="text-xs">
+            Private
+          </SelectItem>
           {SHARING_OPTIONS.map((o) => (
             <SelectItem key={o.value} value={o.value} className="text-xs">
               {o.label}
@@ -291,7 +301,7 @@ function ShareRow({
         onClick={() => copy(url)}
         title="Copy URL"
       >
-        <Copy className="size-3.5" />
+        <CopyIcon className="size-3.5" />
       </Button>
       <Button
         variant="ghost"
@@ -301,7 +311,7 @@ function ShareRow({
         onClick={() => revokeMut.mutate(share.share_id)}
         title="Revoke share"
       >
-        <Trash2 className="size-3.5" />
+        <TrashIcon className="size-3.5" />
       </Button>
     </li>
   );
@@ -327,10 +337,10 @@ export function PublicSharesList({
     mutationFn: (shareId: string) => session.publicShares.revoke(shareId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
-      toast.success('Share revoked');
+      successToast('Share revoked');
     },
     onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to revoke share'),
+      errorToast(err instanceof Error ? err.message : 'Failed to revoke share'),
   });
 
   const shares = sharesQuery.data?.shares ?? [];

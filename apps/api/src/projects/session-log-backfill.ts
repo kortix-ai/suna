@@ -14,16 +14,24 @@
  *   `project_sessions.metadata.deletedAt` (the retention purge removes those:
  *   the backfill never resurrects one). Oldest `created_at` first,
  *   `BACKFILL_BATCH_SIZE` per tick, one session per transaction.
- * - Cursor. Written logs leave the queue, so a write pass resumes after a
- *   restart by itself. Within a pass, the tick also walks a keyset cursor
- *   `(created_at, session_id)` kept in memory: a dry pass writes no row, and a
- *   failed session stays behind the cursor, so a pass visits each session once.
- *   A pass ends on a short batch.
+ * - Cursor. The pass state (mode, keyset cursor `(created_at, session_id)`,
+ *   running totals) is one row of `kortix.session_log_backfill_state`, loaded
+ *   and saved by every tick, so a new leader resumes the pass where the last one
+ *   stopped. A dry pass writes no log, and a failed session stays behind the
+ *   cursor, so a pass visits each session once. A pass ends on a short batch.
+ *   A tick saves only over the `rev` it loaded: an old leader's late tick cannot
+ *   move the cursor back. A mode change starts a new pass.
  * - Passes. `write` starts a new pass after each one (the worker waits an hour);
  *   it selects only sessions without a log, so every pass retries the failures
  *   of the last one and is cheap once the queue is empty. `dry` runs one pass per
- *   process: after its summary it does nothing until the process restarts or the
- *   mode changes, because each dry pass reads and converts every old mirror.
+ *   build (`KORTIX_COMMIT`): after its summary it does nothing until the mode or
+ *   the build changes, because each dry pass reads and converts every old
+ *   mirror. A skipped dry tick says so once per process at info. Run it again on
+ *   the same build: `DELETE FROM kortix.session_log_backfill_state`.
+ * - Size cap. A mirror over the capture's cap (`mirrorStoredCap`,
+ *   `session-log-capture.ts`) is not converted: the capture answers `too_large`
+ *   after one cheap size query, and the backfill counts it. Every write pass
+ *   counts it again; its v1 mirror stays the store.
  * - Budget. A tick stops after the session that crossed `BACKFILL_BUDGET_MS`.
  * - Checks. Every converted log is validated with `SessionLogSchema` in the converter: a log
  *   that fails is not written (`validation_failed`). A dry pass also compares, per session,
@@ -36,12 +44,13 @@
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
  */
 import { toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
-import { sql } from 'drizzle-orm';
+import { sessionLogBackfillState } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { largeTextCount } from './session-log-blobs';
-import { writeSessionLogFromMirror } from './session-log-capture';
+import { breathe, writeSessionLogFromMirror } from './session-log-capture';
 
 export const BACKFILL_BATCH_SIZE = 50;
 export const BACKFILL_BUDGET_MS = 20_000;
@@ -55,6 +64,8 @@ const zero = () => ({
   logs: 0,
   skipped: 0,
   failed: 0,
+  /** Sessions whose mirror is over the capture's size cap (`mirrorStoredCap`): not converted. */
+  too_large: 0,
   messages: 0,
   // Restore grades of the logs. `fromV1` gives converted or partial.
   native: 0,
@@ -94,11 +105,13 @@ export type BackfillState = {
   totals: BackfillCounts;
   passStartedAt: number | null;
   ingestOffWarned: boolean;
-  /** A dry pass ended: nothing more until the process restarts or the mode changes. */
+  /** A dry pass ended: nothing more until the mode or the build changes. */
   dryDone: boolean;
+  /** The build (`KORTIX_COMMIT`) that ended the dry pass. */
+  dryCommit?: string;
 };
 
-export const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
+const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
   mode,
   after: null,
   totals: zero(),
@@ -106,6 +119,29 @@ export const newBackfillState = (mode: BackfillMode | null = null): BackfillStat
   ingestOffWarned: false,
   dryDone: false,
 });
+
+const STATE_ID = 'pass';
+/** The build this process last said "dry pass already complete" for: once per build. */
+let dryDoneSaidFor: string | null = null;
+
+/** The pass state and the `rev` it was saved at (0: no row yet). */
+async function loadState(): Promise<{ state: BackfillState; rev: number }> {
+  const [row] = await db.select({ state: sessionLogBackfillState.state, rev: sessionLogBackfillState.rev }).from(sessionLogBackfillState).where(eq(sessionLogBackfillState.id, STATE_ID));
+  if (!row) return { state: newBackfillState(), rev: 0 };
+  const stored = row.state as BackfillState;
+  // A count added since the row was saved starts at 0.
+  return { state: { ...newBackfillState(), ...stored, totals: { ...zero(), ...stored.totals } }, rev: row.rev };
+}
+
+/** Save over `rev` only. False: another tick saved since this one loaded (an old leader's late tick). */
+async function saveState(state: BackfillState, rev: number): Promise<boolean> {
+  const saved = await db
+    .insert(sessionLogBackfillState)
+    .values({ id: STATE_ID, state, rev: rev + 1 })
+    .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state, rev: rev + 1, updatedAt: sql`now()` }, setWhere: eq(sessionLogBackfillState.rev, rev) })
+    .returning({ id: sessionLogBackfillState.id });
+  return saved.length > 0;
+}
 
 /** The next sessions to convert: after the cursor, oldest first. */
 async function selectBatch(after: BackfillState['after']) {
@@ -127,9 +163,12 @@ const canon = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 
 /** How many stored v1 rows `toV1` of the log does not give back exactly (rows compared as a multiset; an extra row counts too). */
-export function roundTripMismatches(log: SessionLog, rows: V1Row[]): number {
+export async function roundTripMismatches(log: SessionLog, rows: V1Row[]): Promise<number> {
   const back = new Map<string, number>();
-  for (const k of toV1(JSON.parse(JSON.stringify(log))).rows.map(canon)) back.set(k, (back.get(k) ?? 0) + 1);
+  const v1 = toV1(JSON.parse(JSON.stringify(log)));
+  await breathe();
+  for (const k of v1.rows.map(canon)) back.set(k, (back.get(k) ?? 0) + 1);
+  await breathe();
   let missing = 0;
   for (const r of rows) {
     const k = canon(r);
@@ -151,6 +190,10 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   });
   counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
   if (result.outcome === 'skipped') counts.skipped++;
+  if (result.outcome === 'too_large') {
+    counts.too_large++;
+    logger.debug('[session-log] backfill session over the size cap; not converted', { sessionId });
+  }
   if (result.outcome === 'invalid') {
     counts.validation_failed++;
     logger.debug('[session-log] backfill session fails SessionLogSchema', { sessionId });
@@ -166,7 +209,7 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
   if (result.harnessFrom === 'default') counts.harness_defaulted++;
   if (result.harnessFrom === 'root') counts.harness_inferred_pi++;
   if (mode === 'dry') {
-    const mismatches = roundTripMismatches(log, result.rows);
+    const mismatches = await roundTripMismatches(log, result.rows);
     if (mismatches > 0) {
       counts.roundtrip_mismatch_sessions++;
       counts.roundtrip_mismatch_messages += mismatches;
@@ -186,20 +229,27 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
 }
 
 /**
- * One tick: up to `BACKFILL_BATCH_SIZE` sessions after the cursor in `state`.
+ * One tick: up to `BACKFILL_BATCH_SIZE` sessions after the stored cursor.
  * `more` is true while the queue may hold more (a full batch, or the budget cut it).
- * When a write pass ends, `state` starts over; when a dry pass ends, every later
+ * When a write pass ends, the state starts over; when a dry pass ends, every later
  * dry tick does nothing. `convert` is the capture write; tests wrap it.
  */
 export async function backfillSessionLogs(
   mode: BackfillMode,
-  state: BackfillState,
   options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror } = {},
 ): Promise<{ more: boolean; counts: BackfillCounts }> {
   const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror } = options;
-  if (state.mode !== mode) Object.assign(state, newBackfillState(mode));
+  const { state, rev } = await loadState();
+  // A new mode, or a dry pass that an older build ended, starts a new pass.
+  if (state.mode !== mode || (state.dryDone && state.dryCommit !== config.KORTIX_COMMIT)) Object.assign(state, newBackfillState(mode));
   const counts = zero();
-  if (state.dryDone) return { more: false, counts };
+  if (state.dryDone) {
+    if (dryDoneSaidFor !== config.KORTIX_COMMIT) {
+      dryDoneSaidFor = config.KORTIX_COMMIT;
+      logger.info('[session-log] backfill dry pass already complete for this build; to run it again, deploy a new build or DELETE FROM kortix.session_log_backfill_state', { commit: config.KORTIX_COMMIT });
+    }
+    return { more: false, counts };
+  }
   const started = Date.now();
   state.passStartedAt ??= started;
   if (mode === 'write' && !config.SESSION_LOG_INGEST_ENABLED && !state.ingestOffWarned) {
@@ -218,9 +268,9 @@ export async function backfillSessionLogs(
     state.totals[k] = MAX_KEYS.has(k) ? Math.max(state.totals[k], counts[k]) : state.totals[k] + counts[k];
   }
   if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
-  if (!more) {
-    if (state.totals.sessions > 0) logger.info('[session-log] backfill pass complete', { mode, ...state.totals });
-    Object.assign(state, newBackfillState(mode), { dryDone: mode === 'dry' });
-  }
+  const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
+  if (!more) Object.assign(state, newBackfillState(mode), mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT } : {});
+  if (!(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
+  else if (summary) logger.info('[session-log] backfill pass complete', summary);
   return { more, counts };
 }

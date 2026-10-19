@@ -9,6 +9,7 @@ let poolEnabled = false;
 let poolLoading = false;
 let poolError = false;
 let secretAllowed = true;
+let managesSession = true;
 let selection: Record<string, string[]> = {};
 // The scope catalog (and, for a session, its scope) has answered.
 let catalogLoaded = true;
@@ -25,10 +26,12 @@ mock.module('./session-overrides-control', () => ({
     return null;
   },
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: (message: string) => { toasts.push(message); },
   errorToast: () => {},
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string, values?: { count: number }) =>
     values ? `${key}:${values.count}` : key, { raw: (key: string) => key }),
@@ -49,6 +52,7 @@ mock.module('@/features/session/scope/use-session-scope', () => ({
 }));
 mock.module('@kortix/sdk/react', () => ({
   useFeatureFlag: (_project: string, flag: string) => ({ enabled: flag === 'llm_gateway' || poolEnabled }),
+  useProjectSession: () => ({ data: { can_manage_lifecycle: managesSession } }),
   useSessionProviderSecretPools: () => ({
     data: { pools: [], can_edit: true },
     isError: poolError,
@@ -88,6 +92,18 @@ test('new session retains ordered row summaries and override flags', () => {
   ]);
   selection = {};
   expect(render()[1]).toEqual({ id: 'provider-keys', summary: 'projectDefaultShort', overridden: false });
+});
+
+// The pools route refuses a viewer who cannot manage the session, so the row
+// is not offered to one. A new session is always the caller's own.
+test('a viewer who cannot manage the session gets no Provider keys row', () => {
+  poolEnabled = true;
+  secretAllowed = true;
+  selection = {};
+  managesSession = false;
+  expect(render(true).map((row) => row.id)).toEqual(['secrets', 'sandbox']);
+  expect(render().map((row) => row.id)).toEqual(['secrets', 'provider-keys', 'sandbox']);
+  managesSession = true;
 });
 
 test('existing session retains provider loading and failure summaries', () => {

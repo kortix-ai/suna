@@ -206,7 +206,7 @@ export function AgentSelector({
         size="sm"
         disabled
         aria-label={unavailableHint ?? undefined}
-        className="text-muted-foreground rounded-lg"
+        className="text-muted-foreground rounded-lg hit-area-y-3"
       >
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
         <CaretDownIcon className="size-3" />
@@ -234,7 +234,7 @@ export function AgentSelector({
         variant="ghost"
         size="sm"
         disabled
-        className="text-muted-foreground rounded-lg"
+        className="text-muted-foreground rounded-lg hit-area-y-3"
       >
         {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
@@ -250,7 +250,7 @@ export function AgentSelector({
           variant="ghost"
           size="sm"
           aria-label={t('selectAgent')}
-          className="text-foreground/70 rounded-lg"
+          className="text-foreground/70 rounded-lg hit-area-y-3"
         >
           {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>

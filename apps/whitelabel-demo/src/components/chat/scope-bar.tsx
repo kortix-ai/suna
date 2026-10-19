@@ -17,10 +17,8 @@
  * `connections-scope-chip.tsx`, the shared primitives in `chip.tsx`.
  */
 
-import { Bot, Cpu } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 import { ScopeChip, StartWithScope } from '@/components/chat/scope-bar/chip';
 import { ConnectionsScopeChip } from '@/components/chat/scope-bar/connections-scope-chip';
@@ -36,6 +34,7 @@ import {
   sessionScopeIsReadable,
 } from '@/lib/session-scope';
 import { useCreateSession } from '@/lib/use-create-session';
+import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   scopeBarConnectors,
@@ -43,13 +42,18 @@ import {
   scopeControl,
   scopeDraftIssues,
 } from './scope-bar-model';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
+import { CpuIcon, RobotIcon } from '@phosphor-icons/react';
 
 export function ScopeBar({
   projectId,
   sessionId,
+  pickedModel = null,
 }: {
   projectId: string;
   sessionId: string;
+  /** The composer's model pick (`useSession(...).picks.model`). Every send uses it, so the chip shows it first. */
+  pickedModel?: UseSessionResult['picks']['model'];
 }) {
   const router = useRouter();
   const qc = useQueryClient();
@@ -70,9 +74,9 @@ export function ScopeBar({
     retry: false,
   });
   const connectors = useConnectorBindingChoices(projectId);
-  // The switcher inside the popover shares this hook's cache entry, so this
-  // label is the switcher's own answer rather than a second opinion — and it
-  // costs no second request.
+  // The session's stored model: the chip's fallback when the composer has no
+  // pick. The switcher inside the popover shares this hook's cache entry, so
+  // it costs no second request.
   const model = useSessionModel(projectId, sessionId);
 
   // A redacted session arrives as a perfectly good HTTP 200 with
@@ -144,17 +148,17 @@ export function ScopeBar({
       // that does not exist there.
       const dropped = body.dropped_secrets ?? [];
       if (dropped.length > 0 && body.retroactive === false) {
-        toast.warning(body.detail ?? 'Applies from the next prompt.', {
+        warningToast(body.detail ?? 'Applies from the next prompt.', {
           duration: 8000,
         });
       } else {
-        toast.success(body.detail ?? 'Scope updated — applies from the next prompt.');
+        successToast(body.detail ?? 'Scope updated — applies from the next prompt.');
       }
       qc.setQueryData(qk.sessionScope(projectId, sessionId), body);
       setDraftSecrets(undefined);
       setDraftBindings(undefined);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => errorToast(err.message),
   });
 
   // Every chip is a claim about what this session may reach, and a half-loaded
@@ -185,7 +189,7 @@ export function ScopeBar({
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
       <ScopeChip
-        icon={<Bot className="size-3" />}
+        icon={<RobotIcon className="size-3" />}
         label="Agent"
         value={data.agent_name ?? 'Project default'}
         title="Agent"
@@ -221,9 +225,13 @@ export function ScopeBar({
       />
 
       <ScopeChip
-        icon={<Cpu className="size-3" />}
+        icon={<CpuIcon className="size-3" />}
         label="Model"
-        value={model.data?.model ?? 'Project default'}
+        value={
+          pickedModel
+            ? `${pickedModel.providerID}/${pickedModel.modelID}`
+            : (model.data?.model ?? 'Project default')
+        }
         title="Model"
         badge={scopeControl('model').badge}
         note={scopeControl('model').note}

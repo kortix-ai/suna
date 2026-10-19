@@ -75,6 +75,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
+import { mcpServerIdentity } from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
@@ -93,7 +94,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { useAddAccount } from '@/hooks/connectors/use-add-account';
+import { emptyProjectSlot, useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -552,7 +553,12 @@ export function ConnectionsList({
     onChanged();
   };
 
-  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  const allRows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  // The server's empty shared slot is a placeholder, not an account anyone
+  // added: listing it reads as "everyone already shares this". Add account
+  // still reuses it when the person picks Everyone.
+  const slot = emptyProjectSlot(connector, allRows);
+  const rows = slot ? allRows.filter((row) => row !== slot) : allRows;
 
   const openCredential = onSetCredential ?? setCredentialTarget;
   // "Add account" asks the account's name and who may use it: only you,
@@ -2791,12 +2797,16 @@ function ConnectorConfigFields({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Once the slug is typed in by hand, never overwrite it from the source again.
   const slugTouched = useRef(false);
-  const suggestedSlug = slugFromTitle(detectedTitle);
+  // An MCP server answers 401 before it names itself: fall back to the
+  // URL's domain (`https://api.acme.ai/mcp` → `acme`).
+  const sourceUrl = draft.url ?? draft.endpoint ?? draft.baseUrl ?? draft.spec ?? '';
+  const suggestedSlug =
+    slugFromTitle(detectedTitle) || (sourceUrl ? (mcpServerIdentity(sourceUrl, [])?.slug ?? '') : '');
   useEffect(() => {
-    // Only ever fills a blank slug, and only before the user types one. Editing
-    // an existing connector (slugEditable false) is never touched.
+    // Follows the source until the user types a slug. Editing an existing
+    // connector (slugEditable false) is never touched.
     if (!slugEditable || readOnly || slugTouched.current) return;
-    if (!suggestedSlug || draft.slug) return;
+    if (!suggestedSlug || draft.slug === suggestedSlug) return;
     onChange({ ...draft, slug: suggestedSlug });
   }, [suggestedSlug, slugEditable, readOnly, draft, onChange]);
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });

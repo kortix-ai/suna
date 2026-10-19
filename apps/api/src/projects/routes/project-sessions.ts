@@ -52,6 +52,7 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getImpersonationContext } from '../../shared/impersonation';
 import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
@@ -307,7 +308,7 @@ export function registerProjectSessionsRoutes(): void {
     return c.json(
         serializeSession(result.row, {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       }),
       201,
     );
@@ -397,10 +398,27 @@ export function registerProjectSessionsRoutes(): void {
       c.get('iamTokenId'),
       c.get('authType'),
       callerKortixSessionId(c),
-      c.req.header('x-kortix-admin-bypass') === '1' ? 'bypass' : '',
+      // Act-as widens what the same user sees (every session, via oversight).
+      getImpersonationContext()?.grantId ?? '',
       projectId,
       c.req.url.split('?')[1] ?? '',
     ].join('|');
+    // KRTX-2736: build the poll response with its headers AT construction and
+    // never touch the context response afterwards. `c.header()` on a finalized
+    // context re-wraps the existing response's body through
+    // `createResponseInstance` (`new Response(res.body, res)`), and if
+    // something finalized the context mid-handler with a ReadableStream body
+    // that had already been locked and read, that re-wrap throws
+    // `TypeError: Body object should not be disturbed or locked` — the
+    // unattributed 500s prod logged on this route on 2026-10-17. Passing the
+    // headers into `c.body` embeds them without a re-wrap. And when the
+    // context WAS finalized behind us, our response must still win: compose
+    // skips assignment once `finalized` is true, so assign through `c.res` —
+    // its re-wrap wraps OUR OWN string/null body, which is always safe.
+    const claim = (response: Response): Response => {
+      if (c.finalized) c.res = response;
+      return response;
+    };
     const ifNoneMatch = c.req.header('if-none-match');
     if (ifNoneMatch) {
       const memoed = peekSessionListPollEtag(pollMemoKey, ifNoneMatch);
@@ -409,11 +427,13 @@ export function registerProjectSessionsRoutes(): void {
         // a browser-JWT principal has no other source for it, and the audit
         // snapshot and the post-handler context propagation both read it.
         c.set('accountId', memoed.accountId);
-        c.header('Cache-Control', 'private, no-cache');
-        c.header('ETag', memoed.etag);
-        if (memoed.nextCursor) c.header('X-Next-Cursor', memoed.nextCursor);
-        c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
-        return c.body(null, 304);
+        const memoHeaders: Record<string, string> = {
+          'Cache-Control': 'private, no-cache',
+          ETag: memoed.etag,
+          'Access-Control-Expose-Headers': 'X-Next-Cursor',
+        };
+        if (memoed.nextCursor) memoHeaders['X-Next-Cursor'] = memoed.nextCursor;
+        return claim(c.body(null, 304, memoHeaders));
       }
     }
 
@@ -429,7 +449,6 @@ export function registerProjectSessionsRoutes(): void {
       projectId,
       accountId: loaded.row.accountId,
       userId: loaded.userId,
-      effectiveRole: loaded.effectiveRole,
       scope,
       orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
       limit: query.limit,
@@ -492,29 +511,31 @@ export function registerProjectSessionsRoutes(): void {
     // The sidebar re-fetches this list several times per session open (six in the
     // measured SampleCo corpus, 2026-08-26) and the answer is usually byte-identical
     // between them. A weak ETag lets those repeats end as a 304 with no body.
-    // `no-cache` — not `no-store` — is what makes a client revalidate rather than
-    // serve a stale inventory: the response is private and always re-validated,
-    // it just does not have to be re-transferred.
     const serialized = JSON.stringify(body);
     // The cursor is part of the response identity: two pages of the same length
     // whose rows happen to hash alike must not 304 each other into the wrong
     // continuation. Hash it with the body.
     const etag = `W/"${Bun.hash(`${inventory.nextCursor ?? ''}:${serialized}`).toString(36)}-${body.length}"`;
-    c.header('Cache-Control', 'private, no-cache');
-    c.header('ETag', etag);
-    // The page's continuation token. Absent means this is the last page. It rides
-    // a header so the 200 body stays the bare `Session[]` array every existing
-    // client already parses — adding an envelope would have broken all of them.
-    if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
-    c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+    const headers: Record<string, string> = {
+      // `no-cache` — not `no-store` — is what makes a client revalidate rather
+      // than serve a stale inventory: the response is private and always
+      // re-validated, it just does not have to be re-transferred.
+      'Cache-Control': 'private, no-cache',
+      ETag: etag,
+      // The page's continuation token. Absent means this is the last page. It
+      // rides a header so the 200 body stays the bare `Session[]` array every
+      // existing client already parses — adding an envelope would have broken
+      // all of them.
+      'Access-Control-Expose-Headers': 'X-Next-Cursor',
+    };
+    if (inventory.nextCursor) headers['X-Next-Cursor'] = inventory.nextCursor;
     storeSessionListPollEtag(pollMemoKey, {
       etag,
       nextCursor: inventory.nextCursor,
       accountId: loaded.row.accountId,
     });
-    if (c.req.header('if-none-match') === etag) return c.body(null, 304);
-    c.header('Content-Type', 'application/json');
-    return c.body(serialized, 200);
+    if (c.req.header('if-none-match') === etag) return claim(c.body(null, 304, headers));
+    return claim(c.body(serialized, 200, { ...headers, 'Content-Type': 'application/json' }));
   },
   );
 

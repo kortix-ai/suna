@@ -11,6 +11,7 @@ import type { AttachmentUploadStatus } from '@/features/session/turn/user-messag
 import {
   attachmentFailureReason,
   refusedFilesToast,
+  heldTraySizes,
   splitComposerFiles,
   attachmentFailureRetryable,
   attachmentsBlockSend,
@@ -799,6 +800,18 @@ describe('planAttachmentReplacement', () => {
 // KRTX-2557: one empty or oversized file in a drop refused the whole drop
 // (the SDK's `addMany` checks the batch at once), with one English message
 // that named no file. The split keeps every file that fits.
+describe('heldTraySizes', () => {
+  test('a restored upload counts toward the limits like a local one; a URL file does not', () => {
+    expect(
+      heldTraySizes([
+        { kind: 'local', uploadId: 'u-1', file: new File(['abcd'], 'a.txt'), localUrl: 'blob:a', isImage: false },
+        { kind: 'uploaded', uploadId: 'u-2', filename: 'b.pdf', mime: 'application/pdf', size: 1200, isImage: false },
+        { kind: 'remote', url: 'https://example.test/c.png', filename: 'c.png', mime: 'image/png', isImage: true },
+      ]),
+    ).toEqual([4, 1200]);
+  });
+});
+
 describe('splitComposerFiles', () => {
   const MiB = 1024 * 1024;
   const file = (name: string, size: number) =>

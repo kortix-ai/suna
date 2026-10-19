@@ -75,6 +75,49 @@ export function previewSuiteStatusPath(runId: string, runAttempt: string): strin
  * replace the API while the suite runs, and it refuses to start when the local
  * edge no longer serves `sha` (a redeploy won the lock in between).
  */
+/**
+ * The shared bash prelude of both remote preview scripts: fixed workspace and
+ * log paths, the HOME/CI exports, the deploy.lock flock, and the finish trap
+ * that writes the exit code. `mid` carries the script's own lines between the
+ * flock and the tee redirect; `finishFirst` its extra lines at the top of
+ * finish(), before the results tarball; `header` and `beforeLock` the extra
+ * variable and setup lines a script needs.
+ */
+function previewScriptPrelude(
+  state: string,
+  statusPath: string,
+  mid: string,
+  finishFirst = '',
+  header = '',
+  beforeLock = '',
+): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/workspace/suna
+STATE=${state}
+LOG="$STATE/kortix-preview.log"
+STATUS=${shellQuote(statusPath)}
+PHASE="$STATE/kortix-preview.phase"
+${header}export HOME=/root
+export CI=1
+export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
+
+${beforeLock}exec 9>"$STATE/deploy.lock"
+flock -x 9
+${mid}exec > >(tee -a "$LOG") 2>&1
+
+finish() {
+  local code="$1"
+  set +e
+${finishFirst}  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
+  printf '%s\n' "$code" > "$STATUS"
+}
+trap 'code=$?; finish "$code"' EXIT
+
+`;
+}
+
 export function buildPreviewSuiteScript(input: {
   prNumber: number;
   sha: string;
@@ -84,34 +127,15 @@ export function buildPreviewSuiteScript(input: {
   previewSandboxName(input.prNumber);
   const state = '/workspace/kortix-preview';
   const instanceDir = `${state}/self-host/pr-${input.prNumber}`;
-  return `#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT=/workspace/suna
-STATE=${state}
-LOG="$STATE/kortix-preview.log"
-STATUS=${shellQuote(input.statusPath)}
-PHASE="$STATE/kortix-preview.phase"
-export HOME=/root
-export CI=1
-export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
-
-exec 9>"$STATE/deploy.lock"
-flock -x 9
-rm -f "$STATUS"
+  return `${previewScriptPrelude(
+    state,
+    input.statusPath,
+    `rm -f "$STATUS"
 printf '%s\n' "$$" > ${shellQuote(PREVIEW_SUITE_PID_PATH)}
-exec > >(tee -a "$LOG") 2>&1
-
-finish() {
-  local code="$1"
-  set +e
-  rm -f ${shellQuote(PREVIEW_SUITE_PID_PATH)}
-  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
-  printf '%s\n' "$code" > "$STATUS"
-}
-trap 'code=$?; finish "$code"' EXIT
-
-curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
+`,
+    `  rm -f ${shellQuote(PREVIEW_SUITE_PID_PATH)}
+`,
+  )}curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
   | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .commit == $sha' >/dev/null || {
   echo "the preview no longer serves ${input.sha}; refusing to test another commit" >&2
   exit ${PREVIEW_SUITE_REFUSED}
@@ -177,41 +201,24 @@ export function buildPreviewBootstrapScript(input: {
   const state = '/workspace/kortix-preview';
   const instanceDir = `${state}/self-host/${instance}`;
   const compose = `docker compose --project-name kortix-${instance} --env-file ${instanceDir}/.env -f ${instanceDir}/docker-compose.yml -f ${state}/docker-compose.preview.yml`;
-  return `#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT=/workspace/suna
-STATE=${state}
-LOG="$STATE/kortix-preview.log"
-STATUS=${shellQuote(input.statusPath ?? `${state}/kortix-preview.exit`)}
-PHASE="$STATE/kortix-preview.phase"
-SECRETS="$STATE/runtime-secrets.json"
-export HOME=/root
-export CI=1
-export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
-
-mkdir -p "$STATE" "$ROOT/tests/test-results"
-# A cancelled workflow can leave its remote bootstrap running. Hold this lock
-# through checkout, redeploy, and tests so the next run cannot replace the API
-# while the first run is still testing it.
-exec 9>"$STATE/deploy.lock"
-flock -x 9
-rm -f "$STATUS" "$PHASE"
+  return `${previewScriptPrelude(
+    state,
+    input.statusPath ?? `${state}/kortix-preview.exit`,
+    `rm -f "$STATUS" "$PHASE"
 # Results belong to one commit. The preview serves this directory at /_tests/
 # and the run uploads it, so an earlier run's report would read as this one's.
 # Empty it, keep the directory: it is bind-mounted into the edge container.
 find "$ROOT/tests/test-results" -mindepth 1 -delete
-exec > >(tee -a "$LOG") 2>&1
-
-finish() {
-  local code="$1"
-  set +e
-  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
-  printf '%s\n' "$code" > "$STATUS"
-}
-trap 'code=$?; finish "$code"' EXIT
-
-printf 'checkout\n' > "$PHASE"
+`,
+    '',
+    `SECRETS="$STATE/runtime-secrets.json"
+`,
+    `mkdir -p "$STATE" "$ROOT/tests/test-results"
+# A cancelled workflow can leave its remote bootstrap running. Hold this lock
+# through checkout, redeploy, and tests so the next run cannot replace the API
+# while the first run is still testing it.
+`,
+  )}printf 'checkout\n' > "$PHASE"
 test -d "$ROOT/.git"
 git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
 git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}

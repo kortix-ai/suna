@@ -61,7 +61,12 @@ async function applyClientAuthentication(
   headers: Headers,
   runtime: OAuth2LifecycleRuntime,
 ): Promise<void> {
-  body.set('client_id', application.client_id);
+  // client_secret_basic carries the client in the header only. A body
+  // client_id makes some servers read the request as client_secret_post and
+  // answer `invalid_client: Missing client_secret` (RFC 6749 §2.3).
+  if (application.token_endpoint_auth_method !== 'client_secret_basic') {
+    body.set('client_id', application.client_id);
+  }
   switch (application.token_endpoint_auth_method) {
     case 'none':
       return;

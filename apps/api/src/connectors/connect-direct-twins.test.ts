@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { appNameKey, withDirectIds } from './connect-direct-twins';
+import { appNameKey, withDirectIds, withDirectMcpUrls } from './connect-direct-twins';
 
 describe('appNameKey', () => {
   test('one key per app across catalogues and "<App> MCP" toolkits', () => {
@@ -50,5 +50,37 @@ describe('withDirectIds', () => {
   test('leaves anything that is not a listing untouched', () => {
     expect(withDirectIds(null, ids)).toBeNull();
     expect(withDirectIds({ total: 3 }, ids)).toEqual({ total: 3 });
+  });
+});
+
+describe('withDirectMcpUrls', () => {
+  test("adds each managed app's hosted MCP server URL, or null", () => {
+    expect(
+      withDirectMcpUrls(
+        { apps: [{ slug: 'linear', name: 'Linear' }, { slug: 'mural', name: 'Mural' }] },
+        new Map([['linear', 'https://mcp.linear.app/mcp']]),
+      ),
+    ).toEqual({
+      apps: [
+        { slug: 'linear', name: 'Linear', directMcpUrl: 'https://mcp.linear.app/mcp' },
+        { slug: 'mural', name: 'Mural', directMcpUrl: null },
+      ],
+    });
+  });
+
+  test('Composio browse sections nest their apps under `toolkits`', () => {
+    expect(
+      withDirectMcpUrls(
+        { sections: [{ key: 'pm', toolkits: [{ slug: 'linear', name: 'Linear' }] }] },
+        new Map([['linear', 'https://mcp.linear.app/mcp']]),
+      ),
+    ).toEqual({
+      sections: [
+        {
+          key: 'pm',
+          toolkits: [{ slug: 'linear', name: 'Linear', directMcpUrl: 'https://mcp.linear.app/mcp' }],
+        },
+      ],
+    });
   });
 });

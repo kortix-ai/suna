@@ -4,12 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
-FRONTEND_PID=""
-API_PID=""
-GATEWAY_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
-STRIPE_PID=""
 
 # Standalone LLM gateway: a single fixed port (laptop dev is single-instance,
 # unlike worktrees which stride per-slot) and a fixed shared internal token the
@@ -253,7 +249,6 @@ start_tunnel_watchdog() {
       pkill -f -- '--hot src/index.ts' 2>/dev/null || true
     done
   ) &
-  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -287,7 +282,6 @@ ensure_stripe_listen() {
   stripe listen --api-key "$STRIPE_SECRET_KEY" \
     --forward-to "http://localhost:${api_port}/v1/billing/webhooks/stripe" 2>&1 \
     | sed 's/^/[stripe] /' &
-  STRIPE_PID=$!
 }
 
 # Start the standalone LLM gateway (apps/llm-gateway) so the API routes sandbox
@@ -306,7 +300,6 @@ ensure_dev_gateway() {
       GATEWAY_API_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
       pnpm --filter @kortix/llm-gateway-server dev 2>&1 | sed 's/^/[gateway] /'
   ) &
-  GATEWAY_PID=$!
 }
 
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
@@ -501,35 +494,13 @@ kill_dev_ports() {
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
-
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-    wait "$FRONTEND_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${GATEWAY_PID:-}" ]] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    wait "$GATEWAY_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    kill "$TUNNEL_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
-    kill "$STRIPE_PID" 2>/dev/null || true
-  fi
-  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
-
+  # The worker and all its pipelines share this private group, including
+  # tunnels rotated by its watchdog. Never match another checkout by name.
+  kill -TERM -- "-$STACK_PID" 2>/dev/null || true
+  /bin/sleep 0.2
+  kill -KILL -- "-$STACK_PID" 2>/dev/null || true
+  wait "$STACK_PID" 2>/dev/null || true
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG" || true
   exit "$exit_code"
 }
 
@@ -694,7 +665,6 @@ EOF
     if pnpm --filter Kortix-Computer-Frontend build; then
       echo "[dev] Frontend built — serving (pnpm start) on :3000"
       pnpm --filter Kortix-Computer-Frontend start &
-      FRONTEND_PID=$!
     else
       echo "[dev] ⚠️  Frontend build failed — continuing with API only"
     fi
@@ -706,7 +676,6 @@ EOF
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
     (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
-    FRONTEND_PID=$!
   fi
 
   echo "[dev] Starting API (dev) on :8008"
@@ -717,7 +686,8 @@ EOF
   KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev:envfile
 }
 
-trap cleanup EXIT INT TERM
+run_dev_local() {
+set +m
 
 if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
   run_sandbox_dev
@@ -810,11 +780,10 @@ ensure_dev_gateway
 if [[ "$BUILD_MODE" == "1" ]]; then
   # The API needs no build step, so boot it in the BACKGROUND now and let it
   # come up on :8008 while the (multi-minute) frontend build runs — overlapping
-  # the two instead of paying them back-to-back. cleanup() kills API_PID on exit.
+  # the two instead of paying them back-to-back. cleanup() stops the worker's
+  # process group on exit, so the background API needs no tracked pid.
   echo "[dev] Starting API (production runtime, no --hot) on :8008…"
   ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
-  API_PID=$!
-
 
   # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
   # BUILD time, so the build must run with the env load_local_env() exported (it
@@ -844,7 +813,6 @@ if [[ "$BUILD_MODE" == "1" ]]; then
 else
   echo "[dev] Starting frontend..."
   pnpm --filter Kortix-Computer-Frontend dev &
-  FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
   # Turbopack's on-demand compile. Unauthenticated requests still compile the
@@ -867,3 +835,20 @@ else
     echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
   done
 fi
+
+}
+
+# Job control assigns the single worker its own process group — the group
+# cleanup() kills. Turn it off inside the worker so nested pipelines inherit
+# that group (also on Bash 3.2). Wait for the worker with `wait`, never `fg`:
+# bash defers a trapped signal until `fg`'s foreground job ends, so a TERM
+# sent to this script while the stack runs would hang the script until the
+# worker exits on its own. `wait` is the one wait bash interrupts the moment
+# a trapped signal arrives, so the traps below run at signal time.
+set -m
+run_dev_local "$@" <&0 &
+STACK_PID=$!
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+wait "$STACK_PID"

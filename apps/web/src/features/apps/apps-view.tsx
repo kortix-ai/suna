@@ -17,7 +17,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
+import { AddExternalAppDialog } from './app-add-external';
 import { appCan, appStatus, cardPreviewApp, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
@@ -36,10 +37,13 @@ function AppsHeader({
   columns,
   onColumnsChange,
   showColumns,
+  onAdd,
 }: {
   projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
+  /** Absent: the viewer may not add Apps, and the control is not shown. */
+  onAdd?: () => void;
   /**
    * The control only exists to reshape a grid, so it is absent whenever there
    * is no grid — the feature gate, the error state and the empty state each
@@ -68,6 +72,12 @@ function AppsHeader({
         {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
+      {onAdd ? (
+        <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
+          <PlusIcon className="size-3.5 shrink-0" aria-hidden />
+          {tI18nComplete.raw('text3dd46a7b552c')}
+        </Button>
+      ) : null}
     </ProjectPageHeader>
   );
 }
@@ -92,6 +102,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   // `/backends/<id>` routes land here.
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
+  const [adding, setAdding] = useState(false);
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
@@ -133,7 +144,9 @@ export function AppsView({ projectId }: { projectId: string }) {
         columns={gridColumns}
         onColumnsChange={setGridColumns}
         showColumns={apps.isLoading || !!apps.data?.length}
+        onAdd={canWrite ? () => setAdding(true) : undefined}
       />
+      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid

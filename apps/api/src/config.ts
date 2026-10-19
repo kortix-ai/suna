@@ -320,8 +320,13 @@ const envSchema = z.object({
   // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
   // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
   // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
-  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only.
+  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
+  // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
+  // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
+  KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -583,10 +588,6 @@ const envSchema = z.object({
   // mounts, with the folders synced in by the box's daemon.
   KORTIX_DRIVES_SESSION_MOUNT: optStr,
   KORTIX_DRIVES_SYNC: optStr,
-  // `off` (or 0/false/no): no new session gets a /workspace volume, whatever its
-  // project's `workspace_volume` flag says. A session that already has one keeps
-  // it (platform/services/workspace-volume.ts).
-  KORTIX_WORKSPACE_VOLUMES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -914,9 +915,11 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
-  // Where public demo-request / "book a demo" lead notifications are sent.
-  // Comma-separated list; every address gets every submission.
-  DEMO_LEAD_NOTIFY_EMAIL: optStrDefault('marko@kortix.ai,hey@kortix.ai'),
+  // Where Kortix sales hears about leads: "book a demo", "Talk to sales", the
+  // Enterprise demo turned on, billing ops copies. Comma-separated list; every
+  // address gets every email. Unset → the sales inboxes on prod only: dev,
+  // staging, local and self-host test accounts must never email sales.
+  DEMO_LEAD_NOTIFY_EMAIL: z.string().optional(),
   // Sender for those notifications. kortix.ai (not the global MAILTRAP_FROM_
   // EMAIL on kortix.com) so the send is DKIM-aligned with the kortix.ai
   // recipient inboxes — the kortix.com sender was landing in spam.
@@ -1296,6 +1299,7 @@ export const config = {
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
@@ -1423,7 +1427,6 @@ export const config = {
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
-  KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1596,7 +1599,8 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
-  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
+  DEMO_LEAD_NOTIFY_EMAIL:
+    env.DEMO_LEAD_NOTIFY_EMAIL ?? (env.INTERNAL_KORTIX_ENV === 'prod' ? 'marko@kortix.ai,hey@kortix.ai' : ''),
   DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
 
   // ─── Mailtrap contact sync (signup → automation lists) ────────────────────

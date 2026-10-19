@@ -30,6 +30,7 @@ import { SidebarContext } from '@/components/ui/sidebar';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
+import { useAccountHubAccess } from '@/features/accounts/hub/use-account-hub-access';
 import { useWorkspaceSearch } from '@/features/files';
 import {
   ThemeSwatch,
@@ -46,7 +47,16 @@ import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
+import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
+  LEGACY_PALETTE_HIDDEN,
+  paletteRowPermitted,
+} from '@/features/workspace/command-palette-visibility';
+import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import {
+  useCapabilityAccess,
+  useProjectNavRows,
+} from '@/features/workspace/project-sidebar/project-settings-nav';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -97,7 +107,7 @@ import {
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { track } from '@/lib/track';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectCan, useProjectPageCans } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
@@ -1169,7 +1179,40 @@ export function CommandPalette() {
 
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
+  // Joined so the memo below keys on the answer, not on a fresh array.
+  const customizeTabs = useCapabilityAccess(projectId ?? undefined).tabs.join(' ');
+  // A row is offered only when the caller can act on it: the same verdicts
+  // the account hub nav and the sidebar rows read, joined so the memo keys on
+  // the answers. Every one is false until its probe lands.
+  const { sectionVisible } = useAccountHubAccess(selectedAccountId ?? undefined);
+  const accountSections = Object.entries(sectionVisible)
+    .filter(([, visible]) => visible)
+    .map(([section]) => section)
+    .join(' ');
+  const navRows = useProjectNavRows(projectId ?? undefined);
+  const customizeRow = navRows.customize !== null;
+  const repoRow = navRows.files === 'repo';
+  const canInvite =
+    useProjectPageCans(projectId ?? undefined)[PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE]?.allowed ===
+    true;
+  const appsRow = useAppsRowVisible(projectId ?? undefined);
   const allPaletteItems = useMemo(() => {
+    const gates = {
+      accountSections: Object.fromEntries(
+        accountSections.split(' ').map((section) => [section, true]),
+      ),
+      rows: {
+        'proj-customize': customizeRow,
+        'proj-files': repoRow,
+        'proj-apps': appsRow,
+        'proj-invite': canInvite,
+        // The roster is read-only without the leaf that changes it.
+        'proj-members': canInvite,
+        // Open change requests are the Review tab's business: only a caller
+        // who can act on reviews gets the list.
+        'review-changes': customizeTabs.split(' ').includes('review'),
+      },
+    };
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
@@ -1191,10 +1234,15 @@ export function CommandPalette() {
       // an `{accountId}` href could not. Same guard, off the kind instead of
       // off a token, so a new account row can never ship without it.
       if (item.kind === 'account' && !selectedAccountId) continue;
+      if (!paletteRowPermitted(item, gates)) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
         href = href.replaceAll('{projectId}', projectId);
+        // A Customize tab is offered only when `capabilityAccess()` lists it:
+        // the same rule the sidebar row and the tab bar follow.
+        const tab = activeCapabilityTab(href.split('?')[0]);
+        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1212,6 +1260,12 @@ export function CommandPalette() {
     sidebarCtx,
     projectFlags,
     tI18nComplete,
+    customizeTabs,
+    accountSections,
+    customizeRow,
+    repoRow,
+    appsRow,
+    canInvite,
   ]);
 
   const filteredNavItems = useMemo(() => {

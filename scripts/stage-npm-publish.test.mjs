@@ -37,6 +37,7 @@ const run = (dir, version) =>
         exports: { '.': './src/index.ts' },
         bin: { 'kortix-x': './src/cli.ts' },
         dependencies: { '@kortix/shared': 'workspace:*', zustand: '^5.0.3' },
+        peerDependencies: { '@kortix/sdk': 'workspace:^', '@kortix/y': 'workspace:~', react: '>=18' },
         files: ['dist', 'src', 'README.md'],
         publishConfig: {
           access: 'public',
@@ -62,6 +63,9 @@ const run = (dir, version) =>
   assert(out.bin['kortix-x'] === './dist/cli.js', 'bin promoted to dist');
   assert(JSON.stringify(out.files) === JSON.stringify(['dist', 'README.md']), 'files promoted from publishConfig');
   assert(out.dependencies['@kortix/shared'] === '2.3.4', 'workspace dep pinned to the release version');
+  assert(out.peerDependencies['@kortix/sdk'] === '^2.3.4', 'workspace:^ keeps its caret on the release version');
+  assert(out.peerDependencies['@kortix/y'] === '~2.3.4', 'workspace:~ keeps its tilde on the release version');
+  assert(out.peerDependencies.react === '>=18', 'registry peer range left alone');
   assert(out.dependencies.zustand === '^5.0.3', 'registry dep range left untouched');
   assert(out.publishConfig.main === undefined, 'promoted publishConfig overrides stripped');
   assert(out.publishConfig.exports === undefined, 'promoted publishConfig.exports stripped');

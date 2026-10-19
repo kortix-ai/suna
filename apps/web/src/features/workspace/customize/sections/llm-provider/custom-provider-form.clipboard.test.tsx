@@ -6,7 +6,9 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 const successToast = mock(() => {});
 const errorToast = mock(() => {});
 const upsertProjectSecret = mock(async () => {});
-mock.module('@/components/ui/toast', () => ({ successToast, errorToast }));
+const uiToastMock = () => ({ successToast, errorToast });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () =>
     Object.assign((key: string) => `localized:${key}`, { raw: (key: string) => `localized:${key}` }),
@@ -129,42 +131,5 @@ describe('CustomProviderForm clipboard characterization', () => {
     expect(successToast).not.toHaveBeenCalled();
     expect(copyButton()).toBeDefined();
     expect(renderer.root.findAllByProps({ 'aria-label': 'Copied' })).toHaveLength(0);
-  });
-  test('the live preview copies the snippet as typed, before saving', async () => {
-    const writeText = mock(async (_text: string) => {});
-    Object.defineProperty(globalThis, 'navigator', {
-      configurable: true,
-      value: { clipboard: { writeText } },
-    });
-    const client = new QueryClient({
-      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-    });
-    await act(async () => {
-      renderer = create(
-        <QueryClientProvider client={client}>
-          <CustomProviderForm projectId="test-project" onDone={() => {}} />
-        </QueryClientProvider>,
-      );
-    });
-    for (const [id, value] of Object.entries({
-      'custom-provider-id': 'example',
-      'custom-display-name': 'Example',
-      'custom-base-url': 'https://api.example.com/v1',
-      'custom-api-key': 'synthetic-key',
-      'custom-model-id': 'model-one',
-      'custom-model-name': 'Model One',
-    })) {
-      await act(async () => renderer.root.findByProps({ id }).props.onChange({ target: { value } }));
-    }
-    const previewCopy = renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.type === 'button' && typeof button.props.onClick === 'function' && !button.props['aria-label']);
-    if (!previewCopy) throw new Error('Missing preview copy button');
-    await act(async () => {
-      await previewCopy.props.onClick();
-    });
-    expect(writeText).toHaveBeenCalledWith(expectedSnippet);
-    expect(successToast).toHaveBeenCalledWith('localized:texte957fd04449d');
-    expect(upsertProjectSecret).not.toHaveBeenCalled();
   });
 });

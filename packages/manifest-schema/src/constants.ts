@@ -108,6 +108,8 @@ export const MONITOR_MODES = ['poll', 'stream'] as const;
 export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 /** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
+export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 
@@ -416,8 +418,12 @@ export const HARNESS_TOOL_NAMES = [
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
  * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
  * with its own module under the same name.
+ *
+ * Connector access is the `kortix connectors` CLI, never a built-in tool. The
+ * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
+ * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
@@ -462,6 +468,7 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
+  'kortix-ui',
 ] as const;
 /** The prefix only Kortix skills use. */
 export const KORTIX_SKILL_PREFIX = 'kortix-';

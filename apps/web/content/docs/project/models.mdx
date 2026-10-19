@@ -211,6 +211,7 @@ kortix gateway budget rm <budget-id>
 - Every member cap has a row in the list, also when its member has spent nothing this month.
 - At 80% and at 100% of the limit, Kortix emails the account owners and admins and the project managers, once per threshold per period.
 - Setting a budget needs `project.gateway.budget.set`. Reading spend needs `project.gateway.spend.read`.
+- A project manager reads every member's spend and cap. A plain `member` reads the project budget, their own cap and their own spend row, and never another member's id or email.
 
 Read spend and requests:
 
@@ -223,6 +224,8 @@ kortix gateway test kimi-k3 glm-5.3-flash --prompt "Say hi"
 ```
 
 The **Costs** and **Logs** tabs show the same data. For account-wide usage, see [Plans & credits](/docs/credits).
+
+A project manager reads every log and every session's spend. A plain `member` reads only the logs and session spend of their own requests and of sessions they may open. `kortix gateway test` spends credits on real model calls, so it needs `project.model.write`, the Manager permission that changes the project's models.
 
 ## Use the gateway from your own tools
 

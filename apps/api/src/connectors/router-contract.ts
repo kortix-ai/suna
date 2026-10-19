@@ -143,6 +143,9 @@ export interface ProjectPoliciesViewResponse {
   policies: ProjectPolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /** Per-connector rule counts from the same manifest — the parent `policy ls`
+   *  view must reflect a rule `policy <slug> set` just wrote (KRTX-2527). */
+  connectorRules?: Array<{ slug: string; count: number }>;
 }
 
 export interface ListCatalogOptions {
@@ -400,6 +403,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   /** API/MCP catalogue id by app join key, for the managed listings' `directId`. */
   catalogDirectIds?(): Promise<ReadonlyMap<string, string>>;
+  /** Hosted MCP server URL by app join key, for the managed listings' `directMcpUrl`. */
+  catalogDirectMcpUrls?(): Promise<ReadonlyMap<string, string>>;
   listConnectToolkits?(
     projectId: string,
     input: { q?: string; category?: string; cursor?: string; limit?: number },

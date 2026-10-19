@@ -133,10 +133,9 @@ export function ComposerUnderbar({
             size="icon-base"
             onClick={onAttachClick}
             aria-label={t('attachFiles')}
-            // `hit-area-1` — the same extension the toolbar's send
-            // buttons carry. The visible chip stays 32px; the pressable box
-            // grows to 40, on a mouse as well as on a finger.
-            className="text-muted-foreground hit-area-1 rounded-lg"
+            // `hit-area-3` — the ≈29px ghost chip clears the 44px mobile tap
+            // floor only with the shared pseudo-element extension.
+            className="text-muted-foreground hit-area-3 rounded-lg"
           >
             <Paperclip className="size-4 shrink-0" />
           </Button>

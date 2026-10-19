@@ -68,8 +68,16 @@ export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** What an agent's sessions get in `/workspace`. */
 export interface AgentWorkspaceV2 {
-  /** Check out the project repository. Defaults to true. */
+  /** Check out the project repository. Defaults to true in v1/v2, false in v3. */
   project_repository?: boolean;
+}
+
+/**
+ * `workspace.project_repository` when an agent omits it. v1 and v2 clone the
+ * project repository; v3 does not, so an agent opts in to the checkout.
+ */
+export function projectRepositoryDefault(kortixVersion: number): boolean {
+  return kortixVersion < 3;
 }
 
 export type ProjectRepositoryResult =
@@ -77,12 +85,13 @@ export type ProjectRepositoryResult =
   | { ok: false; path: string; message: string };
 
 /**
- * Resolve `agents.<name>.workspace.project_repository` (default true) from the
- * block and its two legacy forms: `repository_access: <bool>` and
- * `workspace: runtime|read|branch`. Forms that disagree are an error.
+ * Resolve `agents.<name>.workspace.project_repository` from the block and its
+ * two legacy forms: `repository_access: <bool>` and
+ * `workspace: runtime|read|branch`. Forms that disagree are an error. An
+ * omitted value is `fallback`: `projectRepositoryDefault(kortix_version)`.
  * `legacyRead` is the legacy `workspace: read` with no explicit choice.
  */
-export function resolveProjectRepository(entry: Record<string, unknown>): ProjectRepositoryResult {
+export function resolveProjectRepository(entry: Record<string, unknown>, fallback = true): ProjectRepositoryResult {
   const access = entry.repository_access;
   if (access !== undefined && typeof access !== 'boolean') {
     return { ok: false, path: 'repository_access', message: 'must be a boolean.' };
@@ -115,7 +124,7 @@ export function resolveProjectRepository(entry: Record<string, unknown>): Projec
   }
   return {
     ok: true,
-    value: access ?? fromWorkspace ?? true,
+    value: access ?? fromWorkspace ?? fallback,
     legacyRead: typeof workspace === 'string' && workspace.trim() === 'read' && access === undefined,
   };
 }
@@ -1037,7 +1046,11 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
   }
   for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
-    if (!TOOL_NAME_RE.test(name) && !isKortixTool(name)) {
+    if (RETIRED_KORTIX_TOOLS.includes(name) && file === `kortix:${name}`) {
+      issues.push({ path: where, message: `"${name}" was removed: agents reach connectors with the \`kortix connectors\` CLI. Delete this line.`, severity: 'warning' });
+      continue;
+    }
+    if (!TOOL_NAME_RE.test(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
@@ -1055,6 +1068,9 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
     });
   }
 }
+
+/** Kortix tools a dev starter listed briefly (#9902) and that no longer exist. */
+const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 
 function isKortixTool(name: string): boolean {
   return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);

@@ -65,11 +65,13 @@ mock.module('@/features/workspace/customize/sections/connector-oauth2-start', ()
     return null;
   },
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => undefined,
   warningToast: (message: string) => calls.push(`warning:${message}`),
   errorToast: (message: string) => calls.push(`error:${message}`),
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
@@ -89,8 +91,8 @@ const connector = {
 
 /** Submit one Add account draft; return the account credential entry opened for. */
 async function addAccount(draft: Partial<NewAccountDraft>, target: AdminConnector = connector) {
-  let submit: ((draft: NewAccountDraft) => void) | null = null;
-  let opened: { connectionId: string; owner: 'project' | 'me' } | null = null;
+  let submit = null as ((draft: NewAccountDraft) => void) | null;
+  let opened = null as { connectionId: string; owner: 'project' | 'me' } | null;
   let settle = () => undefined as void;
   const done = new Promise<void>((resolve) => (settle = resolve));
   function Probe() {

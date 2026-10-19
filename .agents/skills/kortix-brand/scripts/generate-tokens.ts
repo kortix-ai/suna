@@ -4,8 +4,10 @@
 //   bun .agents/skills/kortix-brand/scripts/generate-tokens.ts           write
 //   bun .agents/skills/kortix-brand/scripts/generate-tokens.ts --check   exit 1 on drift
 //
-// It rewrites ONLY marker-delimited regions in apps/web/src/app/globals.css and
-// apps/mobile/global.css, whole-file outputs under references/visual/, and
+// It rewrites ONLY marker-delimited regions in apps/web/src/app/globals.css,
+// packages/ui/src/styles/theme.css and apps/mobile/global.css, whole-file
+// outputs under references/visual/, packages/ui/src/styles/tokens.css and
+// fonts.css, and
 // apps/api/src/lib/email/brand-tokens.generated.ts.
 // Stdlib only.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,6 +18,9 @@ const VISUAL = join(ROOT, '.agents/skills/kortix-brand/references/visual');
 const JSON_PATH = join(VISUAL, 'visual-system.json');
 const WEB_CSS = join(ROOT, 'apps/web/src/app/globals.css');
 const MOBILE_CSS = join(ROOT, 'apps/mobile/global.css');
+const UI_THEME_CSS = join(ROOT, 'packages/ui/src/styles/theme.css');
+const UI_TOKENS_CSS = join(ROOT, 'packages/ui/src/styles/tokens.css');
+const UI_FONTS_CSS = join(ROOT, 'packages/ui/src/styles/fonts.css');
 const EMAIL_TS = join(ROOT, 'apps/api/src/lib/email/brand-tokens.generated.ts');
 
 const EDIT_HINT =
@@ -242,6 +247,33 @@ function webTheme(): string {
   return L.join('\n');
 }
 
+/** @kortix/ui tokens.css: the web :root/.dark values as one unlayered file, so
+ *  --spacing still overrides Tailwind's default. Names match apps/web. */
+function uiTokens(): string {
+  const extra: string[] = [
+    `  --font-sans-system: ${systemStack(vs.typography.stacks.sans)};`,
+    `  --font-mono-system: ${systemStack(vs.typography.stacks.mono)};`,
+  ];
+  for (const [k, v] of Object.entries<any>(vs.typography.scale)) {
+    extra.push(`  --text-${k}: ${v.size};`, `  --text-${k}--line-height: ${v.line_height};`);
+  }
+  const lines = webRootAndDark().split('\n');
+  const rootEnd = lines.indexOf('}');
+  lines.splice(rootEnd, 0, ...extra);
+  const body = lines
+    .join('\n')
+    .replace(/^:root \{$/m, ':root {\n  color-scheme: light;')
+    .replace(/^\.dark \{$/m, '.dark {\n  color-scheme: dark;');
+  return [
+    '/* GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '   @kortix/ui design tokens: light on :root, dark on .dark (class on <html>).',
+    '   A white-label host overrides any of these variables in its own :root / .dark. */',
+    '',
+    body,
+    '',
+  ].join('\n');
+}
+
 // ───────────────────────── mobile generators ─────────────────────────
 function mobileBlock(theme: Theme): string {
   const L: string[] = [];
@@ -385,6 +417,23 @@ function kitFonts(): string {
   return L.join('\n');
 }
 
+/** @kortix/ui fonts.css: the kit @font-face rules plus the two variables that
+ *  theme.css reads (--font-roobert, --font-roobert-mono). Opt-in, Kortix-owned
+ *  surfaces only (D8a); a white-label host never imports it. */
+function uiFonts(): string {
+  return [
+    kitFonts().replace(
+      '   Use these URLs',
+      '   @kortix/ui/fonts.css: import it after theme.css on Kortix-owned surfaces only (D8a).\n   Use these URLs'
+    ),
+    ':root {',
+    `  --font-roobert: '${vs.typography.families.sans.name}';`,
+    `  --font-roobert-mono: '${vs.typography.families.mono.name}';`,
+    '}',
+    '',
+  ].join('\n');
+}
+
 /** TS module for transactional email: opaque light-theme hex only (clients cannot read CSS variables). */
 function emailTokens(): string {
   const hex = (name: string) => toHex(resolveColor(name, 'light'));
@@ -464,7 +513,10 @@ if (errors.length) {
 }
 
 const outputs: Record<string, string> = {
-  [WEB_CSS]: rewriteRegions(WEB_CSS, { '': webRootAndDark(), theme: webTheme() }),
+  [WEB_CSS]: rewriteRegions(WEB_CSS, { '': webRootAndDark() }),
+  [UI_THEME_CSS]: rewriteRegions(UI_THEME_CSS, { theme: webTheme() }),
+  [UI_TOKENS_CSS]: uiTokens(),
+  [UI_FONTS_CSS]: uiFonts(),
   [MOBILE_CSS]: rewriteRegions(MOBILE_CSS, {
     'mobile-light': mobileBlock('light'),
     'mobile-dark': mobileBlock('dark'),

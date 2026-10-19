@@ -192,6 +192,10 @@ describe('policy and status', () => {
       excluded_domains: [],
       exclusion_groups: ['password_managers'],
       exclude_private_browsing: true,
+      record_only_included: false,
+      included_bundle_ids: [],
+      included_domains: [],
+      member_inclusions: true,
     });
     const set = PolicySchema.parse({
       privacy: {
@@ -206,6 +210,22 @@ describe('policy and status', () => {
     conforms('policy', JSON.parse(policyDocument(set, 1)));
     expect(PolicySchema.safeParse({ privacy: { exclusion_groups: ['unknown'] } }).success).toBe(false);
     expect(PolicySchema.safeParse({ privacy: { excluded_domains: ['not a domain'] } }).success).toBe(false);
+  });
+
+  test('record only included: the mode and both lists, normalized like the exclusions', () => {
+    const set = PolicySchema.parse({
+      privacy: {
+        record_only_included: true,
+        included_bundle_ids: [' com.tinyspeck.slackmacgap ', 'com.tinyspeck.slackmacgap', 'code.exe'],
+        included_domains: ['https://www.GitHub.com/kortix-ai', 'linear.app'],
+      },
+    });
+    expect(set.privacy.record_only_included).toBe(true);
+    expect(set.privacy.included_bundle_ids).toEqual(['com.tinyspeck.slackmacgap', 'code.exe']);
+    expect(set.privacy.included_domains).toEqual(['github.com', 'linear.app']);
+    conforms('policy', JSON.parse(policyDocument(set, 1)));
+    expect(PolicySchema.safeParse({ privacy: { included_domains: ['not a domain'] } }).success).toBe(false);
+    expect(PolicySchema.safeParse({ privacy: { included_bundle_ids: ['--frontmost'] } }).success).toBe(false);
   });
 
   test('the policy accepts and refuses exactly what the editors do (one rule, @kortix/sdk/capture-rules)', () => {

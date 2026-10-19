@@ -1,0 +1,1079 @@
+{
+  "name": "@kortix/ui",
+  "version": "0.0.0",
+  "description": "Kortix UI: the shared React component library for apps/web, Kortix Apps and SDK hosts. Tailwind v4 classes, themed by CSS variables.",
+  "type": "module",
+  "license": "Elastic-2.0",
+  "homepage": "https://github.com/kortix-ai/suna/tree/dev/packages/ui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/ui"
+  },
+  "keywords": [
+    "kortix",
+    "ui",
+    "react",
+    "components",
+    "tailwind",
+    "design-system"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./accordion": "./src/components/ui/accordion.tsx",
+    "./alert": "./src/components/ui/alert.tsx",
+    "./alert-dialog": "./src/components/ui/alert-dialog.tsx",
+    "./avatar": "./src/components/ui/avatar.tsx",
+    "./back-pill": "./src/components/ui/back-pill.tsx",
+    "./badge": "./src/components/ui/badge.tsx",
+    "./breadcrumb": "./src/components/ui/breadcrumb.tsx",
+    "./bubble": "./src/components/ui/bubble.tsx",
+    "./button": "./src/components/ui/button.tsx",
+    "./button-group": "./src/components/ui/button-group.tsx",
+    "./calendar": "./src/components/ui/calendar.tsx",
+    "./card": "./src/components/ui/card.tsx",
+    "./chain-of-thought": "./src/components/ui/chain-of-thought.tsx",
+    "./chart": "./src/components/ui/chart.tsx",
+    "./chat": "./src/chat/index.ts",
+    "./checkbox": "./src/components/ui/checkbox.tsx",
+    "./checkbox-group": "./src/components/ui/checkbox-group.tsx",
+    "./collapsible": "./src/components/ui/collapsible.tsx",
+    "./command": "./src/components/ui/command.tsx",
+    "./confirm-dialog": "./src/components/ui/confirm-dialog.tsx",
+    "./context-menu": "./src/components/ui/context-menu.tsx",
+    "./count-badge": "./src/components/ui/count-badge.tsx",
+    "./data-grid": "./src/components/ui/data-grid.tsx",
+    "./date-range-picker": "./src/components/ui/date-range-picker.tsx",
+    "./definition-list": "./src/components/ui/definition-list.tsx",
+    "./dialog": "./src/components/ui/dialog.tsx",
+    "./disclosure": "./src/components/ui/disclosure.tsx",
+    "./dot-matrix/dotm-3x3-10": "./src/components/ui/dot-matrix/dotm-3x3-10.tsx",
+    "./dot-matrix/dotm-3x3-12": "./src/components/ui/dot-matrix/dotm-3x3-12.tsx",
+    "./dot-matrix/dotm-3x3-13": "./src/components/ui/dot-matrix/dotm-3x3-13.tsx",
+    "./dot-matrix/dotm-3x3-15": "./src/components/ui/dot-matrix/dotm-3x3-15.tsx",
+    "./dot-matrix/dotm-3x3-16": "./src/components/ui/dot-matrix/dotm-3x3-16.tsx",
+    "./dot-matrix/dotm-3x3-18": "./src/components/ui/dot-matrix/dotm-3x3-18.tsx",
+    "./dot-matrix/dotm-3x3-19": "./src/components/ui/dot-matrix/dotm-3x3-19.tsx",
+    "./dot-matrix/dotm-3x3-2": "./src/components/ui/dot-matrix/dotm-3x3-2.tsx",
+    "./dot-matrix/dotm-3x3-20": "./src/components/ui/dot-matrix/dotm-3x3-20.tsx",
+    "./dot-matrix/dotm-3x3-21": "./src/components/ui/dot-matrix/dotm-3x3-21.tsx",
+    "./dot-matrix/dotm-3x3-3": "./src/components/ui/dot-matrix/dotm-3x3-3.tsx",
+    "./dot-matrix/dotm-3x3-4": "./src/components/ui/dot-matrix/dotm-3x3-4.tsx",
+    "./dot-matrix/dotm-3x3-5": "./src/components/ui/dot-matrix/dotm-3x3-5.tsx",
+    "./dot-matrix/dotm-3x3-6": "./src/components/ui/dot-matrix/dotm-3x3-6.tsx",
+    "./dot-matrix/dotm-3x3-7": "./src/components/ui/dot-matrix/dotm-3x3-7.tsx",
+    "./dot-matrix/dotm-3x3-8": "./src/components/ui/dot-matrix/dotm-3x3-8.tsx",
+    "./dot-matrix/dotm-3x3-9": "./src/components/ui/dot-matrix/dotm-3x3-9.tsx",
+    "./dot-matrix/dotm-circular-1": "./src/components/ui/dot-matrix/dotm-circular-1.tsx",
+    "./dot-matrix/dotm-circular-10": "./src/components/ui/dot-matrix/dotm-circular-10.tsx",
+    "./dot-matrix/dotm-circular-11": "./src/components/ui/dot-matrix/dotm-circular-11.tsx",
+    "./dot-matrix/dotm-circular-12": "./src/components/ui/dot-matrix/dotm-circular-12.tsx",
+    "./dot-matrix/dotm-circular-14": "./src/components/ui/dot-matrix/dotm-circular-14.tsx",
+    "./dot-matrix/dotm-circular-15": "./src/components/ui/dot-matrix/dotm-circular-15.tsx",
+    "./dot-matrix/dotm-circular-17": "./src/components/ui/dot-matrix/dotm-circular-17.tsx",
+    "./dot-matrix/dotm-circular-2": "./src/components/ui/dot-matrix/dotm-circular-2.tsx",
+    "./dot-matrix/dotm-circular-3": "./src/components/ui/dot-matrix/dotm-circular-3.tsx",
+    "./dot-matrix/dotm-circular-4": "./src/components/ui/dot-matrix/dotm-circular-4.tsx",
+    "./dot-matrix/dotm-circular-5": "./src/components/ui/dot-matrix/dotm-circular-5.tsx",
+    "./dot-matrix/dotm-circular-6": "./src/components/ui/dot-matrix/dotm-circular-6.tsx",
+    "./dot-matrix/dotm-circular-7": "./src/components/ui/dot-matrix/dotm-circular-7.tsx",
+    "./dot-matrix/dotm-circular-8": "./src/components/ui/dot-matrix/dotm-circular-8.tsx",
+    "./dot-matrix/dotm-circular-9": "./src/components/ui/dot-matrix/dotm-circular-9.tsx",
+    "./dot-matrix/dotm-square-1": "./src/components/ui/dot-matrix/dotm-square-1.tsx",
+    "./dot-matrix/dotm-square-10": "./src/components/ui/dot-matrix/dotm-square-10.tsx",
+    "./dot-matrix/dotm-square-11": "./src/components/ui/dot-matrix/dotm-square-11.tsx",
+    "./dot-matrix/dotm-square-12": "./src/components/ui/dot-matrix/dotm-square-12.tsx",
+    "./dot-matrix/dotm-square-13": "./src/components/ui/dot-matrix/dotm-square-13.tsx",
+    "./dot-matrix/dotm-square-14": "./src/components/ui/dot-matrix/dotm-square-14.tsx",
+    "./dot-matrix/dotm-square-15": "./src/components/ui/dot-matrix/dotm-square-15.tsx",
+    "./dot-matrix/dotm-square-16": "./src/components/ui/dot-matrix/dotm-square-16.tsx",
+    "./dot-matrix/dotm-square-17": "./src/components/ui/dot-matrix/dotm-square-17.tsx",
+    "./dot-matrix/dotm-square-18": "./src/components/ui/dot-matrix/dotm-square-18.tsx",
+    "./dot-matrix/dotm-square-19": "./src/components/ui/dot-matrix/dotm-square-19.tsx",
+    "./dot-matrix/dotm-square-2": "./src/components/ui/dot-matrix/dotm-square-2.tsx",
+    "./dot-matrix/dotm-square-20": "./src/components/ui/dot-matrix/dotm-square-20.tsx",
+    "./dot-matrix/dotm-square-3": "./src/components/ui/dot-matrix/dotm-square-3.tsx",
+    "./dot-matrix/dotm-square-4": "./src/components/ui/dot-matrix/dotm-square-4.tsx",
+    "./dot-matrix/dotm-square-5": "./src/components/ui/dot-matrix/dotm-square-5.tsx",
+    "./dot-matrix/dotm-square-6": "./src/components/ui/dot-matrix/dotm-square-6.tsx",
+    "./dot-matrix/dotm-square-7": "./src/components/ui/dot-matrix/dotm-square-7.tsx",
+    "./dot-matrix/dotm-square-8": "./src/components/ui/dot-matrix/dotm-square-8.tsx",
+    "./dot-matrix/dotm-square-9": "./src/components/ui/dot-matrix/dotm-square-9.tsx",
+    "./dot-matrix/session-dot-matrix": "./src/components/ui/dot-matrix/session-dot-matrix.tsx",
+    "./dotmatrix-loader.css": "./src/styles/dotmatrix-loader.css",
+    "./drawer": "./src/components/ui/drawer.tsx",
+    "./dropdown-menu": "./src/components/ui/dropdown-menu.tsx",
+    "./emoji-picker": "./src/components/ui/emoji-picker.tsx",
+    "./emoji-tint": "./src/components/ui/emoji-tint.ts",
+    "./empty": "./src/components/ui/empty.tsx",
+    "./entity-avatar": "./src/components/ui/entity-avatar.tsx",
+    "./faded-scroll-area": "./src/components/ui/faded-scroll-area.tsx",
+    "./favicon-avatar": "./src/components/ui/favicon-avatar.tsx",
+    "./field": "./src/components/ui/field.tsx",
+    "./file-tree": "./src/components/ui/file-tree.tsx",
+    "./fonts.css": "./src/styles/fonts.css",
+    "./glyph-face": "./src/components/ui/glyph-face.tsx",
+    "./glyph-picker": "./src/components/ui/glyph-picker.tsx",
+    "./glyph-registry": "./src/components/ui/glyph-registry.tsx",
+    "./glyph-tint": "./src/components/ui/glyph-tint.ts",
+    "./hint": "./src/components/ui/hint.tsx",
+    "./histogram-bars": "./src/components/ui/histogram-bars.tsx",
+    "./hooks/use-debounce": "./src/hooks/use-debounce.ts",
+    "./hooks/use-is-dark": "./src/hooks/use-is-dark.ts",
+    "./hooks/use-mobile": "./src/hooks/use-mobile.ts",
+    "./hooks/use-proximity-hover": "./src/hooks/use-proximity-hover.ts",
+    "./hover-card": "./src/components/ui/hover-card.tsx",
+    "./icon-provider": "./src/components/ui/icon-provider.tsx",
+    "./icons/close": "./src/icons/close.tsx",
+    "./icons/copy": "./src/icons/copy.tsx",
+    "./icons/sidebar-toggle": "./src/icons/sidebar-toggle.tsx",
+    "./info-banner": "./src/components/ui/info-banner.tsx",
+    "./inline-meta": "./src/components/ui/inline-meta.tsx",
+    "./input": "./src/components/ui/input.tsx",
+    "./input-group": "./src/components/ui/input-group.tsx",
+    "./item": "./src/components/ui/item.tsx",
+    "./kbd": "./src/components/ui/kbd.tsx",
+    "./kortix-asterisk": "./src/components/ui/kortix-asterisk.tsx",
+    "./kortix-icons": "./src/components/ui/kortix-icons.ts",
+    "./kortix-loader": "./src/components/ui/kortix-loader.tsx",
+    "./kortix-logo": "./src/components/ui/kortix-logo.tsx",
+    "./label": "./src/components/ui/label.tsx",
+    "./lib/dotmatrix-core": "./src/lib/dotmatrix-core.tsx",
+    "./lib/dotmatrix-hooks": "./src/lib/dotmatrix-hooks.ts",
+    "./lib/favicon": "./src/lib/favicon.ts",
+    "./lib/font-weight": "./src/lib/font-weight.ts",
+    "./lib/icon-config": "./src/lib/icon-config.ts",
+    "./lib/icon-context": "./src/lib/icon-context.tsx",
+    "./lib/portal-root": "./src/lib/portal-root.ts",
+    "./lib/settle": "./src/lib/settle.ts",
+    "./lib/springs": "./src/lib/springs.ts",
+    "./lib/utils": "./src/lib/utils.ts",
+    "./lib/z-stack": "./src/lib/z-stack.tsx",
+    "./list": "./src/components/ui/list.tsx",
+    "./loading": "./src/components/ui/loading.tsx",
+    "./local-time": "./src/components/ui/local-time.tsx",
+    "./map": "./src/components/ui/map.tsx",
+    "./marker": "./src/components/ui/marker.tsx",
+    "./menu-recipe": "./src/components/ui/menu-recipe.ts",
+    "./mermaid-render": "./src/components/ui/mermaid-render.ts",
+    "./mermaid-renderer": "./src/components/ui/mermaid-renderer.tsx",
+    "./message": "./src/components/ui/message.tsx",
+    "./modal": "./src/components/ui/modal.tsx",
+    "./navigation-menu": "./src/components/ui/navigation-menu.tsx",
+    "./package.json": "./package.json",
+    "./page-search-bar": "./src/components/ui/page-search-bar.tsx",
+    "./phone-input": "./src/components/ui/phone-input.tsx",
+    "./pixel-kortix-mark": "./src/components/ui/pixel-kortix-mark.tsx",
+    "./popover": "./src/components/ui/popover.tsx",
+    "./portal": "./src/components/ui/portal.tsx",
+    "./preview-image": "./src/components/ui/preview-image.tsx",
+    "./progress": "./src/components/ui/progress.tsx",
+    "./progress-ring": "./src/components/ui/progress-ring.tsx",
+    "./providers/ui-provider": "./src/providers/ui-provider.tsx",
+    "./radio-group": "./src/components/ui/radio-group.tsx",
+    "./resizable": "./src/components/ui/resizable.tsx",
+    "./scroll-area": "./src/components/ui/scroll-area.tsx",
+    "./section": "./src/components/ui/section.tsx",
+    "./section-card": "./src/components/ui/section-card.tsx",
+    "./select": "./src/components/ui/select.tsx",
+    "./separator": "./src/components/ui/separator.tsx",
+    "./shader-safe": "./src/components/ui/shader-safe.tsx",
+    "./sheet": "./src/components/ui/sheet.tsx",
+    "./sidebar": "./src/components/ui/sidebar.tsx",
+    "./sidebar-context": "./src/components/ui/sidebar-context.tsx",
+    "./sidebar-menu-primitives": "./src/components/ui/sidebar-menu-primitives.tsx",
+    "./sidebar-panel": "./src/components/ui/sidebar-panel.tsx",
+    "./sidebar-width": "./src/components/ui/sidebar-width.ts",
+    "./skeleton": "./src/components/ui/skeleton.tsx",
+    "./slider": "./src/components/ui/slider.tsx",
+    "./slider-native": "./src/components/ui/slider-native.tsx",
+    "./sliding-tab-indicator": "./src/components/ui/sliding-tab-indicator.tsx",
+    "./split-sheet": "./src/components/ui/split-sheet.tsx",
+    "./spotlight-card": "./src/components/ui/spotlight-card.tsx",
+    "./status": "./src/components/ui/status.tsx",
+    "./status-ring": "./src/components/ui/status-ring.ts",
+    "./stepper": "./src/components/ui/stepper.tsx",
+    "./styles.css": "./dist/styles.css",
+    "./switch": "./src/components/ui/switch.tsx",
+    "./system-message": "./src/components/ui/system-message.tsx",
+    "./table": "./src/components/ui/table.tsx",
+    "./tabs": "./src/components/ui/tabs.tsx",
+    "./tag": "./src/components/ui/tag.tsx",
+    "./tailwind.css": "./src/styles/tailwind.css",
+    "./text-shimmer": "./src/components/ui/text-shimmer.tsx",
+    "./textarea": "./src/components/ui/textarea.tsx",
+    "./theme.css": "./src/styles/theme.css",
+    "./toast": "./src/components/ui/toast.tsx",
+    "./toggle": "./src/components/ui/toggle.tsx",
+    "./tokens.css": "./src/styles/tokens.css",
+    "./tooltip": "./src/components/ui/tooltip.tsx",
+    "./trigger-variants": "./src/components/ui/trigger-variants.ts",
+    "./type-to-confirm-dialog": "./src/components/ui/type-to-confirm-dialog.tsx",
+    "./typed-title": "./src/components/ui/typed-title.tsx",
+    "./typing-animation": "./src/components/ui/typing-animation.tsx",
+    "./user-avatar": "./src/components/ui/user-avatar.tsx"
+  },
+  "publishConfig": {
+    "access": "public",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./accordion": {
+        "types": "./dist/components/ui/accordion.d.ts",
+        "import": "./dist/components/ui/accordion.js"
+      },
+      "./alert": {
+        "types": "./dist/components/ui/alert.d.ts",
+        "import": "./dist/components/ui/alert.js"
+      },
+      "./alert-dialog": {
+        "types": "./dist/components/ui/alert-dialog.d.ts",
+        "import": "./dist/components/ui/alert-dialog.js"
+      },
+      "./avatar": {
+        "types": "./dist/components/ui/avatar.d.ts",
+        "import": "./dist/components/ui/avatar.js"
+      },
+      "./back-pill": {
+        "types": "./dist/components/ui/back-pill.d.ts",
+        "import": "./dist/components/ui/back-pill.js"
+      },
+      "./badge": {
+        "types": "./dist/components/ui/badge.d.ts",
+        "import": "./dist/components/ui/badge.js"
+      },
+      "./breadcrumb": {
+        "types": "./dist/components/ui/breadcrumb.d.ts",
+        "import": "./dist/components/ui/breadcrumb.js"
+      },
+      "./bubble": {
+        "types": "./dist/components/ui/bubble.d.ts",
+        "import": "./dist/components/ui/bubble.js"
+      },
+      "./button": {
+        "types": "./dist/components/ui/button.d.ts",
+        "import": "./dist/components/ui/button.js"
+      },
+      "./button-group": {
+        "types": "./dist/components/ui/button-group.d.ts",
+        "import": "./dist/components/ui/button-group.js"
+      },
+      "./calendar": {
+        "types": "./dist/components/ui/calendar.d.ts",
+        "import": "./dist/components/ui/calendar.js"
+      },
+      "./card": {
+        "types": "./dist/components/ui/card.d.ts",
+        "import": "./dist/components/ui/card.js"
+      },
+      "./chain-of-thought": {
+        "types": "./dist/components/ui/chain-of-thought.d.ts",
+        "import": "./dist/components/ui/chain-of-thought.js"
+      },
+      "./chart": {
+        "types": "./dist/components/ui/chart.d.ts",
+        "import": "./dist/components/ui/chart.js"
+      },
+      "./chat": {
+        "types": "./dist/chat/index.d.ts",
+        "import": "./dist/chat/index.js"
+      },
+      "./checkbox": {
+        "types": "./dist/components/ui/checkbox.d.ts",
+        "import": "./dist/components/ui/checkbox.js"
+      },
+      "./checkbox-group": {
+        "types": "./dist/components/ui/checkbox-group.d.ts",
+        "import": "./dist/components/ui/checkbox-group.js"
+      },
+      "./collapsible": {
+        "types": "./dist/components/ui/collapsible.d.ts",
+        "import": "./dist/components/ui/collapsible.js"
+      },
+      "./command": {
+        "types": "./dist/components/ui/command.d.ts",
+        "import": "./dist/components/ui/command.js"
+      },
+      "./confirm-dialog": {
+        "types": "./dist/components/ui/confirm-dialog.d.ts",
+        "import": "./dist/components/ui/confirm-dialog.js"
+      },
+      "./context-menu": {
+        "types": "./dist/components/ui/context-menu.d.ts",
+        "import": "./dist/components/ui/context-menu.js"
+      },
+      "./count-badge": {
+        "types": "./dist/components/ui/count-badge.d.ts",
+        "import": "./dist/components/ui/count-badge.js"
+      },
+      "./data-grid": {
+        "types": "./dist/components/ui/data-grid.d.ts",
+        "import": "./dist/components/ui/data-grid.js"
+      },
+      "./date-range-picker": {
+        "types": "./dist/components/ui/date-range-picker.d.ts",
+        "import": "./dist/components/ui/date-range-picker.js"
+      },
+      "./definition-list": {
+        "types": "./dist/components/ui/definition-list.d.ts",
+        "import": "./dist/components/ui/definition-list.js"
+      },
+      "./dialog": {
+        "types": "./dist/components/ui/dialog.d.ts",
+        "import": "./dist/components/ui/dialog.js"
+      },
+      "./disclosure": {
+        "types": "./dist/components/ui/disclosure.d.ts",
+        "import": "./dist/components/ui/disclosure.js"
+      },
+      "./dot-matrix/dotm-3x3-10": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-10.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-10.js"
+      },
+      "./dot-matrix/dotm-3x3-12": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-12.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-12.js"
+      },
+      "./dot-matrix/dotm-3x3-13": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-13.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-13.js"
+      },
+      "./dot-matrix/dotm-3x3-15": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-15.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-15.js"
+      },
+      "./dot-matrix/dotm-3x3-16": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-16.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-16.js"
+      },
+      "./dot-matrix/dotm-3x3-18": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-18.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-18.js"
+      },
+      "./dot-matrix/dotm-3x3-19": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-19.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-19.js"
+      },
+      "./dot-matrix/dotm-3x3-2": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-2.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-2.js"
+      },
+      "./dot-matrix/dotm-3x3-20": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-20.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-20.js"
+      },
+      "./dot-matrix/dotm-3x3-21": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-21.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-21.js"
+      },
+      "./dot-matrix/dotm-3x3-3": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-3.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-3.js"
+      },
+      "./dot-matrix/dotm-3x3-4": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-4.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-4.js"
+      },
+      "./dot-matrix/dotm-3x3-5": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-5.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-5.js"
+      },
+      "./dot-matrix/dotm-3x3-6": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-6.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-6.js"
+      },
+      "./dot-matrix/dotm-3x3-7": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-7.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-7.js"
+      },
+      "./dot-matrix/dotm-3x3-8": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-8.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-8.js"
+      },
+      "./dot-matrix/dotm-3x3-9": {
+        "types": "./dist/components/ui/dot-matrix/dotm-3x3-9.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-3x3-9.js"
+      },
+      "./dot-matrix/dotm-circular-1": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-1.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-1.js"
+      },
+      "./dot-matrix/dotm-circular-10": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-10.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-10.js"
+      },
+      "./dot-matrix/dotm-circular-11": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-11.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-11.js"
+      },
+      "./dot-matrix/dotm-circular-12": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-12.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-12.js"
+      },
+      "./dot-matrix/dotm-circular-14": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-14.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-14.js"
+      },
+      "./dot-matrix/dotm-circular-15": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-15.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-15.js"
+      },
+      "./dot-matrix/dotm-circular-17": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-17.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-17.js"
+      },
+      "./dot-matrix/dotm-circular-2": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-2.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-2.js"
+      },
+      "./dot-matrix/dotm-circular-3": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-3.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-3.js"
+      },
+      "./dot-matrix/dotm-circular-4": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-4.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-4.js"
+      },
+      "./dot-matrix/dotm-circular-5": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-5.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-5.js"
+      },
+      "./dot-matrix/dotm-circular-6": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-6.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-6.js"
+      },
+      "./dot-matrix/dotm-circular-7": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-7.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-7.js"
+      },
+      "./dot-matrix/dotm-circular-8": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-8.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-8.js"
+      },
+      "./dot-matrix/dotm-circular-9": {
+        "types": "./dist/components/ui/dot-matrix/dotm-circular-9.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-circular-9.js"
+      },
+      "./dot-matrix/dotm-square-1": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-1.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-1.js"
+      },
+      "./dot-matrix/dotm-square-10": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-10.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-10.js"
+      },
+      "./dot-matrix/dotm-square-11": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-11.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-11.js"
+      },
+      "./dot-matrix/dotm-square-12": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-12.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-12.js"
+      },
+      "./dot-matrix/dotm-square-13": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-13.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-13.js"
+      },
+      "./dot-matrix/dotm-square-14": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-14.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-14.js"
+      },
+      "./dot-matrix/dotm-square-15": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-15.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-15.js"
+      },
+      "./dot-matrix/dotm-square-16": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-16.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-16.js"
+      },
+      "./dot-matrix/dotm-square-17": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-17.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-17.js"
+      },
+      "./dot-matrix/dotm-square-18": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-18.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-18.js"
+      },
+      "./dot-matrix/dotm-square-19": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-19.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-19.js"
+      },
+      "./dot-matrix/dotm-square-2": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-2.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-2.js"
+      },
+      "./dot-matrix/dotm-square-20": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-20.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-20.js"
+      },
+      "./dot-matrix/dotm-square-3": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-3.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-3.js"
+      },
+      "./dot-matrix/dotm-square-4": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-4.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-4.js"
+      },
+      "./dot-matrix/dotm-square-5": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-5.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-5.js"
+      },
+      "./dot-matrix/dotm-square-6": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-6.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-6.js"
+      },
+      "./dot-matrix/dotm-square-7": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-7.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-7.js"
+      },
+      "./dot-matrix/dotm-square-8": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-8.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-8.js"
+      },
+      "./dot-matrix/dotm-square-9": {
+        "types": "./dist/components/ui/dot-matrix/dotm-square-9.d.ts",
+        "import": "./dist/components/ui/dot-matrix/dotm-square-9.js"
+      },
+      "./dot-matrix/session-dot-matrix": {
+        "types": "./dist/components/ui/dot-matrix/session-dot-matrix.d.ts",
+        "import": "./dist/components/ui/dot-matrix/session-dot-matrix.js"
+      },
+      "./dotmatrix-loader.css": "./dist/styles/dotmatrix-loader.css",
+      "./drawer": {
+        "types": "./dist/components/ui/drawer.d.ts",
+        "import": "./dist/components/ui/drawer.js"
+      },
+      "./dropdown-menu": {
+        "types": "./dist/components/ui/dropdown-menu.d.ts",
+        "import": "./dist/components/ui/dropdown-menu.js"
+      },
+      "./emoji-picker": {
+        "types": "./dist/components/ui/emoji-picker.d.ts",
+        "import": "./dist/components/ui/emoji-picker.js"
+      },
+      "./emoji-tint": {
+        "types": "./dist/components/ui/emoji-tint.d.ts",
+        "import": "./dist/components/ui/emoji-tint.js"
+      },
+      "./empty": {
+        "types": "./dist/components/ui/empty.d.ts",
+        "import": "./dist/components/ui/empty.js"
+      },
+      "./entity-avatar": {
+        "types": "./dist/components/ui/entity-avatar.d.ts",
+        "import": "./dist/components/ui/entity-avatar.js"
+      },
+      "./faded-scroll-area": {
+        "types": "./dist/components/ui/faded-scroll-area.d.ts",
+        "import": "./dist/components/ui/faded-scroll-area.js"
+      },
+      "./favicon-avatar": {
+        "types": "./dist/components/ui/favicon-avatar.d.ts",
+        "import": "./dist/components/ui/favicon-avatar.js"
+      },
+      "./field": {
+        "types": "./dist/components/ui/field.d.ts",
+        "import": "./dist/components/ui/field.js"
+      },
+      "./file-tree": {
+        "types": "./dist/components/ui/file-tree.d.ts",
+        "import": "./dist/components/ui/file-tree.js"
+      },
+      "./fonts.css": "./dist/styles/fonts.css",
+      "./glyph-face": {
+        "types": "./dist/components/ui/glyph-face.d.ts",
+        "import": "./dist/components/ui/glyph-face.js"
+      },
+      "./glyph-picker": {
+        "types": "./dist/components/ui/glyph-picker.d.ts",
+        "import": "./dist/components/ui/glyph-picker.js"
+      },
+      "./glyph-registry": {
+        "types": "./dist/components/ui/glyph-registry.d.ts",
+        "import": "./dist/components/ui/glyph-registry.js"
+      },
+      "./glyph-tint": {
+        "types": "./dist/components/ui/glyph-tint.d.ts",
+        "import": "./dist/components/ui/glyph-tint.js"
+      },
+      "./hint": {
+        "types": "./dist/components/ui/hint.d.ts",
+        "import": "./dist/components/ui/hint.js"
+      },
+      "./histogram-bars": {
+        "types": "./dist/components/ui/histogram-bars.d.ts",
+        "import": "./dist/components/ui/histogram-bars.js"
+      },
+      "./hooks/use-debounce": {
+        "types": "./dist/hooks/use-debounce.d.ts",
+        "import": "./dist/hooks/use-debounce.js"
+      },
+      "./hooks/use-is-dark": {
+        "types": "./dist/hooks/use-is-dark.d.ts",
+        "import": "./dist/hooks/use-is-dark.js"
+      },
+      "./hooks/use-mobile": {
+        "types": "./dist/hooks/use-mobile.d.ts",
+        "import": "./dist/hooks/use-mobile.js"
+      },
+      "./hooks/use-proximity-hover": {
+        "types": "./dist/hooks/use-proximity-hover.d.ts",
+        "import": "./dist/hooks/use-proximity-hover.js"
+      },
+      "./hover-card": {
+        "types": "./dist/components/ui/hover-card.d.ts",
+        "import": "./dist/components/ui/hover-card.js"
+      },
+      "./icon-provider": {
+        "types": "./dist/components/ui/icon-provider.d.ts",
+        "import": "./dist/components/ui/icon-provider.js"
+      },
+      "./icons/close": {
+        "types": "./dist/icons/close.d.ts",
+        "import": "./dist/icons/close.js"
+      },
+      "./icons/copy": {
+        "types": "./dist/icons/copy.d.ts",
+        "import": "./dist/icons/copy.js"
+      },
+      "./icons/sidebar-toggle": {
+        "types": "./dist/icons/sidebar-toggle.d.ts",
+        "import": "./dist/icons/sidebar-toggle.js"
+      },
+      "./info-banner": {
+        "types": "./dist/components/ui/info-banner.d.ts",
+        "import": "./dist/components/ui/info-banner.js"
+      },
+      "./inline-meta": {
+        "types": "./dist/components/ui/inline-meta.d.ts",
+        "import": "./dist/components/ui/inline-meta.js"
+      },
+      "./input": {
+        "types": "./dist/components/ui/input.d.ts",
+        "import": "./dist/components/ui/input.js"
+      },
+      "./input-group": {
+        "types": "./dist/components/ui/input-group.d.ts",
+        "import": "./dist/components/ui/input-group.js"
+      },
+      "./item": {
+        "types": "./dist/components/ui/item.d.ts",
+        "import": "./dist/components/ui/item.js"
+      },
+      "./kbd": {
+        "types": "./dist/components/ui/kbd.d.ts",
+        "import": "./dist/components/ui/kbd.js"
+      },
+      "./kortix-asterisk": {
+        "types": "./dist/components/ui/kortix-asterisk.d.ts",
+        "import": "./dist/components/ui/kortix-asterisk.js"
+      },
+      "./kortix-icons": {
+        "types": "./dist/components/ui/kortix-icons.d.ts",
+        "import": "./dist/components/ui/kortix-icons.js"
+      },
+      "./kortix-loader": {
+        "types": "./dist/components/ui/kortix-loader.d.ts",
+        "import": "./dist/components/ui/kortix-loader.js"
+      },
+      "./kortix-logo": {
+        "types": "./dist/components/ui/kortix-logo.d.ts",
+        "import": "./dist/components/ui/kortix-logo.js"
+      },
+      "./label": {
+        "types": "./dist/components/ui/label.d.ts",
+        "import": "./dist/components/ui/label.js"
+      },
+      "./lib/dotmatrix-core": {
+        "types": "./dist/lib/dotmatrix-core.d.ts",
+        "import": "./dist/lib/dotmatrix-core.js"
+      },
+      "./lib/dotmatrix-hooks": {
+        "types": "./dist/lib/dotmatrix-hooks.d.ts",
+        "import": "./dist/lib/dotmatrix-hooks.js"
+      },
+      "./lib/favicon": {
+        "types": "./dist/lib/favicon.d.ts",
+        "import": "./dist/lib/favicon.js"
+      },
+      "./lib/font-weight": {
+        "types": "./dist/lib/font-weight.d.ts",
+        "import": "./dist/lib/font-weight.js"
+      },
+      "./lib/icon-config": {
+        "types": "./dist/lib/icon-config.d.ts",
+        "import": "./dist/lib/icon-config.js"
+      },
+      "./lib/icon-context": {
+        "types": "./dist/lib/icon-context.d.ts",
+        "import": "./dist/lib/icon-context.js"
+      },
+      "./lib/portal-root": {
+        "types": "./dist/lib/portal-root.d.ts",
+        "import": "./dist/lib/portal-root.js"
+      },
+      "./lib/settle": {
+        "types": "./dist/lib/settle.d.ts",
+        "import": "./dist/lib/settle.js"
+      },
+      "./lib/springs": {
+        "types": "./dist/lib/springs.d.ts",
+        "import": "./dist/lib/springs.js"
+      },
+      "./lib/utils": {
+        "types": "./dist/lib/utils.d.ts",
+        "import": "./dist/lib/utils.js"
+      },
+      "./lib/z-stack": {
+        "types": "./dist/lib/z-stack.d.ts",
+        "import": "./dist/lib/z-stack.js"
+      },
+      "./list": {
+        "types": "./dist/components/ui/list.d.ts",
+        "import": "./dist/components/ui/list.js"
+      },
+      "./loading": {
+        "types": "./dist/components/ui/loading.d.ts",
+        "import": "./dist/components/ui/loading.js"
+      },
+      "./local-time": {
+        "types": "./dist/components/ui/local-time.d.ts",
+        "import": "./dist/components/ui/local-time.js"
+      },
+      "./map": {
+        "types": "./dist/components/ui/map.d.ts",
+        "import": "./dist/components/ui/map.js"
+      },
+      "./marker": {
+        "types": "./dist/components/ui/marker.d.ts",
+        "import": "./dist/components/ui/marker.js"
+      },
+      "./menu-recipe": {
+        "types": "./dist/components/ui/menu-recipe.d.ts",
+        "import": "./dist/components/ui/menu-recipe.js"
+      },
+      "./mermaid-render": {
+        "types": "./dist/components/ui/mermaid-render.d.ts",
+        "import": "./dist/components/ui/mermaid-render.js"
+      },
+      "./mermaid-renderer": {
+        "types": "./dist/components/ui/mermaid-renderer.d.ts",
+        "import": "./dist/components/ui/mermaid-renderer.js"
+      },
+      "./message": {
+        "types": "./dist/components/ui/message.d.ts",
+        "import": "./dist/components/ui/message.js"
+      },
+      "./modal": {
+        "types": "./dist/components/ui/modal.d.ts",
+        "import": "./dist/components/ui/modal.js"
+      },
+      "./navigation-menu": {
+        "types": "./dist/components/ui/navigation-menu.d.ts",
+        "import": "./dist/components/ui/navigation-menu.js"
+      },
+      "./package.json": "./package.json",
+      "./page-search-bar": {
+        "types": "./dist/components/ui/page-search-bar.d.ts",
+        "import": "./dist/components/ui/page-search-bar.js"
+      },
+      "./phone-input": {
+        "types": "./dist/components/ui/phone-input.d.ts",
+        "import": "./dist/components/ui/phone-input.js"
+      },
+      "./pixel-kortix-mark": {
+        "types": "./dist/components/ui/pixel-kortix-mark.d.ts",
+        "import": "./dist/components/ui/pixel-kortix-mark.js"
+      },
+      "./popover": {
+        "types": "./dist/components/ui/popover.d.ts",
+        "import": "./dist/components/ui/popover.js"
+      },
+      "./portal": {
+        "types": "./dist/components/ui/portal.d.ts",
+        "import": "./dist/components/ui/portal.js"
+      },
+      "./preview-image": {
+        "types": "./dist/components/ui/preview-image.d.ts",
+        "import": "./dist/components/ui/preview-image.js"
+      },
+      "./progress": {
+        "types": "./dist/components/ui/progress.d.ts",
+        "import": "./dist/components/ui/progress.js"
+      },
+      "./progress-ring": {
+        "types": "./dist/components/ui/progress-ring.d.ts",
+        "import": "./dist/components/ui/progress-ring.js"
+      },
+      "./providers/ui-provider": {
+        "types": "./dist/providers/ui-provider.d.ts",
+        "import": "./dist/providers/ui-provider.js"
+      },
+      "./radio-group": {
+        "types": "./dist/components/ui/radio-group.d.ts",
+        "import": "./dist/components/ui/radio-group.js"
+      },
+      "./resizable": {
+        "types": "./dist/components/ui/resizable.d.ts",
+        "import": "./dist/components/ui/resizable.js"
+      },
+      "./scroll-area": {
+        "types": "./dist/components/ui/scroll-area.d.ts",
+        "import": "./dist/components/ui/scroll-area.js"
+      },
+      "./section": {
+        "types": "./dist/components/ui/section.d.ts",
+        "import": "./dist/components/ui/section.js"
+      },
+      "./section-card": {
+        "types": "./dist/components/ui/section-card.d.ts",
+        "import": "./dist/components/ui/section-card.js"
+      },
+      "./select": {
+        "types": "./dist/components/ui/select.d.ts",
+        "import": "./dist/components/ui/select.js"
+      },
+      "./separator": {
+        "types": "./dist/components/ui/separator.d.ts",
+        "import": "./dist/components/ui/separator.js"
+      },
+      "./shader-safe": {
+        "types": "./dist/components/ui/shader-safe.d.ts",
+        "import": "./dist/components/ui/shader-safe.js"
+      },
+      "./sheet": {
+        "types": "./dist/components/ui/sheet.d.ts",
+        "import": "./dist/components/ui/sheet.js"
+      },
+      "./sidebar": {
+        "types": "./dist/components/ui/sidebar.d.ts",
+        "import": "./dist/components/ui/sidebar.js"
+      },
+      "./sidebar-context": {
+        "types": "./dist/components/ui/sidebar-context.d.ts",
+        "import": "./dist/components/ui/sidebar-context.js"
+      },
+      "./sidebar-menu-primitives": {
+        "types": "./dist/components/ui/sidebar-menu-primitives.d.ts",
+        "import": "./dist/components/ui/sidebar-menu-primitives.js"
+      },
+      "./sidebar-panel": {
+        "types": "./dist/components/ui/sidebar-panel.d.ts",
+        "import": "./dist/components/ui/sidebar-panel.js"
+      },
+      "./sidebar-width": {
+        "types": "./dist/components/ui/sidebar-width.d.ts",
+        "import": "./dist/components/ui/sidebar-width.js"
+      },
+      "./skeleton": {
+        "types": "./dist/components/ui/skeleton.d.ts",
+        "import": "./dist/components/ui/skeleton.js"
+      },
+      "./slider": {
+        "types": "./dist/components/ui/slider.d.ts",
+        "import": "./dist/components/ui/slider.js"
+      },
+      "./slider-native": {
+        "types": "./dist/components/ui/slider-native.d.ts",
+        "import": "./dist/components/ui/slider-native.js"
+      },
+      "./sliding-tab-indicator": {
+        "types": "./dist/components/ui/sliding-tab-indicator.d.ts",
+        "import": "./dist/components/ui/sliding-tab-indicator.js"
+      },
+      "./split-sheet": {
+        "types": "./dist/components/ui/split-sheet.d.ts",
+        "import": "./dist/components/ui/split-sheet.js"
+      },
+      "./spotlight-card": {
+        "types": "./dist/components/ui/spotlight-card.d.ts",
+        "import": "./dist/components/ui/spotlight-card.js"
+      },
+      "./status": {
+        "types": "./dist/components/ui/status.d.ts",
+        "import": "./dist/components/ui/status.js"
+      },
+      "./status-ring": {
+        "types": "./dist/components/ui/status-ring.d.ts",
+        "import": "./dist/components/ui/status-ring.js"
+      },
+      "./stepper": {
+        "types": "./dist/components/ui/stepper.d.ts",
+        "import": "./dist/components/ui/stepper.js"
+      },
+      "./styles.css": "./dist/styles.css",
+      "./switch": {
+        "types": "./dist/components/ui/switch.d.ts",
+        "import": "./dist/components/ui/switch.js"
+      },
+      "./system-message": {
+        "types": "./dist/components/ui/system-message.d.ts",
+        "import": "./dist/components/ui/system-message.js"
+      },
+      "./table": {
+        "types": "./dist/components/ui/table.d.ts",
+        "import": "./dist/components/ui/table.js"
+      },
+      "./tabs": {
+        "types": "./dist/components/ui/tabs.d.ts",
+        "import": "./dist/components/ui/tabs.js"
+      },
+      "./tag": {
+        "types": "./dist/components/ui/tag.d.ts",
+        "import": "./dist/components/ui/tag.js"
+      },
+      "./tailwind.css": "./dist/styles/tailwind.css",
+      "./text-shimmer": {
+        "types": "./dist/components/ui/text-shimmer.d.ts",
+        "import": "./dist/components/ui/text-shimmer.js"
+      },
+      "./textarea": {
+        "types": "./dist/components/ui/textarea.d.ts",
+        "import": "./dist/components/ui/textarea.js"
+      },
+      "./theme.css": "./dist/styles/theme.css",
+      "./toast": {
+        "types": "./dist/components/ui/toast.d.ts",
+        "import": "./dist/components/ui/toast.js"
+      },
+      "./toggle": {
+        "types": "./dist/components/ui/toggle.d.ts",
+        "import": "./dist/components/ui/toggle.js"
+      },
+      "./tokens.css": "./dist/styles/tokens.css",
+      "./tooltip": {
+        "types": "./dist/components/ui/tooltip.d.ts",
+        "import": "./dist/components/ui/tooltip.js"
+      },
+      "./trigger-variants": {
+        "types": "./dist/components/ui/trigger-variants.d.ts",
+        "import": "./dist/components/ui/trigger-variants.js"
+      },
+      "./type-to-confirm-dialog": {
+        "types": "./dist/components/ui/type-to-confirm-dialog.d.ts",
+        "import": "./dist/components/ui/type-to-confirm-dialog.js"
+      },
+      "./typed-title": {
+        "types": "./dist/components/ui/typed-title.d.ts",
+        "import": "./dist/components/ui/typed-title.js"
+      },
+      "./typing-animation": {
+        "types": "./dist/components/ui/typing-animation.d.ts",
+        "import": "./dist/components/ui/typing-animation.js"
+      },
+      "./user-avatar": {
+        "types": "./dist/components/ui/user-avatar.d.ts",
+        "import": "./dist/components/ui/user-avatar.js"
+      }
+    },
+    "files": [
+      "dist",
+      "skills",
+      "README.md"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\"",
+    "gen-exports": "node scripts/gen-exports.mjs",
+    "build:styles": "node scripts/build-styles.mjs",
+    "build": "node scripts/build.mjs",
+    "smoke:install": "node scripts/smoke-install.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "2.1.10",
+    "@radix-ui/react-accordion": "^1.2.11",
+    "@radix-ui/react-alert-dialog": "^1.1.11",
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-popover": "^1.1.7",
+    "@radix-ui/react-portal": "1.1.17",
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-scroll-area": "^1.2.4",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slider": "^1.3.2",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.8",
+    "@radix-ui/react-toggle": "^1.1.10",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@radix-ui/react-visually-hidden": "^1.2.4",
+    "ag-grid-community": "^35.1.0",
+    "ag-grid-react": "^35.1.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^0.2.1",
+    "frimousse": "^0.3.0",
+    "maplibre-gl": "6.12.0",
+    "mermaid": "^11.12.0",
+    "motion": "^12.40.0",
+    "radix-ui": "^1.6.0",
+    "react-day-picker": "^8.10.1",
+    "react-markdown": "^10.1.0",
+    "react-phone-number-input": "^3.4.12",
+    "react-resizable-panels": "^3.0.6",
+    "recharts": "^3.2.1",
+    "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.3",
+    "tailwind-merge": "^3.6.0",
+    "vaul": "^1.1.2"
+  },
+  "peerDependencies": {
+    "@kortix/sdk": "workspace:^",
+    "@types/react": ">=18",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "tailwind-scrollbar": "^4.0.2",
+    "tailwind-scrollbar-hide": "^2.0.0",
+    "tw-animate-css": "^1.2.4"
+  },
+  "peerDependenciesMeta": {
+    "@kortix/sdk": {
+      "optional": true
+    },
+    "@types/react": {
+      "optional": true
+    },
+    "tailwind-scrollbar": {
+      "optional": true
+    },
+    "tailwind-scrollbar-hide": {
+      "optional": true
+    },
+    "tw-animate-css": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@kortix/sdk": "workspace:*",
+    "@kortix/shared": "workspace:*",
+    "@tailwindcss/cli": "4.3.3",
+    "@types/bun": "^1.3.12",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "happy-dom": "^20.14.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-scrollbar": "^4.0.2",
+    "tailwind-scrollbar-hide": "^2.0.0",
+    "tailwindcss": "4.3.3",
+    "tsc-alias": "^1.8.17",
+    "tsup": "^8.5.1",
+    "tw-animate-css": "^1.2.4",
+    "typescript": "^5.4.0"
+  }
+}

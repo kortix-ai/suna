@@ -13,27 +13,27 @@
  * behaviour is byte-for-byte what it was before this dialog existed.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { AgentPicker } from '@/components/chat/agent-picker';
 import {
   ConnectorBindingFields,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Label } from '@kortix/ui/label';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { NO_OVERRIDES, type SessionOverrides } from '@/lib/session-overrides';
@@ -42,6 +42,7 @@ import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { AgentPicker } from '@kortix/ui/chat';
 
 export function NewSessionDialog({
   projectId,
@@ -56,15 +57,15 @@ export function NewSessionDialog({
   const [open, setOpen] = useState(false);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[85dvh] overflow-y-auto scrollbar-thin sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New session</DialogTitle>
-          <DialogDescription>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>{trigger}</ModalTrigger>
+      <ModalContent className="max-h-[85dvh] overflow-y-auto scrollbar-thin lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>New session</ModalTitle>
+          <ModalDescription>
             Set the initial agent, secrets, and connections. You can change the session scope later.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         {/* Mounted only while open so the pickers' fetches don't run on every
             page that renders the sidebar. */}
         {open && (
@@ -74,8 +75,8 @@ export function NewSessionDialog({
             onDone={() => setOpen(false)}
           />
         )}
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -150,101 +151,103 @@ function NewSessionForm({
   };
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-1.5">
-        <Label>Agent</Label>
-        <div className="flex items-center gap-2">
-          <AgentPicker
-            agents={agents}
-            value={agent}
-            onChange={setAgent}
-            defaultName={config?.default_agent}
-          />
-          {agents.length === 0 && (
-            <span className="text-xs text-muted-foreground">
-              This project runs its default agent.
-            </span>
-          )}
-        </div>
-      </section>
-
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <Label htmlFor="narrow-secrets">Limit which secrets this session can read</Label>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Off, the session gets the agent&apos;s full secret grant. An allowlist only ever
-              narrows it. You can replace the allowlist after the session starts.
-            </p>
-          </div>
-          <Switch
-            id="narrow-secrets"
-            checked={allowlist !== null}
-            onCheckedChange={(on) => setAllowlist(on ? [] : null)}
-            disabled={secrets.isLoading || identifiers.length === 0}
-          />
-        </div>
-        {secrets.isLoading && <Skeleton className="h-8 w-full" />}
-        {allowlist !== null && (
-          <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
-            {identifiers.map((secret) => (
-              <div key={secret.identifier} className="flex items-center justify-between gap-3">
-                <Label
-                  htmlFor={`secret-${secret.identifier}`}
-                  className="min-w-0 font-mono text-xs font-normal"
-                >
-                  <span className="truncate">{secret.identifier}</span>
-                  {secret.name !== secret.identifier && (
-                    <span className="truncate text-muted-foreground">→ {secret.name}</span>
-                  )}
-                </Label>
-                <Switch
-                  id={`secret-${secret.identifier}`}
-                  checked={checked.includes(secret.identifier)}
-                  onCheckedChange={(on) => toggle(secret.identifier, on)}
-                />
-              </div>
-            ))}
-            {checked.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                This session will receive no project secrets at all.
-              </p>
+    <>
+      <ModalBody className="space-y-5">
+        <section className="space-y-1.5">
+          <Label>Agent</Label>
+          <div className="flex items-center gap-2">
+            <AgentPicker
+              agents={agents}
+              value={agent}
+              onChange={setAgent}
+              defaultName={config?.default_agent}
+            />
+            {agents.length === 0 && (
+              <span className="text-xs text-muted-foreground">
+                This project runs its default agent.
+              </span>
             )}
           </div>
-        )}
-      </section>
-
-      {(connectors.data?.connectors.length ?? 0) > 0 && (
-        <section className="space-y-2">
-          <div>
-            <Label>Connections</Label>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Which shared account each connector acts as. Sessions started here can only use
-              project connections.
-            </p>
-          </div>
-          <ConnectorBindingFields
-            choices={connectors.data?.connectors ?? []}
-            value={bindings}
-            onChange={setBindings}
-          />
-          {/* Where the options in that picker come from — including why an
-              alias can be listed with nothing to choose. */}
-          <CallSnippet id="connections.list" context={{ projectId }} />
         </section>
-      )}
 
-      {/* The dialog IS the create body — so show the body it currently builds,
-          updating as the switches move, rather than describing it. */}
-      <CallSnippet
-        id="session.create"
-        context={{
-          projectId,
-          overrides,
-        }}
-      />
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <Label htmlFor="narrow-secrets">Limit which secrets this session can read</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Off, the session gets the agent&apos;s full secret grant. An allowlist only ever
+                narrows it. You can replace the allowlist after the session starts.
+              </p>
+            </div>
+            <Switch
+              id="narrow-secrets"
+              checked={allowlist !== null}
+              onCheckedChange={(on) => setAllowlist(on ? [] : null)}
+              disabled={secrets.isLoading || identifiers.length === 0}
+            />
+          </div>
+          {secrets.isLoading && <Skeleton className="h-8 w-full" />}
+          {allowlist !== null && (
+            <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
+              {identifiers.map((secret) => (
+                <div key={secret.identifier} className="flex items-center justify-between gap-3">
+                  <Label
+                    htmlFor={`secret-${secret.identifier}`}
+                    className="min-w-0 font-mono text-xs font-normal"
+                  >
+                    <span className="truncate">{secret.identifier}</span>
+                    {secret.name !== secret.identifier && (
+                      <span className="truncate text-muted-foreground">→ {secret.name}</span>
+                    )}
+                  </Label>
+                  <Switch
+                    id={`secret-${secret.identifier}`}
+                    checked={checked.includes(secret.identifier)}
+                    onCheckedChange={(on) => toggle(secret.identifier, on)}
+                  />
+                </div>
+              ))}
+              {checked.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  This session will receive no project secrets at all.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
 
-      <DialogFooter>
+        {(connectors.data?.connectors.length ?? 0) > 0 && (
+          <section className="space-y-2">
+            <div>
+              <Label>Connections</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Which shared account each connector acts as. Sessions started here can only use
+                project connections.
+              </p>
+            </div>
+            <ConnectorBindingFields
+              choices={connectors.data?.connectors ?? []}
+              value={bindings}
+              onChange={setBindings}
+            />
+            {/* Where the options in that picker come from — including why an
+                alias can be listed with nothing to choose. */}
+            <CallSnippet id="connections.list" context={{ projectId }} />
+          </section>
+        )}
+
+        {/* The dialog IS the create body — so show the body it currently builds,
+            updating as the switches move, rather than describing it. */}
+        <CallSnippet
+          id="session.create"
+          context={{
+            projectId,
+            overrides,
+          }}
+        />
+      </ModalBody>
+
+      <ModalFooter>
         <Button variant="ghost" onClick={onDone} disabled={start.isPending}>
           Cancel
         </Button>
@@ -252,7 +255,7 @@ function NewSessionForm({
           {start.isPending && <Loading className="size-4" />}
           Start session
         </Button>
-      </DialogFooter>
-    </div>
+      </ModalFooter>
+    </>
   );
 }

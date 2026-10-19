@@ -30,8 +30,16 @@ const srTranslator = createTranslator({
 
 const localeCatalogs = { en, de, it, zh, ja, pt, fr, es, sr } as const;
 
+// An ICU branch body such as `other {failed}` is copy, not an argument: skip a
+// brace that follows a plural/select selector.
 function placeholders(value: string): string[] {
-  return [...value.matchAll(/\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g)].map((match) => match[1]).sort();
+  return [
+    ...value.matchAll(
+      /(?<!(?:\b(?:zero|one|two|few|many|other)|=\d+)\s*)\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g,
+    ),
+  ]
+    .map((match) => match[1])
+    .sort();
 }
 
 describe('complete UI localization', () => {
@@ -87,8 +95,8 @@ describe('complete UI localization', () => {
       expect(localizedFaq.items[index]?.question).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
       expect(localizedFaq.items[index]?.answer).toMatch(/[А-Яа-яЉЊЂЋЏљњђћџ]/u);
     }
-    expect(localizedOpenSource.aboutLabel).toBe('Зашто га градимо');
-    expect(localizedOpenSource.repoLabel).toBe('Прочитајте изворни кôд');
+    expect<string>(localizedOpenSource.aboutLabel).toBe('Зашто га градимо');
+    expect<string>(localizedOpenSource.repoLabel).toBe('Прочитајте изворни кôд');
   });
 
   test('keeps every locale in exact key and placeholder parity with English', () => {

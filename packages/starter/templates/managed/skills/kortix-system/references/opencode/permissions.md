@@ -69,7 +69,7 @@ For most permissions, you can use an object to apply different actions based on 
 }
 ```
 
-Rules are evaluated by pattern match, with the **last matching rule winning**. A common pattern is to put the catch-all `"*"` rule first, and more specific rules after it.
+In a Kortix session the **most specific matching rule wins**, whatever order the keys are written in: the longest matching pattern decides, and `"*"` is the fallback. The same holds between keys: `bash` outranks `"*"`. Two patterns of equal length: the later one in code-unit order wins. kortixd orders every block before OpenCode reads it, so pi and OpenCode resolve the same rule. (Stock OpenCode applies the last matching rule in key order.)
 
 ### Wildcards
 

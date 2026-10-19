@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { discoverProtectedResourceOAuth2 } from './oauth2-resource-discovery';
+import { discoverProtectedResourceOAuth2, mcpSignInCheck } from './oauth2-resource-discovery';
 
 type Route = (url: string, init?: RequestInit) => Response | Promise<Response>;
 
@@ -226,5 +226,48 @@ describe('discoverProtectedResourceOAuth2 — MCP authorization discovery chain'
       { fetchImpl },
     );
     expect(calls[0]).toBe('GET https://api.example.com/v1');
+  });
+});
+
+describe('mcpSignInCheck: can Kortix sign in to an MCP server in one click', () => {
+  const base = { resource_url: 'https://mcp.example.test/mcp', scopes: [], warnings: [] };
+  const metadata = {
+    authorization_url: 'https://mcp.example.test/authorize',
+    token_url: 'https://mcp.example.test/token',
+  };
+
+  test('OAuth endpoints plus dynamic client registration is one click', () => {
+    expect(
+      mcpSignInCheck({
+        ...base,
+        requires_authorization: true,
+        metadata,
+        registration_endpoint: 'https://mcp.example.test/register',
+      }),
+    ).toEqual({ requires_sign_in: true, one_click: true });
+  });
+
+  test('without dynamic client registration it is not one click', () => {
+    expect(mcpSignInCheck({ ...base, requires_authorization: true, metadata })).toEqual({
+      requires_sign_in: true,
+      one_click: false,
+    });
+  });
+
+  test('a server with no OAuth metadata is not one click', () => {
+    expect(
+      mcpSignInCheck({
+        ...base,
+        requires_authorization: true,
+        registration_endpoint: 'https://mcp.example.test/register',
+      }),
+    ).toEqual({ requires_sign_in: true, one_click: false });
+  });
+
+  test('a server that answers without credentials needs no sign-in', () => {
+    expect(mcpSignInCheck({ ...base, requires_authorization: false })).toEqual({
+      requires_sign_in: false,
+      one_click: false,
+    });
   });
 });

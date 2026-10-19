@@ -18,12 +18,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import { connectorBindingNotice } from '@/lib/connector-binding';
 import { getSessionToken } from '@/lib/session';
 import type { ConnectorBindingChoice } from '@/server/bindable-connections';
 import { useQuery } from '@tanstack/react-query';
-import { Users } from 'lucide-react';
+import { UsersIcon } from '@phosphor-icons/react';
 
 const DEFAULT_VALUE = 'default';
 
@@ -79,7 +79,7 @@ export function ConnectorBindingFields({
               key={choice.alias}
               className="flex items-start gap-2.5 rounded-md border border-border bg-muted/30 px-3 py-2.5"
             >
-              <Users className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <UsersIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <div className="text-sm">{notice.title}</div>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">

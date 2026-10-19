@@ -32,6 +32,7 @@ flow(
   "MCP-1",
   {
     domain: "mcp",
+    tags: ["deployed"],
     routes: [
       "POST /v1/mcp",
       "GET /.well-known/oauth-protected-resource/v1/mcp",
@@ -579,6 +580,7 @@ flow(
   "MCP-4",
   {
     domain: "mcp",
+    tags: ["deployed"],
     routes: ["POST /v1/accounts/tokens", "POST /v1/mcp", "GET /v1/accounts", "GET /v1/projects", "GET /v1/projects/:projectId/files"],
   },
   async (ctx) => {

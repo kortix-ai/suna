@@ -1,6 +1,6 @@
 ---
 title: React
-description: "@kortix/sdk/react: useSession for a whole session view, a chat kit, and data hooks for everything else."
+description: "@kortix/sdk/react: useSession for a whole session view, a headless chat kit, and data hooks for everything else."
 ---
 
 `@kortix/sdk/react` is the React layer of the SDK. It gives you one hook that runs a whole session view, a headless chat kit, and data hooks for accounts, projects, sessions, secrets, triggers, Apps, notifications and access checks. It works in React and React Native.
@@ -233,7 +233,27 @@ While the view is mounted, its event stream raises these. When the view unmounts
 
 ## Build a chat UI
 
-`messages` are runtime messages. The chat kit turns each one into typed parts you can render with no knowledge of the harness.
+Start with `SessionThread` from [`@kortix/ui/chat`](/docs/sdk/ui#add-a-chat). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
+
+```tsx
+import { useSession } from '@kortix/sdk/react';
+import { SessionThread } from '@kortix/ui/chat';
+
+function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  return (
+    <div className="h-dvh">
+      <SessionThread session={session} />
+    </div>
+  );
+}
+```
+
+Its `renderTool` and `renderers` props replace one tool card or one part kind, and its parts (`MessageList`, `MessageView`, `Composer`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+
+### Render the parts yourself
+
+To draw every part with your own components, use the headless chat kit. `messages` are runtime messages. The kit turns each one into typed parts you can render with no knowledge of the harness.
 
 ```tsx
 import { toolViewModel } from '@kortix/sdk';
@@ -326,7 +346,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |
 | `useProjectSecrets(projectId)` | Secrets, with `upsert`, `remove`, `setPersonal` and `removePersonal`. Values are never returned. |
 | `useAccountSecretResources(accountId, projectId?)`, `useSessionProviderSecretPools(projectId, sessionId)` | Account-level secret resources, and the provider-key pools one session can use. |
-| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove` and `fire`. |
+| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireProjectTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `ProjectTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. A dry run refreshes nothing. |
+| `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)`, `useProjectTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | One trigger's runs, and every run of the project, as an infinite query paged by `next_cursor`. Read `data.pages[].runs`, and call `fetchNextPage()` while `hasNextPage` is true. No polling by default; pass `refetchInterval` (ms) to poll while a run is queued or running. `limit` (1 to 100, server default 25) sets the runs per page of `useTriggerRuns`; a set limit is its own cache entry. |
 | `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useProjectReminders(projectId)`, `useSessionReminders(projectId, sessionId)` | Reminders, with `update` and `remove`. The project hook adds `updateMany` and `removeMany`. |
 | `useChangeRequests(projectId, status?)` | Change requests, with `open`, `merge`, `close` and `requestChanges`. |

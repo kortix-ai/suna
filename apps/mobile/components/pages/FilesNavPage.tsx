@@ -44,7 +44,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SandboxFile } from '@/api/types';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
-import { FilePreview, FilePreviewBottomInsetContext, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { FilePreview } from '@/components/files/FilePreviewRenderers';
+import { FilePreviewBottomInsetContext } from '@/components/files/file-preview-webview';
+import { getFilePreviewType } from '@/lib/files/preview-type';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -97,9 +99,6 @@ interface FilesNavPageProps {
   /** As a sub-page: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -466,9 +465,6 @@ export function FilesNavPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: FilesNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -707,9 +703,6 @@ export function FilesNavPage({
         title={path ? basename(path) : page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

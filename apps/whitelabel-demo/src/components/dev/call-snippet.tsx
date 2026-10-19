@@ -18,13 +18,13 @@
  * holds the class per token role and no logic about what a token is.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+} from '@kortix/ui/collapsible';
 import {
   type CallSnippetId,
   type SnippetContext,
@@ -37,10 +37,10 @@ import {
   type TokenKind,
   highlight,
 } from '@/lib/syntax-highlight';
-import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Code2, Copy } from 'lucide-react';
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState } from 'react';
+import { cn } from '@kortix/ui/lib/utils';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { CaretDownIcon, CheckIcon, CodeIcon, CopyIcon } from '@phosphor-icons/react';
 
 export function CallSnippet({
   id,
@@ -64,9 +64,9 @@ export function CallSnippet({
           size="xs"
           className="group gap-1.5 text-muted-foreground"
         >
-          <Code2 className="size-3" />
+          <CodeIcon className="size-3" />
           The API call
-          <ChevronDown className="size-3 transition-transform group-data-[state=open]:rotate-180" />
+          <CaretDownIcon className="size-3 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
@@ -168,12 +168,28 @@ function Block({
   copyable?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearTimeout(resetTimer.current);
+    };
+  }, []);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    toast.success(`${label} call copied`);
-    setTimeout(() => setCopied(false), 1_500);
+    try {
+      await navigator.clipboard.writeText(code);
+      if (!mounted.current) return;
+      setCopied(true);
+      successToast(`${label} call copied`);
+      clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      if (mounted.current) errorToast('Could not copy');
+    }
   };
 
   return (
@@ -190,12 +206,13 @@ function Block({
             variant="ghost"
             size="icon-xs"
             aria-label={`Copy the ${label} call`}
+            data-copied={copied ? '' : undefined}
             onClick={copy}
           >
             {copied ? (
-              <Check className="size-3" />
+              <CheckIcon className="size-3" />
             ) : (
-              <Copy className="size-3" />
+              <CopyIcon className="size-3" />
             )}
           </Button>
         )}

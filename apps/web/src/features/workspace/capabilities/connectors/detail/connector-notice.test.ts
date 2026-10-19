@@ -111,6 +111,23 @@ describe('connectorNotice: MCP sign-in still to do', () => {
       }),
     ).toEqual({ kind: 'sign_in' });
   });
+
+  test('with no account yet, a 401 on a connector with an auth scheme still asks for sign-in', () => {
+    const unsigned = {
+      ...base,
+      status: 'error' as const,
+      lastError: 'MCP tools/list failed: HTTP 401',
+      accountCount: 0,
+    };
+    expect(connectorNotice(unsigned)).toEqual({ kind: 'sign_in' });
+    expect(noticeButton(connectorNotice(unsigned), noticeTarget([]), false)).toEqual({
+      kind: 'sign_in',
+      run: 'add',
+      account: null,
+    });
+    // No auth scheme and no account: the 401 is the failure.
+    expect(connectorNotice({ ...unsigned, hasAuth: false }).kind).toBe('error');
+  });
 });
 
 describe('noticeTarget: the account the banner button fixes', () => {

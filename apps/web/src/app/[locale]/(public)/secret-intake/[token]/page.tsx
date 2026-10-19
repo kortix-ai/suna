@@ -18,7 +18,7 @@ export default function SecretIntakePage() {
         <StepHeader
           title={tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a')}
           description={tI18nHardcoded.raw(
-            'autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee',
+            'autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068',
           )}
         />
       </Rise>

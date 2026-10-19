@@ -126,9 +126,11 @@ import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-
 import { bootLinkPath, isInReleaseStore, readBootLinkTarget, readBootReleaseRoot, releaseRootOf } from '@/services/config-provider/boot-config'
 import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
+import { writePermissionOrderPlugin } from './permission-order'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
+import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
@@ -383,6 +385,8 @@ export async function buildOpencodeConfigContent(
     servesRelease?: boolean
     /** The hosted tools' bridge plugin (tool-bridge.ts), when one was written. */
     toolBridgeSpec?: string | null
+    /** The permission-order plugin (permission-order.ts), when one was written. */
+    permissionOrderSpec?: string | null
     /** kortix.yaml v3: where registered skill folders and extensions resolve (the active release root, else /workspace). */
     configRoot?: string | null
     /** Test seam: the baked tree and installer for v3 extension dependencies (extension-deps.ts). */
@@ -509,10 +513,12 @@ export async function buildOpencodeConfigContent(
     if (!plugins.includes(RELEASE_INSTRUCTIONS_PLUGIN_SPEC)) out.plugin = [...plugins, RELEASE_INSTRUCTIONS_PLUGIN_SPEC]
   }
 
-  // The Kortix tools and the project's tools, run by the daemon (tool-bridge.ts).
-  if (opts.toolBridgeSpec) {
+  // The Kortix tools and the project's tools, run by the daemon (tool-bridge.ts), and the
+  // permission order for the config kortixd does not compose (permission-order.ts).
+  for (const spec of [opts.toolBridgeSpec, opts.permissionOrderSpec]) {
+    if (!spec) continue
     const plugins = Array.isArray(out.plugin) ? out.plugin.filter((item): item is string => typeof item === 'string') : []
-    if (!plugins.includes(opts.toolBridgeSpec)) out.plugin = [...plugins, opts.toolBridgeSpec]
+    if (!plugins.includes(spec)) out.plugin = [...plugins, spec]
   }
 
   // (5) Injected managed skills and the project root's skills — append to
@@ -642,6 +648,15 @@ export async function buildOpencodeConfigContent(
   }
   // (8) Each agent's tool access (kortix.yaml `agents.<name>.tools`) last, so no rule above re-opens a removed tool.
   applyAgentToolAccess(out)
+  // (9) The most specific rule wins (`@kortix/api-contract/permission-rules`): OpenCode applies
+  // the last match in key order, so every block is written least specific first.
+  out.permission = orderPermissionRules(out.permission)
+  for (const agent of Object.values((out.agent ?? {}) as Record<string, unknown>)) {
+    if (agent && typeof agent === 'object' && 'permission' in agent) {
+      const entry = agent as Record<string, unknown>
+      entry.permission = orderPermissionRules(entry.permission)
+    }
+  }
 
   Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
@@ -689,9 +704,10 @@ const DENIED_BUILTIN_SKILLS = ['customize-opencode']
  * Deny the built-in skills in one permission block. OpenCode flattens the
  * global block and then the agent's into one rule list and the LAST match
  * wins, so an agent's own `permission: allow` outranks a global deny: every
- * block gets the rule, as its last `skill` entry. A bare action becomes its
- * `*` form, which OpenCode reads the same way. A block that already denies
- * every skill is left alone.
+ * block gets the rule. The exact skill name is more specific than any `*`
+ * rule, so it stays last once the block is ordered (`orderPermissionRules`).
+ * A bare action becomes its `*` form, which OpenCode reads the same way. A
+ * block that already denies every skill is left alone.
  */
 export function denyBuiltinSkills(permission: unknown): unknown {
   if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
@@ -993,6 +1009,7 @@ function scheduleCatalogWarmToPath(
 const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-opencode.json')
 const RELEASE_INSTRUCTIONS_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-release-instructions.js')
 const RELEASE_INSTRUCTIONS_PLUGIN_SPEC = `file://${RELEASE_INSTRUCTIONS_PLUGIN_PATH}`
+const PERMISSION_ORDER_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-permission-order.js')
 const TOOL_BRIDGE_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-tools.js')
 
 /**
@@ -1020,6 +1037,7 @@ export async function writeKortixOpencodeConfig(
   } = {},
 ): Promise<string | null> {
   if (opts.servesRelease) writeReleaseInstructionsPlugin(RELEASE_INSTRUCTIONS_PLUGIN_PATH)
+  const permissionOrderSpec = writePermissionOrderPlugin(PERMISSION_ORDER_PLUGIN_PATH)
   const toolBridgeSpec = opts.toolBridge
     ? await writeToolBridge(TOOL_BRIDGE_PLUGIN_PATH, { env, ...opts.toolBridge }).catch((err) => {
         logger.warn('[opencode] the hosted tools bridge was not written; the session runs without hosted tools', {
@@ -1035,6 +1053,7 @@ export async function writeKortixOpencodeConfig(
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
     toolBridgeSpec,
+    permissionOrderSpec,
     configRoot: opts.configRoot,
   })
   if (!content) return null

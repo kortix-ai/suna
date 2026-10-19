@@ -101,3 +101,18 @@ test('the root builds a sandbox proxy URL from an external id (mobile: no Sandbo
   expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');
   expect(root.getSandboxUrlForExternalId('ext-1')).toBe('http://test.local/p/ext-1/8000');
 });
+
+test('project(id).triggers reaches run history, fire with a payload, and replay (KRTX-1743)', async () => {
+  const t = kortix.project('P1').triggers;
+  await t.runs('nightly', { limit: 5 });
+  await t.projectRuns({ status: 'failed' });
+  await t.fire('nightly', { dryRun: true });
+  await t.replay('nightly', 'run-1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/triggers/nightly/runs?limit=5',
+    'GET http://test.local/projects/P1/trigger-runs?status=failed',
+    'POST http://test.local/projects/P1/triggers/nightly/fire',
+    'POST http://test.local/projects/P1/triggers/nightly/runs/run-1/replay',
+  ]);
+  expect(calls[2]!.body).toEqual({ dry_run: true });
+});

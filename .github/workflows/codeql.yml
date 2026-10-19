@@ -4,13 +4,15 @@ name: CodeQL
 # Findings appear under the repo's Security > Code scanning tab.
 
 on:
-  # One scan per release tree: the pull request into `staging`. Not on a push to
-  # `staging` or `prod`, and not on the `prod` pull request: those trees are the
-  # same tree plus VERSION (testing reset, 2026-10-16). `dev` is scanned weekly.
+  # One scan per release tree: the release pull request into `prod`. Not on a
+  # push, and not on the pull request into `staging`, which runs nothing
+  # (2026-10-16). `dev` is scanned weekly.
   pull_request:
-    branches: [staging]
+    branches: [prod]
   schedule:
     - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
+  # Measure a change to this workflow without opening a release PR.
+  workflow_dispatch:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +35,12 @@ jobs:
         uses: github/codeql-action/init@v4.38.2
         with:
           languages: javascript-typescript
-          queries: security-and-quality
+          # security-extended: every security query of security-and-quality.
+          # The dropped half is maintainability ("quality") queries: no SOC 2
+          # control rests on them. With test code excluded too
+          # (.github/codeql/codeql-config.yml) the analysis step went from
+          # 1136 s (run 38935179266) to 502 s (run 38943876690).
+          queries: security-extended
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL analysis

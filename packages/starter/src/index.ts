@@ -66,6 +66,7 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
+  'kortix-ui',
 ] as const;
 export type KortixManagedSkillName = (typeof KORTIX_MANAGED_SKILL_NAMES)[number];
 
@@ -265,11 +266,9 @@ export function getStarterCatalogSourceMap(): Map<string, string> {
  */
 function rawFilesForRoot(name: string, dir: string): StarterFile[] {
   try {
-    return walk(dir).map((absPath) => ({
-      path: relative(dir, absPath).split(sep).join('/'),
-      content: readFileSync(absPath, 'utf8'),
-    }));
-  } catch {
+    statSync(dir);
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
     const embedded = EMBEDDED_STARTER[name];
     if (!embedded) {
       // An OPTIONAL root that is legitimately empty (git does not track empty
@@ -281,6 +280,10 @@ function rawFilesForRoot(name: string, dir: string): StarterFile[] {
     }
     return embedded.files;
   }
+  return walk(dir).map((absPath) => ({
+    path: relative(dir, absPath).split(sep).join('/'),
+    content: readFileSync(absPath, 'utf8'),
+  }));
 }
 
 /**

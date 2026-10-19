@@ -1,15 +1,10 @@
 'use client';
 
-import { XIcon } from '@phosphor-icons/react';
+import { PromoNavRow } from './promo-nav-row';
+
 import { useCallback, useState } from 'react';
 
-import {
-  SidebarMenuAction,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Mcp } from '@/features/icon/icons/mcp';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations } from '@/i18n/use-translations';
@@ -49,28 +44,16 @@ export function ProjectMcpNavItem({ onOpenConnect }: { onOpenConnect: () => void
   if (dismissed) return null;
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        className="text-sidebar-foreground bg-hover group-has-data-[sidebar=menu-action]/menu-item:pr-12"
-        onClick={() => {
-          onOpenConnect();
-          if (isMobile) setOpenMobile(false);
-        }}
-      >
-        <Mcp className="text-muted-foreground size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{t('workspace.connectMcp')}</span>
-      </SidebarMenuButton>
-      <SidebarMenuBadge className="bg-kortix-blue/15 text-kortix-blue rounded-sm px-1.5 mr-1 group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0 max-md:hidden">
-        {t('new')}
-      </SidebarMenuBadge>
-      <SidebarMenuAction
-        onClick={dismiss}
-        aria-label={tComputers('dismissPromo')}
-        showOnHover
-        className="mr-1"
-      >
-        <XIcon />
-      </SidebarMenuAction>
-    </SidebarMenuItem>
+    <PromoNavRow
+      icon={<Mcp className="text-muted-foreground size-4 shrink-0" />}
+      label={t('workspace.connectMcp')}
+      badge={t('new')}
+      dismissLabel={tComputers('dismissPromo')}
+      onDismiss={dismiss}
+      onClick={() => {
+        onOpenConnect();
+        if (isMobile) setOpenMobile(false);
+      }}
+    />
   );
 }

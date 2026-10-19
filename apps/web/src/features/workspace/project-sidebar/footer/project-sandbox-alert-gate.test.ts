@@ -14,7 +14,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const source = readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 'utf8');
+const source =
+  readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 'utf8') +
+  readFileSync(join(import.meta.dir, 'sandbox-health.ts'), 'utf8');
 const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
 describe('sandbox alert — controls are IAM-gated, the message is not', () => {
@@ -100,7 +102,7 @@ describe('sandbox alert — a viewer with neither leaf gets the member view', ()
   test('operator vs member is decided from the same two leaves, after the probe settles', () => {
     expect(code).toContain('if (details?.isLoading || write?.isLoading) return null;');
     expect(code).toContain(
-      "const isOperator = details?.allowed !== false || write?.allowed !== false;",
+      'const isOperator = details?.allowed !== false || write?.allowed !== false;',
     );
     expect(code).toContain('if (!isOperator) {');
   });
@@ -115,6 +117,6 @@ describe('sandbox alert — a viewer with neither leaf gets the member view', ()
     expect(member).not.toContain('SandboxAlertContent');
     expect(source).toContain("critical: 'Sessions unavailable',");
     // A partial outage still routes sessions: members are not shown it.
-    expect(source).not.toContain('warning: \'Sessions');
+    expect(source).not.toContain("warning: 'Sessions");
   });
 });

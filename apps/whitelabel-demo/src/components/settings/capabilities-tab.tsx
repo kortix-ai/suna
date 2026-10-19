@@ -1,9 +1,9 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@kortix/ui/card';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useProjectConfig } from '@kortix/sdk/react';
-import { Bot, type LucideIcon, Slash, Sparkles } from 'lucide-react';
+import { RobotIcon, SparkleIcon, TerminalIcon, type Icon } from '@phosphor-icons/react';
 
 /**
  * Read-only view of the project's server-side capabilities — agents, slash
@@ -17,9 +17,9 @@ export function CapabilitiesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <Section icon={Bot} title="Agents" items={config.agents} defaultName={config.default_agent} />
-      <Section icon={Slash} title="Commands" items={config.commands} prefix="/" />
-      <Section icon={Sparkles} title="Skills" items={config.skills} />
+      <Section icon={RobotIcon} title="Agents" items={config.agents} defaultName={config.default_agent} />
+      <Section icon={TerminalIcon} title="Commands" items={config.commands} prefix="/" />
+      <Section icon={SparkleIcon} title="Skills" items={config.skills} />
     </div>
   );
 }
@@ -31,7 +31,7 @@ function Section({
   prefix = '',
   defaultName,
 }: {
-  icon: LucideIcon;
+  icon: Icon;
   title: string;
   items: Array<{ name: string; description: string | null }>;
   prefix?: string;

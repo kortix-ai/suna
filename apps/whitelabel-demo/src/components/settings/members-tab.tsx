@@ -1,20 +1,20 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { relativeTime } from '@/lib/utils';
@@ -25,9 +25,9 @@ import type {
   ProjectGroupGrant,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { CheckIcon, EnvelopeIcon, PaperPlaneTiltIcon, TrashIcon, UsersIcon, XIcon } from '@phosphor-icons/react';
 
 type Role = 'manager' | 'member';
 const ROLES: Role[] = ['manager', 'member'];
@@ -53,9 +53,9 @@ function useAccessAction<TVars>(
     onSuccess: () => {
       options.onDone?.();
       qc.invalidateQueries({ queryKey: options.keys });
-      toast.success(options.done);
+      successToast(options.done);
     },
-    onError: () => toast.error(options.failed),
+    onError: () => errorToast(options.failed),
   });
 }
 
@@ -147,7 +147,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Invite */}
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Mail className="size-4 text-muted-foreground" /> Invite a member
+          <EnvelopeIcon className="size-4 text-muted-foreground" /> Invite a member
         </div>
         <form
           className="mt-3 flex flex-wrap gap-2"
@@ -185,7 +185,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Members */}
       <Card className="p-0">
         <div className="flex items-center gap-2 px-5 pt-5 text-sm font-medium">
-          <Users className="size-4 text-muted-foreground" /> Members
+          <UsersIcon className="size-4 text-muted-foreground" /> Members
         </div>
         <div className="mt-2 divide-y divide-border">
           {access.isLoading && (
@@ -239,7 +239,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                       onClick={() => revoke.mutate(userId)}
                       aria-label="Revoke access"
                     >
-                      <Trash2 className="size-4" />
+                      <TrashIcon className="size-4" />
                     </Button>
                   )}
                 </div>
@@ -252,7 +252,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Pending invites */}
       <Card className="p-0">
         <div className="flex items-center gap-2 px-5 pt-5 text-sm font-medium">
-          <Send className="size-4 text-muted-foreground" /> Pending invites
+          <PaperPlaneTiltIcon className="size-4 text-muted-foreground" /> Pending invites
         </div>
         <div className="mt-2 divide-y divide-border">
           {pending.isLoading && (
@@ -291,7 +291,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                     onClick={() => revokeInvite.mutate(inviteId)}
                     aria-label="Revoke invite"
                   >
-                    <Trash2 className="size-4" />
+                    <TrashIcon className="size-4" />
                   </Button>
                 </div>
               </div>
@@ -335,7 +335,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                     onClick={() => approve.mutate(requestId)}
                     aria-label="Approve"
                   >
-                    <Check className="size-4" />
+                    <CheckIcon className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -345,7 +345,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                     onClick={() => reject.mutate(requestId)}
                     aria-label="Reject"
                   >
-                    <X className="size-4" />
+                    <XIcon className="size-4" />
                   </Button>
                 </div>
               </div>

@@ -480,7 +480,6 @@
     },
     "rail": {
       "settings": "Configurações",
-      "projectTitle": "Configurações — {projectName}",
       "backToApp": "Voltar ao aplicativo",
       "close": "Fechar",
       "docs": "Documentação",
@@ -1258,10 +1257,6 @@
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
-        },
-        "workspace_volume": {
-          "name": "Volume do espaço de trabalho",
-          "description": "Mantém o /workspace de cada nova sessão em um volume próprio em vez do disco do sandbox. A Kortix ativa por projeto."
         }
       }
     },
@@ -1331,6 +1326,11 @@
     "tokens": {
       "keyRevoked": "Chave de API revogada",
       "revokeFailed": "Não foi possível revogar a chave de API",
+      "deleteKey": "Excluir chave",
+      "deleteTitle": "Excluir esta chave de API?",
+      "deleteDescription": "{name} já está revogada. Excluir remove-a da lista. Esta ação não pode ser desfeita.",
+      "keyDeleted": "Chave de API excluída",
+      "deleteFailed": "Não foi possível excluir a chave de API",
       "newKey": "Nova chave",
       "confirmIdentity": "Confirme sua identidade",
       "verify": "Verificar",
@@ -1983,6 +1983,9 @@
       "fullTextDownload": "Baixar o texto completo ({size})",
       "fullTextError": "Não foi possível carregar o texto completo.",
       "fullTextRetry": "Tentar novamente"
+    },
+    "turn": {
+      "autoRetried": "A Kortix repetiu o modelo automaticamente {count, plural, one {uma vez} other {# vezes}} antes desta falha."
     }
   },
   "agents": {
@@ -2288,7 +2291,8 @@
         "groups": {
           "small": "Equipes pequenas",
           "growing": "Equipes em crescimento",
-          "scale": "Scale"
+          "scale": "Scale",
+          "large": "Grandes organizações"
         }
       }
     },
@@ -2458,10 +2462,11 @@
         "free": {
           "name": "Free",
           "note": "Comece com créditos reais de sandbox.",
-          "f1": "200 créditos / mês, sem cartão",
-          "f2": "1 projeto",
-          "f3": "Use sua própria chave de API para qualquer modelo premium",
-          "f4": "Conecte sua assinatura do ChatGPT"
+          "f1": "500 créditos / mês, sem cartão",
+          "f2": "Modelos gerenciados: Kimi, DeepSeek, GLM. Retenção zero de dados, inferência nos EUA",
+          "f3": "1 projeto",
+          "f4": "Use sua própria chave de API para qualquer modelo premium",
+          "f5": "Conecte sua assinatura do ChatGPT"
         },
         "credits": {
           "name": "Créditos",
@@ -2471,7 +2476,7 @@
           "f2": "Membros ilimitados, um único pool de créditos compartilhado",
           "f3": "Créditos não usados são transferidos por um mês",
           "f4": "Recarregue quando quiser. Recargas nunca expiram",
-          "f5": "Modelos gerenciados e todos os recursos",
+          "f5": "Até 200 projetos e limites de taxa de modelos mais altos",
           "f6": "Suporte por e-mail"
         },
         "enterprise": {
@@ -2489,7 +2494,7 @@
       "faq": {
         "free": {
           "question": "O que o Free inclui?",
-          "answer": "O Free inclui 200 créditos por mês para computação em sandbox e 1 projeto. Use sua própria chave de API ou conecte sua assinatura do ChatGPT para modelos premium. Modelos gerenciados com chaves da Kortix exigem um plano pago."
+          "answer": "O Free inclui 500 créditos por mês, modelos gerenciados e todos os recursos, para 1 projeto. Os créditos pagam o computador do agente e os modelos da Kortix. Use sua própria chave de API ou conecte sua assinatura do ChatGPT para qualquer outro modelo."
         },
         "credit": {
           "question": "O que um crédito compra?",
@@ -2497,7 +2502,7 @@
         },
         "amounts": {
           "question": "Quanto pago por mês?",
-          "answer": "Escolha um nível de US$ 50 por mês (5.000 créditos) a US$ 10.000 por mês (1.000.000 de créditos). Todo nível dá créditos pela mesma taxa: 100 créditos por dólar. Para mais de US$ 10.000 por mês, fale com vendas."
+          "answer": "Escolha um nível de US$ 50 por mês (5.000 créditos) a US$ 50.000 por mês (5.000.000 de créditos). Todo nível dá créditos pela mesma taxa: 100 créditos por dólar. Para mais de US$ 50.000 por mês, fale com vendas."
         },
         "members": {
           "question": "Pago pelos membros?",
@@ -2745,7 +2750,9 @@
       "link": {
         "title": "Verifique seu e-mail",
         "description": "Enviamos um link para <address>{email}</address>. Abra-o para continuar.",
+        "confirmDescription": "Enviamos um e-mail de confirmação para <address>{email}</address>. Confirme seu e-mail para continuar.",
         "notReceived": "Não recebeu o link?",
+        "confirmNotReceived": "Não recebeu o e-mail de confirmação?",
         "resendIn": "Reenviar em {seconds}",
         "resend": "Reenviar"
       },
@@ -9063,7 +9070,6 @@
     "autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8": "Conecte um aplicativo",
     "autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3": "Seu agente Kortix deseja conectar este aplicativo em seu nome. Autorize com um clique – nenhuma chave é colada no chat ou armazenada no repositório.",
     "autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a": "Adicione um segredo do projeto",
-    "autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee": "Seu agente Kortix precisa disso para continuar. Insira o valor abaixo – ele está criptografado e o agente nunca o vê.",
     "autoAppPublicShareShareIdErrorJsxAttrDescriptionWeCouldn67117bd7": "Não foi possível carregar esta página compartilhada. Tente novamente ou recarregue se isso continuar acontecendo.",
     "autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641": "Link de compartilhamento indisponível",
     "autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952": "Compartilhamento público",
@@ -9697,7 +9703,6 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— nenhuma chave é colada no chat nem armazenada no repositório.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Salvo com segurança",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Você pode fechar isso. O agente irá buscá-lo – diga “pronto” para continuar.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Criptografado em repouso. Somente este projeto pode lê-lo. O agente nunca vê o valor.",
     "autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26": "Insira uma porta sandbox, por exemplo. 3.000",
     "autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9": "Digite uma porta ou URL de aplicativo",
     "autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05": "Visualizar navegador",
@@ -10884,7 +10889,6 @@
       "text1d0c9d480457": "Consumido pelo gateway de modelos da Kortix. Nunca entra no sandbox.",
       "text1d1d94fb5397": "Fale conosco",
       "text1d21d2b18753": "Linha adicionada",
-      "text1d280015aac2": "Voltar para Personalizar",
       "text1d2a6194e5b0": "Gatilho atualizado",
       "text1d421d3dc4ae": "Prompt copiado — cole no chat para pedir ao seu agente.",
       "text1d42883b00c1": "Escopos: {value0}.",
@@ -11364,6 +11368,7 @@
       "text2b00ca23b112": "<Button variant=\"secondary\" size=\"sm\" onClick={handleClick} > Salvar </Button>",
       "text2b040fd0129f": "limite do sandbox",
       "text2b065c7c9ce4": "Hoje",
+      "texte10ae9907401": "Anteriormente",
       "text2b112b05602c": "O GitHub e sua chave de modelo não são solicitados aqui de propósito. Ambos são configurados no dashboard depois que a stack estiver ativa — o GitHub em Settings → Git, e a chave do modelo no seletor de modelos.",
       "text2b152ca731e4": "Onde os dados ficam é escolha sua",
       "text2b2b0a697042": "Aprovado — o agente continuará",
@@ -16670,6 +16675,7 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
+      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -17410,6 +17416,55 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
+      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)",
+      "text848f54e89660": "Execuções",
+      "textb098a09c78aa": "Testar com payload",
+      "text99733344956d": "Payload",
+      "text4309aba52556": "Pré-visualizar prompt",
+      "text98ee1ca163c3": "Executar com este payload",
+      "text920ed46028e8": "Insira um JSON válido.",
+      "text6ea4fcc31727": "Insira um objeto JSON.",
+      "text2631c2f64174": "O filtro corresponde",
+      "text2319ec274750": "Chave da sessão",
+      "text398d270b036a": "Não foi possível carregar as execuções.",
+      "text4c2e1df4570b": "Monitor",
+      "text31757bbfa17e": "Lembrete",
+      "text12698ce1ea5c": "Ignorada",
+      "text9daf8e05c684": "Sem assinatura",
+      "text7f2b8f3a675c": "A assinatura do webhook não foi verificada.",
+      "text98c78fbb22fe": "Repetir execução",
+      "texta9cd409ba9ca": "Repetir esta execução sem assinatura?",
+      "text776bb15115b3": "A assinatura não foi verificada. Uma repetição envia o mesmo payload ao agente novamente.",
+      "text2f1b3ba06cfb": "Não foi possível repetir a execução",
+      "textff2c3559cd6b": "Pré-visualize o prompt que este payload gera ou execute o gatilho com ele.",
+      "text15e8856d4d77": "Inicia uma sessão real. Há custos.",
+      "text858e4ba7a29f": "Pausar",
+      "texte0ab721ade45": "{count, plural, one {execução} other {execuções}}",
+      "textf1a06b0cb2ca": "duração mediana",
+      "textfa14066e0399": "Duração mediana",
+      "text26735edf00f9": "Nenhuma execução",
+      "textd2c58b300c07": "Execuções ao longo do tempo",
+      "text6de3a7d8e5db": "Nenhuma execução neste intervalo",
+      "text84b05fbb7f76": "Em um evento",
+      "text27a2c8b3a0d2": "próxima {value0}",
+      "textd47d7cb0e4f8": "Mais",
+      "textc8dae6371b33": "Repetir",
+      "text4aaee10f3594": "ID da sessão copiado",
+      "text4001631320f1": "{count, plural, one {com falha} other {com falha}}",
+      "textd835122c9dd1": "{count, plural, one {crédito} other {créditos}}",
+      "text72a85758b69c": "Ainda não há execuções.",
+      "text75c4316dcad4": "Ainda não há execuções. Este gatilho está pausado.",
+      "textdf86da65c421": "Ainda não há execuções. A primeira começa {value0}.",
+      "text1cc5b0d9628f": "{count, plural, one {# selecionado} other {# selecionados}}",
+      "text6363885af551": "Pausando {done} de {total}…",
+      "text4cc2a4d3a49a": "Retomando {done} de {total}…",
+      "text6e24bb562ab0": "Excluindo {done} de {total}…",
+      "textd845c8702b04": "{ok, plural, other {# pausados}}{failed, plural, =0 {} other {, # com falha}}",
+      "texte57e0a07011b": "{ok, plural, other {# retomados}}{failed, plural, =0 {} other {, # com falha}}",
+      "text1412a8506003": "{ok, plural, other {# excluídos}}{failed, plural, =0 {} other {, # com falha}}",
+      "textd142c482800c": "Excluir {count, plural, one {# gatilho} other {# gatilhos}}?",
+      "text75af4531ed17": "Eles são removidos do manifesto do projeto. Isso não pode ser desfeito.",
+      "textc9e9d972eda2": "Nada neste projeto está rodando sozinho agora. Você ainda pode iniciar um gatilho manualmente.",
       "textd861cc0af73c": "kortix init cria a estrutura, e kortix ship coloca tudo no ar. É o mesmo repo fazendo a mesma coisa, então o desenvolvimento local e o sistema em produção deixaram de ser categorias diferentes.",
       "textd864380a766f": "O sandbox usa um token Kortix com escopo de projeto e nenhuma chave de terceiros. As credenciais do tracker e do helpdesk são descriptografadas no servidor e anexadas à chamada de saída.",
       "textd8707d411d99": "Segredos",
@@ -18869,6 +18924,13 @@
       "textf81ab834de5f": "Motivo",
       "text44cdf35701cd": "Em uso agora",
       "text591f9f0f3259": "Release com falha",
+      "text7cda1d1355a0": "A atualização da configuração não foi aplicada",
+      "textdf6f45b0b6d0": "Esta sessão continua funcionando com a versão anterior.",
+      "textb9b5df3315d1": "Configuração mais recente",
+      "text52a4b8f845a4": "Atendendo esta sessão",
+      "text4a823118b9ba": "Host",
+      "textb346c1b839cb": "Configuração anterior",
+      "textfd01ebfc09ff": "Tenta novamente quando a branch base mudar",
       "text00ed4c71dc2b": "Última release funcional",
       "textbd7a1a3b4141": "A configuração padrão da plataforma",
       "text643df05476ab": "A configuração padrão da plataforma está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
@@ -19193,6 +19255,7 @@
       "text97dc6aeaa967": "Autorização de dispositivo do túnel do computador consultada",
       "textf3e8ebf108f5": "Mesclagem da solicitação de alteração pré-visualizada",
       "text703a2cfcc370": "Autenticação do conector pré-visualizada",
+      "text63abe9112af0": "Início de sessão do servidor MCP verificado",
       "textf4a73a5afc5b": "Rateio da mudança de plano pré-visualizado",
       "text5c3f85a1e314": "Usuário SCIM provisionado",
       "text7603d7a6b46b": "Push para o repositório Git efetuado",
@@ -19724,6 +19787,9 @@
       "texta7a8d2a5fb25": "Peça a um agente para criar um.",
       "text42cf267578ad": "Tipos de evento de gatilho listados",
       "text631b422403db": "Apps que podem disparar eventos listados",
+      "text104b83c048f9": "Execuções do gatilho listadas",
+      "text7823ec680410": "Execução do gatilho repetida",
+      "text7ecaa37e9cf6": "Execuções de gatilhos do projeto listadas",
       "text5d5b7c17acf0": "Evento de app recebido",
       "textd919fde889e9": "Requer conexão",
       "textd7b77185afd1": "Ativando",
@@ -19958,7 +20024,7 @@
       "text146aaf3c71fa": "Mantém SSO, SCIM, RBAC e auditoria habilitados para uma conta Enterprise contratada que também é cobrada por um plano pago, para que a reconciliação do Stripe não os remova.",
       "text517105fd13ce": "Os créditos financiam a computação em sandbox — até um teste BYOK precisa de saldo na carteira para executar sessões. O crédito de boas-vindas gratuito é de US$ 2.",
       "text2f1d17f50af8": "O Enterprise libera SAML SSO, sincronização de diretório SCIM, RBAC e acesso à auditoria para esta conta. O plano cobrado não muda.",
-      "text12836c0e435d": "O Free custa US$ 0 — um projeto e 200 créditos por mês de computação em sandbox, com sua própria chave para qualquer modelo premium. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre a conta inteira. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
+      "text12836c0e435d": "O Free custa US$ 0 — um projeto, 500 créditos por mês, modelos gerenciados e todos os recursos, com sua própria chave para qualquer outro modelo. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre a conta inteira. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
       "text5dffd4db88c5": "Seu plano, seus créditos e o faturamento desta conta.",
       "text49fd64c206dd": "Seu plano está ativo. Os créditos estão prontos.",
       "textad828837ddd8": "membros membro acesso ao espaço de trabalho colaboradores pessoas colegas lista quem pode ver permissões conceder compartilhar",
@@ -20050,6 +20116,41 @@
       "text02b242fd11cd": "Há uma oferta aberta. Retire-a primeiro.",
       "text451c4b7d695d": "Há um contrato ativo. Encerre-o primeiro ou crie uma oferta com cartão.",
       "text06bdc1c507f1": "Carência de SSO até {date}",
+      "textac8710553475": "Período de teste estendido",
+      "text0bad4daa3f0d": "Dias restantes / término",
+      "text5f2d23caa972": "Estender período de teste",
+      "texta88fdf3e2772": "Conceder o plano que já está em teste move a data de término (Estender).",
+      "textfdd57ee91bdc": "Uma concessão de créditos no início, que expira com o período de teste. Deixe o valor vazio para usar o padrão: ${amount} para Enterprise, $0 para Créditos.",
+      "text05700b032dac": "Uma concessão de plano com data. Quando termina, a conta volta para <tier>{plan}</tier>.",
+      "text94ddcfbb2f30": "Uma chamada negada também é uma briga. O que não aconteceu faz parte do registro tanto quanto o que aconteceu.",
+      "text89faa819e995": "O que nunca consegue é o alcance de quem o criou. Não há vantagem de herança aqui para subir.",
+      "text6a51a65a11f4": "Iniciar uma sessão corta um branch e inicializa uma máquina para ele. O banco de dados não permitirá que uma segunda sessão tenha aquela máquina.",
+      "catalogExcludedNoActions": "{count, plural, one {1 aplicativo corresponde, mas não publica nenhuma ação que um agente possa chamar.} other {{count} aplicativos correspondem, mas não publicam nenhuma ação que um agente possa chamar.}}",
+      "text08cadd4156a5": "Uma sandbox é uma máquina Linux real na qual o modelo pode executar qualquer coisa. Portanto, a única credencial nele é um token Kortix, com escopo definido para o projeto.",
+      "textc7d878b8738e": "As ações da conta ficam no mesmo lugar – associação, funções, políticas, tokens, grupos.",
+      "text5b70d52b009e": "A API de terceiros vê uma solicitação autenticada comum. A resposta volta para o agente. A credencial fica para trás.",
+      "text7a570559b1e0": "Uma pessoa age através dos papéis que lhe foram atribuídos, avaliados em relação aos recursos que procura.",
+      "text8f0f0d2cd359": "Nada se mescla sozinho: o trabalho chega ao principal por meio de uma solicitação de mudança aprovada por uma pessoa, a menos que um administrador conceda o recurso de mesclagem.",
+      "text10fd874b68da": "escrever",
+      "textafeac15c27a6": "Kortix verifica se este agente pode usar este conector, aplica a política e descriptografa a credencial em seu próprio lado da parede.",
+      "text6fb8ad227c23": "Gravar nunca é algo pelo qual você paga. Todo plano escreve isso. O plano decide quem pode ler, exportar ou transmitir.",
+      "textdb3871e22b38": "Uma segunda sessão obtém seu próprio branch e sua própria máquina. Nada se cruza entre eles – mesmo projeto, mesma equipe ou outro cliente.",
+      "textc8fc6bf296fa": "corrido",
+      "text0913fabeeba4": "O trabalho da sessão chega ao main por meio de uma solicitação de mudança.",
+      "text8c6976e5b541": "administrador",
+      "text1b933329d22a": "destrutivo",
+      "text28ef515dd5b9": "Quando a sessão deseja manter algo, ela abre uma solicitação de alteração.",
+      "textd26b162f1b6a": "Portanto, o que uma sessão pode realmente tocar é a interseção: o que a pessoa pode fazer e o que foi declarado permitido ao agente. Nunca o sindicato.",
+      "textc19146bd7bd6": "O agente chama uma ferramenta pelo nome. Não possui URL, host e chave - ele não pode construir a solicitação sozinho.",
+      "text6973dddd3ef9": "bloqueado",
+      "text66d3cd60b831": "Uma conta de serviço é um principal próprio. As políticas são anexadas diretamente a ele e sua solicitação é avaliada exclusivamente em relação a essas políticas.",
+      "textcf072fa71675": "Esses quatro nunca entram na máquina que o modelo está dirigindo. A desativação do conector entra em vigor na próxima chamada — sem nada na sandbox para girar.",
+      "text2687f86ed678": "aprovado",
+      "text1eddfe2fbb7a": "Um projeto é um repositório. main é a única coisa que todos compartilham.",
+      "text0c983266f830": "limite de confiança",
+      "text4c6aaca6d645": "Cada sessão possui sua própria máquina e ramificação isoladas.",
+      "textc610d5d19d2b": "A máquina é descartável. Uma instalação ruim desaparece com isso. Somente o que a sessão confirma sobrevive, e sobrevive como uma solicitação de mudança.",
+      "text8e97f02e6f34": "Cada chamada que um agente faz por meio de um conector é uma linha. O gateway que resolve a credencial é quem a grava.",
       "textd6ea513221b7": "Enterprise · demonstração",
       "text5a22403ec082": "Enterprise · licenciado",
       "text87feb882165d": "Licenciado",
@@ -20076,8 +20177,18 @@
       "textc6813a9e41ac": "Em créditos: {value0} LLM · {value1} computação · {value2} outros.",
       "textc86ce3b8097b": "ex.: 5000",
       "textfaaf56a699c2": "Limite (créditos)",
-      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
-      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)"
+      "texte7a241debad5": "URL",
+      "text3dd46a7b552c": "Adicionar app",
+      "text68cf13547e38": "Adicionar um app por URL",
+      "text46bc646c9bfe": "Mostre neste projeto um site hospedado em qualquer lugar. O Kortix o abre aqui mesmo, ao lado dos apps que executa.",
+      "text08e6480e9b78": "{value0} adicionado",
+      "text6241684827b2": "Este site não permite que o Kortix o mostre aqui.",
+      "textdae75dce541f": "Pausa todos os agendamentos e webhooks deste projeto.",
+      "textced57bebd466": "Reativa os agendamentos e webhooks deste projeto.",
+      "agentsListSubagentsTitle": "Subagentes",
+      "agentsListSubagentsHint": "Outros agentes os chamam durante uma sessão. Ninguém inicia um chat com eles.",
+      "agentsListAlsoSubagent": "Também subagente",
+      "servedModelTurnRow": "{requested} falhou ({reason}) — alterado para {served}."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20145,7 +20256,12 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
-    }
+    },
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Entrega: runtime — o valor real é carregado no ambiente do sandbox. O código do agente pode lê-lo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — apenas no servidor. O valor nunca entra no ambiente do sandbox.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "O escopo de entrega não está disponível. Peça ao agente para confirmar onde este valor será usado antes de salvá-lo.",
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Criptografado em repouso. A entrega segue o escopo mostrado acima.",
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso."
   },
   "projectOnboarding": {
     "resetSuccess": "Redefinição de integração",
@@ -20642,6 +20758,7 @@
     "notFoundDescription": "Foi removido ou o link está incorreto.",
     "backToConnectors": "Voltar aos conectores",
     "installed": "{name} está instalado",
+    "yourConnectors": "Seus conectores",
     "installedSyncFailed": "{name} está instalado. O Kortix não conseguiu carregar as ferramentas: {error}",
     "newSession": "Nova sessão",
     "sections": "Seções de {name}",
@@ -20689,7 +20806,9 @@
     "providerInfoActionsApp": "O {name} executa cada ação que um agente pede.",
     "providerInfoSecretsManaged": "Os agentes nunca veem senha, token ou chave.",
     "providerInfoSecretsDirect": "O Kortix adiciona a chave a cada chamada. Os agentes nunca a veem.",
-    "providerInfoLabel": "Quem gerencia esta conexão"
+    "providerInfoLabel": "Quem gerencia esta conexão",
+    "addMcpAppTitle": "Conectar {name}",
+    "addMcpAppDescription": "O Kortix se conecta ao servidor MCP do próprio {name}. Escolha quem pode usá-lo e depois entre no {name}."
   },
   "connectMcp": {
     "title": "Conecte o Kortix via MCP",
@@ -21473,7 +21592,11 @@
         "excluded": "Excluídos",
         "noMatch": "Nada corresponde.",
         "noExcludedApps": "Nenhum app está excluído.",
-        "noExcludedSites": "Nenhum site está excluído."
+        "noExcludedSites": "Nenhum site está excluído.",
+        "commonApps": "Apps comuns",
+        "commonSites": "Sites comuns",
+        "showList": "Mostrar lista",
+        "hideList": "Ocultar lista"
       },
       "remoteDays": "No Kortix",
       "remoteDaysHint": "Por quanto tempo a Kortix mantém as gravações. 0 mantém sem limite.",
@@ -21497,7 +21620,7 @@
       "experimentalTitle": "Experimental",
       "experimentalHint": "Experimente recursos que ainda podem mudar.",
       "privacyControls": "Controles de privacidade",
-      "privacyControlsHint": "Mostra o mascaramento de dados pessoais e os apps e sites que nenhum computador grava. Desativar oculta os controles; o que está configurado continua valendo.",
+      "privacyControlsHint": "Mostrar o mascaramento de dados pessoais. Desativar oculta; o que está definido continua valendo.",
       "maskingTitle": "Mascaramento",
       "framesTitle": "Quadros da tela",
       "interval": "Um quadro a cada",
@@ -21506,7 +21629,35 @@
       "resolution": "Resolução",
       "resolutionHint": "Telas maiores são reduzidas a esta altura. 4K mantém detalhes finos, como desenhos CAD.",
       "framesHint": "Sem valor, cada computador usa o seu (uma imagem a cada 2 s em 1440p). Com valor, todos os computadores o usam e ninguém pode alterá-lo. Cliques, digitação e rolagem são gravados com capturas próprias em qualquer intervalo.",
-      "computerDecides": "Cada computador decide"
+      "computerDecides": "Cada computador decide",
+      "included": {
+        "title": "Apps e sites",
+        "hint": "Escolha o que cada computador de {org} grava. O que é ignorado fica escurecido e nunca é salvo nem enviado. As pessoas podem adicionar os seus no Kortix Capture; não podem remover estes nem desativar Gravar apenas.",
+        "switch": "Gravar apenas apps e sites incluídos",
+        "switchHint": "Desativado: tudo é gravado, exceto Nunca gravar.",
+        "kindLabel": "Apps ou sites",
+        "apps": "Apps",
+        "websites": "Sites",
+        "addAppPlaceholder": "Adicione um app pelo ID, como com.tinyspeck.slackmacgap ou slack.exe",
+        "addSitePlaceholder": "Adicione um site, como github.com",
+        "addApp": "Incluir {app}",
+        "addDomain": "Incluir {domain}",
+        "included": "Incluídos",
+        "noApps": "Nenhum app incluído. Apenas os sites incluídos são gravados.",
+        "noSites": "Nenhum site incluído. Os navegadores só são gravados se o app do navegador estiver incluído.",
+        "switchHintOn": "Ativado: apenas os apps e sites abaixo são gravados.",
+        "commonApps": "Apps comuns",
+        "commonSites": "Sites comuns",
+        "policyType": "Tipo de política",
+        "exclusionPolicy": "Política de exclusão",
+        "exclusionPolicyHint": "Gravar tudo, exceto o que você excluir.",
+        "inclusionPolicy": "Política de inclusão",
+        "inclusionPolicyHint": "Gravar apenas o que você incluir. Todo o resto fica escurecido.",
+        "recordTitle": "Gravar apenas estes",
+        "exceptTitle": "Nunca gravar, mesmo se incluídos",
+        "memberInclusions": "As pessoas podem incluir os próprios apps e sites",
+        "memberInclusionsHint": "Desativado: os computadores gravam apenas os apps e sites listados aqui. As pessoas ainda podem adicionar apps e sites para ignorar."
+      }
     },
     "area": {
       "wordmark": "Kortix Capture",
