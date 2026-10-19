@@ -593,7 +593,7 @@ function SandboxProviderRow({
             }
             disabled={!canManage || mutation.isPending}
           >
-            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-40 shrink-0">
+            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-48 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
