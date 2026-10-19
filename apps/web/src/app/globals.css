@@ -840,16 +840,20 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
 }
 /* The docked project sidebar shares the native-light band. The hover-peek card
    keeps its normal 8px padding and must not gain a 40px blank strip. */
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header:not([data-peek]),
 html[data-desktop-platform='macos'] .kx-project-sidebar-header:not([data-peek]) {
   padding-top: 0;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-titlebar,
 html[data-desktop-platform='macos'] .kx-project-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-project-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-project-sidebar-titlebar {
   padding-left: 0.5rem;
 }
@@ -861,6 +865,7 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-project-
 html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
   height: 52px;
 }
+html[data-desktop-titlebar='overlay'] [data-side='right'] [data-sidebar='header'],
 html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
   height: var(--kx-titlebar-inset) !important;
 }
@@ -873,11 +878,21 @@ html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] 
 html[data-desktop='true'] .kx-titlebar-tabs {
   height: 52px;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs,
 html[data-desktop-platform='macos'] .kx-titlebar-tabs {
   -webkit-app-region: drag;
   app-region: drag;
   height: var(--kx-titlebar-inset) !important;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header button,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header a,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header input,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header [role='button'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs button,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs a,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs input,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs [role='tab'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs [role='button'],
 html[data-desktop-platform='macos'] .kx-project-sidebar-header button,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header a,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header input,
@@ -898,6 +913,7 @@ html[data-desktop-platform='macos'] .kx-titlebar-tabs [role='button'] {
    can grab the window from any horizontal position along its top edge —
    even areas not covered by the sidebar header or tab bar. The strip is
    thin enough not to occlude any visible UI. */
+html[data-desktop-titlebar='overlay'] .kx-desktop-chrome,
 html[data-desktop-platform='macos'] .kx-desktop-chrome {
   position: fixed;
   top: 0;
@@ -911,6 +927,7 @@ html[data-desktop-platform='macos'] .kx-desktop-chrome {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-desktop-drag,
 html[data-desktop-platform='macos'] .kx-desktop-drag {
   -webkit-app-region: drag;
   app-region: drag;
@@ -933,9 +950,15 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
    `pointer-events: none` on the strip and its child fixes 2 and keeps 1:
    Chromium applies app regions at the compositor level and ignores
    `pointer-events` (see apps/desktop-electron/src/window-chrome.js). */
+html[data-desktop-titlebar='overlay'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome {
   height: max(6px, var(--kx-titlebar-inset));
 }
+html[data-desktop-titlebar='overlay'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
+html[data-desktop-titlebar='overlay']
+  body:not(:has([data-kx-titlebar-owner]))
+  .kx-desktop-chrome
+  > *,
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
 html[data-desktop-platform='macos']
   body:not(:has([data-kx-titlebar-owner]))
@@ -1013,6 +1036,61 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] {
   --kx-titlebar-control-top: 6px;
   --kx-titlebar-control-left: 8px;
   --kx-titlebar-content-left: 44px;
+}
+
+/* Windows band geometry. DERIVED — do not hand-edit: these mirror
+   WIN_TITLEBAR / winBandMetrics() in apps/desktop-electron/src/window-chrome.js.
+   The shell sets `data-desktop-titlebar='overlay'` (preload.js) when Windows
+   draws only its caption buttons over the page: the same band as macOS, with
+   the OS controls on the RIGHT (138 window px) and the app-menu button in the
+   left slot the traffic lights take on macOS. Every rule above that puts a row
+   in the macOS band also lists this attribute. The caption buttons are drawn
+   in window pixels, so each value cancels the shell zoom like the macOS block.
+   Asserted by desktop-titlebar.test.ts. */
+html[data-desktop-titlebar='overlay'] {
+  --kx-titlebar-control-size: calc(28px / var(--kx-desktop-zoom));
+  --kx-titlebar-inset: calc(40px / var(--kx-desktop-zoom));
+  /* The app-menu button: the left slot. */
+  --kx-titlebar-menu-left: calc(8px / var(--kx-desktop-zoom));
+  --kx-titlebar-lights-end: calc(36px / var(--kx-desktop-zoom));
+  --kx-titlebar-control-top: calc(6px / var(--kx-desktop-zoom));
+  --kx-titlebar-control-left: calc(44px / var(--kx-desktop-zoom));
+  --kx-titlebar-content-left: calc(80px / var(--kx-desktop-zoom));
+  /* minimize + maximize + close. */
+  --kx-titlebar-controls-width: calc(138px / var(--kx-desktop-zoom));
+}
+/* Full screen hides the caption buttons and the menu button (Alt still opens
+   the menu). */
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] {
+  --kx-titlebar-inset: 0px;
+  --kx-titlebar-lights-end: 0px;
+  --kx-titlebar-control-top: 6px;
+  --kx-titlebar-control-left: 8px;
+  --kx-titlebar-content-left: 44px;
+  --kx-titlebar-controls-width: 0px;
+}
+/* The app-menu button (DesktopChrome). Unlayered for the same reason as
+   `.kx-desktop-back`: the Button's `inline-flex` lives in a cascade layer. */
+.kx-desktop-app-menu {
+  display: none;
+}
+html[data-desktop-titlebar='overlay'] .kx-desktop-app-menu {
+  display: flex;
+  /* Above full-window overlays (the Settings dialog is z-index 9999), like
+     the OS controls it sits beside. */
+  z-index: 10000;
+}
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-desktop-app-menu {
+  display: none;
+}
+/* Only a row that reaches the window's right edge shares it with the caption
+   buttons. Rows in a left sidebar (the project sidebar, the Settings
+   sidebar) never do; the right sidebar's header does whenever it is open. */
+html[data-desktop-titlebar='overlay'] :is([data-side='left'] .kx-titlebar-row, .kx-overlay-sidebar-titlebar) {
+  padding-right: 0.5rem;
+}
+html[data-desktop-titlebar='overlay'] [data-side='right'] [data-sidebar='header'] {
+  padding-right: var(--kx-titlebar-controls-width);
 }
 
 /* The window's one Back (root layout, `DesktopBackButton`). The desktop shell
@@ -1122,6 +1200,28 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    `/new`) get the transparent root band below instead. Content under it is
    visible, so the shell's rule must keep every control there clickable.
    `:where()` keeps the specificity of the owner rule below unchanged. */
+html[data-desktop-titlebar='overlay']
+  :where(body:has([data-kx-titlebar-owner]))
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
+  ),
 html[data-desktop-platform='macos']
   :where(body:has([data-kx-titlebar-owner]))
   :is(
@@ -1147,6 +1247,39 @@ html[data-desktop-platform='macos']
   -webkit-app-region: initial;
   app-region: initial;
 }
+html[data-desktop-titlebar='overlay']
+  :is(
+    .kx-titlebar-row,
+    .kx-titlebar-tabs,
+    .kx-project-sidebar-header,
+    [role='dialog'],
+    [role='alertdialog'],
+    [role='menu'],
+    [role='listbox'],
+    [data-radix-popper-content-wrapper],
+    [data-sonner-toaster]
+  )
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
+  ),
+html[data-desktop-titlebar='overlay'] [class*='app-region:no-drag'],
 html[data-desktop-platform='macos']
   :is(
     .kx-titlebar-row,
@@ -1191,6 +1324,7 @@ html[data-desktop-platform='macos'] [class*='app-region:no-drag'] {
 .kx-project-shell-drag-region {
   display: none;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-shell-drag-region,
 html[data-desktop-platform='macos'] .kx-project-shell-drag-region {
   position: absolute;
   z-index: 10;
@@ -1204,6 +1338,9 @@ html[data-desktop-platform='macos'] .kx-project-shell-drag-region {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay']
+  [data-kx-titlebar-owner]:has(.kx-titlebar-row)
+  > .kx-project-shell-drag-region,
 html[data-desktop-platform='macos']
   [data-kx-titlebar-owner]:has(.kx-titlebar-row)
   > .kx-project-shell-drag-region {
@@ -1235,17 +1372,25 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 /* Keep collapsed capability rows draggable. The fixed shell opener paints
    above page headers and has its own no-drag region; disabling the entire row
    removes the only usable drag area between its tabs. */
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row,
 html[data-desktop-platform='macos'] .kx-titlebar-row {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-band-height,
 html[data-desktop-platform='macos'] .kx-titlebar-band-height {
   height: var(--kx-titlebar-inset);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-titlebar-band-height,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-titlebar-band-height {
   height: auto;
   min-height: 2.75rem;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row button,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row a,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row input,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row [role='button'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row [role='tab'],
 html[data-desktop-platform='macos'] .kx-titlebar-row button,
 html[data-desktop-platform='macos'] .kx-titlebar-row a,
 html[data-desktop-platform='macos'] .kx-titlebar-row input,
@@ -1256,27 +1401,34 @@ html[data-desktop-platform='macos'] .kx-titlebar-row [role='tab'] {
 }
 /* Overlay sidebars share the native-light row instead of adding a blank strip.
    Keep their controls out of AppKit's hit area at every renderer zoom. */
+html[data-desktop-titlebar='overlay'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
   justify-content: flex-end;
 }
 /* With the account sidebar hidden, its opener occupies the first web-control
    slot. The breadcrumb follows it, rather than starting under the lights. */
+html[data-desktop-titlebar='overlay'] .kx-account-hub-header[data-sidebar-collapsed],
 html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-control-left);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
   padding-left: 0.5rem;
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true']
+  .kx-account-hub-header[data-sidebar-collapsed],
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
   .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The mobile Settings headers (list and pane) share the native titlebar band:
    the close control takes the band's control size. */
+html[data-desktop-titlebar='overlay'] .kx-settings-mobile-titlebar .kx-settings-mobile-close,
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   height: var(--kx-titlebar-control-size);
 }
+html[data-desktop-titlebar='overlay'] .kx-settings-mobile-titlebar .kx-settings-mobile-close,
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   width: var(--kx-titlebar-control-size);
 }

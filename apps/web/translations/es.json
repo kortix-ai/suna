@@ -546,7 +546,7 @@
           "description": "Usa Kortix desde Claude, Claude Code, Cursor, Codex o cualquier cliente MCP. Inicias sesión una vez. Sin instalar nada."
         },
         "computer": {
-          "label": "Ordenador",
+          "label": "Mi ordenador",
           "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las aplicaciones de tu ordenador."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "La aplicación de escritorio conecta este ordenador con un clic.",
       "desktopLabel": "Aplicación de escritorio",
       "download": "Descargar",
-      "cliLabel": "Línea de comandos"
+      "cliLabel": "Línea de comandos",
+      "otherComputerHint": "Instala la app de escritorio de Kortix en el otro ordenador e inicia sesión. Se conecta con un clic."
     }
   },
   "triggers": {
@@ -1720,6 +1721,15 @@
       "showArchived": "Sesiones archivadas",
       "pinnedMark": "Fijada"
     },
+    "recentlyDeleted": {
+      "view": "Eliminadas recientemente",
+      "empty": "Las sesiones que elimines aparecerán aquí durante {days} días.",
+      "deletedAgo": "Eliminada {when}",
+      "restorableUntil": "Se puede restaurar hasta el {date}",
+      "restore": "Restaurar sesión",
+      "restoreNamed": "Restaurar {title}",
+      "openSession": "Abrir sesión"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personalizar barra lateral",
@@ -1876,8 +1886,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurar la sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
-    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada sesión durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurarla desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada una desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
     "restoring": "Restaurando la sesión…",
     "undo": "Deshacer",
     "restored": "Sesión restaurada",
@@ -2467,21 +2477,21 @@
           "name": "Free",
           "note": "Empieza con créditos reales de sandbox.",
           "f1": "500 créditos / mes, sin tarjeta",
-          "f2": "Modelos gestionados: Kimi, DeepSeek, GLM. Retención de datos cero, inferencia en EE. UU.",
-          "f3": "1 proyecto",
-          "f4": "Usa tu propia clave de API para cualquier modelo premium",
-          "f5": "Conecta tu suscripción de ChatGPT"
+          "f2": "1 proyecto",
+          "f3": "Usa tu propia clave de API para cualquier modelo premium",
+          "f4": "Conecta tu suscripción de ChatGPT"
         },
         "credits": {
           "name": "Créditos",
           "note": "Desde 50 $ al mes. Elige los créditos que tu equipo necesita.",
           "unit": "/ mes y más",
           "f1": "Todo lo de Free",
-          "f2": "Miembros ilimitados, un único fondo de créditos compartido",
-          "f3": "Los créditos sin usar se trasladan un mes",
-          "f4": "Recarga cuando quieras. Las recargas nunca caducan",
-          "f5": "Hasta 200 proyectos y límites de uso de modelos más altos",
-          "f6": "Soporte por correo electrónico"
+          "f2": "Modelos gestionados: DeepSeek, GLM. Retención de datos cero",
+          "f3": "Miembros ilimitados, un único fondo de créditos compartido",
+          "f4": "Los créditos sin usar se trasladan un mes",
+          "f5": "Recarga cuando quieras. Las recargas nunca caducan",
+          "f6": "Hasta 200 proyectos y límites de uso de modelos más altos",
+          "f7": "Soporte por correo electrónico"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -20028,7 +20038,7 @@
       "text146aaf3c71fa": "Mantiene habilitados SSO, SCIM, RBAC y auditoría en una cuenta Enterprise firmada que también se factura mediante un plan de pago, para que la conciliación de Stripe no los retire.",
       "text517105fd13ce": "Los créditos financian el cómputo en sandbox: incluso una prueba BYOK necesita saldo en el monedero para ejecutar sesiones. La concesión de bienvenida gratuita es de 2 $.",
       "text2f1d17f50af8": "Enterprise desbloquea SAML SSO, sincronización de directorio SCIM, RBAC y acceso a auditoría para esta cuenta. El plan facturado no cambia.",
-      "text12836c0e435d": "Free cuesta 0 $: un proyecto, 500 créditos al mes, modelos gestionados y todas las funciones, con tu propia clave para cualquier otro modelo. Los planes de pago son de créditos: eliges un importe mensual, los miembros son gratuitos e ilimitados y un único fondo cubre toda la cuenta. Autoalojar el software no cuesta nada; en su lugar pagas tu propia factura de modelos y de cómputo.",
+      "text79c0703d2226": "Free cuesta 0 $: un proyecto, 500 créditos al mes y todas las funciones, con tu propia clave o tu suscripción de ChatGPT para los modelos. Los modelos gestionados por Kortix requieren un plan de pago. Los planes de pago son de créditos: eliges un importe mensual, los miembros son gratuitos e ilimitados y un único fondo cubre toda la cuenta. Autoalojar el software no cuesta nada; en su lugar pagas tu propia factura de modelos y de cómputo.",
       "text5dffd4db88c5": "Tu plan, tus créditos y la facturación de esta cuenta.",
       "text49fd64c206dd": "Tu plan está activo. Los créditos están listos.",
       "textad828837ddd8": "miembros miembro acceso al espacio de trabajo colaboradores personas compañeros lista quién puede ver permisos conceder compartir",
@@ -20193,6 +20203,7 @@
       "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
       "agentsListAlsoSubagent": "También subagente",
       "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}.",
+      "servedModelTurnRowRepeated": "{requested} falló ({reason}) en {count, number} solicitudes — se cambió a {served}.",
       "text51e6bc656528": "Chatea con tu agente desde un bot de Telegram.",
       "text00c7991f0490": "Conectar Telegram",
       "texta832efd235a7": "Crea un bot con @BotFather en Telegram y pega aquí su token. Kortix registra el webhook y guarda el token en el servidor.",
@@ -20270,7 +20281,8 @@
       "text41b257b886b2": "Leer el acuerdo",
       "text08f3c151d323": "Solicitar condiciones personalizadas",
       "texta0990a4a86dc": "Marca blanca: tu producto de IA sobre el cómputo de Platinum.dev",
-      "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev."
+      "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev.",
+      "text7971dd752669": "Recordatorios"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20858,6 +20870,18 @@
     "noticeReconnectBody": "Ninguna cuenta está autorizada. Vuelve a conectar una en la pestaña Cuentas.",
     "noticeErrorTitle": "Kortix no pudo cargar {name}",
     "noticeErrorBody": "El último intento de leer sus herramientas falló. Revisa la credencial y la configuración de conexión, y vuelve a intentarlo.",
+    "moveTitle": "Saca {app} de {provider}",
+    "moveBody": "Kortix retira {provider}. Inicia sesión una vez en {app} y este conector funcionará en Kortix. Los agentes, los disparadores y kortix.yaml siguen usando {slug}.",
+    "moveNoneTitle": "{name} funciona a través de {provider}",
+    "moveNoneBody": "Kortix aún no tiene una conexión directa para {name}. Sigue funcionando a través de {provider}.",
+    "moveAction": "Mover a Kortix",
+    "moveFinishAction": "Terminar el traslado",
+    "moveConfirmTitle": "¿Mover a {app}?",
+    "moveConfirmBody": "{count, plural, one {# cuenta más de este conector vuelve a iniciar sesión tras el traslado.} other {# cuentas más de este conector vuelven a iniciar sesión tras el traslado.}} {provider} sigue funcionando hasta que termines de iniciar sesión.",
+    "moveNoSignIn": "{app} no tiene inicio de sesión con un clic en este despliegue.",
+    "moveDone": "{name} ya funciona en Kortix.",
+    "movesBannerTitle": "{count, plural, one {# conector puede pasar} other {# conectores pueden pasar}} a Kortix",
+    "movesBannerBody": "Kortix retira Pipedream y Composio. Abre cada uno y elige «Mover a Kortix»:",
     "nameLabel": "Nombre",
     "toolsEmptyBody": "{name} no ha informado de ninguna herramienta. Aparecerán aquí cuando se conecte.",
     "stripStatus": "Estado",
@@ -21092,7 +21116,7 @@
     "lastSeen": "visto por última vez {time}",
     "scopeLine": "Solo tú puedes usarlo, desde tus sesiones privadas, en todos los proyectos.",
     "capabilitiesTitle": "Qué puede usar Kortix",
-    "capabilitiesHint": "Se eligió al conectar este ordenador. Vuelve a conectarlo para cambiarlo.",
+    "capabilitiesHint": "Activa o desactiva cualquiera en cualquier momento. La siguiente solicitud lo respeta.",
     "capability": {
       "filesystem": "Archivos",
       "filesystemDescription": "Tu carpeta personal",
@@ -21102,7 +21126,8 @@
       "desktopDescription": "Ver y usar tus apps",
       "allowed": "Permitido",
       "notAllowed": "No permitido",
-      "needsSetup": "Requiere configuración"
+      "needsSetup": "Requiere configuración",
+      "notAvailable": "No disponible en este ordenador ahora mismo"
     },
     "runInBackground": "Ejecutar en segundo plano",
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
@@ -21113,10 +21138,10 @@
     "connectAnother": "Conectar otra computadora",
     "approvingAs": "Apruebas como {email}. La computadora se vincula a esta cuenta.",
     "alreadyConnected": "{name} ya está conectada a tu cuenta",
-    "alreadyConnectedHint": "Aprueba para reconectarla con una clave nueva y el acceso que elijas. Sus proyectos y permisos compartidos se mantienen.",
+    "alreadyConnectedHint": "Aprueba para volver a conectarlo con una clave nueva. Sus proyectos y accesos compartidos se mantienen.",
     "alreadyConnectedLive": "Está en línea ahora. Aprueba para pasarla a esta solicitud: la conexión actual se detiene. Sus proyectos y permisos compartidos se mantienen.",
     "reconnect": "Reconectar",
-    "accessHint": "El acceso seleccionado seguirá activo hasta que lo revoques.",
+    "accessHint": "Los agentes de Kortix obtienen los tres. Desactiva cualquiera más tarde en Configuración › Mi ordenador.",
     "setup": {
       "title": "Termina de configurar tu computadora",
       "hint": "macOS pide una vez cada permiso de abajo. Van a Kortix, así nada vuelve a preguntar mientras trabaja un agente.",
@@ -21141,7 +21166,8 @@
       "removeAll": "Quitar todas",
       "confirmTitle": "¿Quitar todas las conexiones antiguas?",
       "confirmDescription": "Kortix las quita junto con sus cuentas de todos los proyectos. Una computadora que aún use una puede volver a conectarse."
-    }
+    },
+    "capabilitiesSaved": "Acceso actualizado"
   },
   "messageFrom": {
     "from": "De",
@@ -21227,6 +21253,42 @@
     "downloadFailed": "No se pudo descargar {name}",
     "folderCreated": "Carpeta creada",
     "folderFailed": "No se pudo crear la carpeta",
+    "newFile": "Nuevo archivo",
+    "fileNameLabel": "Nombre del archivo",
+    "nameTaken": "{name} ya existe en esta carpeta.",
+    "untitledFolder": "Carpeta sin título",
+    "untitledFile": "sin-titulo.md",
+    "uploadsInProgress": "Subiendo {done} de {total}",
+    "uploadsComplete": "{count, plural, one {# subida completada} other {# subidas completadas}}",
+    "uploadsFailedCount": "{count, plural, one {# subida fallida} other {# subidas fallidas}}",
+    "uploadsToggle": "Mostrar u ocultar subidas",
+    "uploadsDismiss": "Cerrar subidas",
+    "uploadRetry": "Reintentar",
+    "uploadFolder": "Subir carpeta",
+    "uploadingFile": "Subiendo {name}",
+    "openFolder": "Abrir carpeta",
+    "uploadTreeTitle": "{count, plural, one {¿Subir # archivo de “{name}”?} other {¿Subir # archivos de “{name}”?}}",
+    "uploadTreesTitle": "{folders, plural, one {¿Subir {count} archivos de # carpeta?} other {¿Subir {count} archivos de # carpetas?}}",
+    "uploadTreeDescription": "Sus carpetas se recrean aquí y los archivos van dentro.",
+    "dropHint": "Archivos y carpetas completas. Las carpetas conservan su estructura.",
+    "clipboardMoving": "Moviendo {name}",
+    "clipboardCopying": "Copiando {name}",
+    "select": "Seleccionar",
+    "selectAll": "Seleccionar todo",
+    "deselectAll": "Quitar selección",
+    "selectedCount": "{count} seleccionados",
+    "downloadZipCount": "{count, plural, one {Descargar # elemento como zip} other {Descargar # elementos como zip}}",
+    "copyItems": "Copiar",
+    "copyCount": "{count, plural, one {Copiar # elemento} other {Copiar # elementos}}",
+    "moveItems": "Mover",
+    "moveCount": "{count, plural, one {Mover # elemento} other {Mover # elementos}}",
+    "deleteCount": "{count, plural, one {Eliminar # elemento} other {Eliminar # elementos}}",
+    "deleteManyTitle": "{count, plural, one {¿Eliminar # elemento?} other {¿Eliminar # elementos?}}",
+    "deleteManyDescription": "Se eliminan de Drive y de cada sesión que los usa. No se puede deshacer.",
+    "clipboardMovingMany": "{count, plural, one {Moviendo # elemento} other {Moviendo # elementos}}",
+    "clipboardCopyingMany": "{count, plural, one {Copiando # elemento} other {Copiando # elementos}}",
+    "pasted": "{count, plural, one {# elemento pegado} other {# elementos pegados}}",
+    "zipFailed": "No se pudo crear el zip {message}",
     "renamed": "Renombrado",
     "renameFailed": "No se pudo renombrar",
     "deleted": "Eliminado",
@@ -21272,7 +21334,7 @@
     "versionDeleted": "{count, plural, one {# archivo eliminado} other {# archivos eliminados}}",
     "sessionChipLabel": "{count, plural, one {# drive} other {# drives}}",
     "sessionChipTitle": "Drives en esta sesión",
-    "sessionChipDescription": "Los archivos aquí se sincronizan con Drive en segundos.",
+    "sessionCanUse": "Esta sesión puede usar",
     "readOnly": "Solo lectura",
     "openDrive": "Abrir Drive",
     "unavailableTitle": "Drive está desactivado en este proyecto",
@@ -21358,7 +21420,6 @@
     "myFolderHint": "Tu propia carpeta: privada hasta que la compartas, y tu escritorio en tus sesiones",
     "sharedWithMeHint": "Carpetas que otras personas compartieron contigo",
     "sessionNoFolders": "No hay carpetas montadas en esta sesión.",
-    "sessionDesktop": "Tu carpeta (escritorio)",
     "folderAccessDescription": "Elige quién puede abrir esta carpeta y todo su contenido. Una sesión recibe la carpeta cuando su agente, su proyecto o la persona que la inició tiene acceso.",
     "whoCanAccess": "Quién tiene acceso",
     "whoCanAccessFolder": "Quién puede acceder a {name}",
@@ -21834,7 +21895,7 @@
       "createdBody": "Kortix muestra este token una sola vez. Quien lo tenga puede inscribir equipos en esta organización hasta que lo revoques.",
       "installTitle": "Instalar en cada equipo",
       "installBody": {
-        "windows": "Ejecútalo como administrador o distribúyelo con Intune o directiva de grupo. El equipo empieza a grabar en el próximo inicio de sesión.",
+        "windows": "Pégalo en el Símbolo del sistema abierto como administrador. Descarga el instalador, lo instala y avisa cuando termina. El equipo graba desde el siguiente inicio de sesión de Windows. Para Intune o directiva de grupo, consulta la guía de TI.",
         "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM. La persona permite la grabación de pantalla una vez, salvo que un perfil PPPC la conceda.",
         "linux": "Ejecútalo en un escritorio con X11. El equipo empieza a grabar en el próximo inicio de sesión. Wayland aún no es compatible."
       },

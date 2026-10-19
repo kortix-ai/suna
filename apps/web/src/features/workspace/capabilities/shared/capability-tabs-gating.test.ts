@@ -26,8 +26,9 @@ const failed: CanResult = { allowed: false, reason: null, isLoading: false, isEr
 const allowOnly = (...allowed: string[]) =>
   Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, verdict(allowed.includes(a))]));
 const every = (result: CanResult) => Object.fromEntries(PROJECT_PAGE_ACTIONS.map((a) => [a, result]));
-/** The rule for a project with the `drives` flag on. */
-const access = (caps: Record<string, CanResult>) => capabilityAccess(caps, true);
+const ON = { drives: true, reminders: true } as const;
+/** The rule for a project with the `drives` and `reminders` flags on. */
+const access = (caps: Record<string, CanResult>) => capabilityAccess(caps, ON);
 
 // The built-in Member role's project leaves
 // (packages/db/migrations/20260819015724479_rbac_canonical_model.sql).
@@ -42,13 +43,14 @@ const MEMBER = [
 
 describe('capabilityAccess', () => {
   test('a manager opens every tab, in bar order', () => {
-    expect(capabilityAccess(every(verdict(true)), true)).toEqual({
+    expect(capabilityAccess(every(verdict(true)), ON)).toEqual({
       settled: true,
       tabs: [
         'agent',
         'skills',
         'connectors',
         'triggers',
+        'reminders',
         'models',
         'secrets',
         'files',
@@ -58,7 +60,7 @@ describe('capabilityAccess', () => {
     });
   });
 
-  test('a plain member opens no tab: no Agents, no Triggers, no Repo, no dead-end tab', () => {
+  test('a plain member opens no tab: no Agents, no Triggers, no Reminders, no Repo, no dead-end tab', () => {
     expect(access(allowOnly(...MEMBER))).toEqual({ settled: true, tabs: [] });
   });
 
@@ -90,7 +92,7 @@ describe('capabilityAccess', () => {
     expect(access(allowOnly(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).tabs).toEqual([]);
   });
 
-  test('any one trigger write leaf shows Triggers; firing alone does not', () => {
+  test('any one trigger write leaf shows Triggers and Reminders; firing alone does not', () => {
     for (const write of [
       PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
       PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
@@ -98,6 +100,7 @@ describe('capabilityAccess', () => {
     ]) {
       expect(access(allowOnly(PROJECT_ACTIONS.PROJECT_TRIGGER_READ, write)).tabs).toEqual([
         'triggers',
+        'reminders',
       ]);
     }
     expect(
@@ -129,9 +132,27 @@ describe('capabilityAccess', () => {
 
   test('Repo shows only to an admin, only with the drives flag on, and waits for the flag', () => {
     const admin = allowOnly(...MEMBER, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
-    expect(capabilityAccess(admin, true).tabs).toEqual(['files', 'config']);
-    expect(capabilityAccess(admin, false)).toEqual({ settled: true, tabs: ['config'] });
-    expect(capabilityAccess(admin, undefined)).toEqual({ settled: false, tabs: [] });
+    expect(capabilityAccess(admin, ON).tabs).toEqual(['files', 'config']);
+    expect(capabilityAccess(admin, { ...ON, drives: false })).toEqual({
+      settled: true,
+      tabs: ['config'],
+    });
+    expect(capabilityAccess(admin, { ...ON, drives: undefined })).toEqual({
+      settled: false,
+      tabs: [],
+    });
+  });
+
+  test('Reminders shows only with the reminders flag on, and waits for the flag', () => {
+    const triggers = allowOnly(
+      PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+    );
+    expect(capabilityAccess(triggers, { ...ON, reminders: false }).tabs).toEqual(['triggers']);
+    expect(capabilityAccess(triggers, { ...ON, reminders: undefined })).toEqual({
+      settled: false,
+      tabs: [],
+    });
   });
 
   test('a failed probe settles closed', () => {
@@ -149,7 +170,7 @@ describe('capabilityAccess', () => {
 describe('projectNavRows', () => {
   const READ_REPO = PROJECT_ACTIONS.PROJECT_FILE_READ;
   const rows = (caps: Record<string, CanResult>, drives: boolean | undefined = true) =>
-    projectNavRows(capabilityAccess(caps, drives), caps[READ_REPO], drives === true);
+    projectNavRows(capabilityAccess(caps, { drives, reminders: true }), caps[READ_REPO], drives === true);
 
   test('a plain member with drives on gets a Drive row and no Customize row', () => {
     expect(rows(allowOnly(...MEMBER))).toEqual({ customize: null, files: 'drive' });
@@ -186,7 +207,11 @@ describe('projectNavRows', () => {
     expect(rows(caps)).toEqual({ customize: null, files: null });
     const settledCaps = allowOnly(...MEMBER, READ_REPO);
     expect(
-      projectNavRows(capabilityAccess(settledCaps, undefined), settledCaps[READ_REPO], false),
+      projectNavRows(
+        capabilityAccess(settledCaps, { drives: undefined, reminders: true }),
+        settledCaps[READ_REPO],
+        false,
+      ),
     ).toEqual({ customize: null, files: null });
     expect(rows({})).toEqual({ customize: null, files: null });
   });

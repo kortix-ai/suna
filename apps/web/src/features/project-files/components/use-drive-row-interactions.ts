@@ -1,15 +1,18 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
+import { droppedEntries, type DroppedEntry } from '../drop-tree';
 import type { FileNode } from '@/features/file-browser/types';
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 import { rowDragIntent } from '../upload-batch';
+import { decodeDragPaths, encodeDragPaths, useDriveSelection } from './drive-selection';
+import { useRequestRename } from './drive-rename-dialog';
 
 interface DriveRowInteractions {
   node: FileNode;
   onRename?: (node: FileNode, newName: string) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
-  onDropUpload?: (files: File[], targetDirPath: string) => void;
+  onDropUpload?: (files: File[], targetDirPath: string, entries?: DroppedEntry[]) => void;
   selectRenameInput: (el: HTMLInputElement) => void;
 }
 
@@ -17,6 +20,8 @@ export function useDriveRowInteractions({
   node, onRename, onDropMove, onDropUpload, selectRenameInput,
 }: DriveRowInteractions) {
   const isDir = node.type === 'directory';
+  const selection = useDriveSelection();
+  const requestRename = useRequestRename();
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -26,12 +31,14 @@ export function useDriveRowInteractions({
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
-      e.dataTransfer.setData(DRAG_MIME, node.path);
-      e.dataTransfer.setData('text/plain', node.name);
+      // A selected item drags the whole selection with it.
+      const paths = selection?.dragPaths(node) ?? [node.path];
+      e.dataTransfer.setData(DRAG_MIME, encodeDragPaths(paths));
+      e.dataTransfer.setData('text/plain', paths.length === 1 ? node.name : `${paths.length} items`);
       e.dataTransfer.effectAllowed = 'move';
       setIsDragging(true);
     },
-    [node.path, node.name],
+    [node, selection],
   );
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
@@ -89,13 +96,15 @@ export function useDriveRowInteractions({
       if (intent === 'upload') {
         // Always notify, even for an empty transfer: this drop is stopped
         // before the page handler, which owns the drop overlay's reset.
-        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path);
+        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path, droppedEntries(e.dataTransfer));
         return;
       }
 
-      const sourcePath = e.dataTransfer.getData(DRAG_MIME);
-      if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
-      onDropMove?.(sourcePath, node.path);
+      // Never into itself or into a folder inside it.
+      for (const sourcePath of decodeDragPaths(e.dataTransfer.getData(DRAG_MIME))) {
+        if (sourcePath === node.path || node.path.startsWith(sourcePath + '/')) continue;
+        onDropMove?.(sourcePath, node.path);
+      }
     },
     [intentOf, node.path, onDropMove, onDropUpload],
   );
@@ -105,6 +114,12 @@ export function useDriveRowInteractions({
   const renameCommittedRef = useRef(false);
 
   const startRenaming = useCallback(() => {
+    // The explorer renames in its modal; inline editing is the fallback for
+    // a host without one.
+    if (requestRename) {
+      requestRename(node);
+      return;
+    }
     renameCommittedRef.current = false;
     setRenameName(node.name);
     setIsRenaming(true);
@@ -114,7 +129,7 @@ export function useDriveRowInteractions({
         if (el) selectRenameInput(el);
       });
     });
-  }, [node.name, selectRenameInput]);
+  }, [node, requestRename, selectRenameInput]);
 
   // Closing the editor any other way (Escape) is a cancel: the blur that
   // follows must not commit the half-typed name.

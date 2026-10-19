@@ -109,6 +109,7 @@ import { access, constants, open, readdir, readFile, realpath, stat } from 'node
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
+import { variantsFromReasoningOptions } from '../shared/reasoning-variants'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -737,36 +738,10 @@ type KortixProviderOpts = {
   requiredModelIds?: string[]
 }
 
-// The composer's Thinking control lists `Object.keys(model.variants)` and sends
-// the pick as `variant` on the prompt; OpenCode resolves that id against THIS
-// provider map. On-gateway the web derives the ids from the API's
-// `reasoning_options` (packages/sdk provider-selection.ts, via
-// @kortix/llm-catalog's generationControlCapabilities), so the provider must
-// publish the SAME ids or a picked tier silently does nothing. Mirror of that
-// derivation (this package cannot import @kortix/llm-catalog): an `effort`
-// knob → its values verbatim; a `budget_tokens` knob → the low/medium/high
-// tiers the gateway's Claude mapping accepts; anything else → no variants.
-// Each variant carries `reasoningEffort`, which `@ai-sdk/openai-compatible`
-// serializes as the `reasoning_effort` the gateway reads. OpenCode keeps an
-// explicit config `variants` map verbatim (its own derivation for an
-// openai-compatible package would keep only low/medium/high — verified on
-// 1.18.21 via /config/providers).
-const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const
-
-export function variantsFromReasoningOptions(
-  model: Pick<KortixGatewayModel, 'reasoning_options'>,
-): Record<string, Record<string, unknown>> | undefined {
-  const options = Array.isArray(model.reasoning_options) ? model.reasoning_options : []
-  const effort = options.find((o) => o && o.type === 'effort')
-  const ids: string[] = effort?.values?.length
-    ? effort.values.filter((v): v is string => typeof v === 'string' && v.length > 0)
-    : options.some((o) => o && o.type === 'budget_tokens')
-      ? [...BUDGET_TOKENS_EFFORT_TIERS]
-      : []
-  if (ids.length === 0) return undefined
-  return Object.fromEntries(ids.map((id) => [id, { reasoningEffort: id }]))
-}
-
+// OpenCode keeps an explicit config `variants` map verbatim (its own derivation
+// for an openai-compatible package would keep only low/medium/high — verified
+// on 1.18.21 via /config/providers), so the provider publishes the ids from
+// `variantsFromReasoningOptions`.
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
   const known = withManagedOverlay(loadGatewayCatalog(opts), opts.managedOverlay)
   for (const id of opts.requiredModelIds ?? []) known[id] ??= { name: id }

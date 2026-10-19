@@ -28,7 +28,6 @@ import {
   isKnownManagedModelId,
   isRetiredManagedModelId,
 } from '../models/managed-models';
-import { isPlatformDefaultModelId } from '../models/served-managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -375,17 +374,14 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',
     'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
-  // The platform default is the ONE managed model every tier may use — a fresh
-  // free account's only working model (KRTX-1067). The rest of the lineup
-  // keeps its plan gates.
-  const platformDefault = isPlatformDefaultModelId(effectiveModel);
-  if (!platformDefault) {
-    if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
-      `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
-    if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(principal.accountId))) {
-      const tier = await getCachedAccountTier(principal.accountId);
-      throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
-    }
+  // THE managed-model gate. No model, default or fallback is exempt: an
+  // account without the entitlement (the Free plan) never reaches a managed
+  // model on Kortix credits.
+  if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
+    `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(principal.accountId))) {
+    const tier = await getCachedAccountTier(principal.accountId);
+    throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
   return managedCandidates(managed).map((candidate) => {
     const headers = opencodeHeaders(candidate.baseUrl, principal);

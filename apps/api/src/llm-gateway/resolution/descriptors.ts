@@ -1,5 +1,6 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import { VERIFIED_US_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
+import { VERIFIED_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
+import { inferenceHostCleared } from '@kortix/shared/subprocessors';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
@@ -173,15 +174,22 @@ function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | nul
   };
 }
 
+/**
+ * The OpenRouter pool members a request may reach now: verified endpoints whose
+ * host is a subprocessor in effect (DPA 7.3). A host joins on its notice date.
+ */
+export function clearedOpenRouterEndpoints(configuredOnly: unknown): string[] {
+  if (!Array.isArray(configuredOnly)) return [];
+  const approved = new Set<string>(VERIFIED_MANAGED_ENDPOINTS);
+  return configuredOnly.filter(
+    (tag: unknown): tag is string =>
+      typeof tag === 'string' && approved.has(tag) && inferenceHostCleared(tag.split('/')[0]!),
+  );
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
-  const configuredOnly = managed.openrouterProvider?.only;
-  if (!Array.isArray(configuredOnly)) return null;
-  const approved = new Set<string>(VERIFIED_US_MANAGED_ENDPOINTS);
-  const allowed = configuredOnly.filter(
-    (tag: unknown): tag is string => typeof tag === 'string' && approved.has(tag),
-  );
-  const only = allowed;
+  const only = clearedOpenRouterEndpoints(managed.openrouterProvider?.only);
   if (only.length === 0) return null;
   return {
     provider: 'openrouter',
@@ -232,9 +240,8 @@ function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null 
 }
 
 /**
- * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
- * OpenRouter fallback stays inside the verified US endpoint pool.
- * OPENCODE_ZEN_MANAGED_MODELS puts OpenCode Zen first; the others become its fallback.
+ * A managed model's upstreams, in order: Morph direct (MORPH_MANAGED_MODELS),
+ * OpenCode Zen (OPENCODE_ZEN_MANAGED_MODELS), then the OpenRouter ZDR pool. Each fails over to the next on a 429, 5xx or network error.
  */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
@@ -246,7 +253,7 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   const morph = morphManagedDescriptor(managed);
   const openrouter = openRouterManagedDescriptor(managed);
   const zen = zenManagedDescriptor(managed);
-  return [zen, morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
+  return [morph, zen, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
 /**

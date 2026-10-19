@@ -546,7 +546,7 @@
           "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。"
         },
         "computer": {
-          "label": "コンピューター",
+          "label": "マイコンピューター",
           "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "デスクトップアプリはワンクリックでこのコンピューターを接続します。",
       "desktopLabel": "デスクトップアプリ",
       "download": "ダウンロード",
-      "cliLabel": "コマンドライン"
+      "cliLabel": "コマンドライン",
+      "otherComputerHint": "もう一台のコンピューターに Kortix デスクトップアプリをインストールしてサインインしてください。ワンクリックで接続します。"
     }
   },
   "triggers": {
@@ -1720,6 +1721,15 @@
       "showArchived": "アーカイブ済みのセッション",
       "pinnedMark": "ピン留め済み"
     },
+    "recentlyDeleted": {
+      "view": "最近削除した項目",
+      "empty": "削除したセッションは {days} 日間ここに表示されます。",
+      "deletedAgo": "削除: {when}",
+      "restorableUntil": "{date} まで復元可能",
+      "restore": "セッションを復元",
+      "restoreNamed": "{title} を復元",
+      "openSession": "セッションを開く"
+    },
     "drive": "ドライブ",
     "repo": "Repo",
     "customizeSidebar": "サイドバーをカスタマイズ",
@@ -1876,8 +1886,8 @@
     }
   },
   "sessionDelete": {
-    "description": "<name>{label}</name> を削除し、そのサンドボックスを破棄します。セッションは {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
-    "bulkDescription": "選択した各セッションを削除し、そのサンドボックスを破棄します。各セッションは {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
+    "description": "<name>{label}</name> を削除し、そのサンドボックスを破棄します。「最近削除した項目」から {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
+    "bulkDescription": "選択した各セッションを削除し、そのサンドボックスを破棄します。各セッションは「最近削除した項目」から {days} 日間復元できます。その後、メッセージとファイルは削除されます。ブランチは保持されます。",
     "restoring": "セッションを復元しています…",
     "undo": "元に戻す",
     "restored": "セッションを復元しました",
@@ -2467,21 +2477,21 @@
           "name": "Free",
           "note": "実際のサンドボックスクレジットで始めましょう。",
           "f1": "月 500 クレジット、カード不要",
-          "f2": "マネージドモデル：Kimi、DeepSeek、GLM。データ保持ゼロ、米国での推論",
-          "f3": "1 プロジェクト",
-          "f4": "任意のプレミアムモデルに自分の API キーを利用可能",
-          "f5": "ChatGPT のサブスクリプションを接続"
+          "f2": "1 プロジェクト",
+          "f3": "任意のプレミアムモデルに自分の API キーを利用可能",
+          "f4": "ChatGPT のサブスクリプションを接続"
         },
         "credits": {
           "name": "クレジット",
           "note": "月 50 ドルから。チームに必要なクレジットを選べます。",
           "unit": "/ 月から",
           "f1": "Free のすべて",
-          "f2": "メンバー無制限、クレジットプールは 1 つを共有",
-          "f3": "未使用のクレジットは 1 か月繰り越し",
-          "f4": "いつでもチャージ可能。チャージ分は無期限",
-          "f5": "最大 200 プロジェクトと、より高いモデルのレート制限",
-          "f6": "メールサポート"
+          "f2": "マネージドモデル：DeepSeek、GLM。データ保持ゼロ",
+          "f3": "メンバー無制限、クレジットプールは 1 つを共有",
+          "f4": "未使用のクレジットは 1 か月繰り越し",
+          "f5": "いつでもチャージ可能。チャージ分は無期限",
+          "f6": "最大 200 プロジェクトと、より高いモデルのレート制限",
+          "f7": "メールサポート"
         },
         "enterprise": {
           "name": "エンタープライズ",
@@ -20028,7 +20038,7 @@
       "text146aaf3c71fa": "契約済みで有料プランでも請求されているエンタープライズアカウントについて、SSO、SCIM、RBAC、監査の権限を維持し、Stripe の突合で外されないようにします。",
       "text517105fd13ce": "クレジットはサンドボックスの計算に使われます。BYOK のトライアルでも、セッションの実行にはウォレット残高が必要です。無料のウェルカム付与は 2 ドルです。",
       "text2f1d17f50af8": "エンタープライズにより、このアカウントで SAML SSO、SCIM ディレクトリ同期、RBAC、監査アクセスが有効になります。請求プランは変わりません。",
-      "text12836c0e435d": "Free は 0 ドルで、1 プロジェクト、毎月 500 クレジット、マネージドモデルとすべての機能が付き、その他のモデルは自分のキーで利用できます。有料プランはクレジット制で、月額を選ぶだけです。メンバーは無料で無制限、1 つのプールでアカウント全体をまかないます。ソフトウェアのセルフホストは無料で、代わりにモデル利用料と計算料金をご自身でお支払いいただきます。",
+      "text79c0703d2226": "Free は 0 ドルで、1 プロジェクト、毎月 500 クレジットとすべての機能が付き、モデルは自分のキーまたは ChatGPT のサブスクリプションで利用できます。Kortix のマネージドモデルには有料プランが必要です。有料プランはクレジット制で、月額を選ぶだけです。メンバーは無料で無制限、1 つのプールでアカウント全体をまかないます。ソフトウェアのセルフホストは無料で、代わりにモデル利用料と計算料金をご自身でお支払いいただきます。",
       "text5dffd4db88c5": "このアカウントのプラン、クレジット、請求。",
       "text49fd64c206dd": "プランが有効になりました。クレジットをご利用いただけます。",
       "textad828837ddd8": "メンバー メンバー ワークスペース アクセス コラボレーター ユーザー チームメイト 名簿 閲覧者 権限 付与 共有",
@@ -20193,6 +20203,7 @@
       "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
       "agentsListAlsoSubagent": "サブエージェントとしても使用",
       "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。",
+      "servedModelTurnRowRepeated": "{requested} が {count, number} 件のリクエストで失敗しました（{reason}）— {served} に切り替えました。",
       "text51e6bc656528": "Telegram ボットからエージェントとチャットできます。",
       "text00c7991f0490": "Telegram を接続",
       "texta832efd235a7": "Telegram の @BotFather でボットを作成し、そのトークンをここに貼り付けてください。Kortix が Webhook を登録し、トークンはサーバーに保管されます。",
@@ -20270,7 +20281,8 @@
       "text41b257b886b2": "契約を読む",
       "text08f3c151d323": "個別条件を相談する",
       "texta0990a4a86dc": "ホワイトラベル:Platinum.dev のコンピュートで動く自社 AI プロダクト",
-      "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。"
+      "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
+      "text7971dd752669": "リマインダー"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20858,6 +20870,18 @@
     "noticeReconnectBody": "認証済みのアカウントがありません。「アカウント」タブで再接続してください。",
     "noticeErrorTitle": "Kortix は {name} を読み込めませんでした",
     "noticeErrorBody": "ツールの読み取りに失敗しました。認証情報と接続設定を確認して、もう一度お試しください。",
+    "moveTitle": "{app} を {provider} から移行",
+    "moveBody": "Kortix は {provider} の提供を終了します。{app} に一度サインインすると、このコネクターは Kortix で動作します。エージェント、トリガー、kortix.yaml は引き続き {slug} を使います。",
+    "moveNoneTitle": "{name} は {provider} 経由で動作しています",
+    "moveNoneBody": "Kortix にはまだ {name} への直接接続がありません。引き続き {provider} 経由で動作します。",
+    "moveAction": "Kortix に移行",
+    "moveFinishAction": "移行を完了",
+    "moveConfirmTitle": "{app} に移行しますか？",
+    "moveConfirmBody": "{count, plural, other {このコネクターの他の # 件のアカウントは、移行後に再度サインインが必要です。}} サインインが完了するまで {provider} は引き続き動作します。",
+    "moveNoSignIn": "このデプロイメントでは {app} のワンクリックサインインを利用できません。",
+    "moveDone": "{name} は Kortix で動作するようになりました。",
+    "movesBannerTitle": "{count, plural, other {# 件のコネクターを Kortix に移行できます}}",
+    "movesBannerBody": "Kortix は Pipedream と Composio の提供を終了します。各コネクターを開き、「Kortix に移行」を選んでください:",
     "nameLabel": "名前",
     "toolsEmptyBody": "{name} はツールを報告していません。接続後にここに表示されます。",
     "stripStatus": "ステータス",
@@ -21092,7 +21116,7 @@
     "lastSeen": "最終接続 {time}",
     "scopeLine": "あなたのプライベートセッションから、すべてのプロジェクトで、あなただけが使えます。",
     "capabilitiesTitle": "Kortix が使えるもの",
-    "capabilitiesHint": "このコンピューターを接続したときに選んだ内容です。変更するにはもう一度接続してください。",
+    "capabilitiesHint": "いつでもオンまたはオフにできます。次のリクエストから反映されます。",
     "capability": {
       "filesystem": "ファイル",
       "filesystemDescription": "ホームフォルダー",
@@ -21102,7 +21126,8 @@
       "desktopDescription": "アプリを見て操作",
       "allowed": "許可",
       "notAllowed": "許可なし",
-      "needsSetup": "設定が必要"
+      "needsSetup": "設定が必要",
+      "notAvailable": "このコンピューターでは現在利用できません"
     },
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
@@ -21113,10 +21138,10 @@
     "connectAnother": "別のコンピューターを接続",
     "approvingAs": "{email} として承認します。コンピューターはこのアカウントに紐づきます。",
     "alreadyConnected": "{name} はすでにあなたのアカウントに接続されています",
-    "alreadyConnectedHint": "承認すると、新しいキーと選択したアクセスで再接続します。プロジェクトと共有はそのまま残ります。",
+    "alreadyConnectedHint": "承認すると新しいキーで再接続します。プロジェクトと共有はそのまま残ります。",
     "alreadyConnectedLive": "現在オンラインです。承認するとこのリクエストに移行し、現在の接続は停止します。プロジェクトと共有はそのまま残ります。",
     "reconnect": "再接続",
-    "accessHint": "選択したアクセス権は、取り消すまで有効です。",
+    "accessHint": "Kortix エージェントは 3 つすべてを使えます。後から 設定 › マイコンピューター でいつでもオフにできます。",
     "setup": {
       "title": "コンピューターの設定を完了",
       "hint": "macOS が下の各権限を一度だけ確認します。権限は Kortix に付与されるため、エージェントの作業中に再び確認されることはありません。",
@@ -21141,7 +21166,8 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
-    }
+    },
+    "capabilitiesSaved": "アクセスを更新しました"
   },
   "messageFrom": {
     "from": "送信元",
@@ -21227,6 +21253,42 @@
     "downloadFailed": "{name} をダウンロードできませんでした",
     "folderCreated": "フォルダを作成しました",
     "folderFailed": "フォルダを作成できませんでした",
+    "newFile": "新しいファイル",
+    "fileNameLabel": "ファイル名",
+    "nameTaken": "{name} はこのフォルダにすでにあります。",
+    "untitledFolder": "無題のフォルダ",
+    "untitledFile": "untitled.md",
+    "uploadsInProgress": "{total} 件中 {done} 件をアップロード中",
+    "uploadsComplete": "{count, plural, other {# 件のアップロードが完了}}",
+    "uploadsFailedCount": "{count, plural, other {# 件のアップロードに失敗}}",
+    "uploadsToggle": "アップロードの表示を切り替え",
+    "uploadsDismiss": "アップロードを閉じる",
+    "uploadRetry": "再試行",
+    "uploadFolder": "フォルダをアップロード",
+    "uploadingFile": "{name} をアップロード中",
+    "openFolder": "フォルダを開く",
+    "uploadTreeTitle": "{count, plural, other {「{name}」の # 件のファイルをアップロードしますか？}}",
+    "uploadTreesTitle": "{folders, plural, other {# 個のフォルダの {count} 件のファイルをアップロードしますか？}}",
+    "uploadTreeDescription": "フォルダ構成をここに再作成し、ファイルをその中に入れます。",
+    "dropHint": "ファイルもフォルダごとでも。フォルダの構成はそのまま保たれます。",
+    "clipboardMoving": "{name} を移動中",
+    "clipboardCopying": "{name} をコピー中",
+    "select": "選択",
+    "selectAll": "すべて選択",
+    "deselectAll": "選択を解除",
+    "selectedCount": "{count} 件を選択中",
+    "downloadZipCount": "{count, plural, other {# 件を ZIP でダウンロード}}",
+    "copyItems": "コピー",
+    "copyCount": "{count, plural, other {# 件をコピー}}",
+    "moveItems": "移動",
+    "moveCount": "{count, plural, other {# 件を移動}}",
+    "deleteCount": "{count, plural, other {# 件を削除}}",
+    "deleteManyTitle": "{count, plural, other {# 件を削除しますか？}}",
+    "deleteManyDescription": "Drive と、それらを使うすべてのセッションから削除されます。元に戻せません。",
+    "clipboardMovingMany": "{count, plural, other {# 件を移動中}}",
+    "clipboardCopyingMany": "{count, plural, other {# 件をコピー中}}",
+    "pasted": "{count, plural, other {# 件を貼り付けました}}",
+    "zipFailed": "ZIP を作成できませんでした {message}",
     "renamed": "名前を変更しました",
     "renameFailed": "名前を変更できませんでした",
     "deleted": "削除しました",
@@ -21272,7 +21334,7 @@
     "versionDeleted": "{count, plural, other {# 個のファイルを削除}}",
     "sessionChipLabel": "{count, plural, other {# 個のドライブ}}",
     "sessionChipTitle": "このセッションのドライブ",
-    "sessionChipDescription": "ここにあるファイルは数秒でドライブと同期されます。",
+    "sessionCanUse": "このセッションで使えるフォルダ",
     "readOnly": "読み取り専用",
     "openDrive": "ドライブを開く",
     "unavailableTitle": "このプロジェクトではドライブがオフです",
@@ -21358,7 +21420,6 @@
     "myFolderHint": "あなた専用のフォルダー: 共有するまで非公開で、セッションではデスクトップになります",
     "sharedWithMeHint": "他のユーザーがあなたと共有したフォルダー",
     "sessionNoFolders": "このセッションにはフォルダーがマウントされていません。",
-    "sessionDesktop": "あなたのフォルダー (デスクトップ)",
     "folderAccessDescription": "このフォルダーとその中のすべてを開けるユーザーを選択します。セッションは、そのエージェント、プロジェクト、または開始したユーザーにアクセス権があるときにフォルダーを受け取ります。",
     "whoCanAccess": "アクセスできるユーザー",
     "whoCanAccessFolder": "{name} にアクセスできるユーザー",
@@ -21834,7 +21895,7 @@
       "createdBody": "Kortix がこのトークンを表示するのは一度だけです。取り消すまで、これを持つ人は誰でもこの組織にコンピューターを登録できます。",
       "installTitle": "各コンピューターにインストール",
       "installBody": {
-        "windows": "管理者として実行するか、Intune またはグループ ポリシーで配布します。次回のサインインで録画が始まります。",
+        "windows": "管理者として開いたコマンド プロンプトに貼り付けます。インストーラーをダウンロードしてインストールし、完了すると表示します。次回の Windows サインインから記録します。Intune やグループ ポリシーは IT セットアップ ガイドを参照してください。",
         "macos": "ターミナルで実行するか、MDM でパッケージを配布します。PPPC プロファイルで許可しない限り、画面収録の許可が一度だけ必要です。",
         "linux": "X11 のデスクトップで実行します。次回のサインインで録画が始まります。Wayland はまだ対応していません。"
       },

@@ -546,7 +546,7 @@
           "description": "在 Claude、Claude Code、Cursor、Codex 或任何 MCP 客户端中使用 Kortix。只需登录一次，无需安装。"
         },
         "computer": {
-          "label": "电脑",
+          "label": "我的电脑",
           "description": "让 Kortix 智能体使用你电脑上的文件、终端和应用。"
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "桌面应用一键连接这台电脑。",
       "desktopLabel": "桌面应用",
       "download": "下载",
-      "cliLabel": "命令行"
+      "cliLabel": "命令行",
+      "otherComputerHint": "在另一台电脑上安装 Kortix 桌面应用并登录。一键即可连接。"
     }
   },
   "triggers": {
@@ -1720,6 +1721,15 @@
       "showArchived": "已归档的会话",
       "pinnedMark": "已置顶"
     },
+    "recentlyDeleted": {
+      "view": "最近删除",
+      "empty": "你删除的会话将在这里保留 {days} 天。",
+      "deletedAgo": "删除于{when}",
+      "restorableUntil": "可恢复至 {date}",
+      "restore": "恢复会话",
+      "restoreNamed": "恢复 {title}",
+      "openSession": "打开会话"
+    },
     "drive": "云盘",
     "repo": "Repo",
     "customizeSidebar": "自定义侧边栏",
@@ -1876,8 +1886,8 @@
     }
   },
   "sessionDelete": {
-    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内恢复该会话。之后，其消息和文件将被删除。分支会保留。",
-    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复它。之后，其消息和文件将被删除。分支会保留。",
+    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
     "restoring": "正在恢复会话…",
     "undo": "撤销",
     "restored": "会话已恢复",
@@ -2467,21 +2477,21 @@
           "name": "免费版",
           "note": "从真实的沙盒积分开始。",
           "f1": "每月 500 个积分，无需绑卡",
-          "f2": "托管模型：Kimi、DeepSeek、GLM。零数据保留，美国推理",
-          "f3": "1 个项目",
-          "f4": "可自带 API 密钥使用任何高级模型",
-          "f5": "连接你的 ChatGPT 订阅"
+          "f2": "1 个项目",
+          "f3": "可自带 API 密钥使用任何高级模型",
+          "f4": "连接你的 ChatGPT 订阅"
         },
         "credits": {
           "name": "积分版",
           "note": "每月 50 美元起。按团队所需选择积分。",
           "unit": "/ 月起",
           "f1": "包含免费版的全部功能",
-          "f2": "成员不限数量，共用一个积分池",
-          "f3": "未用完的积分可顺延一个月",
-          "f4": "随时充值，充值的积分永不过期",
-          "f5": "最多 200 个项目，更高的模型速率限制",
-          "f6": "邮件支持"
+          "f2": "托管模型：DeepSeek、GLM。零数据保留",
+          "f3": "成员不限数量，共用一个积分池",
+          "f4": "未用完的积分可顺延一个月",
+          "f5": "随时充值，充值的积分永不过期",
+          "f6": "最多 200 个项目，更高的模型速率限制",
+          "f7": "邮件支持"
         },
         "enterprise": {
           "name": "企业版",
@@ -20028,7 +20038,7 @@
       "text146aaf3c71fa": "为已签约、同时通过付费套餐计费的企业版账户保持 SSO、SCIM、RBAC 和审计权限，避免 Stripe 对账将其移除。",
       "text517105fd13ce": "积分用于支付沙盒算力——即使是 BYOK 试用，运行会话也需要钱包余额。免费欢迎额度为 2 美元。",
       "text2f1d17f50af8": "企业版为此账户开通 SAML SSO、SCIM 目录同步、RBAC 和审计访问。计费套餐保持不变。",
-      "text12836c0e435d": "免费版 0 美元——1 个项目，每月 500 个积分，托管模型和全部功能，其他模型使用你自己的密钥。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个账户。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
+      "text79c0703d2226": "免费版 0 美元——1 个项目，每月 500 个积分和全部功能，模型使用你自己的密钥或 ChatGPT 订阅。Kortix 托管模型需要付费套餐。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个账户。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
       "text5dffd4db88c5": "此账户的套餐、积分和账单。",
       "text49fd64c206dd": "你的套餐已生效，积分已到账。",
       "textad828837ddd8": "成员 成员 工作区 访问 协作者 人员 队友 名册 谁可以查看 权限 授予 分享",
@@ -20193,6 +20203,7 @@
       "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
       "agentsListAlsoSubagent": "也可作为子代理",
       "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。",
+      "servedModelTurnRowRepeated": "{requested} 在 {count, number} 个请求中失败（{reason}）— 已切换到 {served}。",
       "text51e6bc656528": "通过 Telegram 机器人与你的代理聊天。",
       "text00c7991f0490": "连接 Telegram",
       "texta832efd235a7": "在 Telegram 中用 @BotFather 创建一个机器人，然后在此粘贴它的令牌。Kortix 会注册 webhook，并将令牌保存在服务器上。",
@@ -20270,7 +20281,8 @@
       "text41b257b886b2": "阅读协议",
       "text08f3c151d323": "咨询定制条款",
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
-      "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。"
+      "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
+      "text7971dd752669": "提醒"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20858,6 +20870,18 @@
     "noticeReconnectBody": "没有已授权的账户。请在“账户”选项卡中重新连接。",
     "noticeErrorTitle": "Kortix 无法加载 {name}",
     "noticeErrorBody": "上次读取其工具失败。请检查凭据和连接设置，然后重试。",
+    "moveTitle": "将 {app} 迁出 {provider}",
+    "moveBody": "Kortix 即将停用 {provider}。登录一次 {app}，此连接器即在 Kortix 上运行。智能体、触发器和 kortix.yaml 继续使用 {slug}。",
+    "moveNoneTitle": "{name} 通过 {provider} 运行",
+    "moveNoneBody": "Kortix 暂时没有 {name} 的直接连接。它会继续通过 {provider} 运行。",
+    "moveAction": "迁移到 Kortix",
+    "moveFinishAction": "完成迁移",
+    "moveConfirmTitle": "迁移到 {app}？",
+    "moveConfirmBody": "{count, plural, other {此连接器的其他 # 个账户在迁移后需要重新登录。}}在你完成登录之前，{provider} 会继续运行。",
+    "moveNoSignIn": "在此部署上，{app} 不支持一键登录。",
+    "moveDone": "{name} 现在在 Kortix 上运行。",
+    "movesBannerTitle": "{count, plural, other {# 个连接器可以迁移到 Kortix}}",
+    "movesBannerBody": "Kortix 即将停用 Pipedream 和 Composio。打开每个连接器并选择“迁移到 Kortix”：",
     "nameLabel": "名称",
     "toolsEmptyBody": "{name} 尚未报告任何工具。连接后会显示在这里。",
     "stripStatus": "状态",
@@ -21092,7 +21116,7 @@
     "lastSeen": "最后在线 {time}",
     "scopeLine": "只有你能使用它：在你的私人会话中，在每个项目里。",
     "capabilitiesTitle": "Kortix 可以使用的内容",
-    "capabilitiesHint": "在连接这台电脑时选定。要更改，请重新连接。",
+    "capabilitiesHint": "随时开启或关闭任意一项。下一个请求即按此执行。",
     "capability": {
       "filesystem": "文件",
       "filesystemDescription": "你的主文件夹",
@@ -21102,7 +21126,8 @@
       "desktopDescription": "查看并使用你的应用",
       "allowed": "已允许",
       "notAllowed": "未允许",
-      "needsSetup": "需要设置"
+      "needsSetup": "需要设置",
+      "notAvailable": "此电脑当前不可用"
     },
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
@@ -21113,10 +21138,10 @@
     "connectAnother": "连接另一台电脑",
     "approvingAs": "你将以 {email} 的身份批准。这台电脑将归属此账户。",
     "alreadyConnected": "{name} 已连接到你的账户",
-    "alreadyConnectedHint": "批准后将使用新密钥和你选择的权限重新连接。其项目和共享保持不变。",
+    "alreadyConnectedHint": "批准后将使用新密钥重新连接。它的项目和共享保持不变。",
     "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
     "reconnect": "重新连接",
-    "accessHint": "选定的访问权限会一直有效，直到你撤销。",
+    "accessHint": "Kortix 代理获得全部三项权限。之后可在 设置 › 我的电脑 中关闭任意一项。",
     "setup": {
       "title": "完成电脑设置",
       "hint": "macOS 会对下面每项权限询问一次。权限授予 Kortix，因此代理工作时不会再询问。",
@@ -21141,7 +21166,8 @@
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
-    }
+    },
+    "capabilitiesSaved": "访问权限已更新"
   },
   "messageFrom": {
     "from": "来自",
@@ -21227,6 +21253,42 @@
     "downloadFailed": "无法下载 {name}",
     "folderCreated": "文件夹已创建",
     "folderFailed": "无法创建文件夹",
+    "newFile": "新建文件",
+    "fileNameLabel": "文件名",
+    "nameTaken": "此文件夹中已有 {name}。",
+    "untitledFolder": "未命名文件夹",
+    "untitledFile": "untitled.md",
+    "uploadsInProgress": "正在上传第 {done}/{total} 个",
+    "uploadsComplete": "{count, plural, other {# 个上传已完成}}",
+    "uploadsFailedCount": "{count, plural, other {# 个上传失败}}",
+    "uploadsToggle": "显示或隐藏上传",
+    "uploadsDismiss": "关闭上传",
+    "uploadRetry": "重试",
+    "uploadFolder": "上传文件夹",
+    "uploadingFile": "正在上传 {name}",
+    "openFolder": "打开文件夹",
+    "uploadTreeTitle": "{count, plural, other {上传“{name}”中的 # 个文件？}}",
+    "uploadTreesTitle": "{folders, plural, other {上传 # 个文件夹中的 {count} 个文件？}}",
+    "uploadTreeDescription": "会在此处重建其文件夹结构，并把文件放入其中。",
+    "dropHint": "文件和整个文件夹均可，文件夹会保留原有结构。",
+    "clipboardMoving": "正在移动 {name}",
+    "clipboardCopying": "正在复制 {name}",
+    "select": "选择",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "selectedCount": "已选 {count} 项",
+    "downloadZipCount": "{count, plural, other {将 # 项下载为 zip}}",
+    "copyItems": "复制",
+    "copyCount": "{count, plural, other {复制 # 项}}",
+    "moveItems": "移动",
+    "moveCount": "{count, plural, other {移动 # 项}}",
+    "deleteCount": "{count, plural, other {删除 # 项}}",
+    "deleteManyTitle": "{count, plural, other {删除 # 项？}}",
+    "deleteManyDescription": "它们会从 Drive 以及所有使用它们的会话中移除，且无法撤销。",
+    "clipboardMovingMany": "{count, plural, other {正在移动 # 项}}",
+    "clipboardCopyingMany": "{count, plural, other {正在复制 # 项}}",
+    "pasted": "{count, plural, other {已粘贴 # 项}}",
+    "zipFailed": "无法创建 zip {message}",
     "renamed": "已重命名",
     "renameFailed": "无法重命名",
     "deleted": "已删除",
@@ -21272,7 +21334,7 @@
     "versionDeleted": "{count, plural, other {删除了 # 个文件}}",
     "sessionChipLabel": "{count, plural, other {# 个云盘}}",
     "sessionChipTitle": "此会话中的云盘",
-    "sessionChipDescription": "此处的文件会在几秒内与云盘同步。",
+    "sessionCanUse": "此会话可使用",
     "readOnly": "只读",
     "openDrive": "打开云盘",
     "unavailableTitle": "此项目未开启云盘",
@@ -21358,7 +21420,6 @@
     "myFolderHint": "你的个人文件夹：在你共享之前保持私密，并作为你会话中的桌面",
     "sharedWithMeHint": "其他人与你共享的文件夹",
     "sessionNoFolders": "此会话中没有挂载任何文件夹。",
-    "sessionDesktop": "你的文件夹（桌面）",
     "folderAccessDescription": "选择谁可以打开此文件夹及其中的所有内容。当会话的智能体、项目或启动它的人有访问权限时，该会话会获得此文件夹。",
     "whoCanAccess": "谁可以访问",
     "whoCanAccessFolder": "谁可以访问 {name}",
@@ -21834,7 +21895,7 @@
       "createdBody": "Kortix 只显示此令牌一次。在你撤销之前，持有它的任何人都可以将电脑注册到此组织。",
       "installTitle": "在每台电脑上安装",
       "installBody": {
-        "windows": "以管理员身份运行，或通过 Intune 或组策略部署。电脑在下次登录时开始录制。",
+        "windows": "粘贴到以管理员身份打开的命令提示符中。它会下载安装程序、完成安装并在结束时提示。电脑从下次登录 Windows 起开始录制。Intune 或组策略请参阅 IT 设置指南。",
         "macos": "在终端中运行，或通过 MDM 部署安装包。除非 PPPC 配置文件已授权，用户需允许一次屏幕录制。",
         "linux": "在 X11 桌面上运行。电脑在下次登录时开始录制。暂不支持 Wayland。"
       },

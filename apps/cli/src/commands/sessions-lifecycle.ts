@@ -63,6 +63,7 @@ deleted, and only the branch remains. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
 short id cannot be expanded, and no other project is searched for it.
+\`sessions ls --deleted\` lists the ones you can restore with their full id;
 \`sessions rm\` prints the exact command, with --project (and --host).
 
 Options:
@@ -235,7 +236,7 @@ export async function runSessionsRestore(argv: string[]): Promise<number> {
   }
   if (!SESSION_UUID_RE.test(sessionId)) {
     process.stderr.write(
-      `${status.err('Pass the full session id. `kortix sessions rm` printed it when it deleted the session.')}\n`,
+      `${status.err('Pass the full session id: `kortix sessions ls --deleted` lists it, and `kortix sessions rm` printed it.')}\n`,
     );
     return 2;
   }

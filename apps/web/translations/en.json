@@ -399,7 +399,7 @@
           "description": "Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install."
         },
         "computer": {
-          "label": "Computer",
+          "label": "My computer",
           "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "The desktop app connects this computer in one click.",
       "desktopLabel": "Desktop app",
       "download": "Download",
-      "cliLabel": "Command line"
+      "cliLabel": "Command line",
+      "otherComputerHint": "Install the Kortix desktop app on the other computer and sign in. It connects in one click."
     }
   },
   "triggers": {
@@ -1720,6 +1721,15 @@
       "showArchived": "Archived sessions",
       "pinnedMark": "Pinned"
     },
+    "recentlyDeleted": {
+      "view": "Recently deleted",
+      "empty": "Sessions you delete will show up here for {days} days.",
+      "deletedAgo": "Deleted {when}",
+      "restorableUntil": "Restorable until {date}",
+      "restore": "Restore session",
+      "restoreNamed": "Restore {title}",
+      "openSession": "Open session"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Customize sidebar",
@@ -1876,8 +1886,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore the session for {days} days. After that, its messages and files are deleted. Its branch is kept.",
-    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each session for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
     "restoring": "Restoring the session…",
     "undo": "Undo",
     "restored": "Session restored",
@@ -2467,21 +2477,21 @@
           "name": "Free",
           "note": "Start with real sandbox credits.",
           "f1": "500 credits / month, no card needed",
-          "f2": "Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference",
-          "f3": "1 project",
-          "f4": "Bring your own API key for any premium model",
-          "f5": "Connect your ChatGPT subscription"
+          "f2": "1 project",
+          "f3": "Bring your own API key for any premium model",
+          "f4": "Connect your ChatGPT subscription"
         },
         "credits": {
           "name": "Credits",
           "note": "From $50 a month. Pick the credits your team needs.",
           "unit": "/ month and up",
           "f1": "Everything in Free",
-          "f2": "Unlimited members, one shared credit pool",
-          "f3": "Unused credits roll over one month",
-          "f4": "Top up any time. Top-ups never expire",
-          "f5": "Up to 200 projects and higher model rate limits",
-          "f6": "Support via email"
+          "f2": "Managed models: DeepSeek, GLM. Zero data retention",
+          "f3": "Unlimited members, one shared credit pool",
+          "f4": "Unused credits roll over one month",
+          "f5": "Top up any time. Top-ups never expire",
+          "f6": "Up to 200 projects and higher model rate limits",
+          "f7": "Support via email"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -20039,7 +20049,7 @@
       "text146aaf3c71fa": "Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also billed through a paid plan, so the Stripe reconciliation cannot strip them.",
       "text517105fd13ce": "Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions. The free welcome grant is $2.",
       "text2f1d17f50af8": "Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan is unchanged.",
-      "text12836c0e435d": "Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text79c0703d2226": "Free is $0 — one project, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this account.",
       "text49fd64c206dd": "Your plan is active. Credits are ready.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",
@@ -20204,6 +20214,7 @@
       "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
       "agentsListAlsoSubagent": "Also a subagent",
       "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}.",
+      "servedModelTurnRowRepeated": "{requested} failed ({reason}) on {count, number} requests — switched to {served}.",
       "text51e6bc656528": "Chat with your agent from a Telegram bot.",
       "text00c7991f0490": "Connect Telegram",
       "texta832efd235a7": "Create a bot with @BotFather in Telegram, then paste its token here. Kortix registers the webhook and keeps the token on the server.",
@@ -20281,7 +20292,8 @@
       "text41b257b886b2": "Read the agreement",
       "text08f3c151d323": "Ask for custom terms",
       "texta0990a4a86dc": "White-label: your AI product on Platinum.dev compute",
-      "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev."
+      "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.",
+      "text7971dd752669": "Reminders"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20858,6 +20870,18 @@
     "noticeReconnectBody": "No account is authorized. Reconnect one on the Accounts tab.",
     "noticeErrorTitle": "Kortix could not load {name}",
     "noticeErrorBody": "The last attempt to read its tools failed. Check the credential and the connection settings, then try again.",
+    "moveTitle": "Move {app} off {provider}",
+    "moveBody": "Kortix is retiring {provider}. Sign in to {app} once and this connector runs on Kortix. Agents, triggers and kortix.yaml keep using {slug}.",
+    "moveNoneTitle": "{name} runs through {provider}",
+    "moveNoneBody": "Kortix has no direct connection for {name} yet. It keeps working through {provider}.",
+    "moveAction": "Move to Kortix",
+    "moveFinishAction": "Finish move",
+    "moveConfirmTitle": "Move to {app}?",
+    "moveConfirmBody": "{count, plural, one {# other account on this connector signs in again after the move.} other {# other accounts on this connector sign in again after the move.}} {provider} keeps working until you finish signing in.",
+    "moveNoSignIn": "{app} has no one-click sign-in on this deployment.",
+    "moveDone": "{name} now runs on Kortix.",
+    "movesBannerTitle": "{count, plural, one {# connector can move} other {# connectors can move}} to Kortix",
+    "movesBannerBody": "Kortix is retiring Pipedream and Composio. Open each one and choose Move to Kortix:",
     "nameLabel": "Name",
     "toolsEmptyBody": "{name} has not reported any tools. They appear here after it connects.",
     "stripStatus": "Status",
@@ -21092,7 +21116,7 @@
     "lastSeen": "last seen {time}",
     "scopeLine": "Only you can use it, from your private sessions, in every project.",
     "capabilitiesTitle": "What Kortix can use",
-    "capabilitiesHint": "Chosen when you connected this computer. Connect it again to change it.",
+    "capabilitiesHint": "Turn any of these on or off at any time. The next request follows it.",
     "capability": {
       "filesystem": "Files",
       "filesystemDescription": "Your home folder",
@@ -21102,7 +21126,8 @@
       "desktopDescription": "See and use your apps",
       "allowed": "Allowed",
       "notAllowed": "Not allowed",
-      "needsSetup": "Needs setup"
+      "needsSetup": "Needs setup",
+      "notAvailable": "Not available on this computer right now"
     },
     "runInBackground": "Run in the background",
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
@@ -21113,10 +21138,10 @@
     "connectAnother": "Connect another computer",
     "approvingAs": "You approve as {email}. The computer joins this account.",
     "alreadyConnected": "{name} is already connected to your account",
-    "alreadyConnectedHint": "Approve to reconnect it with a new key and the access you select. Its projects and shares stay.",
+    "alreadyConnectedHint": "Approve to reconnect it with a new key. Its projects and shares stay.",
     "alreadyConnectedLive": "It is online now. Approve to move it to this request: the current connection stops. Its projects and shares stay.",
     "reconnect": "Reconnect",
-    "accessHint": "Selected access stays active until you revoke it.",
+    "accessHint": "Kortix agents get all three. Turn any of them off later in Settings › My computer.",
     "setup": {
       "title": "Finish setting up your computer",
       "hint": "macOS asks once for each permission below. They go to Kortix, so nothing asks again while an agent works.",
@@ -21141,7 +21166,8 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
-    }
+    },
+    "capabilitiesSaved": "Access updated"
   },
   "messageFrom": {
     "from": "From",
@@ -21227,6 +21253,42 @@
     "downloadFailed": "Couldn't download {name}",
     "folderCreated": "Folder created",
     "folderFailed": "Couldn't create the folder",
+    "newFile": "New file",
+    "fileNameLabel": "File name",
+    "nameTaken": "{name} already exists in this folder.",
+    "untitledFolder": "Untitled folder",
+    "untitledFile": "untitled.md",
+    "uploadsInProgress": "Uploading {done} of {total}",
+    "uploadsComplete": "{count, plural, one {# upload complete} other {# uploads complete}}",
+    "uploadsFailedCount": "{count, plural, one {# upload failed} other {# uploads failed}}",
+    "uploadsToggle": "Show or hide uploads",
+    "uploadsDismiss": "Close uploads",
+    "uploadRetry": "Retry",
+    "uploadFolder": "Upload folder",
+    "uploadingFile": "Uploading {name}",
+    "openFolder": "Open folder",
+    "uploadTreeTitle": "{count, plural, one {Upload # file from “{name}”?} other {Upload # files from “{name}”?}}",
+    "uploadTreesTitle": "{folders, plural, one {Upload {count} files from # folder?} other {Upload {count} files from # folders?}}",
+    "uploadTreeDescription": "Its folders are recreated here, and the files go into them.",
+    "dropHint": "Files and whole folders. Folders keep their structure.",
+    "clipboardMoving": "Moving {name}",
+    "clipboardCopying": "Copying {name}",
+    "select": "Select",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "selectedCount": "{count} selected",
+    "downloadZipCount": "{count, plural, one {Download # item as zip} other {Download # items as zip}}",
+    "copyItems": "Copy",
+    "copyCount": "{count, plural, one {Copy # item} other {Copy # items}}",
+    "moveItems": "Move",
+    "moveCount": "{count, plural, one {Move # item} other {Move # items}}",
+    "deleteCount": "{count, plural, one {Delete # item} other {Delete # items}}",
+    "deleteManyTitle": "{count, plural, one {Delete # item?} other {Delete # items?}}",
+    "deleteManyDescription": "They are removed from Drive and from every session that uses them. This can't be undone.",
+    "clipboardMovingMany": "{count, plural, one {Moving # item} other {Moving # items}}",
+    "clipboardCopyingMany": "{count, plural, one {Copying # item} other {Copying # items}}",
+    "pasted": "{count, plural, one {Pasted # item} other {Pasted # items}}",
+    "zipFailed": "Couldn't make the zip {message}",
     "renamed": "Renamed",
     "renameFailed": "Couldn't rename",
     "deleted": "Deleted",
@@ -21272,7 +21334,7 @@
     "versionDeleted": "{count, plural, one {# file deleted} other {# files deleted}}",
     "sessionChipLabel": "{count, plural, one {# folder} other {# folders}}",
     "sessionChipTitle": "Files in this session",
-    "sessionChipDescription": "Folders the agent can use here. Share a folder in Files to add it; it arrives within seconds.",
+    "sessionCanUse": "This session can use",
     "readOnly": "Read only",
     "openDrive": "Open Files",
     "unavailableTitle": "Files is off for this project",
@@ -21358,7 +21420,6 @@
     "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
     "sharedWithMeHint": "Folders other people shared with you",
     "sessionNoFolders": "No folders are mounted in this session.",
-    "sessionDesktop": "Your folder (desktop)",
     "folderAccessDescription": "Choose who can open this folder and everything in it. A session gets the folder when its agent, its project or the person who started it has access.",
     "whoCanAccess": "Who can access",
     "whoCanAccessFolder": "Who can access {name}",
@@ -21834,7 +21895,7 @@
       "createdBody": "Kortix shows this token once. Anyone who has it can enroll computers into this organization until you revoke it.",
       "installTitle": "Install on each computer",
       "installBody": {
-        "windows": "Run as administrator, or deploy with Intune or Group Policy. The computer starts recording at the next sign-in.",
+        "windows": "Paste into Command Prompt opened as administrator. It downloads the installer, installs it and says when it is done. The computer records from the next Windows sign-in. For Intune or Group Policy, see the IT setup guide.",
         "macos": "Run in Terminal, or deploy the package with your MDM. The person allows Screen Recording once, unless a PPPC profile grants it.",
         "linux": "Run on a desktop with X11. The computer starts recording at the next sign-in. Wayland is not supported yet."
       },

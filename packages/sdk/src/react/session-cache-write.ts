@@ -50,7 +50,7 @@ type ListFilters = {
   parent: string | null;
   startedBy: string | null;
   q: string | null;
-  view?: 'pinned' | 'archived';
+  view?: 'pinned' | 'archived' | 'deleted';
 };
 
 /**
@@ -69,6 +69,8 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   const filters = rest[0] === 'list-paged' ? (rest[2] as ListFilters | undefined) : undefined;
   if (!filters) return true;
   if (filters.q) return false;
+  // Recently deleted holds what the server says is restorable: a live session never belongs.
+  if (filters.view === 'deleted') return false;
   if (filters.view === 'pinned' && !session.pinned_at) return false;
   if (filters.view === 'archived' && !session.archived_at) return false;
   if (filters.parent === 'root' && parentId !== null) return false;

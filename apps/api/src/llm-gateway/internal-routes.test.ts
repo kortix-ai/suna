@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
-import { platformDefaultModelId } from './models/served-managed-models';
 
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
@@ -242,13 +241,13 @@ describe('POST /models managedOnly', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(gatewayModelCatalog(undefined)).length);
   });
 
-  test('a free-tier account gets only the platform default', async () => {
+  test('a free-tier account gets no managed model, the platform default included', async () => {
     const managed = await models({
       principal: { userId: 'u', accountId: 'a', projectId: 'p', keyId: 'k', freeModelsOnly: true },
       managedOnly: true,
     });
 
-    expect(Object.keys(managed)).toEqual([platformDefaultModelId()]);
+    expect(Object.keys(managed)).toEqual([]);
   });
 });
 

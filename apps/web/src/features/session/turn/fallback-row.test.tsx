@@ -53,4 +53,14 @@ describe('TurnFallbackRows', () => {
     expect(html).toContain('Flash failed (timeout) — switched to Other.');
     expect(html.indexOf('switched to Flash.')).toBeLessThan(html.indexOf('switched to Other.'));
   });
+
+  test('consecutive identical switches are one row with the request count', () => {
+    const other = { requested: 'Flash', served: 'Other', reason: 'timeout' };
+    const html = render(false, [...Array(1219).fill(event), other, event, event]);
+    expect(html.match(/data-testid="turn-fallback-row"/g)).toHaveLength(3);
+    expect(html).toContain('Sol failed (rate_limit_exceeded) on 1,219 requests — switched to Flash.');
+    expect(html).toContain('Flash failed (timeout) — switched to Other.');
+    expect(html).toContain('Sol failed (rate_limit_exceeded) on 2 requests — switched to Flash.');
+    expect(html.indexOf('1,219')).toBeLessThan(html.indexOf('switched to Other.'));
+  });
 });

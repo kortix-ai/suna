@@ -399,7 +399,7 @@
           "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate."
         },
         "computer": {
-          "label": "Рачунар",
+          "label": "Moj računar",
           "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "Десктоп апликација повезује овај рачунар једним кликом.",
       "desktopLabel": "Десктоп апликација",
       "download": "Преузми",
-      "cliLabel": "Командна линија"
+      "cliLabel": "Командна линија",
+      "otherComputerHint": "Instaliraj Kortix desktop aplikaciju na drugom računaru i prijavi se. Povezuje se jednim klikom."
     }
   },
   "triggers": {
@@ -1720,6 +1721,15 @@
       "showArchived": "Архивиране сесије",
       "pinnedMark": "Закачена"
     },
+    "recentlyDeleted": {
+      "view": "Недавно обрисане",
+      "empty": "Сесије које обришете појавиће се овде у року од {days} дана.",
+      "deletedAgo": "Обрисана {when}",
+      "restorableUntil": "Може да се врати до {date}",
+      "restore": "Врати сесију",
+      "restoreNamed": "Врати {title}",
+      "openSession": "Отвори сесију"
+    },
     "drive": "Диск",
     "repo": "Repo",
     "customizeSidebar": "Prilagodi bočnu traku",
@@ -1876,8 +1886,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Брише <name>{label}</name> и уклања њен сандбок. Сесију можете да вратите у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
-    "bulkDescription": "Брише сваку изабрану сесију и уклања њен сандбок. Сваку сесију можете да вратите у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "description": "Брише <name>{label}</name> и уклања њен сандбок. Можете да је вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "bulkDescription": "Брише сваку изабрану сесију и уклања њен сандбок. Сваку можете да вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
     "restoring": "Враћање сесије…",
     "undo": "Опозови",
     "restored": "Сесија је враћена",
@@ -2467,21 +2477,21 @@
           "name": "Free",
           "note": "Почните са стварним sandbox кредитима.",
           "f1": "500 кредита / месец, без картице",
-          "f2": "Управљани модели: Kimi, DeepSeek, GLM. Нулто задржавање података, инференција у САД",
-          "f3": "1 пројекат",
-          "f4": "Користите сопствени API кључ за било који премијум модел",
-          "f5": "Повежите своју ChatGPT претплату"
+          "f2": "1 пројекат",
+          "f3": "Користите сопствени API кључ за било који премијум модел",
+          "f4": "Повежите своју ChatGPT претплату"
         },
         "credits": {
           "name": "Кредити",
           "note": "Од 50 $ месечно. Изаберите кредите који су потребни вашем тиму.",
           "unit": "/ месечно и више",
           "f1": "Све из Free плана",
-          "f2": "Неограничен број чланова, један заједнички фонд кредита",
-          "f3": "Неискоришћени кредити преносе се месец дана",
-          "f4": "Допуњавајте кад год желите. Допуне никада не истичу",
-          "f5": "До 200 пројеката и виша ограничења брзине модела",
-          "f6": "Подршка путем е-поште"
+          "f2": "Управљани модели: DeepSeek, GLM. Нулто задржавање података",
+          "f3": "Неограничен број чланова, један заједнички фонд кредита",
+          "f4": "Неискоришћени кредити преносе се месец дана",
+          "f5": "Допуњавајте кад год желите. Допуне никада не истичу",
+          "f6": "До 200 пројеката и виша ограничења брзине модела",
+          "f7": "Подршка путем е-поште"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -20028,7 +20038,7 @@
       "text146aaf3c71fa": "Одржава SSO, SCIM, RBAC и ревизију омогућеним за потписани Enterprise налог који се такође наплаћује преко плаћеног плана, како их Stripe усклађивање не би уклонило.",
       "text517105fd13ce": "Кредити финансирају рачунарску снагу sandbox-а — чак и BYOK пробни период захтева стање у новчанику за покретање сесија. Бесплатни уводни износ је 2 $.",
       "text2f1d17f50af8": "Enterprise омогућава SAML SSO, SCIM синхронизацију директоријума, RBAC и приступ ревизији за овај налог. Наплаћени план се не мења.",
-      "text12836c0e435d": "Free је 0 $ — један пројекат, 500 кредита месечно, управљани модели и све функције, са вашим кључем за било који други модел. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
+      "text79c0703d2226": "Free је 0 $ — један пројекат, 500 кредита месечно и све функције, са вашим кључем или ChatGPT претплатом за моделе. Модели којима управља Kortix захтевају плаћени план. Плаћени планови су у кредитима: изаберете месечни износ, чланови су бесплатни и неограничени, а један фонд покрива цео налог. Самостално хостовање софтвера не кошта ништа; уместо тога плаћате сопствени рачун за моделе и рачунарску снагу.",
       "text5dffd4db88c5": "План, кредити и обрачун за овај налог.",
       "text49fd64c206dd": "Ваш план је активан. Кредити су спремни.",
       "textad828837ddd8": "чланови члан радни простор приступ сарадници људи колеге списак ко може да види дозволе додели дели",
@@ -20193,6 +20203,7 @@
       "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
       "agentsListAlsoSubagent": "Такође подагент",
       "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}.",
+      "servedModelTurnRowRepeated": "{requested} није успео ({reason}) у {count, number} захтева — пребачено на {served}.",
       "text51e6bc656528": "Разговарајте са својим агентом преко Telegram бота.",
       "text00c7991f0490": "Повежите Telegram",
       "texta832efd235a7": "Направите бота помоћу @BotFather у Telegram-у, па овде налепите његов токен. Kortix региструје webhook и чува токен на серверу.",
@@ -20270,7 +20281,8 @@
       "text41b257b886b2": "Прочитајте уговор",
       "text08f3c151d323": "Затражите прилагођене услове",
       "texta0990a4a86dc": "Вајт-лејбл: ваш AI производ на Platinum.dev compute-у",
-      "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у."
+      "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у.",
+      "text7971dd752669": "Подсетници"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20858,6 +20870,18 @@
     "noticeReconnectBody": "Ниједан налог није овлашћен. Поново повежите један на картици Налози.",
     "noticeErrorTitle": "Kortix није могао да учита {name}",
     "noticeErrorBody": "Последњи покушај читања алата није успео. Проверите акредитив и подешавања везе, па покушајте поново.",
+    "moveTitle": "Premesti {app} sa servisa {provider}",
+    "moveBody": "Kortix gasi {provider}. Prijavi se jednom na {app} i ovaj konektor radi na Kortixu. Agenti, okidači i kortix.yaml i dalje koriste {slug}.",
+    "moveNoneTitle": "{name} radi preko servisa {provider}",
+    "moveNoneBody": "Kortix još nema direktnu vezu za {name}. Nastavlja da radi preko servisa {provider}.",
+    "moveAction": "Premesti na Kortix",
+    "moveFinishAction": "Završi premeštanje",
+    "moveConfirmTitle": "Premestiti na {app}?",
+    "moveConfirmBody": "{count, plural, one {# drugi nalog ovog konektora se ponovo prijavljuje posle premeštanja.} few {# druga naloga ovog konektora se ponovo prijavljuju posle premeštanja.} other {# drugih naloga ovog konektora se ponovo prijavljuje posle premeštanja.}} {provider} radi dok ne završiš prijavu.",
+    "moveNoSignIn": "{app} nema prijavu jednim klikom na ovom okruženju.",
+    "moveDone": "{name} sada radi na Kortixu.",
+    "movesBannerTitle": "{count, plural, one {# konektor može da pređe} few {# konektora mogu da pređu} other {# konektora može da pređe}} na Kortix",
+    "movesBannerBody": "Kortix gasi Pipedream i Composio. Otvori svaki i izaberi „Premesti na Kortix“:",
     "nameLabel": "Назив",
     "toolsEmptyBody": "{name} није пријавио ниједан алат. Појавиће се овде након повезивања.",
     "stripStatus": "Status",
@@ -21092,7 +21116,7 @@
     "lastSeen": "последњи пут виђен {time}",
     "scopeLine": "Само ви можете да га користите, из својих приватних сесија, у сваком пројекту.",
     "capabilitiesTitle": "Шта Kortix може да користи",
-    "capabilitiesHint": "Изабрано када сте повезали овај рачунар. Повежите га поново да бисте то променили.",
+    "capabilitiesHint": "Uključi ili isključi bilo koji u svakom trenutku. Sledeći zahtev to poštuje.",
     "capability": {
       "filesystem": "Датотеке",
       "filesystemDescription": "Ваша почетна фасцикла",
@@ -21102,7 +21126,8 @@
       "desktopDescription": "Преглед и коришћење апликација",
       "allowed": "Дозвољено",
       "notAllowed": "Није дозвољено",
-      "needsSetup": "Потребно подешавање"
+      "needsSetup": "Потребно подешавање",
+      "notAvailable": "Trenutno nije dostupno na ovom računaru"
     },
     "runInBackground": "Ради у позадини",
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
@@ -21113,10 +21138,10 @@
     "connectAnother": "Повежи други рачунар",
     "approvingAs": "Одобраваш као {email}. Рачунар се везује за овај налог.",
     "alreadyConnected": "{name} је већ повезан са твојим налогом",
-    "alreadyConnectedHint": "Одобри да га поново повежеш са новим кључем и приступом који изабереш. Пројекти и дељења остају.",
+    "alreadyConnectedHint": "Odobri da ga ponovo povežeš novim ključem. Njegovi projekti i deljenja ostaju.",
     "alreadyConnectedLive": "Тренутно је на мрежи. Одобри да га пребациш на овај захтев: тренутна веза се прекида. Пројекти и дељења остају.",
     "reconnect": "Повежи поново",
-    "accessHint": "Изабрани приступ остаје активан док га не опозовете.",
+    "accessHint": "Kortix agenti dobijaju sva tri. Isključi bilo koji kasnije u Podešavanja › Moj računar.",
     "setup": {
       "title": "Заврши подешавање рачунара",
       "hint": "macOS једном тражи сваку дозволу испод. Иду Kortix-у, па ништа више не пита док агент ради.",
@@ -21141,7 +21166,8 @@
       "removeAll": "Уклони све",
       "confirmTitle": "Уклонити све старије везе?",
       "confirmDescription": "Kortix их уклања заједно са налозима из свих пројеката. Рачунар који још користи неку може поново да се повеже."
-    }
+    },
+    "capabilitiesSaved": "Pristup ažuriran"
   },
   "messageFrom": {
     "from": "Od",
@@ -21227,6 +21253,42 @@
     "downloadFailed": "Преузимање {name} није успело",
     "folderCreated": "Фасцикла је направљена",
     "folderFailed": "Прављење фасцикле није успело",
+    "newFile": "Нова датотека",
+    "fileNameLabel": "Назив датотеке",
+    "nameTaken": "{name} већ постоји у овој фасцикли.",
+    "untitledFolder": "Неименована фасцикла",
+    "untitledFile": "bez-naziva.md",
+    "uploadsInProgress": "Отпремање {done} од {total}",
+    "uploadsComplete": "{count, plural, one {# отпремање завршено} few {# отпремања завршена} other {# отпремања завршено}}",
+    "uploadsFailedCount": "{count, plural, one {# отпремање није успело} few {# отпремања нису успела} other {# отпремања није успело}}",
+    "uploadsToggle": "Прикажи или сакриј отпремања",
+    "uploadsDismiss": "Затвори отпремања",
+    "uploadRetry": "Покушај поново",
+    "uploadFolder": "Отпреми фасциклу",
+    "uploadingFile": "Отпремање: {name}",
+    "openFolder": "Отвори фасциклу",
+    "uploadTreeTitle": "{count, plural, one {Отпремити # датотеку из „{name}“?} few {Отпремити # датотеке из „{name}“?} other {Отпремити # датотека из „{name}“?}}",
+    "uploadTreesTitle": "{folders, plural, one {Отпремити {count} датотека из # фасцикле?} other {Отпремити {count} датотека из # фасцикли?}}",
+    "uploadTreeDescription": "Фасцикле се овде праве поново, а датотеке иду у њих.",
+    "dropHint": "Датотеке и целе фасцикле. Фасцикле задржавају своју структуру.",
+    "clipboardMoving": "Премештање: {name}",
+    "clipboardCopying": "Копирање: {name}",
+    "select": "Изабери",
+    "selectAll": "Изабери све",
+    "deselectAll": "Поништи избор",
+    "selectedCount": "Изабрано: {count}",
+    "downloadZipCount": "{count, plural, one {Преузми # ставку као zip} few {Преузми # ставке као zip} other {Преузми # ставки као zip}}",
+    "copyItems": "Копирај",
+    "copyCount": "{count, plural, one {Копирај # ставку} few {Копирај # ставке} other {Копирај # ставки}}",
+    "moveItems": "Премести",
+    "moveCount": "{count, plural, one {Премести # ставку} few {Премести # ставке} other {Премести # ставки}}",
+    "deleteCount": "{count, plural, one {Обриши # ставку} few {Обриши # ставке} other {Обриши # ставки}}",
+    "deleteManyTitle": "{count, plural, one {Обрисати # ставку?} few {Обрисати # ставке?} other {Обрисати # ставки?}}",
+    "deleteManyDescription": "Уклањају се из Drive-а и из сваке сесије која их користи. Ово се не може опозвати.",
+    "clipboardMovingMany": "{count, plural, one {Премештање # ставке} other {Премештање # ставки}}",
+    "clipboardCopyingMany": "{count, plural, one {Копирање # ставке} other {Копирање # ставки}}",
+    "pasted": "{count, plural, one {Налепљена # ставка} few {Налепљене # ставке} other {Налепљено # ставки}}",
+    "zipFailed": "Zip није направљен {message}",
     "renamed": "Преименовано",
     "renameFailed": "Преименовање није успело",
     "deleted": "Обрисано",
@@ -21272,7 +21334,7 @@
     "versionDeleted": "{count, plural, one {# датотека обрисана} few {# датотеке обрисане} other {# датотека обрисано}}",
     "sessionChipLabel": "{count, plural, one {# диск} few {# диска} other {# дискова}}",
     "sessionChipTitle": "Дискови у овој сесији",
-    "sessionChipDescription": "Датотеке овде се синхронизују са Диском за неколико секунди.",
+    "sessionCanUse": "Ова сесија може да користи",
     "readOnly": "Само читање",
     "openDrive": "Отвори Диск",
     "unavailableTitle": "Drive je isključen za ovaj projekat",
@@ -21358,7 +21420,6 @@
     "myFolderHint": "Твоја фасцикла: приватна док је не поделиш, и твоја радна површина у твојим сесијама",
     "sharedWithMeHint": "Фасцикле које су други поделили са тобом",
     "sessionNoFolders": "У овој сесији није монтирана ниједна фасцикла.",
-    "sessionDesktop": "Твоја фасцикла (радна површина)",
     "folderAccessDescription": "Изабери ко може да отвори ову фасциклу и све у њој. Сесија добија фасциклу када њен агент, њен пројекат или особа која ју је покренула има приступ.",
     "whoCanAccess": "Ко има приступ",
     "whoCanAccessFolder": "Ко може да приступи фасцикли {name}",
@@ -21834,7 +21895,7 @@
       "createdBody": "Kortix приказује овај токен само једном. Свако ко га има може да региструје рачунаре у ову организацију док га не опозовеш.",
       "installTitle": "Инсталирај на сваком рачунару",
       "installBody": {
-        "windows": "Pokreni kao administrator ili rasporedi preko Intune ili grupnih smernica. Računar počinje snimanje pri sledećoj prijavi.",
+        "windows": "Nalepite u Komandnu liniju otvorenu kao administrator. Preuzima instalacioni program, instalira ga i javlja kada je gotovo. Računar snima od sledeće prijave na Windows. Za Intune ili smernice grupe pogledajte IT vodič.",
         "macos": "Pokreni u Terminalu ili rasporedi paket preko MDM-a. Osoba jednom dozvoljava snimanje ekrana, osim ako ga PPPC profil ne dodeli.",
         "linux": "Pokreni na desktopu sa X11. Računar počinje snimanje pri sledećoj prijavi. Wayland još nije podržan."
       },

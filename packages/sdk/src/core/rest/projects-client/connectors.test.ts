@@ -3,6 +3,8 @@ import { configureKortix } from '../../http/config';
 import {
   activateConnection,
   checkMcpServerSignIn,
+  listConnectorMoves,
+  moveConnector,
   addComputerToProject,
   createConnector,
   deleteConnector,
@@ -1584,4 +1586,41 @@ test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is o
     method: 'POST',
     body: { url: 'https://mcp.example.test/mcp' },
   });
+});
+
+test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each moves to', async () => {
+  const move = {
+    slug: 'gmail',
+    name: 'Gmail',
+    provider: 'composio' as const,
+    app: 'gmail',
+    to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
+    connection_id: null,
+    signed_in: false,
+    accounts: 1,
+  };
+  nextResponse = { status: 200, body: { moves: [move] } };
+  const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
+  expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
+  expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
+});
+
+test('moveConnector POSTs the account to sign in on and returns the next step', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'sign_in', connection_id: 'c1', to: { slug: 'gmail', name: 'Gmail', url: 'https://gmailmcp.googleapis.com/mcp/v1' } },
+  };
+  const result: import('./connectors').ConnectorMoveResult = await moveConnector('p1', 'gmail work', { connectionId: 'c1' });
+  expect(result.status).toBe('sign_in');
+  expect(result.connection_id).toBe('c1');
+  expect(last()).toEqual({
+    url: 'http://test.local/projects/p1/connectors/gmail%20work/move',
+    method: 'POST',
+    body: { connection_id: 'c1' },
+  });
+  nextResponse = { status: 200, body: { status: 'moved' } };
+  await moveConnector('p1', 'gmail');
+  expect(last().body).toEqual({});
 });

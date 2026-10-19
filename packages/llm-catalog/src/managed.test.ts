@@ -5,7 +5,7 @@ import {
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   PLATFORM_DEFAULT_MODEL_ID,
-  VERIFIED_US_MANAGED_ENDPOINTS,
+  VERIFIED_MANAGED_ENDPOINTS,
   catalogModelForWireModel,
   getManagedModel,
   isManagedModelId,
@@ -14,18 +14,15 @@ import {
 const served = [
   'deepseek-v4.1-flash',
   'glm-5.3-flash',
-  'kimi-k3',
 ];
 
-// OpenRouter endpoints whose US datacenter is confirmed on 2026-09-24: the
-// provider lists US headquarters AND US datacenters (/api/v1/providers), or the
-// endpoint tag names the US region (`/us`). US headquarters alone is not enough.
-// Every bundled route pins a ZDR endpoint. Vision is per model.
+// Every bundled route pins endpoints from OpenRouter's ZDR feed that passed the
+// 2026-10-19 probes (README). Vision is per model.
 describe('managed catalog', () => {
   test('serves the selected managed models', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual(served);
     expect(PLATFORM_DEFAULT_MODEL_ID).toBe('deepseek-v4.1-flash');
-    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('kimi-k3');
+    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('deepseek-v4.1-flash');
   });
 
   test('every managed model has explicit credit pricing and never shows an upstream brand', () => {
@@ -49,7 +46,7 @@ describe('managed catalog', () => {
     });
   });
 
-  test('every managed route excludes Morph and pins ZDR endpoints in US datacenters', () => {
+  test('every managed route pins verified ZDR endpoints and excludes Morph', () => {
     for (const model of MANAGED_MODELS) {
       expect(model.transport).toBe('openrouter');
       const route = model.openrouterProvider as {
@@ -58,8 +55,8 @@ describe('managed catalog', () => {
       };
       expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
       expect(route.only.length, model.id).toBeGreaterThanOrEqual(1);
-      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS as readonly string[], `${model.id} ${tag}`).toContain(tag);
-      expect(route.only, model.id).not.toContain('morph');
+      for (const tag of route.only) expect(VERIFIED_MANAGED_ENDPOINTS as readonly string[], `${model.id} ${tag}`).toContain(tag);
+      expect(route.only.some((tag) => tag.startsWith('morph')), model.id).toBe(false);
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
       expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);
       expect(route.max_price.completion).toBeGreaterThanOrEqual(model.pricing!.outputPerMillion);
@@ -80,22 +77,17 @@ describe('managed catalog', () => {
     }
   });
 
-  test('fallback pools exclude endpoints that failed the 2026-09-24 residency or image probes', () => {
+  test('fallback pools exclude endpoints that failed the 2026-10-19 probes', () => {
     const only = (id: string) => (getManagedModel(id)?.openrouterProvider as { only: string[] }).only;
-    // Non-US or unknown provider location.
-    for (const id of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) {
-      expect(only(id)).not.toContain('morph');
-      for (const tag of ['z-ai/fp8', 'siliconflow/fp8', 'inceptron/fp8', 'nextbit/fp8', 'moonshotai/mxfp4', 'dekallm', 'relace', 'near-ai/fp8', 'digitalocean', 'reka/fp8', 'makora']) {
-        expect(only(id), `${id} ${tag}`).not.toContain(tag);
-      }
+    // 429 from a shared pool on most requests.
+    for (const tag of ['coreweave/fp8', 'coreweave/nvfp4', 'decart/fp4', 'baseten', 'baseten/fp8', 'baseten/fp8/us']) {
+      expect(only('deepseek-v4.1-flash'), tag).not.toContain(tag);
+      expect(only('glm-5.3-flash'), tag).not.toContain(tag);
     }
-    // US headquarters without a confirmed US datacenter.
-    for (const tag of ['wafer', 'together', 'parasail/fp8', 'io-net/fp8', 'novita/fp8', 'phala', 'phala/fp8', 'baseten/fp8', 'fireworks', 'deepinfra/fp8', 'deepinfra/bf16', 'modal']) {
-      for (const id of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) expect(only(id), `${id} ${tag}`).not.toContain(tag);
-    }
-    // HTTP 400 on image input (confirmed-US, still excluded).
-    expect(only('glm-5.3-flash')).not.toContain('venice');
-    expect(only('deepseek-v4.1-flash')).not.toContain('venice/fp8');
+    // Garbled text (GLM) or failed image input.
+    expect(only('deepseek-v4.1-flash')).not.toContain('relace');
+    for (const tag of ['relace', 'digitalocean', 'sail-research/us', 'sail-research/fp4']) expect(only('glm-5.3-flash')).not.toContain(tag);
+    expect(getManagedModel('kimi-k3')).toBeUndefined();
     expect(getManagedModel('morph-dsv4flash')).toBeUndefined();
   });
 

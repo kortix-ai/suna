@@ -144,9 +144,9 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     if (!result.ok) expect(result.errorCode).toBe('subscription_required');
   });
 
-  // `none` is the tier without managed models. Free has them since #10147.
-  test('an account without managed models never receives an LLM admission hold', async () => {
-    accountTier = 'none';
+  // `none` and `free` are the plans without managed models.
+  test.each(['none', 'free'])('the %s tier (no managed models) never receives an LLM admission hold', async (tier) => {
+    accountTier = tier;
 
     const result = await authorizeRequest('good');
 
@@ -158,8 +158,8 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     }
   });
 
-  test.each(['credits', 'free'])('the %s tier keeps the LLM admission hold', async (tier) => {
-    accountTier = tier;
+  test('the credits tier keeps the LLM admission hold', async () => {
+    accountTier = 'credits';
 
     const result = await authorizeRequest('good');
 
