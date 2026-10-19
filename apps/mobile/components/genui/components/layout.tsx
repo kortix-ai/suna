@@ -23,10 +23,14 @@ export const kids = (value: unknown): GenuiNode[] => (Array.isArray(value) ? (va
  * image), and a "2 / 5" counter under the page, as the markdown image gallery. Every page keeps its caption.
  */
 function GenuiGallery({ images, renderChild }: { images: GenuiNode[]; renderChild: GenuiComponentProps['renderChild'] }) {
+  const { t } = useTranslation();
   const [width, setWidth] = useState(0);
   const [page, setPage] = useState(0);
   return (
-    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} accessibilityLabel={`${images.length} images`}>
+    <View
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      accessibilityLabel={t('genui.imageCount', { defaultValue: '{{count}} images', count: images.length })}
+    >
       {width > 0 ? (
         <ScrollView
           horizontal

@@ -1207,6 +1207,8 @@
     "chartTapHint": "タップして値を表示",
     "checklistReady": "{{done}}/{{total}} 完了",
     "directions": "経路",
+    "imageCount_one": "{{count}}枚の画像",
+    "imageCount_other": "{{count}}枚の画像",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",
@@ -1215,6 +1217,7 @@
     "pieFocus": "{{label}}は合計の{{percent}}%",
     "pieOfTotal": "{{total}}のうち{{value}}",
     "showData": "データを表示",
+    "unavailable": "このコンテンツを表示できませんでした。",
     "website": "ウェブサイト"
   },
   "updateRequired": {

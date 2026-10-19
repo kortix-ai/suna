@@ -39,10 +39,13 @@ mock.module('react-native-svg', () => ({ default: host('svg'), G: host('svg-g'),
 mock.module('expo-router/react-navigation', () => ({ DefaultTheme: {}, DarkTheme: {} }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 /** i18next's two call shapes: `t(key, fallback)` and `t(key, { defaultValue, ...values })`. */
-const translate = (_key: string, options: string | Record<string, unknown>) =>
-  typeof options === 'string'
+const translated: { key: string; options: string | Record<string, unknown> }[] = [];
+const translate = (key: string, options: string | Record<string, unknown>) => {
+  translated.push({ key, options });
+  return typeof options === 'string'
     ? options
     : String(options.defaultValue).replace(/{{(\w+)}}/g, (_m, name: string) => String(options[name]));
+};
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: { language: 'en' } }) }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/badge', () => ({ Badge: host('badge') }));
@@ -61,7 +64,13 @@ mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('lo
 mock.module('@/components/kortix/settings-list', () => ({ SettingsGroup: host('settings-group'), SettingsRow: host('settings-row') }));
 mock.module('./map/map-sheet', () => ({ MapSheet: host('map-sheet') }));
 // The Map module loads native modules (clipboard, sheet); genui-map.test.tsx renders it.
-mock.module('./components/map', () => ({ GenuiMap: host('genui-map') }));
+const mapThrows = { on: false };
+mock.module('./components/map', () => ({
+  GenuiMap: (props: HostProps) => {
+    if (mapThrows.on) throw new Error('map failed');
+    return host('genui-map')(props);
+  },
+}));
 // The chart's Show data sheet loads gorhom and Reanimated internals; components/charts.test.tsx covers it.
 mock.module('@/components/kortix/sheet', () => ({ KortixBottomSheetModal: host('sheet') }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetScrollView: host('sheet-scroll') }));
@@ -99,6 +108,8 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
   opened.length = 0;
+  translated.length = 0;
+  mapThrows.on = false;
   motion.reduced = false;
   motion.timings.length = 0;
   act(() => {
@@ -412,6 +423,8 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
     const root = render(`root = Stack([${ids.join(', ')}])\n${ids.map(img).join('\n')}`);
     const gallery = all(root, 'view').find((n) => n.props.accessibilityLabel === '7 images')!;
+    // The label is translated, with the count for the plural form.
+    expect(translated.find((call) => call.key === 'genui.imageCount')?.options).toMatchObject({ count: 7 });
     // Pages need the measured width before they exist.
     act(() => (gallery.props.onLayout as (e: unknown) => void)({ nativeEvent: { layout: { width: 320 } } }));
     const [pager] = all(root, 'scroll');
@@ -774,6 +787,67 @@ list = Checklist("Bring", ["Passport", "Visa"])`;
       act(() => tree?.unmount());
       tree = undefined;
     }
+  });
+
+  describe('block error boundary', () => {
+    const MAP = `root = Stack([m])
+m = Map([a], "places tool")
+a = Marker(19.04, 72.82, "Place A")`;
+    const BADGE = `root = Stack([b])
+b = Badge("Sibling")`;
+    /** React logs every caught render error; the throws here are the point of the test. */
+    const quiet = <T,>(run: () => T): T => {
+      const original = console.error;
+      console.error = () => {};
+      try {
+        return run();
+      } finally {
+        console.error = original;
+      }
+    };
+    const failing = () => {
+      throw new Error('markdown failed');
+    };
+    const two = (first: string, renderFirst: (markdown: string) => React.ReactNode) => (
+      <>
+        <GenuiMessageBlock code={first} version={1} isStreaming={false} renderMarkdown={renderFirst} />
+        <GenuiMessageBlock code={BADGE} version={1} isStreaming={false} renderMarkdown={fallback} />
+      </>
+    );
+    const notes = (root: ReactTestInstance) =>
+      all(root, 'text').filter((n) => texts(n).join('') === 'This content could not be displayed.');
+
+    test('a throw the SDK cannot contain shows the muted note for that block only; the sibling block still renders', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, failing)))));
+      const [note] = notes(tree!.root);
+      expect(note).toBeDefined();
+      expect(note!.props.variant).toBe('muted');
+      expect(translated.some((call) => call.key === 'genui.unavailable')).toBe(true);
+      expect(texts(tree!.root)).toContain('Sibling');
+    });
+
+    test('a throwing component falls back inside the SDK to its markdown; the sibling block still renders', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, fallback)))));
+      expect(all(tree!.root, 'fallback')).toHaveLength(1);
+      expect(notes(tree!.root)).toHaveLength(0);
+      expect(texts(tree!.root)).toContain('Sibling');
+    });
+
+    test('the boundary resets when the block source changes', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, failing)))));
+      expect(notes(tree!.root)).toHaveLength(1);
+      act(() => tree!.update(two(`root = Stack([b])\nb = Badge("Fixed")`, failing)));
+      expect(notes(tree!.root)).toHaveLength(0);
+      expect(texts(tree!.root)).toEqual(expect.arrayContaining(['Fixed', 'Sibling']));
+    });
+
+    test('a block keeps web my-4 spacing', () => {
+      const root = render(BADGE);
+      expect(className(all(root, 'view')[0]!)).toBe('my-4');
+    });
   });
 
   // Chart behavior (header row, legend, Show data sheet, pie layouts) lives in components/charts.test.tsx.

@@ -1207,6 +1207,8 @@
     "chartTapHint": "Touchez pour lire une valeur",
     "checklistReady": "{{done}}/{{total}} prêts",
     "directions": "Itinéraire",
+    "imageCount_one": "{{count}} image",
+    "imageCount_other": "{{count}} images",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible",
     "openImage": "Ouvrir l'image",
@@ -1215,6 +1217,7 @@
     "pieFocus": "{{label}} représente {{percent}} % du total",
     "pieOfTotal": "{{value}} sur {{total}}",
     "showData": "Afficher les données",
+    "unavailable": "Ce contenu n'a pas pu être affiché.",
     "website": "Site web"
   },
   "updateRequired": {

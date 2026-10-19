@@ -221,6 +221,22 @@ b = Series("Mobile", [2, 1])`);
     expect(texts(root)).toEqual(expect.arrayContaining(['Other', '300 USD · 4%']));
   });
 
+  test('the donut center total is one line that shrinks to fit the disc', () => {
+    const root = render(pie(null, [['A', 70000], ['B', 30000], ['C', 20000]]));
+    const center = all(root, 'text').find((n) => texts(n).join('') === '120,000')!;
+    expect(center.props).toMatchObject({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.5 });
+  });
+
+  test('donut values are foreground ink, as on web; ring rows after the first stay muted', () => {
+    const value = (root: ReactTestInstance, text: string) => String(all(root, 'text').find((n) => texts(n).join('') === text)!.props.className);
+    const donut = render(pie(null));
+    for (const text of ['4,200', '300']) expect(value(donut, text)).toContain('text-foreground');
+    act(() => tree!.unmount());
+    const ring = render(pie('ring'));
+    expect(value(ring, '4,200')).toContain('text-foreground');
+    expect(value(ring, '300')).toContain('text-muted-foreground');
+  });
+
   test('stack and ring list every slice with its value', () => {
     const stack = render(pie('stack'));
     expect(texts(stack)).toEqual(expect.arrayContaining(['Compute', '4,200 · 58%', 'Other', '300 · 4%']));

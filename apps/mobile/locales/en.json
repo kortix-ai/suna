@@ -1209,6 +1209,8 @@
     "chartTapHint": "Tap to read a value",
     "checklistReady": "{{done}}/{{total}} ready",
     "directions": "Directions",
+    "imageCount_one": "{{count}} image",
+    "imageCount_other": "{{count}} images",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",
@@ -1217,6 +1219,7 @@
     "pieFocus": "{{label}} is {{percent}}% of the total",
     "pieOfTotal": "{{value}} of {{total}}",
     "showData": "Show data",
+    "unavailable": "This content could not be displayed.",
     "website": "Website"
   },
   "updateRequired": {

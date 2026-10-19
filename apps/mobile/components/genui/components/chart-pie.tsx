@@ -281,7 +281,8 @@ function PieFigure({
       <View accessible accessibilityRole="image" accessibilityLabel={a11y} style={{ width: SMALL_DISC, height: SMALL_DISC }}>
         {disc(SMALL_DISC, ring ? SMALL_DISC * 0.46 : SMALL_DISC * 0.34)}
         <View pointerEvents="none" className="absolute inset-0 items-center justify-center px-3">
-          <Text variant="h4" className="tabular-nums">
+          {/* The text box is ~76pt wide: a long total ("120,000") shrinks to one line instead of wrapping. */}
+          <Text variant="h4" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} className="tabular-nums">
             {shown ? `${shown.percent}%` : ring ? `${lead?.percent ?? 0}%` : format(total)}
           </Text>
           {shown ? (
@@ -311,7 +312,7 @@ function PieFigure({
                 <Text variant="small" numberOfLines={1} className={`flex-1 leading-5 ${quiet ? 'text-muted-foreground' : ''}`}>
                   {slice.label}
                 </Text>
-                <Text variant="muted" className={`font-mono text-xs tabular-nums ${ring ? (quiet ? 'text-muted-foreground' : 'text-foreground') : ''}`}>
+                <Text variant="muted" className={`font-mono text-xs tabular-nums ${quiet ? 'text-muted-foreground' : 'text-foreground'}`}>
                   {format(slice.value)}
                 </Text>
                 {ring ? null : <Text variant="muted" className="w-9 text-right font-mono text-xs tabular-nums">{`${slice.percent}%`}</Text>}

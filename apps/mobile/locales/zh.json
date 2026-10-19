@@ -1207,6 +1207,8 @@
     "chartTapHint": "点按查看数值",
     "checklistReady": "已完成 {{done}}/{{total}}",
     "directions": "路线",
+    "imageCount_one": "{{count}} 张图片",
+    "imageCount_other": "{{count}} 张图片",
     "map": "地图",
     "mapUnavailable": "地图不可用",
     "openImage": "打开图片",
@@ -1215,6 +1217,7 @@
     "pieFocus": "{{label}} 占总数的 {{percent}}%",
     "pieOfTotal": "{{total}} 中的 {{value}}",
     "showData": "显示数据",
+    "unavailable": "无法显示此内容。",
     "website": "网站"
   },
   "updateRequired": {
