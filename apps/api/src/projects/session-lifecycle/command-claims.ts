@@ -58,7 +58,11 @@ export async function claimDueLifecycleCommands(input: {
         )` : undefined,
         or(
           and(
-            eq(sessionLifecycleCommands.status, 'queued'),
+            // A literal, not a bound parameter: under a generic prepared plan
+            // `status = $n` cannot prove the predicate of the partial index
+            // `idx_session_lifecycle_commands_claimable`, and the claim then
+            // detoasts the payload of every held prompt on each tick.
+            sql`${sessionLifecycleCommands.status} = 'queued'`,
             or(
               isNull(sessionLifecycleCommands.lockedUntil),
               lte(sessionLifecycleCommands.lockedUntil, now),
