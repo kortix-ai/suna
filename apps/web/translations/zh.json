@@ -21967,5 +21967,16 @@
       "showRevoked": "显示已撤销（{count}）",
       "hideRevoked": "隐藏已撤销"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "条件 {value0} — 运算符",
+    "equals": "等于",
+    "not": "不等于",
+    "in": "等于其中之一",
+    "prefix": "开头为",
+    "notPrefix": "开头不为",
+    "exists": "存在",
+    "missing": "不存在",
+    "listPlaceholder": "值 1, 值 2"
   }
 }

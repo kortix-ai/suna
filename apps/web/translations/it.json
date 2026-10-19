@@ -21967,5 +21967,16 @@
       "showRevoked": "Mostra revocati ({count})",
       "hideRevoked": "Nascondi revocati"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "Condizione {value0} — operatore",
+    "equals": "è",
+    "not": "non è",
+    "in": "è uno tra",
+    "prefix": "inizia con",
+    "notPrefix": "non inizia con",
+    "exists": "esiste",
+    "missing": "non esiste",
+    "listPlaceholder": "valore 1, valore 2"
   }
 }

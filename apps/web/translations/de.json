@@ -21967,5 +21967,16 @@
       "showRevoked": "Widerrufene anzeigen ({count})",
       "hideRevoked": "Widerrufene ausblenden"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "Bedingung {value0} — Operator",
+    "equals": "ist",
+    "not": "ist nicht",
+    "in": "ist eines von",
+    "prefix": "beginnt mit",
+    "notPrefix": "beginnt nicht mit",
+    "exists": "existiert",
+    "missing": "existiert nicht",
+    "listPlaceholder": "Wert 1, Wert 2"
   }
 }

@@ -21967,5 +21967,16 @@
       "showRevoked": "Прикажи опозване ({count})",
       "hideRevoked": "Сакриј опозване"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "Услов {value0} — оператор",
+    "equals": "је",
+    "not": "није",
+    "in": "је једно од",
+    "prefix": "почиње са",
+    "notPrefix": "не почиње са",
+    "exists": "постоји",
+    "missing": "не постоји",
+    "listPlaceholder": "вредност 1, вредност 2"
   }
 }

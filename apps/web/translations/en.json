@@ -21967,5 +21967,16 @@
       "showRevoked": "Show revoked ({count})",
       "hideRevoked": "Hide revoked"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "Condition {value0} — operator",
+    "equals": "is",
+    "not": "is not",
+    "in": "is one of",
+    "prefix": "starts with",
+    "notPrefix": "does not start with",
+    "exists": "exists",
+    "missing": "does not exist",
+    "listPlaceholder": "value 1, value 2"
   }
 }

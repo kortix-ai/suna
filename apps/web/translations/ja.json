@@ -21967,5 +21967,16 @@
       "showRevoked": "取り消し済みを表示 ({count})",
       "hideRevoked": "取り消し済みを隠す"
     }
+  },
+  "triggerConditions": {
+    "operatorLabel": "条件 {value0} — 演算子",
+    "equals": "次と一致する",
+    "not": "次と一致しない",
+    "in": "次のいずれかと一致する",
+    "prefix": "次で始まる",
+    "notPrefix": "次で始まらない",
+    "exists": "存在する",
+    "missing": "存在しない",
+    "listPlaceholder": "値 1, 値 2"
   }
 }

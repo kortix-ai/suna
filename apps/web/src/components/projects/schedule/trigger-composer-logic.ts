@@ -27,7 +27,7 @@ import {
   describeCadence,
   describeOneOff,
 } from './schedule-copy';
-import type { ConditionRow } from './schedule-fields';
+import { type ConditionRow, conditionNeedsValue } from './schedule-fields';
 
 /** A block of the composer. Problems point at one, in the order a person meets them. */
 export type ComposerBlock = 'when' | 'then' | 'name' | 'options';
@@ -272,9 +272,12 @@ export function validate(
   if (draft.mode === 'keyed' && !draft.sessionKey.trim())
     add('options', tI18nComplete.raw('text473d5c3c6169'));
   // A half-filled condition is a silent no-op otherwise — say so instead.
+  // An exists/missing row has no value field, so its path alone completes it.
   if (
     draft.kind !== 'cron' &&
-    draft.conditions.some((row) => Boolean(row.path.trim()) !== Boolean(row.value.trim()))
+    draft.conditions.some(
+      (row) => Boolean(row.path.trim()) !== (!conditionNeedsValue(row.operator) || Boolean(row.value.trim())),
+    )
   )
     add('options', tI18nComplete.raw('text8f4597a69c3c'));
   return problems;

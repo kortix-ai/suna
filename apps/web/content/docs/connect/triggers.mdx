@@ -442,7 +442,7 @@ await reminders.remove(reminder.id);
 | `session_mode` | all | no | `fresh`; `reuse` on a monitor | `fresh`, `reuse`, `pinned` or `keyed`. See [Session strategy](#session-strategy). |
 | `session_id` | `pinned` | yes | — | The session to re-prompt. |
 | `session_key` | `keyed` | yes | — | Template. Setting it alone implies `keyed`. |
-| `filter` | all | no | — | Map of dotted path to expected string. See [Templates and filters](#templates-and-filters). |
+| `filter` | all | no | — | Map of dotted path to a value it must equal, or to one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. See [Templates and filters](#templates-and-filters). |
 | `max_runs_per_hour` | all | no | `60` | Whole number, at least 1. Runs the trigger may start in any 60 minutes. See [Pause and limits](#pause-and-limits). |
 | `max_runs_per_day` | all | no | no cap | Whole number, at least 1. Runs the trigger may start in a UTC day. |
 | `cron` | `cron` | one of `cron`, `run_at` | — | 6-field expression, at most once a minute. |
@@ -487,12 +487,41 @@ A frequent trigger can roll its session on a calendar boundary so its history st
 | Monitor | `line.*` (`line.raw` for a line that is not JSON), `monitor.slug`, `monitor.seq`, `monitor.emitted_at`, `monitor.kind` (`event` or `lifecycle`) |
 | Manual fire | `fired_at`, `source` (`manual`), `actor`. An `event` trigger gets an empty `event.data`. |
 
-`filter` maps dotted paths to expected strings. A fire runs only when every path matches; a missing path does not match. A webhook that does not match answers `200` with `status: skipped`. Use a filter to break loops, for example when a source reports the agent's own reply as a new event:
+`filter` maps dotted paths to conditions. A fire runs only when every condition matches. A webhook that does not match answers `200` with `status: skipped`. Values compare as text, so `true`, `3` and `"3"` are the same. A missing or `null` path reads as an empty string.
+
+| Condition | Matches when the value at the path |
+| --- | --- |
+| `"inbound"` (a plain value) | equals it. A missing path does not match. |
+| `{ not: [a, b] }` | equals none of them. A missing path matches. |
+| `{ in: [a, b] }` | equals one of them. |
+| `{ prefix: [a, b] }` | starts with one of them. |
+| `{ not_prefix: [a, b] }` | starts with none of them. A missing path matches. |
+| `{ exists: true }` | is present and not `null`. `false` matches a missing or `null` path. |
+
+Each path takes one condition. `not`, `in`, `prefix` and `not_prefix` take one value or a list. `kortix validate` and the API reject an unknown operator, two operators on one path, and an empty list.
+
+Use a filter to break loops. A source that reports the agent's own reply as a new event:
 
 ```yaml
 filter:
   "body.data.direction": "inbound"
 ```
+
+A push webhook whose agent pushes fixes on `kortix/*` branches. It skips the agent's pushes and still fires for everyone else's:
+
+```yaml
+filter:
+  "body.ref": { not_prefix: "refs/heads/kortix/" }
+  "body.sender.login": { not: [kortix-bot] }
+```
+
+From the CLI, `--filter path=value` sets equality and `--filter path:operator=value` sets an operator. List operators take comma-separated values; `exists` takes `true` or `false`:
+
+```bash
+kortix triggers set on-push --filter body.ref:not_prefix=refs/heads/kortix/ --filter body.sender.login:not=kortix-bot
+```
+
+`kortix triggers fire <slug> --payload <json> --dry-run` prints the filter verdict for a payload without firing.
 
 ## Session access
 
