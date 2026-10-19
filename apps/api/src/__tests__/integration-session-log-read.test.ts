@@ -202,7 +202,10 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
   });
 
   test('a session whose threads fromV1 did not build (the pi adapter writes them natively) is served from the mirror', async () => {
+    // The mirror is history from before the flag: with it on, the capture writes no v1 row (P8).
+    await setFlag(false);
     await storeBothWays(nativeSession, 6, { nativeThreads: true });
+    await setFlag(true);
     const body = (await (await get(`${base(nativeSession)}/transcript?shape=sync`)).json()) as { captured_at: string };
     const [mirror] = await db.select({ capturedAt: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, nativeSession));
     expect(body.captured_at).toBe(new Date(mirror!.capturedAt).toISOString());
