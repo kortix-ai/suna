@@ -433,6 +433,12 @@ export const HARNESS_TOOL_NAMES = [
  * were re-added once (#9902) and removed again; a test pins them out.
  */
 export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/**
+ * Kortix tools that no longer exist. Manifests written while #9902 was live
+ * still name them (the v2 starter, v3 agent excludes). Naming one is
+ * a warning, not an error: no session can load it, so the name has no effect.
+ */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 

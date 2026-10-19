@@ -413,7 +413,7 @@ flow(
     domain: "channels",
     serial: true,
     timeoutMs: 180_000,
-    requires: ["database", "daytona", "funded"],
+    requires: ["database", "sandbox", "funded"],
     routes: [
       "POST /v1/projects/:projectId/secrets",
       "POST /v1/webhooks/telegram/:projectId",
@@ -1071,7 +1071,7 @@ flow(
   "CHN-23",
   {
     domain: "channels",
-    requires: ["daytona"],
+    requires: ["sandbox"],
     routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
   },
   async (ctx) => {

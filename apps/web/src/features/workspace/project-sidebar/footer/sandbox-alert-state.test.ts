@@ -198,12 +198,15 @@ describe('describeFailedBuild', () => {
 });
 
 describe('formatSandboxProviders', () => {
-  test('reads as prose', () => {
+  test('reads as prose, Platinum first and the legacy provider last', () => {
     expect(formatSandboxProviders([])).toBe('');
     expect(formatSandboxProviders(['daytona'])).toBe('Daytona');
-    expect(formatSandboxProviders(['daytona', 'e2b'])).toBe('Daytona and E2B');
+    expect(formatSandboxProviders(['daytona', 'platinum'])).toBe('Platinum and Daytona');
+  });
+
+  test('shows a provider with no label, such as a legacy e2b row, as its raw value', () => {
     expect(formatSandboxProviders(['daytona', 'e2b', 'platinum'])).toBe(
-      'Daytona, E2B and Platinum',
+      'Platinum, e2b and Daytona',
     );
   });
 });

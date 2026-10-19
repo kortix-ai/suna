@@ -1102,8 +1102,8 @@ flow(
     });
     if (ctx.env.target !== 'local') {
       // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
-      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
-      // enables Platinum only. Read it from the project instead of assuming a
+      // API key): dev/staging/prod enable Platinum and the legacy Daytona
+      // fallback, a PR preview enables Platinum only. Read it from the project instead of assuming a
       // provider, then prove a concrete pin works and a known-but-disabled
       // provider is refused.
       let enabled: string[] = [];
@@ -1136,7 +1136,7 @@ flow(
           throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
         }
       });
-      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      const disabled = ['platinum', 'daytona'].find((name) => !enabled.includes(name));
       if (disabled) {
         await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
@@ -1150,6 +1150,16 @@ flow(
         });
       }
     }
+    await ctx.step('pin to the discontinued e2b provider → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'e2b' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -1165,7 +1175,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -1175,7 +1185,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status(401);

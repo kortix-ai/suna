@@ -255,7 +255,7 @@ export interface RenderComposeOptions {
   /**
    * Whether "tunnel" reachability mode is selected (see reachabilityMode() in
    * self-host/tunnel.ts). When true, the `cloudflared` service is included so
-   * cloud (Daytona) sandboxes can call back to this instance with no public
+   * cloud sandboxes can call back to this instance with no public
    * domain/DNS at all. When false, it is omitted entirely — not merely
    * disabled — so an instance not using it never runs the container.
    */

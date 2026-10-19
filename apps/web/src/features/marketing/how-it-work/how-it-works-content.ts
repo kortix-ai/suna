@@ -24,7 +24,7 @@
  *     Never write "the model never sees them". "Brokered server-side and never
  *     enters the machine" is true for CONNECTOR credentials only.
  *   - Egress is not controlled at the network. Nothing implements it.
- *   - microVM is the Platinum provider only; the default is containers. The
+ *   - microVM is the Platinum provider only; legacy Daytona is containers. The
  *     sanctioned phrasing is "its own isolated machine".
  *   - Channels are a closed enum: slack | teams | email. Telegram,
  *     WhatsApp, SMS and Discord are not channels. And `channels:` is REJECTED

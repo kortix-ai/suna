@@ -1804,7 +1804,7 @@ harnessFlow(
   'CFG-11',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
@@ -2089,7 +2089,7 @@ harnessFlow(
   'CFG-12',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_800_000,
     routes: [
       FEATURES,
@@ -2306,7 +2306,7 @@ flow(
   'CFG-13',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 900_000,
     routes: [
       FEATURES,
@@ -2566,7 +2566,7 @@ harnessFlow(
   'CFG-16',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe', 'projectSnapshots'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe', 'projectSnapshots'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,

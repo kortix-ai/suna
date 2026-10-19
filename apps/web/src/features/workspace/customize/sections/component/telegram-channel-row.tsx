@@ -132,7 +132,7 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
             <Input
               type="password"
               autoComplete="off"
-              placeholder="123456789:AA…"
+              placeholder="123456789:…"
               value={token}
               onChange={(event) => setToken(event.target.value)}
             />

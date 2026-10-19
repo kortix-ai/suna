@@ -6,6 +6,7 @@ import { testUiTranslator as t } from '@/i18n/test-translator';
 import type { ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
 
 import { defaultConfigDraft, oneLineDescription, schemaFields } from './event-trigger-copy';
+import type { ConditionRow } from './schedule-fields';
 import {
   type ComposerDraft,
   autoName,
@@ -351,6 +352,14 @@ describe('trigger composer: inline validation', () => {
     });
     expect(validate(half, ctx(), t).map((p) => p.block)).toEqual(['options']);
     expect(validate({ ...half, kind: 'cron' }, ctx(), t)).toEqual([]);
+  });
+
+  test('an exists or missing condition needs no value; a list operator does (KRTX-1721)', () => {
+    const rows = (conditions: ConditionRow[]) =>
+      validate(draftOf({ kind: 'webhook', signingKey: 'k', instruction: 'x', conditions }), ctx(), t).map((p) => p.block);
+    expect(rows([{ path: 'body.pull_request', operator: 'exists', value: '' }])).toEqual([]);
+    expect(rows([{ path: 'body.draft', operator: 'missing', value: '' }])).toEqual([]);
+    expect(rows([{ path: 'body.sender.login', operator: 'not', value: ' ' }])).toEqual(['options']);
   });
 });
 

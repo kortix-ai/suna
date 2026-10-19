@@ -8,7 +8,7 @@
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries the provider of its most recent
- * successful build; the matching Daytona, Platinum, or E2B adapter is resolved
+ * successful build; the matching Platinum or Daytona adapter is resolved
  * through the shared provider registry.
  */
 
@@ -269,7 +269,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       name: input.name || input.slug,
       isShared: false,
       source: input.source ?? 'ui',
-      provider: 'daytona',
+      provider: config.getDefaultProvider(),
       image: input.image ?? null,
       dockerfilePath: input.dockerfilePath ?? null,
       entrypoint: input.entrypoint ?? null,
@@ -613,7 +613,7 @@ function synthesizedDefault(): ResolvedTemplate {
     name: tpl.name ?? 'Default',
     isShared: true,
     source: 'platform',
-    provider: 'daytona',
+    provider: config.getDefaultProvider(),
     image: null,
     dockerfilePath: null,
     entrypoint: null,
@@ -672,7 +672,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           name: tpl.name ?? tpl.slug,
           isShared: false,
           source: 'toml',
-          provider: 'daytona',
+          provider: config.getDefaultProvider(),
           image: tpl.image ?? null,
           dockerfilePath: tpl.dockerfile ?? null,
           entrypoint: null,

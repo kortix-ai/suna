@@ -118,17 +118,17 @@ export const SECRET_DEFS: SecretDef[] = [
   // IdP until re-registered.
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
-  // Agent sandbox — three interchangeable providers (SandboxProviderName in
-  // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
-  // runs on (default daytona) and only collect that provider's key(s); the
-  // actual required-secret gate is the composite sandboxProviderConfigured()
-  // check in commands/self-host.ts (whichever provider ALLOWED_SANDBOX_
-  // PROVIDERS names), not a blanket `required` flag per key here — Daytona
-  // stays `required: true` below only because it's the default/recommended
-  // provider, not because it's unconditionally needed.
-  { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: true },
-  { key: 'E2B_API_KEY', category: 'sandbox', kind: 'operator', required: false },
-  { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: false },
+  // Agent sandbox — Platinum (the reference) or the legacy Daytona fallback,
+  // whose removal is scheduled (SandboxProviderName in apps/api/src/config.ts).
+  // `init`/`configure` ask which ONE this instance runs on (default platinum)
+  // and only collect that provider's key(s); the actual required-secret gate
+  // is the composite sandboxProviderConfigured() check in
+  // commands/self-host.ts (whichever provider ALLOWED_SANDBOX_PROVIDERS
+  // names), not a blanket `required` flag per key here — Platinum stays
+  // `required: true` below only because it's the default provider, not
+  // because it's unconditionally needed.
+  { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: true },
+  { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: false },
   { key: 'PLATINUM_WEBHOOK_SECRET', category: 'sandbox', kind: 'operator', required: false },
 
   // Managed git — NOT init-required: configured in-app (Settings → Git,
@@ -293,7 +293,6 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   DAYTONA_API_KEY: ['kortix-api'],
   DAYTONA_SERVER_URL: ['kortix-api'],
   DAYTONA_TARGET: ['kortix-api'],
-  E2B_API_KEY: ['kortix-api'],
   PLATINUM_API_KEY: ['kortix-api'],
   PLATINUM_API_URL: ['kortix-api'],
   PLATINUM_TEMPLATE: ['kortix-api'],

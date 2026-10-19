@@ -37,6 +37,7 @@ let succeededCalls: string[] = [];
 mock.module('../../../config', () => ({
   config: cfg,
   SANDBOX_VERSION: 'test',
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 mock.module('../../../shared/db', () => ({

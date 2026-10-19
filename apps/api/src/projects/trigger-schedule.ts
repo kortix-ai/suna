@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CRON_MIN_INTERVAL_SECONDS, cronIntervalError } from '@kortix/manifest-schema';
+import { CRON_MIN_INTERVAL_SECONDS, type TriggerFilter, cronIntervalError } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
@@ -17,7 +17,7 @@ export interface TriggerScheduleSpec {
   sessionMode: string;
   pinnedSessionId: string | null;
   sessionKey: string | null;
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
   run?: string | null;
   monitorMode?: 'poll' | 'stream' | null;

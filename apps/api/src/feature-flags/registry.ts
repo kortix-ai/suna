@@ -222,7 +222,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
-    // ≥1 min and E2B caps runtime at 1 h — so the surface stays dark unless
+    // ≥1 min — so the surface stays dark unless
     // Platinum credentials are configured.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.

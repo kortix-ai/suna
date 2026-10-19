@@ -11,7 +11,6 @@ import {
   describeProviderCoverage,
   describeProviderMode,
   latestObservedAt,
-  sandboxProviderLabel,
 } from '../../customize/sections/view/sandbox-provider-coverage';
 import {
   SandboxTabView,
@@ -115,11 +114,10 @@ describe('sandbox template provider coverage presentation', () => {
       label: 'Automatic',
       selectedProvider: null,
     });
-    expect(describeProviderMode('pinned', 'e2b', testUiTranslator)).toEqual({
+    expect(describeProviderMode('pinned', 'platinum', testUiTranslator)).toEqual({
       label: 'Pinned provider',
-      selectedProvider: 'E2B',
+      selectedProvider: 'Platinum',
     });
-    expect(sandboxProviderLabel('e2b')).toBe('E2B');
   });
 
   test('renders automatic mode with runtime readiness for every routed provider', () => {
@@ -129,14 +127,15 @@ describe('sandbox template provider coverage presentation', () => {
       coverage: [
         coverageEntry({ provider: 'daytona', status: 'ready' }),
         coverageEntry({ provider: 'platinum', status: 'building' }),
-        coverageEntry({ provider: 'e2b', available: false, status: 'unavailable' }),
       ],
     });
 
     expect(html).toContain('Session runtime');
     expect(html).toContain('Daytona');
     expect(html).toContain('Platinum');
-    expect(html).not.toContain('E2B');
+    // Platinum is the reference provider and comes first; Daytona is marked legacy.
+    expect(html.indexOf('Platinum')).toBeLessThan(html.indexOf('Daytona'));
+    expect(html).toContain('Legacy');
     expect(html).toContain('Ready');
     expect(html).toContain('Building');
     expect(html).not.toContain('Selected');
@@ -176,21 +175,12 @@ describe('sandbox template provider coverage presentation', () => {
       coverage: [
         coverageEntry({ provider: 'daytona', available: true, status: 'ready' }),
         coverageEntry({ provider: 'platinum', available: false, status: 'ready' }),
-        coverageEntry({
-          provider: 'e2b',
-          available: true,
-          status: 'building',
-          state: 'building',
-          launch_ready: false,
-        }),
       ],
     });
 
     expect(html).toContain('Session runtime');
     expect(html).toContain('Daytona');
     expect(html).toContain('Ready');
-    expect(html).toContain('E2B');
-    expect(html).toContain('Building');
     expect(html).not.toContain('Platinum');
     expect(html).not.toContain('Pinned provider');
   });
@@ -217,11 +207,10 @@ describe('sandbox template provider coverage presentation', () => {
   test('pinned with no available providers renders no runtime strip at all', () => {
     const html = renderProviderPresentation({
       providerMode: 'pinned',
-      selectedProvider: 'e2b',
+      selectedProvider: 'daytona',
       coverage: [
         coverageEntry({ provider: 'daytona', available: false, status: 'unavailable' }),
         coverageEntry({ provider: 'platinum', available: false, status: 'unavailable' }),
-        coverageEntry({ provider: 'e2b', available: false, status: 'unavailable' }),
       ],
     });
 
@@ -229,7 +218,7 @@ describe('sandbox template provider coverage presentation', () => {
     // the strip with no label beside it. The card now ends at the spec grid,
     // and the routing fact carries the words — with the pinned provider named.
     expect(html).toBe('');
-    expect(describeRouting('pinned', 'e2b', testUiTranslator).label).toBe('Pinned · E2B');
+    expect(describeRouting('pinned', 'daytona', testUiTranslator).label).toBe('Pinned · Daytona');
     expect(describeRouting('pinned', null, testUiTranslator).label).toBe('Pinned');
   });
 

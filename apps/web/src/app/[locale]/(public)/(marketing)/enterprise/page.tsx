@@ -52,7 +52,7 @@ const DIFFERENTIATORS = [
  * Do NOT restore "scoped per person / per group" either — retired by migration
  * `20260706_secrets_v2_identifier_model.sql`.
  *
- * Same rule for isolation copy on this page: the default sandbox provider runs
+ * Same rule for isolation copy on this page: the legacy Daytona provider runs
  * containers, not microVMs, so write "its own isolated machine". "microVM" is
  * only accurate where the provider is Platinum.
  */

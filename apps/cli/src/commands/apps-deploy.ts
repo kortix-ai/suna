@@ -190,8 +190,8 @@ interface DeployFlags {
 export function deployFlags(rest: string[]): DeployFlags {
   dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
-  if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
-    throw new Error('--provider must be daytona, platinum, or e2b');
+  if (provider && !['platinum', 'daytona'].includes(provider)) {
+    throw new Error('--provider must be platinum or daytona (legacy fallback)');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (

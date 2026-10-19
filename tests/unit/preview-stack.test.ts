@@ -144,7 +144,6 @@ describe('ephemeral self-host preview stack', () => {
 
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
-      'DAYTONA_API_KEY',
       'KE2E_STRIPE_SECRET_KEY',
       'KE2E_STRIPE_WEBHOOK_SECRET',
       'KORTIX_GITHUB_APP_ID',
@@ -159,10 +158,12 @@ describe('ephemeral self-host preview stack', () => {
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
-        DAYTONA_API_KEY: 'allowed',
+        PLATINUM_API_KEY: 'allowed',
         DEV_DATABASE_URL: 'forbidden',
       }),
     ).toThrow('DEV_DATABASE_URL');
+    // Daytona is a legacy fallback: a preview never receives its key.
+    expect(() => validatePreviewRuntimeSecrets({ DAYTONA_API_KEY: 'legacy' })).toThrow('DAYTONA_API_KEY');
   });
 
   it('reads every allowed runtime secret from the deployment environment', () => {
@@ -187,7 +188,6 @@ describe('ephemeral self-host preview stack', () => {
         frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
       },
       {
-        DAYTONA_API_KEY: 'daytona',
         KE2E_STRIPE_SECRET_KEY: 'stripe',
         KE2E_STRIPE_WEBHOOK_SECRET: 'webhook',
         KORTIX_GITHUB_APP_ID: '12345',
@@ -225,6 +225,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain(
       'KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres',
     );
+    expect(configured.testEnv).toContain('KE2E_CAP_SANDBOX=1');
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
   });
@@ -239,7 +240,6 @@ describe('ephemeral self-host preview stack', () => {
       frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
     };
     const secrets = {
-      DAYTONA_API_KEY: 'daytona',
       KORTIX_GITHUB_APP_ID: '12345',
       KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
       KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
@@ -248,9 +248,7 @@ describe('ephemeral self-host preview stack', () => {
     };
 
     // Without a Platinum key the preview cannot run a session anywhere it is
-    // allowed to. Fail before boot instead of falling back to Daytona: the
-    // shared Daytona org hit its snapshot quota on 2026-09-21 and every preview
-    // session died with "Snapshot quota exceeded".
+    // allowed to. Fail before boot: a preview never falls back to Daytona.
     expect(() => applyPreviewEnvironment(base, input, secrets)).toThrow('PLATINUM_API_KEY');
 
     const wired = applyPreviewEnvironment(

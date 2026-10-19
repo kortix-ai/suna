@@ -244,7 +244,118 @@
           "filter": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "not": {
+                      "oneOf": [
+                        {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "in": {
+                      "oneOf": [
+                        {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "prefix": {
+                      "oneOf": [
+                        {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ],
+                          "minLength": 1
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ],
+                            "minLength": 1
+                          }
+                        }
+                      ]
+                    },
+                    "not_prefix": {
+                      "oneOf": [
+                        {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ],
+                          "minLength": 1
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ],
+                            "minLength": 1
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
             }
           },
           "sessionMode": {

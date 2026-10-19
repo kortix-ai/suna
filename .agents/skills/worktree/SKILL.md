@@ -163,7 +163,7 @@ Docker running when Supabase needs to be reached or started.
 - **Agents:** do not call this inline — it will hang the turn. If you need the
   stack running to test, launch it as a background process and poll, or ask the
   user to run `pnpm worktree start <n>` in their own terminal.
-- A Cloudflare quick tunnel starts by default so cloud Daytona sandboxes can
+- A Cloudflare quick tunnel starts by default so cloud (Platinum) sandboxes can
   call back to the local API (`KORTIX_URL` → the `*.trycloudflare.com` URL).
   `--no-tunnel` skips it; if `cloudflared` is missing it warns and continues.
 - `--stripe` turns billing **on** for the worktree and runs `stripe listen`
