@@ -785,10 +785,11 @@ jobs:
         shell: bash
         run: |
           # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
+          # No publisherName: electron-builder 25 passes every extra azureSignOptions key to
+          # Invoke-TrustedSigning, which has no such parameter. The certificate names the publisher.
           azure=()
           if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
-            azure=(--config.win.azureSignOptions.publisherName="Kortix AI Corp"
-                   --config.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
+            azure=(--config.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
                    --config.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGNING_ACCOUNT"
                    --config.win.azureSignOptions.certificateProfileName="$AZURE_SIGNING_PROFILE")
           fi
