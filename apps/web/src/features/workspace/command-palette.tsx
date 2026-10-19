@@ -1,5 +1,7 @@
 'use client';
 
+import { firstChatHref, useFirstChatPending } from '@/stores/first-chat-store';
+
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import {
   AlertDialog,
@@ -896,6 +898,10 @@ export function CommandPalette() {
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
   const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
+  const firstChatPending = useFirstChatPending(projectId ?? '');
+  const tFirstChat = useTranslations('firstChat');
+  const firstChatLabel = tFirstChat('title');
+  const showFirstChat = Boolean(projectId && firstChatPending && firstChatLabel.toLowerCase().includes(query.trim().toLowerCase()));
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
     const match = pathname?.match(/^\/sessions\/([^/]+)/);
@@ -1789,6 +1795,7 @@ export function CommandPalette() {
     rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
+    showFirstChat ||
     hasWorkspaceResults ||
     hasSessionActionResults ||
     hasSettingsResults;
@@ -2331,7 +2338,7 @@ export function CommandPalette() {
     if (page === 'models') return visibleModels.length;
     if (page === 'workspaces') return workspacePageRows.length;
     if (page === 'accounts') return filteredAccountsList.length;
-    if (page === 'sessions') return filteredProjectSessionsList.length;
+    if (page === 'sessions') return filteredProjectSessionsList.length + Number(showFirstChat);
     if (page === 'density') return filteredDensityOptions.length;
     // 0: these pages fetch and filter their own rows, so the count lives
     // inside them (the 'changes' group heading carries it) rather than being
@@ -2341,12 +2348,14 @@ export function CommandPalette() {
     return (
       filteredNavItems.length +
       rootSessionResults.length +
+      Number(showFirstChat) +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
       rootCopyResults.length
     );
   }, [
+    showFirstChat,
     page,
     hasQuery,
     filteredNavItems,
@@ -3162,6 +3171,21 @@ export function CommandPalette() {
                 <PaletteEmpty>{tI18nComplete('textec0ea7563cde', { value0: query })}</PaletteEmpty>
               ))}
 
+            {(page === 'root' || page === 'sessions') && showFirstChat && projectId && (
+              <CommandGroup heading="Sessions" forceMount>
+                <CommandItem
+                  value={sanitizeCmdkValue(firstChatLabel)}
+                  onSelect={() => {
+                    setOpen(false);
+                    router.push(firstChatHref(projectId));
+                  }}
+                >
+                  <MessageCircle className="size-4 shrink-0" />
+                  <span className="flex-1 truncate">{firstChatLabel}</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
+
             {page === 'sessions' &&
               (filteredProjectSessionsList.length > 0 ? (
                 <CommandGroup heading="Sessions" forceMount>
@@ -3185,7 +3209,7 @@ export function CommandPalette() {
                     </CommandItem>
                   ))}
                 </CommandGroup>
-              ) : projectSessionsPending ? (
+              ) : showFirstChat ? null : projectSessionsPending ? (
                 // No list and no sidebar pages to stand in: loading, not
                 // "No sessions yet". Same frame as the workspaces page.
                 <div className="flex justify-center py-8">

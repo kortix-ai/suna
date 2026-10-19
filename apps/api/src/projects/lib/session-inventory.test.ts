@@ -53,6 +53,25 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('project list excludes unused warm drafts and deleted sessions but keeps explicit empty sessions', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('unused', { metadata: { warm: true } }),
+        row('deleted', { metadata: { deletedAt: '2026-10-18T00:00:00.000Z' } }),
+        row('empty', { status: 'stopped', metadata: { custom_name: 'Empty session' } }),
+      ],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['empty']);
+  });
+
   test('account session oversight widens the manager inventory to other members\' private sessions', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const restrictedOther = row('restricted-other', { createdBy: OTHER_ID, visibility: 'restricted' });
@@ -88,7 +107,7 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items).toEqual([]);
   });
 
-  test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
+  test('manager project scope hides inaccessible and deleted rows but keeps stopped sessions', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -113,61 +132,12 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'stopped-lost',
-      'deleted',
     ]);
     expect(selected.items[0]).toMatchObject({
       canAccess: true,
       runtimeStatus: null,
     });
-    expect(selected.items[1]).toMatchObject({
-      canAccess: true,
-      deletedAt: '2026-07-20T10:00:00.000Z',
-      deletedBy: VIEWER_ID,
-    });
-  });
 
-  test('manager project scope drops a soft-deleted warm draft and keeps a soft-deleted real session', () => {
-    // A deleted "New session" row was never prompted, so its tombstone carries
-    // no conversation or work to audit — keeping it is what left the Sessions
-    // page unable to ever reach its empty state on a fresh project. A deleted
-    // real session keeps its tombstone row for the manager's audit.
-    const deletedWarmDraft = row('deleted-warm-draft', {
-      status: 'stopped',
-      metadata: {
-        warm: true,
-        deletedAt: '2026-07-20T10:00:00.000Z',
-        deletedBy: VIEWER_ID,
-      },
-    });
-    const deletedReal = row('deleted-real', {
-      status: 'completed',
-      metadata: { deletedAt: '2026-07-20T10:00:00.000Z', deletedBy: VIEWER_ID },
-    });
-    const liveWarmDraft = row('live-warm-draft', {
-      status: 'stopped',
-      metadata: { warm: true },
-    });
-
-    const selected = selectSessionRowsForViewer({
-      rows: [deletedWarmDraft, deletedReal, liveWarmDraft],
-      scope: 'project',
-      canManageProject: true,
-      subject,
-      grantsBySession: new Map(),
-      callerSessionId: null,
-      boundCredentialSessionId: null,
-      runtimeStatusBySession: new Map(),
-    });
-
-    expect(selected.authorized).toBe(true);
-    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
-      'deleted-real',
-      'live-warm-draft',
-    ]);
-    expect(selected.items[0]).toMatchObject({
-      deletedAt: '2026-07-20T10:00:00.000Z',
-      deletedBy: VIEWER_ID,
-    });
   });
 
   test('project scope is denied without project-management rights', () => {
@@ -323,15 +293,6 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     ])).toEqual(['own']);
   });
 
-  // A warm box bills compute from creation (sandbox-deadline-policy.ts
-  // warmPoolGrantMs) until the reaper or the user stops it. Even so the row
-  // stays hidden from the `visible` scope for as long as it carries the
-  // marker: a warm row listed as an untitled "New session" that spins for the
-  // whole grant is the worst of both worlds — a phantom row the user never
-  // started, on the one list they read constantly. The money stays visible
-  // where lifecycle work happens: the manager `project` scope keeps a live
-  // warm row listed (see the manager test below), and open/stop/delete by id
-  // never consulted the marker.
   test('a warm session that is up and billing stays hidden from the sidebar', () => {
     expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual([]);
   });
@@ -348,10 +309,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
   });
 
-  // The money-visibility half of KRTX-1068 lives here now: the manager
-  // inventory keeps a live billed warm row listed so its owner can see and
-  // stop it, even though the sidebar hides it.
-  test('manager project scope keeps a live billed warm row listed', () => {
+  test('manager project scope hides an unused billed warm draft', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('billed-warm', { metadata: { warm: true } })],
       scope: 'project',
@@ -363,7 +321,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
       runtimeStatusBySession: new Map(),
     });
     expect(selected.authorized).toBe(true);
-    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['billed-warm']);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([]);
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
@@ -384,9 +342,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     expect(selected.items).toEqual([]);
   });
 
-  // A manager auditing the project must see every session, warm ones included:
-  // they are real rows holding a real sandbox.
-  test('project scope keeps the warm session', () => {
+  test('project scope hides warm drafts alongside visible scope', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('own'), row('warm', { metadata: { warm: true } })],
       scope: 'project',
@@ -398,7 +354,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
       runtimeStatusBySession: new Map(),
     });
 
-    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own', 'warm']);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own']);
   });
 
   test('a malformed warm marker never hides a real session', () => {

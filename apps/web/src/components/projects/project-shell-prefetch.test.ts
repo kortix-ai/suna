@@ -49,6 +49,17 @@ function mockFetch(gatewayEnabled: boolean) {
   return urls;
 }
 
+describe('KRTX-2618: one session-list fetch per render', () => {
+  test('the shell prefetch issues exactly one project-sessions read per project', async () => {
+    const urls = mockFetch(false);
+    const client = new QueryClient();
+    prefetchProjectShellReads(client, 'P1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(urls.filter((u) => u.includes('/projects/P1/sessions')).length).toBe(1);
+    client.clear();
+  });
+});
+
 describe('prefetchProjectShellReads', () => {
   test('issues detail, sessions and sandbox-health reads up front', async () => {
     const urls = mockFetch(false);

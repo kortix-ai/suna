@@ -87,6 +87,7 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
           agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
           canManageProject: false,
           accountSessionOversight: false,
+          allowDeleted: true,
         }),
       ),
     );

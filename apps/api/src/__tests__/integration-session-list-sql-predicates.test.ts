@@ -292,12 +292,38 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
     expect(second.nextCursor).toBeNull();
   });
 
-  test('the manager inventory still lists the tombstones and the live warm drafts', async () => {
+  test('the manager inventory excludes tombstones and unused warm drafts', async () => {
     const { ids, requests } = await walk({ project: PROJECT_B, viewer: OWNER, manager: true, scope: 'project', limit: 200 });
-    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(1500);
+    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(0);
     expect(ids.filter((id) => id.startsWith('live-'))).toHaveLength(60);
+    expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(0);
+    expect(requests).toBe(1);
+  });
+
+  test('the open gate still opens soft-deleted sessions and unused warm drafts (project-read-view)', async () => {
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, PROJECT_B),
+          eq(projectSessions.accountId, ACCOUNT),
+          sessionListViewerSql({
+            scope: 'project',
+            viewerId: OWNER,
+            boundCredentialSessionId: null,
+            agentPrincipal: false,
+            canManageProject: false,
+            accountSessionOversight: false,
+            allowDeleted: true,
+          }),
+        ),
+      );
+    const ids = rows.map((r) => short(r.sessionId));
+    // The tombstone still holds the caller's work: a soft-deleted session
+    // stays open by id even though every list hides it.
+    expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(1500);
     expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(20);
-    expect(requests).toBe(8);
   });
 
   test('the visible page walks idx_project_sessions_project_live in list order, with no sort, with and without a generic plan', async () => {

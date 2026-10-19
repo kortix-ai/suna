@@ -143,48 +143,13 @@ export function selectSessionRowsForViewer(input: {
     return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
 
-  if (input.scope === 'project') {
-    // A list row is a disclosure. Keep manager-only lifecycle coverage for
-    // sessions the manager can open, including warm and soft-deleted rows, but
-    // never return an inaccessible session as a redacted breadcrumb.
-    //
-    // A soft-deleted warm draft is the one exception: it was never prompted, so
-    // its tombstone holds no conversation or work to audit, and listing it kept
-    // the Sessions page's empty state unreachable on a fresh project. A warm
-    // row that dropped its marker deletes like any other real session.
-    return {
-      authorized: true,
-      items: items.filter(
-        (item) =>
-          item.canAccess &&
-          !(item.deletedAt && isWarmProjectSession(item.row.metadata)),
-      ),
-    };
-  }
 
   return {
     authorized: true,
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
-      // A warm session the user never prompted holds no work of theirs, so it
-      // stays hidden — a project visit must not litter the sidebar with rows
-      // the user never started. The marker is dropped by the first prompt, and
-      // from that moment the row lists like any other session. See
-      // lib/warm-sessions.ts.
-      //
-      // This holds even while the warm box bills compute from creation
-      // (sandbox-deadline-policy.ts warmPoolGrantMs): KRTX-1068 briefly listed
-      // a billing warm row here so its owner could see and stop it, and that
-      // traded one bad state for another — every project visit painted an
-      // untitled "New session" row that spins for the whole grant on the one
-      // list the user reads constantly. The money stays visible where
-      // lifecycle work happens: the manager `project` scope keeps a live warm
-      // row listed for inspection, and open/stop/delete by id never consulted
-      // the marker.
-      //
-      // `visible` scope only. The `project` scope keeps accessible warm rows for
-      // lifecycle inspection, but it also applies the access filter above.
+      // Speculative drafts are not conversations, in either list scope.
       if (isWarmProjectSession(item.row.metadata)) {
         return false;
       }

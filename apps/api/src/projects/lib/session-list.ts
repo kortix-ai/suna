@@ -103,15 +103,18 @@ function likePattern(q: string): string {
 }
 
 /** Title, trigger slug / channel (initiator_id), agent, source, the owner's
- *  email or name, or a session-id prefix (the branch is the session id). The
- *  title is what `serializeSession` resolves: custom_name, the auto name, or a
- *  runtime conversation title in the opencode_sessions snapshot. The owner is
- *  already on every row the viewer may see (`owner_email`/`owner_name`). */
+ *  email or name, or a session-id prefix (the branch is the session id).
+ *  `branch_name` too: an empty session has no conversation title yet, and its
+ *  only durable label is its branch (KRTX-2476). The title is what
+ *  `serializeSession` resolves: custom_name, the auto name, or a runtime
+ *  conversation title in the opencode_sessions snapshot. The owner is already
+ *  on every row the viewer may see (`owner_email`/`owner_name`). */
 function searchMatchSql(t: SessionTable, q: string): SQL {
   const pattern = likePattern(q);
   return sql`(
     ${t.metadata}->>'custom_name' ilike ${pattern}
     or ${t.metadata}->>'name' ilike ${pattern}
+    or ${t.branchName} ilike ${pattern}
     or ${t.initiatorId} ilike ${pattern}
     or ${t.agentName} ilike ${pattern}
     or ${t.metadata}->>'source' ilike ${pattern}
@@ -209,6 +212,10 @@ export interface SessionListViewer {
   canManageProject: boolean;
   /** `hasAccountSessionOversight`. Applied to the `project` scope only. */
   accountSessionOversight: boolean;
+  /** The open gate (project-read-view) still opens a soft-deleted session —
+   *  its tombstone still holds the caller's work. A list never reads a
+   *  deleted row. */
+  allowDeleted?: boolean;
 }
 
 /**
@@ -222,11 +229,13 @@ export interface SessionListViewer {
 export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   const t = projectSessions;
   const bound = viewer.boundCredentialSessionId;
-  const tombstone =
-    viewer.scope === 'visible'
-      ? sql`${liveSessionSql} and (${warmSessionSql}) is not true`
-      : // A soft-deleted warm draft holds nothing to audit.
-        sql`not ((${t.metadata} ? 'deletedAt') is true and (${warmSessionSql}) is true)`;
+  // A list hides deleted rows and unused warm drafts in every scope
+  // (KRTX-2647). The open gate keeps a soft-deleted session reachable —
+  // its tombstone still holds the caller's work; only a deleted warm draft
+  // holds nothing to open.
+  const tombstone = viewer.allowDeleted
+    ? sql`not ((${t.metadata} ? 'deletedAt') is true and (${warmSessionSql}) is true)`
+    : sql`${liveSessionSql} and (${warmSessionSql}) is not true`;
   // A session-bound credential reaches its own session and the ones it spawned.
   const own = bound === null
     ? undefined
@@ -270,7 +279,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   const needle = q.toLowerCase();
   const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
+  if (hit(meta.custom_name) || hit(meta.name) || hit(row.branchName) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
   if ((row.labels ?? []).some(hit)) return true;
