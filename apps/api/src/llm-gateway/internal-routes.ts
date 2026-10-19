@@ -76,12 +76,11 @@ export function createInternalGatewayRoutes() {
   });
 
   app.post('/resolve-upstream', async (c) => {
-    const { principal, model, fallbackFor } = await c.req.json();
+    const { principal, model } = await c.req.json();
     try {
       const candidates = await resolveCandidates(
         principal as AuthedPrincipal,
         typeof model === 'string' ? model : '',
-        typeof fallbackFor === 'string' ? { fallbackFor } : undefined,
       );
       return c.json({ candidates });
     } catch (err) {
@@ -182,9 +181,8 @@ export function createInternalGatewayRoutes() {
     }
     // `managedOnly` backs the standalone gateway's `GET /models?scope=managed`
     // — the compact managed lineup a sandbox fetches on boot. Dropping the
-    // projectId is what selects MANAGED_ONLY: a free-tier caller gets the
-    // platform default alone (an empty set when the deployment serves none),
-    // every other managed model stays paid (KRTX-1067).
+    // projectId is what selects MANAGED_ONLY. An account without the
+    // managed-models entitlement gets an empty set.
     return c.json({
       models: gatewayModelCatalog(managedOnly === true ? undefined : p.projectId, {
         freeManagedOnly: !!p.freeModelsOnly,
@@ -197,8 +195,7 @@ export function createInternalGatewayRoutes() {
     try {
       // The pod calls this only for a Kortix-billed request it already
       // resolved (`simple-handler.ts` gates admitCharge on billingMode), so
-      // the wallet floor applies to every account here — the platform default
-      // included (KRTX-1067).
+      // the wallet floor applies to every account here.
       const result = await assertLlmBillingActive(accountId as string, { creditsRequest: true });
       return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {

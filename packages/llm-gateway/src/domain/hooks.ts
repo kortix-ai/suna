@@ -34,15 +34,7 @@ export interface GatewayHooks {
     principal: AuthedPrincipal,
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
-  /**
-   * `fallbackFor` names the routed model when `model` is resolved as its
-   * fallback, so the host can admit a model the principal could not pick.
-   */
-  resolveUpstream: (
-    principal: AuthedPrincipal,
-    model: string,
-    options?: { fallbackFor?: string },
-  ) => Promise<UpstreamDescriptor[]>;
+  resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
   /**
    * A fresh descriptor for a refreshable login the provider refused with 401,

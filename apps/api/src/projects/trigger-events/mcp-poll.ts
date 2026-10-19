@@ -15,7 +15,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { enqueueJobs, registerJobHandler } from '../../shared/job-queue';
 import { clearTriggerAlert, raiseTriggerAlert } from '../lib/trigger-alerts';
-import { triggersPausedForProject } from '../lib/triggers';
+import { automaticFirePauseReason } from '../lib/triggers';
 import { resolveProjectAutomationActor } from '../session-lifecycle/actor';
 import type { GitTriggerSpec } from '../trigger-types';
 import { deliverEvents } from './deliver';
@@ -147,7 +147,7 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     return null;
   }
   const [project] = await db
-    .select({ status: projects.status, metadata: projects.metadata })
+    .select({ status: projects.status, metadata: projects.metadata, accountId: projects.accountId })
     .from(projects)
     .where(eq(projects.projectId, stream.projectId))
     .limit(1);
@@ -160,7 +160,8 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     project.status !== 'active' ||
     !eventTriggersEnabled(project.metadata) ||
     !resolveFeatureFlag(project.metadata, 'connectors_v2') ||
-    triggersPausedForProject(project.metadata) ||
+    // The project's pause, or the account's Pause all automations (KRTX-1721).
+    (await automaticFirePauseReason(project)) !== null ||
     consumers.length === 0
   ) {
     await skip(stream, now, true);

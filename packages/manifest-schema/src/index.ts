@@ -41,6 +41,7 @@ import {
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
@@ -196,6 +197,7 @@ export {
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
   formatDurationSeconds,
@@ -1425,6 +1427,13 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         message: 'prompt is required and may not be empty.',
         severity: 'error',
       });
+    }
+    // Run caps (KRTX-1721): any trigger type, a whole number of at least 1.
+    for (const field of ['max_runs_per_hour', 'max_runs_per_day'] as const) {
+      const cap = entry[field];
+      if (cap !== undefined && !(typeof cap === 'number' && Number.isInteger(cap) && cap >= 1)) {
+        issues.push({ path: `${where}.${field}`, message: `${field} must be a whole number of at least 1.`, severity: 'error' });
+      }
     }
     // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.
     if (entry.max_lateness !== undefined) {

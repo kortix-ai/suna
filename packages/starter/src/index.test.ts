@@ -314,6 +314,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-system',
       'kortix-teams',
       'kortix-ui',
+      'kortix-user-memory',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);

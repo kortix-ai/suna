@@ -93,12 +93,14 @@ jobs:
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       # Some library tests assert Unix paths (service::tests::the_packaged_app_*): on
-      # Windows run the protocol, managed (enrollment, tray, machine service) and format suites.
+      # Windows run the protocol, managed (enrollment, tray, machine service), the
+      # engine and app-rule (exclusions) and format suites.
       - name: Engine protocol, managed and enrollment tests (Windows)
         if: matrix.name == 'windows'
         run: |
           cargo test --release --features capture-engine --test capture_engine_protocol
           cargo test --release --features capture-engine --lib managed
+          cargo test --release --features capture-engine --lib -- capture_engine:: memory::exclusions:: memory::action_exclusions::
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       - name: Tray tests (Linux AppIndicator)

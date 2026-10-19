@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 864,
+  "count": 866,
   "routes": [
     {
       "method": "GET",
@@ -241,6 +241,14 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/automations"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/automations"
     },
     {
       "method": "DELETE",

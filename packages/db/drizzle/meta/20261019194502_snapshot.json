@@ -1,6 +1,6 @@
 {
-  "id": "c9cc49c5-1df3-4d40-aac4-16a07d594a04",
-  "prevId": "33d9dc40-2665-4054-ad14-11367a4fb801",
+  "id": "838c94fb-b9a6-404f-bba0-57136fdba786",
+  "prevId": "b82ba6fc-9903-4b9c-91e1-0b38126b6374",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2551,6 +2551,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "automations_paused_at": {
+          "name": "automations_paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automations_paused_by": {
+          "name": "automations_paused_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "branding": {
           "name": "branding",

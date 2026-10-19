@@ -116,7 +116,26 @@ export interface FileExplorerSource {
   ) => ExplorerQueryResult<FileCommitDiff>;
 
   // ── Mutations (read-only sources reject; the UI never invokes them) ──
-  useFileUpload: () => ExplorerMutation<{ file: File | Blob; targetPath?: string }>;
+  /** `onProgress` reports bytes sent; a source that cannot measure them ignores it. */
+  useFileUpload: () => ExplorerMutation<{
+    file: File | Blob;
+    targetPath?: string;
+    onProgress?: (sentBytes: number, totalBytes: number) => void;
+  }>;
+  /**
+   * Show `file` as the preview of its path before its upload lands, so the
+   * listing's thumbnail never fetches a file that is still on its way up.
+   * Optional: a source without it fetches as usual.
+   */
+  useUploadPreview?: () => (file: File, targetPath?: string) => void;
+  /**
+   * Save several files and folders as one zip (a multi-selection's "Download
+   * as zip"). Optional: without it, a selection downloads its files one by one.
+   */
+  useDownloadZip?: () => (
+    items: { path: string; name: string; type: 'file' | 'directory' }[],
+    zipName: string,
+  ) => Promise<void>;
   useFileDelete: () => ExplorerMutation<{ filePath: string }>;
   useFileMkdir: () => ExplorerMutation<{ dirPath: string }>;
   useFileRename: () => ExplorerMutation<{ from: string; to: string }>;
