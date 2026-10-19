@@ -22,13 +22,12 @@ import {
   type Pty,
 } from '@kortix/sdk/react';
 import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import dynamic from 'next/dynamic';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import React, { useCallback, useEffect, useRef } from 'react';
 
 // Lazy-load to avoid SSR issues with xterm.js
-const PtyTerminal = dynamic(
-  () => import('@/features/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
-  { ssr: false },
+const PtyTerminal = lazyClient(() =>
+  import('@/features/session/pty-terminal').then((mod) => mod.PtyTerminal),
 );
 
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;

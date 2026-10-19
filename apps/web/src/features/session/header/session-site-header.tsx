@@ -43,7 +43,7 @@ import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { useNotificationCenter } from '@/features/notifications/use-notification-center';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiPathname, useUiRouter, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
@@ -87,7 +87,6 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { usePathname, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 
 /** Sandbox surfaces reachable from the header. One list drives both the
@@ -125,8 +124,8 @@ export function SessionSiteHeader({
   const tNotifications = useTranslations('notifications');
   const tPinArchive = useTranslations('sidebar.pinArchive');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
-  const router = useRouter();
-  const pathname = usePathname();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const queryClient = useQueryClient();
   // Desktop shell with the sidebar hidden (offcanvas): this header reaches the
   // window's top-left corner, which the OS owns — the macOS traffic lights and
@@ -179,10 +178,10 @@ export function SessionSiteHeader({
   // it may mute it; unmuting a session you never watched makes you a watcher.
   // Only with the project's `notification_center` flag on: off, the watch
   // routes answer 403 and the item does not exist.
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const notificationCenter = useNotificationCenter(projectId);
   const sessionWatch = useSessionWatch({
-    userId: user?.id,
+    userId: viewerId,
     projectId,
     sessionId: projectSessionId,
     enabled: isProjectSession && !parent && notificationCenter,

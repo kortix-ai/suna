@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { Button } from '@/components/ui/button';

@@ -3,7 +3,7 @@
 import { CopyButton } from '@/components/markdown/copy-button';
 import { languageLabel } from '@/components/markdown/unified-markdown-utils';
 import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CODE_SETTLE_MS, useSettledValue } from './settle';
@@ -49,9 +49,9 @@ export function HighlightedCode({
    */
   isStreaming?: boolean;
 }) {
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   // Which half of the one palette to draw. There is no third option.
-  const theme: CodeThemeName = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
+  const theme: CodeThemeName = isDark ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const opts = useMemo(() => ({ unbounded }), [unbounded]);
   const target = useSettledValue(code, isStreaming, CODE_SETTLE_MS);
   const [result, setResult] = useState<HighlightResult | null>(null);

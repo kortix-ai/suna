@@ -4,7 +4,7 @@ import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SessionChat } from '@/features/session/session-chat';
 import { cn } from '@/lib/utils';
 import { KanbanIcon as SquareKanban, XIcon as X } from '@phosphor-icons/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useTranslations } from '@/i18n/use-translations';
 
 export interface SubSessionModalProps {
@@ -19,7 +19,7 @@ export function SubSessionModalContent({ open, onOpenChange, sessionId, title }:
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The session page this sub-agent runs under. Its saved history holds the
   // sub-agent's transcript too, so the view paints while the computer is off.
-  const params = useParams<{ id?: string; sessionId?: string }>();
+  const params = useUiParams<{ id?: string; sessionId?: string }>();
   const savedHistoryScope =
     params?.id && params?.sessionId ? `${params.id}/${params.sessionId}` : undefined;
   return (

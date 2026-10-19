@@ -2,7 +2,7 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { ErrorBoundary } from '@kortix/ui/error-boundary';
 import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
@@ -236,7 +236,7 @@ export function FileContentRenderer({
       {/* Content area — readOnly uses overflow-auto so the read-only editor
           (which renders at auto height) can scroll within the fixed-size parent. */}
       <div className={cn('flex-1', readOnly ? 'overflow-auto' : 'overflow-hidden')}>
-        <ClientErrorBoundary
+        <ErrorBoundary
           fallback={() => (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
               <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
@@ -577,7 +577,7 @@ export function FileContentRenderer({
           {!showLoadingState && !contentError && isNotFound && (
             <FileNotFoundState filePath={filePath} />
           )}
-        </ClientErrorBoundary>
+        </ErrorBoundary>
       </div>
     </div>
   );

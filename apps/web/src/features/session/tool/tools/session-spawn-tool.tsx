@@ -15,8 +15,7 @@ import { cn } from '@/lib/utils';
 import { getChildSessionId, getToolInfo } from '@/ui';
 import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useUiLink, useUiPathname } from '@kortix/ui/providers/ui-provider';
 import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 import { subAgentCalls } from '@kortix/sdk';
@@ -25,7 +24,8 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(call);
   const status = partStatus(call);
-  const pathname = usePathname();
+  const pathname = useUiPathname();
+  const Link = useUiLink();
 
   const agentName = capitalizeWords((input.agent as string) || 'kortix');
   const description = (input.description as string) || '';

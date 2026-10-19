@@ -6,7 +6,7 @@ import {
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/llm-catalog';
-import Image from 'next/image';
+import { useUiImage } from '@kortix/ui/providers/ui-provider';
 import { useState } from 'react';
 
 export const POPULAR_PROVIDER_IDS = [
@@ -159,6 +159,7 @@ export function ProviderLogo({
    *  themes. `theme` follows the theme. */
   tone?: 'theme' | 'light';
 }) {
+  const Image = useUiImage();
   const light = tone === 'light';
   // An unreachable models.dev logo (offline self-host) falls back to initials.
   const [failedSrc, setFailedSrc] = useState<string>();

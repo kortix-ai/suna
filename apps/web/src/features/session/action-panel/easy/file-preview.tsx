@@ -31,9 +31,9 @@ import { useContentRevision } from '@/features/file-viewer/use-content-revision'
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { useFileRefresh } from '@/features/files/hooks/use-file-refresh';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { useIsMobile } from '@/hooks/utils';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';

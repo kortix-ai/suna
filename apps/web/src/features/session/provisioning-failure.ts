@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 import type { PendingSessionPrompt } from '@kortix/sdk';
 import { readStartStash } from '@kortix/sdk/react';
 

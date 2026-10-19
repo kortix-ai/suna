@@ -29,7 +29,7 @@ import {
   TreeStructureIcon as Diagram,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type MermaidParseError,
@@ -149,8 +149,8 @@ export interface MermaidDiagramProps {
 
 export function MermaidDiagram({ source, fileName, onShowSource, className }: MermaidDiagramProps) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const { resolvedTheme } = useTheme();
-  const state = useMermaidSvg(source, resolvedTheme === 'dark');
+  const isDark = useIsDark();
+  const state = useMermaidSvg(source, isDark);
   const svg = state.status === 'ready' ? state.svg : null;
   const url = useSvgUrl(svg);
   const svgName = mermaidSvgFileName(fileName);

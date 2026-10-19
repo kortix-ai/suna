@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 /**
  * What still refuses a submission once the server owns prompt ordering.
  *

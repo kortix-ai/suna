@@ -13,7 +13,7 @@
  * the case this chip exists for. No sounds or toasts here, ever.
  */
 
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { useIsSidePanelOpen, useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { useEffect, useRef } from 'react';

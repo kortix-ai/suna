@@ -30,7 +30,7 @@ import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagra
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
 import { HtmlPreview, SaveAsPdfButton } from '@/features/file-viewer';
 import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';

@@ -25,7 +25,7 @@
  */
 
 import { ArrowsClockwiseIcon, XIcon } from '@phosphor-icons/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { createContext, useCallback, useContext, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -101,7 +101,7 @@ function writeDismissed(projectSessionId: string): void {
  */
 export function PreviousRepositoryNotice() {
   const visible = useContext(PreviousRepositoryNoticeContext);
-  const { id: projectId, sessionId: projectSessionId } = useParams<{
+  const { id: projectId, sessionId: projectSessionId } = useUiParams<{
     id: string;
     sessionId: string;
   }>();

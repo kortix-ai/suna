@@ -4,7 +4,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 
 import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 
 import { cn } from '@/lib/utils';
 import { type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';

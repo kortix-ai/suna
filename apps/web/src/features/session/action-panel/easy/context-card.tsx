@@ -34,7 +34,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import {
   CaretRightIcon as ChevronRight,

@@ -9,6 +9,7 @@
 //   src/components/ui/<path>.tsx     → "./<path>"         (subfolders kept: "./dot-matrix/dotm-square-1")
 //   src/{lib,hooks,icons,providers}/<name>.ts(x) → "./<dir>/<name>"
 //   src/chat/index.ts(x)             → "./chat"
+//   src/i18n/index.ts                → "./i18n"
 //   src/styles/<name>.css            → "./<name>.css"
 //   dist/styles.css                  → "./styles.css"     (built by scripts/build-styles.mjs)
 // Test files (*.test.*), __snapshots__, *.d.ts and INTERNAL modules are never exported.
@@ -52,8 +53,9 @@ const modules = (dir) =>
 export function buildExports() {
   const out = {};
   for (const f of ['index.ts', 'index.tsx']) if (existsSync(join(SRC, f))) out['.'] = rel(join(SRC, f));
-  for (const f of ['index.ts', 'index.tsx'])
-    if (existsSync(join(SRC, 'chat', f))) out['./chat'] = rel(join(SRC, 'chat', f));
+  for (const dir of ['chat', 'i18n'])
+    for (const f of ['index.ts', 'index.tsx'])
+      if (existsSync(join(SRC, dir, f))) out[`./${dir}`] = rel(join(SRC, dir, f));
   for (const file of modules(join(SRC, 'components', 'ui'))) {
     out[`./${posix(relative(join(SRC, 'components', 'ui'), file)).replace(MODULE, '')}`] = rel(file);
   }

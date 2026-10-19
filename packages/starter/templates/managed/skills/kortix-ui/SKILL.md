@@ -25,9 +25,9 @@ Outside it: tell the user, style with plain CSS over the section 6 variables, ne
 2. Fonts. `@kortix/ui/fonts.css` (Roobert) is for Kortix-owned surfaces only. A white-label host never
    imports it and renders the system stack.
 3. Dark mode is the `dark` class on `<html>` (`useIsDark()` reads it). Mount once at the root:
-   `UiProvider` (`strings` for translated copy, `chat` included; `link` for your router's link; `useBrand`
-   for an organization's logo), `IconProvider` (`@kortix/ui/icon-provider`, the house icon weight; not the icon-set provider of `lib/icon-context`) and one
-   `<Toaster />` from `@kortix/ui/toast` for the toast helpers.
+   `UiProvider` (`strings`, `chat` included; `link` and `image`: your router's link and image; `useBrand`:
+   an organization's logo; `navigation`, `i18n`, `useViewerId`, `config`: router hooks, translation hooks,
+   user id, flags), `IconProvider` (`@kortix/ui/icon-provider`, the house icon weight; not the icon-set provider of `lib/icon-context`) and one `<Toaster />` from `@kortix/ui/toast`. `setUiTelemetry` (`@kortix/ui/lib/telemetry`) once at module load.
 4. Import by subpath: `import { Modal } from '@kortix/ui/modal'`. The root `@kortix/ui` holds only the
    light core in section 7. Heavy parts (charts, maps, grids, mermaid, emoji data) load only from their own
    subpath.
@@ -98,7 +98,7 @@ accent) `Progress`, `Slider`, menu tint; plus `--radius`, `--font-sans-system`. 
 
 | Import from | Names |
 | --- | --- |
-| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `defaultChatStrings`, `useUiStrings`, `useUiLink`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `ChatStrings`, `UiLinkProps`, `UiLinkComponent`, `UiBrand`, `UseUiBrand`, `useIsDark` |
+| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `defaultChatStrings`, `useUiStrings`, `useUiLink`, `useUiImage`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `ChatStrings`, `UiLinkProps`, `UiLinkComponent`, `UiImageProps`, `UiImageComponent`, `UiBrand`, `UseUiBrand`, `useIsDark`, `useUiRouter`, `useUiPathname`, `useUiSearchParams`, `useUiParams`, `defaultUiNavigation`, `UiNavigation`, `UiRouter`, `UiRouteParams`, `UiSearchParams`, `useUiViewerId`, `useUiHostConfig`, `defaultUiHostConfig`, `UiHostConfig` |
 | `@kortix/ui` (actions, display) | `Button`, `buttonVariants`, `ButtonProps`, `Badge`, `badgeVariants`, `Card`, `CardAction`, `CardButton`, `CardContent`, `CardDescription`, `CardEyebrow`, `CardFeature`, `CardFooter`, `CardGroup`, `CardHeader`, `CardImage`, `CardMedia`, `CardTitle`, `CardButtonProps`, `CardButtonSize`, `CardButtonVariant`, `CardGroupProps`, `CardLogo`, `CardProps`, `Separator`, `Skeleton` |
 | `@kortix/ui` (forms) | `Input`, `inputFocusClasses`, `inputInvalidClasses`, `inputSurfaceClasses`, `inputTransitionClasses`, `InputProps`, `useAutosizeTextArea`, `Textarea`, `AutosizeTextAreaRef`, `AutosizeTextAreaProps`, `Label`, `Checkbox`, `CheckboxProps`, `CheckboxVariant`, `Switch`, `SwitchProps`, `Select`, `SelectContent`, `SelectGroup`, `SelectItem`, `SelectLabel`, `SelectScrollDownButton`, `SelectScrollUpButton`, `SelectSeparator`, `SelectTrigger`, `SelectValue`, `SelectTriggerProps` |
 | `@kortix/ui` (overlays) | `Modal`, `ModalBody`, `ModalClose`, `ModalContent`, `ModalContentInner`, `ModalDescription`, `ModalFooter`, `ModalHeader`, `ModalOverlay`, `ModalPortal`, `ModalTitle`, `ModalTrigger`, `Hint`, `HintProps`, `Popover`, `PopoverAnchor`, `PopoverContent`, `PopoverTrigger`, `DropdownMenu`, `DropdownMenuCheckboxItem`, `DropdownMenuContent`, `DropdownMenuGroup`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuPortal`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`, `DropdownMenuSeparator`, `DropdownMenuShortcut`, `DropdownMenuSub`, `DropdownMenuSubContent`, `DropdownMenuSubTrigger`, `DropdownMenuTrigger` |

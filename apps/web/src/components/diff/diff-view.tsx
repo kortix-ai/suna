@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import type { FileDiffOptions } from '@pierre/diffs';
 import { PatchDiff } from '@pierre/diffs/react';
 import { createTwoFilesPatch } from 'diff';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useMemo } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -65,8 +65,8 @@ interface FilesProps extends DiffViewCommonProps {
 }
 
 export function DiffView(props: PatchProps | FilesProps) {
-  const { resolvedTheme } = useTheme();
-  const themeType = resolvedTheme === 'dark' ? 'dark' : 'light';
+  const isDark = useIsDark();
+  const themeType = isDark ? 'dark' : 'light';
 
   const patch = useMemo(() => {
     // `createTwoFilesPatch` writes no `new file mode` / `deleted file mode`

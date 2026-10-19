@@ -2,7 +2,7 @@
 
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 import type { ChannelPlatform } from './channel-message';
 
 /**

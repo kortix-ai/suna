@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 /**
  * Git History API — retrieve commit history for files via a short-lived PTY.
  *

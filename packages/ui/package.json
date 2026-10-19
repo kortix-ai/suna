@@ -110,6 +110,7 @@
     "./emoji-tint": "./src/components/ui/emoji-tint.ts",
     "./empty": "./src/components/ui/empty.tsx",
     "./entity-avatar": "./src/components/ui/entity-avatar.tsx",
+    "./error-boundary": "./src/components/ui/error-boundary.tsx",
     "./faded-scroll-area": "./src/components/ui/faded-scroll-area.tsx",
     "./favicon-avatar": "./src/components/ui/favicon-avatar.tsx",
     "./field": "./src/components/ui/field.tsx",
@@ -126,6 +127,7 @@
     "./hooks/use-mobile": "./src/hooks/use-mobile.ts",
     "./hooks/use-proximity-hover": "./src/hooks/use-proximity-hover.ts",
     "./hover-card": "./src/components/ui/hover-card.tsx",
+    "./i18n": "./src/i18n/index.ts",
     "./icon-provider": "./src/components/ui/icon-provider.tsx",
     "./icons/close": "./src/icons/close.tsx",
     "./icons/copy": "./src/icons/copy.tsx",
@@ -147,9 +149,11 @@
     "./lib/font-weight": "./src/lib/font-weight.ts",
     "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/icon-context": "./src/lib/icon-context.tsx",
+    "./lib/lazy-client": "./src/lib/lazy-client.tsx",
     "./lib/portal-root": "./src/lib/portal-root.ts",
     "./lib/settle": "./src/lib/settle.ts",
     "./lib/springs": "./src/lib/springs.ts",
+    "./lib/telemetry": "./src/lib/telemetry.ts",
     "./lib/utils": "./src/lib/utils.ts",
     "./lib/z-stack": "./src/lib/z-stack.tsx",
     "./list": "./src/components/ui/list.tsx",
@@ -571,6 +575,10 @@
         "types": "./dist/components/ui/entity-avatar.d.ts",
         "import": "./dist/components/ui/entity-avatar.js"
       },
+      "./error-boundary": {
+        "types": "./dist/components/ui/error-boundary.d.ts",
+        "import": "./dist/components/ui/error-boundary.js"
+      },
       "./faded-scroll-area": {
         "types": "./dist/components/ui/faded-scroll-area.d.ts",
         "import": "./dist/components/ui/faded-scroll-area.js"
@@ -631,6 +639,10 @@
       "./hover-card": {
         "types": "./dist/components/ui/hover-card.d.ts",
         "import": "./dist/components/ui/hover-card.js"
+      },
+      "./i18n": {
+        "types": "./dist/i18n/index.d.ts",
+        "import": "./dist/i18n/index.js"
       },
       "./icon-provider": {
         "types": "./dist/components/ui/icon-provider.d.ts",
@@ -716,6 +728,10 @@
         "types": "./dist/lib/icon-context.d.ts",
         "import": "./dist/lib/icon-context.js"
       },
+      "./lib/lazy-client": {
+        "types": "./dist/lib/lazy-client.d.ts",
+        "import": "./dist/lib/lazy-client.js"
+      },
       "./lib/portal-root": {
         "types": "./dist/lib/portal-root.d.ts",
         "import": "./dist/lib/portal-root.js"
@@ -727,6 +743,10 @@
       "./lib/springs": {
         "types": "./dist/lib/springs.d.ts",
         "import": "./dist/lib/springs.js"
+      },
+      "./lib/telemetry": {
+        "types": "./dist/lib/telemetry.d.ts",
+        "import": "./dist/lib/telemetry.js"
       },
       "./lib/utils": {
         "types": "./dist/lib/utils.d.ts",
@@ -984,6 +1004,7 @@
     "typecheck": "tsgo --noEmit",
     "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\"",
     "gen-exports": "node scripts/gen-exports.mjs",
+    "gen-i18n-catalog": "node scripts/gen-i18n-catalog.mjs",
     "build:styles": "node scripts/build-styles.mjs",
     "build": "node scripts/build.mjs",
     "smoke:install": "node scripts/smoke-install.mjs"
@@ -1029,6 +1050,7 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.3",
     "tailwind-merge": "^3.6.0",
+    "use-intl": "^4.13.4",
     "vaul": "^1.1.2"
   },
   "peerDependencies": {

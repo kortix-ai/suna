@@ -13,7 +13,7 @@
 
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
 
 import type { Outcome, OutcomeTone } from './outcome-types';

@@ -23,7 +23,7 @@ import {
 import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploaded-file-refs';
 import { useInstantSessionSend } from '@/features/session/use-instant-session-send';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
@@ -138,7 +138,7 @@ export function InstantSessionShell({
   const { submitted, effectiveSubmission, extraSends, handleSend, forgetExtraSend } = send;
   // A queued prompt runs as its author: only they edit or send it, and the
   // session's managers may remove it.
-  const { user: viewer } = useAuth();
+  const viewerId = useUiViewerId();
   const projectSessionRow = useProjectSession(projectId, sessionId, {
     enabled: !!projectId && !!sessionId,
   }).data;
@@ -155,9 +155,9 @@ export function InstantSessionShell({
           createdAtMs: 0,
           posted: false,
         })),
-        viewer: { userId: viewer?.id, managesSession: viewerManagesSession },
+        viewer: { userId: viewerId, managesSession: viewerManagesSession },
       }),
-    [promptInbox.prompts, extraSends, viewer?.id, viewerManagesSession],
+    [promptInbox.prompts, extraSends, viewerId, viewerManagesSession],
   );
   const transcriptQueue = useMemo(() => {
     const rows = promptInbox.prompts.filter(

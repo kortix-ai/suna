@@ -33,14 +33,14 @@ import type { SessionReminder } from '@kortix/sdk';
 import { qk, useFeatureFlag, useSessionReminders, useSessionWorking } from '@kortix/sdk/react';
 import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef, useState } from 'react';
 
 export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSessionId: string }) {
   const t = useTranslations('reminders');
   const locale = useLocale();
   // Route params: `id` = project, `sessionId` = the Kortix session reminders key on.
-  const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const { id: projectId, sessionId } = useUiParams<{ id: string; sessionId: string }>();
   const gate = useFeatureFlag(projectId, 'reminders');
   const reminders = useSessionReminders(gate.enabled ? projectId : null, sessionId);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);

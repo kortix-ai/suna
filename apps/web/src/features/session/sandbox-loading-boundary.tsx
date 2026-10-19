@@ -18,7 +18,7 @@
  * a missed caller degrades to "loading", never to a crash.
  */
 
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { ErrorBoundary } from '@kortix/ui/error-boundary';
 import { isRuntimeStartingError } from '@kortix/sdk';
 import { useEffect } from 'react';
 
@@ -44,7 +44,7 @@ function Rethrow({ error }: { error: Error }): never {
 
 export function SandboxLoadingBoundary({ children }: { children: React.ReactNode }) {
   return (
-    <ClientErrorBoundary
+    <ErrorBoundary
       fallback={({ error, reset }) =>
         isRuntimeStartingError(error) ? (
           <RuntimeLoadingFallback reset={reset} />
@@ -54,6 +54,6 @@ export function SandboxLoadingBoundary({ children }: { children: React.ReactNode
       }
     >
       {children}
-    </ClientErrorBoundary>
+    </ErrorBoundary>
   );
 }

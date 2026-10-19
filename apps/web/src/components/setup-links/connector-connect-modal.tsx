@@ -41,7 +41,7 @@ import { useEffect, useState } from 'react';
 import { ConnectorHandshake } from './connector-handshake';
 import { useConnectorIntake } from './connector-intake';
 import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
-import { setupLinkApiBase } from './util';
+import { setupLinkApiBase } from './api-base';
 
 const COPY = {
   title: 'Connect {app}',

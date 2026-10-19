@@ -30,7 +30,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { useBrowserRecentsStore } from '@/stores/browser-recents-store';

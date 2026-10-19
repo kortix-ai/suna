@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useEffect, useRef, useState } from 'react';
 
-import { setupLinkApiBase } from '@/components/setup-links/util';
+import { setupLinkApiBase } from '@/components/setup-links/api-base';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { ErrorStrip } from '@/features/auth/auth-primitives';

@@ -16,7 +16,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import Link from 'next/link';
+import { useUiLink } from '@kortix/ui/providers/ui-provider';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useInsideLink } from './inside-link-context';
 
@@ -146,6 +146,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 
 // Inline code that becomes a link (URLs) or opens a file preview (paths).
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
+  const Link = useUiLink();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { proxyUrl } = useSandboxProxy();
   const insideLink = useInsideLink();

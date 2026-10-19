@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { getRetryInfo, getRetryMessage } from '@/ui';
 import { classifySessionLogMessage, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
 import { canQueryRuntimeSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 
 const NO_SESSION = { projectId: '', sessionId: '', runtimeSessionId: null };
@@ -20,7 +20,7 @@ const NO_SESSION = { projectId: '', sessionId: '', runtimeSessionId: null };
  * last consumer is gone, and a preview has no re-hydrate path of its own.
  */
 export function useSubAgentThread(childSessionId: string | undefined): SessionLogThread | null {
-  const params = useParams<{ id?: string; sessionId?: string }>();
+  const params = useUiParams<{ id?: string; sessionId?: string }>();
   useEffect(() => {
     if (!canQueryRuntimeSession(childSessionId)) return;
     return useSessionStateStore.getState().retainSession(childSessionId);

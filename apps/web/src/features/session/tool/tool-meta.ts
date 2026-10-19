@@ -1,6 +1,6 @@
 import { contextToolTrigger as sdkContextToolTrigger } from '@kortix/sdk';
 
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 
 /**
  * Moved to `@kortix/sdk` (`packages/sdk/src/core/turns/tools/tool-meta.ts`)

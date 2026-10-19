@@ -2,12 +2,16 @@
 
 import * as React from 'react';
 
+import type { UiI18nHost } from '../i18n';
+
 /**
  * The host adapters for @kortix/ui: the copy components render when the
- * caller passes no label, the link component they navigate with, and the
- * organization marks KortixLogo renders. A host mounts <UiProvider> once at
- * its root. Without one, components render the English defaults, a plain <a>
- * and the Kortix logo.
+ * caller passes no label, the link component they navigate with, the
+ * organization marks KortixLogo renders, the image and router components, translations, the viewer
+ * and host flags. A host mounts <UiProvider> once at its root. Without one,
+ * components render the English defaults, a plain <a>, the Kortix logo and
+ * navigate with `window.location`. Telemetry is module-level:
+ * `setUiTelemetry` in `@kortix/ui/lib/telemetry`.
  */
 /**
  * The copy @kortix/ui/chat renders. Every key has an English default; a host
@@ -177,8 +181,23 @@ export type UiStringsInput = Partial<Omit<UiStrings, 'chat'>> & { chat?: Partial
 export type UiLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   href: string;
   ref?: React.Ref<HTMLAnchorElement>;
+  /**
+   * Router prefetch hint, as `next/link` reads it: `null` (default) = automatic,
+   * `true` = the full page, `false` = none. The default link ignores it.
+   */
+  prefetch?: boolean | null;
 };
 export type UiLinkComponent = React.ComponentType<UiLinkProps>;
+
+export type UiImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'alt' | 'width' | 'height'> & {
+  src: string;
+  alt: string;
+  width?: number;
+  height?: number;
+  /** Skip the host's image optimizer (`next/image` reads it). The default image ignores it. */
+  unoptimized?: boolean;
+};
+export type UiImageComponent = React.ComponentType<UiImageProps>;
 
 /** Organization marks that replace the Kortix logo. Each `*_dark_url` falls back to its light mark. */
 export interface UiBrand {
@@ -205,40 +224,145 @@ const DefaultLink = React.forwardRef<HTMLAnchorElement, UiLinkProps>(function De
   props,
   ref,
 ) {
-  return <a ref={ref} {...props} />;
+  const { prefetch: _prefetch, ...anchor } = props;
+  return <a ref={ref} {...anchor} />;
 });
+
+function DefaultImage({ unoptimized: _unoptimized, alt, ...props }: UiImageProps) {
+  return <img alt={alt} {...props} />;
+}
+
+/** Client-side navigation. `next/navigation`'s `useRouter()` result fits as is. */
+export interface UiRouter {
+  push(href: string): void;
+  replace(href: string): void;
+  prefetch(href: string): void;
+  back(): void;
+}
+
+/** Route segment values, as `next/navigation`'s `useParams()` returns them. */
+export type UiRouteParams = Record<string, string | string[] | undefined>;
+
+/** Read only: a Next.js host returns ReadonlyURLSearchParams, whose setters throw. Copy to change. */
+export type UiSearchParams = URLSearchParams;
+
+/**
+ * The host router as four hooks, so a component calls only the one it reads.
+ * Next.js hosts pass `next/navigation`'s hooks unchanged: one combined hook
+ * would call `useSearchParams` everywhere and change what prerenders.
+ */
+export interface UiNavigation {
+  useRouter: () => UiRouter;
+  usePathname: () => string;
+  useSearchParams: () => UiSearchParams;
+  /** Default: no route params. A host with dynamic segments passes its own. */
+  useParams: () => UiRouteParams;
+}
+
+const browserRouter: UiRouter = {
+  push: (href) => window.location.assign(href),
+  replace: (href) => window.location.replace(href),
+  prefetch: () => {},
+  back: () => window.history.back(),
+};
+
+function subscribeLocation(onChange: () => void): () => void {
+  window.addEventListener('popstate', onChange);
+  return () => window.removeEventListener('popstate', onChange);
+}
+
+const NO_PARAMS: UiRouteParams = {};
+
+/**
+ * Framework-free navigation: full page loads, `window.location` reads that
+ * update on `popstate`. SSR renders an empty pathname and no search params.
+ * ponytail: a direct `history.pushState` is not observed; a SPA host passes its router.
+ */
+export const defaultUiNavigation: UiNavigation = {
+  useRouter: () => browserRouter,
+  usePathname: () =>
+    React.useSyncExternalStore(subscribeLocation, () => window.location.pathname, () => ''),
+  useSearchParams: () => {
+    const search = React.useSyncExternalStore(
+      subscribeLocation,
+      () => window.location.search,
+      () => '',
+    );
+    return React.useMemo(() => new URLSearchParams(search), [search]);
+  },
+  useParams: () => NO_PARAMS,
+};
+
+/** Values the host knows and the UI reads. Every field has a default. */
+export interface UiHostConfig {
+  /** Billing is on, so upgrade actions have a target. Default: false. */
+  billingEnabled: boolean;
+}
+
+export const defaultUiHostConfig: UiHostConfig = { billingEnabled: false };
+
+const useNoViewer = (): string | undefined => undefined;
 
 interface UiContextValue {
   strings: UiStrings;
   link: UiLinkComponent;
+  image: UiImageComponent;
   useBrand: UseUiBrand;
+  navigation: UiNavigation;
+  i18n: UiI18nHost | null;
+  useViewerId: () => string | undefined;
+  config: UiHostConfig;
 }
 
 const UiContext = React.createContext<UiContextValue>({
   strings: defaultUiStrings,
   link: DefaultLink,
+  image: DefaultImage,
   useBrand: useNoBrand,
+  navigation: defaultUiNavigation,
+  i18n: null,
+  useViewerId: useNoViewer,
+  config: defaultUiHostConfig,
 });
 
 export function UiProvider({
   strings,
   link,
+  image,
   useBrand,
+  navigation,
+  i18n,
+  useViewerId,
+  config,
   children,
 }: {
   strings?: UiStringsInput;
   link?: UiLinkComponent;
+  /** Default: a plain <img>. apps/web passes `next/image`. */
+  image?: UiImageComponent;
   /** Default: no brand, so KortixLogo renders the Kortix marks. */
   useBrand?: UseUiBrand;
+  /** Default: `defaultUiNavigation`. Pass a stable object. */
+  navigation?: UiNavigation;
+  /** Default: the bundled English catalog (`@kortix/ui/i18n`). Pass a stable object. */
+  i18n?: UiI18nHost;
+  /** A hook that returns the signed-in user's id. Default: no viewer. */
+  useViewerId?: () => string | undefined;
+  config?: Partial<UiHostConfig>;
   children: React.ReactNode;
 }) {
   const value = React.useMemo<UiContextValue>(
     () => ({
       strings: { ...defaultUiStrings, ...strings, chat: { ...defaultChatStrings, ...strings?.chat } },
       link: link ?? DefaultLink,
+      image: image ?? DefaultImage,
       useBrand: useBrand ?? useNoBrand,
+      navigation: navigation ?? defaultUiNavigation,
+      i18n: i18n ?? null,
+      useViewerId: useViewerId ?? useNoViewer,
+      config: { ...defaultUiHostConfig, ...config },
     }),
-    [strings, link, useBrand],
+    [strings, link, image, useBrand, navigation, i18n, useViewerId, config],
   );
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
 }
@@ -251,7 +375,42 @@ export function useUiLink(): UiLinkComponent {
   return React.useContext(UiContext).link;
 }
 
+export function useUiImage(): UiImageComponent {
+  return React.useContext(UiContext).image;
+}
+
 /** The host's organization brand for this subtree, or null for the Kortix marks. */
 export function useUiBrand(): UiBrand | null {
   return React.useContext(UiContext).useBrand();
+}
+
+export function useUiRouter(): UiRouter {
+  return React.useContext(UiContext).navigation.useRouter();
+}
+
+export function useUiPathname(): string {
+  return React.useContext(UiContext).navigation.usePathname();
+}
+
+export function useUiSearchParams(): UiSearchParams {
+  return React.useContext(UiContext).navigation.useSearchParams();
+}
+
+/** The current route's dynamic segments. `T` narrows them, as `useParams<T>()` does. */
+export function useUiParams<T extends UiRouteParams = UiRouteParams>(): T {
+  return React.useContext(UiContext).navigation.useParams() as T;
+}
+
+/** The signed-in user's id, or undefined. */
+export function useUiViewerId(): string | undefined {
+  return React.useContext(UiContext).useViewerId();
+}
+
+export function useUiHostConfig(): UiHostConfig {
+  return React.useContext(UiContext).config;
+}
+
+/** The host's translation hooks, or null for the bundled catalog. Read by `@kortix/ui/i18n`. */
+export function useUiI18nHost(): UiI18nHost | null {
+  return React.useContext(UiContext).i18n;
 }

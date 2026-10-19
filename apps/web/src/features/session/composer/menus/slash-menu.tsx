@@ -1,7 +1,7 @@
 'use client';
 
 import { Kbd } from '@/components/ui/kbd';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import {
   ArrowsClockwiseIcon,

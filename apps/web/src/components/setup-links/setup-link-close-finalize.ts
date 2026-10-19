@@ -2,7 +2,8 @@
 
 import { finalizeConnectorSetupLink } from '@kortix/sdk';
 
-import { setupLinkApiBase, type SetupLinkKind } from './util';
+import { setupLinkApiBase } from './api-base';
+import type { SetupLinkKind } from './util';
 
 /**
  * Settle a connect when our own modal closes.

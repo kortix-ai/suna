@@ -41,7 +41,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { useUiLink } from '@kortix/ui/providers/ui-provider';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { parseMarkdownIntoBlocks, Streamdown } from 'streamdown';
 
@@ -82,6 +82,7 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
 });
 
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const Link = useUiLink();
   const { proxy, policy, variant } = useContext(MarkdownRenderContext);
   // Only agent content may turn a setup link into the in-app card. From any
   // other writer it stays a plain link to the same page.

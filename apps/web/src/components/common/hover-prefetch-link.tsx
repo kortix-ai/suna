@@ -1,11 +1,9 @@
 'use client';
 
-import NextLink from 'next/link';
-import { forwardRef, useState, type ComponentPropsWithoutRef } from 'react';
+import { useUiLink, type UiLinkProps } from '@kortix/ui/providers/ui-provider';
+import { forwardRef, useState } from 'react';
 
-type NextLinkProps = ComponentPropsWithoutRef<typeof NextLink>;
-
-export interface HoverPrefetchLinkProps extends Omit<NextLinkProps, 'prefetch'> {
+export interface HoverPrefetchLinkProps extends Omit<UiLinkProps, 'prefetch' | 'ref'> {
   /**
    * Which prefetch kind to switch on once the pointer/focus reaches the link.
    * Mirrors `next/link`'s own prop: `null` (default) = the automatic
@@ -15,8 +13,8 @@ export interface HoverPrefetchLinkProps extends Omit<NextLinkProps, 'prefetch'> 
 }
 
 /**
- * A `next/link` that prefetches on *intent* (hover, focus, touch) instead of on
- * mount. Next's own answer to "Preventing too many prefetches"
+ * The host link (`useUiLink`: `next/link` in apps/web) that prefetches on
+ * *intent* (hover, focus, touch) instead of on mount. Next's own answer to "Preventing too many prefetches"
  * (node_modules/next/dist/docs/01-app/02-guides/prefetching.md:302).
  *
  * Why it exists — measured, not theorised. A single session open on the
@@ -40,10 +38,11 @@ export const HoverPrefetchLink = forwardRef<HTMLAnchorElement, HoverPrefetchLink
     { prefetch = null, onMouseEnter, onFocus, onTouchStart, ...props },
     ref,
   ) {
+    const Link = useUiLink();
     const [armed, setArmed] = useState(false);
 
     return (
-      <NextLink
+      <Link
         {...props}
         ref={ref}
         prefetch={armed ? prefetch : false}

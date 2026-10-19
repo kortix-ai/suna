@@ -27,9 +27,9 @@ import {
   classifySetupLinkError,
   describeLinkExpiry,
   describeWithheldSecrets,
-  setupLinkApiBase,
   splitTextLinks,
 } from './util';
+import { setupLinkApiBase } from './api-base';
 
 type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
 

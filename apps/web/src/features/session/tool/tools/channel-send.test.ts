@@ -121,7 +121,6 @@ describe('ChannelSendCard', () => {
   test("names the Slack conversation from the project's bindings, the id only as a fallback", () => {
     expect(card).toContain('useChannelBindings(');
     expect(card).toContain('slackConversationName(');
-    expect(card).toContain("useParams<{ id?: string }>()");
   });
 
   test('the card and its collapsed row show one text: the reply as Slack shows it', () => {

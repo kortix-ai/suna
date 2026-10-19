@@ -9,7 +9,7 @@ import {
   ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useCallback, useEffect, useState } from 'react';
 import { XlsxViewerPreview } from './xlsx-viewer';
 
@@ -49,7 +49,7 @@ export function XlsxRenderer({
   showDownload = true,
 }: XlsxRendererProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -135,7 +135,7 @@ export function XlsxRenderer({
     <XlsxViewerPreview
       src={src}
       fileName={fileName}
-      isDark={resolvedTheme === 'dark'}
+      isDark={isDark}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
       showDownload={showDownload}

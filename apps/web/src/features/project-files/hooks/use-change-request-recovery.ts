@@ -6,7 +6,7 @@ import { createProjectSession, markSessionFresh } from '@kortix/sdk';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useState } from 'react';
 import {
   buildChangeRequestRecoveryPrompt,
@@ -20,7 +20,7 @@ export function useChangeRequestRecovery() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const projectId = useProjectContext()?.projectId ?? '';
   const queryClient = useQueryClient();
-  const router = useRouter();
+  const router = useUiRouter();
   const [startingCrId, setStartingCrId] = useState<string | null>(null);
 
   const startRecovery = useCallback(

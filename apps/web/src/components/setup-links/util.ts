@@ -1,11 +1,5 @@
-import { getEnv } from '@/lib/env-config';
 import { HostBoundaryError, type LinkInfoStorage, type SecretSetupLinkSubmitResult } from '@kortix/sdk';
 import { openMarkdownLinkAtEnd } from '@kortix/shared';
-
-/** API base (already includes the /v1 suffix), e.g. https://api.kortix.com/v1. */
-export function setupLinkApiBase(): string {
-  return (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
-}
 
 /**
  * The browser storage the SDK's connector link-info cache persists through, or

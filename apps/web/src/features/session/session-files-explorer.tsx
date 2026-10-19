@@ -7,7 +7,7 @@ import Loading from '@/components/ui/loading';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FilesStoreProvider, useFilesStore } from '@/features/files';
 import { SandboxFileExplorer } from '@/features/files/sandbox-file-explorer';
-import { DRIVE_ACTION_ROW_CLASS } from '@/features/project-files';
+import { DRIVE_ACTION_ROW_CLASS } from '@/features/project-files/components/drive-toolbar';
 import {
   useOpenChangeRequest,
   useSessionBaseRef,
@@ -24,7 +24,7 @@ import { getSessionFilesStore } from '@/features/session/session-files-store-reg
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef, useState } from 'react';
 
 export type { SessionPanelMode };
@@ -100,7 +100,7 @@ function SessionFilesExplorerInner({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The git branch == the ROUTE session id; the chat session id is passed in.
-  const { id: routeProjectId, sessionId: gitSessionId } = useParams<{
+  const { id: routeProjectId, sessionId: gitSessionId } = useUiParams<{
     id: string;
     sessionId: string;
   }>();

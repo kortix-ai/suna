@@ -78,7 +78,7 @@ import {
 import { slackChannelNames } from '@/features/session/turn/channel-message';
 import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
 import { useProjectSession } from '@kortix/sdk/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef, useState } from 'react';
 
 /** How long a just-decided row stays on screen to confirm the outcome. */
@@ -92,7 +92,7 @@ export function SessionApprovalPrompt({
   onDockedChange?: (docked: boolean) => void;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { id: projectId, sessionId: projectSessionId } = useParams<{
+  const { id: projectId, sessionId: projectSessionId } = useUiParams<{
     id: string;
     sessionId: string;
   }>();

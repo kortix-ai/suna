@@ -19,9 +19,9 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { ObjectUrlCache } from '@/lib/object-url-cache';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { cn } from '@/lib/utils';
 import {
   AppWindowIcon as AppWindow,

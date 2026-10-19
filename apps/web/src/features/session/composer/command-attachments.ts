@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 /**
  * Whether a `/` command submission may carry the composer's attachments.
  *

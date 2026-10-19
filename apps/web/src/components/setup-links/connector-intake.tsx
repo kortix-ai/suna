@@ -11,7 +11,8 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
-import { browserLinkInfoStorage, setupLinkApiBase } from './util';
+import { setupLinkApiBase } from './api-base';
+import { browserLinkInfoStorage } from './util';
 
 /**
  * Renders 1-click authorization for an agent-minted connect link.

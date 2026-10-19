@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 function subscribe(onChange: () => void): () => void {
+  if (typeof document === 'undefined') return () => {};
   const observer = new MutationObserver(onChange);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
   const media = window.matchMedia?.(DARK_QUERY);
@@ -15,8 +16,9 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-/** `<html class="dark">` wins, then `class="light"`, then the OS preference. */
+/** `<html class="dark">` wins, then `class="light"`, then the OS preference. No DOM (a test or native renderer): light. */
 function getSnapshot(): boolean {
+  if (typeof document === 'undefined') return false;
   const classes = document.documentElement.classList;
   if (classes.contains('dark')) return true;
   if (classes.contains('light')) return false;

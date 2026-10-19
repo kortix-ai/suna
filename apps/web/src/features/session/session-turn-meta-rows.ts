@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 /**
  * Pure derivation of a turn's "when did this finish, how long did it take,
  * what did it cost" meta — no React, no clock read of its own. `now` is

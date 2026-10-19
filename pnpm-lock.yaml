@@ -1841,6 +1841,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.7.0
+      use-intl:
+        specifier: ^4.13.4
+        version: 4.14.5(react@19.3.0)
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)

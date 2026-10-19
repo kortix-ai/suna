@@ -1,6 +1,6 @@
 import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 import type { SessionReloadPhase } from '@kortix/sdk';
 
 export const RELOAD_PROGRESS_STEPS: ReadonlyArray<{

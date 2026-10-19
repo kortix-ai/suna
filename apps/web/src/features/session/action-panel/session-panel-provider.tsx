@@ -31,7 +31,7 @@ import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils/use-mobile';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
   useClearFocusedToolCall,

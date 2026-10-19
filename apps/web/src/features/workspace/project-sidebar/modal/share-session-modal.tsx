@@ -21,7 +21,7 @@ import {
   type SharingCopy,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 import { getSessionOversight, setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
 import { sessionOversightQueryKey } from '@/components/iam/session-oversight-card';

@@ -1,6 +1,6 @@
 'use client';
 
-import * as Sentry from '@sentry/nextjs';
+import { addBreadcrumb, captureMessage } from '@kortix/ui/lib/telemetry';
 import { useEffect } from 'react';
 
 /**
@@ -210,7 +210,7 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
       console.warn('[session] involuntary page load', { sessionId, cause, ...forensics });
     }
     if (shouldReportReloadCause(cause)) {
-      Sentry.captureMessage('session page reloaded involuntarily', {
+      captureMessage('session page reloaded involuntarily', {
         level: 'warning',
         extra: { sessionId, cause, ...forensics },
       });
@@ -220,7 +220,7 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
       // on the discard itself. No `message` field — a `message:` literal reads as
       // UI copy to the i18n audit, and this is developer-facing telemetry; the
       // category and `data.cause` carry the meaning.
-      Sentry.addBreadcrumb({
+      addBreadcrumb({
         category: 'session.reload',
         level: 'info',
         data: { sessionId, cause, ...forensics },

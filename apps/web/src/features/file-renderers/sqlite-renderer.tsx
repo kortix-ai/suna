@@ -62,7 +62,7 @@ import {
   type RowSelectionOptions,
 } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
 
@@ -285,11 +285,11 @@ export function SqliteRenderer({
   const gridApiRef = useRef<AgGridReact | null>(null);
 
   // AG Grid theme
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   const agTheme = useMemo(() => {
-    const colorScheme = resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
+    const colorScheme = isDark ? colorSchemeDarkBlue : colorSchemeLight;
     return gridTheme.withPart(colorScheme);
-  }, [resolvedTheme]);
+  }, [isDark]);
 
   // ── Refresh table metadata after mutations ────────────────────────────
   const refreshTableMeta = useCallback(() => {

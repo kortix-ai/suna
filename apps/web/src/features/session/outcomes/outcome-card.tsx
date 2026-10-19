@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/item';
 import { cn } from '@/lib/utils';
 
-import Link from 'next/link';
+import { useUiLink } from '@kortix/ui/providers/ui-provider';
 import type { Outcome, OutcomeKind } from './outcome-types';
 import { outcomeMetaLine, outcomeTint, truncateOutcomeTitle } from './outcome-vocabulary';
 
@@ -114,6 +114,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   pending?: boolean;
   className?: string;
 }) {
+  const Link = useUiLink();
   const Glyph = icon ?? OUTCOME_ICON[outcome.kind];
   const tint = outcomeTint(outcome.status.tone);
   // Narrowed to a definite string rather than a boolean flag: `Link`'s `href`

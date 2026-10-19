@@ -4,7 +4,7 @@ import type { PastedContent } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 
 import type { ComposerEditorHandle } from '../editor/composer-editor';
 import { useLatestRef } from '../hooks/use-latest-ref';
@@ -86,8 +86,8 @@ export function useComposerDraft({
   hasPrefill,
   onRestore,
 }: UseComposerDraftInput): UseComposerDraftResult {
-  const { user } = useAuth();
-  const userId = user?.id ?? '';
+  const viewerId = useUiViewerId();
+  const userId = viewerId ?? '';
   const enabled = !!scope && !!userId;
 
   // Everything the debounced writer reads, held in refs so the timer callback

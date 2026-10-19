@@ -1,13 +1,12 @@
 'use client';
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { useAuth } from '@/features/providers/auth-provider';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useUiParams, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useState, type ComponentProps, type ReactNode } from 'react';
 import {
   type ChatGptConnectionAction,
@@ -669,7 +668,7 @@ export function TurnErrorDisplay({
  * informational, exactly as before.
  */
 function ChatGptConnectionSlot({ action }: { action: ChatGptConnectionAction }) {
-  const params = useParams<{ id?: string; sessionId?: string }>();
+  const params = useUiParams<{ id?: string; sessionId?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : null;
   if (!projectId || !sessionId) return null;
@@ -691,7 +690,7 @@ function ChatGptConnectionButton({
   sessionId: string;
 }) {
   const t = useTranslations('pooledSecrets');
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const pooled = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const project = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -710,7 +709,7 @@ function ChatGptConnectionButton({
     chatGptActionApplies({
       action,
       personalUser: sessionPersonalUser(session.data),
-      viewerId: user?.id,
+      viewerId: viewerId,
       explicitSelection: pools.isSuccess
         ? pools.data.pools.some((pool) => pool.provider_id === 'codex')
         : undefined,

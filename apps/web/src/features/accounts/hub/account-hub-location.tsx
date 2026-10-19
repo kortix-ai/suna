@@ -15,7 +15,7 @@
  * and the browser still shows where the row goes.
  */
 
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { forwardRef, useMemo, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 
 import {
@@ -36,7 +36,7 @@ import { preloadAccountHub } from './account-hub-entry';
  * rendered route segments describe the page underneath, not the hub.
  */
 export function useAccountPanelId(): string | undefined {
-  return useSearchParams().get(ACCOUNT_PANEL_PARAM) || undefined;
+  return useUiSearchParams().get(ACCOUNT_PANEL_PARAM) || undefined;
 }
 
 /**
@@ -53,7 +53,7 @@ export function useAccountPanelId(): string | undefined {
  * it into client-side rendering at build time.
  */
 export function useHubSearchParams(): URLSearchParams {
-  const search = useSearchParams();
+  const search = useUiSearchParams();
   return useMemo(() => hubParamsFromUrl(search), [search]);
 }
 
@@ -69,8 +69,8 @@ export function useHubSearchParams(): URLSearchParams {
  * provide a router just to render one.
  */
 export function useHubUrl(target: HubTarget): string {
-  const pathname = usePathname();
-  const search = useSearchParams();
+  const pathname = useUiPathname();
+  const search = useUiSearchParams();
   const query = search?.toString() ?? '';
   return useMemo(
     () => {

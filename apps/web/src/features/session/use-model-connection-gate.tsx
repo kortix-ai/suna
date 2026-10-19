@@ -1,13 +1,12 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
+import { useUiHostConfig, useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo, useState } from 'react';
 
 import { useAccountState } from '@/hooks/billing';
 import { useOpenedOnce } from '@/hooks/utils/use-opened-once';
-import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
@@ -27,12 +26,10 @@ import { resolveEntitlementsPending } from './entitlements-pending';
 // The provider modal pulls the whole Customize → Models surface (gateway tabs,
 // usage charts, the provider catalog). Every composer renders this gate — the
 // marketing home demo included — so the modal body loads on first open only.
-const ProjectProviderModal = dynamic(
-  () =>
-    import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
-      (mod) => mod.ProjectProviderModal,
-    ),
-  { ssr: false },
+const ProjectProviderModal = lazyClient(() =>
+  import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
+    (mod) => mod.ProjectProviderModal,
+  ),
 );
 
 export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
@@ -88,7 +85,7 @@ export function useModelConnectionGate(
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const params = useParams<{ id?: string }>();
+  const params = useUiParams<{ id?: string }>();
   const projectId = resolveGateProjectId(options?.projectId, params?.id);
 
   const projectDetailQuery = useQuery({
@@ -217,7 +214,7 @@ export function useModelConnectionGate(
   // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
   // enables billing without mounting one still yields a dead click — which is
   // exactly why `/new` had to mount its own.
-  const showUpgradeOption = isBillingEnabled();
+  const showUpgradeOption = useUiHostConfig().billingEnabled;
 
   return {
     openConnectProvider,

@@ -44,7 +44,7 @@ import {
   useRevokePublicShare,
   useSessionPublicShares,
 } from '@/hooks/use-session-public-shares';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';

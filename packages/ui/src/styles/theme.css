@@ -20,8 +20,10 @@
  * --font-mono-system). A host that skips tokens.css and leaves those unset falls
  * back to the generic ui-sans-serif / ui-monospace stacks. */
 
-/* Tailwind scans the package source for class names. */
+/* Tailwind scans the package source for class names. The i18n catalog is
+   copy, not markup: its words must not become utilities. */
 @source "../";
+@source not "../i18n/en.json";
 
 @import './dotmatrix-loader.css';
 

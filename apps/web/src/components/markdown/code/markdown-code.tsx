@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { ErrorBoundary } from '@kortix/ui/error-boundary';
 import type { MarkdownTrust, MarkdownVariant } from '@/components/markdown/markdown-policy';
 import { KaTeXBlock } from '@/components/markdown/katex-block';
 import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
@@ -73,7 +73,7 @@ function GenuiMarkdownFallback({ code, version, streaming, trust, variant }: Omi
  * its markdown, not the whole chat with the crash card. Exported for its test.
  */
 export function GenuiFenceBoundary({ children, ...fence }: Omit<GenuiFenceProps, 'cutOff'> & { children: React.ReactNode }) {
-  return <ClientErrorBoundary fallback={() => <GenuiMarkdownFallback {...fence} />}>{children}</ClientErrorBoundary>;
+  return <ErrorBoundary fallback={() => <GenuiMarkdownFallback {...fence} />}>{children}</ErrorBoundary>;
 }
 
 function GenuiFence({ turnStreaming, ...fence }: GenuiFenceProps & { turnStreaming: boolean }) {

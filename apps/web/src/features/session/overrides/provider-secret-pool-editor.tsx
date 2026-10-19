@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
-import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useUiLink } from '@kortix/ui/providers/ui-provider';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   type AccountSecretResource, getProjectDetail,
 } from '@kortix/sdk';
@@ -56,6 +56,7 @@ const PERSONAL_KEYS_NOTE: Record<PersonalKeysReason, 'sharedSessionKeys' | 'prom
 };
 
 function NoPoolKeys({ projectId, shared = false, reason = null }: { projectId: string; shared?: boolean; reason?: PersonalKeysReason | null }) {
+  const Link = useUiLink();
   const t = useTranslations('pooledSecrets');
   return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
     {shared && <p className="text-muted-foreground text-xs">{t(PERSONAL_KEYS_NOTE[reason ?? 'shared'])}</p>}
@@ -72,6 +73,7 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
   personalKeys?: boolean;
   onChange: (ids: string[]) => void; onReset: () => void;
 }) {
+  const Link = useUiLink();
   const t = useTranslations('pooledSecrets');
   const id = useId();
   const personalChatGpt = providerId === 'codex' && personalKeys;

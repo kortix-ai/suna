@@ -46,8 +46,13 @@ import {
   StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  useUiLink,
+  useUiPathname,
+  useUiRouter,
+  useUiSearchParams,
+  useUiViewerId,
+} from '@kortix/ui/providers/ui-provider';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -60,7 +65,6 @@ import {
   stoppedByName,
 } from './turn/message-author';
 import { stopRefusalMessage } from './stop-refusal';
-import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
 import { runtimePermissionLocksComposer } from './composer/send-blockers';
 import { SessionPrintHeader } from './print/session-print-header';
@@ -175,7 +179,7 @@ import {
   buildFileRefsBlock,
 } from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -687,7 +691,8 @@ export function SessionChat({
   threadRef.current = thread;
   const messagesLoading = syncMessagesLoading;
   // Who wrote each user message. A one-person session stays unlabelled.
-  const { user: viewer } = useAuth();
+  const viewerId = useUiViewerId();
+  const Link = useUiLink();
   // Only a user message adds an author, so only user messages key the refetch.
   const userMessageIds = useMemo(
     () => (messages ?? []).filter((m) => m.role === 'user').map((m) => m.message_id),
@@ -1348,8 +1353,8 @@ export function SessionChat({
   // session's managers may remove it. Same cache entry as the header's read.
   const viewerManagesSession = projectSessionRow?.can_manage_lifecycle !== false;
   const queuedPromptViewer = useMemo(
-    () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
-    [viewer?.id, viewerManagesSession],
+    () => ({ userId: viewerId, managesSession: viewerManagesSession }),
+    [viewerId, viewerManagesSession],
   );
   const queueRows = useMemo(
     () =>
@@ -3507,8 +3512,8 @@ export function SessionChat({
     }
   }, [heldCommands, effectiveBusy, runtimeReady, awaitingUserInput, queueRows.rows, handleCommand]);
 
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathname = useUiPathname();
+  const router = useUiRouter();
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
@@ -3989,7 +3994,7 @@ export function SessionChat({
   // uses (`useSessionBaseRef`), so the transcript and Changes cannot disagree
   // about which ref backs a change request.
   const outcomesBaseRef = useSessionBaseRef(projectId, projectSessionId);
-  const searchParams = useSearchParams();
+  const searchParams = useUiSearchParams();
   // `readOnly` is the nested sub-session modal (`sub-session-modal.tsx`) — it
   // shares this component but must not rewrite the parent route's URL.
   const [openCrId, setOpenCrIdState] = useState<string | null>(() =>
@@ -4427,8 +4432,8 @@ export function SessionChat({
                               }
                               turn={turn}
                               author={turnAuthor}
-                              showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
-                              stoppedBy={stoppedByName(messageAuthors, turn.id, viewer?.id)}
+                              showAuthor={showAuthorName(turnAuthor, groupChat, viewerId)}
+                              stoppedBy={stoppedByName(messageAuthors, turn.id, viewerId)}
                               servedModel={servedModelOfTurn(modelUsage, turn.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.id === lastUserMessageId}

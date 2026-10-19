@@ -16,7 +16,7 @@
  */
 
 import { MOBILE_BREAKPOINT } from '@/hooks/utils/use-mobile';
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 import {
   type QuickView,
   type QuickViewTarget,

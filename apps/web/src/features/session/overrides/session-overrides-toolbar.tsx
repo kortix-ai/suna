@@ -9,7 +9,7 @@ import {
   KeyIcon as KeyRound,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
-import dynamic from 'next/dynamic';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
@@ -45,13 +45,11 @@ import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool
 // The pooled-key editors read the full LLM provider catalog (`lib/llm-providers`
 // → the bundled models.dev snapshot). They render only when the user opens the
 // "Provider keys" row, so they load then — not with every composer.
-const ProviderSecretPoolEditor = dynamic(
-  () => import('./provider-secret-pool-editor').then((mod) => mod.ProviderSecretPoolEditor),
-  { ssr: false },
+const ProviderSecretPoolEditor = lazyClient(() =>
+  import('./provider-secret-pool-editor').then((mod) => mod.ProviderSecretPoolEditor),
 );
-const NewProviderSecretPoolEditor = dynamic(
-  () => import('./provider-secret-pool-editor').then((mod) => mod.NewProviderSecretPoolEditor),
-  { ssr: false },
+const NewProviderSecretPoolEditor = lazyClient(() =>
+  import('./provider-secret-pool-editor').then((mod) => mod.NewProviderSecretPoolEditor),
 );
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {

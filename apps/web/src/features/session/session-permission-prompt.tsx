@@ -40,7 +40,7 @@ import {
   ShieldWarningIcon as ShieldAlert,
   ShieldCheckIcon as ShieldCheck,
 } from '@phosphor-icons/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 /**
@@ -144,7 +144,7 @@ export function SessionPermissionPrompt({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Only the /projects/[id]/sessions/[sessionId] route has a project in scope —
   // on plain /sessions/[id], `id` IS the session, so no config surface.
-  const params = useParams<{ id?: string; sessionId?: string }>();
+  const params = useUiParams<{ id?: string; sessionId?: string }>();
   const projectId = params?.sessionId ? params.id : undefined;
   const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_AGENT_WRITE];
 

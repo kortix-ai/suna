@@ -8,7 +8,7 @@ import {
 } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo, useState } from 'react';
 
 /**
@@ -124,7 +124,7 @@ export function useModelPricingLookup(
 ): ModelPricingLookup {
   // Every caller renders under `/projects/[id]/…` (session chat, the
   // sub-session modal, the context modal). No project id → no fallback.
-  const params = useParams<{ id?: string }>();
+  const params = useUiParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
 
   const [catalogWanted, setCatalogWanted] = useState(false);

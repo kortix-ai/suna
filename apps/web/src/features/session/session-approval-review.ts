@@ -1,4 +1,4 @@
-import type { UiTranslator } from '@/i18n/translator';
+import type { UiTranslator } from '@kortix/ui/i18n';
 /**
  * Pure mapping + list logic behind every connector-approval surface.
  *

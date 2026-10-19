@@ -6,7 +6,7 @@ import { CustomizeGlyph } from '@/features/icon/icons/customize';
 export { CustomizeGlyph } from '@/features/icon/icons/customize';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useParams, usePathname } from 'next/navigation';
+import { useUiParams, useUiPathname } from '@kortix/ui/providers/ui-provider';
 
 import { CountBadge } from '@/components/ui/count-badge';
 import {
@@ -261,8 +261,8 @@ export function useProjectNavRows(projectId: string | undefined): ProjectNavRows
  */
 export function ProjectCustomizeNavItem() {
   const t = useTranslations('sidebar');
-  const pathname = usePathname();
-  const params = useParams<{ id: string }>();
+  const pathname = useUiPathname();
+  const params = useUiParams<{ id: string }>();
   const projectId = params?.id;
   const access = useCapabilityAccess(projectId);
   const rows = useProjectNavRows(projectId);

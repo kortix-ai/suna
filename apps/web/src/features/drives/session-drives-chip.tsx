@@ -8,7 +8,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { FolderIcon, HouseIcon, WarningIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { useUiLink } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef } from 'react';
 
 /** Where the person's own folder also appears in the box: a path, not prose. */
@@ -24,6 +24,7 @@ const DESKTOP_PATH = '~/Desktop';
  * the chip orange and raises one toast.
  */
 export function SessionDrivesChip({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const Link = useUiLink();
   const t = useTranslations('drives');
   const flag = useFeatureFlag(projectId, 'drives');
   const session = useSessionDrives(projectId, sessionId);

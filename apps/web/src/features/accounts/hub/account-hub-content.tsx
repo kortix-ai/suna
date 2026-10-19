@@ -35,7 +35,7 @@ import {
   ClockIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -634,7 +634,7 @@ function GitHubConnectionCard({
   // the entry the modal pushed — so Back from the setup page returns to where
   // the hub was opened, not to the hub — and the URL it goes to carries no
   // `accountId`, which is what "closed" means.
-  const router = useRouter();
+  const router = useUiRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;

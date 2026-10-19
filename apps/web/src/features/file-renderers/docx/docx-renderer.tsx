@@ -2,7 +2,7 @@
 
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useEffect, useState } from 'react';
 import { DocxViewerPreview } from './docx-viewer';
 
@@ -65,7 +65,7 @@ export function DocxRenderer({
   toolbarActions,
   showDownload = true,
 }: DocxRendererProps) {
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export function DocxRenderer({
     <DocxViewerPreview
       src={src}
       fileName={fileName ? ensureDocxFileName(fileName) : blob ? 'document.docx' : undefined}
-      isDark={resolvedTheme === 'dark'}
+      isDark={isDark}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
       showDownload={showDownload}

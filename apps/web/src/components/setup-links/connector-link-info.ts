@@ -10,7 +10,8 @@ import {
 } from '@kortix/sdk/react';
 import type { ConnectorSetupLinkInfo } from '@kortix/sdk';
 
-import { browserLinkInfoStorage, setupLinkApiBase } from './util';
+import { setupLinkApiBase } from './api-base';
+import { browserLinkInfoStorage } from './util';
 
 export { connectorHeadline } from '@kortix/sdk';
 
