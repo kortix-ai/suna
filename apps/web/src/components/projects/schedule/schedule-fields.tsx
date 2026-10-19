@@ -367,7 +367,7 @@ export function ConditionsEditor({
             // Rows are edited in place and identified positionally; there is
             // no stable id to key on until a field is typed.
             // biome-ignore lint/suspicious/noArrayIndexKey: positional rows
-            <div key={index} className="flex items-center gap-2">
+            <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2">
               <Input
                 value={row.path}
                 onChange={(e) => patch(index, { path: e.target.value })}
@@ -382,7 +382,7 @@ export function ConditionsEditor({
                 disabled={disabled}
               >
                 <SelectTrigger
-                  className="w-36 shrink-0 cursor-pointer text-xs"
+                  className="w-48 shrink-0 cursor-pointer text-xs"
                   aria-label={tConditions('operatorLabel', { value0: index + 1 })}
                 >
                   <SelectValue />
@@ -395,6 +395,8 @@ export function ConditionsEditor({
                   ))}
                 </SelectContent>
               </Select>
+              {/* exists / missing take no value; the empty cell keeps the columns aligned. */}
+              {!conditionNeedsValue(row.operator) && <span aria-hidden />}
               {conditionNeedsValue(row.operator) && (
                 <Input
                   value={row.value}
