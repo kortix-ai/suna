@@ -484,32 +484,6 @@
     },
     {
       "os": "windows",
-      "case": "elevated process the recorder cannot open (snapshot name only)",
-      "entry": "regedit.exe",
-      "app": {
-        "bundle_id": "regedit.exe",
-        "aliases": [
-          "regedit.exe",
-          "regedit"
-        ]
-      },
-      "match": true
-    },
-    {
-      "os": "windows",
-      "case": "elevated process the recorder cannot open (snapshot name only)",
-      "entry": "regedit",
-      "app": {
-        "bundle_id": "regedit.exe",
-        "aliases": [
-          "regedit.exe",
-          "regedit"
-        ]
-      },
-      "match": true
-    },
-    {
-      "os": "windows",
       "case": "Java host: every Java app is javaw.exe",
       "entry": "javaw.exe",
       "app": {

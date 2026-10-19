@@ -1165,7 +1165,7 @@ more). The API and the SDK (`normalizeCaptureAppId`) accept any such entry.
 | Windows 10/11, classic Win32 | exe file name, version-resource description | `acad.exe`, `ACAD`, `C:\Program Files\Autodesk\AutoCAD 2025\acad.exe`, `AutoCAD Application`, `autocad*` |
 | Windows, packaged MSIX/Store (Win11 Notepad, Paint, Terminal, Calculator) | AppUserModelID, exe file name, package family, package name, description | `notepad.exe`, `Microsoft.WindowsNotepad`, `Microsoft.WindowsNotepad_8wekyb3d8bbwe`, the AUMID, a `WindowsApps` path |
 | Windows, UWP in `ApplicationFrameHost.exe` | the app process behind the frame; if not found, the window's `PKEY_AppUserModel_ID` | `calculatorapp.exe`, `Microsoft.WindowsCalculator` (`calc.exe` is only a launcher: it never matches) |
-| Windows, elevated or protected process | exe name from a process snapshot (the image path is unreadable) | the exe name |
+| Windows, elevated or protected process the recorder may not open | none: the app is unknown (a process snapshot names it in `aliases` only) | nothing: never recorded unless `record_unknown_bundle_ids`, never with Record only |
 | Windows, Java / .NET / Electron hosts | the host exe (`javaw.exe`), or the app's own exe (`slack.exe`) | `javaw.exe` names every Java app |
 | macOS 14+ | bundle id, app name, executable name, `.app` file name | `com.autodesk.AutoCAD2025`, `com.autodesk.autocad*`, `AutoCAD 2025`, `AutoCAD 2025.app`, a `/Applications/...` path |
 | macOS, Mac Catalyst | bundle id without `maccatalyst.` | the iOS bundle id |
@@ -1175,8 +1175,9 @@ more). The API and the SDK (`normalizeCaptureAppId`) accept any such entry.
 
 Fail-safe rules:
 
-- An app without identifiers (macOS without a bundle id, an X11 window
-  without `WM_CLASS` or pid) is never recorded with Record only on. With it
+- An app without a `bundle_id` (macOS without a bundle id, an X11 window
+  without `WM_CLASS` or pid, a Windows process the recorder may not open) is
+  never recorded with Record only on, even when its name is listed. With it
   off it is hidden unless `record_unknown_bundle_ids`; the recorder reports
   `unknown_bundle`.
 - Record only on: a browser whose URL is not read (an unfocused window on

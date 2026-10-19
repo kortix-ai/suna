@@ -1473,6 +1473,38 @@ mod tests {
         assert!(app_listed(&["freecad".into()], "", &process_aliases("/x", "", b"APPIMAGE=/a/FreeCAD.AppImage")));
     }
 
+    /// A window the OS did not name (on Windows, an elevated process the recorder
+    /// may not open: empty `bundle_id`, its snapshot name in `aliases`) fails closed.
+    #[test]
+    fn an_unknown_app_is_hidden_even_when_its_name_is_listed() {
+        let display = [DisplayInfo {
+            id: 1,
+            rect: Rect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+            name: "DISPLAY1".into(),
+            main: true,
+            scale: 1.0,
+        }];
+        let mut elevated = win(1, "", 0, 0, 1920, 1080);
+        elevated.aliases = vec!["regedit.exe".into()];
+        let windows = vec![elevated];
+        let no_url = |_: &WinInfo| None;
+        let none = |_: &str, _: &[String]| false;
+        let include = Include {
+            on: true,
+            apps: vec!["regedit.exe".into()],
+            domains: vec![],
+        };
+        for (record_unknown, include) in [(false, Include::default()), (true, include)] {
+            let plan = plan_displays(&windows, &display, &no_url, &none, &[], true, record_unknown, &include);
+            assert!(plan.hidden.contains(&1) && plan.covered.contains(&1));
+        }
+    }
+
     #[test]
     fn a_packaged_app_is_also_named_by_its_package() {
         assert_eq!(

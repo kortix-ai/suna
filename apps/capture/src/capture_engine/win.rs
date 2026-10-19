@@ -6,8 +6,8 @@
 //!   window list, because a desktop grab cannot exclude windows.
 //! * Foreground / process: `GetForegroundWindow`, `QueryFullProcessImageNameW`,
 //!   `GetApplicationUserModelId` for packaged apps, version resource for name.
-//!   A process the recorder may not open (an elevated or protected one) keeps
-//!   its executable name from a process snapshot, so it is never "unknown". A
+//!   A process the recorder may not open (an elevated or protected one) stays
+//!   unknown (empty `bundle_id`); a process snapshot names it in `aliases`. A
 //!   frame-hosted UWP window whose app process is not found is named by the
 //!   window's AppUserModelID property.
 //! * URL and AX tree: UI Automation.
@@ -252,8 +252,12 @@ fn proc_info(pid: u32) -> Option<ProcInfo> {
             return Some(info.clone());
         }
     }
-    // Not openable (elevated, protected): the snapshot still names its executable.
-    let (path, aumid) = exe_and_aumid(pid).or_else(|| Some((snapshot_exe(pid)?, None)))?;
+    // Not openable (elevated, protected): the app stays unknown (empty `bundle_id`,
+    // never recorded unless `record_unknown`, never with Record only); the snapshot
+    // only names it, for status and Kortix's own windows.
+    let opened = exe_and_aumid(pid);
+    let unknown = opened.is_none();
+    let (path, aumid) = opened.or_else(|| Some((snapshot_exe(pid)?, None)))?;
     let file = Path::new(&path)
         .file_name()?
         .to_string_lossy()
@@ -277,7 +281,11 @@ fn proc_info(pid: u32) -> Option<ProcInfo> {
     aliases.extend(aumid.as_deref().map(packaged_aliases).unwrap_or_default());
     aliases.push(name.clone());
     let info = ProcInfo {
-        bundle_id: aumid.unwrap_or_else(|| file.clone()),
+        bundle_id: if unknown {
+            String::new()
+        } else {
+            aumid.unwrap_or_else(|| file.clone())
+        },
         exe: file,
         aliases,
         name,
