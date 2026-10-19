@@ -197,6 +197,12 @@ export const accounts = kortixSchema.table(
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
    *  a disclosure in the share dialog while it is on. */
   adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+  /** Pause all automations (KRTX-1721): set, no schedule, reminder, webhook,
+   *  app event or monitor of any project in the account fires on its own. A
+   *  manual fire still runs. NULL = automations run. `PATCH /accounts/:id/automations`. */
+  automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+  /** Who paused them; NULL while running. */
+  automationsPausedBy: uuid('automations_paused_by'),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The

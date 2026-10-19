@@ -46,8 +46,8 @@ Kortix Cloud serves two managed models. You need no key. Kimi K3 left the lineup
 | GLM 5.3 Flash | `glm-5.3-flash` | fast | 1,000,000 | 65,536 | Yes |
 
 - The picker lists them under **Kortix**.
-- Every plan, Free included, can run the platform default. Another managed model needs a plan that includes it. Otherwise the request returns `plan_upgrade_required`.
-- Kortix sends each managed model only to a fixed pool of US inference endpoints with zero data retention.
+- Managed models need the Credits plan or Enterprise. On Free, every managed model, the platform default included, returns `plan_upgrade_required`.
+- Kortix sends each managed model only to a fixed pool of inference endpoints with zero data retention.
 - Managed requests use credits. See [Plans & credits](/docs/credits).
 - The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for them.
 - A self-hosted instance has no managed models. Connect your own providers.
@@ -116,7 +116,7 @@ A stale default never fails a session. A less specific default is not tried when
 
 - An explicit pin that the project cannot run falls through to the defaults.
 - A default that cannot run, for example after its key was removed, falls back to a model of another connected provider, then to the platform default.
-- On the Free plan, a default that names another managed model falls back to the platform default.
+- On the Free plan, a default that names a managed model falls back to your connected ChatGPT subscription, then a connected provider key. With neither, the session has no model until you connect one.
 
 `kortix models default` prints the chain and what it resolves to. `kortix models default --clear [--account]` removes a default. Writes need the `project.model.write` permission.
 

@@ -1513,6 +1513,13 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the default,
+   * 60, applies. A fire past it is a skipped run with reason `throttled: …`.
+   */
+  max_runs_per_hour: z.number().int().nullable().optional(),
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day: z.number().int().nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
@@ -1532,6 +1539,8 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
+  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;

@@ -57,6 +57,7 @@ export function TriggerOptions({
   edit?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tComposer = useI18nTranslations('triggerComposer');
   const sessions = useQuery({
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
@@ -103,6 +104,43 @@ export function TriggerOptions({
               showHeading={false}
               copy={triggerSessionAccessCopy(tI18nComplete)}
             />
+          </OptionField>
+
+          <OptionField label={tComposer('runLimits')} hint={tComposer('runLimitsHint')}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="trigger-max-runs-per-hour" className="text-muted-foreground text-xs font-normal">
+                  {tComposer('perHour')}
+                </Label>
+                <Input
+                  id="trigger-max-runs-per-hour"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={draft.maxRunsPerHour}
+                  onChange={(e) => patch({ maxRunsPerHour: e.target.value })}
+                  placeholder="60"
+                  className="text-sm tabular-nums"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="trigger-max-runs-per-day" className="text-muted-foreground text-xs font-normal">
+                  {tComposer('perDay')}
+                </Label>
+                <Input
+                  id="trigger-max-runs-per-day"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={draft.maxRunsPerDay}
+                  onChange={(e) => patch({ maxRunsPerDay: e.target.value })}
+                  placeholder={tComposer('noLimit')}
+                  className="text-sm tabular-nums"
+                />
+              </div>
+            </div>
           </OptionField>
 
           {!isCron && (

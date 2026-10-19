@@ -2477,21 +2477,21 @@
           "name": "Free",
           "note": "Starte mit echten Sandbox-Credits.",
           "f1": "500 Credits / Monat, keine Karte nötig",
-          "f2": "Verwaltete Modelle: Kimi, DeepSeek, GLM. Keine Datenspeicherung, Inferenz in den USA",
-          "f3": "1 Projekt",
-          "f4": "Eigener API-Schlüssel für jedes Premium-Modell",
-          "f5": "Verbinde dein ChatGPT-Abo"
+          "f2": "1 Projekt",
+          "f3": "Eigener API-Schlüssel für jedes Premium-Modell",
+          "f4": "Verbinde dein ChatGPT-Abo"
         },
         "credits": {
           "name": "Credits",
           "note": "Ab 50 $ pro Monat. Wähle die Credits, die dein Team braucht.",
           "unit": "/ Monat und mehr",
           "f1": "Alles aus Free",
-          "f2": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
-          "f3": "Ungenutzte Credits werden einen Monat übertragen",
-          "f4": "Jederzeit aufladen. Aufladungen verfallen nie",
-          "f5": "Bis zu 200 Projekte und höhere Modell-Ratenlimits",
-          "f6": "Support per E-Mail"
+          "f2": "Verwaltete Modelle: DeepSeek, GLM. Keine Datenspeicherung",
+          "f3": "Unbegrenzt viele Mitglieder, ein gemeinsamer Credit-Pool",
+          "f4": "Ungenutzte Credits werden einen Monat übertragen",
+          "f5": "Jederzeit aufladen. Aufladungen verfallen nie",
+          "f6": "Bis zu 200 Projekte und höhere Modell-Ratenlimits",
+          "f7": "Support per E-Mail"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -3033,6 +3033,10 @@
       "label": "Benachrichtigungen",
       "unreadLabel": "Benachrichtigungen: {count} ungelesen",
       "markAllRead": "Alle als gelesen markieren",
+      "tabAll": "Alle",
+      "tabNeedsYou": "Für dich",
+      "tabDone": "Erledigt",
+      "emptyNeedsYou": "Gerade wartet nichts auf dich",
       "empty": "Benachrichtigungen erscheinen hier",
       "loadError": "Benachrichtigungen konnten nicht geladen werden",
       "retry": "Erneut versuchen",
@@ -20038,7 +20042,7 @@
       "text146aaf3c71fa": "Hält SSO, SCIM, RBAC und Audit für ein unterzeichnetes Enterprise-Konto freigeschaltet, das zusätzlich über einen kostenpflichtigen Plan abgerechnet wird, damit der Stripe-Abgleich sie nicht entziehen kann.",
       "text517105fd13ce": "Credits finanzieren Sandbox-Rechenzeit – auch eine BYOK-Testphase braucht Guthaben, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $.",
       "text2f1d17f50af8": "Enterprise schaltet SAML-SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für dieses Konto frei. Der abgerechnete Plan bleibt unverändert.",
-      "text12836c0e435d": "Free kostet 0 $ – ein Projekt, 500 Credits pro Monat, verwaltete Modelle und alle Funktionen, mit deinem eigenen Schlüssel für jedes andere Modell. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
+      "text79c0703d2226": "Free kostet 0 $ – ein Projekt, 500 Credits pro Monat und alle Funktionen, mit deinem eigenen Schlüssel oder ChatGPT-Abo für Modelle. Von Kortix verwaltete Modelle brauchen einen bezahlten Plan. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt das ganze Konto. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
       "text5dffd4db88c5": "Dein Plan, deine Credits und die Abrechnung für dieses Konto.",
       "text49fd64c206dd": "Dein Plan ist aktiv. Die Credits sind bereit.",
       "textad828837ddd8": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "Ereignisse nach dem Verbinden",
     "mcpCheckedAt": "Geprüft {when}",
     "mcpNextCheck": "Nächste Prüfung {when}",
-    "mcpNotChecked": "Noch nicht geprüft"
+    "mcpNotChecked": "Noch nicht geprüft",
+    "runLimits": "Ausführungslimits",
+    "runLimitsHint": "Ein Auslöser über einem Limit startet nichts und erscheint als übersprungene Ausführung. Eine manuelle Ausführung wird nie zurückgehalten, zählt aber mit.",
+    "perHour": "Pro Stunde",
+    "perDay": "Pro Tag",
+    "noLimit": "Kein Limit"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",
@@ -21334,7 +21343,7 @@
     "versionDeleted": "{count, plural, one {# Datei gelöscht} other {# Dateien gelöscht}}",
     "sessionChipLabel": "{count, plural, one {# Drive} other {# Drives}}",
     "sessionChipTitle": "Drives in dieser Sitzung",
-    "sessionChipDescription": "Dateien hier werden innerhalb von Sekunden mit Drive synchronisiert.",
+    "sessionCanUse": "Diese Sitzung kann nutzen",
     "readOnly": "Nur lesen",
     "openDrive": "Drive öffnen",
     "unavailableTitle": "Drive ist für dieses Projekt deaktiviert",
@@ -21420,7 +21429,6 @@
     "myFolderHint": "Dein eigener Ordner: privat, bis du ihn teilst, und in deinen Sitzungen dein Desktop",
     "sharedWithMeHint": "Ordner, die andere mit dir geteilt haben",
     "sessionNoFolders": "In dieser Sitzung sind keine Ordner eingebunden.",
-    "sessionDesktop": "Dein Ordner (Desktop)",
     "folderAccessDescription": "Lege fest, wer diesen Ordner und alles darin öffnen kann. Eine Sitzung erhält den Ordner, wenn ihr Agent, ihr Projekt oder die Person, die sie gestartet hat, Zugriff hat.",
     "whoCanAccess": "Wer hat Zugriff",
     "whoCanAccessFolder": "Wer auf {name} zugreifen kann",
@@ -21959,5 +21967,24 @@
       "showRevoked": "Widerrufene anzeigen ({count})",
       "hideRevoked": "Widerrufene ausblenden"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automatisierungen",
+    "groupDescription": "Zeitpläne, Erinnerungen, Webhooks, App-Ereignisse und Monitore in jedem Projekt dieses Kontos.",
+    "label": "Alle Automatisierungen pausieren",
+    "description": "In keinem Projekt läuft etwas von selbst: kein Zeitplan, keine Erinnerung, kein Webhook, kein App-Ereignis und kein Monitor. Ein manuell ausgeführter Auslöser funktioniert weiterhin.",
+    "readOnlyDescription": "Nur ein Inhaber oder Admin kann Automatisierungen pausieren oder fortsetzen.",
+    "pausedSince": "Pausiert seit {date}.",
+    "pauseTitle": "Alle Automatisierungen pausieren?",
+    "pauseDescription": "Jedes Projekt dieses Kontos startet keine Sitzungen mehr von selbst, bis du fortsetzt. Webhooks werden bestätigt und übersprungen.",
+    "pauseConfirm": "Alle pausieren",
+    "resumeTitle": "Alle Automatisierungen fortsetzen?",
+    "resumeDescription": "Auslöser laufen wieder von selbst. Ein während der Pause verpasster Zeitplan läuft einmal.",
+    "resumeConfirm": "Alle fortsetzen",
+    "pausedToast": "Alle Automatisierungen pausiert",
+    "resumedToast": "Alle Automatisierungen fortgesetzt",
+    "failedToast": "Automatisierungen konnten nicht geändert werden. Versuche es erneut.",
+    "bannerTitle": "Alle Automatisierungen dieses Kontos sind pausiert",
+    "bannerDescription": "Hier läuft nichts von selbst, bis ein Inhaber oder Admin sie in den Kontoeinstellungen fortsetzt. Ein manuell ausgeführter Auslöser funktioniert weiterhin."
   }
 }

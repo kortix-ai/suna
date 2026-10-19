@@ -2477,21 +2477,21 @@
           "name": "Free",
           "note": "Démarrez avec de vrais crédits sandbox.",
           "f1": "500 crédits / mois, sans carte",
-          "f2": "Modèles gérés : Kimi, DeepSeek, GLM. Zéro conservation des données, inférence aux États-Unis",
-          "f3": "1 projet",
-          "f4": "Apportez votre propre clé API pour n'importe quel modèle premium",
-          "f5": "Connectez votre abonnement ChatGPT"
+          "f2": "1 projet",
+          "f3": "Apportez votre propre clé API pour n'importe quel modèle premium",
+          "f4": "Connectez votre abonnement ChatGPT"
         },
         "credits": {
           "name": "Crédits",
           "note": "À partir de 50 $ par mois. Choisissez les crédits dont votre équipe a besoin.",
           "unit": "/ mois et plus",
           "f1": "Tout ce qui est dans Free",
-          "f2": "Membres illimités, un seul pool de crédits partagé",
-          "f3": "Les crédits inutilisés sont reportés d'un mois",
-          "f4": "Rechargez à tout moment. Les recharges n'expirent jamais",
-          "f5": "Jusqu’à 200 projets et des limites de débit plus élevées",
-          "f6": "Support par e-mail"
+          "f2": "Modèles gérés : DeepSeek, GLM. Zéro conservation des données",
+          "f3": "Membres illimités, un seul pool de crédits partagé",
+          "f4": "Les crédits inutilisés sont reportés d'un mois",
+          "f5": "Rechargez à tout moment. Les recharges n'expirent jamais",
+          "f6": "Jusqu’à 200 projets et des limites de débit plus élevées",
+          "f7": "Support par e-mail"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -3033,6 +3033,10 @@
       "label": "Notifications",
       "unreadLabel": "Notifications : {count} non lues",
       "markAllRead": "Tout marquer comme lu",
+      "tabAll": "Tout",
+      "tabNeedsYou": "Pour vous",
+      "tabDone": "Terminé",
+      "emptyNeedsYou": "Rien ne vous attend pour l’instant",
       "empty": "Les notifications s'afficheront ici",
       "loadError": "Impossible de charger les notifications",
       "retry": "Réessayer",
@@ -20038,7 +20042,7 @@
       "text146aaf3c71fa": "Maintient SSO, SCIM, RBAC et audit activés pour un compte Enterprise signé également facturé via un forfait payant, afin que le rapprochement Stripe ne les retire pas.",
       "text517105fd13ce": "Les crédits financent le calcul en sandbox : même un essai BYOK nécessite un solde de portefeuille pour exécuter des sessions. Le crédit de bienvenue gratuit est de 2 $.",
       "text2f1d17f50af8": "Enterprise débloque SAML SSO, la synchronisation d'annuaire SCIM, RBAC et l'accès à l'audit pour ce compte. Le forfait facturé ne change pas.",
-      "text12836c0e435d": "Free coûte 0 $ — un projet, 500 crédits par mois, les modèles gérés et toutes les fonctionnalités, avec votre propre clé pour tout autre modèle. Les forfaits payants sont en crédits : choisissez un montant mensuel, les membres sont gratuits et illimités, et un seul pool couvre tout le compte. L'auto-hébergement du logiciel ne coûte rien ; vous payez à la place votre propre facture de modèles et de calcul.",
+      "text79c0703d2226": "Free coûte 0 $ — un projet, 500 crédits par mois et toutes les fonctionnalités, avec votre propre clé ou votre abonnement ChatGPT pour les modèles. Les modèles gérés par Kortix nécessitent un forfait payant. Les forfaits payants sont en crédits : choisissez un montant mensuel, les membres sont gratuits et illimités, et un seul pool couvre tout le compte. L'auto-hébergement du logiciel ne coûte rien ; vous payez à la place votre propre facture de modèles et de calcul.",
       "text5dffd4db88c5": "Votre forfait, vos crédits et la facturation de ce compte.",
       "text49fd64c206dd": "Votre forfait est actif. Les crédits sont prêts.",
       "textad828837ddd8": "membres membre accès à l’espace de travail collaborateurs personnes coéquipiers liste qui peut voir permissions accorder partager",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "Événements après la connexion",
     "mcpCheckedAt": "Vérifié {when}",
     "mcpNextCheck": "Prochaine vérification {when}",
-    "mcpNotChecked": "Pas encore vérifié"
+    "mcpNotChecked": "Pas encore vérifié",
+    "runLimits": "Limites d'exécution",
+    "runLimitsHint": "Un déclenchement au-delà d'une limite ne lance rien et apparaît comme une exécution ignorée. Un lancement manuel n'est jamais retenu, mais il compte.",
+    "perHour": "Par heure",
+    "perDay": "Par jour",
+    "noLimit": "Sans limite"
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",
@@ -21334,7 +21343,7 @@
     "versionDeleted": "{count, plural, one {# fichier supprimé} other {# fichiers supprimés}}",
     "sessionChipLabel": "{count, plural, one {# drive} other {# drives}}",
     "sessionChipTitle": "Drives de cette session",
-    "sessionChipDescription": "Les fichiers ici se synchronisent avec Drive en quelques secondes.",
+    "sessionCanUse": "Cette session peut utiliser",
     "readOnly": "Lecture seule",
     "openDrive": "Ouvrir Drive",
     "unavailableTitle": "Drive est désactivé pour ce projet",
@@ -21420,7 +21429,6 @@
     "myFolderHint": "Votre propre dossier : privé jusqu’à ce que vous le partagiez, et votre bureau dans vos sessions",
     "sharedWithMeHint": "Dossiers que d’autres personnes ont partagés avec vous",
     "sessionNoFolders": "Aucun dossier n’est monté dans cette session.",
-    "sessionDesktop": "Votre dossier (bureau)",
     "folderAccessDescription": "Choisissez qui peut ouvrir ce dossier et tout son contenu. Une session reçoit le dossier quand son agent, son projet ou la personne qui l’a lancée y a accès.",
     "whoCanAccess": "Qui a accès",
     "whoCanAccessFolder": "Qui peut accéder à {name}",
@@ -21959,5 +21967,24 @@
       "showRevoked": "Afficher les révoqués ({count})",
       "hideRevoked": "Masquer les révoqués"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automatisations",
+    "groupDescription": "Planifications, rappels, webhooks, événements d'apps et moniteurs dans chaque projet de ce compte.",
+    "label": "Mettre en pause toutes les automatisations",
+    "description": "Rien ne s'exécute seul dans aucun projet : ni planification, ni rappel, ni webhook, ni événement d'app, ni moniteur. Lancer un déclencheur à la main fonctionne toujours.",
+    "readOnlyDescription": "Seul un propriétaire ou un administrateur peut mettre en pause ou reprendre les automatisations.",
+    "pausedSince": "En pause depuis {date}.",
+    "pauseTitle": "Mettre en pause toutes les automatisations ?",
+    "pauseDescription": "Aucun projet de ce compte ne démarre de session tout seul jusqu'à la reprise. Les webhooks sont acquittés et ignorés.",
+    "pauseConfirm": "Tout mettre en pause",
+    "resumeTitle": "Reprendre toutes les automatisations ?",
+    "resumeDescription": "Les déclencheurs s'exécutent de nouveau seuls. Une planification manquée pendant la pause s'exécute une fois.",
+    "resumeConfirm": "Tout reprendre",
+    "pausedToast": "Toutes les automatisations sont en pause",
+    "resumedToast": "Toutes les automatisations ont repris",
+    "failedToast": "Impossible de modifier les automatisations. Réessayez.",
+    "bannerTitle": "Toutes les automatisations de ce compte sont en pause",
+    "bannerDescription": "Rien ne s'exécute seul ici tant qu'un propriétaire ou un administrateur ne les reprend pas dans les paramètres du compte. Lancer un déclencheur à la main fonctionne toujours."
   }
 }

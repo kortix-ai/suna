@@ -58,7 +58,7 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 | `kortix triggers pause\|resume` | Stops or restarts every automatic fire in the project. See [Pause and limits](#pause-and-limits). |
 | `kortix triggers events …` | Lists apps and events for app event triggers. See [App events](#app-events). |
 
-`--model`, `--session-mode`, `--session-key`, `--session-id`, `--session-access`, `--member`, `--group` and `--filter` apply only with `--apply` on `add`, and on `set`.
+`--model`, `--session-mode`, `--session-key`, `--session-id`, `--session-access`, `--member`, `--group` and `--filter` apply only with `--apply` on `add`, and on `set`. `--max-runs-per-hour` and `--max-runs-per-day` apply on every `add` and `set`; see [Run limits](#run-limits).
 
 Reading triggers needs `project.trigger.read`. Creating, editing and deleting need write access to the project (`project.write`) and `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`. Firing needs `project.trigger.fire`, which the built-in member role holds.
 
@@ -145,7 +145,7 @@ curl -X POST "$URL" \
 | Status | Meaning |
 | --- | --- |
 | `202` | Accepted. Body `status` is `fired`, `queued` or `deduped`, with `session_id` and `command_id`. |
-| `200` | Accepted and skipped. Body `{ "status": "skipped", "reason": … }`: the project is paused, or the body did not match `filter`. |
+| `200` | Accepted and skipped. Body `{ "status": "skipped", "reason": … }`: the project is paused, the body did not match `filter`, or the trigger reached a run limit (`reason` starts with `throttled:`). |
 | `400` | The project id or the slug in the URL is malformed. |
 | `401` | Any miss before authentication: a bad signature or token, a stale timestamp, an unknown project or trigger, a disabled trigger, or a secret that is missing or not delivered to `connector`. The response does not say which. |
 | `402` | The account cannot run the fire: it has no usable model, or a billing gate blocks it. The body `code` is `no_usable_model`, `insufficient_credits`, `subscription_required` or `no_account`. |
@@ -443,6 +443,8 @@ await reminders.remove(reminder.id);
 | `session_id` | `pinned` | yes | — | The session to re-prompt. |
 | `session_key` | `keyed` | yes | — | Template. Setting it alone implies `keyed`. |
 | `filter` | all | no | — | Map of dotted path to expected string. See [Templates and filters](#templates-and-filters). |
+| `max_runs_per_hour` | all | no | `60` | Whole number, at least 1. Runs the trigger may start in any 60 minutes. See [Pause and limits](#pause-and-limits). |
+| `max_runs_per_day` | all | no | no cap | Whole number, at least 1. Runs the trigger may start in a UTC day. |
 | `cron` | `cron` | one of `cron`, `run_at` | — | 6-field expression, at most once a minute. |
 | `run_at` | `cron` | one of `cron`, `run_at` | — | ISO-8601 instant. Fires once. |
 | `timezone` | `cron` | no | `UTC` | IANA name. |
@@ -518,6 +520,34 @@ With the project flag `notification_center` on, Kortix sends one `automation_fai
 ## Pause and limits
 
 `kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, app events, monitors and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For app events of source `mcp`, see Pause in [How checks work](#how-checks-work).
+
+**Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, app event or monitor of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
+
+- In the web app: **Account settings** → **Settings** → **Automations** → **Pause all automations**. The Triggers page of every project shows that automations are paused.
+- In the CLI: `kortix triggers pause --account-wide` and `kortix triggers resume --account-wide`.
+- In the API: `GET` and `PATCH /v1/accounts/<account_id>/automations` with `{ "paused": true }`. Any member may read it; changing it takes `account.write` (owners and admins by default). The trigger listing carries `account_automations_paused`.
+
+### Run limits
+
+A trigger starts at most `max_runs_per_hour` runs in any 60 minutes, 60 when unset, and at most `max_runs_per_day` runs in a UTC day, no cap when unset. A run counts once its fire reached a session or a queued create.
+
+- A fire past a limit starts no session and sends no prompt. It is a skipped run whose reason names the limit, for example `throttled: 60 runs in the last hour (max_runs_per_hour 60)`. Under a storm, the history keeps at most one such run per trigger every 10 seconds.
+- A webhook answers `200` with `status: skipped`, so a sender that retries on errors does not retry.
+- The trigger's watchers get one notice per trigger per UTC day (with the project flag `notification_center`).
+- A manual fire and a replay are never held, but they count toward the limits.
+- Set the limits in `kortix.yaml`, with `kortix triggers add|set --max-runs-per-hour <n> --max-runs-per-day <n>` (`set … none` removes one), in the API body, or under **Options → Run limits** on the trigger.
+
+```yaml
+triggers:
+  - slug: pr-review
+    type: webhook
+    secret_env: GITHUB_WEBHOOK_SECRET
+    prompt: "Review {{ body.pull_request.html_url }}"
+    max_runs_per_hour: 20
+    max_runs_per_day: 100
+```
+
+### Platform limits
 
 - At most 3 trigger-created sessions provision at once in a project. A fire past that answers `queued` and runs when a slot frees.
 - The webhook URLs of one project accept 120 requests per minute from one client.
