@@ -2527,6 +2527,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
+    "lint": "eslint src",
     "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\"",
     "gen-exports": "node scripts/gen-exports.mjs",
     "gen-i18n-catalog": "node scripts/gen-i18n-catalog.mjs",
@@ -2639,6 +2640,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/react-test-renderer": "^19.3.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "eslint": "^9.39.4",
     "happy-dom": "^20.14.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

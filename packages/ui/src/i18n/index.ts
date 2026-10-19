@@ -62,5 +62,7 @@ export const useTranslations = ((namespace?: string) => {
 export function useLocale(): string {
   const host = useUiI18nHost();
   const useHost = host?.useLocale;
+  // The host object is stable (see UiI18nHost), so the branch never flips between renders.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useHost ? useHost() : (host?.locale ?? 'en');
 }

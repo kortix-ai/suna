@@ -1950,6 +1950,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.5
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5

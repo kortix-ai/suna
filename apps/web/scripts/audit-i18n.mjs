@@ -31,11 +31,32 @@ const maxHardcoded = args.has('max-hardcoded')
 
 const includeGenerated = args.get('include-generated') === 'true';
 
+// A module moved into @kortix/ui leaves a one-line shim at its apps/web path
+// (`export * from '@kortix/ui/<path>'`). The audit scans the moved source
+// under the shim's path, so the per-file rules below keep their apps/web paths.
+const uiSrcDir = path.join(root, '..', '..', 'packages', 'ui', 'src');
+const SHIM = /^(?:['"]use client['"];\s*)?(?:export (?:\*|\{ default \}) from '@kortix\/ui\/([\w./-]+)';\s*)+$/;
+
+/** The file whose source `file` stands for: the package module behind a shim, or itself. */
+function realSource(file) {
+  const source = fs.readFileSync(file, 'utf8');
+  const target = SHIM.exec(source.trim())?.[1];
+  if (!target) return { file, source };
+  for (const candidate of [`${target}.ts`, `${target}.tsx`, `${target}/index.ts`, `${target}/index.tsx`]) {
+    const real = path.join(uiSrcDir, candidate);
+    if (fs.existsSync(real)) return { file: real, source: fs.readFileSync(real, 'utf8') };
+  }
+  return { file, source };
+}
+
+const readSource = (file) => realSource(file).source;
+const displayPath = (file) => path.relative(root, realSource(file).file);
+
 function generatedTranslationText(relativeFile) {
   const file = path.join(srcDir, relativeFile);
   const values = new Set();
   if (!fs.existsSync(file)) return values;
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -501,7 +522,7 @@ function getLine(sourceFile, pos) {
 }
 
 function scanFile(file) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -571,7 +592,7 @@ function scanFile(file) {
     if (!isHumanText(normalized, kind)) return;
     recordedNodes.add(nodeKey);
     findings.push({
-      file: path.relative(root, file),
+      file: displayPath(file),
       line: getLine(sourceFile, node.getStart(sourceFile)),
       kind,
       text: normalized,
@@ -583,7 +604,7 @@ function scanFile(file) {
     if (recordedNodes.has(nodeKey)) return;
     recordedNodes.add(nodeKey);
     findings.push({
-      file: path.relative(root, file),
+      file: displayPath(file),
       line: getLine(sourceFile, node.getStart(sourceFile)),
       kind: `translated-technical:${attributeName}`,
       text: node.getText(sourceFile).replace(/\s+/g, ' ').trim(),
@@ -1199,7 +1220,7 @@ function scanFile(file) {
 }
 
 function scanHardcodedTranslationReferences(file, messages) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -1234,7 +1255,7 @@ function scanHardcodedTranslationReferences(file, messages) {
       const key = node.arguments[0].text;
       if (isHardcodedTranslator && !hasMessage(key)) {
         findings.push({
-          file: path.relative(root, file),
+          file: displayPath(file),
           line: getLine(sourceFile, node.arguments[0].getStart(sourceFile)),
           key,
         });
@@ -1306,8 +1327,8 @@ function auditTechnicalValues() {
 /** Rule 2 of i18n-technical-values.mjs: no machine-read value comes from a catalog. */
 function scanNonLinguisticBindings(file) {
   if (!/\.[cm]?[jt]sx?$/.test(file) || ignoredFilePattern.test(file)) return [];
-  return nonLinguisticBindings(fs.readFileSync(file, 'utf8'), file).map((finding) => ({
-    file: path.relative(root, file),
+  return nonLinguisticBindings(readSource(file), file).map((finding) => ({
+    file: displayPath(file),
     ...finding,
   }));
 }
