@@ -131,6 +131,10 @@ export async function loadTriggersForResponse(
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
       // The slot the scheduler claims next, jitter included (KRTX-1743).
       next_fire_at: runtimeBySlug.get(spec.slug)?.nextFireAt?.toISOString() ?? null,
+      // Auto-pause (KRTX-1721): set while the trigger paused itself after a
+      // sustained run-limit breach. `PATCH enabled: true` resumes it.
+      auto_paused_at: runtimeBySlug.get(spec.slug)?.autoPausedAt?.toISOString() ?? null,
+      auto_paused_reason: runtimeBySlug.get(spec.slug)?.autoPausedAt ? (runtimeBySlug.get(spec.slug)?.autoPausedReason ?? null) : null,
       webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When

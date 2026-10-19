@@ -1177,6 +1177,13 @@
       "when": 1792436141586,
       "tag": "20261019185541_account_automations_paused",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1792441874880,
+      "tag": "20261019203114_trigger_auto_pause",
+      "breakpoints": true
     }
   ]
 }

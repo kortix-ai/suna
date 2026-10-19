@@ -137,6 +137,15 @@ export interface ProjectTrigger {
   max_runs_per_hour?: number | null;
   /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
   max_runs_per_day?: number | null;
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic fire
+   * starts a run until it is resumed: `updateProjectTrigger(…, { enabled: true })`.
+   * Absent on older servers.
+   */
+  auto_paused_at?: string | null;
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason?: string | null;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
   /**
