@@ -1,5 +1,6 @@
 import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
 import { probeFileAvailability, resetFileAvailability } from '@/features/session/file-availability';
+import { UiProvider } from '@kortix/ui/providers/ui-provider';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -7,7 +8,14 @@ import { isHexColor } from './inline-chip';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
 import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 
-const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
+// The connector card renders only when the host fills its modal slot.
+const HOST_COMPONENTS = { ConnectorConnectModal: () => null };
+const render = (props: MarkdownCodeProps) =>
+  renderToStaticMarkup(
+    <UiProvider components={HOST_COMPONENTS}>
+      <MarkdownCode {...props} />
+    </UiProvider>,
+  );
 
 /**
  * The card header's language chip, found by its test hook rather than a

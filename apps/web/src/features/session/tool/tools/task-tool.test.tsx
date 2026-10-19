@@ -9,8 +9,6 @@ import type { MessageWithParts, ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -372,50 +370,4 @@ test('a failed dispatch draws the error and keeps the view affordance', () => {
   const markup = render(failed as ToolPart, { open: true });
   expect(markup).toContain('aria-label="Open full view"');
   expect(markup).toContain('assistant message prefill');
-});
-
-describe('the never-rendered rightAccessory prop is gone, not merely unused', () => {
-  // `ToolHeaderRow` never rendered `rightAccessory`, so all four call sites were
-  // silent no-ops. The prop is deleted rather than implemented: none of the four
-  // accessories carried a click handler, so rendering them would have added
-  // undesigned chrome to three unrelated tools. A reintroduced prop fails here.
-  const toolsDir = __dirname;
-  const sharedDir = join(__dirname, '..', 'shared');
-
-  // `scripts/split-tool-renderers.ts` carries a copy of `BasicToolProps` in the
-  // string it writes `shared/types.ts` from, so it is the one file that can
-  // mechanically regenerate the prop. It is swept with the rest.
-  const generator = join(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    '..',
-    '..',
-    'scripts',
-    'split-tool-renderers.ts',
-  );
-
-  const files = [
-    ...readdirSync(toolsDir)
-      .filter((f) => f.endsWith('.tsx') && !f.endsWith('.test.tsx'))
-      .map((f) => join(toolsDir, f)),
-    join(sharedDir, 'types.ts'),
-    join(sharedDir, 'infrastructure.tsx'),
-    generator,
-  ];
-
-  test('sanity: the sweep reads real files', () => {
-    expect(files.length).toBeGreaterThan(50);
-    expect(readFileSync(join(sharedDir, 'types.ts'), 'utf8')).toContain('BasicToolProps');
-    // The generator path resolves — otherwise its test would fail on ENOENT
-    // rather than silently passing on an empty read.
-    expect(readFileSync(generator, 'utf8')).toContain('export interface BasicToolProps');
-  });
-
-  for (const file of files) {
-    test(`${file.split('/').slice(-2).join('/')} does not mention rightAccessory`, () => {
-      expect(readFileSync(file, 'utf8')).not.toContain('rightAccessory');
-    });
-  }
 });

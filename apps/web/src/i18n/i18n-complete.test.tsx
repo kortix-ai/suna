@@ -42,6 +42,19 @@ function placeholders(value: string): string[] {
     .sort();
 }
 
+
+// apps/web/src and packages/ui/src: the session UI renders from @kortix/ui.
+const SOURCE_ROOTS = [join(import.meta.dir, '..'), join(import.meta.dir, '../../../../packages/ui/src')];
+const sourceFiles = () =>
+  SOURCE_ROOTS.flatMap((root) =>
+    readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
+      .map((file) => join(root, file)),
+  );
+/** A one-line `export * from '@kortix/ui/…'` left at a moved module's old path. */
+const isShim = (file: string) => /^(?:'use client';\s*)?export \* from '@kortix\/ui\//.test(readFileSync(file, 'utf8').trim());
+
 describe('complete UI localization', () => {
   test('localizes nested display text, preserves React elements, and keeps unknown fallbacks', () => {
     const icon = createElement('span', { 'data-testid': 'icon' });
@@ -117,13 +130,12 @@ describe('complete UI localization', () => {
 
   test('keeps every generated translation-map key in the English catalog', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
-    const generatedFiles = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('-translation-keys.generated.ts'));
+    const generatedFiles = sourceFiles().filter(
+      (file) => file.endsWith('-translation-keys.generated.ts') && !isShim(file),
+    );
 
     for (const file of generatedFiles) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+      const source = readFileSync(file, 'utf8');
       const keys = [...source.matchAll(/:\s*'(text[0-9a-f]{12})'/g)]
         .map((match) => match[1])
         .filter((key) => key !== 'texte3b0c44298fc');
@@ -147,16 +159,12 @@ describe('complete UI localization', () => {
 
   test('resolves every i18nComplete key the app reads at runtime', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
     const callSite =
       /(?:tI18nHardcoded|tHardcodedUi|tI18nComplete)(?:\.raw)?\(\s*'(?:i18nComplete\.)?(text[0-9a-f]{12})'/g;
-    const sources = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'));
 
     let referenced = 0;
-    for (const file of sources) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+    for (const file of sourceFiles()) {
+      const source = readFileSync(file, 'utf8');
       for (const match of source.matchAll(callSite)) {
         referenced += 1;
         expect(english[match[1]], `${file}:${match[1]}`).toBeDefined();

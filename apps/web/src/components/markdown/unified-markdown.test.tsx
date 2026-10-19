@@ -4,13 +4,18 @@ import { createRequire } from 'node:module';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { UiProvider } from '@kortix/ui/providers/ui-provider';
+
 import { MarkdownImage, UnifiedMarkdown } from './unified-markdown';
 import { prepareMarkdownSource } from './unified-markdown-utils';
+
+const HOST_COMPONENTS = { ConnectorConnectModal: () => null };
 
 function withIntl(node: ReactNode) {
   return (
     <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      {node}
+      {/* The connector card renders only when the host fills its modal slot. */}
+      <UiProvider components={HOST_COMPONENTS}>{node}</UiProvider>
     </NextIntlClientProvider>
   );
 }

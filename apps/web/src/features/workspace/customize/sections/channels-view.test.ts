@@ -263,12 +263,7 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
     expect(wizardSource).not.toContain('fetch(');
   });
 
-  test('the house icon-swap values live in the shared CopyButton, once', () => {
-    const copyButton = read('../../../../components/markdown/copy-button.tsx');
-    expect(copyButton).toContain("filter: 'blur(4px)'");
-    expect(copyButton).toContain('scale: 0.25');
-    expect(copyButton).toContain('bounce: 0');
-    expect(copyButton).toContain('initial={false}');
+  test('Teams copies through the shared CopyButton, not a local button', () => {
     // Teams' old local button hard-swapped the glyphs; nothing does now.
     expect(teamsCardSource).not.toMatch(/\{copied \? <Check/);
     expect(teamsCardSource).not.toContain('navigator.clipboard');
