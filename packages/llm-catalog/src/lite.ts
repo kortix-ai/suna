@@ -547,30 +547,36 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
 // picker shows Kortix whichever upstream serves the request.
 //
-// Models selected by MORPH_MANAGED_MODELS try Morph direct first. Every model
-// has an OpenRouter endpoint pool. Each pool lists
-// only endpoints that, on 2026-09-24, were in
-// OpenRouter's ZDR feed, had a CONFIRMED US datacenter (US headquarters plus US
-// datacenters in /api/v1/providers, or a `/us` endpoint tag), and answered pinned
-// text and image probes. US headquarters alone does not qualify. `allow_fallbacks: true` lets OpenRouter move between pool members;
-// `only` keeps it inside the pool. `max_price` (USD per 1M tokens) excludes premium
-// tiers. packages/llm-catalog/README.md records the probe results.
-// Vision is explicit per model so the picker and runtime reject image input for text-only models.
+// Upstream order per model (apps/api `managedCandidates`): OpenCode Zen, Morph
+// direct, then the OpenRouter endpoint pool below. Every pool member was in
+// OpenRouter's ZDR feed and passed, on 2026-10-19 through OpenRouter pinned to
+// that endpoint: 12/12 text + tool-call requests (~30k-token context), 3/3 image
+// reads, first token p50 under 6 s, and a price at or below `pricing`. The
+// gateway sends a request to a member only when its host is a subprocessor in
+// effect (`inferenceHostCleared`, @kortix/shared/subprocessors), so a host joins
+// on its notice date by itself. `allow_fallbacks: true` lets OpenRouter move
+// between members; `only` keeps it inside the pool. packages/llm-catalog/README.md
+// records the probe results.
 const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
 
-// Checked against OpenRouter's ZDR and provider-location feeds on 2026-09-26;
-// morph/fp8 on 2026-10-18 (README, "OpenRouter endpoint pools").
 // Resolver uses this list for operator overlays too; an unknown endpoint fails closed.
-export const VERIFIED_US_MANAGED_ENDPOINTS = [
-  'morph/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
+export const VERIFIED_MANAGED_ENDPOINTS = [
+  'deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare',
+  'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
+  'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
+  'siliconflow/fp8', 'venice',
 ] as const;
 
-// Customer-facing name of the US inference provider behind each route. The
+// Customer-facing name of the inference provider behind each route. The
 // picker shows this name, never the aggregator or the quantization tag.
-// `morph` is the direct Morph route (off by default; see MORPH_MANAGED_MODELS).
-export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_US_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
-  'morph/fp8': 'Morph',
-  'decart/fp4': 'Decart', 'coreweave/nvfp4': 'CoreWeave', 'fireworks/us': 'Fireworks',
+// `morph` is the direct Morph route (MORPH_MANAGED_MODELS).
+export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
+  'deepinfra/fp8': 'DeepInfra', 'deepinfra/fp8/priority': 'DeepInfra', 'deepinfra/fp4': 'DeepInfra',
+  'inference-net/fp8': 'Inference.net', 'inference-net/fp4': 'Inference.net',
+  'wafer/mxfp4': 'Wafer', cloudflare: 'Cloudflare', fireworks: 'Fireworks', together: 'Together',
+  'parasail/fp4': 'Parasail', 'modal/nvfp4': 'Modal', 'crusoe/fp4': 'Crusoe', makora: 'Makora',
+  'near-ai/fp8': 'NEAR AI', 'open-inference/fp4': 'Open Inference', primeintellect: 'Prime Intellect',
+  'siliconflow/fp8': 'SiliconFlow', venice: 'Venice',
   morph: 'Morph',
 };
 
@@ -581,13 +587,17 @@ export const MANAGED_MODELS: ManagedModel[] = [
     morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
-    openrouterEndpointPricing: { 'morph/fp8': { inputPerMillion: 0.09, cachedInputPerMillion: 0.008, outputPerMillion: 0.55 } },
+    openrouterEndpointPricing: {
+      'deepinfra/fp8': { inputPerMillion: 0.098, cachedInputPerMillion: 0.00294, outputPerMillion: 0.294 },
+      'deepinfra/fp8/priority': { inputPerMillion: 0.147, cachedInputPerMillion: 0.00441, outputPerMillion: 0.441 },
+      'inference-net/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.008, outputPerMillion: 0.5 },
+      'wafer/mxfp4': { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.5 },
+      cloudflare: { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
+    },
     tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 65_536 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
-      // ponytail: one endpoint, no OpenRouter fallback. deepinfra/fp8 and
-      // deepinfra/fp8/priority pass ZDR + US; add them after the DPA 7.3 notice.
-      only: ['morph/fp8'],
+      only: ['deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare'],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.3, completion: 1.2 },
     },
@@ -599,30 +609,31 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     openrouterEndpointPricing: {
-      'decart/fp4': { inputPerMillion: 0.1275, cachedInputPerMillion: 0.0255, outputPerMillion: 0.425 },
-      'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+      fireworks: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'deepinfra/fp4': { inputPerMillion: 0.075, cachedInputPerMillion: 0.015, outputPerMillion: 0.25 },
+      together: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'parasail/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'modal/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'crusoe/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'inference-net/fp4': { inputPerMillion: 0.12, cachedInputPerMillion: 0.032, outputPerMillion: 0.388 },
+      makora: { inputPerMillion: 0.14, cachedInputPerMillion: 0.024, outputPerMillion: 0.47 },
+      'near-ai/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.012, outputPerMillion: 0.5 },
+      'open-inference/fp4': { inputPerMillion: 0.048, cachedInputPerMillion: 0.006, outputPerMillion: 0.16 },
+      primeintellect: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      'siliconflow/fp8': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
+      venice: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
     },
     tier: 'fast', vision: true, limit: { context: 1_000_000, output: 65_536 },
     // `none` returns 400 upstream, so GLM has no off switch.
     reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
     openrouterProvider: {
-      only: ['decart/fp4', 'coreweave/nvfp4'],
+      only: [
+        'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
+        'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
+        'siliconflow/fp8', 'venice',
+      ],
       ...OPENROUTER_POOL_PRIVACY,
       max_price: { prompt: 0.15, completion: 0.5 },
-    },
-  },
-  {
-    id: 'kimi-k3', name: 'Kimi K3 2.8T', upstreamModelId: 'moonshotai/kimi-k3',
-    transport: 'openrouter', morphModelId: 'morph-kimik3',
-    morphPricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
-    pricingRef: 'openrouter/moonshotai/kimi-k3',
-    pricing: { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 },
-    openrouterEndpointPricing: { 'fireworks/us': { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 } },
-    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 65_536 },
-    openrouterProvider: {
-      only: ['fireworks/us'],
-      ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 3.3, completion: 16.5 },
     },
   },
 ];

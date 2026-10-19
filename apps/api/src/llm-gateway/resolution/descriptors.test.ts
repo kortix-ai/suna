@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { MANAGED_MODELS } from '@kortix/llm-catalog';
 import * as realTiers from '../../billing/services/tiers';
 
@@ -9,6 +9,10 @@ const config: Record<string, unknown> = {
   OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
 mock.module('../../config', () => ({ config }));
+// Pool members follow subprocessor dates: on 2026-11-25 Fireworks and DeepInfra
+// may serve, an unlisted host (inference-net) may not.
+beforeAll(() => setSystemTime(new Date('2026-11-25T12:00:00Z')));
+afterAll(() => setSystemTime());
 // Spread the real module — see the note in resolve-candidates.test.ts. Listing
 // three exports by hand silently removed every other one from the registry.
 mock.module('../../billing/services/tiers', () => ({
@@ -182,7 +186,7 @@ describe('managed OpenRouter descriptor', () => {
       tier: 'balanced',
       vision: true,
       limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: { only: ['morph/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+      openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     })).toEqual([expect.objectContaining({
       provider: 'openrouter',
       kind: 'openai-compat',
@@ -196,7 +200,7 @@ describe('managed OpenRouter descriptor', () => {
         cachedInputPerMillion: 0.006,
         outputPerMillion: 0.6,
       }),
-      bodyExtras: { provider: { only: ['morph/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
+      bodyExtras: { provider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
     })]);
   });
 });
@@ -211,7 +215,7 @@ describe('managed OpenRouter pool', () => {
     pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast' as const, vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['morph', 'decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      only: ['morph', 'fireworks', 'deepinfra/fp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
       max_price: { prompt: 0.15, completion: 0.5 },
     },
   };
@@ -233,7 +237,7 @@ describe('managed OpenRouter pool', () => {
         provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'openrouter-test-key',
         resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', publicProvider: 'kortix',
         bodyExtras: { provider: {
-          only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+          only: ['fireworks', 'deepinfra/fp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
           max_price: { prompt: 0.15, completion: 0.5 },
         } },
       }),
@@ -243,10 +247,10 @@ describe('managed OpenRouter pool', () => {
   test('the OpenRouter route always forces ZDR and no data collection', () => {
     const [openrouter] = managedCandidates({
       ...glm,
-      openrouterProvider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
+      openrouterProvider: { only: ['fireworks'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
     });
     expect(openrouter.bodyExtras).toEqual({
-      provider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
+      provider: { only: ['fireworks'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
     });
   });
 
@@ -267,15 +271,15 @@ describe('managed OpenRouter pool', () => {
     expect(managedCandidates({ ...glm, openrouterProvider: { ...glm.openrouterProvider, only: ['morph'] } })).toEqual([]);
   });
 
-  test('the default list uses Morph for DeepSeek and Kimi only', () => {
-    for (const id of ['deepseek-v4.1-flash', 'kimi-k3']) {
+  test('a listed model uses Morph first, then the OpenRouter pool', () => {
+    for (const id of ['deepseek-v4.1-flash']) {
       const model = MANAGED_MODELS.find((entry) => entry.id === id)!;
       const candidates = managedCandidates(model);
       expect(candidates.map((candidate) => candidate.provider)).toEqual(['morph', 'openrouter']);
       expect(candidates[0].resolvedModel).toBe(model.morphModelId!);
       expect(candidates.map((candidate) => candidate.failover)).toEqual([true, true]);
       expect(candidates[1].bodyExtras).toMatchObject({
-        provider: { only: model.openrouterProvider!.only, zdr: true, data_collection: 'deny' },
+        provider: { only: ['deepinfra/fp8', 'deepinfra/fp8/priority'], zdr: true, data_collection: 'deny' },
       });
     }
   });
@@ -288,7 +292,7 @@ describe('managed OpenRouter pool', () => {
       resolvedModel: 'morph-glm53flash', pricing: glm.morphPricing, failover: true,
     });
     expect(candidates[1].bodyExtras).toMatchObject({
-      provider: { only: ['decart/fp4', 'coreweave/nvfp4'], zdr: true, data_collection: 'deny' },
+      provider: { only: ['fireworks', 'deepinfra/fp4'], zdr: true, data_collection: 'deny' },
     });
     expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['openrouter']);
   });
@@ -314,7 +318,16 @@ describe('managed OpenRouter pool', () => {
     } finally { config.OPENROUTER_API_KEY = saved; }
   });
 
-  test('operator endpoints outside the verified US pool fail closed', () => {
+  test('a pool member whose host is not yet a subprocessor in effect is skipped', () => {
+    setSystemTime(new Date('2026-10-20T12:00:00Z'));
+    try {
+      const [openrouter] = managedCandidates(glm);
+      expect(openrouter.bodyExtras).toMatchObject({ provider: { only: ['fireworks'] } });
+      expect(managedCandidates({ ...glm, openrouterProvider: { ...glm.openrouterProvider, only: ['inference-net/fp4'] } })).toEqual([]);
+    } finally { setSystemTime(new Date('2026-11-25T12:00:00Z')); }
+  });
+
+  test('operator endpoints outside the verified pool fail closed', () => {
     expect(managedCandidates({
       ...glm,
       openrouterProvider: { ...glm.openrouterProvider, only: ['z-ai/fp8'] },
