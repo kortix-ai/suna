@@ -256,6 +256,24 @@ jobs:
           $hit = Select-String -Path target/release/kortix-capture.exe -Pattern "127.0.0.1:8899" -SimpleMatch -Quiet
           "test manifest URL in the release binary: $([bool]$hit)" | Tee-Object "$env:EV\no_test_hook.txt"
           if ($hit) { throw "the release binary contains the updater's test manifest URL" }
+      - name: The exes need no Visual C++ Redistributable
+        shell: python
+        run: |
+          # A Windows computer without it has no vcruntime140.dll: an exe that imports it does not
+          # start, and the MSI's service start failed with error 1920 (the C runtime is linked
+          # statically, apps/capture/.cargo/config.toml).
+          import subprocess, sys
+          subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pefile"], check=True)
+          import pefile
+          bad = {}
+          for exe in ["kortix-capture.exe", "kortix-capture-engine.exe", "kortix-backend.exe"]:
+              pe = pefile.PE(f"target/release/{exe}")
+              dlls = sorted(e.dll.decode().lower() for e in pe.DIRECTORY_ENTRY_IMPORT)
+              print(exe, dlls)
+              hit = [d for d in dlls if d.startswith(("vcruntime", "msvcp", "api-ms-win-crt", "ucrtbase"))]
+              if hit:
+                  bad[exe] = hit
+          assert not bad, f"these exes need the Visual C++ runtime: {bad}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: capture-installer-windows
@@ -299,6 +317,18 @@ jobs:
           Set-Content "$d\data\capture\orgs\$acct\policy.json" '{"schema": 2, "notice": "Recorded for the CI verification."}'
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: A manual install (no properties) never rolls back, and the service runs
+        run: |
+          # Double-clicked or `msiexec /i … /qn` without KORTIX_URL and ENROLLMENT_TOKEN.
+          $msi = "$env:RUNNER_TEMP\msi\KortixCapture-$($env:TAG)-x64.msi"
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "`"$msi`"", "/qn", "/l*v", "`"$env:EV\msi-manual.log`"" -Wait -PassThru
+          $t0 = Get-Date
+          while ((Get-Service KortixCapture -ErrorAction SilentlyContinue).Status -ne 'Running' -and ((Get-Date) - $t0).TotalSeconds -lt 30) { Start-Sleep 1 }
+          $svc = Get-CimInstance Win32_Service -Filter "Name='KortixCapture'"
+          $state = @{ exit = $p.ExitCode; state = $svc.State; start_mode = $svc.StartMode; exe = Test-Path "${env:ProgramFiles}\Kortix\Capture\kortix-capture.exe" }
+          $u = Start-Process msiexec.exe -ArgumentList "/x", "`"$msi`"", "/qn" -Wait -PassThru
+          $state.uninstall_exit = $u.ExitCode
+          $state | ConvertTo-Json | Tee-Object "$env:EV\manual_install.json"
       - name: Install silently as IT would
         run: |
           # The screen changes every second: the recorder saves a frame only when it changed.
@@ -507,6 +537,8 @@ jobs:
           assert "msiexec exit: 0" in inst
           assert "token in msi log: False" in inst, "the enrollment token reached the MSI log"
           assert re.search(r"standard user: error: (SecurityException|UnauthorizedAccessException)", inst), "a standard user could read the policy key"
+          man = load("manual_install.json"); print("manual install", man)
+          assert man["exit"] == 0 and man["exe"] and man["state"] == "Running" and man["start_mode"] == "Auto" and man["uninstall_exit"] == 0, man
           svc = load("service.json"); print("service", svc)
           assert svc["state"] == "Running" and svc["start_mode"] == "Auto" and svc["account"] == "LocalSystem", svc
           assert "machine run" in svc["path"], svc

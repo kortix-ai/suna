@@ -71,7 +71,11 @@
     <Binary Id="WebView2Setup" SourceFile="$(WebView2Setup)" />
     <CustomAction Id="InstallWebView2" BinaryRef="WebView2Setup" ExeCommand="/silent /install"
                   Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="StartMachineService" Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]sc.exe&quot; start KortixCapture"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
+      <Custom Action="StartMachineService" After="StartServices" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
       <Custom Action="InstallWebView2" Before="InstallFinalize"
               Condition="NOT (REMOVE~=&quot;ALL&quot;) AND (NOT WEBVIEW2_VERSION OR WEBVIEW2_VERSION = &quot;0.0.0.0&quot;)" />
       <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt;= 4 AND NOT KORTIX_URL AND NOT ENROLLMENT_TOKEN" />
@@ -127,7 +131,9 @@
                               RestartServiceDelayInSeconds="10"
                               ResetPeriodInDays="1" />
         </ServiceInstall>
-        <ServiceControl Id="MachineServiceControl" Name="KortixCapture" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        <!-- No Start here: a service that cannot start (error 1920) would roll the whole install
+             back. StartMachineService starts it and ignores a failure; Start="auto" covers boot. -->
+        <ServiceControl Id="MachineServiceControl" Name="KortixCapture" Stop="both" Remove="uninstall" Wait="yes" />
         <util:RemoveFolderEx On="uninstall" Property="MACHINEDATA" />
       </Component>
       <Component Id="CaptureEngineExe" Bitness="always64">

@@ -529,6 +529,11 @@ The MSI (`installer/windows/kortix-capture.wxs`, built by
   no `pv`. Windows 11 ships the runtime; some Windows 10 computers do not. The
   bootstrapper downloads the runtime. Its failure does not fail the install
   (`Return="ignore"`): the computer records, and the window says what is missing;
+- starts the service with a deferred `sc.exe start KortixCapture` that ignores a
+  failure (`StartMachineService`), not with `ServiceControl Start`: a service that
+  cannot start failed the install with error 1920 and rolled it back. The exes link
+  the C runtime statically (`apps/capture/.cargo/config.toml`), so a computer
+  without the Visual C++ Redistributable runs them;
 - adds the Start menu entry `kortix-capture.exe app` (`Show="minimized"` only
   hides the console a click on a console exe opens; `app` starts itself again
   without one, and that process shows the window).

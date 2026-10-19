@@ -42,6 +42,8 @@ export function windowsCmd(url: string, token: string): string {
     [
       `curl.exe -fsSL -o ${msi} ${windowsInstallerUrl(url)}`,
       `start /wait msiexec /i ${msi} /qn /l*v ${log} KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`,
+      // A rolled-back install can still exit 0 here: the service must exist.
+      'sc query KortixCapture >nul 2>&1',
       'echo Kortix Capture installed. It records from the next Windows sign-in.',
     ].join(' && ') + ` || echo Install failed. Log: ${log}`
   );

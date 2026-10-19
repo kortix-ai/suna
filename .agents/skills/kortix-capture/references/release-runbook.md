@@ -15,8 +15,9 @@ Kortix Capture ships with Kortix. Its version is the Kortix release version.
 1. `test` (Linux, macOS, Windows): UI node tests; `cargo test --release` for the
    library, the engine protocol, enrollment and the format schemas; on Linux
    also the AppIndicator tray and the S3 sync suite against versitygw.
-2. `windows-msi`: builds the `.msi`, installs it silently with a made-up
-   enrollment token, and asserts: service running as LocalSystem, policy key
+2. `windows-msi`: builds the `.msi`, checks that no exe imports the Visual C++
+   runtime, installs it once without properties (exit 0, service running, then
+   uninstall), installs it silently with a made-up enrollment token, and asserts: service running as LocalSystem, policy key
    ACL, token absent from the MSI log, enrollment against a local stand-in
    issuer (`scripts/ci_fake_issuer.py`), frames recorded, the Start menu entry
    run with a basic-user token (`runas /trustlevel:0x20000`, like a person
