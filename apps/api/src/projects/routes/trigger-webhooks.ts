@@ -13,6 +13,7 @@ import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { takeThrottledRunSlot } from '../lib/trigger-run-caps';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
@@ -208,6 +209,12 @@ export function registerTriggerWebhooksRoutes(): void {
       await recordRun({ status: 'failed', error: error instanceof Error ? error.message : String(error) });
       throw error;
     });
+    // A run cap held it (KRTX-1721): 200 skipped, like a paused trigger, so a
+    // sender that retries on an error does not retry. One history row per 10 s.
+    if (result.status === 'skipped') {
+      if (takeThrottledRunSlot(project.projectId, spec.slug)) await recordRun(triggerRunFromFire(result));
+      return c.json({ status: 'skipped' as const, reason: result.reason ?? 'skipped' }, 200);
+    }
     await recordRun(triggerRunFromFire(result));
 
     // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.

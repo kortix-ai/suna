@@ -464,6 +464,10 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's, like the monitor duration floors below.
       max_lateness: durationSchema,
+      // Any trigger type: runs started in any 60 minutes (60 when unset) and
+      // in a UTC day (KRTX-1721).
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,

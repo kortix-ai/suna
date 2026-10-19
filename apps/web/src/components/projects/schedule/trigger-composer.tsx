@@ -51,6 +51,7 @@ import { triggerToastEntity } from './trigger-toast';
 import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
+  runCapFromInput,
   type ComposerBlock,
   type ComposerDraft,
   findDraftApp,
@@ -258,6 +259,8 @@ function ComposerForm({
             ...(draft.agent ? { agent: draft.agent } : {}),
             ...(draft.model ? { model: modelKeyToWire(draft.model) } : {}),
             session_access: draft.sessionAccess,
+            ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
+            ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
             ...(draft.mode !== 'fresh' ? { session_mode: draft.mode } : {}),
             ...(draft.mode === 'pinned' && draft.pinnedSessionId
               ? { session_id: draft.pinnedSessionId }

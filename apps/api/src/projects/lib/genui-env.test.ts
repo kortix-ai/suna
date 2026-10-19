@@ -12,9 +12,9 @@ describe('genuiEnvValue', () => {
   test('flag off => 0', () => {
     expect(genuiEnvValue(off, true)).toBe('0');
   });
-  test('no flag set => platform default (off) => 0', () => {
-    expect(genuiEnvValue({}, true)).toBe('0');
-    expect(genuiEnvValue(null, true)).toBe('0');
+  test('no flag set => platform default (on) => 1', () => {
+    expect(genuiEnvValue({}, true)).toBe('1');
+    expect(genuiEnvValue(null, true)).toBe('1');
   });
   test('kill switch closed => 0 even with the flag on', () => {
     expect(genuiEnvValue(on, false)).toBe('0');

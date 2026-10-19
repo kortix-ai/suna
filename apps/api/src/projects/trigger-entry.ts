@@ -153,6 +153,26 @@ export function parseMaxLateness(
   return 'error' in parsed ? parsed : { maxLatenessSeconds: parsed.seconds };
 }
 
+/**
+ * A trigger's run caps (KRTX-1721): `max_runs_per_hour` and `max_runs_per_day`,
+ * any type. Absent → omitted, so a spec without them keeps its shape and
+ * schedule revision. Mirrors `@kortix/manifest-schema`: a whole number ≥ 1.
+ */
+export function parseRunCaps(
+  row: Record<string, unknown>,
+): { maxRunsPerHour?: number; maxRunsPerDay?: number } | { error: string } {
+  const caps: { maxRunsPerHour?: number; maxRunsPerDay?: number } = {};
+  for (const [field, key] of [['max_runs_per_hour', 'maxRunsPerHour'], ['max_runs_per_day', 'maxRunsPerDay']] as const) {
+    const raw = row[field];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
+      return { error: `${field} must be a whole number of at least 1` };
+    }
+    caps[key] = raw;
+  }
+  return caps;
+}
+
 function parseMonitorDuration(
   value: unknown,
   field: string,
@@ -315,6 +335,9 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
+  // Only when set, like model: an uncapped manifest stays byte-stable.
+  if (spec.maxRunsPerHour) entry.max_runs_per_hour = spec.maxRunsPerHour;
+  if (spec.maxRunsPerDay) entry.max_runs_per_day = spec.maxRunsPerDay;
   // `keyed` is written as `session_key` alone: the key implies the mode on read
   // (see parseTriggerEntry), so emitting both would be redundant in the file a
   // human actually reads. It also keeps the manifest valid against the
@@ -415,6 +438,8 @@ function parseTriggerEntry(
   const type = typeRaw as GitTriggerType;
   const lateness = parseMaxLateness(row, type);
   if ('error' in lateness) return err(slug, lateness.error);
+  const caps = parseRunCaps(row);
+  if ('error' in caps) return err(slug, caps.error);
   if (type !== 'event') {
     const bad = eventOnlyKeyError(row, 'config', type);
     if (bad) return err(slug, bad);
@@ -531,6 +556,7 @@ function parseTriggerEntry(
     pinnedSessionId,
     sessionKey,
     filter,
+    ...caps,
   };
 
   if (type === 'event') {

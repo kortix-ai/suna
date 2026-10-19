@@ -20589,7 +20589,12 @@
     "mcpEventsOnConnect": "Ereignisse nach dem Verbinden",
     "mcpCheckedAt": "Geprüft {when}",
     "mcpNextCheck": "Nächste Prüfung {when}",
-    "mcpNotChecked": "Noch nicht geprüft"
+    "mcpNotChecked": "Noch nicht geprüft",
+    "runLimits": "Ausführungslimits",
+    "runLimitsHint": "Ein Auslöser über einem Limit startet nichts und erscheint als übersprungene Ausführung. Eine manuelle Ausführung wird nie zurückgehalten, zählt aber mit.",
+    "perHour": "Pro Stunde",
+    "perDay": "Pro Tag",
+    "noLimit": "Kein Limit"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",
