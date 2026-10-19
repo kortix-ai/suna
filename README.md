@@ -274,12 +274,12 @@ Ask us and we'll tell you which one you're on.
 
 ## White-label
 
-Kortix stays open source. On top of that, a white-label license lets you run Kortix however you
-want: your name and logo in place of ours, your own structure, and Kortix as a hosted service for
-your customers. The one requirement is an Exclusive Compute Agreement: your sandboxes run on
-[Platinum](https://www.platinum.dev), the most affordable sandbox cloud for AI agents, and your
-GPU inference comes from Kortix, at rates we guarantee to be competitive. Sign it online and you
-are licensed on the spot: **[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
+Kortix stays open source. On top of that, a free white-label license lets you run Kortix however
+you want: your name and logo in place of ours, your own structure, and Kortix as a hosted service
+for your customers. The one requirement: use [Platinum](https://www.platinum.dev) as your exclusive
+compute provider for everything it offers (sandboxes, volumes, runners, AI compute, inference), at
+rates we commit to keep competitive. Sign online and you are licensed on the spot:
+**[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
 [marko@kortix.ai](mailto:marko@kortix.ai).
 
 ---
