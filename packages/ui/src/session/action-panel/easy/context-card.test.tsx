@@ -6,6 +6,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ContextItem } from '../shared/derive-panels';
 import { ContextCard } from './context-card';
+import { callInRender } from '../../../test-utils/call-in-render';
 import type { Detail } from './detail-view';
 import { PanelCard, type PanelCardProps } from './panel-card';
 
@@ -67,13 +68,13 @@ function cardBody(
     onAddContext?: () => void;
   } = {},
 ): ReactNode {
-  const card = ContextCard({
+  const card = callInRender(() => ContextCard({
     ...items,
     sessionId: 's1',
     onOpenDetail,
     onOpenFile,
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-  });
+  }));
   return (card as ReactElement<{ children?: ReactNode }>).props.children;
 }
 
@@ -91,13 +92,13 @@ function emptyActionsOf(
     onAddContext?: () => void;
   } = {},
 ): ReactNode {
-  const card = ContextCard({
+  const card = callInRender(() => ContextCard({
     ...items,
     sessionId: 's1',
     onOpenDetail: () => {},
     onOpenFile: () => {},
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-  }) as ReactElement<PanelCardProps>;
+  })) as ReactElement<PanelCardProps>;
   return card.props.emptyActions;
 }
 
@@ -121,13 +122,13 @@ function renderExpanded(
     onAddContext?: () => void;
   } = {},
 ): string {
-  const card = ContextCard({
+  const card = callInRender(() => ContextCard({
     ...items,
     sessionId: 's1',
     onOpenDetail: () => {},
     onOpenFile: () => {},
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-  }) as ReactElement<PanelCardProps>;
+  })) as ReactElement<PanelCardProps>;
   return renderToStaticMarkup(<PanelCard {...card.props} defaultExpanded />);
 }
 

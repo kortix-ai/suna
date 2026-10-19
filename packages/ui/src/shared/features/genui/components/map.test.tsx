@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // eslint-disable-next-line no-restricted-imports -- the test parses real OpenUI source into map nodes
 import { parseGenui } from '@kortix/sdk/genui';
 
-import { createTranslator } from 'next-intl';
+import { createTranslator } from 'use-intl';
 
 import { MAP_DEFAULTS, watchMapLoad } from '../../../../components/ui/map';
 import { setUiHostEnv } from '../../../../lib/host-env';
 
-import en from '../../../../translations/en.json';
+import { defaultUiMessages as en } from '../../../../i18n';
 import type { GenuiNode } from '../sdk';
 import { GenuiMapView } from './map';
 import { canvasOptions, paintRgb } from './map-canvas';

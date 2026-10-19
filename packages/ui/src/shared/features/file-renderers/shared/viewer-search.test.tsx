@@ -15,20 +15,20 @@ const host = (name: string) =>
     return React.createElement(name, props, children);
   };
 for (const [path, names] of Object.entries({
-  '@/components/ui/button': ['Button'],
-  '@/components/ui/input': ['Input'],
-  '@/components/ui/popover': ['Popover', 'PopoverContent', 'PopoverTrigger'],
-  '@/components/ui/tooltip': ['Tooltip', 'TooltipContent', 'TooltipTrigger', 'TooltipProvider'],
-  '@/components/ui/select': [
+  '../../../../components/ui/button': ['Button'],
+  '../../../../components/ui/input': ['Input'],
+  '../../../../components/ui/popover': ['Popover', 'PopoverContent', 'PopoverTrigger'],
+  '../../../../components/ui/tooltip': ['Tooltip', 'TooltipContent', 'TooltipTrigger', 'TooltipProvider'],
+  '../../../../components/ui/select': [
     'Select',
     'SelectContent',
     'SelectItem',
     'SelectTrigger',
     'SelectValue',
   ],
-  '@/components/ui/separator': ['Separator'],
-  '@/components/ui/tabs': ['Tabs', 'TabsList', 'TabsTrigger'],
-  '@/components/ui/dropdown-menu': [
+  '../../../../components/ui/separator': ['Separator'],
+  '../../../../components/ui/tabs': ['Tabs', 'TabsList', 'TabsTrigger'],
+  '../../../../components/ui/dropdown-menu': [
     'DropdownMenu',
     'DropdownMenuContent',
     'DropdownMenuItem',
@@ -36,18 +36,18 @@ for (const [path, names] of Object.entries({
     'DropdownMenuRadioItem',
     'DropdownMenuTrigger',
   ],
-  '@/features/file-renderers/shared/select-compat': [
+  './select-compat': [
     'Select',
     'SelectContent',
     'SelectItem',
     'SelectTrigger',
     'SelectValue',
   ],
-  '@/features/file-renderers/shared/scroll-area-compat': ['ScrollArea'],
-  '@/features/file-renderers/shared/viewer-copy-menu': ['ViewerCopyMenu'],
+  './scroll-area-compat': ['ScrollArea'],
+  './viewer-copy-menu': ['ViewerCopyMenu'],
 }))
   mock.module(path, () => Object.fromEntries(names.map((name) => [name, host(name)])));
-mock.module('@/i18n/use-translations', () => ({
+mock.module('../../../../i18n', () => ({
   useTranslations: () => Object.assign((s: string) => s, { raw: (s: string) => s }),
 }));
 type SearchSheet = Pick<

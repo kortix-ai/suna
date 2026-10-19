@@ -2,7 +2,7 @@ import { toolCallBlock } from '@kortix/sdk';
 import { memoryRelPath, parseMemoryView } from '@kortix/sdk';
 import type { ToolPart } from '../../../shared/ui';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { isMemoryMarkdown, memoryRowTarget, MemoryTool, memoryToolTitle } from './memory-tool';
@@ -37,9 +37,9 @@ import { isMemoryMarkdown, memoryRowTarget, MemoryTool, memoryToolTitle } from '
 
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{ hardcodedUi: {} }} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       {node}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

@@ -3,7 +3,7 @@ import { ToolRunningContext } from '../shared/infrastructure';
 import type { ToolPart } from '../../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -12,9 +12,9 @@ import { WriteTool, writeStat } from './write-tool';
 function withProviders(node: ReactNode) {
   const queryClient = new QueryClient();
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

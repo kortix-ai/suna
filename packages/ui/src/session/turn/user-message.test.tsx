@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '../../components/ui/tooltip';
@@ -8,7 +8,7 @@ import { MentionChip, chipClass } from '../mention-chip';
 import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
-import enMessages from '../../../../translations/en.json';
+import { defaultUiMessages as enMessages } from '../../i18n';
 import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
 import {
   buildOptimisticPromptTextWithUploads,
@@ -57,7 +57,7 @@ const stamped = {
 const render = (rewindDisabled: boolean, msg: V1Row = message) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <TooltipProvider>
           <UserMessage
             message={logOf(msg)}
@@ -67,7 +67,7 @@ const render = (rewindDisabled: boolean, msg: V1Row = message) =>
             rewindDisabled={rewindDisabled}
           />
         </TooltipProvider>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 
@@ -75,7 +75,7 @@ const render = (rewindDisabled: boolean, msg: V1Row = message) =>
 const renderText = (text: string, props: Record<string, unknown> = {}) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <UserMessage
           message={logOf(
             {
@@ -87,7 +87,7 @@ const renderText = (text: string, props: Record<string, unknown> = {}) =>
           ownsPlan={false}
           {...props}
         />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 
@@ -467,7 +467,7 @@ describe('UserMessage persisted attachments', () => {
     } as V1Row;
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <UserMessage
             message={logOf(streaming)}
             sessionId="s"
@@ -478,7 +478,7 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     expect(html).toContain('REPRO');
@@ -488,9 +488,9 @@ describe('UserMessage persisted attachments', () => {
     expect(html.split('tiny.png').length - 1).toBe(
       renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
-          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <IntlTestProvider locale="en" onError={() => {}}>
             <UserMessage message={logOf(streaming)} sessionId="s" ownsPlan={false} />
-          </NextIntlClientProvider>
+          </IntlTestProvider>
         </QueryClientProvider>,
       ).split('tiny.png').length - 1,
     );
@@ -512,7 +512,7 @@ describe('UserMessage persisted attachments', () => {
     } as unknown as V1Row;
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <UserMessage
             message={logOf(swapping)}
             sessionId="s"
@@ -523,7 +523,7 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     expect(html).toContain('FLICKER');
@@ -654,11 +654,11 @@ describe('UserMessage renders the plan it owns', () => {
     client.setQueryData(['opencode', 'session-todo', SESSION], todos);
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <TooltipProvider>
             <UserMessage message={logOf(message)} sessionId={SESSION} ownsPlan={ownsPlan} />
           </TooltipProvider>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
   };
@@ -829,9 +829,9 @@ describe('sent attachment tiles', () => {
   ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={messages} onError={() => {}}>
           <UserMessage message={logOf(msg)} sessionId="session-1" ownsPlan={false} {...props} />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1024,9 +1024,9 @@ describe('sent attachment tiles', () => {
     const strip = (status?: typeof failed) =>
       renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
-          <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
             <MessageAttachments attachments={[]} status={status} />
-          </NextIntlClientProvider>
+          </IntlTestProvider>
         </QueryClientProvider>,
       );
 
@@ -1047,7 +1047,7 @@ describe('sent attachment tiles', () => {
   test('a failed send keeps its tile and reads "Couldn\'t send" with Retry, never "Upload failed"', () => {
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <MessageAttachments
             attachments={[
               {
@@ -1059,7 +1059,7 @@ describe('sent attachment tiles', () => {
             ]}
             status={{ state: 'failed', onRetry: () => {} }}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1150,7 +1150,7 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
     // quote and the second quote is never drawn.
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <UserMessage
             message={logOf(
               {
@@ -1174,7 +1174,7 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
             sessionId="session-1"
             ownsPlan={false}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     const quotes = blockquotes(markup);
@@ -1403,7 +1403,7 @@ describe('UserMessage member author', () => {
   const renderWith = (author: typeof MEMBER | undefined, showAuthor: boolean, msg: V1Row = message) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+        <IntlTestProvider locale="en" timeZone="UTC" messages={enMessages}>
           <TooltipProvider>
             <UserMessage
               message={logOf(msg)}
@@ -1414,7 +1414,7 @@ describe('UserMessage member author', () => {
               showAuthor={showAuthor}
             />
           </TooltipProvider>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1446,7 +1446,7 @@ describe('UserMessage platform prompts', () => {
   const renderText = (text: string) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+        <IntlTestProvider locale="en" timeZone="UTC" messages={enMessages}>
           <TooltipProvider>
             <UserMessage
               message={logOf({ ...message, parts: [{ ...message.parts[0], text }] } as V1Row)}
@@ -1454,7 +1454,7 @@ describe('UserMessage platform prompts', () => {
               ownsPlan={false}
             />
           </TooltipProvider>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1485,11 +1485,11 @@ describe('UserMessage platform prompts', () => {
 describe('UserMessageBubble clamp toggle', () => {
   test('only the Show more button toggles: the bubble carries no click affordance', () => {
     const markup = renderToStaticMarkup(
-      <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+      <IntlTestProvider locale="en" timeZone="UTC" messages={enMessages}>
         <UserMessageBubble canExpand expanded={false} onToggle={() => {}} textId="m1-text">
           long text
         </UserMessageBubble>
-      </NextIntlClientProvider>,
+      </IntlTestProvider>,
     );
     expect(markup).not.toContain('cursor-pointer');
     expect(markup).toContain('>Show more</button>');

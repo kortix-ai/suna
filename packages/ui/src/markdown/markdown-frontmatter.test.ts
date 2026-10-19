@@ -83,9 +83,9 @@ describe('parseFrontmatter', () => {
 // instead of shipping the bug again.
 describe('markdown FILE renderers all strip frontmatter', () => {
   const FILE_RENDERERS = [
-    '../../features/session/action-panel/easy/file-viewer.tsx',
-    '../../features/file-renderers/show-content-renderer.tsx',
-    '../../features/file-viewer/file-content-renderer.tsx',
+    '../session/action-panel/easy/file-viewer.tsx',
+    '../shared/features/file-renderers/show-content-renderer.tsx',
+    '../shared/features/file-viewer/file-content-renderer.tsx',
   ];
 
   for (const rel of FILE_RENDERERS) {

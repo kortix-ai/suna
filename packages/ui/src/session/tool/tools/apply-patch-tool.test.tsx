@@ -3,7 +3,7 @@ import { ToolRunningContext } from '../shared/infrastructure';
 import type { ToolPart } from '../../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApplyPatchTool } from './apply-patch-tool';
 
@@ -19,11 +19,11 @@ const part = (files: unknown[], status = 'completed', output = 'ok'): ToolPart =
 const render = (p: ToolPart, open = false, running = false) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <ToolRunningContext.Provider value={running}>
           <ApplyPatchTool call={toolCallBlock(p)} defaultOpen={open} />
         </ToolRunningContext.Provider>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

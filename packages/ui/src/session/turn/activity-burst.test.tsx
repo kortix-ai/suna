@@ -20,7 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ActivityBurst, ActivityGroupStep, sameActivityGroupStepProps } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
@@ -141,7 +141,7 @@ describe('ActivityGroupStep', () => {
   const render = (open: boolean, input: Part[] = parts) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ChainOfThoughtStep open={open}>
             <ActivityGroupStep
               step={groupOf(input)}
@@ -149,7 +149,7 @@ describe('ActivityGroupStep', () => {
               disableNavigation
             />
           </ChainOfThoughtStep>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -525,7 +525,7 @@ describe('ActivityBurst', () => {
   ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ActivityBurst
             blocks={blocksOf(parts, { live: working })}
             sessionId="session-1"
@@ -534,7 +534,7 @@ describe('ActivityBurst', () => {
             disableNavigation
             density={density}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -665,7 +665,7 @@ describe('ActivityBurst', () => {
     // per-call rows and thoughts are one click down, not spread between sentences.
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <WorkFoldContext.Provider value>
             <ActivityBurst
               blocks={blocksOf([
@@ -679,7 +679,7 @@ describe('ActivityBurst', () => {
               disableNavigation
             />
           </WorkFoldContext.Provider>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     expect(markup).toContain('Ran 2 commands, read 1 file · 1 failed');
@@ -1132,7 +1132,7 @@ describe('chain rail', () => {
   const railStep = (defaultOpen: boolean) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ChainOfThoughtStep>
             <ToolPartRenderer
               call={toolCallBlock(
@@ -1148,7 +1148,7 @@ describe('chain rail', () => {
               disableNavigation
             />
           </ChainOfThoughtStep>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1206,9 +1206,9 @@ describe('bare row alignment', () => {
   const renderBare = (parts: Part[]) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ActivityBurst blocks={blocksOf(parts)} sessionId="session-1" working={false} disableNavigation />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1280,9 +1280,9 @@ describe('chain alignment', () => {
   const wrap = (node: React.ReactNode) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           {node}
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -1355,7 +1355,7 @@ describe('answered question step', () => {
   const renderBurst = (parts: Part[], { working = false, isTrailing = false } = {}) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ActivityBurst
             blocks={blocksOf(parts, { live: working })}
             sessionId="session-1"
@@ -1363,7 +1363,7 @@ describe('answered question step', () => {
             isTrailing={isTrailing}
             disableNavigation
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 

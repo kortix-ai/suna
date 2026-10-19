@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { qk } from '@kortix/sdk/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import messages from '../../../../translations/en.json';
+import { defaultUiMessages as messages } from '../../i18n';
 import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
 
 function render(input: {
@@ -30,13 +30,13 @@ function render(input: {
     }
   }
   const markup = renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" timeZone="UTC" messages={messages}>
+    <IntlTestProvider locale="en" timeZone="UTC" messages={messages}>
       <QueryClientProvider client={client}>
         {input.selection
           ? <NewProviderSecretPoolEditor projectId="project" selection={input.selection} onChange={() => {}} />
           : <ProviderSecretPoolEditor projectId="project" sessionId="session" drafts={{}} onChange={() => {}} saving={input.saving} />}
       </QueryClientProvider>
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
   client.clear();
   return markup;

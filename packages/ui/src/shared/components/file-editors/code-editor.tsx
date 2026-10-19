@@ -276,7 +276,7 @@ export function getLanguageFromExtension(fileName: string, tI18nComplete: UiTran
   return extensionToLanguage[extension] || 'text';
 }
 
-interface CodeEditorProps {
+export interface CodeEditorProps {
   content: string;
   originalContent?: string; // The saved/persisted content (for tracking unsaved changes across remounts)
   hasUnsavedChanges?: boolean; // Controlled by parent - persists across remounts

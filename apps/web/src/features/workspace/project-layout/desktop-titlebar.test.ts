@@ -296,7 +296,7 @@ describe('nothing re-hard-codes the band', () => {
     'utf8',
   );
   const sessionHeader = readFileSync(
-    join(repoRoot, 'apps/web/src/features/session/header/session-site-header.tsx'),
+    join(repoRoot, 'packages/ui/src/session/header/session-site-header.tsx'),
     'utf8',
   );
   const main = readFileSync(join(repoRoot, 'apps/desktop-electron/src/main.js'), 'utf8');
@@ -460,7 +460,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
     presentation: readFileSync(
       join(
         repoRoot,
-        'apps/web/src/features/file-renderers/presentation/FullScreenPresentationViewer.tsx',
+        'packages/ui/src/shared/features/file-renderers/presentation/FullScreenPresentationViewer.tsx',
       ),
       'utf8',
     ),
@@ -535,14 +535,17 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     ),
     'session-site-header.tsx': join(
       repoRoot,
-      'apps/web/src/features/session/header/session-site-header.tsx',
+      'packages/ui/src/session/header/session-site-header.tsx',
     ),
     'drive-header.tsx': join(
       repoRoot,
-      'apps/web/src/features/project-files/components/drive-header.tsx',
+      'packages/ui/src/shared/features/project-files/components/drive-header.tsx',
     ),
     // Apps draws its opener through this shared header.
-    'project-page-header.tsx': join(import.meta.dir, 'project-page-header.tsx'),
+    'project-page-header.tsx': join(
+      repoRoot,
+      'packages/ui/src/shared/features/workspace/project-layout/project-page-header.tsx',
+    ),
     // The route that had NO opener on any of its headerless surfaces, which is
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(
@@ -555,7 +558,10 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     const source = readFileSync(path, 'utf8');
 
     test(`${name} renders the shared SidebarToggle`, () => {
-      expect(source).toContain("from '@/features/workspace/project-layout/sidebar-toggle'");
+      // A web view imports it by alias; a view that moved to @kortix/ui, relatively.
+      expect(source).toMatch(
+        /from '(@\/features\/workspace\/project-layout\/|(\.\.\/)+(shared\/features\/)?workspace\/project-layout\/|\.\/)sidebar-toggle'/,
+      );
       expect(source).toContain('<SidebarToggle');
     });
 

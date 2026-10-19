@@ -16,6 +16,7 @@ import {
   terminalLayerMotion,
   ToolParts,
 } from './detail-view';
+import { callInRender } from '../../../test-utils/call-in-render';
 
 describe('DetailLayer a11y (W6)', () => {
   test('desktop detail is a labeled dialog', () => {
@@ -284,7 +285,7 @@ function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolCa
  * `ToolParts` holds no hooks — safe to call directly as a plain function, the
  * same harness `context-card.test.tsx` uses for `ContextCard`. That sidesteps
  * fully rendering `ToolPartRenderer` (it needs a `QueryClientProvider` +
- * `NextIntlClientProvider` tree this test has no reason to stand up) while
+ * `IntlTestProvider` tree this test has no reason to stand up) while
  * still proving the summary line's presence and its position relative to the
  * failure banner and the raw tool views.
  */
@@ -293,7 +294,7 @@ function toolPartsChildren(props: {
   sessionId: string;
   summary?: string;
 }): ReactElement[] {
-  const provider = ToolParts(props) as ReactElement<{
+  const provider = callInRender(() => ToolParts(props)) as ReactElement<{
     children: ReactElement<{ children?: ReactNode }>;
   }>;
   const raw = provider.props.children.props.children;
@@ -380,7 +381,7 @@ describe('ToolParts defaultOpen wiring (Task 16, W11/D13)', () => {
 
 describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', () => {
   test('max-h-none stays; overflow-visible is gone so ToolCodeCard keeps its x-axis scrollbar', () => {
-    const provider = ToolParts({ calls: [part('bash')], sessionId: 's1' }) as ReactElement<{
+    const provider = callInRender(() => ToolParts({ calls: [part('bash')], sessionId: 's1' })) as ReactElement<{
       children: ReactElement<{ className: string }>;
     }>;
     const wrapperClassName = provider.props.children.props.className;
@@ -394,7 +395,7 @@ describe('ToolParts — a lone show call fills the panel', () => {
   // That height only resolves if this column has one; without it the iframe
   // fell back to the browser's 150px default and the preview was clipped.
   function columnClass(calls: ToolCallBlock[]): string {
-    const provider = ToolParts({ calls, sessionId: 's1' }) as ReactElement<{
+    const provider = callInRender(() => ToolParts({ calls, sessionId: 's1' })) as ReactElement<{
       children: ReactElement<{ className: string }>;
     }>;
     return provider.props.children.props.className;

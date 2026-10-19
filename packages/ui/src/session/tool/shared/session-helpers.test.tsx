@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { InlineSessionMessagesList, parseSessionMessagesOutput } from './session-helpers';
@@ -25,9 +25,9 @@ describe('InlineSessionMessagesList cost display', () => {
     expect(parsed).not.toBeNull();
 
     const html = renderToStaticMarkup(
-      <NextIntlClientProvider locale="en" messages={MESSAGES} onError={() => {}}>
+      <IntlTestProvider locale="en" messages={MESSAGES} onError={() => {}}>
         <InlineSessionMessagesList messages={parsed ?? []} />
-      </NextIntlClientProvider>,
+      </IntlTestProvider>,
     );
 
     // $0.01 is 1 credit; the old 1.2x fudge would read 1.2 credits.

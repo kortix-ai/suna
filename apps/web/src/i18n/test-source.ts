@@ -1,7 +1,10 @@
 import {
+  existsSync,
   readFileSync as readNodeFileSync,
   type PathOrFileDescriptor,
 } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import messages from '../../translations/en.json';
 
@@ -41,6 +44,20 @@ export function expandI18nSource(source: string): string {
     .replace(new RegExp(String.raw`\{(${call}) ${value}\}`, 'g'), '{$1}$3');
 }
 
+const UI_DIR = fileURLToPath(new URL('../../../../packages/ui/', import.meta.url));
+const SHIM = /^(?:\s*['"]use client['"];)?\s*export \* from '@kortix\/ui\/([^']+)';\s*$/;
+
+/** A web file that only re-exports `@kortix/ui/<sub>` reads as the moved source. */
+function followUiShim(source: string): string {
+  const sub = source.match(SHIM)?.[1];
+  if (!sub) return source;
+  const exports = JSON.parse(readNodeFileSync(join(UI_DIR, 'package.json'), 'utf8')).exports;
+  const target = exports[`./${sub}`];
+  const file = typeof target === 'string' ? join(UI_DIR, target) : undefined;
+  if (!file || !existsSync(file)) throw new Error(`no @kortix/ui source for ${sub}`);
+  return readNodeFileSync(file, 'utf8');
+}
+
 export function readFileSync(path: PathOrFileDescriptor, options: { encoding: BufferEncoding; flag?: string } | BufferEncoding): string;
 export function readFileSync(path: PathOrFileDescriptor): Buffer;
 export function readFileSync(
@@ -48,5 +65,5 @@ export function readFileSync(
   options?: { encoding?: null | BufferEncoding; flag?: string } | null | BufferEncoding,
 ): string | Buffer {
   const result = readNodeFileSync(path, options as never);
-  return typeof result === 'string' ? expandI18nSource(result) : result;
+  return typeof result === 'string' ? expandI18nSource(followUiShim(result)) : result;
 }

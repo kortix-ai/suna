@@ -4,7 +4,7 @@ import type { ToolPart } from '../../shared/ui';
 import { toolCallBlock } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolPartRenderer } from './tool-part-renderer';
@@ -27,11 +27,11 @@ const inputless = {
 const render = (part: ToolPart, turnLive: boolean) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <TurnLiveContext.Provider value={turnLive}>
           <ToolPartRenderer call={toolCallBlock(part)} sessionId="s1" defaultOpen />
         </TurnLiveContext.Provider>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

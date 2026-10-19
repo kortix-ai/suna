@@ -1,4 +1,4 @@
-import { NextIntlClientProvider } from '../i18n';
+import { IntlTestProvider } from '../test-utils/intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { createElement } from 'react';
@@ -6,8 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '../components/ui/sidebar';
 import type { ChangeRequest, SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
-import enMessages from '../../../translations/en.json';
-import { TestUiHost } from '@/test-utils/ui-host';
+import { defaultUiMessages as enMessages } from '../i18n';
+import { TestUiHost } from '../test-utils/ui-host';
 import { sessionAuditKey } from './session-audit-shared';
 
 const ROUTE = { id: 'project-fixture', sessionId: 'project-session-fixture' };
@@ -218,7 +218,7 @@ describe('SessionChat transcript rows', () => {
   const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
       <QueryClientProvider client={client}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <TestUiHost params={ROUTE} viewerId="viewer-1">
             <SidebarProvider>
               <SessionChat
@@ -228,7 +228,7 @@ describe('SessionChat transcript rows', () => {
               />
             </SidebarProvider>
           </TestUiHost>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
   test('persisted failures render without a transcript message and deduplicate last_ended', () => {
@@ -399,7 +399,7 @@ describe('SessionChat moved turn sections', () => {
   const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
       <QueryClientProvider client={client}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <TestUiHost params={ROUTE} viewerId="viewer-1">
             <SidebarProvider>
               <SessionChat
@@ -409,7 +409,7 @@ describe('SessionChat moved turn sections', () => {
               />
             </SidebarProvider>
           </TestUiHost>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 
@@ -761,7 +761,7 @@ describe('SessionChat command-list resolution wire', () => {
   const renderChat = () =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <TestUiHost params={ROUTE} viewerId="viewer-1">
             <SidebarProvider>
               <SessionChat
@@ -771,7 +771,7 @@ describe('SessionChat command-list resolution wire', () => {
               />
             </SidebarProvider>
           </TestUiHost>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 

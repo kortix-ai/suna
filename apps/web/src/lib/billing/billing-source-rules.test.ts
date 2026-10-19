@@ -56,7 +56,7 @@ const DISPLAY_ONLY = [
  * They are consumers of the wire format, not billing surfaces.
  */
 const ERROR_NOISE_FILTERS = [
-  join('lib', 'browser-noise', 'rules', 'expected-states.ts'),
+  join('@kortix/ui', 'shared', 'lib', 'browser-noise', 'rules', 'expected-states.ts'),
   join('app', 'sentry-ignore-errors.test.ts'),
   'sentry.client.config.ts',
 ];

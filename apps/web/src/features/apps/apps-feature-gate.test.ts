@@ -40,7 +40,7 @@ mock.module('next/link', () => ({
     React.createElement('a', { href, ...props }, children),
 }));
 mock.module('@kortix/ui/shared/hooks/utils/index', () => ({ useIsMobile: () => false }));
-mock.module('@/components/ui/sidebar', () => ({
+mock.module('@kortix/ui/sidebar', () => ({
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),

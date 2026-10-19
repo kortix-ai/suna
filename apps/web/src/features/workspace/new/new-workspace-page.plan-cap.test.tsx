@@ -125,6 +125,8 @@ const motionValue = (initial: number) => ({
 });
 mock.module('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
+  // @kortix/ui's UiProvider wraps its tree in LazyMotion.
+  LazyMotion: ({ children }: { children: ReactNode }) => <>{children}</>,
   m: motionComponents,
   animate: () => Promise.resolve(),
   useMotionValue: (initial: number) => motionValue(initial),

@@ -1,21 +1,21 @@
 import { TooltipProvider } from '../../../components/ui/tooltip';
 import { PreviewFitProvider } from '../file-viewer/preview-fit';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../../../i18n';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ImageRenderer } from './image-renderer';
 
 // ImageRenderer calls `useTranslations('hardcodedUi')` unconditionally for
 // its toolbar labels (see show-tool.test.tsx for the same requirement), so
-// it needs a NextIntlClientProvider ancestor even though this render never
+// it needs a IntlTestProvider ancestor even though this render never
 // reaches an interactive state. Its floating toolbar also renders `Hint`
 // (a Radix `Tooltip`), which needs a `TooltipProvider` ancestor.
 function withIntl(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <TooltipProvider>{node}</TooltipProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

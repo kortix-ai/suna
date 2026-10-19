@@ -8,7 +8,7 @@ import {
 import type { MessageWithParts, ToolPart } from '../../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -121,11 +121,11 @@ function taskPart(overrides: {
 
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={new QueryClient()}>
         <TooltipProvider>{node}</TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

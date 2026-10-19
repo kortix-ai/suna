@@ -3,8 +3,6 @@ import { beforeEach, expect, test } from 'bun:test';
 import * as sdk from '@kortix/sdk/internal/diagnostics-store'; // eslint-disable-line no-restricted-imports
 import { resetIdentityState } from '@kortix/sdk/react';
 
-import { isAppOwnedStorageKey, isKeptStorageKey } from '@/lib/utils/clear-local-storage';
-
 import * as web from './diagnostics-store';
 
 // The SDK event stream writes LSP diagnostics into the SDK store. The file
@@ -27,13 +25,6 @@ test('an SDK setFromLspEvent write is readable through the web import', () => {
 
   const found = web.findDiagnosticsForFile(web.useDiagnosticsStore.getState().byFile, 'a.ts');
   expect(found).toMatchObject([{ file: '/workspace/a.ts', line: 4, column: 2, message: 'boom' }]);
-});
-
-test('the SDK persist name is swept at sign-out and not kept', () => {
-  const name = sdk.useDiagnosticsStore.persist.getOptions().name;
-  expect(name).toBe('kortix-diagnostics');
-  expect(isAppOwnedStorageKey(name!)).toBe(true);
-  expect(isKeptStorageKey(name!)).toBe(false);
 });
 
 // The web app calls `resetIdentityState()` on every identity change

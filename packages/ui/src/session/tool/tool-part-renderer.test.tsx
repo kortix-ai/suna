@@ -3,7 +3,7 @@ import { TooltipProvider } from '../../components/ui/tooltip';
 import type { ToolPart } from '../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReactNode } from 'react';
@@ -34,11 +34,11 @@ import { ToolPartRenderer } from './tool-part-renderer';
  */
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={new QueryClient()}>
         <TooltipProvider>{node}</TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

@@ -3,7 +3,7 @@ import { ToolSurfaceContext } from '../shared/infrastructure';
 import type { ToolPart } from '../../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SkillTool } from './skill-tool';
 
@@ -35,9 +35,9 @@ const part = (input: Record<string, unknown>, output: string): ToolPart =>
 const render = (p: ToolPart, open = false) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <SkillTool call={toolCallBlock(p)} defaultOpen={open} />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 
@@ -118,11 +118,11 @@ describe('SkillTool', () => {
   test('on the panel the files still sit in the result card, not a section heading', () => {
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider locale="en" onError={() => {}}>
           <ToolSurfaceContext.Provider value="panel">
             <SkillTool call={toolCallBlock(part({ name: 'webapp', dir: DIR }, OUTPUT))} defaultOpen />
           </ToolSurfaceContext.Provider>
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
 

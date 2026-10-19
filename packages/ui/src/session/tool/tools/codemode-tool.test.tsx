@@ -2,11 +2,11 @@ import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '../../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import en from '../../../../../translations/en.json';
+import { defaultUiMessages as en } from '../../../i18n';
 import { CodemodeTool, scriptCalls, scriptResult } from './codemode-tool';
 
 /** The text of rendered markup: tags removed until none remain (one pass can leave a tag behind). */
@@ -22,9 +22,9 @@ function textOf(html: string): string {
 
 function render(node: ReactNode) {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={en} onError={() => {}}>
+    <IntlTestProvider locale="en" messages={en} onError={() => {}}>
       <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 }
 

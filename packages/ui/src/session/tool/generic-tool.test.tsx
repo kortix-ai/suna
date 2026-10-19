@@ -1,7 +1,7 @@
 import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '../../shared/ui';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../../i18n';
+import { IntlTestProvider } from '../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -13,9 +13,9 @@ import { GenericTool, parseToolName } from './generic-tool';
 // at all, not a message this test asserts on.
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       {node}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

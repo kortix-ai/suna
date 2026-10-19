@@ -1,6 +1,6 @@
 import { toolCallBlock } from '@kortix/sdk';
 import { TooltipProvider } from '../../../components/ui/tooltip';
-import { NextIntlClientProvider } from '../../../i18n';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ToolPart } from '../../../shared/ui';
 import { ArrowSquareOutIcon, FileCsvIcon, FilePdfIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -33,7 +33,7 @@ mock.module('@kortix/sdk', () => ({
 }));
 
 // ShowTool calls `useTranslations('hardcodedUi')` unconditionally (for its
-// loading-state copy), so it needs a NextIntlClientProvider ancestor even
+// loading-state copy), so it needs a IntlTestProvider ancestor even
 // when the render path never reaches that branch — see mode-gate.test.tsx
 // for the same requirement on AdvancedPanel. It also renders
 // ShowContentRenderer, which calls `useFileContent` (react-query)
@@ -42,11 +42,11 @@ mock.module('@kortix/sdk', () => ({
 function withProviders(node: ReactNode) {
   const queryClient = new QueryClient();
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>{node}</TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

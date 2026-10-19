@@ -3,7 +3,7 @@ import { STATUS_TEXT } from '../../components/ui/status';
 import type { Part, ToolPart } from '../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { toolCallBlock } from '@kortix/sdk';
 import { ActivityFileChipStep, isFileChipCall } from './activity-file-chips';
@@ -28,7 +28,7 @@ const chipCount = (markup: string) => markup.split('aria-label="Open ').length -
 const render = (parts: Part[], { open = true, running = false, bare = false } = {}) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <ChainOfThoughtStep open={open}>
           <ActivityFileChipStep
             calls={parts.map((p) => toolCallBlock(p as ToolPart))}
@@ -37,7 +37,7 @@ const render = (parts: Part[], { open = true, running = false, bare = false } = 
             disableNavigation
           />
         </ChainOfThoughtStep>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

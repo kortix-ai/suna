@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../i18n';
+import { IntlTestProvider } from '../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -9,7 +9,7 @@ import {
   type HeldSend,
 } from '../shared/stores/session-composer-handoff-store';
 
-import enMessages from '../../../translations/en.json';
+import { defaultUiMessages as enMessages } from '../i18n';
 import { sessionLogOfV1Rows } from '@kortix/sdk';
 
 import { OptimisticTurn } from './optimistic-turn';
@@ -23,9 +23,9 @@ import { buildOptimisticPromptTextWithUploads } from './uploaded-file-refs';
 const render = (el: React.ReactElement) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         {el}
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 
@@ -347,13 +347,13 @@ describe('OptimisticTurn upload status', () => {
   test('a failed send the host kept offers Retry', () => {
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <OptimisticTurn
             text="x"
             attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
             uploadStatus={{ state: 'failed', message: 'photo.jpg did not upload', onRetry: () => {} }}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     expect(markup).toContain('photo.jpg did not upload');
@@ -403,13 +403,13 @@ describe('OptimisticTurn upload status', () => {
     };
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
           <OptimisticTurn
             text="x"
             attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
             uploadStatus={status}
           />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </QueryClientProvider>,
     );
     expect(markup).toContain('photo.jpg did not upload');

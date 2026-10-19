@@ -1,19 +1,19 @@
 import { PreviewFitProvider } from '../file-viewer/preview-fit';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../../../i18n';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VideoRenderer, requestVideoFullscreen } from './video-renderer';
 
 // VideoRenderer calls `useTranslations('hardcodedUi')` unconditionally for
 // its error copy (see show-tool.test.tsx for the same requirement), so it
-// needs a NextIntlClientProvider ancestor even though this render never
+// needs a IntlTestProvider ancestor even though this render never
 // reaches the error branch.
 function withIntl(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       {node}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

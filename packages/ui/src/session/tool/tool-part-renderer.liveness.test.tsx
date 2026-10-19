@@ -4,7 +4,7 @@ import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolPartRenderer } from './tool-part-renderer';
@@ -35,11 +35,11 @@ const closed = (call: ToolCallBlock): ToolCallBlock => ({
 const render = (call: ToolCallBlock, turnLive: boolean) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <TurnLiveContext.Provider value={turnLive}>
           <ToolPartRenderer call={call} sessionId="s1" defaultOpen />
         </TurnLiveContext.Provider>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

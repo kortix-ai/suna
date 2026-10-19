@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -21,13 +21,6 @@ import { ComposerToolbar } from './composer-toolbar';
  */
 
 const noop = () => {};
-const messages = {
-  threads: {
-    sendMessage: 'Send message',
-    sending: 'Sending',
-    stop: 'Stop',
-  },
-};
 
 function render(
   toolbarSlot?: React.ReactNode,
@@ -35,7 +28,7 @@ function render(
   send?: { agentUnavailable?: boolean; canSubmit?: boolean; submitDisabled?: boolean },
 ): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
+    <IntlTestProvider locale="en" onError={noop}>
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
@@ -65,7 +58,7 @@ function render(
           />
         </TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 }
 

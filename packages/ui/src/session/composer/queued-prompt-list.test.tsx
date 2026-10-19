@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -30,7 +30,7 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
 const render = (props: Partial<QueuedPromptListProps>) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <TooltipProvider>
           <QueuedPromptList
             rows={[]}
@@ -41,7 +41,7 @@ const render = (props: Partial<QueuedPromptListProps>) =>
             {...props}
           />
         </TooltipProvider>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

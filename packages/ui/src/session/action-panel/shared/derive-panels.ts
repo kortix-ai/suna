@@ -30,7 +30,7 @@ import {
   contextLabelForTool,
   createArtifactKind,
   familyForTool,
-  humanizeToolName,
+  narrationToolName as humanizeToolName,
 } from '@kortix/sdk';
 import { toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -27,7 +27,16 @@ import { join } from 'node:path';
  * storm, so importing one here is the failure.
  */
 const dir = import.meta.dir;
-const read = (relative: string) => readFileSync(join(dir, relative), 'utf8');
+const uiSrc = join(dir, '../../../../../../packages/ui/src');
+/** Reads a sidebar file; a web re-export of @kortix/ui reads the moved source. */
+const read = (relative: string) => {
+  const source = readFileSync(join(dir, relative), 'utf8');
+  const moved = source.match(/^export \* from '@kortix\/ui\/(.+)';$/m)?.[1];
+  if (!moved) return source;
+  const file = [`${moved}.tsx`, `${moved}.ts`].map((f) => join(uiSrc, f)).find(existsSync);
+  if (!file) throw new Error(`${relative} re-exports a missing @kortix/ui/${moved}`);
+  return readFileSync(file, 'utf8');
+};
 const strip = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
@@ -64,7 +73,7 @@ describe('sidebar prefetch contract', () => {
     const code = strip(
       // The source moved to @kortix/ui; the web path is a re-export.
       readFileSync(
-        join(dir, '../../../../../../packages/ui/src/shared/components/common/hover-prefetch-link.tsx'),
+        join(uiSrc, 'shared/components/common/hover-prefetch-link.tsx'),
         'utf8',
       ),
     );

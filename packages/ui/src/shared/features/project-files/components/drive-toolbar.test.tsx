@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -22,9 +22,9 @@ function render(node: ReactNode) {
   // server-render fallbacks are swallowed rather than dragging a 644 KB
   // catalogue into the run.
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       {node}
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 }
 

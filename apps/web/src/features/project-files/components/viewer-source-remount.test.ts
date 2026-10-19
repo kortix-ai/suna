@@ -25,15 +25,15 @@ import { workspaceFileSource } from '@/features/files/file-source';
  */
 
 const contentRenderer = readFileSync(
-  fileURLToPath(new URL('./file-content-renderer.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/shared/features/project-files/components/file-content-renderer.tsx', import.meta.url)),
   'utf8',
 );
 const previewModal = readFileSync(
-  fileURLToPath(new URL('./file-preview-modal.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/shared/features/project-files/components/file-preview-modal.tsx', import.meta.url)),
   'utf8',
 );
 const projectFileSource = readFileSync(
-  fileURLToPath(new URL('../file-source.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/shared/features/project-files/file-source.tsx', import.meta.url)),
   'utf8',
 );
 

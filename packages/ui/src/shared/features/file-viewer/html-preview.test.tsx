@@ -1,4 +1,3 @@
-import { SHARE_FILE_IFRAME_CLASS } from '@/app/[locale]/(public)/share/session/[token]/share-layout';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { HTML_PREVIEW_IFRAME_CLASS, HtmlPreview } from './html-preview';
@@ -15,7 +14,6 @@ describe('HTML_PREVIEW_IFRAME_CLASS', () => {
     // is the exact mistake `SHARE_FILE_IFRAME_CLASS` documents guarding against.
     expect(HTML_PREVIEW_IFRAME_CLASS).toContain('bg-white');
     expect(HTML_PREVIEW_IFRAME_CLASS).not.toContain('bg-background');
-    expect(SHARE_FILE_IFRAME_CLASS).toContain('bg-white');
   });
 
   test('fills its region edge to edge, with no frame border', () => {

@@ -1,6 +1,6 @@
 import './tools/register';
 import { TooltipProvider } from '../../components/ui/tooltip';
-import { NextIntlClientProvider } from '../../i18n';
+import { IntlTestProvider } from '../../test-utils/intl';
 import type { ToolPart } from '../../shared/ui';
 import { sessionLogShowGroupCall, toolCallBlock } from '@kortix/sdk';
 import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
@@ -16,11 +16,11 @@ import { ToolPartRenderer } from './tool-part-renderer';
 // react-query unconditionally, even on a static render.
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+    <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={new QueryClient()}>
         <TooltipProvider>{node}</TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

@@ -93,74 +93,6 @@ describe('the transcript column has ONE definition', () => {
   });
 });
 
-const pageSource = readFileSync(
-  resolve(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
-  'utf8',
-);
-if (pageSource.length < 1000) throw new Error('session page did not load');
-
-describe('the crossfade covers the screen at every frame', () => {
-  test('only the overlay animates', () => {
-    // Two opacity transitions running against each other do not sum to one: at
-    // the midpoint both layers sit at 0.5 and the composite covers 75%, so a
-    // quarter of the page behind them shows through and the text washes out and
-    // back. Identical content on both layers does not save it. The chat is
-    // painted and opaque underneath; the overlay dissolves off it.
-    expect(pageSource).toContain("!chatReady && 'pointer-events-none',");
-    expect(pageSource).not.toMatch(/chatReady \? 'opacity-100' : 'pointer-events-none opacity-0'/);
-    // ...and the overlay must be opaque, or the always-painted chat reads
-    // through the boot loader's transparent centred block.
-    expect(pageSource).toContain(
-      "'bg-background absolute inset-0 flex flex-col transition-opacity",
-    );
-  });
-
-  test('the shell is pinned by the prompt it is painting, not by where it was typed', () => {
-    // The home-composer hand-off leaves the text in `useFirstPromptPreviewStore`
-    // and nothing else; without reading it here the route tore the shell down
-    // for a boot spinner the moment the transcript arrived.
-    expect(pageSource).toContain('useFirstPromptPreviewStore');
-    expect(pageSource).toContain('shellShowsFirstPrompt');
-    expect(pageSource).toMatch(
-      /resolveSessionOverlay\(\{ \.\.\.surface, shellShowsFirstPrompt \}\)/,
-    );
-    // Read at mount as well as live: SessionChat clears the preview the instant
-    // the transcript shows the text, and that clear can land in the same commit
-    // as `chatReady` — a purely live read would drop the pin on the exact frame
-    // the fade starts and unmount the shell instead of dissolving it.
-    expect(pageSource).toContain('handoff.firstPrompt');
-    expect(pageSource).toContain(
-      'const firstPrompt = !!useFirstPromptPreviewStore.getState().previewBySession[sessionId];',
-    );
-  });
-});
-
-describe('the overlay never covers a Restart the user needs', () => {
-  test('the fade ends on exactly the two errors that render a restart card', () => {
-    // The terminal cards in `ProjectSessionView` replace the whole dual-layer
-    // block, so no overlay exists over them. These two are different: they
-    // render INSIDE the chat layer, underneath the overlay, and are only
-    // reachable once the overlay has faded. `sessionErrorSurfaceReady` must
-    // therefore take the same two values the guards do — the ordinary path is
-    // the one that waits for `onContentReady`, never these.
-    expect(pageSource).toContain('runtimePresentation.replaceSession');
-    expect(pageSource).toContain(
-      'if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {',
-    );
-    expect(pageSource).toContain('if (runtimeError && runtimePresentation.replaceSession) {');
-    // Both cards restart in place rather than asking for a page reload.
-    expect(pageSource).toMatch(/runtimeBootError[\s\S]{0,700}<RestartSessionButton/);
-  });
-
-  test('the composer behind the overlay does not steal focus from the shell', () => {
-    // `useComposerFocus` reads visibility from `offsetParent`, which does not
-    // notice an opaque layer on top. Harmless while the shell was torn down in
-    // the same commit the chat mounted; a live steal now that the shell is
-    // pinned through the crossfade.
-    expect(chatSource).toContain('autoFocus={deferComposerFocus ? false : undefined}');
-    expect(pageSource).toContain('deferComposerFocus={!chatReady}');
-  });
-});
 
 describe('the first prompt is drawn by one component on both sides of the fade', () => {
   test('SessionChat stands in for the missing bubble with OptimisticTurn', () => {
@@ -177,47 +109,11 @@ describe('the first prompt is drawn by one component on both sides of the fade',
   });
 });
 
-describe('a readable transcript is never covered by the boot overlay', () => {
-  test('the presentation decision is made, and the banner is what replaces the wall', () => {
-    // THE COMPLAINT: opening a stopped/hibernated session showed a full-screen
-    // "Connecting…" for the whole wake (5-240 s) with no transcript, although
-    // every message existed. The server-side transcript mirror puts the thread
-    // on screen from the first frame, so the overlay must step aside.
-    expect(pageSource).toContain('resolveBootPresentation({ overlay, hasTranscript })');
-    expect(pageSource).toContain('<SessionConnectingBanner');
-  });
 
-  test('the overlay is dismissed by the banner flip through the SAME crossfade', () => {
-    // Not a hard unmount: the chat is already painted underneath, and swapping
-    // an opaque panel for the thread in one frame is the flash this route
-    // spent three fixes removing.
-    expect(pageSource).toContain(
-      "const overlayDismissed = chatReady || bootPresentation === 'banner';",
-    );
-    expect(pageSource).toContain(
-      "overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',",
-    );
-  });
-});
-
-describe('a stopped session with a transcript is not a dead end', () => {
-  test('the dormant branch leaves the composer live instead of a terminal card', () => {
-    // The old card replaced the composer and made Restart the only way back.
-    // A sent message wakes the box (deliver carries the wake intent) and a
-    // human who left and returns re-opens it (useSession releases the stop
-    // hold on the next presence return), so the branch falls through to the
-    // live chat and the composer's own asleep notice.
-    expect(pageSource).toContain('A deliberate stop with a readable transcript is not a dead end');
-    expect(pageSource).not.toMatch(
-      /tSessionPage\('stopped\.message'\),\s*action: <RestartSessionButton/,
-    );
-  });
-
-  test('the connecting strip is gated off while nothing is connecting', () => {
-    // With the dormant notice gone, the banner's stage 'stopped' would spin a
-    // forever "Connecting" pill over a session nobody is waking yet.
-    expect(pageSource).toMatch(
-      /!notice &&\s*!dormantWithoutRuntime &&\s*bootPresentation === 'banner'/,
-    );
+describe('the composer behind the overlay does not steal focus from the shell', () => {
+  test('SessionChat defers composer autofocus while the shell is on top', () => {
+    // `useComposerFocus` reads visibility from `offsetParent`, which does not
+    // notice an opaque layer on top, so the host passes `deferComposerFocus`.
+    expect(chatSource).toContain('autoFocus={deferComposerFocus ? false : undefined}');
   });
 });

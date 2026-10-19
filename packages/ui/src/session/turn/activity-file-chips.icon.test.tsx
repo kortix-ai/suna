@@ -1,7 +1,7 @@
 import type { Part } from '../../shared/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { Disclosure } from '../../components/ui/disclosure';
@@ -30,11 +30,11 @@ const writePart = (filePath: string): Part =>
 const render = (parts: Part[], bare: boolean) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <Disclosure open={false} onOpenChange={() => {}}>
           <ActivityFileChipStep calls={parts.map((p) => toolCallBlock(p as ToolPart))} sessionId="s1" bare={bare} />
         </Disclosure>
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

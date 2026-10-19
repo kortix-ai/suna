@@ -5,7 +5,7 @@ import { getFileCategory } from '../../../shared/features/file-viewer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
@@ -428,11 +428,11 @@ You are **Veyris Internal**.
 describe('FileViewer — markdown frontmatter', () => {
   test('renders sibling file links relative to the viewed document', () => {
     const html = renderToStaticMarkup(
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider locale="en" onError={() => {}}>
         <Wrapped>
           <FileViewer fileName="MEMORY.md" path="/workspace/memory/MEMORY.md" content={'---\ntitle: Index\n---\n[sibling](sibling.md)'} />
         </Wrapped>
-      </NextIntlClientProvider>,
+      </IntlTestProvider>,
     );
     expect(html).toContain('/workspace/memory/sibling.md — Click to preview');
     expect(html).not.toContain('[blocked]');

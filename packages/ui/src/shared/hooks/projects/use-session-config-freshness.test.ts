@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { defaultUiMessages } from '../../../i18n';
+
 import {
   CONFIG_FRESHNESS_STALE_TIME_MS,
   fallbackCopyKeys,
@@ -402,8 +404,7 @@ describe('the freshness answer expires fast enough to be re-asked on focus', () 
 });
 
 describe('fallbackCopyKeys', () => {
-  const en = JSON.parse(readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'))
-    .hardcodedUi.i18nComplete as Record<string, string>;
+  const en = defaultUiMessages.hardcodedUi.i18nComplete as Record<string, string>;
 
   test('the image default is named as the platform default config, never "an earlier config"', () => {
     const keys = fallbackCopyKeys('image-default');

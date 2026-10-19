@@ -1,7 +1,7 @@
 import { toolCallBlock } from '@kortix/sdk';
 import type { ToolPart } from '../../../shared/ui';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../../../i18n';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -12,15 +12,15 @@ import { WebSearchTool } from './web-search-tool';
 //
 // The trigger row no longer calls `useTranslations` — it dropped the literal
 // "Web Search" label entirely (the query itself is the row; the magnifying
-// glass icon already says "search"). `NextIntlClientProvider` stays only
+// glass icon already says "search"). `IntlTestProvider` stays only
 // because `render()` is a shared helper other tests in this file may extend.
 const HARDCODED_UI_MESSAGES = {};
 
 function withProviders(node: ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={HARDCODED_UI_MESSAGES} onError={() => {}}>
+    <IntlTestProvider locale="en" messages={HARDCODED_UI_MESSAGES} onError={() => {}}>
       {node}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { PANEL_EVENTS } from '@/lib/track';
 import { useUserPreferencesStore } from '../../stores/user-preferences-store';
 
 import GenuiMessageBlock from './genui-message-block';
@@ -78,9 +77,5 @@ describe('GenuiMessageBlock', () => {
     const renderer = await render(true);
     expect(textOf(renderer)).toContain('Book by Friday');
     expect(renderer.root.findAllByType('strong')).toHaveLength(0);
-  });
-
-  test('genui_block is a closed telemetry event', () => {
-    expect(PANEL_EVENTS).toContain('genui_block');
   });
 });

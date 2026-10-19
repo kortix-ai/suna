@@ -10,7 +10,7 @@ import type { ToolProps } from './shared/types';
 import { CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
-import { humanizeToolName } from '@kortix/sdk';
+import { narrationToolName as humanizeToolName } from '@kortix/sdk';
 
 /**
  * `linear/create_issue` → server `linear`, display `Create Issue`.
