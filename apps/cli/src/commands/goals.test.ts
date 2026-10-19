@@ -72,3 +72,47 @@ test('the real CLI lists and shows goals from the mounted folders', async () => 
   expect(missingRoot.exitCode).toBe(2);
   expect(missingRoot.stderr.toString() + missingRoot.stdout.toString()).toContain('Files is not mounted here');
 });
+
+describe('transitionViolations (the goal state machine)', () => {
+  const { transitionViolations } = require('./goals') as typeof import('./goals');
+  const facts = { activeHeartbeats: ['reminder.a'], unattended: true, verification: null, existingEvidence: new Set<string>() };
+  const draft = { ...base, status: 'draft', success_criteria: [] as typeof base.success_criteria };
+  const two = [
+    { id: 'c1', text: 'a', met: true, evidence: 'evidence/a.md' },
+    { id: 'c2', text: 'b', met: true, evidence: 'evidence/b.md' },
+  ];
+
+  test('only listed edges exist; closed goals have none; every transition needs a reason', () => {
+    expect(transitionViolations({ ...base }, 'done', 'x', facts)[0]).toContain('active → done is not a transition');
+    expect(transitionViolations({ ...base, status: 'done' }, 'active', 'x', facts)[0]).toContain('none (closed)');
+    expect(transitionViolations({ ...base }, 'waiting_on_user', ' ', facts)[0]).toContain('--reason');
+    expect(transitionViolations({ ...base }, 'abandoned', 'user said stop', facts)).toEqual([]);
+  });
+
+  test('draft → active needs 2-6 criteria, one heartbeat and unattended', () => {
+    expect(transitionViolations(draft, 'active', 'planned', { ...facts, unattended: false }).length).toBe(2);
+    expect(transitionViolations({ ...draft, success_criteria: two }, 'active', 'planned', facts)).toEqual([]);
+  });
+
+  test('waiting_on_user needs an open ask with owner and due', () => {
+    expect(transitionViolations(base, 'waiting_on_user', 'asked', facts)[0]).toContain('needs an "owner" and a "due"');
+    const asked = { ...base, items: [{ id: 'i1', kind: 'ask', title: 'x', status: 'open', owner: 'user', due: '2026-10-20T09:00:00Z' }] };
+    expect(transitionViolations(asked, 'waiting_on_user', 'asked', facts)).toEqual([]);
+  });
+
+  test('verifying needs met criteria with existing evidence and a verifier; done needs its PASS', () => {
+    const ready = { ...base, success_criteria: two };
+    expect(transitionViolations(ready, 'verifying', 'all met', facts).join('\n')).toContain('no existing evidence');
+    const withVerifier = { ...ready, sessions: [...base.sessions, { id: 'ver', role: 'verifier' }] };
+    expect(transitionViolations(withVerifier, 'verifying', 'all met', { ...facts, existingEvidence: new Set(['evidence/a.md', 'evidence/b.md']) })).toEqual([]);
+    const verifying = { ...withVerifier, status: 'verifying', verified_by: 'ver' };
+    expect(transitionViolations(verifying, 'done', 'pass', { ...facts, verification: 'c1 FAIL' })).toHaveLength(1);
+    expect(transitionViolations({ ...verifying, verified_by: 'coord' }, 'done', 'pass', { ...facts, verification: 'PASS' })).toHaveLength(1);
+    expect(transitionViolations(verifying, 'done', 'pass', { ...facts, verification: 'c1 PASS, c2 PASS' })).toEqual([]);
+  });
+
+  test('check flags a status edited by hand', () => {
+    const edited = { ...base, transitions: [{ from: null, to: 'draft', at: 'x', reason: 'r', by: 'coord' }] };
+    expect(goalViolations(edited, healthy).join('\n')).toContain('edited by hand');
+  });
+});

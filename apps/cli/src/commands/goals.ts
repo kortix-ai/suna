@@ -30,6 +30,14 @@ Subcommands:
   new "<objective>"   Create the goal folder, mark this session unattended,
                       arm the daily heartbeat and install the on-idle check.
                       Prints the folder.
+  transition <to> [<folder>] --reason "<why>"
+                      Move the goal to another state. The only way status
+                      changes: the edge must exist and its guard must hold
+                      (draft→active needs 2-6 criteria and one heartbeat;
+                      →waiting_on_user an open ask with owner and due;
+                      →verifying every criterion met with evidence and a
+                      verifier started; verifying→done an independent PASS).
+                      done/abandoned also remove the heartbeat.
   check [<folder>]    Check every goal this session coordinates (or one
                       folder): goal.json is valid, an open goal has an active
                       heartbeat, done has an independent PASS in
@@ -50,8 +58,24 @@ Options:
   -h, --help          Show this help.
 `;
 
-export const GOAL_STATUSES = ['active', 'waiting_on_user', 'waiting_external', 'done', 'abandoned'] as const;
-const OPEN = new Set(['active', 'waiting_on_user', 'waiting_external']);
+export const GOAL_STATUSES = ['draft', 'active', 'waiting_on_user', 'waiting_external', 'verifying', 'done', 'abandoned'] as const;
+export type GoalStatus = (typeof GOAL_STATUSES)[number];
+const OPEN = new Set<string>(['draft', 'active', 'waiting_on_user', 'waiting_external', 'verifying']);
+
+/**
+ * The goal state machine. A status changes only through `kortix goals
+ * transition`, which allows the edges below and checks each edge's guard
+ * (`transitionViolations`). Every open state may also go to `abandoned`.
+ */
+export const TRANSITIONS: Record<GoalStatus, readonly GoalStatus[]> = {
+  draft: ['active'],
+  active: ['waiting_on_user', 'waiting_external', 'verifying'],
+  waiting_on_user: ['active'],
+  waiting_external: ['active'],
+  verifying: ['done', 'active'],
+  done: [],
+  abandoned: [],
+};
 const ITEM_KINDS = new Set(['task', 'ask', 'wait']);
 const ITEM_STATUSES = new Set(['open', 'doing', 'done', 'dropped']);
 
@@ -75,6 +99,8 @@ export interface Goal {
   items: GoalItem[];
   sessions: Array<{ id: string; role: string; since?: string }>;
   reminder_id: string | null;
+  /** Every status change, oldest first; the last `to` is the current status. */
+  transitions?: Array<{ from: string | null; to: string; at: string; reason: string; by: string }>;
   verified_by?: string | null;
   next_wake_at?: string | null;
   updated_at?: string;
@@ -98,8 +124,12 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
   if (g.version !== 1) out.push('goal.json "version" must be 1.');
   if (typeof g.objective !== 'string' || !g.objective.trim()) out.push('goal.json has no "objective".');
   if (!GOAL_STATUSES.includes(g.status as never)) out.push(`goal.json "status" must be one of ${GOAL_STATUSES.join(', ')}.`);
-  if (!Array.isArray(g.success_criteria) || g.success_criteria.length === 0) {
+  if (g.status !== 'draft' && (!Array.isArray(g.success_criteria) || g.success_criteria.length === 0)) {
     out.push('goal.json has no "success_criteria": write 2 to 6 checkable criteria.');
+  }
+  const last = g.transitions?.at(-1);
+  if (GOAL_STATUSES.includes(g.status as never) && last && last.to !== g.status) {
+    out.push(`"status" is ${g.status} but the last transition went to ${last.to}: status was edited by hand. Set it back and use kortix goals transition <to> --reason "…".`);
   }
   if (!Array.isArray(g.items)) out.push('goal.json "items" must be a list.');
   else {
@@ -128,6 +158,60 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
   }
   if ((g.status === 'done' || g.status === 'abandoned') && facts.activeHeartbeats.length > 0) {
     out.push(`The goal is closed and its heartbeat ${facts.activeHeartbeats.join(', ')} is still active: kortix reminders rm <id>.`);
+  }
+  return out;
+}
+
+/** What a transition's guard sees besides goal.json. */
+export interface TransitionFacts extends GoalFacts {
+  /** Evidence paths (relative to the goal folder) that exist. */
+  existingEvidence: Set<string>;
+}
+
+/** Why `from → to` is not allowed now. Empty: the transition may happen. */
+export function transitionViolations(raw: unknown, to: string, reason: string, facts: TransitionFacts): string[] {
+  const g = (raw ?? {}) as Partial<Goal>;
+  const from = g.status as GoalStatus;
+  if (!GOAL_STATUSES.includes(to as never)) return [`"${to}" is not a goal status: ${GOAL_STATUSES.join(', ')}.`];
+  if (!reason.trim()) return ['Pass --reason "<why>": every transition is logged.'];
+  if (to === 'abandoned') {
+    return OPEN.has(from) ? [] : [`A ${from} goal cannot be abandoned.`];
+  }
+  if (!(TRANSITIONS[from] ?? []).includes(to as GoalStatus)) {
+    return [`${from} → ${to} is not a transition. From ${from}: ${[...(TRANSITIONS[from] ?? []), ...(OPEN.has(from) ? ['abandoned'] : [])].join(', ') || 'none (closed)'}.`];
+  }
+  const out: string[] = [];
+  const criteria = g.success_criteria ?? [];
+  const items = g.items ?? [];
+  const coordinators = (g.sessions ?? []).filter((s) => s.role === 'coordinator').map((s) => s.id);
+  if (to === 'active' && from === 'draft') {
+    if (criteria.length < 2 || criteria.length > 6) out.push(`Write 2 to 6 success_criteria (now ${criteria.length}).`);
+    if (facts.activeHeartbeats.length !== 1) out.push(`Exactly one heartbeat must be active (now ${facts.activeHeartbeats.length}).`);
+    if (!facts.unattended) out.push('Mark the session unattended: kortix sessions update --meta unattended=true.');
+  }
+  if (to === 'waiting_on_user') {
+    const asks = items.filter((i) => i.kind === 'ask' && i.status === 'open');
+    if (!asks.length) out.push('No open "ask" item: write what you need and from whom first.');
+    for (const a of asks) if (!a.owner || !a.due) out.push(`ask ${a.id} needs an "owner" and a "due" time.`);
+  }
+  if (to === 'waiting_external') {
+    const waits = items.filter((i) => i.kind === 'wait' && i.status === 'open');
+    if (!waits.length) out.push('No open "wait" item: write what you wait for and until when first.');
+    for (const w of waits) if (!w.due) out.push(`wait ${w.id} needs a "due" time.`);
+  }
+  if (to === 'verifying') {
+    for (const c of criteria) {
+      if (!c.met) out.push(`Criterion ${c.id} is not met.`);
+      else if (!c.evidence || !facts.existingEvidence.has(c.evidence.split(' ')[0]!)) out.push(`Criterion ${c.id} has no existing evidence file.`);
+    }
+    if (!(g.sessions ?? []).some((s) => s.role === 'verifier')) out.push('Start a verifier session and record it in "sessions" with role "verifier" first.');
+  }
+  if (to === 'done') {
+    const v = facts.verification;
+    if (v === null || !/\bPASS\b/.test(v) || /\bFAIL\b/.test(v)) out.push('evidence/verification.md must say PASS on every criterion.');
+    if (!g.verified_by || coordinators.includes(g.verified_by) || !(g.sessions ?? []).some((s) => s.id === g.verified_by && s.role === 'verifier')) {
+      out.push('"verified_by" must be the id of a verifier session listed in "sessions".');
+    }
   }
   return out;
 }
@@ -223,7 +307,13 @@ export async function runGoals(argv: string[]): Promise<number> {
     return fail((err as Error).message);
   }
   const sub = rest.shift();
-  if (!sub || !['new', 'check', 'ls', 'list', 'status'].includes(sub)) {
+  let reason = '';
+  try {
+    reason = takeFlagValue(rest, ['--reason']) ?? '';
+  } catch (err) {
+    return fail((err as Error).message);
+  }
+  if (!sub || !['new', 'check', 'transition', 'ls', 'list', 'status'].includes(sub)) {
     return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
   }
   if (!existsSync(drivesRoot())) {
@@ -262,7 +352,7 @@ export async function runGoals(argv: string[]): Promise<number> {
         version: 1,
         objective,
         input: objective,
-        status: 'active',
+        status: 'draft',
         summary: '',
         success_criteria: [],
         constraints: [],
@@ -272,6 +362,7 @@ export async function runGoals(argv: string[]): Promise<number> {
         verified_by: null,
         next_wake_at: reminder.next_fire_at,
         updated_at: now,
+        transitions: [{ from: null, to: 'draft', at: now, reason: 'goal created', by: sessionId }],
       };
       writeFileSync(join(folder, 'goal.json'), `${JSON.stringify({ ...goal, threads: [] }, null, 2)}\n`);
       writeFileSync(join(folder, 'log.md'), `# Log\n\n- ${now} Goal created: ${objective}\n`);
@@ -281,10 +372,12 @@ export async function runGoals(argv: string[]): Promise<number> {
       else {
         process.stdout.write(`${status.ok(`Goal created: ${C.bold}${folder}${C.reset}`)}\n`);
         process.stdout.write(`  ${C.dim}heartbeat ${C.reset}${reminder.id} (daily, next ${reminder.next_fire_at ?? '—'})\n`);
-        process.stdout.write(`  ${C.dim}next      ${C.reset}write success_criteria and the first items into goal.json\n`);
+        process.stdout.write(`  ${C.dim}next      ${C.reset}write success_criteria into goal.json, then kortix goals transition active --reason "…"\n`);
       }
       return 0;
     }
+
+    if (sub === 'transition') return await transitionGoal(client, sessionPath, sessionId, rest[0], rest[1], reason, json);
 
     // check
     const folders = rest[0] ? [rest[0]] : goalFolders().filter((f) => {
@@ -318,6 +411,69 @@ export async function runGoals(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+/** The goals this session coordinates. */
+function coordinatedGoals(sessionId: string): string[] {
+  return goalFolders().filter((f) => {
+    const g = readGoal(f) as Partial<Goal> | null;
+    return g?.sessions?.some((s) => s.id === sessionId && s.role === 'coordinator') ?? false;
+  });
+}
+
+async function transitionGoal(
+  client: ApiClient,
+  sessionPath: string,
+  sessionId: string,
+  to: string | undefined,
+  folderArg: string | undefined,
+  reason: string,
+  json: boolean,
+): Promise<number> {
+  if (!to) return missing('the target status: kortix goals transition <to> --reason "…" [<folder>]');
+  const mine = coordinatedGoals(sessionId);
+  const folder = folderArg ?? (mine.length === 1 ? mine[0] : undefined);
+  if (!folder) return fail(mine.length ? 'This session coordinates several goals: pass the folder.' : 'No goal is coordinated by this session: pass the folder.');
+  const raw = readGoal(folder);
+  if (raw === null) return fail(`${folder}/goal.json is missing or not valid JSON.`);
+  const g = raw as Goal;
+  const [{ reminders }, session] = await Promise.all([
+    client.get<{ reminders: Reminder[] }>(`${sessionPath}/reminders`),
+    client.get<ProjectSession & { metadata?: Record<string, unknown> }>(sessionPath),
+  ]);
+  const heartbeats = reminders.filter((r) => r.state === 'active' && (r.id === g.reminder_id || r.prompt.includes(folder)));
+  const vPath = join(folder, 'evidence', 'verification.md');
+  const existingEvidence = new Set(
+    (g.success_criteria ?? []).map((c) => c.evidence?.split(' ')[0]).filter((p): p is string => !!p && existsSync(join(folder, p))),
+  );
+  const violations = transitionViolations(raw, to, reason, {
+    activeHeartbeats: heartbeats.map((r) => r.id),
+    unattended: ['true', true].includes(session.metadata?.unattended as never),
+    verification: existsSync(vPath) ? readFileSync(vPath, 'utf8') : null,
+    existingEvidence,
+  });
+  if (violations.length) {
+    if (json) emitJson({ ok: false, from: g.status, to, violations });
+    else process.stderr.write(`${status.err(`${g.status} → ${to} refused`)}\n${violations.map((v) => `  - ${v}`).join('\n')}\n`);
+    return 1;
+  }
+  // A closed goal wakes no one: its heartbeat goes with the transition.
+  if (to === 'done' || to === 'abandoned') {
+    for (const r of heartbeats) await client.delete(`${sessionPath}/reminders/${r.id}`);
+  }
+  const now = new Date().toISOString();
+  const next: Goal = {
+    ...g,
+    status: to,
+    ...(to === 'done' || to === 'abandoned' ? { reminder_id: null, next_wake_at: null } : {}),
+    updated_at: now,
+    transitions: [...(g.transitions ?? []), { from: g.status, to, at: now, reason, by: sessionId }],
+  };
+  writeFileSync(join(folder, 'goal.json'), `${JSON.stringify(next, null, 2)}\n`);
+  writeFileSync(join(folder, 'log.md'), `${readFileSync(join(folder, 'log.md'), 'utf8').trimEnd()}\n- ${now} ${g.status} → ${to}: ${reason}\n`);
+  if (json) emitJson({ ok: true, from: g.status, to });
+  else process.stdout.write(`${status.ok(`${g.status} → ${to}`)}\n`);
+  return 0;
 }
 
 async function enforceGoals(
