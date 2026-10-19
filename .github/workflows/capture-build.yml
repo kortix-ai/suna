@@ -404,7 +404,7 @@ jobs:
             cmd = $cmd
             webview_processes = $webview
             profile_in_program_files = Test-Path "$env:ProgramFiles\Kortix\Capture\kortix-capture.exe.WebView2"
-            profile_in_library = Test-Path "$env:APPDATA\ai.kortix.capture\webview2"
+            profile_in_local_app_data = Test-Path "$env:LOCALAPPDATA\Kortix\WebView2\EBWebView"
             ui_log = Test-Path "$env:EV\ui.log"
             windows_after_second_click = $windows
             still_open_after_second_click = [bool]($w2 -and -not $w2.HasExited)
@@ -540,7 +540,7 @@ jobs:
           assert win["shortcut"].endswith("kortix-capture.exe app"), win
           assert win["title"] == "Kortix Capture" and win["same_process_after_10s"] and "app --detached" in (win["cmd"] or ""), ("the Start menu entry opened no window", win, text("ui.log") if win["ui_log"] else "")
           assert win["webview_processes"] >= 1 and not win["ui_log"], ("the window has no WebView", win)
-          assert win["profile_in_library"] and not win["profile_in_program_files"], ("the WebView2 profile is not in the library", win)
+          assert win["profile_in_local_app_data"] and not win["profile_in_program_files"], ("the WebView2 profile is not in %LOCALAPPDATA%", win)
           assert win["windows_after_second_click"] == 1 and win["still_open_after_second_click"], ("a second click opened another window or closed this one", win)
           if not real:
               log = [json.loads(l) for l in text("issuer.jsonl").splitlines() if l.strip()]

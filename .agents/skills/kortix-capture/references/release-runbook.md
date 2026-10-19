@@ -18,7 +18,10 @@ Kortix Capture ships with Kortix. Its version is the Kortix release version.
 2. `windows-msi`: builds the `.msi`, installs it silently with a made-up
    enrollment token, and asserts: service running as LocalSystem, policy key
    ACL, token absent from the MSI log, enrollment against a local stand-in
-   issuer (`scripts/ci_fake_issuer.py`), frames recorded, uploads in the local
+   issuer (`scripts/ci_fake_issuer.py`), frames recorded, the Start menu entry
+   run with a basic-user token (`runas /trustlevel:0x20000`, like a person
+   without admin rights) shows the window with a WebView and a profile in
+   `%LOCALAPPDATA%`, a second click keeps one window, uploads in the local
    S3 bucket, tray notice, recovery after a kill, in-place upgrade to the next
    patch version, clean uninstall.
 3. `macos-pkg`: builds the universal `.pkg` (arm64 + x86_64), signs and

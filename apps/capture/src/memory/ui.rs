@@ -320,8 +320,16 @@ mod window {
         let hash = format!("#{}", urlencoding::encode(&target.to_json().to_string()));
         // WebView2 keeps its profile next to the exe unless told otherwise. A person cannot
         // write to Program Files, so the window of an MSI install failed to open.
+        // %LOCALAPPDATA%\Kortix\WebView2: a cache, so not in the roaming library.
         #[cfg(windows)]
-        let mut web_context = wry::WebContext::new(Some(paths.root.join("webview2")));
+        let mut web_context = {
+            let dir = crate::config::app_data_directory()
+                .map(|d| d.join("WebView2"))
+                .unwrap_or_else(|_| paths.root.join("WebView2"));
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("create the WebView2 folder {}", dir.display()))?;
+            wry::WebContext::new(Some(dir))
+        };
         #[cfg(windows)]
         let builder = WebViewBuilder::new_with_web_context(&mut web_context);
         #[cfg(not(windows))]
