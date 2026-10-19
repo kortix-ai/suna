@@ -105,6 +105,36 @@ describe('buildClientRegistrationInput', () => {
   });
 });
 
+describe('a catalogue app on a Kortix OAuth client (kortix_client)', () => {
+  const GMAIL: OAuth2ResourceDiscovery = {
+    resource_url: 'https://gmailmcp.googleapis.com/mcp/v1',
+    requires_authorization: true,
+    resource: 'https://gmailmcp.googleapis.com/mcp/v1',
+    authorization_server: 'https://accounts.google.com',
+    metadata: {
+      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      token_url: 'https://oauth2.googleapis.com/token',
+    },
+    kortix_client: true,
+    scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+    warnings: [],
+  };
+
+  test('is one click with no registration endpoint', () => {
+    expect(autoConnectPlan(GMAIL)).toEqual({
+      kind: 'register',
+      label: 'Connect gmailmcp.googleapis.com',
+      scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+    });
+  });
+
+  test('registers without a registration endpoint, so the API uses its own client', () => {
+    const input = buildClientRegistrationInput(GMAIL);
+    expect(input).not.toHaveProperty('registration_endpoint');
+    expect(input.token_url).toBe('https://oauth2.googleapis.com/token');
+  });
+});
+
 describe('mergeResourceDiscoveryIntoForm', () => {
   test('prefills the authorization-code form and never overwrites user input', () => {
     const prefilled = mergeResourceDiscoveryIntoForm(

@@ -876,6 +876,26 @@ describe('kortix triggers info — webhook signing', () => {
     expect(result.stdout).toContain('$SECRET is the signing key you saved for this webhook');
   });
 
+  test('info on a Kortix-polled trigger prints when the app was checked and is checked next', async () => {
+    const polled = {
+      ...EVENT_TRIGGER,
+      slug: 'inbox-watch',
+      event: {
+        ...EVENT_TRIGGER.event,
+        connector: 'inbox', type: 'new_item.list_items', config: { interval: 5 }, source: 'mcp', provider: 'mcp', app: 'inbox',
+        status: 'active', error: null, checked_at: '2026-10-19T04:00:00.000Z', next_check_at: '2026-10-19T04:05:00.000Z',
+      },
+    };
+    const cfg = writeConfig(startServer([polled, EVENT_TRIGGER]));
+    const result = await runCli(['triggers', 'info', 'inbox-watch', '--project', PROJECT], cfg);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/checked\s+2026-10-19T04:00:00.000Z/);
+    expect(result.stdout).toMatch(/next_check\s+2026-10-19T04:05:00.000Z/);
+    // A Composio trigger is checked by nobody: no such rows.
+    const composio = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(composio.stdout).not.toContain('next_check');
+  });
+
   test('info --json carries the signing scheme a caller can act on', async () => {
     const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
     const result = await runCli(
@@ -1042,7 +1062,8 @@ describe('kortix triggers — events', () => {
     expect(one.stdout).toContain('kortix connectors add <slug> --provider composio --app github');
     const raw = await runCli(['triggers', 'events', '--app', 'github', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
-    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github', '?app=github']);
+    // Without --source, the source comes from the app listing, where github is a composio app.
+    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github&source=composio', '?app=github&source=composio']);
     const both = await runCli(['triggers', 'events', '--app', 'github', '--connector', 'github', '--project', PROJECT], cfg);
     expect(both.code).toBe(2);
   });
@@ -1070,7 +1091,9 @@ describe('kortix triggers — events', () => {
     expect(r.stdout).toMatch(/acme-bot\s+as acme-bot-user\s+default/);
     expect(r.stdout).toMatch(/acme-ci\s+/);
     expect(r.stdout).toMatch(/github-work\s+no shared account/);
-        expect(r.stdout).toMatch(/No connector yet \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toMatch(/No connector yet, source composio \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toContain('Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply');
+    expect(r.stdout).not.toContain('--provider mcp');
     expect(r.stdout).toContain('kortix triggers ls --type event');
     expect(r.stdout).toContain('kortix triggers ls --connector <slug>');
     const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
@@ -1179,6 +1202,170 @@ describe('kortix triggers — events', () => {
     const cfg = writeConfig(startServer([t]));
     const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
     expect(info.stdout).toContain('labelled "acme-bot" on github');
+  });
+
+  describe('source mcp (Kortix-polled app events)', () => {
+    const LINEAR_URL = 'https://mcp.linear.example.test/mcp';
+    const NOTES_URL = 'https://mcp.notes.example.test/mcp';
+    const INTERVAL = {
+      type: 'integer',
+      title: 'Check every (minutes)',
+      description: 'How often Kortix checks the app. A new item fires within this many minutes.',
+      enum: [1, 5, 15, 30, 60, 360, 1440],
+      default: 5,
+    };
+    const NEW_EMAIL = {
+      type: 'gmail.message.received',
+      name: 'New email',
+      description: 'An email arrives that matches your search.',
+      app: 'gmail',
+      delivery: 'poll',
+      config_schema: { type: 'object', properties: { query: { type: 'string', description: 'A Gmail search.' }, interval: INTERVAL } },
+      payload_schema: { type: 'object', properties: { subject: { type: 'string', description: 'Subject line' } } },
+    };
+    const NEW_ITEM = {
+      ...NEW_EMAIL,
+      type: 'new_item.search',
+      name: 'New item from search',
+      app: 'docs-search',
+      config_schema: { type: 'object', properties: { interval: INTERVAL } },
+      payload_schema: null,
+    };
+    const mcpApp = (over: Record<string, unknown>) => ({
+      source: 'mcp', provider: 'mcp', logo: null, connector: null, connected: false, connectors: [], mcp_url: null, ...over,
+    });
+    // A connectors_v2 project: Composio only where it has a connector; every MCP catalogue app.
+    const MCP_APPS = {
+      apps: [
+        { ...EVENT_APPS.apps[0], source: 'composio', mcp_url: null },
+        mcpApp({
+          app: 'gmail', name: 'Gmail', event_count: 1, connector: 'gmail', new_connector_slug: 'gmail-events', mcp_url: 'https://mcp.gmail.example.test/mcp',
+          connectors: [{ slug: 'gmail', name: 'Gmail', accounts: [{ label: 'support', connected_as: null, is_default: true, connected: false }] }],
+        }),
+        mcpApp({
+          app: 'docs-search', name: 'Docs search', event_count: 1, connector: 'docs-search', connected: true, new_connector_slug: 'docs-search-events',
+          connectors: [{ slug: 'docs-search', name: 'Docs search', accounts: [{ label: 'Docs search', connected_as: null, is_default: true, connected: true }] }],
+        }),
+        mcpApp({ app: 'linear', name: 'Linear', event_count: 0, new_connector_slug: 'linear', mcp_url: LINEAR_URL }),
+        mcpApp({ app: 'notes', name: 'Notes', event_count: 1, new_connector_slug: 'notes-events', mcp_url: NOTES_URL }),
+      ],
+    };
+    let requests: string[];
+
+    function startMcpServer(): string {
+      requests = [];
+      server = Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const { pathname, search } = new URL(req.url);
+          if (pathname.includes('/triggers/')) requests.push(`${pathname.replace(/^.*\/triggers\//, '/triggers/')}${search}`);
+          if (pathname.endsWith('/triggers/event-apps')) return Response.json(MCP_APPS);
+          if (pathname.endsWith('/triggers/event-types')) {
+            const q = new URLSearchParams(search);
+            const app = q.get('app') ?? q.get('connector') ?? '';
+            const types = app === 'gmail' || app === 'notes' ? [{ ...NEW_EMAIL, app }] : app === 'docs-search' ? [NEW_ITEM] : [];
+            return Response.json({ source: 'mcp', provider: 'mcp', app, event_types: types });
+          }
+          return Response.json({ triggers: [], errors: [], triggers_paused: false });
+        },
+      });
+      return `http://127.0.0.1:${server.port}`;
+    }
+
+    test('--apps tells mcp and composio apps apart and prints the MCP add path', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toMatch(/source: composio\n\s+github\s+12 events\s+connected/);
+      expect(r.stdout).toMatch(/source: mcp\n\s+gmail\s+1 event\s+needs account/);
+      expect(r.stdout).toMatch(/docs-search\s+1 event\s+connected/);
+      expect(r.stdout).toContain('No connector yet, source mcp (2): linear (0), notes (1, add as notes-events)');
+      expect(r.stdout).toContain(
+        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>.',
+      );
+      // connectors_v2 adds apps from the MCP catalogue: no Composio add line.
+      expect(r.stdout).not.toContain('--provider composio');
+      const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
+      expect(JSON.parse(raw.stdout).apps.map((a: { mcp_url: string | null }) => a.mcp_url)).toEqual([
+        null, 'https://mcp.gmail.example.test/mcp', null, LINEAR_URL, NOTES_URL,
+      ]);
+    });
+
+    test('--app on a catalogue app with no connector prints its add, sign-in, and trigger commands', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const one = await runCli(['triggers', 'events', '--app', 'notes', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(one.code).toBe(0);
+      expect(one.stdout).toContain(`1. kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
+      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the project)');
+      expect(one.stdout).toContain('3. kortix triggers add <slug> --type event --connector notes-events --event gmail.message.received --prompt "…" --apply');
+      expect(one.stdout).not.toContain('--provider composio');
+      const list = await runCli(['triggers', 'events', '--app', 'notes', '--project', PROJECT], cfg);
+      expect(list.stdout).toContain('1 event type on notes (mcp). Details: kortix triggers events --app notes --event <TYPE>');
+      expect(list.stdout).toContain('Set it up first:');
+      expect(list.stdout).toContain(`kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
+      const empty = await runCli(['triggers', 'events', '--app', 'linear', '--project', PROJECT], cfg);
+      expect(empty.code).toBe(0);
+      expect(empty.stdout).toContain('linear has no event types yet. Its read-only list tools become events after these steps:');
+      expect(empty.stdout).toContain(`1. kortix connectors add linear --provider mcp --url ${LINEAR_URL} --apply`);
+      expect(empty.stdout).toContain('2. kortix connectors authorize linear');
+      // No --source: the app is listed under mcp only, so the CLI asks for mcp (the API defaults to composio).
+      expect(requests).toContain('/triggers/event-types?app=linear&source=mcp');
+      await runCli(['triggers', 'events', '--app', 'linear', '--source', 'composio', '--project', PROJECT], cfg);
+      expect(requests).toContain('/triggers/event-types?app=linear&source=composio');
+    });
+
+    test('--app on an app with a connector: sign in when needed, never add it again', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const gmail = await runCli(['triggers', 'events', '--app', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(gmail.code).toBe(0);
+      expect(gmail.stdout).toContain('1. kortix connectors authorize gmail');
+      expect(gmail.stdout).toContain('2. kortix triggers add <slug> --type event --connector gmail --event gmail.message.received');
+      expect(gmail.stdout).not.toContain('connectors add');
+      // A project MCP server (no mcp_url) is its own connector, already signed in: only the trigger line.
+      const custom = await runCli(['triggers', 'events', '--app', 'docs-search', '--event', 'new_item.search', '--project', PROJECT], cfg);
+      expect(custom.code).toBe(0);
+      expect(custom.stdout).toContain('Add it: kortix triggers add <slug> --type event --connector docs-search --event new_item.search --prompt "…" --apply');
+      expect(custom.stdout).not.toContain('connectors add');
+      expect(custom.stdout).not.toContain('authorize');
+    });
+
+    test('--connector needs no app listing; --json stays the raw catalog', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--connector', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(r.stdout).toContain('Add it: kortix triggers add <slug> --type event --connector gmail --event gmail.message.received');
+      const raw = await runCli(['triggers', 'events', '--app', 'gmail', '--json', '--project', PROJECT], cfg);
+      expect(JSON.parse(raw.stdout).event_types[0].type).toBe('gmail.message.received');
+      expect(requests).toEqual(['/triggers/event-types?connector=gmail', '/triggers/event-apps', '/triggers/event-types?app=gmail&source=mcp']);
+    });
+
+    test('--event prints the interval enum readably; add coerces and checks it', async () => {
+      config = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--connector', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT]);
+      expect(r.stdout).toContain(
+        'interval (integer, optional, default 5, one of 1, 5, 15, 30, 60, 360, 1440) — How often Kortix checks the app. A new item fires within this many minutes.',
+      );
+      expect(r.stdout).toContain('query (string, optional) — A Gmail search.');
+      expect(r.stdout).toContain('delivery poll');
+      const ok = await add('--connector', 'gmail', '--event', 'gmail.message.received', '--config', 'interval=15', '--project', PROJECT);
+      expect(ok.code).toBe(0);
+      expect(manifestText()).toContain('interval: 15');
+      const bad = await runCli(['triggers', 'add', 'odd', '--type', 'event', '--prompt', 'p', '--connector', 'gmail', '--event', 'gmail.message.received', '--config', 'interval=7', '--project', PROJECT]);
+      expect(bad.code).not.toBe(0);
+      expect(bad.stderr).toContain('interval must be one of 1, 5, 15, 30, 60, 360, 1440 (got "7")');
+      expect(manifestText()).not.toContain('slug: odd');
+    });
+
+    test('needs_connection on an mcp connector points at authorize, not a connect link', async () => {
+      const t = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, connector: 'gmail', app: 'gmail', type: 'gmail.message.received', source: 'mcp', provider: 'mcp', config: {} } };
+      const cfg = writeConfig(startServer([t]));
+      const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+      expect(info.code).toBe(0);
+      expect(info.stdout).toContain('A person must sign it in: kortix connectors authorize gmail');
+      expect(info.stdout).not.toContain('connectors connect');
+      const labelled = eventNextStep({ ...t, event: { ...t.event, account: 'support' } } as unknown as ProjectTrigger);
+      expect(labelled.lines[0]).toContain('kortix connectors authorize gmail');
+      expect(labelled.lines[0]).toContain('kortix connectors connections default <id>');
+    });
   });
 
   describe('ls filters', () => {

@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
+        },
+        "connectors_v2": {
+          "name": "Connectors v2",
+          "description": "Der MCP-App-Katalog unter Anpassen → Connectoren, mit Anmeldung über Kortix. Ist „App-Ereignis-Trigger“ an, prüft Kortix diese Apps auf neue E-Mails, Dateien und Einträge und startet einen Agenten. Dazu Telegram als Kanal. Neue Connector-Konten werden nicht mehr standardmäßig mit dem ganzen Projekt geteilt."
         }
       }
     },
@@ -20188,7 +20192,17 @@
       "agentsListSubagentsTitle": "Subagenten",
       "agentsListSubagentsHint": "Andere Agenten rufen diese während einer Sitzung auf. Niemand startet einen Chat mit ihnen.",
       "agentsListAlsoSubagent": "Auch Subagent",
-      "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt."
+      "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt.",
+      "text51e6bc656528": "Chatte mit deinem Agenten über einen Telegram-Bot.",
+      "text00c7991f0490": "Telegram verbinden",
+      "texta832efd235a7": "Erstelle in Telegram mit @BotFather einen Bot und füge hier sein Token ein. Kortix registriert den Webhook und bewahrt das Token auf dem Server auf.",
+      "text2c3059c25723": "Erlaubte Nutzer",
+      "text71552d197b53": "Erlaubte Telegram-Nutzer-IDs",
+      "text1f7a451d4722": "Numerische IDs, durch Kommas getrennt. Nur diese Personen können mit dem Bot sprechen; alle anderen erhalten eine Antwort mit ihrer ID.",
+      "text50fcd9c3c020": "Nutzer-IDs müssen Zahlen sein, durch Kommas getrennt.",
+      "text815464994ec4": "Telegram verbunden",
+      "textdfea5351a743": "Telegram getrennt",
+      "text2f95b1c9ee2b": "Erlaubte Nutzer gespeichert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20484,7 +20498,14 @@
   "triggerComposer": {
     "every": "Alle",
     "dayOfMonth": "Tag im Monat",
-    "details": "Details"
+    "details": "Details",
+    "mcpEventsAfterConnect": "Ereignisse erscheinen hier, sobald {name} verbunden ist: eines für jedes Tool, das auflistet oder sucht.",
+    "mcpConnectAsk": "Alle, die dieses Projekt verwalten, können {name} verbinden.",
+    "mcpSignInUnavailable": "Die Anmeldung bei {name} konnte nicht gestartet werden. Hinterlege die Zugangsdaten auf der Connector-Seite.",
+    "mcpEventsOnConnect": "Ereignisse nach dem Verbinden",
+    "mcpCheckedAt": "Geprüft {when}",
+    "mcpNextCheck": "Nächste Prüfung {when}",
+    "mcpNotChecked": "Noch nicht geprüft"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",

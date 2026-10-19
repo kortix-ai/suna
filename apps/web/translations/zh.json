@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
+        },
+        "connectors_v2": {
+          "name": "连接器 v2",
+          "description": "自定义 → 连接器中的 MCP 应用目录，登录由 Kortix 管理。开启“应用事件触发器”后，Kortix 会检查这些应用中的新邮件、文件和条目，并启动智能体。同时添加 Telegram 作为渠道。新的连接器账户默认不再与整个项目共享。"
         }
       }
     },
@@ -20188,7 +20192,17 @@
       "agentsListSubagentsTitle": "子代理",
       "agentsListSubagentsHint": "其他代理会在会话中调用它们。不会直接与它们开始对话。",
       "agentsListAlsoSubagent": "也可作为子代理",
-      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。"
+      "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。",
+      "text51e6bc656528": "通过 Telegram 机器人与你的代理聊天。",
+      "text00c7991f0490": "连接 Telegram",
+      "texta832efd235a7": "在 Telegram 中用 @BotFather 创建一个机器人，然后在此粘贴它的令牌。Kortix 会注册 webhook，并将令牌保存在服务器上。",
+      "text2c3059c25723": "允许的用户",
+      "text71552d197b53": "允许的 Telegram 用户 ID",
+      "text1f7a451d4722": "数字 ID，用逗号分隔。只有这些人可以与机器人对话；其他人会收到一条显示其 ID 的回复。",
+      "text50fcd9c3c020": "用户 ID 必须是用逗号分隔的数字。",
+      "text815464994ec4": "Telegram 已连接",
+      "textdfea5351a743": "Telegram 已断开连接",
+      "text2f95b1c9ee2b": "已保存允许的用户"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20484,7 +20498,14 @@
   "triggerComposer": {
     "every": "每隔",
     "dayOfMonth": "每月日期",
-    "details": "详情"
+    "details": "详情",
+    "mcpEventsAfterConnect": "连接 {name} 后，事件会显示在这里：每个列出或搜索的工具对应一个事件。",
+    "mcpConnectAsk": "管理此项目的任何人都可以连接 {name}。",
+    "mcpSignInUnavailable": "无法启动 {name} 登录。请在连接器页面添加其凭据。",
+    "mcpEventsOnConnect": "连接后显示事件",
+    "mcpCheckedAt": "{when}已检查",
+    "mcpNextCheck": "下次检查：{when}",
+    "mcpNotChecked": "尚未检查"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",

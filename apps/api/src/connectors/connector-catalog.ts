@@ -108,6 +108,12 @@ interface CatalogOptions {
   ttlMs?: number;
   timeoutMs?: number;
   now?: () => number;
+  /** A catalogue other than integrations.sh, held in memory: its records and
+   *  each domain's surfaces, served as they are (no fetch, no enrichment). */
+  source?: {
+    items(): ConnectorCatalogItem[];
+    surfaces(domain: string): ConnectorSurfaceVariant[];
+  };
 }
 
 function strings(value: unknown): string[] {
@@ -403,6 +409,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   const loadIndex = async (): Promise<ConnectorCatalogItem[]> => {
+    if (options.source) return options.source.items();
     if (indexCache && now() - indexCache.at < ttlMs) return indexCache.items;
     if (indexRequest) return indexRequest;
     indexRequest = (async () => {
@@ -430,6 +437,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   const loadSurfaces = async (domain: string): Promise<ConnectorSurfaceVariant[]> => {
+    if (options.source) return options.source.surfaces(domain);
     const cached = surfaceCache.get(domain);
     if (cached && now() - cached.at < ttlMs) return cached.value;
     const pending = surfaceRequests.get(domain);
@@ -622,7 +630,10 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const variants = await loadSurfaces(item.domain);
       return {
         item,
-        variants: [...variants, ...(OFFICIAL_SURFACE_ENRICHMENTS[item.domain] ?? [])],
+        variants: [
+          ...variants,
+          ...(options.source ? [] : (OFFICIAL_SURFACE_ENRICHMENTS[item.domain] ?? [])),
+        ],
       };
     },
   };

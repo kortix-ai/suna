@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
+        },
+        "connectors_v2": {
+          "name": "Konektori v2",
+          "description": "Katalog MCP aplikacija u Prilagodi → Konektori, sa prijavom kojom upravlja Kortix. Uz uključene „Okidače događaja aplikacije“, Kortix proverava ove aplikacije za nove mejlove, fajlove i stavke i pokreće agenta. Dodaje i Telegram kao kanal. Novi nalozi konektora se podrazumevano više ne dele sa celim projektom."
         }
       }
     },
@@ -20188,7 +20192,17 @@
       "agentsListSubagentsTitle": "Подагенти",
       "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
       "agentsListAlsoSubagent": "Такође подагент",
-      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}."
+      "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}.",
+      "text51e6bc656528": "Разговарајте са својим агентом преко Telegram бота.",
+      "text00c7991f0490": "Повежите Telegram",
+      "texta832efd235a7": "Направите бота помоћу @BotFather у Telegram-у, па овде налепите његов токен. Kortix региструје webhook и чува токен на серверу.",
+      "text2c3059c25723": "Дозвољени корисници",
+      "text71552d197b53": "Дозвољени Telegram ID-јеви корисника",
+      "text1f7a451d4722": "Нумерички ID-јеви, одвојени зарезима. Само ове особе могу да разговарају са ботом; сви остали добијају одговор са својим ID-јем.",
+      "text50fcd9c3c020": "ID-јеви корисника морају бити бројеви одвојени зарезима.",
+      "text815464994ec4": "Telegram је повезан",
+      "textdfea5351a743": "Telegram је искључен",
+      "text2f95b1c9ee2b": "Дозвољени корисници су сачувани"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20484,7 +20498,14 @@
   "triggerComposer": {
     "every": "Сваких",
     "dayOfMonth": "Дан у месецу",
-    "details": "Детаљи"
+    "details": "Детаљи",
+    "mcpEventsAfterConnect": "Догађаји се појављују овде када се {name} повеже: по један за сваки алат који листа или претражује.",
+    "mcpConnectAsk": "Свако ко управља овим пројектом може да повеже {name}.",
+    "mcpSignInUnavailable": "Није могуће покренути пријаву за {name}. Додајте акредитиве на страници конектора.",
+    "mcpEventsOnConnect": "Догађаји након повезивања",
+    "mcpCheckedAt": "Проверено {when}",
+    "mcpNextCheck": "Следећа провера {when}",
+    "mcpNotChecked": "Још није проверено"
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",

@@ -317,8 +317,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // The empty state's "App event" button opens the form past the type step.
   const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
   // The app picked in the "Apps with events" strip. The composer lists its events and sends no request.
-  const [createApp, setCreateApp] = useState<{ app: string } | null>(null);
-  const openCreate = (kind: TriggerKind | null = null, app: { app: string } | null = null) => {
+  const [createApp, setCreateApp] = useState<{ app: string; source?: string; provider?: string } | null>(null);
+  const openCreate = (kind: TriggerKind | null = null, app: { app: string; source?: string; provider?: string } | null = null) => {
     setCreateKind(kind);
     setCreateApp(app);
     setCreateOpen(true);
@@ -793,7 +793,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <EventAppsStrip
                 projectId={projectId}
                 disabled={!canWrite}
-                onPick={(app) => openCreate('event', { app: app.app })}
+                onPick={(app) => openCreate('event', { app: app.app, source: app.source, provider: app.provider })}
               />
             ) : null}
 

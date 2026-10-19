@@ -16,6 +16,7 @@ import { db } from '../shared/db';
 export * from './slack/installs';
 export * from './email/installs';
 export * from './teams/installs';
+export * from './telegram/installs';
 
 export async function deleteProjectSecrets(
   projectId: string,

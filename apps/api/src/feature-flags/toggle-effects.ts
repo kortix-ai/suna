@@ -39,6 +39,12 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agentmail_email: reconcileProjectChannels,
+  // Also the Kortix event source: off, its triggers report the legacy "no app-event source" text and
+  // their poll streams are dropped; on, they subscribe without a re-save.
+  connectors_v2: async (ctx) => {
+    await reconcileProjectChannels(ctx);
+    if (resolveFeatureFlag(ctx.metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(ctx.projectId, ctx.accountId);
+  },
   // Off: drop every provider instance so no delivery outlives the switch.
   // On: existing triggers go live without a re-save.
   event_triggers: async ({ projectId, accountId, metadata }) => {

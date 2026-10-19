@@ -766,6 +766,9 @@ export interface OAuth2ResourceDiscovery {
   authorization_server?: string;
   metadata?: Partial<Omit<OAuth2ApplicationView, 'has_client_secret' | 'has_private_key'>>;
   registration_endpoint?: string;
+  /** Kortix signs in with its own OAuth client: a catalogue app whose server
+   *  has no dynamic registration. Register without `registration_endpoint`. */
+  kortix_client?: boolean;
   token_endpoint_auth_methods_supported?: string[];
   code_challenge_methods_supported?: string[];
   scopes: string[];
@@ -778,7 +781,9 @@ export interface OAuth2ResourceDiscoveryInput {
 }
 
 export interface OAuth2ClientRegistrationInput {
-  registration_endpoint: string;
+  /** RFC 7591 endpoint. Absent: the API uses Kortix's own OAuth client, which
+   *  only a catalogue app with `kortix_client` discovery has. */
+  registration_endpoint?: string;
   /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
   issuer?: string;
   client_name?: string;

@@ -174,13 +174,15 @@ export const connectStatusQuery = {
  */
 export function catalogSectionsQuery(
   projectId: string,
-  catalogue: 'discover' | 'composio' | 'pipedream' | null,
+  catalogue: 'kortix' | 'discover' | 'composio' | 'pipedream' | null,
 ) {
   return {
     queryKey: ['catalog-sections', projectId, catalogue] as const,
     queryFn: async (): Promise<BrowseSectionsPage> => {
       const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
-      if (catalogue === 'discover') {
+      // `kortix` is the same Discover route: the API serves Kortix's own MCP
+      // apps to a `connectors_v2` project (apps/api/src/connectors/mcp-apps.ts).
+      if (catalogue === 'discover' || catalogue === 'kortix') {
         return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
       }
       if (catalogue === 'pipedream') {
@@ -260,6 +262,9 @@ export function useCatalog(
     enabled: boolean;
     /** The API/MCP catalogue is on for this project (`connectors_api_discover`). */
     discoverEnabled: boolean;
+    /** `connectors_v2`: the catalogue is Kortix's own MCP apps, served on the
+     *  Discover routes. No Composio or Pipedream request is sent. */
+    mcpApps?: boolean;
     /** Show the native Computer card: this deployment can connect computers. */
     computers?: boolean;
   },
@@ -278,11 +283,15 @@ export function useCatalog(
   // deployment, the API/MCP catalogue is the whole catalogue.
   // `unknown` (the probe failed) falls back to the API/MCP catalogue too, as
   // before the merge of the two.
+  const mcpApps = opts.mcpApps === true;
   const source: CatalogSource =
-    opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown')
+    mcpApps ||
+    (opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown'))
       ? 'discover'
       : 'easy-connect';
   const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
+  // Keys the Discover cache by the catalogue the API answers with.
+  const discoverCatalogue = mcpApps ? 'kortix' : 'discover';
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
   // may well exist is the worse of the two mistakes.
@@ -294,7 +303,9 @@ export function useCatalog(
   const discoverQuery = useInfiniteQuery({
     // An open category is a server-side filter, so it is part of the key. The
     // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
-    queryKey: ['discover-connectors', projectId, activeQuery],
+    queryKey: mcpApps
+      ? ['discover-connectors', projectId, activeQuery, 'kortix']
+      : ['discover-connectors', projectId, activeQuery],
     queryFn: ({ pageParam }) =>
       listDiscoverConnectors(projectId, {
         q: activeQuery || undefined,
@@ -333,7 +344,7 @@ export function useCatalog(
   // response's facet is what lets the open category's header state its name
   // and size. Same key, so opening a category from the browse page costs no
   // request. Pipedream's paged endpoint carries its own facet.
-  const sectionsCatalogue = source === 'discover' ? 'discover' : easyConnectProvider;
+  const sectionsCatalogue = source === 'discover' ? discoverCatalogue : easyConnectProvider;
   const sectionsQuery = useQuery({
     ...catalogSectionsQuery(projectId, sectionsCatalogue),
     enabled: opts.enabled && (source === 'discover' || easyConnectRunnable) && !searching,

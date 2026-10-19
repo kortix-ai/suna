@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
+        },
+        "connectors_v2": {
+          "name": "Conectores v2",
+          "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
         }
       }
     },
@@ -20188,7 +20192,17 @@
       "agentsListSubagentsTitle": "Subagentes",
       "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
       "agentsListAlsoSubagent": "También subagente",
-      "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}."
+      "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}.",
+      "text51e6bc656528": "Chatea con tu agente desde un bot de Telegram.",
+      "text00c7991f0490": "Conectar Telegram",
+      "texta832efd235a7": "Crea un bot con @BotFather en Telegram y pega aquí su token. Kortix registra el webhook y guarda el token en el servidor.",
+      "text2c3059c25723": "Usuarios permitidos",
+      "text71552d197b53": "IDs de usuario de Telegram permitidos",
+      "text1f7a451d4722": "IDs numéricos separados por comas. Solo estas personas pueden hablar con el bot; cualquier otra recibe una respuesta con su ID.",
+      "text50fcd9c3c020": "Los IDs de usuario deben ser números separados por comas.",
+      "text815464994ec4": "Telegram conectado",
+      "textdfea5351a743": "Telegram desconectado",
+      "text2f95b1c9ee2b": "Usuarios permitidos guardados"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20484,7 +20498,14 @@
   "triggerComposer": {
     "every": "Cada",
     "dayOfMonth": "Día del mes",
-    "details": "Detalles"
+    "details": "Detalles",
+    "mcpEventsAfterConnect": "Los eventos aparecen aquí cuando {name} esté conectado: uno por cada herramienta que lista o busca.",
+    "mcpConnectAsk": "Cualquier persona que gestione este proyecto puede conectar {name}.",
+    "mcpSignInUnavailable": "No se pudo iniciar el inicio de sesión en {name}. Añade su credencial en la página del conector.",
+    "mcpEventsOnConnect": "Eventos después de conectarla",
+    "mcpCheckedAt": "Comprobado {when}",
+    "mcpNextCheck": "Próxima comprobación {when}",
+    "mcpNotChecked": "Aún sin comprobar"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",
