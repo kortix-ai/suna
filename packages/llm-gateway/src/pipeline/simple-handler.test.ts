@@ -1843,3 +1843,89 @@ describe('refused requests are traced', () => {
     expect(usage).toHaveLength(0);
   });
 });
+
+describe('one-call admission (hooks.admit)', () => {
+  const ok = () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const logger = { info() {}, warn() {}, error() {} };
+  const failing = async (): Promise<never> => { throw new Error('hook must not run'); };
+
+  test('an admit answer replaces authorize, route, primary resolve and billing', async () => {
+    const inputs: unknown[] = [];
+    const usage: UsageEvent[] = [];
+    let dispatchedModel = '';
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: failing,
+        assertBillingActive: failing,
+        admit: async (token, input) => {
+          inputs.push({ token, input });
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            billing: { holdUsd: 0.01 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async (_url, init) => {
+        dispatchedModel = JSON.parse(String(init.body)).model;
+        return ok();
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(inputs).toEqual([{ token: 'token', input: { requestedModel: 'requested-model', requires: { imageInput: false } } }]);
+    expect(dispatchedModel).toBe('primary-model');
+    // The hold the admit call took is settled with the request.
+    expect(usage.at(-1)?.billingHoldUsd).toBe(0.01);
+  });
+
+  test('a null admit answer falls back to the separate hooks', async () => {
+    const calls: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], []),
+        authorize: async () => { calls.push('authorize'); return { ok: true, principal }; },
+        resolveRoute: async () => { calls.push('route'); return null; },
+        resolveUpstream: async () => { calls.push('resolve'); return [primary]; },
+        assertBillingActive: async () => { calls.push('billing'); },
+        admit: async () => null,
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(calls).toEqual(['authorize', 'route', 'resolve', 'billing']);
+  });
+
+  test('admit answers a denial, a resolution error and a billing refusal like the separate hooks', async () => {
+    const run = (answer: Awaited<ReturnType<NonNullable<GatewayHooks['admit']>>>) => handleChatCompletions({
+      hooks: { ...hooks([], []), admit: async () => answer },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    const route = { policyId: 'route', primaryModel: 'primary-model' };
+    expect((await run({ admission: { ok: false, status: 401, errorCode: 'invalid_token' } })).status).toBe(401);
+    const unresolved = await run({
+      admission: { ok: true, principal }, route,
+      upstream: new GatewayResolutionError('provider_not_connected', 'Connect it', 'Connect the provider'),
+    });
+    expect(unresolved.status).toBe(400);
+    expect((await unresolved.json()).code).toBe('provider_not_connected');
+    const refused = Object.assign(new Error('Add credits'), { reason: 'insufficient_credits' });
+    const unpaid = await run({ admission: { ok: true, principal }, route, upstream: [primary], billing: refused });
+    expect(unpaid.status).toBe(402);
+    expect((await unpaid.json()).code).toBe('insufficient_credits');
+  });
+
+  test('invalid JSON from an unauthenticated caller still answers 401 first', async () => {
+    const response = await handleChatCompletions({
+      hooks: { ...hooks([], []), authorize: async () => ({ ok: false, status: 401, errorCode: 'invalid_token' }) , admit: failing },
+      logger,
+    }, { authorization: 'Bearer token', rawBody: '{not json' });
+    expect(response.status).toBe(401);
+  });
+});

@@ -1,6 +1,7 @@
 import { TimeoutError, withRetry } from '@kortix/llm-gateway';
 import {
   GatewayResolutionError,
+  type AdmitResult,
   type NoUpstreamReasonCode,
   type AuthedPrincipal,
   type AuthorizeResult,
@@ -44,6 +45,7 @@ export interface ApiPingResult {
 export interface ApiClient {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
   authorize: (token: string) => Promise<AuthorizeResult>;
+  admit: (token: string, input: ModelRouteInput) => Promise<AdmitResult | null>;
   resolveRoute: (
     principal: AuthedPrincipal,
     input: ModelRouteInput,
@@ -61,6 +63,37 @@ export interface ApiClient {
 
 /** Calls the caller is waiting on — see `post`'s `retryOnTimeout`. */
 const RETRY_SLOW = { retryOnTimeout: true } as const;
+
+/** How long an API that answered 404 for `/admit` is not asked again. */
+const ADMIT_MISSING_MS = 60_000;
+
+interface ResolutionErrorBody {
+  code: NoUpstreamReasonCode;
+  message: string;
+  suggestion: string;
+  retryAfterSeconds?: number;
+}
+
+interface BillingBody {
+  active: boolean;
+  reason?: string;
+  message?: string;
+  holdUsd?: number;
+}
+
+function resolutionError({ code, message, suggestion, retryAfterSeconds }: ResolutionErrorBody) {
+  return new GatewayResolutionError(code, message, suggestion, retryAfterSeconds);
+}
+
+/** `/billing`'s answer as `assertBillingActive` returns or throws it. */
+function billingResult(result: BillingBody): { holdUsd?: number } | Error {
+  if (!result.active) {
+    const error = new Error(result.message ?? 'subscription required') as Error & { reason?: string };
+    error.reason = result.reason ?? 'subscription_required';
+    return error;
+  }
+  return result.holdUsd ? { holdUsd: result.holdUsd } : {};
+}
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
@@ -137,11 +170,17 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         //
         // Worst case stays bounded by `maxAttempts`: 3 x 5 s plus ~0.3 s of
         // backoff before the caller is told the API is unreachable.
+        // A 404 is a route this API does not serve (or a refused edge key):
+        // repeating it answers the same.
         isRetryable: (err) =>
-          err instanceof ApiUnavailableError || (retryOnTimeout && err instanceof TimeoutError),
+          (err instanceof ApiUnavailableError && err.status !== 404) ||
+          (retryOnTimeout && err instanceof TimeoutError),
       },
     );
   };
+
+  // ponytail: per-process memo; a mixed fleet mid-rollout can flip it once per minute.
+  let admitMissingUntil = 0;
 
   return {
     authenticate: async (token) => {
@@ -155,6 +194,33 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     authorize: async (token) => {
       return post<AuthorizeResult>('/internal/gateway/authorize', { token, deferBilling: true }, RETRY_SLOW);
     },
+    // The gateway and the API roll out independently: an API without
+    // `/admit` answers 404, and the handler then uses the separate calls.
+    admit: async (token, input) => {
+      if (Date.now() < admitMissingUntil) return null;
+      let wire: {
+        admission: AuthorizeResult;
+        route?: ModelRoutePlan | null;
+        candidates?: UpstreamDescriptor[];
+        resolutionError?: ResolutionErrorBody;
+        billing?: BillingBody;
+      };
+      try {
+        wire = await post('/internal/gateway/admit', { token, input }, RETRY_SLOW);
+      } catch (error) {
+        if (error instanceof ApiUnavailableError && error.status === 404) {
+          admitMissingUntil = Date.now() + ADMIT_MISSING_MS;
+          return null;
+        }
+        throw error;
+      }
+      const result: AdmitResult = { admission: wire.admission };
+      if (wire.route !== undefined) result.route = wire.route;
+      if (wire.resolutionError) result.upstream = resolutionError(wire.resolutionError);
+      else if (wire.candidates) result.upstream = wire.candidates;
+      if (wire.billing) result.billing = billingResult(wire.billing);
+      return result;
+    },
     resolveRoute: async (principal, input) => {
       const result = await post<{ route: ModelRoutePlan | null }>(
         '/internal/gateway/resolve-route',
@@ -166,12 +232,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     resolveUpstream: async (principal, model) => {
       const result = await post<{
         candidates?: UpstreamDescriptor[];
-        resolutionError?: {
-          code: NoUpstreamReasonCode;
-          message: string;
-          suggestion: string;
-          retryAfterSeconds?: number;
-        };
+        resolutionError?: ResolutionErrorBody;
       }>('/internal/gateway/resolve-upstream', { principal, model }, RETRY_SLOW);
       // The API catches GatewayResolutionError in /resolve-upstream and returns
       // it in a 200 body instead of letting it propagate as a 500 (which would
@@ -181,10 +242,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       // resolveCandidates) — a thrown GatewayResolutionError it can surface as
       // a clean 400 with the actionable suggestion, rather than a generic
       // ApiUnavailableError 5xx.
-      if (result.resolutionError) {
-        const { code, message, suggestion, retryAfterSeconds } = result.resolutionError;
-        throw new GatewayResolutionError(code, message, suggestion, retryAfterSeconds);
-      }
+      if (result.resolutionError) throw resolutionError(result.resolutionError);
       return result.candidates ?? [];
     },
     notePoolRateLimit: async (principal, secretId, seconds) => {
@@ -201,17 +259,9 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.descriptor ? { ...descriptor, ...result.descriptor } : null;
     },
     assertBillingActive: async (accountId) => {
-      const result = await post<{ active: boolean; reason?: string; message?: string; holdUsd?: number }>(
-        '/internal/gateway/billing',
-        { accountId },
-        RETRY_SLOW,
-      );
-      if (!result.active) {
-        const error = new Error(result.message ?? 'subscription required') as Error & { reason?: string };
-        error.reason = result.reason ?? 'subscription_required';
-        throw error;
-      }
-      return result.holdUsd ? { holdUsd: result.holdUsd } : undefined;
+      const result = billingResult(await post<BillingBody>('/internal/gateway/billing', { accountId }, RETRY_SLOW));
+      if (result instanceof Error) throw result;
+      return result.holdUsd ? result : undefined;
     },
     assertBudget: async (principal) => {
       const result = await post<{ exceeded: boolean; message?: string; warnings?: string[] }>(

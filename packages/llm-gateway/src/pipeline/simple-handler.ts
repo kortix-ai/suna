@@ -1,5 +1,6 @@
 import { upstreamFetch } from '../upstream-fetch';
 import type {
+  AdmitResult,
   AuthedPrincipal,
   AuthorizeResult,
   GatewayAttemptFailure,
@@ -279,9 +280,47 @@ export async function handleChatCompletions(
   // release-gate flake read as a product bug for two releases. Same 503 the
   // caller already got; now it says which hop failed, and it says so in the
   // gateway's own error envelope with a `retry-after`.
-  let admission: AuthorizeResult;
+  // `body` is the ONLY reference to the parsed request graph from here on.
+  // It is nulled the moment dispatch has taken it (below), so a slow
+  // time-to-first-byte upstream does not pin one extra copy of a multi-MB
+  // multimodal request for the whole prefill. Parsed before admission so one
+  // `admit` call can carry the model; invalid JSON is answered after
+  // admission, so an unauthenticated caller still gets its 401 first.
+  let body: Record<string, unknown> | null = null;
+  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
+  // request size, captured before `rawBody` is cleared below. Used only to
+  // decide whether a stream-cut transparent retry may afford ANOTHER
+  // `structuredClone` of the body — see `streamRedispatchBody` below.
+  const approxRequestSize = req.rawBody?.length ?? 0;
   try {
-    admission = await authorize(hooks, token);
+    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
+  } catch {
+    // answered after admission
+  }
+  req.parsedBody = undefined;
+  req.rawBody = '';
+  if (body) {
+    const window = applyImageWindow(body, imageWindow);
+    if (window.dropped > 0) {
+      logger.info(
+        `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
+      );
+    }
+  }
+  const requestedModel = typeof body?.model === 'string' ? body.model : '';
+  let routedModel = requestedModel;
+  // Reused below to decide whether a stream-cut transparent retry may afford
+  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
+  const requestHasImage = body ? hasImage(body) : false;
+  const routeInput = { requestedModel, requires: { imageInput: requestHasImage } };
+
+  let admission: AuthorizeResult;
+  // One control-plane round trip for authorize + route + primary resolve +
+  // billing, when the host offers it. Each missing answer runs its own hook.
+  let prefetched: AdmitResult | null = null;
+  try {
+    prefetched = body && hooks.admit ? await hooks.admit(token, routeInput) : null;
+    admission = prefetched?.admission ?? await authorize(hooks, token);
   } catch (error) {
     // No principal exists yet, so there is nothing to refund and no account to
     // attribute a trace to — and `recordTrace` is another call to the control
@@ -332,8 +371,10 @@ export async function handleChatCompletions(
   const admitCharge = () => {
     chargeAdmission ??= (async () => {
       if (principal.billingHold) return { ok: true as const };
+      const answered = prefetched?.billing;
+      if (answered instanceof Error) return { ok: false as const, error: answered };
       try {
-        const billing = await hooks.assertBillingActive(principal.accountId);
+        const billing = answered ?? await hooks.assertBillingActive(principal.accountId);
         if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
         return { ok: true as const };
       } catch (error) {
@@ -344,22 +385,7 @@ export async function handleChatCompletions(
   };
   const chargeAdmitted = async () => (await admitCharge()).ok;
 
-  // `body` is the ONLY reference to the parsed request graph from here on.
-  // It is nulled the moment dispatch has taken it (below), so a slow
-  // time-to-first-byte upstream does not pin one extra copy of a multi-MB
-  // multimodal request for the whole prefill.
-  let body: Record<string, unknown> | null;
-  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
-  // request size, captured before `rawBody` is cleared below. Used only to
-  // decide whether a stream-cut transparent retry may afford ANOTHER
-  // `structuredClone` of the body — see `streamRedispatchBody` below.
-  const approxRequestSize = req.rawBody?.length ?? 0;
-  try {
-    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
-    req.parsedBody = undefined;
-    req.rawBody = '';
-  } catch {
-    req.rawBody = '';
+  if (!body) {
     refundHold(hooks, principal, logger);
     emit({
       ...identity(principal),
@@ -379,25 +405,11 @@ export async function handleChatCompletions(
     });
   }
 
-  const window = applyImageWindow(body, imageWindow);
-  if (window.dropped > 0) {
-    logger.info(
-      `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
-    );
-  }
-
-  const requestedModel = typeof body.model === 'string' ? body.model : '';
-  let routedModel = requestedModel;
-  // Reused below to decide whether a stream-cut transparent retry may afford
-  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
-  const requestHasImage = hasImage(body);
   let route: ModelRoutePlan | null;
   try {
-    route =
-      (await hooks.resolveRoute?.(principal, {
-        requestedModel,
-        requires: { imageInput: requestHasImage },
-      })) ?? null;
+    route = prefetched?.route !== undefined
+      ? prefetched.route
+      : (await hooks.resolveRoute?.(principal, routeInput)) ?? null;
     routedModel = route?.primaryModel || requestedModel;
     emit.mark('routed');
   } catch (error) {
@@ -511,7 +523,9 @@ export async function handleChatCompletions(
     unavailable = held.unavailable;
     emit.mark('resolved');
   } else try {
-    resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
+    const answered = prefetched?.upstream;
+    if (answered instanceof Error) throw answered;
+    resolvedCandidates = answered ?? await hooks.resolveUpstream(principal, routedModel);
     descriptor = resolvedCandidates[0];
     emit.mark('resolved');
   } catch (error) {

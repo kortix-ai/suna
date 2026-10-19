@@ -291,3 +291,40 @@ describe('ApiClient', () => {
     }
   });
 });
+
+describe('ApiClient.admit', () => {
+  const input = { requestedModel: 'm', requires: { imageInput: false } };
+
+  test('maps one /admit answer to the separate hook results', async () => {
+    const paths: string[] = [];
+    const api = client(async (url) => {
+      paths.push(new URL(url).pathname);
+      return jsonResponse({
+        admission: { ok: true, principal },
+        route: { policyId: 'r', primaryModel: 'p' },
+        candidates: [],
+        resolutionError: { code: 'provider_not_connected', message: 'Connect it', suggestion: 'Connect' },
+        billing: { active: false, reason: 'insufficient_credits', message: 'Add credits' },
+      });
+    });
+    const result = await api.admit('tok', input);
+    expect(paths).toEqual(['/internal/gateway/admit']);
+    expect(result?.admission).toEqual({ ok: true, principal });
+    expect(result?.route?.primaryModel).toBe('p');
+    expect(result?.upstream).toBeInstanceOf(GatewayResolutionError);
+    expect((result?.billing as Error & { reason?: string }).reason).toBe('insufficient_credits');
+  });
+
+  test('leaves out what the API did not answer', async () => {
+    const result = await client(async () => jsonResponse({ admission: { ok: true, principal }, route: null })).admit('tok', input);
+    expect(result).toEqual({ admission: { ok: true, principal }, route: null });
+  });
+
+  test('an API without /admit answers null once, without retries, and is not asked again for a minute', async () => {
+    let calls = 0;
+    const api = client(async () => { calls += 1; return jsonResponse({ error: 'not found' }, 404); });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+});
