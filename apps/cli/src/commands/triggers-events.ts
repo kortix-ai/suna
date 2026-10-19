@@ -279,6 +279,17 @@ function mcpSetup(app: string, entry: TriggerEventApp | undefined): McpSetup {
   };
 }
 
+/** The only source that lists `app`, or undefined (none, several, or the listing failed). */
+async function soleSourceOf(ctx: { client: ApiClient; projectId: string }, app: string): Promise<string | undefined> {
+  try {
+    const { apps } = await ctx.client.get<TriggerEventAppsResponse>(eventAppsPath(ctx.projectId));
+    const sources = new Set(apps.filter((a) => a.app === app).map(sourceOf));
+    return sources.size === 1 ? [...sources][0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadMcpSetup(ctx: { client: ApiClient; projectId: string }, app: string): Promise<McpSetup> {
   let apps: TriggerEventApp[] = [];
   try {
@@ -305,9 +316,11 @@ export async function triggersEvents(
   if (!ctx) return 1;
   try {
     if (args.apps) return await printApps(ctx, json);
+    // No --source: the app's own, when the app listing names exactly one (the API's default is composio).
+    const source = args.app && !args.source ? await soleSourceOf(ctx, args.app) : args.source;
     const resp = await ctx.client.get<TriggerEventTypesResponse>(
       args.app
-        ? appEventTypesPath(ctx.projectId, args.app, args.source)
+        ? appEventTypesPath(ctx.projectId, args.app, source)
         : eventTypesPath(ctx.projectId, args.connector as string),
     );
     const via = args.app ? { app: args.app } : { connector: args.connector as string };

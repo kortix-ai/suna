@@ -1042,7 +1042,8 @@ describe('kortix triggers — events', () => {
     expect(one.stdout).toContain('kortix connectors add <slug> --provider composio --app github');
     const raw = await runCli(['triggers', 'events', '--app', 'github', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
-    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github', '?app=github']);
+    // Without --source, the source comes from the app listing, where github is a composio app.
+    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github&source=composio', '?app=github&source=composio']);
     const both = await runCli(['triggers', 'events', '--app', 'github', '--connector', 'github', '--project', PROJECT], cfg);
     expect(both.code).toBe(2);
   });
@@ -1287,6 +1288,10 @@ describe('kortix triggers — events', () => {
       expect(empty.stdout).toContain('linear has no event types yet. Its read-only list tools become events after these steps:');
       expect(empty.stdout).toContain(`1. kortix connectors add linear --provider mcp --url ${LINEAR_URL} --apply`);
       expect(empty.stdout).toContain('2. kortix connectors authorize linear');
+      // No --source: the app is listed under mcp only, so the CLI asks for mcp (the API defaults to composio).
+      expect(requests).toContain('/triggers/event-types?app=linear&source=mcp');
+      await runCli(['triggers', 'events', '--app', 'linear', '--source', 'composio', '--project', PROJECT], cfg);
+      expect(requests).toContain('/triggers/event-types?app=linear&source=composio');
     });
 
     test('--app on an app with a connector: sign in when needed, never add it again', async () => {
@@ -1310,7 +1315,7 @@ describe('kortix triggers — events', () => {
       expect(r.stdout).toContain('Add it: kortix triggers add <slug> --type event --connector gmail --event gmail.message.received');
       const raw = await runCli(['triggers', 'events', '--app', 'gmail', '--json', '--project', PROJECT], cfg);
       expect(JSON.parse(raw.stdout).event_types[0].type).toBe('gmail.message.received');
-      expect(requests).toEqual(['/triggers/event-types?connector=gmail', '/triggers/event-types?app=gmail']);
+      expect(requests).toEqual(['/triggers/event-types?connector=gmail', '/triggers/event-apps', '/triggers/event-types?app=gmail&source=mcp']);
     });
 
     test('--event prints the interval enum readably; add coerces and checks it', async () => {
