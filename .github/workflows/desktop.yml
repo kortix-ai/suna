@@ -195,11 +195,10 @@ jobs:
           # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
           # scripts/sign-windows-azure.js signs each file with the ArtifactSigning module (the one
           # azure/trusted-signing-action uses): electron-builder 25's azureSignOptions uses the
-          # retired TrustedSigning module, whose NuGet v2 downloads fail. SHA-256 only.
+          # retired TrustedSigning module, whose NuGet v2 downloads fail. The script signs SHA-256 only.
           azure=()
           if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
-            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js"
-                   --config.win.signtoolOptions.signingHashAlgorithms=sha256)
+            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js")
           fi
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
           "${azure[@]}" \

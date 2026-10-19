@@ -13,6 +13,8 @@ const pwsh = (command) =>
 const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
 
 module.exports = async function sign(configuration) {
+  // electron-builder calls once per hash (sha1, sha256). One SHA-256 signature is enough.
+  if (configuration.hash && configuration.hash !== 'sha256') return;
   const { AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE } = process.env;
   if (!AZURE_SIGNING_ENDPOINT || !AZURE_SIGNING_ACCOUNT || !AZURE_SIGNING_PROFILE) {
     throw new Error('sign-windows-azure: AZURE_SIGNING_ENDPOINT, _ACCOUNT and _PROFILE are required');
