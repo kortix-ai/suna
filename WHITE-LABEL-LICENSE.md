@@ -22,9 +22,27 @@ than nearly every other provider. Each sandbox is a hardware-isolated microVM.
 Sandboxes boot in about 400 ms, stop and resume, snapshot and fork, and bill by
 the second. Kortix integrates Platinum natively.
 
+## The default and custom agreements
+
+The Exclusive Compute Agreement below is the default. Anyone can sign it online.
+Under the default:
+
+- The license is free, and the one requirement is Platinum as exclusive compute.
+- **Kortix may end it at any time, for any reason, with written notice.** The
+  partner then has up to 90 days to move existing customers. A partner that
+  breaches the agreement gets no transition period.
+- The partner may end it at any time.
+- Kortix may publish a new version, which applies 30 days after notice.
+- When it ends, only the Elastic License applies. Rights that the Elastic License
+  grants to everyone stay in place.
+
+Kortix and a partner can sign a custom agreement instead, for example with a fixed
+term, committed volumes, or other terms. A signed custom agreement controls over
+the default. Email [marko@kortix.ai](mailto:marko@kortix.ai).
+
 ## Get a license
 
-**[Sign the Exclusive Compute Agreement online](https://app.documenso.com/d/dfohusa86Whi4Sw_u9KkW).**
+**[Sign the Exclusive Compute Agreement online](https://app.documenso.com/d/gaAaA6NPc_E9c6C-sl9YB).**
 It takes about two minutes. The agreement is in force when you sign. Kortix does
 not countersign. You get the signed copy by email.
 
@@ -205,16 +223,20 @@ it.
 
 11.2. Partner may end the Agreement at any time with written notice.
 
-11.3. Kortix may end the Agreement with written notice when Partner breaches
-Section 3 and does not cure the breach within 10 days of notice, or breaches any
-other section and does not cure the breach within 30 days of notice.
+11.3. Kortix may end the Agreement at any time, for any reason or no reason, with
+written notice. The Agreement ends on the date in the notice.
 
-11.4. When the Agreement ends, the permissions in Section 2 end. Partner may
+11.4. Kortix may also end the Agreement with immediate effect when Partner breaches
+Section 3 and does not cure the breach within 10 days of notice, or breaches any
+other section and does not cure the breach within 30 days of notice. In that case
+Section 11.5 does not give Partner a transition period.
+
+11.5. When the Agreement ends, the permissions in Section 2 end. Partner may
 continue to serve existing End Customers for up to 90 days to move them, and
 Section 3 applies during those 90 days. After that, only the Elastic License
 applies to Partner's use of the Licensed Software.
 
-11.5. Sections 6, 7, 8, 9, 10, 11.4, and 13 survive the end of the Agreement.
+11.6. Sections 6, 7, 8, 9, 10, 11.5, and 13 survive the end of the Agreement.
 
 ### 12. Changes to this Agreement
 
