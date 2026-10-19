@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 
 import type { MarkdownImageLook } from '@/components/markdown/markdown-image';
 import { Icon } from '@/components/ui/icon';
-import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { StarIcon } from '@/lib/icons';
@@ -108,8 +107,8 @@ function CardText({ props }: { props: GenuiNode['props'] }) {
         {badges.length > 0 ? (
           <View className="max-w-[50%] flex-row flex-wrap justify-end gap-1.5">
             {badges.map((badge) => (
-              // A plain secondary pill; a good pick (the recommendation) leads with a gold star at the text size.
-              <View key={badge.id} className="flex-row items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-0.5">
+              // A pill a step off the card in both themes (secondary is too close to bg-card); a good pick (the recommendation) leads with a gold star at the text size.
+              <View key={badge.id} className="flex-row items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-0.5">
                 {badge.props.tone === 'good' ? <Icon as={StarIcon} size={12} weight="fill" className="text-kortix-yellow" /> : null}
                 <Text className="text-xs leading-4 text-secondary-foreground">{String(badge.props.label)}</Text>
               </View>
@@ -156,14 +155,19 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
 
   if (mode === 'list') {
     return (
-      <View className="rounded-2xl bg-card">
-        {cards.map(({ id, props }, i) => {
+      // Each option is its own card with a gap between, so the list reads as separate choices, not one block of text.
+      <View className="gap-2">
+        {cards.map(({ id, props }) => {
           const shape = shapes[id] ?? cardImageShape(0, 0);
           const image = props.image && !failed.has(String(props.image)) ? String(props.image) : null;
           return (
             <View key={id}>
-              {i > 0 ? <Separator /> : null}
-              <Pressable accessibilityRole={props.href ? 'link' : undefined} disabled={!props.href} onPress={open(props.href)} className="flex-row gap-3 px-4 py-3 active:opacity-70">
+              <Pressable
+                accessibilityRole={props.href ? 'link' : undefined}
+                disabled={!props.href}
+                onPress={open(props.href)}
+                className="flex-row gap-3 rounded-2xl bg-card px-4 py-3.5 active:opacity-70"
+              >
                 {image ? (
                   <View style={{ width: THUMB, height: THUMB }} className={`overflow-hidden rounded-lg bg-secondary ${shape.inset ? 'p-1.5' : ''}`}>
                     <GenuiImageView

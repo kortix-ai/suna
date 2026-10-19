@@ -206,7 +206,8 @@ export function GenuiCompare({ props }: GenuiComponentProps) {
 export function GenuiRankedList({ props }: GenuiComponentProps) {
   const items = kids(props.items);
   return (
-    <View className="overflow-hidden rounded-2xl bg-card">
+    // Each rank is its own card with a gap between, so the rows read apart.
+    <View className="gap-2">
       {items.map((item, index) => {
         const href = item.props.href;
         const first = index === 0;
@@ -214,7 +215,7 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
         // The rank is a mono number in a fixed right-aligned lane, so "10" lines up with "9". The lane's line box
         // matches the title's, so the number sits on the title's baseline. #1 takes ink.
         const row = (
-          <View className="flex-row items-start gap-3 px-4 py-3">
+          <View className="flex-row items-start gap-3 rounded-2xl bg-card px-4 py-3.5">
             <Text
               className={`w-5 shrink-0 text-right font-mono text-xs tabular-nums ${first ? 'text-foreground font-medium leading-6' : 'text-muted-foreground leading-5'}`}
             >
@@ -241,7 +242,6 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
         );
         return (
           <View key={item.id}>
-            {index > 0 ? <Separator /> : null}
             {href ? (
               <Pressable accessibilityRole="link" className="active:opacity-70" onPress={() => openGenuiLink(href)}>
                 {row}

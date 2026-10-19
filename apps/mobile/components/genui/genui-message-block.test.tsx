@@ -306,6 +306,9 @@ b = RankedItem("Option B", "Quietest")`);
     expect(titles).toHaveLength(10);
     expect(className(titles[0]!)).toContain('text-lg');
     expect(className(titles[1]!)).not.toContain('text-lg');
+    // Each rank is its own card, with a gap between: no hairlines.
+    expect(all(root, 'separator')).toHaveLength(0);
+    expect(all(root, 'view').filter((n) => className(n).includes('rounded-2xl bg-card'))).toHaveLength(10);
   });
 
   test('a ranked item photo fills its 40pt box, with no outline, in compact mode', () => {
@@ -491,7 +494,7 @@ g = Badge("Best for a first project", "good")`);
     expect(texts(root)).toEqual(expect.arrayContaining(['Python', '4.7', '(1,200)', 'Free', 'Language', 'General-purpose.', 'Popular', 'Go']));
     // The badges sit on the title row, top right, as secondary pills; not a muted "A · B" line, no tone dot.
     const row = all(root, 'view').find((n) => className(n).includes('justify-between') && texts(n).includes('Python'))!;
-    const pills = all(row, 'view').filter((n) => className(n).includes('bg-secondary/80'));
+    const pills = all(row, 'view').filter((n) => className(n).includes('bg-foreground/10'));
     expect(pills.map((n) => texts(n).join(''))).toEqual(['Popular', 'Best for a first project']);
     expect(all(root, 'view').some((n) => /bg-kortix-\w+$|bg-kortix-\w+ /.test(className(n)))).toBe(false);
     // Only the good pick leads with a gold star, at the label's size.
@@ -500,7 +503,9 @@ g = Badge("Best for a first project", "good")`);
     expect(all(pills[1]!, 'icon')).toEqual(stars);
     expect([stars[0]!.props.weight, stars[0]!.props.size, className(stars[0]!)]).toEqual(['fill', 12, 'text-kortix-yellow']);
     expect(texts(root)).not.toContain('Popular · Best for a first project');
-    expect(all(root, 'separator')).toHaveLength(1);
+    // Each option is its own card, with a gap between: no hairlines.
+    expect(all(root, 'separator')).toHaveLength(0);
+    expect(all(root, 'pressable').filter((n) => className(n).includes('rounded-2xl bg-card'))).toHaveLength(2);
     const link = all(root, 'pressable').find((n) => n.props.accessibilityRole === 'link')!;
     act(() => (link.props.onPress as () => void)());
     expect(opened).toEqual(['https://python.org/']);
