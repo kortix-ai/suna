@@ -70,7 +70,7 @@ beforeAll(async () => {
     });
     await d.insert(sessionSandboxes).values({
       sandboxId, sessionId: `wake-${name}`, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
-      status: 'stopped', provider: 'daytona', externalId: `ext-${name}`, metadata: metadata[name],
+      status: 'stopped', provider: 'platinum', externalId: `ext-${name}`, metadata: metadata[name],
     });
   }
   providerStatus.set('ext-expiredWake', 'running');

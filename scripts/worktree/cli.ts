@@ -11,6 +11,7 @@
  *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
  *   pnpm worktree nuke            (TTY: pick from a list, then confirm each)
  *   pnpm worktree list · doctor
+ *   pnpm worktree sweep [--idle 60m] [--yes]   (delete build output in idle checkouts)
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
  * ports, install, optional isolated Supabase, prereqs + node-pg-migrate) and boots the stack. Many
@@ -27,7 +28,7 @@ import {
   branchDbName, primaryDb, branchDbExists, createBranchDb, syncBranchUsers, dropBranchDb, withDatabase,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
   listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
-  parseDuration, selectForPrune, type PruneCandidate,
+  parseDuration, selectForPrune, type PruneCandidate, ARTIFACT_DIRS, sweepBusy,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
   type DbMode, type KillResult, type PrimaryDb, type SlotCreds,
 } from './lib';
@@ -235,6 +236,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
   ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base dev --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
+  ${pc.cyan('sweep')} ${pc.dim('[--idle 60m] [--yes]')}   ${pc.dim('delete .next/.turbo/dist/target/test output in idle checkouts; dry run without --yes')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
 shares the primary Supabase DB by default, and gets its own node_modules. Pass ${pc.cyan('--db')}
@@ -959,6 +961,49 @@ function cmdStatus(a: Args) {
   console.log('');
 }
 
+/**
+ * `sweep [--idle 60m] [--yes]` — delete build output (ARTIFACT_DIRS) in every
+ * git worktree of this repo, registered or not, that has no process inside it
+ * and no file written within --idle. Tracked dirs (packages/ui/dist) are kept.
+ * Without --yes it only reports. The next `pnpm dev` / build regenerates it.
+ */
+function cmdSweep(a: Args) {
+  const idleMin = Math.ceil(parseDuration(typeof a.flags.idle === 'string' ? a.flags.idle : '60m') / 60_000);
+  const wts = sh(['git', '-C', repoRoot(), 'worktree', 'list', '--porcelain']).stdout
+    .split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9));
+  const cwds = cwdTable().map((r) => r.cwd);
+  const commands = psTable().map((r) => r.command);
+  // A nested worktree (.claude/worktrees/*) is swept on its own terms, never as part of its parent.
+  const findIn = (wt: string, ...test: string[]) => {
+    const nested = wts.filter((o) => o !== wt && o.startsWith(`${wt}/`)).flatMap((o) => ['-path', o, '-prune', '-o']);
+    return sh(['find', wt, ...nested, '(', '-name', 'node_modules', '-o', '-name', '.git', ')', '-prune', '-o', ...test]).stdout
+      .split('\n').filter(Boolean);
+  };
+  const recent = (dir: string) => sh(['find', dir, '-type', 'f', '-mmin', `-${idleMin}`, '-print', '-quit']).stdout.trim() !== '';
+  step(`Sweeping ${plural(wts.length, 'worktree', 'worktrees')} (idle ≥ ${idleMin}m)`);
+  let kb = 0, dirs = 0, busy = 0;
+  for (const wt of wts) {
+    if (!existsSync(wt)) continue;
+    if (sweepBusy(wt, cwds, commands) || findIn(wt, '-type', 'f', '-mmin', `-${idleMin}`, '-print', '-quit').length) { busy++; continue; }
+    const found = findIn(wt, '-type', 'd', '(', ...ARTIFACT_DIRS.flatMap((n, i) => (i ? ['-o', '-name', n] : ['-name', n])), ')', '-prune', '-print')
+      .filter((d) => !d.slice(wt.length).includes('/src/'));
+    for (const d of found) {
+      if (sh(['git', '-C', wt, 'ls-files', '--', d]).stdout.trim()) continue;
+      const size = Number(sh(['du', '-sk', d]).stdout.split('\t')[0]) || 0;
+      if (a.flags.yes) {
+        if (recent(d)) continue;
+        rmSync(d, { recursive: true, force: true });
+      }
+      kb += size; dirs++;
+      if (size > 1_048_576) sub(`${(size / 1_048_576).toFixed(1)} GB  ${d}`);
+    }
+  }
+  const gb = (kb / 1_048_576).toFixed(1);
+  ok(a.flags.yes
+    ? `deleted ${plural(dirs, 'dir', 'dirs')}, ${gb} GB · skipped ${busy} busy`
+    : `dry run: ${plural(dirs, 'dir', 'dirs')}, ${gb} GB · ${busy} busy · pass --yes to delete`);
+}
+
 async function cmdDoctor(a: Args) {
   step('Toolchain');
   await ensureDeps({ database: true, isolatedDatabase: true, tunnel: true, install: !!a.flags.yes });
@@ -1093,6 +1138,7 @@ try {
     case 'status': cmdStatus(a); break;
     case 'pr': await cmdPr(a); break;
     case 'doctor': await cmdDoctor(a); break;
+    case 'sweep': cmdSweep(a); break;
     default: usage();
   }
 } catch (e: any) {

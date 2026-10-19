@@ -84,6 +84,7 @@ const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true, FRONTEND_URL: 'https://d
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
   config: testConfig,
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 // The model and key plan itself is pinned in unit-channel-model-access; this

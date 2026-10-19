@@ -15,7 +15,9 @@ export function filesRow(
   projectId: string,
   target: 'repo' | 'drive',
 ): { label: FilesNavLabel; href: string } {
-  return target === 'drive'
-    ? { label: 'drive', href: `/projects/${projectId}/drive` }
-    : { label: 'files', href: `/projects/${projectId}/files` };
+  const drive = target === 'drive';
+  return {
+    label: filesNavLabel(drive),
+    href: `/projects/${projectId}/${drive ? 'drive' : 'files'}`,
+  };
 }

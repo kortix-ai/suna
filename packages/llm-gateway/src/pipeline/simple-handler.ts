@@ -23,6 +23,7 @@ import {
 } from '../usage';
 import { calculateCost } from '../usage/pricing';
 import {
+  type DispatchOutcome,
   UPSTREAM_HEADERS_TIMEOUT_MS,
   dispatch,
   fallbackCandidates,
@@ -42,6 +43,13 @@ import {
   shownModel,
   shownProvider,
 } from './public-identity';
+import {
+  DISPATCH_HOLD_SECONDS,
+  MAX_HOLD_SECONDS,
+  type RouteMemory,
+  SETUP_HOLD_SECONDS,
+  routeMemoryKey,
+} from './route-memory';
 import { relayStream, type StreamObservation } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -73,6 +81,8 @@ export interface GatewayDeps {
 export interface HandlerRuntime {
   hooks: GatewayHooks;
   logger: GatewayLogger;
+  /** Routed models held per caller after they failed. See pipeline/route-memory.ts. */
+  routeMemory?: RouteMemory;
   fetchImpl?: FetchImpl;
   imageWindow?: ImageWindowOptions;
 }
@@ -414,6 +424,10 @@ export async function handleChatCompletions(
 
   // The model the route named. A rescued request starts at one of its fallbacks.
   const routeModel = routedModel;
+  // `project:*` routes come from the project's own Routing settings.
+  const fallbackChosenByProject = route?.policyId.startsWith('project:') ?? false;
+  const { routeMemory } = runtime;
+  const memoryKey = routeMemoryKey(principal, routeModel);
   /**
    * Starts the project's own chain when the routed model has no usable
    * upstream: every own key or ChatGPT account is paused or needs reconnection
@@ -446,16 +460,57 @@ export async function handleChatCompletions(
         code: resolution.code,
         message: resolution.message,
       };
+      const resting = resolution.code === 'provider_pool_rate_limited';
+      routeMemory?.hold(memoryKey, { fallbackModel: model, failure, byok: true },
+        resting ? (resolution.retryAfterSeconds ?? MAX_HOLD_SECONDS) : SETUP_HOLD_SECONDS);
       return { model, candidates, remaining: models.slice(index + 1), unavailable: { model: routeModel, failure } };
     }
     return null;
+  };
+
+  /**
+   * Starts at the fallback that answered this caller's last request while the
+   * routed model is held. The routed model stays last in the chain, so a
+   * request whose fallbacks all fail still tries it.
+   */
+  const startHeldChain = async () => {
+    const held = routeMemory?.recall(memoryKey);
+    if (!held || !route) return null;
+    const models = fallbackModelsOf({ model: routeModel, fallbackModels: route.fallbackModels });
+    const index = models.indexOf(held.fallbackModel);
+    const candidates = index < 0 ? [] : await fallbackCandidates(held.fallbackModel, {
+      byok: held.byok,
+      chosenByProject: fallbackChosenByProject,
+      resolveCandidates: (next) => hooks.resolveUpstream(principal, next),
+      admitCharge: chargeAdmitted,
+      logger,
+      requestId: id,
+    });
+    if (!candidates.length) {
+      routeMemory?.release(memoryKey);
+      return null;
+    }
+    return {
+      model: held.fallbackModel,
+      candidates,
+      remaining: [...models.slice(index + 1), routeModel],
+      unavailable: { model: routeModel, failure: { ...held.failure, stage: 'held' as const } },
+    };
   };
 
   let descriptor: UpstreamDescriptor | undefined;
   let resolvedCandidates: UpstreamDescriptor[] = [];
   let chain = route?.fallbackModels;
   let unavailable: { model: string; failure: GatewayAttemptFailure } | undefined;
-  try {
+  const held = await startHeldChain();
+  if (held) {
+    resolvedCandidates = held.candidates;
+    descriptor = held.candidates[0];
+    routedModel = held.model;
+    chain = held.remaining;
+    unavailable = held.unavailable;
+    emit.mark('resolved');
+  } else try {
     resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
     descriptor = resolvedCandidates[0];
     emit.mark('resolved');
@@ -551,7 +606,6 @@ export async function handleChatCompletions(
   if (streaming) body.stream_options = { include_usage: true };
   // A BYOK request is billable too when the project's chain can move it to a
   // Kortix-billed model.
-  const fallbackChosenByProject = route?.policyId.startsWith('project:') ?? false;
   const billable = descriptor.billingMode !== 'none' || (fallbackChosenByProject && Boolean(chain?.length));
   // Measured now, while the parsed body still exists: a billable stream that
   // ends before its usage frame is settled from this (see usage/estimate.ts).
@@ -577,6 +631,24 @@ export async function handleChatCompletions(
     streaming && !requestHasImage && approxRequestSize <= STREAM_REDISPATCH_MAX_BODY_SIZE
       ? structuredClone(body)
       : null;
+  /**
+   * Keeps this outcome for the caller's next request: a transient failure of
+   * the routed model that a fallback answered holds the route, and the routed
+   * model answering releases it.
+   */
+  const holdAfterDispatch = (outcome: DispatchOutcome) => {
+    if (outcome.model === routeModel) return routeMemory?.release(memoryKey);
+    // The plan started at a fallback: its hold was set when the routed model failed.
+    if (unavailable) return;
+    const failure = outcome.attemptFailures.filter((attempt) => attempt.routeModel === routeModel).at(-1);
+    const transient = failure && (failure.status === undefined || failure.status === 429 || failure.status >= 500);
+    if (!transient) return;
+    routeMemory?.hold(memoryKey, {
+      fallbackModel: outcome.model,
+      failure,
+      byok: resolvedCandidates[0]?.billingMode === 'none',
+    }, DISPATCH_HOLD_SECONDS);
+  };
   emit.mark('dispatch');
   const pending = dispatch(
     body,
@@ -585,7 +657,6 @@ export async function handleChatCompletions(
       candidates: resolvedCandidates,
       fallbackModels: chain,
       fallbackOn: route?.fallbackOn,
-      // `project:*` routes come from the project's own Routing settings.
       fallbackChosenByProject,
       // A fallback model gets its own clamped defaults, never the primary's.
       defaultsFor: (model) =>
@@ -616,6 +687,7 @@ export async function handleChatCompletions(
   body = null;
   const outcome = await pending;
   emit.mark('upstream_response');
+  if (outcome.response?.ok) holdAfterDispatch(outcome);
   // Mutable: a stream-cut transparent retry (below) can move this to the
   // candidate that actually answered the retry, exactly like dispatch()'s own
   // pool/profile/fallback moves already do.

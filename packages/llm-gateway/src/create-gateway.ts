@@ -19,6 +19,7 @@ import {
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
+import { createRouteMemory } from './pipeline/route-memory';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
 // shape the JSON envelope for clients speaking the Anthropic wire format; the
@@ -81,6 +82,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     logger,
     fetchImpl: deps.fetchImpl,
     imageWindow: deps.imageWindow,
+    routeMemory: createRouteMemory(),
   };
 
   const jsonResponse = (data: unknown, status = 200): Response =>

@@ -20209,6 +20209,7 @@
       "agentsListAlsoSubagent": "也可作为子代理",
       "servedModelTurnRow": "{requested} 失败（{reason}）— 已切换到 {served}。",
       "servedModelTurnRowRepeated": "{requested} 在 {count, number} 个请求中失败（{reason}）— 已切换到 {served}。",
+      "servedModelReason": "{reason, select, provider_pool_rate_limited {已达上限} rate_limit_exceeded {请求频率受限} model_busy {繁忙} provider_reauth_required {需要重新连接} authentication_error {登录被拒绝} provider_not_connected {未连接} model_unavailable {不可用} context_length_exceeded {上下文过长} upstream_timeout {超时} upstream_inactivity_timeout {超时} upstream_incomplete_stream {流中断} upstream_stream_error {流中断} other {错误}}",
       "text51e6bc656528": "通过 Telegram 机器人与你的代理聊天。",
       "text00c7991f0490": "连接 Telegram",
       "texta832efd235a7": "在 Telegram 中用 @BotFather 创建一个机器人，然后在此粘贴它的令牌。Kortix 会注册 webhook，并将令牌保存在服务器上。",
@@ -21277,8 +21278,8 @@
     "uploadFolder": "上传文件夹",
     "uploadingFile": "正在上传 {name}",
     "openFolder": "打开文件夹",
-    "uploadTreeTitle": "{count, plural, other {上传“{name}”中的 # 个文件？}}",
-    "uploadTreesTitle": "{folders, plural, other {上传 # 个文件夹中的 {count} 个文件？}}",
+    "uploadTreeTitle": "上传“{name}”中的 {count, plural, other {# 个文件}}？",
+    "uploadTreesTitle": "上传 {folders, plural, other {# 个文件夹}}中的 {count} 个文件？",
     "uploadTreeDescription": "会在此处重建其文件夹结构，并把文件放入其中。",
     "dropHint": "文件和整个文件夹均可，文件夹会保留原有结构。",
     "clipboardMoving": "正在移动 {name}",
@@ -21987,5 +21988,16 @@
     "failedToast": "无法更改自动化。请重试。",
     "bannerTitle": "此账户的所有自动化已暂停",
     "bannerDescription": "在所有者或管理员于账户设置中恢复之前，这里不会自动运行任何内容。手动运行触发器仍然可用。"
+  },
+  "triggerConditions": {
+    "operatorLabel": "条件 {value0} — 运算符",
+    "equals": "等于",
+    "not": "不等于",
+    "in": "等于其中之一",
+    "prefix": "开头为",
+    "notPrefix": "开头不为",
+    "exists": "存在",
+    "missing": "不存在",
+    "listPlaceholder": "值 1, 值 2"
   }
 }

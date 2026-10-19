@@ -2816,3 +2816,113 @@ flow(
     });
   },
 );
+
+/**
+ * TRG-37 — filter operators (KRTX-1721). A filter path takes a value (equals)
+ * or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. The
+ * loop-breaking case: a push webhook whose agent pushes on `kortix/*` branches
+ * skips the agent's own pushes and still fires for a person. Local only.
+ */
+flow(
+  'TRG-37',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const slugParams = { ...params, slug: 'loop-safe' };
+    const secret = `ke2e-loop-safe-${crypto.randomUUID()}`;
+    const listedFilter = async () => {
+      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+        .json<{ triggers: Array<{ slug: string; filter: unknown }> }>().triggers.find((row) => row.slug === 'loop-safe');
+      if (!t) throw new Error('loop-safe is not listed');
+      return t.filter;
+    };
+    const deliver = async (body: Record<string, unknown>) => {
+      const rawBody = JSON.stringify(body);
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: slugParams,
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+    const push = (ref: string, login: string) => ({ ref, sender: { login } });
+    const unmatched = 'delivery did not match the trigger filter';
+
+    await ctx.step('an unknown operator, two operators on one path, and an empty list → 400 naming the path', async () => {
+      const create = (filter: unknown) =>
+        owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', filter }, { params });
+      (await create({ 'body.ref': { nott: 'x' } })).status(400)
+        .body().has('$.error', 'filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix');
+      (await create({ 'body.ref': { in: ['a'], not: 'b' } })).status(400).body().has('$.error', 'filter.body.ref takes one operator, got 2: in, not');
+      (await create({ 'body.action': { in: [] } })).status(400).body().has('$.error', 'filter.body.action.in must list at least one value');
+    });
+
+    await ctx.step('a webhook trigger with not_prefix and not → 201; the listing stores each operator as a list', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', {
+        name: 'loop-safe', slug: 'loop-safe', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Lint {{ body.ref }}',
+        filter: { 'body.ref': { not_prefix: 'refs/heads/kortix/' }, 'body.sender.login': { not: ['kortix-bot'] } },
+      }, { params })).status(201);
+      const filter = await listedFilter();
+      const expected = { 'body.ref': { not_prefix: ['refs/heads/kortix/'] }, 'body.sender.login': { not: ['kortix-bot'] } };
+      if (JSON.stringify(filter) !== JSON.stringify(expected)) throw new Error(`listed filter ${JSON.stringify(filter)}, expected ${JSON.stringify(expected)}`);
+    });
+
+    await ctx.step("the agent's own branch and the agent's own sender → 200 skipped, two skipped runs, no session", async () => {
+      (await deliver(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
+      (await deliver(push('refs/heads/main', 'kortix-bot'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
+      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
+      const skipped = runs.filter((run) => run.status === 'skipped' && run.error === unmatched && run.session_id === null);
+      if (skipped.length !== 2) throw new Error(`expected 2 skipped runs: ${JSON.stringify(runs)}`);
+      const sessions = await withDb(ctx, async (db) =>
+        Number((await db.query(`SELECT count(*) AS n FROM kortix.project_sessions WHERE project_id = $1 AND metadata->>'trigger_slug' = 'loop-safe'`, [p.id])).rows[0]?.n ?? 0),
+      );
+      if (sessions !== 0) throw new Error(`a filtered delivery created ${sessions} session(s)`);
+    });
+
+    await ctx.step("a dry run reports a person's push on main as a match and the agent's branch as no match", async () => {
+      const dry = async (payload: Record<string, unknown>) =>
+        owner.post('/v1/projects/:projectId/triggers/:slug/fire', { dry_run: true, payload: { body: payload } }, { params: slugParams });
+      (await dry(push('refs/heads/main', 'a-person'))).status(200).body().has('$.filter_matches', true);
+      (await dry(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.filter_matches', false);
+    });
+
+    await ctx.step('CLI: `--filter path:op=value` replaces the filter with in and exists; `exists=maybe` exits 2 before any request', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg37') });
+      const sb = new CliSandbox('trg37');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const set = await sb.run(['triggers', 'set', 'loop-safe', '--filter', 'body.action:in=opened,reopened', '--filter', 'body.pull_request:exists=true', '--project', p.id]);
+        throwIfCliInfraFailure(set, 'triggers set');
+        if (set.exitCode !== 0) throw new Error(`set --filter: exit ${set.exitCode}: ${set.all}`);
+        const filter = await listedFilter();
+        const expected = { 'body.action': { in: ['opened', 'reopened'] }, 'body.pull_request': { exists: true } };
+        if (JSON.stringify(filter) !== JSON.stringify(expected)) throw new Error(`listed filter ${JSON.stringify(filter)}, expected ${JSON.stringify(expected)}`);
+        const bad = await sb.run(['triggers', 'set', 'loop-safe', '--filter', 'body.pull_request:exists=maybe', '--project', p.id]);
+        if (bad.exitCode !== 2 || !bad.stderr.includes('--filter body.pull_request:exists takes true or false (got "maybe")')) {
+          throw new Error(`set --filter exists=maybe: exit ${bad.exitCode}: ${bad.all}`);
+        }
+        if (JSON.stringify(await listedFilter()) !== JSON.stringify(expected)) throw new Error('a rejected --filter changed the stored filter');
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);

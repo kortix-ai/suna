@@ -20209,6 +20209,7 @@
       "agentsListAlsoSubagent": "Auch Subagent",
       "servedModelTurnRow": "{requested} ist fehlgeschlagen ({reason}) — zu {served} gewechselt.",
       "servedModelTurnRowRepeated": "{requested} ist bei {count, number} Anfragen fehlgeschlagen ({reason}) — zu {served} gewechselt.",
+      "servedModelReason": "{reason, select, provider_pool_rate_limited {Limit erreicht} rate_limit_exceeded {Ratenlimit} model_busy {ausgelastet} provider_reauth_required {muss neu verbunden werden} authentication_error {Anmeldung abgelehnt} provider_not_connected {nicht verbunden} model_unavailable {nicht verfügbar} context_length_exceeded {Kontext zu lang} upstream_timeout {Zeitüberschreitung} upstream_inactivity_timeout {Zeitüberschreitung} upstream_incomplete_stream {Stream abgebrochen} upstream_stream_error {Stream abgebrochen} other {Fehler}}",
       "text51e6bc656528": "Chatte mit deinem Agenten über einen Telegram-Bot.",
       "text00c7991f0490": "Telegram verbinden",
       "texta832efd235a7": "Erstelle in Telegram mit @BotFather einen Bot und füge hier sein Token ein. Kortix registriert den Webhook und bewahrt das Token auf dem Server auf.",
@@ -21277,8 +21278,8 @@
     "uploadFolder": "Ordner hochladen",
     "uploadingFile": "{name} wird hochgeladen",
     "openFolder": "Ordner öffnen",
-    "uploadTreeTitle": "{count, plural, one {# Datei aus „{name}“ hochladen?} other {# Dateien aus „{name}“ hochladen?}}",
-    "uploadTreesTitle": "{folders, plural, one {{count} Dateien aus # Ordner hochladen?} other {{count} Dateien aus # Ordnern hochladen?}}",
+    "uploadTreeTitle": "{count, plural, one {# Datei} other {# Dateien}} aus „{name}“ hochladen?",
+    "uploadTreesTitle": "{count} Dateien aus {folders, plural, one {# Ordner} other {# Ordnern}} hochladen?",
     "uploadTreeDescription": "Die Ordner werden hier neu angelegt, die Dateien kommen hinein.",
     "dropHint": "Dateien und ganze Ordner. Ordner behalten ihre Struktur.",
     "clipboardMoving": "{name} wird verschoben",
@@ -21987,5 +21988,16 @@
     "failedToast": "Automatisierungen konnten nicht geändert werden. Versuche es erneut.",
     "bannerTitle": "Alle Automatisierungen dieses Kontos sind pausiert",
     "bannerDescription": "Hier läuft nichts von selbst, bis ein Inhaber oder Admin sie in den Kontoeinstellungen fortsetzt. Ein manuell ausgeführter Auslöser funktioniert weiterhin."
+  },
+  "triggerConditions": {
+    "operatorLabel": "Bedingung {value0} — Operator",
+    "equals": "ist",
+    "not": "ist nicht",
+    "in": "ist eines von",
+    "prefix": "beginnt mit",
+    "notPrefix": "beginnt nicht mit",
+    "exists": "existiert",
+    "missing": "existiert nicht",
+    "listPlaceholder": "Wert 1, Wert 2"
   }
 }

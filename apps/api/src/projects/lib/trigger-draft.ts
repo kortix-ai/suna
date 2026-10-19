@@ -1,6 +1,6 @@
 import type { TriggerList } from '@kortix/api-contract';
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
-import { cronIntervalError, formatDurationSeconds } from '@kortix/manifest-schema';
+import { type TriggerFilter, cronIntervalError, formatDurationSeconds, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -16,7 +16,6 @@ import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFie
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
-import { isPlainObject } from '../../shared/json';
 import { triggersPausedForProject } from './trigger-scheduler-state';
 import { readAccountAutomationPause } from '../../accounts/automation-pause';
 
@@ -241,7 +240,7 @@ export interface TriggerDraft {
   /** For sessionMode === 'keyed' only: the template deriving one session per key. */
   sessionKey: string | null;
   /** Payload paths that must match for a delivery to fire. Null when unfiltered. */
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
 }
 
 export function parseTriggerDraft(
@@ -281,7 +280,7 @@ export function parseTriggerDraft(
   const session = parseDraftSession(body, type);
   if ('error' in session) return session;
   const { sessionMode, pinnedSessionId, sessionKey } = session;
-  const parsedFilter = parseDraftFilter(body.filter);
+  const parsedFilter = parseTriggerFilter(body.filter);
   if ('error' in parsedFilter) return parsedFilter;
   const { filter } = parsedFilter;
 
@@ -339,27 +338,6 @@ function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
   return { sessionMode, pinnedSessionId, sessionKey };
-}
-
-function parseDraftFilter(filterRaw: unknown): { filter: TriggerDraft['filter'] } | { error: string } {
-  let filter: Record<string, string> | null = null;
-  if (filterRaw !== undefined && filterRaw !== null) {
-    if (!isPlainObject(filterRaw)) {
-      return { error: 'filter must be an object mapping payload paths to expected values' };
-    }
-    const entries: Record<string, string> = {};
-    for (const [key, value] of Object.entries(filterRaw)) {
-      const trimmed = key.trim();
-      if (!trimmed) return { error: 'filter keys must be non-empty payload paths' };
-      if (value === null || typeof value === 'object') {
-        return { error: `filter.${trimmed} must be a string, number, or boolean` };
-      }
-      entries[trimmed] = String(value);
-    }
-    if (Object.keys(entries).length > 0) filter = entries;
-  }
-
-  return { filter };
 }
 
 type DraftCommon = Pick<TriggerDraft, 'slug' | 'name' | 'agent' | 'model' | 'enabled' | 'promptTemplate' | 'sessionMode' | 'pinnedSessionId' | 'sessionKey' | 'filter'>;

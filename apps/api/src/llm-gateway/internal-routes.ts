@@ -19,7 +19,7 @@ import {
 import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
-import { resolveCandidates } from './resolution/resolve-candidates';
+import { codexConversationHeaders, resolveCandidates } from './resolution/resolve-candidates';
 import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
@@ -128,7 +128,7 @@ export function createInternalGatewayRoutes() {
     const parsed = z.object({
       principal: z.object({
         accountId: z.string().uuid(), projectId: z.string().uuid(), userId: z.string().uuid(),
-        sessionId: z.string().nullish(),
+        sessionId: z.string().nullish(), keyId: z.string().optional(),
       }),
       secretId: z.string().uuid(),
       failedKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
@@ -148,7 +148,8 @@ export function createInternalGatewayRoutes() {
     });
     if (!credential) return c.json({ descriptor: null });
     const { apiKey, headers } = codexDescriptor(credential, '');
-    return c.json({ descriptor: { apiKey, headers } });
+    // The refreshed headers replace the descriptor's: keep the conversation's cache.
+    return c.json({ descriptor: { apiKey, headers: { ...headers, ...codexConversationHeaders({ ...principal, sessionId: principal.sessionId ?? undefined }) } } });
   });
 
   app.post('/resolve-route', async (c) => {

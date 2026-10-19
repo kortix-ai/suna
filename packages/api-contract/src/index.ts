@@ -1455,6 +1455,23 @@ export const TriggerSessionAccessSchema = z
 export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
 
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test its
+ * start; `exists` tests that it is present and not null.
+ */
+export const TriggerFilterConditionSchema = z.union([
+  z.object({ not: z.array(z.string()) }).strict(),
+  z.object({ in: z.array(z.string()) }).strict(),
+  z.object({ exists: z.boolean() }).strict(),
+  z.object({ prefix: z.array(z.string()) }).strict(),
+  z.object({ not_prefix: z.array(z.string()) }).strict(),
+]);
+export type TriggerFilterCondition = z.infer<typeof TriggerFilterConditionSchema>;
+/** A filter path's condition: a string means "equals". */
+export const TriggerFilterValueSchema = z.union([z.string(), TriggerFilterConditionSchema]);
+export type TriggerFilterValue = z.infer<typeof TriggerFilterValueSchema>;
+
 export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
@@ -1513,8 +1530,11 @@ export const TriggerSchema = z.object({
    * per delivery to pick one session per key. Null otherwise.
    */
   session_key: z.string().nullable(),
-  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
-  filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Payload paths that must match for the trigger to fire. Null when unfiltered.
+   * A path maps to a value (equals) or one operator (KRTX-1721).
+   */
+  filter: z.record(z.string(), TriggerFilterValueSchema).nullable(),
   /**
    * Runs the trigger may start in any 60 minutes. Null when unset: the default,
    * 60, applies. A fire past it is a skipped run with reason `throttled: …`.

@@ -33,6 +33,9 @@ import {
   holdSavedWindow,
   openBundleHistory,
 } from '../session/open-bundle';
+import { fetchFirstSessionLogPage, loadSessionLogPage, type SessionLogPage } from '../session-log/source';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage } from '../session-log/store';
+import { sessionLogRoot } from '../session-log/v1-view';
 
 /**
  * How long the saved-history read waits for a session-open snapshot in
@@ -97,6 +100,11 @@ export interface SavedSessionCopy {
    * ({@link isEmptyConversation}): show the composer, not a boot screen.
    */
   empty: boolean;
+  /**
+   * With `sessionLog`: the session log's newest page of the root thread (`GET …/log`), or
+   * null when the session has no stored log or the read failed. Absent without `sessionLog`.
+   */
+  log?: SessionLogPage | null;
 }
 
 /**
@@ -114,6 +122,11 @@ export interface SavedSessionCopy {
  * the snapshot `useSession` starts at the bind then asks for the pointer only,
  * and the saved-history read after the bind answers from the held copy. The
  * window is downloaded once per open (KRTX-189).
+ *
+ * With `sessionLog` (the project flag `session_log` on) the copy is the session log's
+ * newest page (`log`, `envelope: null`): the host puts it in the session store
+ * (`applySessionLogPage`) and renders `useSessionLogThread`, which loads a sub-agent's
+ * thread from the heads that page names. `useSession` reads the page again at the bind.
  */
 export async function readSavedSessionCopy(input: {
   projectId: string;
@@ -121,9 +134,20 @@ export async function readSavedSessionCopy(input: {
   sessionId: string;
   /** The runtime session the copy belongs to (the root). */
   runtimeSessionId: string;
+  /**
+   * The project flag `session_log` is on: the session log is the saved copy. Reads its
+   * newest page (`log`), never the v1 window (`GET …/transcript`), and holds nothing.
+   */
+  sessionLog?: boolean;
 }): Promise<SavedSessionCopy> {
   const { projectId, sessionId, runtimeSessionId } = input;
   if (!projectId || !sessionId || !runtimeSessionId) return { envelope: null, empty: false };
+  if (input.sessionLog) {
+    const log = loadSessionLogPage ? await fetchFirstSessionLogPage(loadSessionLogPage, projectId, sessionId) : null;
+    const root = log && sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
+    const provenEmpty = !!root?.empty && root.runtimeSessionId === runtimeSessionId;
+    return { envelope: null, empty: provenEmpty && (await noTurnSince(projectId, sessionId, runtimeSessionId)), log };
+  }
   let envelope: SessionTranscriptSyncEnvelope;
   try {
     envelope = await readSavedWindow(projectId, sessionId, {});
@@ -132,22 +156,25 @@ export async function readSavedSessionCopy(input: {
   }
   holdSavedWindow(projectId, sessionId, envelope);
   if (savedCopyEmptyRoot(envelope) !== runtimeSessionId) return { envelope, empty: false };
-  // A turn that ended after the capture, or one open now, says the copy is
-  // older than the conversation.
+  return { envelope, empty: await noTurnSince(projectId, sessionId, runtimeSessionId) };
+}
+
+/**
+ * A copy proved `runtimeSessionId` empty: no turn ended since and none is open (the copy is
+ * not older than the conversation). An unanswered turn record is an unknown: false.
+ */
+async function noTurnSince(projectId: string, sessionId: string, runtimeSessionId: string): Promise<boolean> {
   try {
     const turn = await getSessionTurn(projectId, sessionId);
-    return {
-      envelope,
-      empty: isEmptyConversation({
-        savedEmptyRoot: runtimeSessionId,
-        rootSessionId: runtimeSessionId,
-        turnRead: true,
-        hasEndedTurn: turn.last_ended != null,
-        hasOpenOrQueuedTurn: turn.turns.length > 0,
-      }),
-    };
+    return isEmptyConversation({
+      savedEmptyRoot: runtimeSessionId,
+      rootSessionId: runtimeSessionId,
+      turnRead: true,
+      hasEndedTurn: turn.last_ended != null,
+      hasOpenOrQueuedTurn: turn.turns.length > 0,
+    });
   } catch {
-    return { envelope, empty: false };
+    return false;
   }
 }
 

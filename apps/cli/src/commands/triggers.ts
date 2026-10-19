@@ -180,6 +180,10 @@ Live-only options (--apply on \`add\`, and every \`set\`):
   --group <uuid>           Grant one group access. Repeat. Implies members.
   --filter <path=value>    Only fire when the payload matches. Repeat for more;
                            every one must match. e.g. --filter body.type=push
+  --filter <path:op=value> Use an operator: not, in, prefix, not_prefix take
+                           comma-separated values; exists takes true|false.
+                           e.g. --filter body.ref:not_prefix=refs/heads/kortix/
+                                --filter body.sender.login:not=kortix-bot
 
 Set options: every live-only option above, plus --name, --prompt, --cron,
 --run-at, --timezone, --secret-env, --agent, and --enabled true|false.

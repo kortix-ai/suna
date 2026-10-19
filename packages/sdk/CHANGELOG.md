@@ -5,11 +5,28 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
 ### Changed (Capture app ids)
 - `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
   app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
   (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
   refuses empty, over-long, flag-like (`-x`) and control-character values.
+
+### Added (session log: the connecting view's saved copy)
+- `readSavedSessionCopy({ …, sessionLog: true })`: with the project flag `session_log` on,
+  reads the session log's newest page (`GET …/log`) into `SavedSessionCopy.log` (new optional
+  field; `envelope: null`) and proves an empty root from it. It reads no `GET …/transcript`.
+  Without `sessionLog` it reads the v1 copy exactly as before.
+- `useSession({ chatEngine: false })`: with the flag known on at the open, the session-open
+  snapshot asks no transcript window (`transcript=0`), as the chat engine already did.
 
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial

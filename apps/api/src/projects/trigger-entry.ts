@@ -8,6 +8,7 @@ import {
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
   parseDurationSeconds,
+  parseTriggerFilter,
 } from '@kortix/manifest-schema';
 import { isPlainObject } from '../shared/json';
 import type { GitBackedProject } from './git';
@@ -521,24 +522,11 @@ function parseTriggerEntry(
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? sessionKeyRaw : null;
 
-  // Optional payload guard. Values are compared as strings against the rendered
-  // path, so `true`/`1` in the manifest behave the same as in the payload.
-  let filter: Record<string, string> | null = null;
-  if (row.filter !== undefined && row.filter !== null) {
-    if (!isPlainObject(row.filter)) {
-      return err(slug, '`filter` must be a table of payload paths to expected values');
-    }
-    const entries: Record<string, string> = {};
-    for (const [key, value] of Object.entries(row.filter)) {
-      const trimmed = key.trim();
-      if (!trimmed) return err(slug, '`filter` keys must be non-empty payload paths');
-      if (value === null || typeof value === 'object') {
-        return err(slug, `\`filter.${trimmed}\` must be a string, number, or boolean`);
-      }
-      entries[trimmed] = String(value);
-    }
-    if (Object.keys(entries).length > 0) filter = entries;
-  }
+  // Optional payload guard: a value (equals) or one operator per path,
+  // compared as text against the delivery (`@kortix/manifest-schema`).
+  const parsedFilter = parseTriggerFilter(row.filter);
+  if ('error' in parsedFilter) return err(slug, parsedFilter.error);
+  const { filter } = parsedFilter;
 
   const path = `${filename}#triggers.${slug}`;
 

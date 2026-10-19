@@ -45,7 +45,7 @@ import { indexedDBKeyValueStorage } from '@kortix/sdk/internal/idb-sync-cache'; 
 if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kortix.saved-copy:open');
 
 /**
- * `base`, except that one prefetched key answers its first read from memory.
+ * `base`, except that each prefetched key answers its first read from memory.
  *
  * A reload opens on the session its URL names, and IndexedDB answers only
  * asynchronously, so that session painted skeleton rows before its saved copy
@@ -55,31 +55,28 @@ if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kor
  * write or a removal of the key drops the copy in memory.
  */
 function withFirstReadFromMemory(base: KeyValueStorage) {
-  let key: string | null = null;
-  let value: string | null | undefined;
-  const drop = (k: string) => {
-    if (k === key) key = null;
-  };
+  // The prefetched reads of this page load; `undefined` while a read is in flight.
+  const prefetched = new Map<string, string | null | undefined>();
   return {
     getItem(k: string) {
-      if (k !== key) return base.getItem(k);
-      key = null;
+      if (!prefetched.has(k)) return base.getItem(k);
+      const value = prefetched.get(k);
+      prefetched.delete(k);
       return value === undefined ? base.getItem(k) : value;
     },
     setItem(k: string, v: string) {
-      drop(k);
+      prefetched.delete(k);
       return base.setItem(k, v);
     },
     removeItem(k: string) {
-      drop(k);
+      prefetched.delete(k);
       return base.removeItem(k);
     },
     prefetch(k: string) {
-      key = k;
-      value = undefined;
+      prefetched.set(k, undefined);
       void Promise.resolve(base.getItem(k)).then(
         (read) => {
-          if (key === k) value = read;
+          if (prefetched.has(k)) prefetched.set(k, read);
         },
         () => undefined,
       );
@@ -156,7 +153,11 @@ export function adoptDeviceCaches(userId: string): void {
     const copies = copyStorage ? createSavedCopyStore({ storage: copyStorage, userId }) : null;
     const opensOn = sessionInUrl();
     if (copyStorage && copies && opensOn) {
-      copyStorage.prefetch(copies.keyFor(opensOn.projectId, opensOn.sessionId));
+      const v1Key = copies.keyFor(opensOn.projectId, opensOn.sessionId);
+      copyStorage.prefetch(v1Key);
+      // A project with the `session_log` flag on keeps the session-log page instead, under
+      // `<namespace>.log:` (the SDK's `createSavedCopyStore`, #10305).
+      copyStorage.prefetch(v1Key.replace(/^([^:]+):/, '$1.log:'));
     }
     setSavedCopyStore(copies);
     adopted = {

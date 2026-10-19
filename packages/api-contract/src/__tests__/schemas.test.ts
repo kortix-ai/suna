@@ -536,6 +536,20 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
+  test('filter: a value or exactly one operator per path (KRTX-1721)', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened'] },
+      'body.pull_request': { exists: true },
+      'body.base': { prefix: ['release/'] },
+      'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    };
+    expect(() => TriggerSchema.strict().parse(triggerFixture({ filter }))).not.toThrow();
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { in: ['a'], not: ['b'] } } })).success).toBe(false);
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { nott: ['a'] } } })).success).toBe(false);
+  });
+
   test('accepts an event trigger with its subscription state', () => {
     const event = {
       connector: 'github',

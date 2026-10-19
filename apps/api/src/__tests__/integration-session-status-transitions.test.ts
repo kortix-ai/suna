@@ -37,7 +37,7 @@ let providerUnbuildable = false;
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => {
-    if (providerUnbuildable) throw new Error('DAYTONA_API_KEY is not set');
+    if (providerUnbuildable) throw new Error('PLATINUM_API_KEY is not set');
     return {
       start: async () => {
         providerStarts += 1;
@@ -135,7 +135,7 @@ async function fixture(input: {
        updated_at)
     values
       (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${input.withoutExternalId ? null : externalId}, 'daytona',
+       ${input.withoutExternalId ? null : externalId}, 'platinum',
        ${input.sandboxStatus}::kortix.session_sandbox_status,
        ${JSON.stringify(input.sandboxMetadata ?? {})}::jsonb,
        -- The API writes updated_at from a JS Date (millisecond precision), and
@@ -565,7 +565,7 @@ describe('resume (resumeStoppedSandbox)', () => {
       sandboxId: f.sandboxId,
       sessionId: f.sessionId,
       accountId: project.account_id,
-      provider: 'daytona',
+      provider: 'platinum',
       externalId: f.externalId,
       metadata: { initStatus: 'ready' },
     };
