@@ -3,10 +3,10 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { UnifiedMarkdown } from '@kortix/ui/markdown';
-import * as trackModule from '@kortix/ui/lib/telemetry';
+import { UnifiedMarkdown } from '../index';
+import * as trackModule from '../../lib/telemetry';
 
-import { GenuiTelemetryContext, type GenuiTelemetryScope } from '@kortix/ui/genui';
+import { GenuiTelemetryContext, type GenuiTelemetryScope } from './index';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 

@@ -1,7 +1,7 @@
 import { getSchema } from '@tiptap/core';
 import { describe, expect, test } from 'bun:test';
 
-import { baseExtensions, MentionNode } from '@kortix/ui/composer';
+import { baseExtensions, MentionNode } from '../index';
 
 /**
  * The composer schema is plain text plus chips — nothing else.

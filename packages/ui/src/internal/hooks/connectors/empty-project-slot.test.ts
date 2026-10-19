@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AdminConnector, Connection } from '@kortix/sdk';
 
-import { emptyProjectSlot } from '@kortix/ui/internal/hooks/connectors/use-add-account';
+import { emptyProjectSlot } from './use-add-account';
 
 const slot = {
   connection_id: 'c-slot',

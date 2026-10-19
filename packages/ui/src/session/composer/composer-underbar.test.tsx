@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+import { IntlTestProvider } from '../../test-utils/intl';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@kortix/ui/tooltip';
+import { TooltipProvider } from '../../primitives/tooltip';
 import type { Agent } from '@kortix/sdk/react';
-import { COMPOSER_SHELL_CLASS, ComposerUnderbar } from '@kortix/ui/composer';
+import { COMPOSER_SHELL_CLASS, ComposerUnderbar } from './index';
 
 /**
  * Matrix row 18 — `TokenProgress` must render at EVERY viewport.
@@ -42,7 +43,7 @@ function render(props?: {
   agents?: Agent[];
 }): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
+    <IntlTestProvider messages={messages} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
           component: the row's own tooltips need one, and a descendant
           selector reads through TanStack Query. Neither needs a DOM. Retries
@@ -63,7 +64,7 @@ function render(props?: {
           />
         </TooltipProvider>
       </QueryClientProvider>
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 }
 

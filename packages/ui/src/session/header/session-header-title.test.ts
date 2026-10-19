@@ -7,11 +7,11 @@
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the
  * left one.
  */
-import { getSessionDisplayTitle } from '@kortix/ui/session';
+import { getSessionDisplayTitle } from '../index';
 import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('../../../../../../packages/ui/src/session/header/session-site-header.tsx', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('./session-site-header.tsx', import.meta.url).pathname).text();
 
 function code(): string {
   return SRC.replace(/\/\*[\s\S]*?\*\//g, '')

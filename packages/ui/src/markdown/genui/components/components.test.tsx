@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { GenuiBlock, GenuiPending, genuiComponents as webGenuiComponents } from '@kortix/ui/genui';
+import { GenuiBlock, GenuiPending, genuiComponents as webGenuiComponents } from '../index';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 

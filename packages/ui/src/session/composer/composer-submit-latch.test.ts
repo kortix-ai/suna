@@ -32,22 +32,22 @@ import {
   runComposerSend,
   type AttachmentSubmission,
   createSubmitLatch,
-} from '@kortix/ui/composer';
+} from './index';
 import {
   deliverAfterPaint,
   dispatchLatched,
   type AttachmentSubmissionController,
   type DispatchOutcome,
-} from '@kortix/ui/session/composer/attachment-submission';
-import type { AttachedFile } from '@kortix/ui/composer';
+} from './attachment-submission';
+import type { AttachedFile } from './index';
 
-const source = readFileSync(fileURLToPath(new URL('../../../../../../packages/ui/src/session/composer/composer.tsx', import.meta.url)), 'utf8');
+const source = readFileSync(fileURLToPath(new URL('./composer.tsx', import.meta.url)), 'utf8');
 // KRTX-373 phase 1 moved the card's JSX subtree into `ComposerCard.tsx`, so the
 // JSX-wiring assertions below read both files. The code assertions (`code()`,
 // the `between` slices) still read `composer.tsx` only: the latch and the
 // dispatch closure did not move.
 const cardSource = readFileSync(
-  fileURLToPath(new URL('../../../../../../packages/ui/src/session/composer/ComposerCard.tsx', import.meta.url)),
+  fileURLToPath(new URL('./ComposerCard.tsx', import.meta.url)),
   'utf8',
 );
 

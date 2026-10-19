@@ -13,11 +13,10 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { uiSourcePath } from '@/test-utils/read-source';
 
 const source =
-  readFileSync(uiSourcePath('workspace/sidebar/footer/project-sandbox-alert.tsx'), 'utf8') +
-  readFileSync(uiSourcePath('workspace/sidebar/footer/sandbox-health.ts'), 'utf8');
+  readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 'utf8') +
+  readFileSync(join(import.meta.dir, 'sandbox-health.ts'), 'utf8');
 const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
 describe('sandbox alert — controls are IAM-gated, the message is not', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { changeRequestKeys } from '@kortix/ui/files';
+import { changeRequestKeys } from '../../files/index';
 
 /**
  * A session's outcome cards poll change requests every 60 s per open thread.

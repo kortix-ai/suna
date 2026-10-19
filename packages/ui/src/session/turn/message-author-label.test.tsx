@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+import { IntlTestProvider } from '../../test-utils/intl';
 
 import { sessionLogOfV1Rows, type SessionMessageAuthor } from '@kortix/sdk';
 
-import { UserMessage } from '@kortix/ui/session';
+import { UserMessage } from '../index';
 
 const blair: SessionMessageAuthor = { kind: 'member', user_id: 'u2', name: 'Blair', email: 'blair@example.com' };
 const lead: SessionMessageAuthor = { kind: 'session', session_id: 's1', name: 'Deploy pipeline', agent: 'release-bot' };
@@ -13,7 +14,7 @@ const lead: SessionMessageAuthor = { kind: 'session', session_id: 's1', name: 'D
 const render = (props: Record<string, unknown> = {}) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider messages={{}} onError={() => {}}>
         <UserMessage
           message={
             sessionLogOfV1Rows('session-1', 'ses_runtime', [
@@ -27,7 +28,7 @@ const render = (props: Record<string, unknown> = {}) =>
           ownsPlan={false}
           {...props}
         />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </QueryClientProvider>,
   );
 

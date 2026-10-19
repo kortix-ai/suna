@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSliderAtDefault } from '@kortix/ui/customize/sections/view/agent-editor-basics-fields';
+import { isSliderAtDefault } from './agent-editor-basics-fields';
 
 /**
  * "Reset" on a slider row unsets the key. It appeared for any value the key

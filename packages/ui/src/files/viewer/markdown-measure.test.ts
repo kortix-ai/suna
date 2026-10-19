@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { getLanguageFromExt } from '@kortix/ui/file-viewer';
+import { getLanguageFromExt } from './index';
 
-const src = readFileSync(resolve(import.meta.dir, '../../../../../packages/ui/src/files/viewer/file-content-renderer.tsx'), 'utf8');
+const src = readFileSync(resolve(import.meta.dir, './file-content-renderer.tsx'), 'utf8');
 
 /**
  * Markdown is prose and gets a reading measure; code does not. These pin the

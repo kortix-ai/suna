@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { uiSourcePath } from '@/test-utils/read-source';
 
-const listSource = readFileSync(uiSourcePath('workspace/sidebar/project-session-list.tsx'), 'utf8');
-const globalsSource = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
+const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+const tokensSource = readFileSync(join(import.meta.dir, '../../styles/tokens.css'), 'utf8');
 
 /** Throws rather than returning '' on a missing anchor, so a rename fails the
  *  test instead of quietly retiring it. */
@@ -19,8 +18,8 @@ function between(source: string, open: string, close: string): string {
 /** The one number every spacing utility in this app is derived from. Tailwind's
  *  stock 0.25rem would make every assertion below wrong by 8%. */
 function spacingRem(): number {
-  const match = globalsSource.match(/--spacing:\s*([\d.]+)rem/);
-  if (!match) throw new Error('--spacing not found in globals.css');
+  const match = tokensSource.match(/--spacing:\s*([\d.]+)rem/);
+  if (!match) throw new Error('--spacing not found in styles/tokens.css');
   return Number(match[1]);
 }
 

@@ -4,8 +4,8 @@ import { PluginKey as PMPluginKey } from '@tiptap/pm/state';
 import { findSuggestionMatch } from '@tiptap/suggestion';
 import { describe, expect, test } from 'bun:test';
 
-import { baseExtensions, MentionNode, baseSuggestion } from '@kortix/ui/composer';
-import type { MenuController } from '@kortix/ui/composer';
+import { baseExtensions, MentionNode, baseSuggestion } from '../index';
+import type { MenuController } from '../index';
 
 /**
  * Pins the two headline spec fixes this task exists for, DIRECTLY against

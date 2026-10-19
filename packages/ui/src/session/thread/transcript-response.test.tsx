@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { UnifiedMarkdown } from '../../markdown/index';
 
-import { TurnAssistantBlock } from '@kortix/ui/session';
+import { TurnAssistantBlock } from '../index';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 // The streaming cadence paces on animation frames; Bun has none. Scoped to this file, so no other test sees them.

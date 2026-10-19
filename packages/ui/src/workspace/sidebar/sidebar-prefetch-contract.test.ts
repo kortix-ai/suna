@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -21,39 +21,31 @@ import { join } from 'node:path';
  * local development and in the dev-stack browser lane — which is exactly why it
  * is pinned here as a source contract instead of a Playwright assertion.
  *
- * The fix is `HoverPrefetchLink` (components/common/hover-prefetch-link.tsx):
+ * The fix is `HoverPrefetchLink` (internal/components/hover-prefetch-link.tsx):
  * prefetch on hover/focus/touch, which still lands 100-300ms before the click.
  * Reintroducing a bare `next/link` in any of these files silently restores the
  * storm, so importing one here is the failure.
  */
-const dir = import.meta.dir;
-const uiSrc = join(dir, '../../../../../../packages/ui/src');
-/** Reads a sidebar file; a web re-export of @kortix/ui reads the moved source. */
-const read = (relative: string) => {
-  const source = readFileSync(join(dir, relative), 'utf8');
-  const moved = source.match(/^export \* from '@kortix\/ui\/(.+)';$/m)?.[1];
-  if (!moved) return source;
-  const file = [`${moved}.tsx`, `${moved}.ts`].map((f) => join(uiSrc, f)).find(existsSync);
-  if (!file) throw new Error(`${relative} re-exports a missing @kortix/ui/${moved}`);
-  return readFileSync(file, 'utf8');
-};
+const uiSrc = join(import.meta.dir, '../..');
+/** Reads a packages/ui/src file. */
+const read = (relative: string) => readFileSync(join(uiSrc, relative), 'utf8');
 const strip = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 const LIST_FILES = [
-  'project-session-list.tsx',
-  'project-settings-nav.tsx',
-  'footer/project-files-nav.tsx',
-  'footer/project-apps-nav.tsx',
+  'workspace/sidebar/project-session-list.tsx',
+  'internal/layout/project-settings-nav.tsx',
+  'workspace/sidebar/footer/project-files-nav.tsx',
+  'workspace/sidebar/footer/project-apps-nav.tsx',
 ] as const;
 
 describe('sidebar prefetch contract', () => {
   for (const file of LIST_FILES) {
     test(`${file} routes navigation through HoverPrefetchLink, not next/link`, () => {
       const code = strip(
-        read(file) + (file === 'project-session-list.tsx' ? '' : read('project-nav-row.tsx')),
+        read(file) + (file.endsWith('project-session-list.tsx') ? '' : read('internal/layout/project-nav-row.tsx')),
       );
-      if (file !== 'project-session-list.tsx') expect(read(file)).toContain('<ProjectNavRow');
+      if (!file.endsWith('project-session-list.tsx')) expect(read(file)).toContain('<ProjectNavRow');
       expect(code).not.toContain("from 'next/link'");
       expect(code).not.toMatch(/<Link[\s>]/);
       expect(code).toContain('HoverPrefetchLink');
@@ -61,7 +53,7 @@ describe('sidebar prefetch contract', () => {
   }
 
   test('every session row in the list is a HoverPrefetchLink', () => {
-    const code = strip(read('project-session-list.tsx'));
+    const code = strip(read('workspace/sidebar/project-session-list.tsx'));
     // ProjectSessionRow (one per session) and ProjectSubsessionRow (one per
     // spawned sub-session) are the two row components the list renders N times.
     const opens = code.match(/<HoverPrefetchLink[\s>]/g) ?? [];
@@ -70,13 +62,7 @@ describe('sidebar prefetch contract', () => {
   });
 
   test('HoverPrefetchLink defers the prefetch until pointer, focus or touch', () => {
-    const code = strip(
-      // The source moved to @kortix/ui; the web path is a re-export.
-      readFileSync(
-        join(uiSrc, 'internal/components/hover-prefetch-link.tsx'),
-        'utf8',
-      ),
-    );
+    const code = strip(read('internal/components/hover-prefetch-link.tsx'));
     // The whole mechanism: `false` until armed, the caller's kind afterwards.
     expect(code).toContain('prefetch={armed ? prefetch : false}');
     expect(code).toMatch(/onMouseEnter=\{\(event\) => \{\s*setArmed\(true\)/);
