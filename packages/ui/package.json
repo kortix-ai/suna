@@ -363,6 +363,7 @@
     "./kortix-logo": "./src/primitives/kortix-logo.tsx",
     "./label": "./src/primitives/label.tsx",
     "./lib/host-env": "./src/lib/host-env.ts",
+    "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/lazy-client": "./src/lib/lazy-client.tsx",
     "./lib/telemetry": "./src/lib/telemetry.ts",
     "./lib/utils": "./src/lib/utils.ts",
@@ -1898,6 +1899,10 @@
       "./lib/host-env": {
         "types": "./dist/lib/host-env.d.ts",
         "import": "./dist/lib/host-env.js"
+      },
+      "./lib/icon-config": {
+        "types": "./dist/lib/icon-config.d.ts",
+        "import": "./dist/lib/icon-config.js"
       },
       "./lib/lazy-client": {
         "types": "./dist/lib/lazy-client.d.ts",

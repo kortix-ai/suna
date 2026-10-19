@@ -214,6 +214,7 @@
     "./internal/tunnel/computer-connect",
     "./internal/tunnel/tunnel-connect-command",
     "./lib/host-env",
+    "./lib/icon-config",
     "./lib/lazy-client",
     "./lib/telemetry",
     "./lib/utils",
