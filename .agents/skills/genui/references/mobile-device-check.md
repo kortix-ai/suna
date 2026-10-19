@@ -180,6 +180,97 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
   device.
 - Optional second data point: the `genui` bundle with Rich answers off.
 
+### Web parity steps (branch `feat/genui/mobile-parity`)
+
+Steps 11 to 18 cover branch `feat/genui/mobile-parity`. Run them on a bundle
+from that branch's worktree. The mobile OTA with this branch must ship
+before a `kortix-genui` skill revision relies on these behaviors (genui
+`SKILL.md` rule 12). Compare each block with the same block on web when you
+can: web is the reference.
+
+### 11. Single card: rating, reviews, price
+
+- Prompt: `Show one hotel as a card: Harbor View Hotel, a quiet hotel by the old port, rating 4.6 from 1240 reviews, from 150 EUR a night, with a photo.`
+- Expected: one card. Under the title, one line reads star, rating, review
+  count in parentheses, a `·` separator, then the price (for example
+  `★ 4.6 (1,240) · From 150 EUR a night`). The star and the rating are ink.
+  The review count is muted. The photo covers its box with no outline.
+
+### 12. Card list: badges top right, gold star on the pick
+
+- Prompt: `Compare three hotels as a list of cards: Hotel North 4.5 stars, 120 EUR, badge "Best value" (good); Hotel South 4.2 stars, 95 EUR, badge "2 rooms left" (warn); Hotel East 4.8 stars, 180 EUR, badge "Sea view".`
+- Expected: three rows, each with a photo or no photo on the left. Each
+  row's badges sit on the title row, at the top right, as pills. The `good`
+  badge (`Best value`) leads with a gold star. The other badges have no star.
+  Badge labels are ink on their tone tint. A thumbnail that fails to load
+  leaves no empty box.
+
+### 13. Bar chart with a negative value
+
+- Prompt: `Show monthly profit as a bar chart: Jan 40, Feb -25, Mar 10, Apr -5.`
+- Expected: Jan and Mar rise above the zero line. Feb and Apr hang below
+  it. The y axis shows a few round ticks in compact form (for example
+  `-25`, `0`, `25`, `50`) with one grid line per tick. No bar clips at the
+  top or the bottom of the plot.
+
+### 14. Legend tap focus
+
+- Prompt: `Show a line chart of weekly signups for two products: Product A 10, 14, 18, 22; Product B 8, 9, 15, 12. Weeks W1 to W4.`
+- Expected: a legend with two entries. Tap `Product A`: Product B's line dims
+  to about 15% opacity, Product A stays full. Tap `Product A` again: both
+  lines are full. Repeat on a bar chart (step 13 or step 2 with two series)
+  and on a pie (step 15): a tap on a legend entry dims the other slices.
+
+### 15. Empty pie shows the loading block, then fills
+
+- Prompt: `Show my budget split as a pie chart: Rent 1200, Food 400, Transport 150, Savings 300.`
+- Expected: while the reply streams and the pie has no slices yet, the block
+  shows the loading block (spinner only) at the pie's settled height. When
+  the slices arrive, the pie draws in the same space. The transcript under
+  the block does not jump.
+
+### 16. Map pin popup: Directions, Website, Call
+
+- `EXPO_PUBLIC_GENUI_MAP_STYLE_URL` unset or a working style (the default is
+  OpenFreeMap).
+- Prompt: `Show two cafes on a map with their phone and website: Cafe Alpha at 48.8566, 2.3522, phone +33 1 00 00 00 01, website https://example.com/alpha; Cafe Beta at 48.8606, 2.3376, phone +33 1 00 00 00 02, website https://example.com/beta.`
+- Expected: while the fence streams, the block holds the loading block. Then
+  a still map shows with both pins. Scroll the transcript over it: the
+  transcript scrolls. Tap the map: the full-screen map opens. Tap a pin: its
+  popup is a place card with **Directions**, **Website**, and **Call**.
+  **Directions** opens Google Maps directions to that place. **Website** opens the
+  place's `https` link. **Call** opens the phone dialer with that number. A
+  place with no phone has no **Call**. A website that is not `http(s)` has
+  no **Website**.
+
+### 17. Broken map style falls back to the place list
+
+- Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://example.invalid/style.json"`
+  in `apps/mobile/.env` and restart Metro with `pnpm dev`.
+- Send the step 16 prompt in a new session.
+- Expected: within 10 s after the block settles, the map area turns into the
+  place list: one row per cafe with **Directions**, **Website**, and
+  **Call**. The block does not stay blank and the app does not crash.
+- Set the value to `off`, restart Metro, and send the prompt again: the
+  place list shows at once, with no map.
+- Remove the line from `.env` and restart Metro after the check.
+
+### 18. A block that fails does not blank the message
+
+- A real prompt cannot force a component to throw. This step is covered by
+  tests only: `apps/mobile/components/genui/genui-message-block.test.tsx`
+  (the block's own error boundary). The GenUI debug screen
+  (`GenuiDebugScreen`, `kortix://genui-debug`) does not cover it: it renders
+  `GenuiBlock` directly, without the message block's boundary.
+- On device, check the related path: open the debug screen (project home →
+  **Debug GenUI** in a dev build) and scroll to `Invalid block (BROKEN_TABS)`.
+  Expected: the invalid block shows its issues count and the other samples
+  on the screen still render.
+- Expected (tests): a component that throws inside the SDK falls back to
+  its markdown. A throw the SDK cannot contain shows *This content could not
+  be displayed.* in place of that block only. The sibling block and the
+  message text still render.
+
 ## Publishing the OTA
 
 Do not run any of this without Jay's explicit approval.
