@@ -49,6 +49,7 @@ Any model, your own API keys, your own infrastructure or our managed cloud.
 - ✅ You want an **"AI employee"** that does the work and waits for a person's approval before it acts → [details](#an-ai-employee-that-asks-before-it-acts)
 - ✅ Your security team needs **governed agents**: per-tool rules, approval gates, an audit trail, SAML SSO, your own VPC → [details](#agents-that-survive-a-security-review)
 - ✅ You want an **AI Operating System to run a company with agents**: every agent, skill, memory file and connector in one git repo → [details](#an-ai-operating-system-for-your-company)
+- ✅ You want to **sell an agent platform under your own brand**: your logo, your structure, Kortix underneath → [details](#white-label)
 
 Kortix is probably **not** the right fit if you want a visual flowchart of fixed steps (a workflow
 builder such as n8n does that well), or only a chat window over your documents (Onyx, Open WebUI or
@@ -268,6 +269,18 @@ network.
 
 Isolation is per provider: the Platinum provider runs microVMs, the default runs containers.
 Ask us and we'll tell you which one you're on.
+
+---
+
+## White-label
+
+Put your own name and logo on Kortix, restructure it, and sell it to your customers as your own
+product. A white-label license gives you the rights the open license does not: your brand in place
+of ours, and Kortix as a hosted service for third parties. In return, your Kortix runs on Kortix
+compute: sandboxes on [Platinum](https://www.platinum.dev), the most affordable sandbox cloud for
+AI agents, and model inference from Kortix. Terms, modes and deal structures:
+**[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. To get a license, email
+[marko@kortix.ai](mailto:marko@kortix.ai).
 
 ---
 
