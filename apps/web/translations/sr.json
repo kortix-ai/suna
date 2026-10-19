@@ -3033,6 +3033,10 @@
       "label": "Обавештења",
       "unreadLabel": "Обавештења: непрочитаних {count}",
       "markAllRead": "Означи све као прочитано",
+      "tabAll": "Sve",
+      "tabNeedsYou": "Čeka tebe",
+      "tabDone": "Gotovo",
+      "emptyNeedsYou": "Trenutno ništa ne čeka tebe",
       "empty": "Обавештења ће се појавити овде",
       "loadError": "Учитавање обавештења није успело",
       "retry": "Покушај поново",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "Догађаји након повезивања",
     "mcpCheckedAt": "Проверено {when}",
     "mcpNextCheck": "Следећа провера {when}",
-    "mcpNotChecked": "Још није проверено"
+    "mcpNotChecked": "Још није проверено",
+    "runLimits": "Ograničenja pokretanja",
+    "runLimitsHint": "Okidanje preko ograničenja ništa ne pokreće i prikazuje se kao preskočeno pokretanje. Ručno pokretanje se nikada ne zadržava, ali se računa.",
+    "perHour": "Po satu",
+    "perDay": "Po danu",
+    "noLimit": "Bez ograničenja"
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",

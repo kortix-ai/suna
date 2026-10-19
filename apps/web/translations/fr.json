@@ -3033,6 +3033,10 @@
       "label": "Notifications",
       "unreadLabel": "Notifications : {count} non lues",
       "markAllRead": "Tout marquer comme lu",
+      "tabAll": "Tout",
+      "tabNeedsYou": "Pour vous",
+      "tabDone": "Terminé",
+      "emptyNeedsYou": "Rien ne vous attend pour l’instant",
       "empty": "Les notifications s'afficheront ici",
       "loadError": "Impossible de charger les notifications",
       "retry": "Réessayer",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "Événements après la connexion",
     "mcpCheckedAt": "Vérifié {when}",
     "mcpNextCheck": "Prochaine vérification {when}",
-    "mcpNotChecked": "Pas encore vérifié"
+    "mcpNotChecked": "Pas encore vérifié",
+    "runLimits": "Limites d'exécution",
+    "runLimitsHint": "Un déclenchement au-delà d'une limite ne lance rien et apparaît comme une exécution ignorée. Un lancement manuel n'est jamais retenu, mais il compte.",
+    "perHour": "Par heure",
+    "perDay": "Par jour",
+    "noLimit": "Sans limite"
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",

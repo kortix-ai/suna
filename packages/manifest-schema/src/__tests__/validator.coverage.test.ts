@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   CRON_MIN_INTERVAL_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   cronIntervalError,
   validateManifest,
   formatIssues,
@@ -377,6 +378,34 @@ describe('validateManifest — trigger edge cases', () => {
     expect(CRON_MIN_INTERVAL_SECONDS).toBe(60);
     expect(cronIntervalError('0 * * * * *')).toBeNull();
     expect(cronIntervalError('*/59 * * * * *')).toContain('60 seconds');
+  });
+
+  // KRTX-1721: a trigger starts at most `max_runs_per_hour` runs in any 60
+  // minutes (60 when unset) and at most `max_runs_per_day` in a UTC day.
+  const capTriggers = {
+    cron: 'type = "cron"\ncron = "0 * * * *"',
+    webhook: 'type = "webhook"',
+  };
+  test('max_runs_per_hour and max_runs_per_day take a positive integer on any trigger type', () => {
+    expect(DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR).toBe(60);
+    for (const body of Object.values(capTriggers)) {
+      const paths = errorPaths(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${body}\nprompt = "go"\nmax_runs_per_hour = 2\nmax_runs_per_day = 3`,
+      );
+      expect(paths).not.toContain('triggers[0].max_runs_per_hour');
+      expect(paths).not.toContain('triggers[0].max_runs_per_day');
+    }
+  });
+
+  test('a run cap that is not a positive integer is rejected, naming the field', () => {
+    for (const field of ['max_runs_per_hour', 'max_runs_per_day']) {
+      for (const value of ['0', '-1', '1.5', '"10"']) {
+        const issue = validateManifest(
+          `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\n${field} = ${value}`,
+        ).issues.find((i) => i.path === `triggers[0].${field}` && i.severity === 'error');
+        expect({ field, value, message: issue?.message }).toEqual({ field, value, message: `${field} must be a whole number of at least 1.` });
+      }
+    }
   });
 
   test('non-boolean enabled is rejected', () => {

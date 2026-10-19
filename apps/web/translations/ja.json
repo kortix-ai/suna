@@ -3033,6 +3033,10 @@
       "label": "通知",
       "unreadLabel": "通知：未読 {count} 件",
       "markAllRead": "すべて既読にする",
+      "tabAll": "すべて",
+      "tabNeedsYou": "要対応",
+      "tabDone": "完了",
+      "emptyNeedsYou": "今は対応が必要なものはありません",
       "empty": "通知はここに表示されます",
       "loadError": "通知を読み込めませんでした",
       "retry": "もう一度試す",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "接続後にイベントを表示",
     "mcpCheckedAt": "{when}に確認",
     "mcpNextCheck": "次回の確認: {when}",
-    "mcpNotChecked": "まだ確認していません"
+    "mcpNotChecked": "まだ確認していません",
+    "runLimits": "実行の上限",
+    "runLimitsHint": "上限を超えた起動は何も開始せず、スキップされた実行として表示されます。手動での実行は止められませんが、回数には含まれます。",
+    "perHour": "1時間あたり",
+    "perDay": "1日あたり",
+    "noLimit": "上限なし"
   },
   "gatewayAccess": {
     "heroTitle": "このプロジェクトのモデルをどこでも使う",

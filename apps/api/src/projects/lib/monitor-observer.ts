@@ -25,6 +25,7 @@ import {
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { takeThrottledRunSlot } from './trigger-run-caps';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import { triggersPausedForProject } from './trigger-scheduler-state';
@@ -201,6 +202,13 @@ export async function processMonitorEvent(
       // a failed stamp must not send this fired event back to `pending`.
       await markGitTriggerFired(row.projectId, row.slug, now, result.status).catch(() => {});
       return 'fired';
+    }
+    // A run cap held it (KRTX-1721): one skipped run, and no retry.
+    if (result.status === 'skipped') {
+      if (takeThrottledRunSlot(row.projectId, row.slug, now)) {
+        await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', spec, payload, ...triggerRunFromFire(result), now });
+      }
+      return await skip(result.reason ?? 'skipped');
     }
     return await failMonitorEvent(row, now, result.error ?? result.reason ?? 'monitor fire failed', { spec, payload });
   } catch (error) {

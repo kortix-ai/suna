@@ -141,6 +141,10 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  // A PATCH of only these must still write the manifest (KRTX-1721, KRTX-1743).
+  'max_runs_per_hour',
+  'max_runs_per_day',
+  'max_lateness',
   'connector',
   'event_account',
   'event_source',
@@ -389,6 +393,8 @@ export function registerTriggersRoutes(): void {
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
             filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
           }) } } },
       },
@@ -589,6 +595,8 @@ export function registerTriggersRoutes(): void {
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
             filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs per 60 minutes; null resets it to the default, 60.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
           }) } } },
       },
@@ -1070,6 +1078,8 @@ async function fireAndAnswer(
     source,
     idempotencyKey: input.idempotencyKey ?? null,
     request: requestAuditContext(c),
+    // A person fired it: the run caps do not hold it (KRTX-1721).
+    deliberate: true,
   }).catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     await recordTriggerRun({ ...run, status: 'failed', error: message });

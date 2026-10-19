@@ -13,6 +13,7 @@ import {
 } from '../lib/triggers';
 import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { takeThrottledRunSlot } from '../lib/trigger-run-caps';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
@@ -173,7 +174,10 @@ async function deliverToRow(
       source: 'event',
       idempotencyKey,
     });
-    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, ...triggerRunFromFire(result), now: new Date() });
+    // A fire a run cap held (KRTX-1721) writes one history row per 10 s.
+    if (result.status !== 'skipped' || takeThrottledRunSlot(row.projectId, row.slug)) {
+      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, ...triggerRunFromFire(result), now: new Date() });
+    }
     if (result.status === 'failed') {
       const error = result.error ?? 'Failed to fire trigger';
       logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
@@ -189,8 +193,9 @@ async function deliverToRow(
       }
       return 'failed';
     }
-    // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
-    if (result.deduped) return 'skipped';
+    // A duplicate, or a fire a run cap held (KRTX-1721), ran nothing: it
+    // leaves last_fired_at and last_event_at alone.
+    if (result.deduped || result.status === 'skipped') return 'skipped';
     await markGitTriggerFired(row.projectId, row.slug, new Date(), result.status);
     await store.touchLastEvent(row.projectId, row.slug);
     return 'fired';

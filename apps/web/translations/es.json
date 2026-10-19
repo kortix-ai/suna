@@ -3033,6 +3033,10 @@
       "label": "Notificaciones",
       "unreadLabel": "Notificaciones: {count} sin leer",
       "markAllRead": "Marcar todo como leído",
+      "tabAll": "Todo",
+      "tabNeedsYou": "Te necesitan",
+      "tabDone": "Hecho",
+      "emptyNeedsYou": "Nada te necesita ahora",
       "empty": "Las notificaciones aparecerán aquí",
       "loadError": "No se pudieron cargar las notificaciones",
       "retry": "Reintentar",
@@ -20585,7 +20589,12 @@
     "mcpEventsOnConnect": "Eventos después de conectarla",
     "mcpCheckedAt": "Comprobado {when}",
     "mcpNextCheck": "Próxima comprobación {when}",
-    "mcpNotChecked": "Aún sin comprobar"
+    "mcpNotChecked": "Aún sin comprobar",
+    "runLimits": "Límites de ejecución",
+    "runLimitsHint": "Un disparo por encima de un límite no inicia nada y aparece como una ejecución omitida. Ejecutarlo a mano nunca se retiene, pero cuenta.",
+    "perHour": "Por hora",
+    "perDay": "Por día",
+    "noLimit": "Sin límite"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",
