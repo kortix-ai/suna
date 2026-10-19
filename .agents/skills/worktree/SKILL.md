@@ -314,6 +314,22 @@ containers, and any slot two worktrees share (allocators before 2026-10-15 could
 reuse a registered slot; nuke and recreate all but one). `--yes` auto-installs
 missing deps.
 
+### `sweep` — reclaim disk from idle checkouts
+
+```sh
+pnpm worktree sweep              # dry run: what would go, and how many GB
+pnpm worktree sweep --yes        # delete it
+pnpm worktree sweep --idle 1d --yes
+```
+
+Deletes `.next`, `.turbo`, `dist`, `target`, `test-results` and
+`playwright-report` in every git worktree of the repo (registered or not,
+scratchpad checkouts included). It skips a checkout with a process inside it or
+naming it on its command line, or any file written within `--idle` (default
+`60m`). It keeps any dir that holds a tracked file (`packages/ui/dist`). Run it
+first when the disk is full: build output is where the space goes, and removing
+a worktree frees only ~0.2 GB because pnpm clones files.
+
 ## Kortix Capture in a worktree
 
 A worktree's API stores Kortix Capture objects in its own Supabase Storage
