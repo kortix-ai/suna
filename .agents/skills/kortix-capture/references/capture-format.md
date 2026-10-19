@@ -164,8 +164,11 @@ null), `domain_icon`, `display` (`x`, `y`, `w`, `h`, and since multi-display
   title alone (a spinner, a playing video) waits for it (`window_change` appears
   in older items only).
 - **Kortix itself is never recorded.** Every `com.kortix.*` and `ai.kortix.*`
-  app, and the app the service runs in (its bundle id and executable name), is
-  hidden like an excluded app: screen, actions and system audio.
+  app, Capture's executables and the Kortix desktop app on Windows and Linux
+  (`memory::exclusions::KORTIX_APPS`), and the app the service runs in (its
+  bundle id and executable name), is hidden like an excluded app: screen,
+  actions and system audio. A Capture window whose process Windows Installer
+  moved to a `.rbf` rollback file during an update is named by its title.
 - **Item length.** A chunk covers at most 30 s of a display's recording, so a
   frame reaches the bucket within about 30 s, plus OCR, encode and the 5 s sync tick.
 

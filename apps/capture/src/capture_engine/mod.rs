@@ -50,24 +50,14 @@ mod unsupported;
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
 use unsupported as os;
 
-/// Executables of Kortix itself. Capture skips frames while one is focused and
-/// paints their windows black.
-const OWN_APPS: &[&str] = &[
-    "kortix-capture.exe",
-    "kortix-tray.exe",
-    "kortix-backend.exe",
-    "kortix-capture-engine.exe",
-    "kortix-capture",
-    "kortix-tray",
-    "kortix-backend",
-];
 /// Lock screen and secure-desktop hosts: never recorded.
 const ALWAYS_EXCLUDED: &[&str] = &["logonui.exe", "lockapp.exe", "consent.exe"];
 
 /// Kortix itself, never recorded: its own executables and the app the service
 /// runs in (`own`, from the request's `own_bundle_ids`).
+/// Capture skips frames while one is focused and paints its windows black.
 pub fn is_own(bundle: &str, aliases: &[String], own: &[String]) -> bool {
-    OWN_APPS.iter().any(|o| app_matches(o, bundle, aliases)) || app_listed(own, bundle, aliases)
+    crate::memory::exclusions::is_own_app(bundle, aliases, own)
 }
 
 /// The package family and package name of a packaged Windows app's

@@ -82,14 +82,29 @@ pub fn app_listed(list: &[String], bundle_id: &str, aliases: &[String]) -> bool 
     list.iter().any(|e| app_matches(e, bundle_id, aliases))
 }
 
-/// Kortix itself: every `com.kortix.*` and `ai.kortix.*` app, and the app the
-/// service runs in (`own`: its bundle id and executable name). Never recorded.
-pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
+/// Kortix's own programs on Windows and Linux, by the app rule: Capture's
+/// executables, the Kortix desktop app (`kortix.exe`, `WM_CLASS` `kortix`), and a
+/// Capture window whose process runs from a Windows Installer rollback file
+/// during an update (named by its window title, see `capture_engine::win`).
+pub const KORTIX_APPS: &[&str] = &[
+    "kortix-capture",
+    "kortix-tray",
+    "kortix-backend",
+    "kortix-capture-engine",
+    "kortix",
+    "Kortix Capture*",
+];
+
+/// Kortix itself: every `com.kortix.*` and `ai.kortix.*` app, [`KORTIX_APPS`],
+/// and the app the service runs in (`own`: its bundle id and executable name).
+/// Never recorded.
+pub fn is_own_app(bundle_id: &str, aliases: &[String], own: &[String]) -> bool {
     let b = bundle_id.to_ascii_lowercase();
     b.starts_with("com.kortix.")
         || b.starts_with("ai.kortix.")
         || b == "com.kortix"
-        || contains_ci(own, &b)
+        || KORTIX_APPS.iter().any(|k| app_matches(k, bundle_id, aliases))
+        || app_listed(own, bundle_id, aliases)
 }
 
 /// With `record_only_included` on: the app is included, or the page's website is.
@@ -118,9 +133,7 @@ pub fn excluded_reason(s: &Settings, front: &Front) -> Option<&'static str> {
 }
 
 fn excluded_by_list(s: &Settings, front: &Front) -> Option<&'static str> {
-    if is_own_app(&front.bundle_id, &s.own_bundle_ids)
-        || app_listed(&s.own_bundle_ids, &front.bundle_id, &front.aliases)
-    {
+    if is_own_app(&front.bundle_id, &front.aliases, &s.own_bundle_ids) {
         return Some("own_app");
     }
     if app_listed(&s.effective_excluded_bundle_ids(), &front.bundle_id, &front.aliases) {
@@ -546,7 +559,7 @@ pub fn frontmost_target(paths: &MemoryPaths) -> Result<Target> {
     let Some((id, name)) = frontmost() else {
         bail!("no app is in front (or this OS does not say which)");
     };
-    if is_own_app(&id, &Settings::effective(paths).own_bundle_ids) {
+    if is_own_app(&id, &[], &Settings::effective(paths).own_bundle_ids) {
         bail!("Kortix ({name}) is in front; bring the app to exclude to the front first");
     }
     Ok(Target::App(id))
@@ -624,10 +637,22 @@ mod tests {
                 Some("own_app"),
                 "{own}"
             );
-            assert!(is_own_app(own, &s.own_bundle_ids), "{own}");
+            assert!(is_own_app(own, &[], &s.own_bundle_ids), "{own}");
         }
         assert_eq!(excluded_reason(&s, &front_of("com.apple.Safari")), None);
-        assert!(!is_own_app("com.kortixfan.app", &s.own_bundle_ids));
+        assert!(!is_own_app("com.kortixfan.app", &[], &s.own_bundle_ids));
+        // Windows and Linux: Capture, the Kortix desktop app, and a Capture window
+        // whose process runs from an installer rollback file mid-update.
+        for (bundle, aliases) in [
+            ("kortix-capture.exe", vec![]),
+            ("kortix.exe", vec!["kortix.exe".to_string()]),
+            ("kortix", vec![]),
+            ("cb8f45c.rbf", vec!["cb8f45c.rbf".to_string(), "Kortix Capture".to_string()]),
+        ] {
+            assert!(is_own_app(bundle, &aliases, &[]), "{bundle}");
+        }
+        assert!(!is_own_app("kortixfan.exe", &["Kortixfan".into()], &[]));
+        assert!(!is_own_app("cb8f45c.rbf", &["cb8f45c.rbf".into(), "Setup".into()], &[]));
     }
 
     #[test]

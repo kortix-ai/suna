@@ -331,7 +331,13 @@ fn window_aumid(hwnd: HWND) -> Option<String> {
 /// The app of a window: its process's, or for a frame-hosted UWP window whose
 /// app process is not found, the window's own AppUserModelID.
 fn window_app(hwnd: HWND, pid: u32) -> ProcInfo {
-    let info = proc_info(pid).unwrap_or_default();
+    let mut info = proc_info(pid).unwrap_or_default();
+    // Windows Installer renames a running exe it replaces to `Config.Msi\<x>.rbf`:
+    // until the process restarts, only its window title still names it.
+    if info.exe.ends_with(".rbf") {
+        info.aliases.push(window_text(hwnd));
+        return info;
+    }
     if info.exe != "applicationframehost.exe" {
         return info;
     }
