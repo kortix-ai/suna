@@ -91,7 +91,7 @@ An open reads the first window once. The session-open snapshot (`GET …/snapsho
 - Next to `useSession({ chatEngine: false })`. That `useSession` makes no saved-history read.
 - On a `savedChild` hook. It reads the sub-agent's own window, which the open does not read.
 
-To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws.
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws. With the project flag `session_log` on, pass `sessionLog: true`: the copy is the session log's newest page (`log`), and no `GET …/transcript` is read.
 
 The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the snapshot asks for no window (`?transcript=0`), and the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
 
@@ -318,9 +318,10 @@ On v2, `useSessionLogThread(session, threadId)` reads a sub-agent thread's newes
 
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
-1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
-2. The project flag `session_log` is `true`.
-3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
+1. The project flag `session_log` is `true`. The runtime is not asked: the stored log is the API's, so a stopped computer shows it too.
+2. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
+
+With the flag on, `useSession` reads no v1 saved copy: the open asks the snapshot for no transcript window, older pages come from `GET …/log?thread=&before_seq=` (`useSessionLogOlder` pages any thread), and a sub-agent thread loads its first page when it shows.
 
 Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
 

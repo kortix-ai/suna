@@ -1613,24 +1613,25 @@ export function SessionChat({
     }, 2 * OLDER_LOADING_MIN_MS);
   }, [loadOlder, scrollRef, contentRef, releaseOlderAnchor]);
   const olderSentinelRef = useRef<HTMLDivElement>(null);
-  // A sub-agent's chat on the session log pulls an older page whenever its top is in view,
-  // scrolled or not: its first page is often shorter than the viewport (a turn folds to one
-  // row), and a reader who cannot scroll has no other way to reach the rest.
-  const subAgentOnLog = !sessionState && !!liveThread;
   useEffect(() => {
     const node = olderSentinelRef.current;
     if (!node || !hasOlder) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         const isIntersecting = !!entry?.isIntersecting;
+        // A transcript shorter than its viewport cannot be scrolled: a first page often folds
+        // to a few rows (a turn is one row), and the reader has no other way to reach older
+        // history. Pull until it fills the viewport, within the auto-load page budget.
+        const root = scrollRef.current;
+        const cannotScroll = !!root && root.scrollHeight <= root.clientHeight;
         const didPull = shouldLoadOlderHistory({
           isIntersecting,
           hasOlder,
           isLoadingOlder,
           lastPullFailed: olderPullFailed,
           autoLoadedPages,
-          readerScrolledUp: readerScrolledUpRef.current || subAgentOnLog,
-          armed: olderAutoloadArmedRef.current,
+          readerScrolledUp: readerScrolledUpRef.current || cannotScroll,
+          armed: olderAutoloadArmedRef.current || cannotScroll,
         });
         olderAutoloadArmedRef.current = nextOlderAutoloadArm({
           armed: olderAutoloadArmedRef.current,
@@ -1657,7 +1658,6 @@ export function SessionChat({
     handleLoadOlder,
     scrollRef,
     sessionId,
-    subAgentOnLog,
   ]);
 
   // Scroll to the bottom on initial load / session change.
