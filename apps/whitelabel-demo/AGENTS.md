@@ -105,9 +105,12 @@ feature-level spinners.
 
 - `src/lib/kortix.ts`: One browser SDK client.
 - `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
-- `src/components/chat/scope-bar*`: Lumen's session-scope chips (the
-  `SessionThread` composer footer).
-- `src/components/workbench/`: Session workbench.
+- `src/components/project-shell.tsx` + `project-sidebar.tsx`: Kortix's layout
+  (`@kortix/ui/sidebar`, `ProjectSessionList`) with Lumen's header, nav and footer.
+- `src/app/projects/[id]/sessions/[sessionId]/page.tsx`: `SessionWorkspace`
+  (thread + side panel) from one `useSession` result.
+- `src/components/workbench/`: What Lumen adds around the session (approval
+  gates, runtime reconnect, the boot error).
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Wrapper authentication, authorization, policy, and limits.

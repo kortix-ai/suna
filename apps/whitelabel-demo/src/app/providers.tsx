@@ -1,6 +1,6 @@
 'use client';
 
-import { UiProvider, type UiNavigation } from '@kortix/ui';
+import { lazyClient, UiProvider, type UiHostComponents, type UiNavigation } from '@kortix/ui';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import Loading from '@kortix/ui/loading';
 import { TooltipProvider } from '@kortix/ui/tooltip';
@@ -23,6 +23,17 @@ const WrapperModeContext = createContext(false);
 
 // Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+
+// A Kortix deployment serves its managed model lineup; without this flag the
+// model picker would list only the account's own provider keys.
+const config = { managedModelsEnabled: true };
+
+// The app features the session UI renders whole. A slot left out hides its
+// control. Lumen ships Kortix's own sharing dialog (who can open a session,
+// public links), loaded on first open.
+const components: UiHostComponents = {
+  ShareSessionModal: lazyClient(() => import('@kortix/ui/workspace').then((m) => m.ShareSessionModal)),
+};
 
 /**
  * True when this server has `KORTIX_API_KEY` set — Lumen is running as a BFF
@@ -86,7 +97,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             stay plain <img> (next/image would need images.remotePatterns for
             organization logos). IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
-        <UiProvider link={NextLink} navigation={navigation}>
+        <UiProvider link={NextLink} navigation={navigation} components={components} config={config}>
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />

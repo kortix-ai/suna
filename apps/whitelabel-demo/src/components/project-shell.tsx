@@ -1,44 +1,39 @@
 'use client';
 
-/**
- * The per-project layout: a left rail (back, project name, new session, the live
- * session list, settings) + a main pane. Shared by the project home, the session
- * workbench, and project settings so navigation stays consistent.
- */
 
-import { NewSessionDialog } from '@/components/new-session-dialog';
-import { Button } from '@kortix/ui/button';
-import { ScrollArea } from '@kortix/ui/scroll-area';
-import { Skeleton } from '@kortix/ui/skeleton';
+import { ProjectSidebar } from '@/components/project-sidebar';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { relativeTime } from '@/lib/utils';
 import { ApiError } from '@kortix/sdk';
+import { SessionIdsProvider } from '@kortix/ui';
+import { Button } from '@kortix/ui/button';
+import { SidebarToggle } from '@kortix/ui/icons';
+import { SidebarEdgePeek, SidebarInset, SidebarProvider, useSidebar } from '@kortix/ui/sidebar';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { cn } from '@kortix/ui/lib/utils';
-import { ArrowLeftIcon, FolderDashedIcon, GearIcon, PlusIcon } from '@phosphor-icons/react';
-
-const STATUS_DOT: Record<string, string> = {
-  running: 'bg-kortix-green',
-  provisioning: 'bg-kortix-orange animate-pulse',
-  branching: 'bg-kortix-orange animate-pulse',
-  queued: 'bg-kortix-orange animate-pulse',
-  completed: 'bg-muted-foreground/50',
-  stopped: 'bg-muted-foreground/40',
-  failed: 'bg-destructive',
-};
+import { ArrowLeftIcon, FolderDashedIcon } from '@phosphor-icons/react';
 
 /** 403/404 from the API — access denied or the project doesn't exist here. */
 function isAccessError(err: unknown): boolean {
   return err instanceof ApiError && (err.status === 403 || err.status === 404);
 }
 
-export function ProjectShell({ children }: { children: React.ReactNode }) {
+/**
+ * Every project page: Lumen's sidebar beside the page, in Kortix's layout (an
+ * inset sidebar that collapses offcanvas, a sheet on a phone).
+ */
+export function ProjectShell({
+  children,
+  pageHasSidebarOpener = false,
+}: {
+  children: React.ReactNode;
+  /** The page draws its own sidebar opener (the session header does). */
+  pageHasSidebarOpener?: boolean;
+}) {
   const params = useParams();
   const projectId = String(params.id);
-  const activeSessionId = params.sessionId ? String(params.sessionId) : null;
+  const sessionId = params.sessionId ? String(params.sessionId) : undefined;
 
   const project = useQuery({
     queryKey: qk.project(projectId),
@@ -46,119 +41,44 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     // 403/404 never recovers on retry — fail fast instead of spamming.
     retry: (count, err) => !isAccessError(err) && count < 2,
   });
-  const denied = project.isError && isAccessError(project.error);
-  const sessions = useQuery({
-    queryKey: qk.sessions(projectId),
-    queryFn: () => kortix.project(projectId).sessions.list(),
-    refetchInterval: denied ? false : 5_000,
-    enabled: !denied,
-    retry: (count, err) => !isAccessError(err) && count < 2,
-  });
 
-  const items = sessions.data ?? [];
-
-  if (denied) return <AccessDenied />;
+  if (project.isError && isAccessError(project.error)) return <AccessDenied />;
 
   return (
-    <div className="flex h-dvh bg-background">
-      {/* Below md the sidebar collapses into the top bar in <main>. */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
-        <div className="flex items-center gap-2 px-3 py-3">
-          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="All projects">
-            <Link href="/">
-              <ArrowLeftIcon className="size-4" />
-            </Link>
-          </Button>
-          <div className="min-w-0 flex-1">
-            {project.isLoading ? (
-              <Skeleton className="h-4 w-28" />
-            ) : (
-              <div className="truncate text-sm font-medium">{project.data?.name ?? 'Project'}</div>
-            )}
-          </div>
-          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Project settings">
-            <Link href={`/projects/${projectId}/settings`}>
-              <GearIcon className="size-4" />
-            </Link>
-          </Button>
-        </div>
+    // The project (and session) every @kortix/ui component below reads.
+    <SessionIdsProvider projectId={projectId} sessionId={sessionId}>
+      <SidebarProvider>
+        <ProjectSidebar projectId={projectId} projectName={project.data?.name} />
+        <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+          <ProjectMain opener={!pageHasSidebarOpener}>{children}</ProjectMain>
+        </SidebarInset>
+      </SidebarProvider>
+    </SessionIdsProvider>
+  );
+}
 
-        <div className="px-3 pb-2">
-          {/* Every session used to be created with an id and nothing else. The
-              overrides behind this dialog are create-only, so this is the only
-              moment they can be chosen at all. */}
-          <NewSessionDialog
-            projectId={projectId}
-            trigger={
-              <Button className="w-full justify-start gap-2" variant="secondary">
-                <PlusIcon className="size-4" /> New session
-              </Button>
-            }
-          />
-        </div>
-
-        <ScrollArea className="flex-1 px-2">
-          <div className="space-y-0.5 pb-3">
-            {sessions.isLoading &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="mx-1 my-1 h-9 rounded-md" />
-              ))}
-            {sessions.isSuccess && items.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                No sessions yet.
-              </p>
-            )}
-            {items.map((s) => {
-              const active = s.session_id === activeSessionId;
-              const title = s.name || s.custom_name || s.branch_name || 'Untitled session';
-              return (
-                <Link
-                  key={s.session_id}
-                  href={`/projects/${projectId}/sessions/${s.session_id}`}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-                    active
-                      ? 'bg-sidebar-accent text-foreground'
-                      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      STATUS_DOT[s.status] ?? 'bg-muted-foreground/40',
-                    )}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{title}</span>
-                    <span className="block truncate text-xs text-muted-foreground/70">
-                      {relativeTime(s.updated_at)}
-                    </span>
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </aside>
-
-      <main className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
-          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="All projects">
-            <Link href="/">
-              <ArrowLeftIcon className="size-4" />
-            </Link>
-          </Button>
-          <Link href={`/projects/${projectId}`} className="min-w-0 flex-1 truncate text-sm font-medium">
-            {project.data?.name ?? 'Project'}
-          </Link>
-          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Project settings">
-            <Link href={`/projects/${projectId}/settings`}>
-              <GearIcon className="size-4" />
-            </Link>
-          </Button>
-        </div>
+function ProjectMain({ children, opener }: { children: React.ReactNode; opener: boolean }) {
+  const { state, isMobile, toggleSidebar, setOpenMobile } = useSidebar();
+  const hidden = opener && (isMobile || state === 'collapsed');
+  return (
+    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Collapsed: hover the left edge to peek at the sidebar. */}
+      <SidebarEdgePeek />
+      {hidden && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Open sidebar"
+          onClick={() => (isMobile ? setOpenMobile(true) : toggleSidebar())}
+          className="absolute top-2 left-2 z-30"
+        >
+          <SidebarToggle />
+        </Button>
+      )}
+      <div className={hidden ? 'flex min-h-0 flex-1 flex-col pl-10' : 'flex min-h-0 flex-1 flex-col'}>
         {children}
-      </main>
+      </div>
     </div>
   );
 }
