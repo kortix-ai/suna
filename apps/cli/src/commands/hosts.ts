@@ -2,6 +2,7 @@ import {
   DEFAULT_HOST_NAME,
   DEFAULT_INTERNAL_DEV_API_BASE,
   type Host,
+  activeHostEntry,
   activeHostName,
   getHost,
   listHosts,
@@ -167,9 +168,29 @@ export async function runHosts(argv: string[]): Promise<number> {
 // ── ls ───────────────────────────────────────────────────────────────────
 
 function hostsLs(json = false): number {
-  const rows = listHosts();
+  const effective = activeHostEntry();
+  const rows = listHosts().map((row) => ({
+    ...row,
+    active:
+      row.name === effective.name &&
+      row.host.url === effective.host.url &&
+      row.host.token === effective.host.token,
+    credential_source: 'stored',
+  }));
+  if (!rows.some((row) => row.active)) {
+    rows.push({
+      ...effective,
+      active: true,
+      credential_source: effective.envWins ? 'environment' : 'url-override',
+    });
+  }
   if (json) {
-    emitJson(rows.map((r) => hostJson(r.name, r.host, r.active)));
+    emitJson(
+      rows.map((r) => ({
+        ...hostJson(r.name, r.host, r.active),
+        credential_source: r.credential_source,
+      })),
+    );
     return 0;
   }
   if (rows.length === 0) {

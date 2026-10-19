@@ -114,6 +114,15 @@ describe('projectSettingsNavTarget', () => {
 });
 
 describe('projectCapabilityNavTarget', () => {
+  test('legacy review navigation reaches the Customize Review tab', () => {
+    expect(projectCapabilityNavTarget('review')).toBe('review');
+    // #10124 moved the Review row under Customize: the standalone page's
+    // address (`/projects/<id>/review`) redirects to the tab's address now.
+    expect(projectCapabilityNavHref('p1', 'review', 'review')).toBe(
+      '/projects/p1/customize/review',
+    );
+  });
+
   test('every legacy llm sub-section is the Models tab', () => {
     // The tab picks its own sub-tab; there is no route for one.
     for (const id of ['llm-management', 'llm-overview', 'llm-providers', 'llm-logs']) {
@@ -134,7 +143,9 @@ describe('projectCapabilityNavTarget', () => {
     expect(projectCapabilityNavHref('p1', 'channels', 'connectors')).toBe(
       '/projects/p1/customize/connectors?scope=channels',
     );
-    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe('/projects/p1/customize/secrets');
+    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe(
+      '/projects/p1/customize/secrets',
+    );
   });
 
   test('anything this page owns, or the overlay owns, is not a capability target', () => {

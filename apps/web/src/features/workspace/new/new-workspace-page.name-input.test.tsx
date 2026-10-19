@@ -40,6 +40,11 @@ mock.module('@/hooks/account/use-accounts-list', () => ({
 mock.module('@/features/workspace/new/use-creatable-accounts', () => ({
   useCreatableAccounts: (accounts: unknown[]) => accounts,
 }));
+// The quota pre-check is this file's sibling test's subject (`plan-cap.test.tsx`);
+// here it only has to stay out of the render — no data, no cap UI, no provider.
+mock.module('@/features/workspace/new/use-project-quota', () => ({
+  useProjectQuota: () => ({ data: undefined }),
+}));
 mock.module('@/features/workspace/new/use-create-workspace', () => ({
   useCreateWorkspace: () => ({
     create: () => {

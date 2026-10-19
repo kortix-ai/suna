@@ -113,6 +113,8 @@ interface PolicyRule {
 interface ProjectPoliciesView {
   policies: PolicyRule[];
   defaultMode: 'risk' | 'allow_all';
+  /** Per-connector tool-call rule counts (KRTX-2527). */
+  connectorRules?: { slug: string; count: number }[];
 }
 
 /** One record in the direct-connector catalogue (integrations.sh). */
@@ -163,9 +165,10 @@ dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
 \`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
 
-Config lives in kortix.yaml (the source of truth): \`add\`/\`rm\`/\`policy set\`
-edit your LOCAL file — run \`kortix ship\` to apply, then \`sync\` to reconcile.
-Only credentials, OAuth, and reads talk to the cloud.
+Config lives in kortix.yaml: \`add\`/\`rm\` and \`policy set --default\` edit your
+LOCAL file — run \`kortix ship\` to apply (or pass --apply to apply at once),
+then \`sync\` to reconcile. Every other policy, credential, rename and mode
+change applies on the cloud project at once.
 
 Subcommands:
   ls [--session <id>] [--json]      List project or session-bound connectors.
@@ -319,6 +322,43 @@ Global:
   -h, --help         Show this help.
 `;
 
+const POLICY_HELP = help`Usage: kortix connectors policy <subcommand> [options]
+
+Show and change what connector calls may do without asking. Project-wide
+rules gate every connector; per-connector rules gate one connector's tool
+calls. Every form below applies on the cloud project at once — except
+\`policy set --default\` without --apply, which edits the LOCAL kortix.yaml
+for \`kortix ship\` to apply.
+
+Project-wide (a connector named like one of these verbs needs
+\`policy <slug> …\` to reach its own rules):
+  ls|show [--json]                  Show the default mode + every rule.
+  set --default <risk|allow_all>    Set the default execution mode. Without
+        [--apply]                   --apply: a LOCAL kortix.yaml edit — run
+                                    \`kortix ship\` to apply.
+  add <match> <action>              Add a rule (applies now). <action>:
+        [--condition <k=v>]…        allow | ask | block. Narrow it to a
+                                    matching argument; repeat for more;
+                                    \`k!=v\` negates. <k> is a dot path into
+                                    the call's arguments.
+  rm <match>                        Remove a rule (applies now).
+
+Per-connector:
+  <slug> ls [--json]                Show one connector's tool-call rules.
+  <slug> set <match> <action>       Allow|ask|block a tool/glob/regex (applies
+                                    now). <match> = tool name, glob (send_*)
+                                    or /regex/.
+  <slug> rm <match>                 Remove a connector rule (applies now).
+  <slug> clear                      Remove all of a connector's rules (applies
+                                    now).
+
+Global:
+  --project <id>     Operate on this project id (default: linked).
+  --host <name>      Operate against a non-default Kortix host.
+  --json             Machine-readable output.
+  -h, --help         Show this help.
+`;
+
 const CONNECTIONS_HELP = help`Usage: kortix connectors connections <subcommand> [options]
 
 Manage connections — the project-wide inventory of every account, across
@@ -374,9 +414,16 @@ export async function runConnectors(argv: string[]): Promise<number> {
     process.stdout.write(CONNECTIONS_HELP);
     return rest.length === 0 ? 2 : 0;
   }
+  // `policy` owns dedicated help too (KRTX-1914): the four per-connector
+  // policy forms and the cloud-side semantics, not the full connectors page.
+  if ((sub === 'policy' || sub === 'policies') && (rest.includes('-h') || rest.includes('--help'))) {
+    process.stdout.write(POLICY_HELP);
+    return 0;
+  }
   // The root help promises `kortix connectors <subcommand> --help`. Only
-  // `connections` (handled above) owns dedicated help text; every other
-  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  // `connections` and `policy` (handled above) own dedicated help text; every
+  // other subcommand would otherwise treat `--help` as an ordinary positional
+  // arg.
   if (rest.includes('-h') || rest.includes('--help')) {
     process.stdout.write(HELP);
     return 0;
@@ -1346,7 +1393,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stdout.write(
             `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
           );
-          if (resp.policies.length === 0) {
+          if (resp.policies.length === 0 && !(resp.connectorRules?.length)) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
@@ -1354,6 +1401,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
             process.stdout.write(
               `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
             );
+          }
+          for (const line of connectorRulesLines(resp.connectorRules ?? [])) {
+            process.stdout.write(line);
           }
           process.stdout.write('\n');
           return 0;
@@ -2087,6 +2137,24 @@ export function parsePolicyConditions(
 function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
+}
+
+/**
+ * `policy ls` renders per-connector rule counts below the project rules
+ * (KRTX-2527): a rule `policy <slug> set` wrote seconds earlier must be
+ * visible in the parent view, not only in `policy <slug> ls`.
+ */
+export function connectorRulesLines(rules: ReadonlyArray<{ slug: string; count: number }>): string[] {
+  if (rules.length === 0) return [];
+  const lines = [
+    `\n  ${C.dim}connector rules:${C.reset}\n`,
+  ];
+  for (const rule of rules) {
+    lines.push(
+      `  ${C.cyan}${rule.slug}${C.reset} ${C.dim}·${C.reset} ${rule.count} rule${rule.count === 1 ? '' : 's'}${C.dim} — policy ${rule.slug} ls${C.reset}\n`,
+    );
+  }
+  return lines;
 }
 
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */

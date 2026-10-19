@@ -69,15 +69,14 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { useProjectCan } from '@/lib/use-project-can';
 import { useSlashFocus } from '@/hooks/utils';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   getProject,
   updateFeatureFlag,
   type FeatureFlagKey,
-  type FeatureFlagStability,
   type FeatureFlagView,
   type ProjectDetail,
 } from '@kortix/sdk';
@@ -94,7 +93,6 @@ import { SettingsTabHeader } from '../settings-tab-header';
  * see.
  */
 export interface ExperimentalCopy {
-  stability: Record<FeatureFlagStability, string>;
   overridden: string;
   /** Origin line of an `operator_only` flag: only Kortix changes it. */
   managedByKortix: string;
@@ -110,7 +108,6 @@ export interface ExperimentalCopy {
 }
 
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
-  stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
   overridden: 'Overridden for this project',
   managedByKortix: 'Managed by Kortix',
   defaultOn: 'Default on',
@@ -147,7 +144,10 @@ export interface FeatureFlagTranslator {
  * English `name` and `description` the API sent, so it reads as words and
  * never as a raw message key.
  */
-export function localizeFeatureFlag<T extends FeatureFlagView>(feature: T, t: FeatureFlagTranslator): T {
+export function localizeFeatureFlag<T extends FeatureFlagView>(
+  feature: T,
+  t: FeatureFlagTranslator,
+): T {
   const nameKey = `flags.${feature.key}.name`;
   const descriptionKey = `flags.${feature.key}.description`;
   return {
@@ -377,7 +377,6 @@ export function ExperimentalTabView({
             {showPermissionNotice ? (
               <p className="text-muted-foreground text-xs">{copy.permission}</p>
             ) : null}
-
           </>
         )}
       </div>
@@ -497,11 +496,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       query={query}
       onQueryChange={setQuery}
       copy={{
-        stability: {
-          experimental: t('stability.experimental'),
-          beta: t('stability.beta'),
-          stable: t('stability.stable'),
-        },
         overridden: t('origin.overridden'),
         managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
         defaultOn: t('origin.defaultOn'),

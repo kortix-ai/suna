@@ -479,7 +479,7 @@ export interface SheetRef {
 }
 
 export { useCloseThen } from './use-close-then';
-
+export { useSheetOpenMove } from './use-sheet-open-move';
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */

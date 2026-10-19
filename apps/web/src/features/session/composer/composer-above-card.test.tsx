@@ -34,7 +34,6 @@ function render(props?: {
   inputSlot?: React.ReactNode;
   quotes?: unknown[];
   questionActive?: boolean;
-  served?: boolean;
 }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -47,8 +46,6 @@ function render(props?: {
         onNoticeRetry={props?.onNoticeRetry}
         inputSlot={props?.inputSlot}
         questionActive={props?.questionActive}
-        servedModel={props?.served ? { served: 'Model B', fallbackFrom: 'Model A' } : null}
-        onModelChange={props?.served ? noop : undefined}
         slashMenuPlacement="above"
         sessionId="ses_test"
         onSend={async () => {}}
@@ -112,11 +109,9 @@ const question = <div>question</div>;
 // A bar under a full-width layer is a middle layer: square top, side ring
 // only. A rounded top there cut notches into the docked question.
 describe('ComposerAboveCard stack corners', () => {
-  test('alone, the notice and the served bar round their tops and carry no ring', () => {
+  test('alone, the notice rounds its top and carries no ring', () => {
     expect(classOf(render({ notice: 'waking' }), NOTICE)).toContain('rounded-t-xl');
-    const served = classOf(render({ served: true }), SERVED);
-    expect(served).toContain('rounded-t-xl');
-    expect(served).not.toContain('ring-3');
+    expect(classOf(render({ notice: 'waking' }), NOTICE)).not.toContain('ring-3');
   });
 
   test('under a docked question, the notice is square with the side ring', () => {
@@ -129,21 +124,10 @@ describe('ComposerAboveCard stack corners', () => {
     expect(cls).toContain('ring-3 [clip-path:inset(0_-8px_0_-8px)]');
   });
 
-  test('under a docked question, the served bar is square with the side ring', () => {
-    const cls = classOf(
-      render({ served: true, inputSlot: question, questionActive: true }),
-      SERVED,
-    );
-    expect(cls).toContain('rounded-t-none');
-    expect(cls).not.toContain('rounded-t-xl');
-    expect(cls).toContain('ring-3 [clip-path:inset(0_-8px_0_-8px)]');
-  });
-
-  test('under the notice, the served bar is square without a ring', () => {
-    const cls = classOf(render({ notice: 'waking', served: true }), SERVED);
-    expect(cls).toContain('rounded-t-none');
-    expect(cls).not.toContain('rounded-t-xl');
-    expect(cls).not.toContain('ring-3');
+  // KRTX-2685: the chat input is not the error surface for model switches —
+  // the served-model strip (#8759, incident 2026-10-02) moved to the turn footer.
+  test('no served-model strip renders at the composer', () => {
+    expect(render({ notice: 'waking', inputSlot: question })).not.toContain(SERVED);
   });
 
   test('the strip is always full width: a narrower strip exposes the corners under it', () => {

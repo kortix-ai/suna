@@ -33,7 +33,7 @@ import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 import { ImageIcon } from '@/lib/icons';
 import { describeMarkdownImage, type MarkdownImageRef } from '@/lib/markdown/markdown-image';
 import { RADIUS } from '@/lib/markdown/markdown-layout';
-import { openExternalLink } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 
 export type MarkdownRemoteImages = 'load' | 'placeholder';
 
@@ -63,7 +63,7 @@ function imageSource(src: string): ImageSource {
  * agent's own text, a `data:` source, or one that failed. An http(s) source
  * opens in the browser on tap; others only show the label.
  */
-export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
+function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
   const { label, href } = describeMarkdownImage(src, alt);
   return (
     <Button

@@ -146,6 +146,7 @@ const ENV_NAME_PATTERN = ENV_NAME_RE.source;
 const ENV_NAME_PATTERN_CASE_INSENSITIVE = '^[A-Za-z_][A-Za-z0-9_]*$';
 
 const NON_EMPTY_STRING: JsonSchemaFragment = { type: 'string', minLength: 1 };
+const NON_BLANK_STRING: JsonSchemaFragment = { type: 'string', pattern: '\\S' };
 
 /** One `agents.<name>.apps` entry: an App slug (`SLUG_RE`) or the `*` wildcard. */
 const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
@@ -154,12 +155,12 @@ const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
  *  an allowlist of names, or the "all"/"none" sentinel (spec §2.2/§2.4/§2.5).
  *  `itemSchema` lets `kortix_permissions` additionally constrain each entry to the
  *  grantable-action enum. */
-function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): JsonSchemaFragment {
+function grantSetSchema(itemSchema: JsonSchemaFragment = NON_BLANK_STRING): JsonSchemaFragment {
   return {
     description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', '*', 'none'] },
+      normalizedEnumSchema(['all', '*', 'none', '']),
     ],
   };
 }
@@ -279,11 +280,41 @@ const SLUG_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: SLUG_RE.sourc
  *  `..`, and no `/` or end immediately after it). */
 const PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN = String.raw`^/|(^|/)\.\.($|/)`;
 
+/** Non-ASCII code points whose `toLowerCase()` folds to an ASCII letter. A
+ *  scan of every code point U+0000..U+10FFFF finds exactly one: U+212A KELVIN
+ *  SIGN → "k" (U+017F is already lowercase; İ and fullwidth Ｋ fold to
+ *  non-ASCII or multi-char results). The validator matches with
+ *  `trim().toLowerCase()` (`./index.ts`), so a literal containing `k` must
+ *  also accept the KELVIN SIGN. Pinned by the Unicode conformance fixtures
+ *  in `./__tests__/json-schema.conformance.test.ts`. */
+const UNICODE_ASCII_FOLDS: Record<string, string> = { k: '\u212A' };
+
 /** Every case-variant of one of `isEnabledValue`'s (`./index.ts`) accepted
  *  sentinel words, turned into a case-insensitive regex alternative (JSON
- *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`. */
+ *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`,
+ *  plus the Unicode folds the validator's `toLowerCase()` performs
+ *  (`keyed` → `[Kk\u212A][Ee]…`). */
 function caseInsensitiveLiteral(word: string): string {
-  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}${UNICODE_ASCII_FOLDS[ch.toLowerCase()] ?? ''}]`);
+}
+
+/** Preserve editor suggestions while matching the validator's trim/lowercase.
+ *  An empty-string member gets its OWN `^\s*$` arm instead of becoming an
+ *  empty pattern alternative: `(?:…|)` sitting between the leading `^\s*`
+ *  and the trailing `\s*` is quadratic on whitespace-only input followed by
+ *  any non-matching character (16 s for 100 KB, measured — G9 item [B]),
+ *  while the dedicated blank arm is linear. Acceptance is unchanged: the
+ *  validator's `trim().toLowerCase()` sends both `""` and `"   "` to `""`. */
+function normalizedEnumSchema(values: readonly string[]): JsonSchemaFragment {
+  const words = values.filter((value) => value !== '');
+  const anyOf: JsonSchemaFragment[] = [{ enum: [...values] }];
+  if (words.length > 0) {
+    anyOf.push({ pattern: `^\\s*(?:${words.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` });
+  }
+  if (words.length !== values.length) {
+    anyOf.push({ pattern: '^\\s*$(?![\\s\\S])' });
+  }
+  return { type: 'string', anyOf };
 }
 
 const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'] as const;
@@ -313,7 +344,7 @@ function enabledValueSchema(): JsonSchemaFragment {
 function relativePathSchema(): JsonSchemaFragment {
   return {
     type: 'string',
-    minLength: 1,
+    pattern: '\\S',
     not: { pattern: PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN },
   };
 }
@@ -358,6 +389,8 @@ function opencodeSchema(): JsonSchemaFragment {
 
 /** One `[[sandbox.templates]]` entry. */
 function sandboxTemplateSchema(): JsonSchemaFragment {
+  const image = { required: ['image'], properties: { image: NON_BLANK_STRING } };
+  const dockerfile = { required: ['dockerfile'], properties: { dockerfile: NON_BLANK_STRING } };
   return {
     type: 'object',
     required: ['slug'],
@@ -365,8 +398,8 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       slug: { allOf: [SLUG_SCHEMA, { not: { const: RESERVED_SANDBOX_SLUG } }] },
       name: { type: 'string' },
       entrypoint: { type: 'string' },
-      image: { type: 'string', minLength: 1 },
-      dockerfile: relativePathSchema(),
+      image: {},
+      dockerfile: {},
       cpu: { type: 'integer', minimum: SANDBOX_CPU_BOUNDS.min },
       memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min },
       disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min },
@@ -374,8 +407,8 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
     },
     // Exactly one of image/dockerfile (`validateSandboxTemplates`).
     oneOf: [
-      { required: ['image'], not: { required: ['dockerfile'] } },
-      { required: ['dockerfile'], not: { required: ['image'] } },
+      { ...image, not: dockerfile },
+      { ...dockerfile, properties: { dockerfile: relativePathSchema() }, not: image },
     ],
   };
 }
@@ -393,14 +426,14 @@ function sandboxSchema(): JsonSchemaFragment {
       templates: { type: 'array', items: sandboxTemplateSchema() },
       // Cross-field: must name a declared template slug — dynamic, left to
       // the imperative validator (see module doc "deliberate scope limits").
-      default: { type: 'string', minLength: 1 },
+      default: NON_BLANK_STRING,
     },
     additionalProperties: true,
   };
 }
 
 /** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
-function triggerSchema(): JsonSchemaFragment {
+function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
@@ -411,23 +444,26 @@ function triggerSchema(): JsonSchemaFragment {
       name: { type: 'string' },
       // Cross-field: must name a declared agent (or be omitted) — dynamic,
       // left to the imperative validator.
-      agent: { type: 'string', minLength: 1 },
-      agent_name: { type: 'string', minLength: 1 },
+      agent: version === 2 ? NON_BLANK_STRING : { type: 'string' },
+      agent_name: { type: 'string' },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      session_mode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
       filter: { type: 'object', additionalProperties: { type: 'string' } },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
-      session_id: { type: 'string', minLength: 1 },
-      sessionId: { type: 'string', minLength: 1 },
-      prompt: NON_EMPTY_STRING,
-      prompt_template: NON_EMPTY_STRING,
+      sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
+      session_id: { type: 'string' },
+      sessionId: { type: 'string' },
+      prompt: { type: 'string' },
+      prompt_template: { type: 'string' },
       cron: { type: 'string', minLength: 1 },
       schedule: { type: 'string', minLength: 1 },
       run_at: { type: 'string', minLength: 1 },
       runAt: { type: 'string', minLength: 1 },
       timezone: { type: 'string' },
+      // `type: cron` only — the misfire bound. Its 60s floor is the imperative
+      // validator's, like the monitor duration floors below.
+      max_lateness: durationSchema,
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -435,24 +471,41 @@ function triggerSchema(): JsonSchemaFragment {
       // expect_event_within ≥ 5m) are value ranges over a formatted string,
       // which JSON Schema can't express — the imperative validator owns them
       // (see json-schema.conformance.test.ts's documented-divergence block).
-      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
+      run: { type: 'string', maxLength: MONITOR_RUN_MAX_LENGTH },
       mode: { type: 'string', enum: [...MONITOR_MODES] },
       interval: durationSchema,
       expect_event_within: durationSchema,
       // `type: event` only — the connector slug, the provider event type id
       // and the provider event config (opaque here; the provider validates it).
-      connector: { type: 'string', minLength: 1 },
+      connector: NON_BLANK_STRING,
       // Optional: the label of one shared account of that connector.
-      account: { type: 'string', minLength: 1 },
+      account: NON_BLANK_STRING,
       // Optional: the event source adapter (default: the connector's provider).
-      source: { type: 'string', minLength: 1 },
-      event: { type: 'string', minLength: 1 },
+      source: NON_BLANK_STRING,
+      event: NON_BLANK_STRING,
       config: { type: 'object' },
     },
     additionalProperties: true,
     allOf: [
+      {
+        if: {
+          anyOf: [
+            { required: ['session_mode'], properties: { session_mode: normalizedEnumSchema(['pinned']) } },
+            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: normalizedEnumSchema(['pinned']) } },
+          ],
+        },
+        then: {
+          if: { required: ['session_id'] },
+          then: { properties: { session_id: NON_BLANK_STRING } },
+          else: { required: ['sessionId'], properties: { sessionId: NON_BLANK_STRING } },
+        },
+      },
       // A prompt (or its alias) is always required, non-empty.
-      { anyOf: [{ required: ['prompt'] }, { required: ['prompt_template'] }] },
+      {
+        if: { required: ['prompt'] },
+        then: { properties: { prompt: NON_BLANK_STRING } },
+        else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+      },
       {
         if: { properties: { type: { const: 'cron' } } },
         then: {
@@ -476,6 +529,7 @@ function triggerSchema(): JsonSchemaFragment {
         then: {
           required: ['run', 'mode'],
           properties: {
+            run: NON_BLANK_STRING,
             cron: false,
             schedule: false,
             run_at: false,
@@ -499,6 +553,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The misfire bound exists only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -529,7 +588,7 @@ function triggerSchema(): JsonSchemaFragment {
 const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED_SLUG_PROVIDERS).map(
   ([slug, provider]) => ({
     if: { properties: { slug: { const: slug } } },
-    then: { properties: { provider: { const: provider } } },
+    then: { properties: { provider: normalizedEnumSchema([provider]) } },
   }),
 );
 
@@ -547,28 +606,27 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
 function connectorSchema(version: 1 | 2): JsonSchemaFragment {
-  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
+  const credentialSchema: JsonSchemaFragment = version === 2 ? normalizedEnumSchema(['shared']) : {};
   const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
   return {
     type: 'object',
     required: ['slug', 'provider'],
     properties: {
       slug: SLUG_SCHEMA,
-      name: NON_EMPTY_STRING,
+      name: NON_BLANK_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
-      provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
+      provider: normalizedEnumSchema(CONNECTOR_PROVIDERS),
       app: { type: 'string' },
       url: { type: 'string' },
       endpoint: { type: 'string' },
       base_url: { type: 'string' },
       baseUrl: { type: 'string' },
-      transport: { type: 'string', enum: ['http', 'sse'] },
+      transport: normalizedEnumSchema(['http', 'sse']),
       spec: { type: 'string' },
-      platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
+      platform: normalizedEnumSchema(CHANNEL_PLATFORMS),
       credential: credentialSchema,
       authorization_strategy: {
-        type: 'string',
-        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        ...normalizedEnumSchema(CONNECTOR_AUTHORIZATION_STRATEGIES),
         default: 'project',
       },
       agent_scope: agentScopeSchema,
@@ -576,7 +634,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
         type: 'object',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: [...CONNECTOR_AUTH_TYPES] },
+          type: normalizedEnumSchema(CONNECTOR_AUTH_TYPES),
           secret: false,
         },
         additionalProperties: true,
@@ -606,8 +664,8 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           type: 'object',
           required: ['match', 'action'],
           properties: {
-            match: NON_EMPTY_STRING,
-            action: { type: 'string', enum: [...CONNECTOR_POLICY_ACTIONS] },
+            match: NON_BLANK_STRING,
+            action: normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS),
           },
         },
       },
@@ -615,21 +673,21 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     additionalProperties: true,
     allOf: [
       ...RESERVED_SLUG_CONST_CHECKS,
-      { if: { properties: { provider: { const: 'pipedream' } } }, then: { required: ['app'] } },
-      { if: { properties: { provider: { const: 'mcp' } } }, then: { required: ['url'] } },
-      { if: { properties: { provider: { const: 'graphql' } } }, then: { required: ['endpoint'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['pipedream']) } }, then: { required: ['app'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['mcp']) } }, then: { required: ['url'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['graphql']) } }, then: { required: ['endpoint'] } },
       {
-        if: { properties: { provider: { const: 'http' } } },
+        if: { properties: { provider: normalizedEnumSchema(['http']) } },
         then: { anyOf: [{ required: ['base_url'] }, { required: ['baseUrl'] }] },
       },
-      { if: { properties: { provider: { const: 'channel' } } }, then: { required: ['platform'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['channel']) } }, then: { required: ['platform'] } },
       // channel connectors authenticate via the platform install token.
       {
         if: {
-          properties: { provider: { const: 'channel' } },
+          properties: { provider: normalizedEnumSchema(['channel']) },
           required: ['auth'],
         },
-        then: { properties: { auth: { properties: { type: { const: 'none' } } } } },
+        then: { properties: { auth: { properties: { type: normalizedEnumSchema(['none']) } } } },
       },
     ],
   };
@@ -641,7 +699,7 @@ function channelSchema(): JsonSchemaFragment {
     type: 'object',
     required: ['platform'],
     properties: {
-      platform: NON_EMPTY_STRING,
+      platform: NON_BLANK_STRING,
       enabled: enabledValueSchema(),
       events: { type: 'array', items: { type: 'string' } },
     },
@@ -668,7 +726,7 @@ function agentEntryV1Schema(): JsonSchemaFragment {
 
 /** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
 function agentToolsSchema(): JsonSchemaFragment {
-  const names = { type: 'array', items: NON_EMPTY_STRING };
+  const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     description:
       'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
@@ -734,12 +792,12 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
-        items: NON_EMPTY_STRING,
+        items: NON_BLANK_STRING,
         description: 'Connector slugs that must resolve before the session starts.',
       },
       connectors_personal: {
         type: 'array',
-        items: NON_EMPTY_STRING,
+        items: NON_BLANK_STRING,
         deprecated: true,
         description: 'Deprecated input alias for connectors_required.',
       },
@@ -841,7 +899,7 @@ function appStringMapSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     propertyNames: { pattern: ENV_NAME_PATTERN },
-    additionalProperties: { type: 'string', minLength: 1 },
+    additionalProperties: NON_BLANK_STRING,
   };
 }
 
@@ -930,7 +988,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       },
       {
         if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
-        then: { required: ['image'] },
+        then: { required: ['image'], properties: { image: NON_BLANK_STRING } },
       },
     ],
   };
@@ -954,7 +1012,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandbox: sandboxSchema(),
     // `[[sandboxes]]` was renamed — always a hard error, so forbid it.
     sandboxes: false,
-    triggers: { type: 'array', items: triggerSchema() },
+    triggers: { type: 'array', items: triggerSchema(connectorVersion) },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
@@ -1014,7 +1072,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       },
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
-      default_agent: NON_EMPTY_STRING,
+      default_agent: NON_BLANK_STRING,
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
@@ -1073,13 +1131,13 @@ function agentBlockV3Schema(): JsonSchemaFragment {
   delete behavior.disable;
   const permission = permissionConfigSchema();
   permission.oneOf[1].properties = { ...permission.oneOf[1].properties, skill: false, task: false };
-  const names = { type: 'array', items: NON_EMPTY_STRING };
+  const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     type: 'object',
     properties: {
       ...behavior,
       permission: { ...permission, description: 'Tool policy. Omitted: allow. `skill` and `task` belong to `skills` and `subagents`.' },
-      prompt: { type: 'string', minLength: 1, description: 'The system prompt.' },
+      prompt: { ...NON_BLANK_STRING, description: 'The system prompt.' },
       prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'Repository path of a Markdown file that holds the system prompt.' },
       enabled: { type: 'boolean', description: 'false: no session can start with this agent. Default true.' },
       codemode: { type: 'string', enum: [...CODEMODE_VALUES], description: 'pi codemode tool: on (default), only, off.' },
@@ -1140,7 +1198,7 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
     properties: {
       kortix_version: { const: 3 },
       imports: { type: 'array', items: { type: 'string', pattern: IMPORT_PATH_PATTERN } },
-      default_agent: NON_EMPTY_STRING,
+      default_agent: NON_BLANK_STRING,
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
       ...shared,
       skills: {
@@ -1163,7 +1221,7 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
           type: 'object',
           properties: {
             description: { type: 'string' },
-            prompt: { type: 'string', minLength: 1 },
+            prompt: NON_BLANK_STRING,
             prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
           },
           additionalProperties: false,

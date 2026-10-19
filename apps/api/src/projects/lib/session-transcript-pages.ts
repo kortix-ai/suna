@@ -2,6 +2,7 @@ import {
   mirrorRowsFromOpencodePayload,
   type MirrorMessage,
 } from "./session-transcript-mirror";
+import { TranscriptReadError } from "./runtime-read-failure";
 
 /**
  * One page of an OpenCode session's messages, newest first.
@@ -116,7 +117,7 @@ export async function readTranscriptPages(
     }
     if (!response.ok) {
       if (pagesRead === 0)
-        throw new Error(`Transcript read failed: HTTP ${response.status}`);
+        throw new TranscriptReadError(response.status);
       return finish();
     }
     const payload: unknown = await response.json();

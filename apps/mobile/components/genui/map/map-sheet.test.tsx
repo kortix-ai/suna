@@ -47,7 +47,7 @@ mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
 mock.module('@/lib/icons', () => ({ XIcon: 'x' }));
-mock.module('@/components/markdown/markdown-text', () => ({ openExternalLink: (href: string) => opened.push(href) }));
+mock.module('@/lib/utils/open-link', () => ({ openExternalLink: (href: string) => opened.push(href), openLink: async () => {} }));
 
 let MapSheet: typeof import('./map-sheet').MapSheet;
 

@@ -124,16 +124,15 @@ describe('project commands palette entry is gone with the Instructions tab', () 
     expect(customizeItem).toBeDefined();
     expect(matchesPaletteQuery(customizeItem!, 'Commands')).toBe(false);
 
-    // Deliberately NOT asserting "nothing matches 'Commands'". Two entries
-    // still do, neither of them this change's business:
+    // Deliberately NOT asserting "nothing matches 'Commands'". One entry
+    // still does, and it is not this change's business:
     //   - `restart-config` is an ACTION
     //     (`keywords: 'reload restart config agents skills commands'`) and
     //     matches correctly — reloading project config does reload commands.
-    //   - `workspace` (`menu-registry.ts:665`) carries the word in its
-    //     keywords and `activePathPrefixes`. It is a PRE-EXISTING dead entry:
-    //     neither `/workspace` nor `/commands` exists under `src/app`, and it
-    //     was already dead before the Instructions tab was removed. Left
-    //     alone here on purpose — folding it into this test would hide it.
+    //   (The other matcher used to be `workspace`, a PRE-EXISTING dead entry
+    //   — neither `/workspace` nor `/commands` exists under `src/app`. It was
+    //   deleted with its dead `/workspace` href rather than kept hidden via
+    //   LEGACY_PALETTE_HIDDEN.)
     // What this change owns is narrower: no PROJECT navigation entry offers
     // to take the user to a commands surface that no longer exists.
     const projectNavMatches = paletteItems
@@ -195,5 +194,19 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(policiesItem).toBeDefined();
     expect(policiesItem!.href).toBe('/projects/{projectId}/customize/connectors?rules=1');
     expect(policiesItem!.label).not.toContain('Customize');
+  });
+});
+
+describe('the dead workspace palette row is deleted', () => {
+  test('no palette entry points at /workspace, a route that does not exist', () => {
+    // The `workspace` entry shipped a `kind: 'navigate'` row with
+    // `href: '/workspace'`, but no page lives at that path under `src/app`
+    // and no rewrite serves it. Runtime kept it invisible only through
+    // LEGACY_PALETTE_HIDDEN, which is why the live-route loop in
+    // menu-registry-destinations.test.ts never saw it. The entry is deleted
+    // (with its hidden-set entry); a future workspace row must target a
+    // route that exists, which that loop enforces for every visible row.
+    expect(paletteItems.find((item) => item.id === 'workspace')).toBeUndefined();
+    expect(paletteItems.some((item) => item.href === '/workspace')).toBe(false);
   });
 });
