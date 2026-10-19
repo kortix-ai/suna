@@ -2720,3 +2720,99 @@ flow(
     });
   },
 );
+
+/**
+ * TRG-36 — Pause all automations (KRTX-1721). One account switch stops every
+ * automatic fire in every project of the account; a manual fire still runs.
+ * On its own team account: the switch would otherwise pause every concurrent
+ * flow on the shared one. Local only: a fire that runs answers 402 (no usable
+ * model) here, which tells it apart from `200 skipped`.
+ */
+flow(
+  'TRG-36',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/accounts/:accountId/automations',
+      'PATCH /v1/accounts/:accountId/automations',
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const member = await team.addMember('member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const memberClient = ctx.client.as(member);
+    const params = { projectId: p.id };
+    const account = { accountId: team.id };
+    const secret = `ke2e-pause-${crypto.randomUUID()}`;
+    type Status = { paused: boolean; paused_at: string | null; paused_by: string | null; can_change: boolean };
+    const deliver = async () => {
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { ...params, slug: 'hook' },
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+    const listingPaused = async () =>
+      (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ account_automations_paused?: boolean }>().account_automations_paused;
+
+    await ctx.step('setup: a webhook trigger on the team project', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+    });
+
+    await ctx.step('GET automations: running; the owner may change it, a member may read it but not change it, an outsider → 403', async () => {
+      (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', true);
+      (await memberClient.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', false);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/automations', { params: account })).status(403);
+    });
+
+    await ctx.step('a member cannot pause → 403; the owner pauses → 200 with paused_at and paused_by; the listing says so', async () => {
+      (await memberClient.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(403);
+      const s = (await owner.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(200).json<Status>();
+      if (!s.paused || !s.paused_at || s.paused_by !== ctx.P.OWNER.userId) throw new Error(`pause status is wrong: ${JSON.stringify(s)}`);
+      if ((await listingPaused()) !== true) throw new Error('the trigger listing does not say the account is paused');
+    });
+
+    await ctx.step('while paused, a signed delivery → 200 skipped "account automations are paused"; a manual fire still runs (402)', async () => {
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'account automations are paused');
+      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'hook' } })).status(402);
+    });
+
+    await ctx.step('resumed: the switch reads running and a delivery reaches the fire path again (402, not skipped)', async () => {
+      (await owner.patch('/v1/accounts/:accountId/automations', { paused: false }, { params: account })).status(200).body().has('$.paused', false).has('$.paused_by', null);
+      if ((await listingPaused()) !== false) throw new Error('the trigger listing still says the account is paused');
+      (await deliver()).status(402);
+    });
+
+    await ctx.step('CLI: `kortix triggers pause --account-wide` pauses the account, `resume --account-wide` resumes it', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg36') });
+      const sb = new CliSandbox('trg36');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: team.id });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const pause = await sb.run(['triggers', 'pause', '--account-wide']);
+        throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
+        if (pause.exitCode !== 0 || !pause.stdout.includes('All automations PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
+        const resume = await sb.run(['triggers', 'resume', '--account-wide']);
+        if (resume.exitCode !== 0 || !resume.stdout.includes('All automations RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);
