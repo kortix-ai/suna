@@ -42,6 +42,7 @@ import {
   appConnectors,
   describeEventStatus,
   draftToConfig,
+  eventAppTarget,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
@@ -80,7 +81,7 @@ export interface TriggerComposerProps {
   /** Opens on this kind, e.g. the empty state's "App event" button. */
   initialKind?: TriggerKind | null;
   /** Opens on App event with this app chosen and its events listed. Sends no request. */
-  initialApp?: { app: string } | null;
+  initialApp?: { app: string; source?: string; provider?: string } | null;
   /** Opens on App event with this connector of the project chosen, e.g. from its own page. */
   initialConnector?: { slug: string; name: string } | null;
 }
@@ -147,6 +148,7 @@ function ComposerForm({
           : initialKind,
       agent: initialAgent,
       appSlug: initialApp?.app ?? null,
+      appSource: initialApp?.source ?? initialApp?.provider ?? null,
       profile: initialConnector?.slug ?? null,
     }),
   );
@@ -241,12 +243,7 @@ function ComposerForm({
           needsConnector && app
             ? async () => {
                 if (addedConnector.current?.app === app.app) return addedConnector.current.slug;
-                const added = await add({
-                  app: app.app,
-                  name: app.name,
-                  connector: null,
-                  newConnectorSlug: app.new_connector_slug,
-                });
+                const added = await add(eventAppTarget(app));
                 addedConnector.current = { app: app.app, slug: added };
                 return added;
               }

@@ -5,21 +5,30 @@
  * trigger form. One hook for the create modal, the detail sheet and the list.
  *
  * An event trigger runs on the project's shared account, so this always
- * connects as the project (`connectApp` -> `owner: 'project'`). The popup opens
- * synchronously inside the click, before any request.
+ * connects as the project. The popup opens synchronously inside the click,
+ * before any request. A Composio app connects through `connectApp`
+ * (`owner: 'project'`). An app Kortix checks itself (source `mcp`) installs its
+ * catalogue MCP server and signs in with that server's own OAuth.
  */
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { connectApp } from '@/components/projects/onboarding/connect-app';
 import {
+  type AddMcpServerDeps,
+  addMcpServer,
+} from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server';
+import { sdkAddMcpServerDeps } from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server-deps';
+import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
+import {
   buildEasyConnectConnectorDraft,
   connectorConnectionQueryKeys,
   connectorSyncErrorForSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
+import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { createConnector, listConnectors } from '@kortix/sdk';
+import { createConnector, listConnections, listConnectors } from '@kortix/sdk';
 import {
   contract,
   projectTriggerEventAppsKey,
@@ -29,20 +38,80 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
-import { newConnectorSlug } from './event-trigger-copy';
+import { type EventAppTarget, newConnectorSlug } from './event-trigger-copy';
 
-/** The app to connect. `connector` is the project's slug for it, null until it is added. */
-export interface EventAppTarget {
-  /** Provider app slug, e.g. `linear`. */
-  app: string;
-  name: string;
-  connector: string | null;
-  /** The API's slug for a new connector (never reserved or taken); the local guess is a fallback. */
-  newConnectorSlug?: string;
+/**
+ * Signs in the project's shared account of a `mcp` app in the popup
+ * `runConnectLinkFlow` opens inside the click. With no connector yet it first
+ * installs the app's catalogue MCP server, named after the app, and calls
+ * `onCreated`. The provider returns the popup to the connector's page.
+ * Resolves to the connector slug.
+ */
+async function connectMcpApp(
+  projectId: string,
+  target: EventAppTarget,
+  options: {
+    deps: AddMcpServerDeps;
+    takenSlugs: readonly string[];
+    onCreated: () => void;
+    /** The error for a server without one-click OAuth. */
+    noSignIn: string;
+  },
+): Promise<string> {
+  let slug = target.connector ?? '';
+  let connectionId: string | null = null;
+  const returnUrl = (connector: string) =>
+    `${window.location.origin}${connectorHref(projectId, connector)}`;
+  await runConnectLinkFlow(
+    async () => {
+      let signInUrl: string | null;
+      if (slug) {
+        connectionId = (await options.deps.projectAccount(projectId, slug, target.name))
+          .connection_id;
+        signInUrl = await options.deps.startSignIn(projectId, connectionId, returnUrl(slug));
+      } else {
+        if (!target.mcpUrl) throw new Error(`${target.name} has no MCP server to install.`);
+        const added = await addMcpServer(
+          projectId,
+          {
+            url: target.mcpUrl,
+            appName: target.name,
+            signIn: true,
+            audience: 'project',
+            takenSlugs: options.takenSlugs,
+            returnUrl,
+          },
+          options.deps,
+        );
+        slug = added.slug;
+        connectionId = added.connectionId;
+        options.onCreated();
+        if (added.signInError) throw new Error(added.signInError);
+        signInUrl = added.signInUrl;
+      }
+      // A credential the server asks for instead is entered on the connector's page.
+      if (!signInUrl) throw new Error(options.noSignIn);
+      return { connectUrl: signInUrl };
+    },
+    async () => {
+      const [{ connections }, { connectors }] = await Promise.all([
+        listConnections(projectId),
+        listConnectors(projectId, { includeSchemas: false }),
+      ]);
+      // The sign-in stores the credential, then re-reads the server's tools: the
+      // app's events exist only after both.
+      const signedIn = connections.some(
+        (c) => c.connection_id === connectionId && c.authorized === true,
+      );
+      return { connected: signedIn && connectors.find((c) => c.slug === slug)?.status !== 'error' };
+    },
+  );
+  return slug;
 }
 
 export function useEventAppConnect(projectId: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComposer = useTranslations('triggerComposer');
   const queryClient = useQueryClient();
   const accountId = useProjectAccountId(projectId);
   const canConnect =
@@ -80,6 +149,24 @@ export function useEventAppConnect(projectId: string) {
   const add = useCallback(
     async (target: EventAppTarget): Promise<string> => {
       if (target.connector) return target.connector;
+      if (target.source === 'mcp') {
+        if (!target.mcpUrl) throw new Error(`${target.name} has no MCP server to install.`);
+        // No sign-in here (`startSignIn` is a no-op): the trigger's "Connect" does it. A first
+        // tools read that fails, such as the 401 before sign-in, still leaves the connector.
+        const added = await addMcpServer(
+          projectId,
+          {
+            url: target.mcpUrl,
+            appName: target.name,
+            audience: 'project',
+            takenSlugs: takenSlugs(),
+            returnUrl: () => window.location.href,
+          },
+          { ...sdkAddMcpServerDeps(accountId), startSignIn: async () => null },
+        );
+        refresh();
+        return added.slug;
+      }
       const slug = (target.newConnectorSlug ?? newConnectorSlug(target.app, takenSlugs()));
       const draft = buildEasyConnectConnectorDraft(
         { slug: target.app, name: target.name, provider: 'composio' },
@@ -92,7 +179,7 @@ export function useEventAppConnect(projectId: string) {
       return slug;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, connectors.data, refresh],
+    [projectId, accountId, connectors.data, refresh],
   );
 
   /** Popup sign-in as the project's shared account. Stays on the page; `onConnected` gets the connector slug. */
@@ -101,21 +188,30 @@ export function useEventAppConnect(projectId: string) {
       if (connecting) return;
       const slug = target.connector ?? (target.newConnectorSlug ?? newConnectorSlug(target.app, takenSlugs()));
       setConnecting(target.app);
-      connectApp(
-        {
-          projectId,
-          app: { slug: target.app, name: target.name, provider: 'composio' },
-          connectorSlug: slug,
-          created: Boolean(target.connector),
-        },
-        undefined,
-        refresh,
-      )
-        .then(() => {
+      const flow =
+        target.source === 'mcp'
+          ? connectMcpApp(projectId, target, {
+              deps: sdkAddMcpServerDeps(accountId),
+              takenSlugs: takenSlugs(),
+              onCreated: refresh,
+              noSignIn: tComposer('mcpSignInUnavailable', { name: target.name }),
+            })
+          : connectApp(
+              {
+                projectId,
+                app: { slug: target.app, name: target.name, provider: 'composio' },
+                connectorSlug: slug,
+                created: Boolean(target.connector),
+              },
+              undefined,
+              refresh,
+            ).then(() => slug);
+      flow
+        .then((connector) => {
           successToast(tI18nComplete('text2dca9f542da4', { name: target.name }), {
             description: tI18nComplete.raw('text54e2237efa16'),
           });
-          onConnected?.(slug);
+          onConnected?.(connector);
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
@@ -128,7 +224,7 @@ export function useEventAppConnect(projectId: string) {
         });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, connecting, connectors.data, refresh],
+    [projectId, accountId, connecting, connectors.data, refresh],
   );
 
   return { connect, add, connecting, canConnect, canAdd };

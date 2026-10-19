@@ -89,16 +89,21 @@ export function describeEventTitle(
     .join(' ');
 }
 
-/** Display names of the event source adapters: the one place a source id becomes a name. */
-const EVENT_SOURCE_NAMES: Record<string, string> = { composio: 'Composio' };
+/**
+ * Display names of the event source adapters: the one place a source id becomes a name.
+ * `mcp` is Kortix checking the connected MCP server itself, so it names no adapter.
+ */
+const EVENT_SOURCE_NAMES: Record<string, string | null> = { composio: 'Composio', mcp: null };
 
-/** `composio` -> `Composio`; null when the event names no source. */
+/** `composio` -> `Composio`; null when the event names no source, or Kortix runs it itself. */
 export function eventSourceName(event: {
   source?: string | null;
   provider?: string | null;
 }): string | null {
   const id = event.source ?? event.provider;
-  return id ? (EVENT_SOURCE_NAMES[id] ?? appLabel(id, id)) : null;
+  if (!id) return null;
+  const name = EVENT_SOURCE_NAMES[id];
+  return name === undefined ? appLabel(id, id) : name;
 }
 
 /**
@@ -194,6 +199,8 @@ export interface SchemaField {
   description: string | null;
   defaultValue: unknown;
   options: string[];
+  /** The enum's values as the schema types them (`5`, not `'5'`), in `options` order. */
+  values: unknown[];
   /** The first schema example, shown as the input placeholder. */
   example: string | null;
 }
@@ -239,6 +246,7 @@ export function schemaFields(schema: JsonSchema | null | undefined): SchemaField
     const kind = fieldKind(prop);
     if (!kind) continue;
     const title = typeof prop.title === 'string' && prop.title.trim() ? prop.title.trim() : null;
+    const values = kind === 'enum' ? [...(prop.enum as unknown[])] : [];
     fields.push({
       key,
       label: title ?? humanizeEventType(key),
@@ -249,7 +257,8 @@ export function schemaFields(schema: JsonSchema | null | undefined): SchemaField
           ? prop.description.trim()
           : null,
       defaultValue: prop.default,
-      options: kind === 'enum' ? (prop.enum as unknown[]).map(String) : [],
+      options: values.map(String),
+      values,
       example: firstExample(prop),
     });
   }
@@ -311,7 +320,10 @@ export function draftToConfig(fields: SchemaField[], draft: ConfigDraft): Record
     }
     if (!text) continue;
     if (field.kind === 'number' || field.kind === 'integer') config[field.key] = Number(text);
-    else if (field.kind === 'list') {
+    // The schema's own value: an integer enum such as `interval` takes 5, never "5".
+    else if (field.kind === 'enum') {
+      config[field.key] = field.values.find((v) => String(v) === text) ?? text;
+    } else if (field.kind === 'list') {
       config[field.key] = text
         .split('\n')
         .map((line) => line.trim())
@@ -477,6 +489,32 @@ export function describeAccount(account: ProjectTriggerEventAccount): {
 /** The app-event triggers that run on one connector, in list order. */
 export function eventTriggersOn(triggers: ProjectTrigger[], connector: string): ProjectTrigger[] {
   return triggers.filter((t) => t.type === 'event' && t.event?.connector === connector);
+}
+
+/** The app to add or connect. `connector` is the project's slug for it, null until it is added. */
+export interface EventAppTarget {
+  /** Provider app slug, e.g. `linear`. */
+  app: string;
+  name: string;
+  connector: string | null;
+  /** The API's slug for a new connector (never reserved or taken); the local guess is a fallback. */
+  newConnectorSlug?: string;
+  /** Event source adapter id. `mcp` installs and signs in over Kortix's MCP path, never Composio. */
+  source?: string;
+  /** Source `mcp`: the catalogue MCP server to install. Null for a project MCP server, which has its connector. */
+  mcpUrl?: string | null;
+}
+
+/** The add/connect target of an app in the picker. */
+export function eventAppTarget(app: EventApp): EventAppTarget {
+  return {
+    app: app.app,
+    name: app.name,
+    connector: app.connector,
+    newConnectorSlug: app.new_connector_slug,
+    source: app.source ?? app.provider,
+    mcpUrl: app.mcp_url ?? null,
+  };
 }
 
 /** The connector slug for a new app: the app slug, or one with a suffix when taken. */

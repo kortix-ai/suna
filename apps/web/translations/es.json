@@ -20498,7 +20498,11 @@
   "triggerComposer": {
     "every": "Cada",
     "dayOfMonth": "Día del mes",
-    "details": "Detalles"
+    "details": "Detalles",
+    "mcpEventsAfterConnect": "Los eventos aparecen aquí cuando {name} esté conectado: uno por cada herramienta que lista o busca.",
+    "mcpConnectAsk": "Cualquier persona que gestione este proyecto puede conectar {name}.",
+    "mcpSignInUnavailable": "No se pudo iniciar el inicio de sesión en {name}. Añade su credencial en la página del conector.",
+    "mcpEventsOnConnect": "Eventos después de conectarla"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",

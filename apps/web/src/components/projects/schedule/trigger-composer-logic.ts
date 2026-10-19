@@ -43,6 +43,11 @@ export interface ComposerDraft {
   // When: app event
   /** Provider app slug (`gmail`). Null until an app is picked. */
   appSlug: string | null;
+  /**
+   * Event source of the picked app (`composio`, `mcp`): one app slug can be
+   * listed by both. Null: match the slug alone (a trigger saved by an older API).
+   */
+  appSource: string | null;
   /** The project's connector (profile) the trigger runs on. Null = the app's first. */
   profile: string | null;
   /** Label of a shared account on that profile. Null = the profile's default. */
@@ -70,6 +75,7 @@ export function initialDraft(init: {
   kind?: TriggerKind | null;
   agent?: string | null;
   appSlug?: string | null;
+  appSource?: string | null;
   profile?: string | null;
 }): ComposerDraft {
   return {
@@ -79,6 +85,7 @@ export function initialDraft(init: {
     timezone: 'UTC',
     signingKey: '',
     appSlug: init.appSlug ?? null,
+    appSource: init.appSource ?? null,
     profile: init.profile ?? null,
     account: null,
     eventType: null,
@@ -154,9 +161,14 @@ export function triggerName(draft: ComposerDraft, tI18nComplete: UiTranslator): 
   return draft.nameOverride ?? autoName(draft, tI18nComplete);
 }
 
-/** The app the draft points at: by slug, else the one that owns the chosen connector. */
+/** An event app's source: `source`, or the deprecated `provider` of an older API. */
+export const eventAppSource = (app: EventApp): string => app.source ?? app.provider;
+
+/** The app the draft points at: by source and slug, else the one that owns the chosen connector. */
 export function findDraftApp(apps: EventApp[], draft: ComposerDraft): EventApp | null {
-  if (draft.appSlug) return apps.find((a) => a.app === draft.appSlug) ?? null;
+  if (draft.appSlug) {
+    return apps.find((a) => a.app === draft.appSlug && (!draft.appSource || eventAppSource(a) === draft.appSource)) ?? null;
+  }
   if (draft.profile) {
     return apps.find((a) => appConnectors(a).some((c) => c.slug === draft.profile)) ?? null;
   }
@@ -316,8 +328,8 @@ export function withEventCleared(draft: ComposerDraft): ComposerDraft {
 }
 
 /** A different app (or none): its events, connector and account no longer apply. */
-export function withAppPicked(draft: ComposerDraft, appSlug: string | null): ComposerDraft {
-  return { ...withEventCleared(draft), appSlug, profile: null, account: null };
+export function withAppPicked(draft: ComposerDraft, appSlug: string | null, appSource: string | null = null): ComposerDraft {
+  return { ...withEventCleared(draft), appSlug, appSource, profile: null, account: null };
 }
 
 /* ─── Connection: connector first, then its account ─────────────────────── */

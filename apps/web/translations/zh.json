@@ -20498,7 +20498,11 @@
   "triggerComposer": {
     "every": "每隔",
     "dayOfMonth": "每月日期",
-    "details": "详情"
+    "details": "详情",
+    "mcpEventsAfterConnect": "连接 {name} 后，事件会显示在这里：每个列出或搜索的工具对应一个事件。",
+    "mcpConnectAsk": "管理此项目的任何人都可以连接 {name}。",
+    "mcpSignInUnavailable": "无法启动 {name} 登录。请在连接器页面添加其凭据。",
+    "mcpEventsOnConnect": "连接后显示事件"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",

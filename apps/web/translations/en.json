@@ -20509,7 +20509,11 @@
   "triggerComposer": {
     "every": "Every",
     "dayOfMonth": "Day of month",
-    "details": "Details"
+    "details": "Details",
+    "mcpEventsAfterConnect": "Events show up here after {name} is connected: one for each tool that lists or searches.",
+    "mcpConnectAsk": "Anyone who manages this project can connect {name}.",
+    "mcpSignInUnavailable": "Could not start the {name} sign-in. Add its credential on the connector page.",
+    "mcpEventsOnConnect": "Events after you connect it"
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",
