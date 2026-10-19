@@ -372,6 +372,14 @@ Icons live in `build/` (`icon.icns` / `icon.ico` / `icon.png`). Code signing /
 notarization are env-driven (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY*`,
 `WIN_CSC_LINK`, …); unsigned local builds are fine for testing.
 
+Windows installers are Authenticode-signed through Microsoft Artifact Signing
+(`win.azureSignOptions`, publisher "Kortix AI Corp") when `kortix-ci-env` holds
+`AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID`, `AZURE_SIGNING_CLIENT_SECRET`,
+`AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE`
+(the same values Kortix Capture uses). `desktop.yml` and `deploy-prod.yml` then
+fail the build unless every `dist/*.exe` is `Valid`. Without them the installer
+is unsigned and SmartScreen shows "Unknown publisher" on download.
+
 ## Auto-update
 
 The installed app self-updates via **electron-updater**, reading the `vX.Y.Z`
