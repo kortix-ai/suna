@@ -20209,6 +20209,7 @@
       "agentsListAlsoSubagent": "Aussi sous-agent",
       "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}.",
       "servedModelTurnRowRepeated": "{requested} a échoué ({reason}) sur {count, number} requêtes — passage à {served}.",
+      "servedModelReason": "{reason, select, provider_pool_rate_limited {limite atteinte} rate_limit_exceeded {limite de débit} model_busy {surchargé} provider_reauth_required {reconnexion requise} authentication_error {connexion refusée} provider_not_connected {non connecté} model_unavailable {indisponible} context_length_exceeded {contexte trop long} upstream_timeout {délai dépassé} upstream_inactivity_timeout {délai dépassé} upstream_incomplete_stream {flux interrompu} upstream_stream_error {flux interrompu} other {erreur}}",
       "text51e6bc656528": "Discutez avec votre agent depuis un bot Telegram.",
       "text00c7991f0490": "Connecter Telegram",
       "texta832efd235a7": "Créez un bot avec @BotFather dans Telegram, puis collez son jeton ici. Kortix enregistre le webhook et garde le jeton sur le serveur.",

@@ -4429,7 +4429,7 @@ export function SessionChat({
                               author={turnAuthor}
                               showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
                               stoppedBy={stoppedByName(messageAuthors, turn.id, viewer?.id)}
-                              servedModel={servedModelOfTurn(modelUsage, turn.id)}
+                              servedModel={servedModelOfTurn(modelUsage, turn.id, turns[turnIndex - 1]?.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.id === lastUserMessageId}
                               ownsPlan={turn.id === planAnchorId}

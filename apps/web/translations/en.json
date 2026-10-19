@@ -20220,6 +20220,7 @@
       "agentsListAlsoSubagent": "Also a subagent",
       "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}.",
       "servedModelTurnRowRepeated": "{requested} failed ({reason}) on {count, number} requests — switched to {served}.",
+      "servedModelReason": "{reason, select, provider_pool_rate_limited {limit reached} rate_limit_exceeded {rate limited} model_busy {busy} provider_reauth_required {needs reconnection} authentication_error {sign-in rejected} provider_not_connected {not connected} model_unavailable {unavailable} context_length_exceeded {context too long} upstream_timeout {timed out} upstream_inactivity_timeout {timed out} upstream_incomplete_stream {stream cut off} upstream_stream_error {stream cut off} other {error}}",
       "text51e6bc656528": "Chat with your agent from a Telegram bot.",
       "text00c7991f0490": "Connect Telegram",
       "texta832efd235a7": "Create a bot with @BotFather in Telegram, then paste its token here. Kortix registers the webhook and keeps the token on the server.",
