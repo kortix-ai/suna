@@ -189,7 +189,7 @@ export function describeWhen(
  * expression's own slot (KRTX-1743).
  */
 export function describeNextRun(trigger: ProjectTrigger): string | null {
-  if (!trigger.enabled || !trigger.next_fire_at) return null;
+  if (!trigger.enabled || trigger.auto_paused_at || !trigger.next_fire_at) return null;
   const at = new Date(trigger.next_fire_at);
   if (Number.isNaN(at.getTime())) return null;
   return `Next run ${at.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
@@ -229,7 +229,8 @@ export function triggerStatus(enabled: boolean, tI18nComplete: UiTranslator): Tr
 export type TriggerBadgeState = 'live' | 'needs_connection' | 'error' | 'pending' | 'paused';
 
 export function triggerBadgeState(trigger: ProjectTrigger): TriggerBadgeState {
-  if (!trigger.enabled) return 'paused';
+  // An auto-pause (KRTX-1721) is runtime state: the manifest still says enabled.
+  if (!trigger.enabled || trigger.auto_paused_at) return 'paused';
   const subscription = trigger.event?.status;
   if (
     subscription === 'needs_connection' ||
@@ -444,7 +445,7 @@ export function matchesQuery(
     trigger.agent,
     describeWhen(trigger),
     trigger.slug,
-    triggerStatus(trigger.enabled, tI18nComplete).label,
+    triggerStatus(trigger.enabled && !trigger.auto_paused_at, tI18nComplete).label,
   ].some((field) => field.toLowerCase().includes(q));
 }
 

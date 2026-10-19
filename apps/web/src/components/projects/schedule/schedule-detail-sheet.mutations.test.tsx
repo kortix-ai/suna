@@ -736,6 +736,27 @@ describe('the header toggle', () => {
   });
 });
 
+// KRTX-1721: a trigger that paused itself shows why, and Resume clears it.
+describe('an auto-paused trigger', () => {
+  const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
+
+  test('shows the reason, offers Resume instead of Pause, and Resume sends { enabled: true }', async () => {
+    const sheet = mountSheet({ enabled: true, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason });
+    expect(JSON.stringify(sheet.renderer.toJSON())).toContain(reason);
+    expect(sheet.buttonsWithin('Pause')).toHaveLength(0);
+    const resume = sheet.buttonsWithin('Resume');
+    expect(resume).toHaveLength(1);
+    await act(async () => call(at(resume, 0).props, 'onClick'));
+    await sheet.flush();
+    expectPatch({ enabled: true });
+  });
+
+  test('a trigger that is not auto-paused shows no such notice', () => {
+    const sheet = mountSheet();
+    expect(JSON.stringify(sheet.renderer.toJSON())).not.toContain('auto-paused');
+  });
+});
+
 // KRTX-1720: Run now, Pause and Delete each follow their own leaf.
 describe('header controls follow one leaf each', () => {
   const none = { canCreate: false, canFire: false, canUpdate: false, canDelete: false };

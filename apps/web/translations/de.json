@@ -21998,5 +21998,9 @@
     "exists": "existiert",
     "missing": "existiert nicht",
     "listPlaceholder": "Wert 1, Wert 2"
+  },
+  "triggerAutoPause": {
+    "title": "Hat sich an seinem Ausführungslimit selbst pausiert",
+    "description": "Er lief 2 Stunden in Folge an seinem stündlichen Ausführungslimit und startet daher keine Ausführungen mehr. Finde heraus, was ihn ständig auslöst, und setze ihn dann fort."
   }
 }
