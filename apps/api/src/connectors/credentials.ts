@@ -787,6 +787,11 @@ export async function upsertCredential(opts: {
       createdBy: opts.createdBy ?? null,
     });
   }
+  // A new credential is no longer the one the upstream rejected.
+  await db
+    .update(connectorConnections)
+    .set({ metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'` })
+    .where(eq(connectorConnections.connectionId, connectionId));
   // Reflect "connected" in the connector status.
   await db
     .update(connectors)

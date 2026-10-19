@@ -291,6 +291,11 @@ export interface ConnectorAccount {
   is_default: boolean;
   /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
   connected_as?: string | null;
+  /** When the upstream first answered 401 to this account's stored credential:
+   *  it expired or was revoked, and a person must replace it. `null` (or
+   *  absent, on older servers) when not rejected. An ok call or a new
+   *  credential clears it. */
+  credential_rejected_at?: string | null;
 }
 
 export interface ConnectorCallOptions {

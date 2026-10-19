@@ -255,6 +255,7 @@ describe('handleCall — upstream + errors', () => {
     deps.markCredentialRejected = async (id, rejected) => {
       marks.push([id, rejected]);
     };
+    deps.credentialKind = async () => 'secret';
     const res = await handleCall(deps, baseInput);
     expect(res).toMatchObject({ status: 'error', upstreamStatus: 401 });
     const reason = (res as { reason: string }).reason;
@@ -264,6 +265,49 @@ describe('handleCall — upstream + errors', () => {
     expect(reason).toContain('api_key_expired');
     expect(records.at(-1)!.resultSummary).toMatchObject({ http_status: 401, error_code: 'credential_rejected' });
     expect(marks).toEqual([['cx-1', true]]);
+  });
+
+  test('401 remedy follows the credential: OAuth signs in again, a project secret is rotated, a repeat 401 says retrying fails', async () => {
+    const reasonFor = async (connector: GatewayConnector, kind: string | null) => {
+      const { deps } = makeDeps({ connector, fetchStatus: 401, fetchBody: '{"error":"invalid_token"}' });
+      const marks: string[] = [];
+      deps.markCredentialRejected = async (id) => {
+        marks.push(id);
+      };
+      deps.credentialKind = async () => kind;
+      const res = await handleCall(deps, baseInput);
+      return { reason: (res as { reason: string }).reason, marks };
+    };
+    const account = { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Main' };
+
+    const oauth = await reasonFor(account, 'oauth2_delegated');
+    expect(oauth.reason).toContain('signs in to account "Main" again in Connectors');
+    expect(oauth.reason).not.toContain('connections credential');
+
+    const projectSecret = await reasonFor({ ...account, authSecret: 'STRIPE_KEY' }, null);
+    expect(projectSecret.reason).toContain('project secret STRIPE_KEY');
+    expect(projectSecret.reason).not.toContain('connections credential');
+
+    const first = await reasonFor(account, 'secret');
+    expect(first.reason).not.toContain('Retrying');
+    const repeat = await reasonFor({ ...account, connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } }, 'secret');
+    expect(repeat.reason).toContain('Retrying returns this error until the credential is replaced.');
+    expect(repeat.marks).toEqual([]);
+  });
+
+  test('a channel 401 is the platform token, not the account credential: plain upstream_401, no mark', async () => {
+    const { deps } = makeDeps({
+      connector: { ...STRIPE, provider: 'channel', connectionId: 'cx-1' },
+      fetchStatus: 401,
+      fetchBody: '',
+    });
+    const marks: string[] = [];
+    deps.markCredentialRejected = async (id) => {
+      marks.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect((res as { reason: string }).reason.startsWith('credential_rejected')).toBe(false);
+    expect(marks).toEqual([]);
   });
 
   test('a later ok call on a marked connection clears the mark; an unmarked one writes nothing', async () => {
