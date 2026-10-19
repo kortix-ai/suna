@@ -33,7 +33,7 @@ function componentsSection(skill: string): string {
 describe('kortix-ui skill', () => {
   const listed = new Set([...componentsSection(SKILL).matchAll(/`([\w$]+)`/g)].map((m) => m[1]));
 
-  for (const barrel of ['./index.ts', './chat/index.ts', './theme/index.ts']) {
+  for (const barrel of ['./index.ts', './chat/index.ts', './session/index.ts', './theme/index.ts']) {
     test(`Components table names every export of src/${barrel.slice(2)}`, () => {
       const source = read(barrel);
       expect(source).not.toMatch(/^export\s+\*/m); // a star export hides its names from this check

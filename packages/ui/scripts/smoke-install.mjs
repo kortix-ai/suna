@@ -147,9 +147,12 @@ for (const name of ['cn', 'Button', 'UiProvider', 'useUiStrings', 'useIsDark']) 
 }
 if (root.cn('px-2', 'px-4') !== 'px-4') throw new Error('cn() does not merge Tailwind classes');
 const chat = await import('@kortix/ui/chat');
-for (const name of ['SessionThread', 'Composer', 'MessageList', 'Markdown']) {
-  if (typeof chat[name] !== 'function' && typeof chat[name] !== 'object') throw new Error('chat export missing: ' + name);
+const session = await import('@kortix/ui/session');
+if (chat.SessionThread !== session.SessionThread) throw new Error('@kortix/ui/chat SessionThread is not @kortix/ui/session SessionThread');
+for (const name of ['SessionThread', 'SessionChatInput', 'ToolPartRenderer', 'UnifiedMarkdown']) {
+  if (typeof session[name] !== 'function' && typeof session[name] !== 'object') throw new Error('session export missing: ' + name);
 }
+if (!session.ToolRegistry.get('bash')) throw new Error('@kortix/ui/session did not register the tool renderers');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { createElement } = await import('react');
 const html = renderToStaticMarkup(createElement(root.Button, null, 'Hi'));
@@ -180,7 +183,7 @@ console.log('OK: ' + js + ' JS exports imported, ' + browserOnly + ' browser-onl
       "import { Dialog, DialogContent, DialogTitle } from '@kortix/ui/dialog';",
       "import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';",
       "import { Command, CommandInput } from '@kortix/ui/command';",
-      "import { Composer } from '@kortix/ui/chat';",
+      "import { SessionThread } from '@kortix/ui/session';",
       'export const view = (',
       '  <div>',
       "    <Button variant='outline' size='sm' className='x'>Hi</Button>",
@@ -190,7 +193,7 @@ console.log('OK: ' + js + ' JS exports imported, ' + browserOnly + ' browser-onl
       '    <Command><CommandInput /></Command>',
       '  </div>',
       ');',
-      'export const composer = Composer;',
+      'export const thread = SessionThread;',
       '',
     ].join('\n'),
   );

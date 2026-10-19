@@ -239,9 +239,9 @@ The app has no UI kit of its own. It composes `@kortix/ui`:
   `errorToast` from the same module.
 - Dialogs are `Modal` from `@kortix/ui/modal`. A destructive action confirms
   through `ConfirmDialog` from `@kortix/ui/confirm-dialog`.
-- The session chat is `<SessionThread session={useSession(…)} />` from
-  `@kortix/ui/chat`, with Lumen's scope bar in the `composerFooter` slot
-  (`src/components/workbench/workbench-tabs.tsx`).
+- The session chat is `<SessionThread session={useSession(…)} hideHeader />`
+  from `@kortix/ui/session`, the same thread apps/web renders, with Lumen's
+  scope bar under it (`src/components/workbench/workbench-tabs.tsx`).
 - `next.config.ts` lists `@kortix/ui` in `transpilePackages`.
 
 `scripts/sdk-boundary.mjs` rejects a file under `src/components/ui`, an

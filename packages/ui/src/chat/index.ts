@@ -1,27 +1,14 @@
 /**
- * @kortix/ui/chat — the Kortix chat for `@kortix/sdk` sessions.
+ * @kortix/ui/chat — the session thread plus two standalone pickers.
  *
  *   const session = useSession(projectId, sessionId);
  *   return <SessionThread session={session} />;
  *
- * Every piece is exported, so a host can compose its own layout from
- * MessageList, MessageView, Composer and the prompts.
+ * `SessionThread` is the one thread implementation (`@kortix/ui/session`, the
+ * thread apps/web renders). Its building blocks live in `@kortix/ui/session`.
+ * `ModelPicker` and `AgentPicker` are controlled pickers over a plain list,
+ * for a form outside a session (a new-session form).
  */
 export { AgentPicker } from './agent-picker';
-export { Composer, type ComposerCommand, parseCommand, slashQuery } from './composer';
-export { Markdown } from './markdown';
-export { DefaultEmptyState, MessageList } from './message-list';
-export { type MessageRenderers, MessageView, type RenderTool } from './message-view';
 export { filterModels, ModelPicker } from './model-picker';
-export { type ChatErrorHandler, type PermissionDecision, PermissionPrompt } from './permission-prompt';
-export { QuestionPrompt } from './question-prompt';
-export { sendFailureTitle } from './send-failure';
-export { SessionPickers, SessionThread, type SessionThreadProps } from './session-thread';
-export {
-  closeUnterminatedCodeFence,
-  holdBackFenceOpener,
-  holdBackTableHeader,
-  streamingMarkdown,
-} from './streaming-markdown';
-export { ToolCall } from './tool-call';
-export { userMessageParts } from './user-message-parts';
+export { SessionThread, type SessionThreadProps } from '../session/session-thread';

@@ -10,6 +10,7 @@
 //   src/{lib,hooks,icons,providers,session,markdown,diff,shared}/<path>.ts(x) → "./<dir>/<path>"
 //   src/i18n/<path>.ts(x) other than index → "./i18n/<path>"
 //   src/chat/index.ts(x)             → "./chat"
+//   src/session/index.ts             → "./session"  (the curated session entry)
 //   src/theme/index.ts               → "./theme"
 //   src/i18n/index.ts                → "./i18n"
 //   src/styles/<name>.css            → "./<name>.css"
@@ -39,6 +40,10 @@ export const INTERNAL = new Set([
   // Reached through the './theme' barrel only.
   'theme/theme.ts',
   'theme/theme-scope.tsx',
+  // UiProvider's LazyMotion chunk.
+  'providers/motion-features.ts',
+  // Published as './session', not './session/index'.
+  'session/index.ts',
 ]);
 
 function walk(dir) {
@@ -58,7 +63,7 @@ const modules = (dir) =>
 export function buildExports() {
   const out = {};
   for (const f of ['index.ts', 'index.tsx']) if (existsSync(join(SRC, f))) out['.'] = rel(join(SRC, f));
-  for (const dir of ['chat', 'i18n', 'theme'])
+  for (const dir of ['chat', 'i18n', 'session', 'theme'])
     for (const f of ['index.ts', 'index.tsx'])
       if (existsSync(join(SRC, dir, f))) out[`./${dir}`] = rel(join(SRC, dir, f));
   for (const file of modules(join(SRC, 'components', 'ui'))) {

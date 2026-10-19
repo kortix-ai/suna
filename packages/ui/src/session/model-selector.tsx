@@ -364,7 +364,7 @@ export interface ModelSelectorProps {
    * the end of the list. Only an interactive session can use a personal
    * account; a scheduled or background run cannot, so its pickers leave this off.
    */
-  offerChatGptAccounts?: boolean;
+  offerProviderAccounts?: boolean;
 
   /**
    * Controlled open state. Omit for the normal case — the trigger owns its
@@ -397,7 +397,7 @@ export function ModelSelector({
   modelsLoading = false,
   triggerLabelClassName,
   triggerVariant = 'ghost',
-  offerChatGptAccounts = false,
+  offerProviderAccounts = false,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
@@ -447,7 +447,7 @@ export function ModelSelector({
   const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const { ProviderAccountsModal } = useUiComponents();
   const chatGptPossible =
-    !!ProviderAccountsModal && offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+    !!ProviderAccountsModal && offerProviderAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
   const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');

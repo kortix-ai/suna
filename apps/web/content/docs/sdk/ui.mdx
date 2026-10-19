@@ -15,7 +15,8 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | --- | --- |
 | `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
-| `@kortix/ui/chat` | The session chat: `SessionThread` and its parts. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/session` | The session thread: `SessionThread` and its building blocks. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/chat` | The same `SessionThread`, plus `ModelPicker` and `AgentPicker` for a form outside a session. |
 | `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
 | `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
@@ -25,7 +26,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | You use | Also install |
 | --- | --- |
 | `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
-| `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| `@kortix/ui/session` or `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
 
 After the first npm release:
 
@@ -109,7 +110,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 | Provider | What it does | Without it |
 | --- | --- | --- |
-| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for every string of `@kortix/ui/chat` (`defaultChatStrings` lists the keys and their English values). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks). `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in user's id. `config`: host flags (`billingEnabled`). | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off. |
+| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for the `ModelPicker` and `AgentPicker` copy (`defaultChatStrings` lists the keys and their English values; the session thread reads `i18n`). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks). `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in user's id. `config`: host flags (`billingEnabled`). | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off. |
 | `SessionIdsProvider` | `projectId` and `sessionId` of the session view it wraps. The session UI reads them with `useSessionIds`, never from your route. | Both ids are `undefined`: components that need them render nothing. |
 | `setUiTelemetry` from `@kortix/ui/lib/telemetry` | Not a provider: call it once at module load with `track`, `captureException`, `captureMessage`, `addBreadcrumb`. Declare `UiTelemetryRegister { event: YourEvents }` to make `tsc` check event names. | `track` does nothing; `captureException` logs to the console. |
 | `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
@@ -240,43 +241,54 @@ Compose before you create. Use `Modal` for a dialog, `Hint` for a tooltip, `Load
 
 ## Add a chat
 
-`SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result: the transcript, the streaming turn, tool calls, the runtime state, permission and question prompts, the typed send error, and the composer with slash commands, the model and agent pickers and Stop.
+`SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result. It is the thread the Kortix web app renders: the transcript, the streaming turn, tool rows, permission and question prompts, the send error, and the composer with attachments, slash commands, the model and agent pickers and Stop.
 
 ```tsx title="chat.tsx"
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
-import { errorToast } from '@kortix/ui/toast';
+import { SessionThread } from '@kortix/ui/session';
 
 export function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId);
   return (
-    <div className="h-dvh">
-      <SessionThread session={session} onError={(message) => errorToast(message)} />
+    <div className="flex h-dvh flex-col">
+      <SessionThread session={session} hideHeader />
     </div>
   );
 }
 ```
 
-The parent sets the height, and the thread fills it. Everything reads off `session`: there is no second chat hook and no transport to write.
+The parent sets the height, and the thread fills it. Everything reads off `session`: there is no second chat hook and no transport to write. The host mounts `QueryClientProvider`, `UiProvider` and one `<Toaster />`. A control whose host feature is missing (a `UiProvider` `components` slot) is hidden, never dead.
 
 | Prop | What it does |
 | --- | --- |
 | `session` | The `useSession(projectId, sessionId)` result. Required. |
-| `composerToolbar` | Replaces the composer's control row. Default: `SessionPickers`, the model and agent pickers. |
-| `composerFooter` | Renders under the composer card. |
-| `emptyState` | Shows when the thread has no messages. Default: `DefaultEmptyState`. |
-| `renderTool` | `(tool) => ReactNode \| undefined`. Replaces the card of one tool call. Return `undefined` to keep the default `ToolCall`. |
-| `renderers` | Overrides the renderer of any part kind (`text`, `reasoning`, `tool`, `file` and the rest). |
-| `onError` | `(message, error) => void`. Reports a failed permission reply, question reply or slash command, for a toast. Without it, the error shows inline. A refused slash command also puts the typed line back into the composer. |
-| `providerLabel` | `(model) => string`. The provider line of a model row in the model picker. A white-label returns its own name for Kortix-managed models (`model.providerID === 'kortix'`). `ModelPicker` takes the same prop. |
+| `hideHeader` | Hides the thread's title row. Use it when your page has its own header. |
+| `readOnly` | Hides the composer: a transcript to read. |
+| `className` | Classes on the thread's root. |
 
-The thread follows the transcript rules of the Kortix web app. When a provider error interrupts a turn, the harness resumes it with its own `[auto-recovery]` prompt: the thread shows no bubble for that prompt and no error row for the failure it continued. If the chain still ends in failure, one error row shows, with how many automatic retries ran. The composer shows the `/ for commands` hint only when the session has a command. In the model picker, ArrowUp and ArrowDown move the highlight and Enter picks it.
+`@kortix/ui/chat` exports the same `SessionThread`, plus `ModelPicker` and `AgentPicker`: controlled pickers over a plain list, for a form outside a session such as a new-session form. `providerLabel` on `ModelPicker` relabels a provider (a white-label returns its own name for `model.providerID === 'kortix'`).
 
-For a layout of your own, compose the parts from the same `useSession` result: `MessageList`, `MessageView`, `Composer`, `PermissionPrompt`, `QuestionPrompt`, `ModelPicker` and `AgentPicker`, all from `@kortix/ui/chat`. `Markdown` renders a streaming message and holds back half-written code fences and tables, so the text does not flicker.
+### Replace one tool row
+
+Every built-in tool row registers when `@kortix/ui/session` loads. Register your own row for a tool name to replace it. The row gets `ToolProps`: `call` is the session-log tool call (`name`, `input`, `status`, `result`). `BasicTool` draws the standard row; `GenericTool` is the default row.
+
+```tsx title="lookup-row.tsx"
+import { BasicTool, ToolRegistry, type ToolProps } from '@kortix/ui/session';
+
+function LookupRow({ call }: ToolProps) {
+  return <BasicTool trigger={`Lookup ${(call.input as { query: string }).query}`} />;
+}
+
+ToolRegistry.register('lookup', LookupRow);
+```
+
+### Compose your own layout
+
+The building blocks of the thread come from `@kortix/ui/session` and read the same providers: `UserMessage`, `ThrottledMarkdown` (streaming markdown that holds back half-written code fences and tables), `UnifiedMarkdown`, `ToolPartRenderer`, `SessionChatInput` (the composer), `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`, `SessionBusyIndicator` and `SessionStartingLoader`.
 
 ### Render the transcript yourself
 
-To draw every part with your own components, skip `@kortix/ui/chat` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
+To draw every part with your own components, skip `@kortix/ui/session` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
 
 ## For agents
 

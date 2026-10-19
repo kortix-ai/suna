@@ -7,8 +7,7 @@ import { PreviewPanel } from '@/components/workbench/preview-panel';
 import { SessionScope } from '@/components/workbench/session-scope';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import type { UseSessionResult } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
-import { brandProviderLabel } from '@/config/brand';
+import { SessionThread } from '@kortix/ui/session';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
@@ -64,25 +63,26 @@ export function WorkbenchTabs({
 }
 
 /**
- * The chat thread: @kortix/ui's SessionThread over the single `useSession`
- * result (transcript, prompts, runtime state, typed send error, composer with
- * the model and agent pickers). Lumen adds one slot, the session's scope under
- * the composer, and the one-shot auto-restart when a connected runtime drops
- * (`useRuntimeRecovery`). No second chat hook and no transport code.
+ * The chat thread: @kortix/ui's SessionThread, the same thread apps/web
+ * renders, over the single `useSession` result (transcript, tool rows,
+ * prompts, composer with the model and agent pickers). Lumen hides the
+ * thread header (its own SessionHeader is above the tabs), adds the
+ * session's scope under the thread, and the one-shot auto-restart when a
+ * connected runtime drops (`useRuntimeRecovery`). No second chat hook and no
+ * transport code.
  */
 function Thread({ session }: { session: UseSessionResult }) {
   useRuntimeRecovery(session);
   return (
-    <SessionThread
-      session={session}
-      composerFooter={
+    <>
+      <SessionThread session={session} hideHeader className="flex-1" />
+      <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-3">
         <ScopeBar
           projectId={session.projectId}
           sessionId={session.sessionId}
           pickedModel={session.picks.model}
         />
-      }
-      providerLabel={brandProviderLabel}
-    />
+      </div>
+    </>
   );
 }

@@ -105,11 +105,10 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 | `@kortix/ui` (navigation) | `FilterBar`, `FilterBarItem`, `Tabs`, `TabsContent`, `TabsList`, `TabsListCompact`, `TabsTrigger`, `TabsTriggerCompact`, `tabsTriggerHeightVariants`, `tabsTriggerPaddingVariants`, `tabsTriggerTextVariants`, `TabsListType`, `TabsSize`, `TabsTriggerSize`, `TabsTriggerVariant`, `TabsUnderlineSize` |
 | `@kortix/ui` (conversation) | `Bubble`, `BubbleContent`, `BubbleGroup`, `BubbleReactions`, `bubbleVariants`, `Message`, `MessageAvatar`, `MessageContent`, `MessageFooter`, `MessageGroup`, `MessageHeader`, `Marker`, `MarkerContent`, `MarkerIcon`, `markerVariants` |
 | `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing` |
-| `@kortix/ui/chat` (whole thread) | `SessionThread`, `SessionThreadProps`, `SessionPickers`, `MessageList`, `DefaultEmptyState` |
-| `@kortix/ui/chat` (one message) | `MessageView`, `MessageRenderers`, `RenderTool`, `ToolCall`, `Markdown`, `userMessageParts` |
-| `@kortix/ui/chat` (input) | `Composer`, `ComposerCommand`, `parseCommand`, `slashQuery`, `ModelPicker`, `filterModels`, `AgentPicker` |
-| `@kortix/ui/chat` (prompts, errors) | `PermissionPrompt`, `PermissionDecision`, `QuestionPrompt`, `ChatErrorHandler`, `sendFailureTitle` |
-| `@kortix/ui/chat` (streaming) | `streamingMarkdown`, `holdBackFenceOpener`, `closeUnterminatedCodeFence`, `holdBackTableHeader` |
+| `@kortix/ui/session` (whole thread) | `SessionThread`, `SessionThreadProps` |
+| `@kortix/ui/session` (blocks) | `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `ToolPartRenderer`, `SessionChatInput`, `SessionChatInputProps`, `AgentSelector`, `ModelSelector`, `ModelSelectorProps`, `SessionPermissionPrompt`, `QuestionPrompt`, `QuestionPromptHandle`, `TurnErrorDisplay`, `SessionBusyIndicator`, `SessionStartingLoader` |
+| `@kortix/ui/session` (tool rows) | `ToolRegistry`, `ToolProps`, `ToolComponent`, `BasicTool`, `BasicToolProps`, `GenericTool` |
+| `@kortix/ui/chat` | `SessionThread` (the same one), `SessionThreadProps`; pickers for a form outside a session: `ModelPicker`, `filterModels`, `AgentPicker` |
 
 Every other component is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>`
 for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` and `@kortix/ui/icons/<name>`. Host-free helpers: `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures; `UiTranslator`, `UiI18nHost`, `UiMessages`, `UiUseTranslations`, `defaultUiMessages`: the bundled English catalog; `createTranslator`), `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event` so tsc checks event names), `lib/lazy-client` (`lazyClient(load, { fallback })`: `next/dynamic` `ssr: false` without Next), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`; reports to `captureException`).
@@ -118,20 +117,16 @@ for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` a
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
-import { errorToast } from '@kortix/ui/toast';
+import { SessionThread } from '@kortix/ui/session';
 
 export function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const session = useSession(projectId, sessionId);
-  return <div className="h-dvh"><SessionThread session={session} onError={(m) => errorToast(m)} /></div>;
+  return <div className="h-dvh"><SessionThread session={useSession(projectId, sessionId)} hideHeader /></div>;
 }
 ```
 
-- Needs `@tanstack/react-query` and one `QueryClientProvider`. The parent sets the height. Slots:
-  `composerToolbar`, `composerFooter`, `emptyState`; `renderTool` (`undefined` keeps the default), `renderers`.
-- A layout of your own composes `MessageList`, `MessageView`, `Composer` and the prompts from the same
-  `useSession` result. Never write a second transport or a raw `fetch`.
-- A fully custom transcript uses `renderParts` from `@kortix/sdk/react` (docs: /docs/sdk/react).
+- It is the thread apps/web renders. Host needs: `QueryClientProvider`, `UiProvider`, `<Toaster />`. The parent sets the height.
+- A custom tool row: `ToolRegistry.register('<tool name>', Row)`; `Row` gets `ToolProps`, draws `BasicTool`.
+- A layout of your own composes the blocks above from the same `useSession` result. Never a raw `fetch`.
 
 ## 9. Verify
 

@@ -19,7 +19,9 @@
     "design-system"
   ],
   "sideEffects": [
-    "*.css"
+    "*.css",
+    "./src/session/tool/tools/*",
+    "./dist/session/tool/tools/*"
   ],
   "exports": {
     ".": "./src/index.ts",
@@ -215,6 +217,7 @@
     "./section-card": "./src/components/ui/section-card.tsx",
     "./select": "./src/components/ui/select.tsx",
     "./separator": "./src/components/ui/separator.tsx",
+    "./session": "./src/session/index.ts",
     "./session/action-panel/advanced/advanced-panel": "./src/session/action-panel/advanced/advanced-panel.tsx",
     "./session/action-panel/browser-panel": "./src/session/action-panel/browser-panel.tsx",
     "./session/action-panel/easy/app-preview": "./src/session/action-panel/easy/app-preview.tsx",
@@ -433,6 +436,7 @@
     "./session/session-terminal-connect-bar": "./src/session/session-terminal-connect-bar.tsx",
     "./session/session-terminal-panel": "./src/session/session-terminal-panel.tsx",
     "./session/session-terminal-state": "./src/session/session-terminal-state.ts",
+    "./session/session-thread": "./src/session/session-thread.tsx",
     "./session/session-transcript-class": "./src/session/session-transcript-class.ts",
     "./session/session-turn-meta": "./src/session/session-turn-meta.tsx",
     "./session/session-turn-meta-rows": "./src/session/session-turn-meta-rows.ts",
@@ -1697,6 +1701,10 @@
         "types": "./dist/components/ui/separator.d.ts",
         "import": "./dist/components/ui/separator.js"
       },
+      "./session": {
+        "types": "./dist/session/index.d.ts",
+        "import": "./dist/session/index.js"
+      },
       "./session/action-panel/advanced/advanced-panel": {
         "types": "./dist/session/action-panel/advanced/advanced-panel.d.ts",
         "import": "./dist/session/action-panel/advanced/advanced-panel.js"
@@ -2568,6 +2576,10 @@
       "./session/session-terminal-state": {
         "types": "./dist/session/session-terminal-state.d.ts",
         "import": "./dist/session/session-terminal-state.js"
+      },
+      "./session/session-thread": {
+        "types": "./dist/session/session-thread.d.ts",
+        "import": "./dist/session/session-thread.js"
       },
       "./session/session-transcript-class": {
         "types": "./dist/session/session-transcript-class.d.ts",

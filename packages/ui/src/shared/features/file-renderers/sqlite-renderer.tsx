@@ -1,3 +1,7 @@
+// sql.js ships no types: a host that compiles this source reads the package's own.
+// An ambient `declare module` file cannot be imported, so this is a reference.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="../../../types/vendor.d.ts" />
 'use client';
 
 import { useTranslations } from '../../../i18n';

@@ -69,10 +69,10 @@ not come back.
 
 - Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
   `textarea`, `select`, `switch`, `dialog`, `card`, `badge`, `tabs`, …).
-- The session chat is `<SessionThread>` from `@kortix/ui/chat`. Lumen passes
-  only its own slot (`composerFooter={<ScopeBar …/>}`). Reuse `ModelPicker`,
-  `AgentPicker` and `sendFailureTitle` from `@kortix/ui/chat`; never re-implement
-  the transcript, composer or prompts.
+- The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
+  thread apps/web renders. Lumen adds only its scope bar under it. The
+  new-session form reuses `ModelPicker` and `AgentPicker` from
+  `@kortix/ui/chat`; never re-implement the transcript, composer or prompts.
 - Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
   `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
 - `cn` comes from `@kortix/ui/lib/utils`.

@@ -249,7 +249,7 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 }
 ```
 
-Its `renderTool` and `renderers` props replace one tool card or one part kind, and its parts (`MessageList`, `MessageView`, `Composer`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+It is the thread the Kortix web app renders. `ToolRegistry.register(name, Row)` replaces one tool row, and its building blocks (`UserMessage`, `ToolPartRenderer`, `SessionChatInput`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
 
 ### Render the parts yourself
 

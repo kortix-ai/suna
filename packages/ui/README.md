@@ -163,9 +163,9 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 `<Toaster />` from `@kortix/ui/toast` at the root; `IconProvider`
 (`@kortix/ui/icon-provider`) sets the house icon weight.
 
-## Chat
+## Session thread
 
-Every part of `@kortix/ui/chat` needs `@kortix/sdk` and `@tanstack/react-query`
+Every part of `@kortix/ui/session` needs `@kortix/sdk` and `@tanstack/react-query`
 5 (`@kortix/sdk/react` imports it; it is an optional peer, so npm does not
 warn when it is missing and the bundler fails instead):
 `npm i @kortix/ui @kortix/sdk @tanstack/react-query`, plus one
@@ -173,14 +173,35 @@ warn when it is missing and the bundler fails instead):
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
+import { SessionThread } from '@kortix/ui/session';
 
 <SessionThread session={useSession(projectId, sessionId)} />
 ```
 
-`src/chat/index.ts` lists every part (`MessageList`, `MessageView`, `Composer`,
-the prompts, the pickers) for a host that composes its own layout. A fully
-custom transcript uses `renderParts` from `@kortix/sdk/react`.
+`SessionThread` is the thread apps/web renders: transcript, tool rows,
+permission and question prompts, the composer with its model and agent
+pickers. `hideHeader` hides its title row; `readOnly` hides the composer. The
+parent sets the height. `@kortix/ui/chat` exports the same `SessionThread`,
+plus `ModelPicker` and `AgentPicker` for a form outside a session.
+
+`src/session/index.ts` lists the building blocks for a host that composes its
+own layout: `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`,
+`ToolPartRenderer`, `SessionChatInput`, `ModelSelector`, `AgentSelector`,
+`SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`,
+`SessionBusyIndicator`, `SessionStartingLoader`.
+
+A custom tool row replaces the built-in one for a tool name:
+
+```tsx
+import { BasicTool, ToolRegistry, type ToolProps } from '@kortix/ui/session';
+
+function LookupRow({ call }: ToolProps) {
+  return <BasicTool trigger={`Lookup ${(call.input as { query: string }).query}`} />;
+}
+ToolRegistry.register('lookup', LookupRow);
+```
+
+A fully custom transcript uses `renderParts` from `@kortix/sdk/react`.
 
 ## Theming
 
