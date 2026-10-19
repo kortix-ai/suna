@@ -9,6 +9,7 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
 import { useSession } from './opencode';
 import { useSessionLogThread } from './use-session-log';
+import { qk } from './query-keys';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,19 +33,27 @@ const SESSION_ID = 'kses_log_host';
 
 let urls: string[];
 let serveLog = false;
+let pagedLog = false;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
 beforeEach(() => {
   urls = [];
   serveLog = false;
+  pagedLog = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
     const parsed = new URL(url instanceof Request ? url.url : String(url));
     const path = parsed.pathname;
     urls.push(path + parsed.search);
-    if (serveLog && path.endsWith('/log')) return Response.json(page());
+    if (serveLog && path.endsWith('/log')) {
+      if (!pagedLog) return Response.json(page());
+      // Paged: the newest page holds all but the first four messages.
+      const before = parsed.searchParams.get('before_seq');
+      const all = page();
+      return Response.json(before === null ? { ...all, messages: all.messages.slice(4), has_more: true } : { ...all, messages: all.messages.slice(0, 4), has_more: false });
+    }
     // The session stream: an open SSE body that never ends.
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
     if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
@@ -113,5 +122,56 @@ describe('useSession negotiates the session log without its chat engine', () => 
     expect(urls.some((u) => u.includes(`/sessions/${SESSION_ID}/events`) && u.includes('schema=v2'))).toBe(true);
     expect(seen.thread?.thread_id).toBe(log.threads[0]!.thread_id);
     expect(seen.thread?.messages.map((m) => m.message_id)).toEqual(log.threads[0]!.messages.map((m) => m.message_id));
+  });
+});
+
+describe('useSession with its chat engine: the session log owns the history once session_log is on', () => {
+  type Result = ReturnType<typeof useSession>;
+  function mountHost(flag: boolean) {
+    // The project shell has read the project detail: the flag is known at the first render.
+    queryClient.setQueryData(qk.project.detail(PROJECT_ID), { project: { project_id: PROJECT_ID, experimental: { session_log: flag } }, config: {} });
+    const seen: { result: Result | null } = { result: null };
+    function Host() {
+      seen.result = useSession(PROJECT_ID, SESSION_ID, { replayStartStash: false });
+      return null;
+    }
+    act(() => {
+      renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+    });
+    return seen;
+  }
+
+  test('no saved-copy read: no /transcript request; the log page paints', async () => {
+    serveLog = true;
+    pagedLog = true;
+    const seen = mountHost(true);
+    await flush();
+    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(urls).toContain(`${base}/log?limit=40`);
+    expect(seen.result!.savedTranscript).toBe('shown');
+    expect(seen.result!.hasOlder).toBe(true);
+  });
+
+  test('loadOlder reads GET …/log?thread=&before_seq= and the thread is whole after it', async () => {
+    serveLog = true;
+    pagedLog = true;
+    const seen = mountHost(true);
+    await flush();
+    const root = log.threads[0]!;
+    await act(async () => { await seen.result!.loadOlder(); });
+    await flush();
+    expect(urls).toContain(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log?thread=${root.thread_id}&before_seq=${root.messages[4]!.seq}&limit=100`);
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.hasOlder).toBe(false);
+  });
+
+  test('flag off: the open reads the saved copy as before (no log request)', async () => {
+    serveLog = true;
+    mountHost(false);
+    await flush();
+    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls).toContain(`${base}/transcript?shape=sync&limit=40&history=true`);
+    expect(urls.filter((u) => u.includes('/log'))).toEqual([]);
   });
 });

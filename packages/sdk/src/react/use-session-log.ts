@@ -1,16 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
 import {
   fetchFirstSessionLogPage,
+  fetchSessionLogPage,
   loadSessionLogPage,
   negotiateSessionLog,
+  SESSION_LOG_FIRST_PAGE_LIMIT,
+  SESSION_LOG_OLDER_PAGE_LIMIT,
   type LoadSessionLogPage,
   type SessionLogDialect,
   type SessionLogPage,
@@ -47,8 +50,8 @@ function useV1SessionLog(session: SessionMessagesSource, threadId: string | null
 /**
  * The session log (`kortix.session/2`) of a session a `useSession` hook owns: every thread,
  * its messages by `seq`, and their blocks. `source` names where it came from:
- *  - `'v2'`: the API's session log, once the runtime lists `session.log.v2`, the project flag
- *    `session_log` is on, and the API serves the log. The v1 hooks (`useSessionMessages`,
+ *  - `'v2'`: the API's session log, once the project flag `session_log` is on and the API
+ *    serves the log. The v1 hooks (`useSessionMessages`,
  *    `useSession().messages`) read the same records through `toV1`.
  *  - `'v1'`: before that, the `fromV1` conversion of the v1 rows `useSessionMessages` renders
  *    for `runtimeSessionId`: one root thread whose id is the runtime session id. The turn that
@@ -79,6 +82,27 @@ export function useSessionLogRecord(session: Pick<SessionMessagesSource, 'sessio
   return useSyncStore((state) => state.sessionLogs[session.sessionId]?.session ?? null);
 }
 
+/** Reads a sub-agent thread's first page. Internal; tests replace it (`undefined` restores the default). */
+let threadLoader: LoadSessionLogPage | null = loadSessionLogPage;
+export function setSessionLogThreadLoader(loader: LoadSessionLogPage | null | undefined): void {
+  threadLoader = loader === undefined ? loadSessionLogPage : loader;
+}
+
+/** The thread pages in flight, one per session and thread, however many rows show the thread. */
+const threadReads = new Set<string>();
+
+function readThread(projectId: string, sessionId: string, threadId: string): void {
+  const key = `${sessionId}\u0000${threadId}`;
+  if (!threadLoader || threadReads.has(key)) return;
+  threadReads.add(key);
+  void fetchSessionLogPage(threadLoader, projectId, sessionId, { thread: threadId, limit: SESSION_LOG_FIRST_PAGE_LIMIT })
+    .then((page) => {
+      // The log may have gone (the session left v2) while the page was read.
+      if (page?.thread_id === threadId && useSyncStore.getState().sessionLogs[sessionId]) useSyncStore.getState().applySessionLogPage(sessionId, page);
+    })
+    .finally(() => threadReads.delete(key));
+}
+
 /**
  * One thread of {@link useSessionLog}, with its messages: the root thread when `threadId` is
  * omitted, a sub-agent's thread by its id. On v1 a thread id is a runtime session id, and the
@@ -88,6 +112,8 @@ export function useSessionLogRecord(session: Pick<SessionMessagesSource, 'sessio
  * the store holds no row of that runtime session (v1). `options.throttleMs` paces the thread on
  * both paths as {@link useSessionMessages} paces the v1 rows: a transcript reads a streaming turn
  * at most once per window (leading and trailing edge; the last change always lands).
+ * On v2 a sub-agent thread the log names but has not read yet loads its newest page
+ * (`GET …/log?thread=`), once per session and thread; the root thread is `useSession`'s.
  */
 export function useSessionLogThread(
   session: SessionMessagesSource,
@@ -108,17 +134,75 @@ export function useSessionLogThread(
   const paced = usePacedStoreValue(select, `${session.sessionId}/${threadId ?? ''}`, throttleMs);
   const v2 = live === PACED ? paced : live;
   const v1 = useV1SessionLog(session, threadId, v2 === undefined, options);
+  const unread = useSyncStore((state) => {
+    const log = threadId ? state.sessionLogs[session.sessionId] : undefined;
+    const head = threadId ? log?.threads[threadId] : undefined;
+    return !!head && head.parent_thread_id !== null && log!.older[threadId!] === undefined;
+  });
+  const { projectId, sessionId } = session;
+  useEffect(() => {
+    if (unread && projectId && threadId) readThread(projectId, sessionId, threadId);
+  }, [unread, projectId, sessionId, threadId]);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
 }
 
 /**
+ * Older messages of one thread of a v2 session, from `GET …/log?thread=&before_seq=`: the
+ * root thread when `threadId` is omitted. `hasOlder` is the oldest page's `has_more`;
+ * `loadOlder` reads the page before the thread's first `seq` (one request at a time, the
+ * same promise to every caller). A failed read stops offering older messages, so a loop
+ * that drains the history (print) ends. Nothing on v1: the session has no log.
+ */
+export function useSessionLogOlder(
+  session: Pick<SessionMessagesSource, 'projectId' | 'sessionId'>,
+  threadId?: string | null,
+  options: { enabled?: boolean; loader?: LoadSessionLogPage | null } = {},
+): { hasOlder: boolean; isLoadingOlder: boolean; loadOlder: () => Promise<void> } {
+  const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
+  const enabled = (options.enabled ?? true) && !!loader;
+  const { projectId, sessionId } = session;
+  const thread = useSyncStore((state) => {
+    const log = state.sessionLogs[sessionId];
+    if (!log) return null;
+    return threadId ?? Object.values(log.threads).find((head) => head.parent_thread_id === null)?.thread_id ?? null;
+  });
+  const more = useSyncStore((state) => (thread ? state.sessionLogs[sessionId]?.older[thread] === true : false));
+  const key = `${projectId}/${sessionId}/${thread ?? ''}`;
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const inFlight = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const loadOlder = useCallback((): Promise<void> => {
+    if (!enabled || !loader || !thread || !projectId) return Promise.resolve();
+    if (inFlight.current?.key === key) return inFlight.current.promise;
+    const state = useSyncStore.getState().sessionLogs[sessionId];
+    const first = state?.messages[thread]?.[0]?.seq;
+    if (state?.older[thread] !== true || first === undefined) return Promise.resolve();
+    setLoadingKey(key);
+    const promise = fetchSessionLogPage(loader, projectId, sessionId, { thread, before_seq: first, limit: SESSION_LOG_OLDER_PAGE_LIMIT })
+      .then((page) => {
+        if (page?.thread_id === thread && useSyncStore.getState().sessionLogs[sessionId]) useSyncStore.getState().applySessionLogPage(sessionId, page, first);
+        else setFailedKey(key);
+      })
+      .finally(() => {
+        if (inFlight.current?.promise === promise) inFlight.current = null;
+        setLoadingKey((current) => (current === key ? null : current));
+      });
+    inFlight.current = { key, promise };
+    return promise;
+  }, [enabled, loader, thread, projectId, sessionId, key]);
+  return { hasOlder: enabled && more && failedKey !== key, isLoadingOlder: loadingKey === key, loadOlder };
+}
+
+/**
  * Internal (`useSession` mounts it). Negotiates the session's dialect
- * (`negotiateSessionLog`). On v2:
+ * (`negotiateSessionLog`: the project flag, no runtime). `'v2'` from the moment the flag is
+ * known on, while the first page is read; `useSession` reads no v1 saved copy then. On v2:
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. the session stream switches to `schema=v2` (`log.*` frames in place of the `message.*`
- *     ones) at the same runtime cursor; the page is read again after each reconnect and on a
- *     `kortix.resync` (a v2 log on another epoch replays nothing for the old cursor).
+ *     ones) at the same runtime cursor; the page is read again after each reconnect, on a
+ *     `kortix.resync` (a v2 log on another epoch replays nothing for the old cursor), and when
+ *     the tab becomes visible again.
  * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
  * A 404 (a new session whose journal has not posted yet) or an invalid page leaves the session
@@ -140,19 +224,10 @@ export function useSessionLogSync(
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
-  const live = useSandboxConnectionStore((state) => state.runtimeCapabilities);
-  // The runtime's answer is latched for the mounted session: a reconnect clears the list
-  // (`use-runtime-reconnect.ts`), and re-negotiating v1 there would drop the log, flip the
-  // rows to v1 and refetch the page. The flag is not latched: turning it off returns to v1.
-  // ponytail: the list is host-global (the last health any session answered), as in
-  // `useRuntimeSupports`; key it per session when two sessions with different runtimes mount.
-  const served = useRef<string | null>(null);
   const key = `${projectId}/${sessionId}`;
-  if (live?.includes('session.log.v2')) served.current = key;
-  const capabilities = served.current === key ? ['session.log.v2'] : live;
   const flag = useFeatureFlag(active ? projectId : null, 'session_log').enabled;
-  const negotiated = active ? negotiateSessionLog({ capabilities, flag, loader }) : 'v1';
-  // The page answered that this session cannot read v2 yet (404, invalid).
+  const negotiated = active ? negotiateSessionLog({ flag, loader }) : 'v1';
+  // The page answered that this session cannot read v2 yet (404, invalid): v1 from then on.
   const [refusedKey, setRefusedKey] = useState<string | null>(null);
   const dialect: SessionLogDialect = negotiated === 'v2' && refusedKey !== key ? 'v2' : 'v1';
 
@@ -166,6 +241,8 @@ export function useSessionLogSync(
     let busy = false;
     // The last turn end the session stream reported, kept across re-joins: a different one is a turn end.
     let lastEnded: string | null | undefined;
+    // The page answered: the stream is on `schema=v2`.
+    let onV2 = false;
     const join = (options: Omit<SessionControlStreamOptions, 'projectId' | 'sessionId'>) => {
       stream?.close();
       stream = joinStream({ projectId, sessionId, ...options });
@@ -193,6 +270,7 @@ export function useSessionLogSync(
       const page = await load();
       busy = false;
       if (stopped) return;
+      onV2 = !!page;
       if (page) {
         setRefusedKey(null);
         // A v2 connection resumes at the v1 cursor; a server on another epoch answers
@@ -222,7 +300,11 @@ export function useSessionLogSync(
       if (saved && !store().sessionLogs[sessionId]) store().applySessionLogPage(sessionId, saved);
       await attempt();
     })();
+    // A tab that comes back is the least sure it has every frame (a background tab can lose
+    // its stream silently): read the newest page again, as the v1 transcript reads its tail.
+    const stopVisible = onTabVisible(() => void (onV2 ? load() : attempt()));
     return () => {
+      stopVisible();
       stopped = true;
       controller.abort();
       stream?.close();

@@ -8,6 +8,7 @@ import {
   applySessionLogPage,
   selectSessionLog,
   selectSessionLogThread,
+  sessionLogHasOlder,
   type SessionLogState,
 } from './store';
 import type { SessionLog, SessionLogMessage, TextBlock } from './types';
@@ -93,6 +94,44 @@ describe('applySessionLogPage', () => {
     (messages[1] as Record<string, unknown>).seq = 'x';
     const state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, page(messages));
     expect(ids(state)).toHaveLength(messages.length - 1);
+  });
+});
+
+describe('sessionLogHasOlder: the oldest page read decides', () => {
+  const window = (messages: SessionLogMessage[], has_more: boolean, thread = ROOT) => ({ ...page(messages), thread_id: thread, has_more });
+  test('undefined before any page of the thread; the first page answers its has_more', () => {
+    const all = rootMessages();
+    expect(sessionLogHasOlder(EMPTY_SESSION_LOG_STATE, ROOT)).toBeUndefined();
+    expect(sessionLogHasOlder(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true)), ROOT)).toBe(true);
+    expect(sessionLogHasOlder(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all, false)), ROOT)).toBe(false);
+  });
+
+  test('an older page answers for the thread; the newest page read again does not undo it', () => {
+    const all = rootMessages();
+    let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true));
+    state = applySessionLogPage(state, window(all.slice(0, 4), false), all[4]!.seq);
+    expect(sessionLogHasOlder(state, ROOT)).toBe(false);
+    expect(ids(state)).toEqual(all.map((m) => m.message_id));
+    // A reconnect reads the newest page again: it still says has_more, but the thread is whole.
+    state = applySessionLogPage(state, window(all.slice(4), true));
+    expect(sessionLogHasOlder(state, ROOT)).toBe(false);
+    expect(ids(state)).toEqual(all.map((m) => m.message_id));
+  });
+
+  test('an older page settles only below its before_seq: a deleted older message leaves, newer ones stay', () => {
+    const all = rootMessages();
+    let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all, false));
+    const gone = all[1]!;
+    state = applySessionLogPage(state, window(all.slice(0, 4).filter((m) => m !== gone), false), all[4]!.seq);
+    expect(ids(state)).toEqual(all.filter((m) => m !== gone).map((m) => m.message_id));
+  });
+
+  test('per thread: a child page leaves the root answer alone', () => {
+    const all = rootMessages();
+    let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true));
+    state = applySessionLogPage(state, window([], false, CHILD));
+    expect(sessionLogHasOlder(state, ROOT)).toBe(true);
+    expect(sessionLogHasOlder(state, CHILD)).toBe(false);
   });
 });
 

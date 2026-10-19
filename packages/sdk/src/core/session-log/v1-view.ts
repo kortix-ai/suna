@@ -51,6 +51,16 @@ const nativeOf = (head: SessionLogThreadHead) => {
   return e ? (e.native_id ?? null) : head.thread_id;
 };
 
+/**
+ * The root thread of `state` (a page or the saved copy is in), with the runtime session id its
+ * v1 rows are keyed by, and whether it holds a message. Null before any page.
+ */
+export function sessionLogRoot(state: SessionLogState | undefined): { runtimeSessionId: string | null; hasMessages: boolean } | null {
+  const head = state && Object.values(state.threads).find((h) => h.parent_thread_id === null);
+  if (!state || !head) return null;
+  return { runtimeSessionId: nativeOf(head), hasMessages: (state.messages[head.thread_id]?.length ?? 0) > 0 };
+}
+
 /** Rows per message, valid for one runtime session id: a `log.thread` upsert keeps them. */
 const messageRows = new WeakMap<SessionLogMessage, { native: string | null; rows: V1MessageRow[] }>();
 

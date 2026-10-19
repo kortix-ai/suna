@@ -45,6 +45,8 @@ export interface SessionLogState {
   threads: Record<string, SessionLogThreadHead>;
   messages: Record<string, SessionLogMessage[]>;
   revs: Record<string, number>;
+  /** Per thread: the oldest page read said older messages exist (`has_more`). Absent before a page of the thread. */
+  older: Record<string, boolean>;
 }
 
 /** The `log.*` frame as the store receives it: the runtime event shape, with the wire's own event id. */
@@ -60,6 +62,7 @@ export const EMPTY_SESSION_LOG_STATE: SessionLogState = Object.freeze({
   threads: {},
   messages: {},
   revs: {},
+  older: {},
 });
 
 type J = Record<string, unknown>;
@@ -132,17 +135,31 @@ export function applySessionLogEvent(state: SessionLogState, event: SessionLogEv
   }
 }
 
-export function applySessionLogPage(state: SessionLogState, page: SessionLogPage): SessionLogState {
+/**
+ * `beforeSeq`: the page answers `before_seq` (an older page); it then settles only below it.
+ * Without it the page is the newest one of its thread.
+ */
+export function applySessionLogPage(state: SessionLogState, page: SessionLogPage, beforeSeq?: number): SessionLogState {
   let messages = state.messages;
-  // The page is the thread's truth from its first seq on (all of it without `has_more`): a held
-  // message there that it lacks and that the stream never revised was deleted, or came from an
-  // older copy (the device's saved copy). It leaves.
+  let older = state.older;
   const thread = page.thread_id;
   const held = thread === null ? undefined : messages[thread];
+  if (thread !== null) {
+    // The page answers for the thread's older messages when it reaches back as far as the
+    // held ones: an older page, the first page of the thread, or a page holding all of it.
+    // The newest page read again after older pages (a reconnect) does not undo their answer.
+    const first = page.messages[0]?.seq;
+    const oldest = beforeSeq !== undefined || !held?.length || !page.has_more || (first !== undefined && first <= held[0]!.seq);
+    if (oldest && state.older[thread] !== page.has_more) older = { ...older, [thread]: page.has_more };
+  }
+  // The page is the thread's truth from its first seq (from the start without `has_more`) up to
+  // `beforeSeq`: a held message there that it lacks and that the stream never revised was
+  // deleted, or came from an older copy (the device's saved copy). It leaves.
   if (thread !== null && held) {
     const from = page.has_more ? (page.messages[0]?.seq ?? Infinity) : -Infinity;
+    const to = beforeSeq ?? Infinity;
     const kept = new Set(page.messages.map((m) => m.message_id));
-    const settled = held.filter((m) => m.seq < from || kept.has(m.message_id) || state.revs[m.message_id] !== undefined);
+    const settled = held.filter((m) => m.seq < from || m.seq >= to || kept.has(m.message_id) || state.revs[m.message_id] !== undefined);
     if (settled.length !== held.length) messages = { ...messages, [thread]: settled };
   }
   for (const message of page.messages) {
@@ -160,7 +177,13 @@ export function applySessionLogPage(state: SessionLogState, page: SessionLogPage
     session: newer ? { ...state.session, ...page.session } : { ...page.session, ...state.session },
     threads,
     messages,
+    older,
   };
+}
+
+/** The oldest page read of `threadId` said older messages exist; undefined before a page of it. */
+export function sessionLogHasOlder(state: SessionLogState, threadId: string): boolean | undefined {
+  return state.older[threadId];
 }
 
 const logs = new WeakMap<SessionLogState, SessionLog | null>();

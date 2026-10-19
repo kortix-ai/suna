@@ -96,7 +96,8 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
-import { useSessionLogSync } from './use-session-log';
+import { useSessionLogOlder, useSessionLogSync } from './use-session-log';
+import { sessionLogRoot } from '../core/session-log/v1-view';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -1365,6 +1366,22 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
+  // 1a'. The session log (v2) when negotiated (`use-session-log.ts`). Also without
+  // the chat engine: a host that reads its own transcript renders the log's threads
+  // (`useSessionLogThread`). With the chat engine, the log OWNS the history from the moment
+  // the `session_log` flag is known on: the open asks the snapshot for no transcript window,
+  // no saved copy is read (`useSessionSync` `sessionLog`), and older pages come from
+  // `GET …/log`. A session the log refuses (no stored log yet) reads v1 as before.
+  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
+  const logOwned = chatEngine && logDialect === 'v2';
+  const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
+  // On v2 the session log is the saved copy: its page, or the device's saved v2 copy.
+  const logHistory = useSyncStore((state): 'loading' | 'present' | 'absent' => {
+    const root = logOwned ? sessionLogRoot(state.sessionLogs[sessionId]) : null;
+    return !root ? 'loading' : root.hasMessages ? 'present' : 'absent';
+  });
+  const logOlder = useSessionLogOlder({ projectId, sessionId }, undefined, { enabled: logOwned });
+
   // 1b. ONE read for the rest of the open.
   //
   // The session row, `/turn`, `/prompts`, `/transcript?shape=sync` and
@@ -1387,7 +1404,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // into a second cadence.
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
-    openSessionBundle(projectId, sessionId);
+    openSessionBundle(projectId, sessionId, logOwned ? { transcript: 0 } : undefined);
     seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
@@ -1512,17 +1529,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
-  // 5a. The session log (v2) when negotiated; until then a no-op and the
-  // transcript below stays the only source (`use-session-log.ts`). Also without
-  // the chat engine: a host that reads its own transcript renders the log's
-  // threads (`useSessionLogThread`).
-  useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
-  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
+  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled && !logOwned);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? initialRuntimeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? logRootRuntimeId ?? initialRuntimeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
@@ -1586,6 +1598,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // copy, or `null` while it runs and when it found none. Never `undefined`,
     // which would make the sync layer read the same window again (KRTX-189).
     mirror: transcriptHistory.envelope,
+    sessionLog: logOwned,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1663,15 +1676,17 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
   const savedTranscript = resolveSavedTranscript({
     enabled: startEnabled && chatEngine,
-    hasMessages: sync.messages.length > 0,
+    hasMessages: sync.messages.length > 0 || (logOwned && logHistory === 'present'),
     history: !transcriptHistoryEnabled
       ? 'off'
-      : transcriptHistory.isLoading
-        ? 'loading'
-        : transcriptHistory.envelope
-          ? 'present'
-          : 'absent',
-    mirror: sync.mirrorState,
+      : logOwned
+        ? logHistory
+        : transcriptHistory.isLoading
+          ? 'loading'
+          : transcriptHistory.envelope
+            ? 'present'
+            : 'absent',
+    mirror: logOwned ? (logHistory === 'present' ? 'painted' : logHistory) : sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
     emptyAwaitingTurnRead: emptyProvenForRoot && !turnRead,
   });
@@ -2077,9 +2092,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
-    hasOlder: sync.hasOlder,
-    isLoadingOlder: sync.isLoadingOlder,
-    loadOlder: sync.loadOlder,
+    // On v2 older history is the session log's (`GET …/log?before_seq=`).
+    hasOlder: logOwned ? logOlder.hasOlder : sync.hasOlder,
+    isLoadingOlder: logOwned ? logOlder.isLoadingOlder : sync.isLoadingOlder,
+    loadOlder: logOwned ? logOlder.loadOlder : sync.loadOlder,
 
     // lifecycle
     phase,
