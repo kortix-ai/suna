@@ -29,6 +29,9 @@ export interface TriggerScheduleSpec {
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
   maxLatenessSeconds?: number;
+  /** Any type — see GitTriggerSpec.maxRunsPerHour / maxRunsPerDay. */
+  maxRunsPerHour?: number;
+  maxRunsPerDay?: number;
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {

@@ -1070,6 +1070,8 @@ async function fireAndAnswer(
     source,
     idempotencyKey: input.idempotencyKey ?? null,
     request: requestAuditContext(c),
+    // A person fired it: the run caps do not hold it (KRTX-1721).
+    deliberate: true,
   }).catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     await recordTriggerRun({ ...run, status: 'failed', error: message });
