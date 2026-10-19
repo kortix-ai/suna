@@ -127,6 +127,10 @@ windows = { version = "0.58", optional = true, features = [
     "Storage_Streams",
 ] }
 
+# The app icon as a Windows resource in every exe (build.rs).
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
+
 [target.'cfg(unix)'.dependencies]
 # The machine service on macOS and Linux (src/memory/managed/unix.rs): getpwuid, geteuid.
 libc = "0.2"

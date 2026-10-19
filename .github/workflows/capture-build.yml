@@ -375,6 +375,46 @@ jobs:
           [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
           $bmp.Save("$env:EV\desktop_with_tray.png")
           exit 0  # `stop` exits 1 on a managed computer by design; the Assert step checks it
+      - name: The Start menu entry opens the window for a person without admin rights
+        run: |
+          # The MSI's shortcut, run exactly as it is (target and arguments).
+          $lnk = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "Kortix Capture.lnk" | Select-Object -First 1
+          $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk.FullName)
+          # The runner's user is an administrator with UAC off. People on a managed computer are not:
+          # a basic-user token (Administrators deny-only) cannot write to Program Files.
+          $before = @(Get-Process kortix-capture -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+          # `start /min`: the shortcut's own show state (minimized, it hides the console a click opens).
+          runas /trustlevel:0x20000 "cmd.exe /c start `"`" /min `"$($sc.TargetPath)`" $($sc.Arguments)"
+          function Window { Get-Process kortix-capture -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $before -and $_.MainWindowTitle } | Select-Object -First 1 }
+          $t0 = Get-Date; $w = $null
+          while (-not $w -and ((Get-Date) - $t0).TotalSeconds -lt 60) { Start-Sleep 1; $w = Window }
+          Start-Sleep 10
+          $w2 = Window
+          $webview = if ($w2) { @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe' AND ParentProcessId=$($w2.Id)").Count } else { 0 }
+          $cmd = if ($w2) { (Get-CimInstance Win32_Process -Filter "ProcessId=$($w2.Id)").CommandLine } else { $null }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:EV\start_menu_window.png")
+          Copy-Item "$env:APPDATA\ai.kortix.capture\logs\ui.log" "$env:EV\ui.log" -ErrorAction SilentlyContinue
+          # A second click while the window is open: the same window comes forward, no second one.
+          runas /trustlevel:0x20000 "cmd.exe /c start `"`" /min `"$($sc.TargetPath)`" $($sc.Arguments)"
+          Start-Sleep 10
+          $windows = @(Get-Process kortix-capture -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq "Kortix Capture" }).Count
+          @{
+            shortcut = "$($sc.TargetPath) $($sc.Arguments)"
+            title = if ($w2) { $w2.MainWindowTitle } else { $null }
+            same_process_after_10s = [bool]($w -and $w2 -and $w.Id -eq $w2.Id)
+            cmd = $cmd
+            webview_processes = $webview
+            profile_in_program_files = Test-Path "$env:ProgramFiles\Kortix\Capture\kortix-capture.exe.WebView2"
+            profile_in_library = Test-Path "$env:APPDATA\ai.kortix.capture\webview2"
+            ui_log = Test-Path "$env:EV\ui.log"
+            windows_after_second_click = $windows
+            still_open_after_second_click = [bool]($w2 -and -not $w2.HasExited)
+          } | ConvertTo-Json | Tee-Object "$env:EV\start_menu_window.json"
+          if ($w2) { $null = $w2.CloseMainWindow() }
       - name: DIAG frame content (temporary)
         continue-on-error: true
         run: |
@@ -546,6 +586,12 @@ jobs:
           assert "[notify] notice: Example Org" in tray_log and "delivered by powershell.exe" in tray_log, "the organization notice was not shown"
           assert load("start_when_managed.json")["managed"] is True, "start must report the managed recording"
           assert "stop exit: 1" in text("stop_when_managed.txt") and "manages Kortix Capture" in text("stop_when_managed.txt")
+          win = load("start_menu_window.json"); print("start menu", win)
+          assert win["shortcut"].endswith("kortix-capture.exe app"), win
+          assert win["title"] == "Kortix Capture" and win["same_process_after_10s"] and "app --detached" in (win["cmd"] or ""), ("the Start menu entry opened no window", win, text("ui.log") if win["ui_log"] else "")
+          assert win["webview_processes"] >= 1 and not win["ui_log"], ("the window has no WebView", win)
+          assert win["profile_in_library"] and not win["profile_in_program_files"], ("the WebView2 profile is not in the library", win)
+          assert win["windows_after_second_click"] == 1 and win["still_open_after_second_click"], ("a second click opened another window or closed this one", win)
           if not real:
               log = [json.loads(l) for l in text("issuer.jsonl").splitlines() if l.strip()]
               enrolls = [l for l in log if l["path"].endswith("/enroll")]
