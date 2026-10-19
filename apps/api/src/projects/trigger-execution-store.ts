@@ -11,6 +11,7 @@ import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
 import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
+import { accountAutomationsRunSql } from '../accounts/automation-pause';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -72,6 +73,9 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
+        // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
+        // so resuming fires a missed slot once.
+        accountAutomationsRunSql(projects.accountId),
         // A session reminder fires only while its project has the `reminders`
         // flag on. Off, the row stays due and unclaimed, so turning the flag
         // back on fires a missed slot once, like any downtime.

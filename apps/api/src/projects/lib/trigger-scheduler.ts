@@ -10,7 +10,7 @@ import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
-import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout } from './trigger-scheduler-state';
+import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
@@ -125,12 +125,14 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  if (!project || project.status !== 'active' || triggersPausedForProject(project.metadata)) {
+  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
+  if (!project || project.status !== 'active' || paused) {
     const reason = !project
       ? 'project not found'
       : project.status !== 'active'
         ? 'project is not active'
-        : 'project triggers are paused';
+        : paused!;
     await markTriggerExecutionSkipped({
       row,
       skippedAt: new Date(),

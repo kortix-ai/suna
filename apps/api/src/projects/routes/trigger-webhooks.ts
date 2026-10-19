@@ -15,7 +15,8 @@ import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-de
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { PROJECT_TRIGGERS_PAUSED_REASON, automaticFirePauseReason } from '../lib/trigger-scheduler-state';
 import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
@@ -175,8 +176,10 @@ export function registerTriggerWebhooksRoutes(): void {
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
     // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
-    if (triggersPausedForProject(project.metadata)) {
-      const reason = 'triggers are paused server-side for this project';
+    // The account's Pause all automations stops it the same way (KRTX-1721).
+    const pausedReason = await automaticFirePauseReason(project);
+    if (pausedReason) {
+      const reason = pausedReason === PROJECT_TRIGGERS_PAUSED_REASON ? 'triggers are paused server-side for this project' : pausedReason;
       await recordRun({ status: 'skipped', error: reason });
       return c.json({ status: 'skipped' as const, reason }, 200);
     }
