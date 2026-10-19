@@ -122,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkov
-        uses: bridgecrewio/checkov-action@cc0e17d456ef1713bbfd963ebac19dc776775cb2 # v12.3128.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: infra/terraform
           framework: terraform
