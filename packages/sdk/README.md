@@ -732,7 +732,8 @@ conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
-either way. See the
+either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 session back
+(`GET …/log?thread=&before_seq=`). See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
 Three transitional functions bridge a host that renders blocks while its rows are

@@ -5,6 +5,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
 ### Changed (Capture app ids)
 - `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
   app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
