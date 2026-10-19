@@ -479,7 +479,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'agent_rooms',
     name: 'Agent Rooms',
     description:
-      'Named rooms where sessions and people message each other (`kortix rooms`). A session joins a room, and every message another participant posts lands in its prompt inbox: a running turn reads it at its next step, a stopped session wakes to answer. Off ⇒ the room routes answer 403 and nothing is delivered.',
+      'Conversations between agent sessions and people (`kortix rooms`, `kortix dm`): named rooms and direct messages. A member session gets each message from someone else as a room event when its current turn ends (a stopped session wakes to answer); a member person gets it as an unread message and, with the notification center on, a notification. Off ⇒ the room routes answer 403 and nothing is delivered.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

@@ -23,7 +23,7 @@ import { projectSessions, projects, roomMembers, roomMessages, rooms, sessionLif
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { filterRoomRecipients } from '../../notifications/access';
+import { filterRoomRecipients, mayPromptSessions } from '../../notifications/access';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { deliver } from '../../notifications/notifier';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -36,6 +36,8 @@ export const ROOM_MESSAGE_MAX_CHARS = 16_000;
 export const ROOM_TOPIC_MAX_CHARS = 500;
 /** Messages one sender may post in one conversation per minute. */
 export const SENDER_MESSAGES_PER_MINUTE = 30;
+/** A sender's message identical to their previous one within this window is refused: a loop, not news. */
+export const DUPLICATE_WINDOW_MS = 60_000;
 
 export type RoomNotify = 'all' | 'mentions' | 'none';
 export type RoomRow = typeof rooms.$inferSelect;
@@ -55,7 +57,7 @@ export type RoomDelivery = {
   session_id: string | null;
   user_id: string | null;
   state: 'queued' | 'notified' | 'unread' | 'skipped';
-  /** Why a member got nothing: `sender`, `notify_none`, `not_mentioned`, `session_deleted`, `flag_off`, `agent_chain`, `no_access`. */
+  /** Why a member got nothing: `sender`, `notify_none`, `not_mentioned`, `session_deleted`, `flag_off`, `agent_chain`, `no_access`, `sender_cannot_prompt`. */
   reason?: string;
 };
 
@@ -359,7 +361,9 @@ export async function postRoomMessage(input: {
   const senderFilter = sender.kind === 'session'
     ? eq(roomMessages.senderSessionId, sender.sessionId)
     : and(eq(roomMessages.senderKind, 'member'), eq(roomMessages.senderUserId, sender.userId));
-  const [recent, [rate], members] = await Promise.all([
+  const [[previous], recent, [rate], members] = await Promise.all([
+    db.select({ text: roomMessages.text, createdAt: roomMessages.createdAt }).from(roomMessages)
+      .where(and(eq(roomMessages.roomId, room.roomId), senderFilter)).orderBy(desc(roomMessages.seq)).limit(1),
     db.select({ kind: roomMessages.senderKind }).from(roomMessages)
       .where(eq(roomMessages.roomId, room.roomId)).orderBy(desc(roomMessages.seq)).limit(AGENT_CHAIN_LIMIT),
     db.select({ count: sql<number>`count(*)::int` }).from(roomMessages)
@@ -368,6 +372,9 @@ export async function postRoomMessage(input: {
   ]);
   if ((rate?.count ?? 0) >= SENDER_MESSAGES_PER_MINUTE) {
     throw new RoomError(429, `At most ${SENDER_MESSAGES_PER_MINUTE} messages per minute per sender in one conversation`, 'room_rate_limited');
+  }
+  if (previous && previous.text === input.text && Date.now() - previous.createdAt.getTime() < DUPLICATE_WINDOW_MS) {
+    throw new RoomError(409, 'You sent this exact message less than a minute ago', 'duplicate_message');
   }
   if (input.replyToSeq !== null && input.replyToSeq > room.lastSeq) {
     throw new RoomError(400, `reply_to #${input.replyToSeq} does not exist in this conversation`, 'reply_to_unknown');
@@ -384,6 +391,18 @@ export async function postRoomMessage(input: {
     room.projectId,
     members.flatMap((m) => (m.memberKind === 'person' && memberKey(refOfRow(m)) !== self ? [m.userId!] : [])),
   ));
+
+  // No laundering: a message reaches a session only when the person vouching
+  // for the sender could prompt that session themselves — the person who
+  // posted, or the person who put the sending session in this conversation.
+  const voucher = sender.kind === 'member'
+    ? sender.userId
+    : members.find((m) => m.sessionId === sender.sessionId)?.addedByUserId ?? sender.userId;
+  const promptable = await mayPromptSessions(
+    voucher,
+    room.accountId,
+    members.flatMap((m) => (m.memberKind === 'session' && memberKey(refOfRow(m)) !== self ? [m.sessionId!] : [])),
+  );
 
   const deliveries: RoomDelivery[] = [];
   const sessionTargets: typeof members = [];
@@ -409,6 +428,7 @@ export async function postRoomMessage(input: {
       }
     } else if (typeof (member.metadata as Record<string, unknown> | null)?.deletedAt === 'string') verdict('skipped', 'session_deleted');
     else if (flagOff.has(member.projectId)) verdict('skipped', 'flag_off');
+    else if (!promptable.has(member.sessionId!)) verdict('skipped', 'sender_cannot_prompt');
     else if (paused) verdict('skipped', 'agent_chain');
     else {
       sessionTargets.push(member);

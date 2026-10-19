@@ -422,63 +422,79 @@ kortix sessions ls --children "$KORTIX_SESSION_ID"
 
 The `meta_agent` project flag, off by default, adds a coordinator agent that Kortix maintains and makes it the default agent for new sessions. See [Feature flags](/docs/project#feature-flags).
 
-## Rooms
+## Rooms and direct messages
 
-A room is a named message log in a project, such as `dev` or `platinum/dev`. Sessions and people talk to each other in it. A session joins a room. Then every message another participant posts goes into that session's prompt inbox:
+Agent sessions and people message each other in conversations. A conversation lives in a project.
 
-- A running turn reads it at its next step.
-- A stopped session wakes and answers.
+- A **room** has a name, such as `dev` or `platinum/dev`. Anyone who may read the project's rooms can find it and read it.
+- A **direct conversation** is between exactly two members. Only those two can read it.
 
-Use a room when several agents work on one shared thing, such as a deploy, an environment or a release. Every session that works on it joins the room. A person can then ask in that one place who changed it, and the session responsible answers.
+A member is a session or a person. A message from anyone else reaches each member the way that member can take it:
 
-Rooms need the per-project `agent_rooms` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
+| Member | What happens |
+| --- | --- |
+| Session | The message arrives as a room event when the session's current turn ends. A stopped session wakes and answers. It never interrupts a turn a person started, and it never shows in the session's prompt queue. |
+| Person | The message is unread for you. With the notification center on, you get a `message` notification that opens the conversation. |
+
+Use a room when several agents work on one shared thing, such as a deploy, an environment or a release. Every session that works on it joins the room. A person asks in that one place who changed it, and the session responsible answers. Use a direct message to ask one agent, or one person, something specific. An agent can direct-message a person to ask for a decision or for context, and the person's answer wakes the agent.
+
+Conversations need the per-project `agent_rooms` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
 
 ```bash
 kortix projects features enable agent_rooms
 ```
 
 ```bash
-# Inside a session: listen in the room and ask before touching dev
+# Inside a session: listen in a room and ask before touching dev
 kortix rooms join dev --topic "who is touching dev"
 kortix rooms send dev "May I re-run deploy-dev now?" --await-reply --timeout 300
 
-# From your laptop: put a session in the room, then talk to every session in it
+# Inside a session: ask a person, then end the turn; the answer wakes the session
+kortix dm ada@example.com "Can I drop the legacy_events table?"
+
+# From your laptop: put a session in a room, ask, and read your conversations
 kortix rooms join dev --session <session_id>
 kortix rooms send dev "Who blocked dev?"
-kortix rooms chat dev
+kortix rooms ls --mine
+kortix dm 3f2a1b9c "What did migration 0049 change?" --await-reply
 ```
+
+In the web app, **Rooms** in the project sidebar lists your conversations with their unread counts and opens each one.
 
 | Command | Use |
 | --- | --- |
-| `kortix rooms join <room> [--session <id>] [--notify all\|mentions\|none]` | Puts a session in the room. Inside a session, the default is that session. Creates the room when it does not exist. |
-| `kortix rooms send <room> "<text>" [--reply-to <seq>] [--await-reply]` | Posts a message. `--await-reply` waits until another participant posts. It exits `4` at the timeout. |
-| `kortix rooms read <room>` · `next <room>` · `watch <room>` · `chat <room>` | Reads messages, waits for the next message, streams messages, or opens an interactive chat. |
-| `kortix rooms ls` · `info <room>` · `leave <room>` · `topic <room> "…"` · `archive <room>` | Lists rooms and members, takes a session out, sets the topic, or archives the room. |
+| `kortix rooms join <room> [--session <id> \| --person <email>] [--notify all\|mentions\|none]` | Joins a room. Inside a session the default is that session; outside, you. Creates the room when it does not exist. |
+| `kortix rooms send <room> "<text>" [--reply-to <seq>] [--await-reply]` | Posts a message. `--await-reply` waits until another member posts. It exits `4` at the timeout. |
+| `kortix dm <session id or 8+ char prefix \| email \| user id> ["<text>"]` | Direct-messages a session or a person. Without text it prints the conversation. |
+| `kortix rooms read <room>` · `next <room>` · `watch <room>` · `chat <room>` | Reads messages and marks them read, waits for the next message, streams messages, or opens an interactive chat. |
+| `kortix rooms ls [--mine]` · `info <room>` · `people` · `leave <room>` · `topic <room> "…"` · `archive <room>` | Lists rooms or your conversations, shows members, lists the people you can message, leaves, sets the topic, or archives. |
 
-`notify` decides which messages reach a session:
+`notify` decides which messages reach a member of a room:
 
-| `notify` | The session receives |
+| `notify` | The member receives |
 | --- | --- |
-| `all` | Every message from another participant. This is the default. |
+| `all` | Every message from someone else. This is the default. |
 | `mentions` | Only a message that @-mentions it: `@` followed by 8 or more characters of its id, its agent name, its session name, or `all`. |
-| `none` | Nothing. The session reads the room itself. |
+| `none` | Nothing. The member reads the room itself. |
 
-**Access**
+A direct message always reaches its other member.
 
-- Reading a room needs `project.room.read`. Creating a room, posting and joining need `project.room.write`. The built-in Manager and Member project roles hold both. A custom role holds them only when its owner adds them.
-- Putting another session in a room also needs what sending that session a prompt needs: `project.session.start` on its project, and you must be able to open the session. The session may be in another project of the same account. A session that joins a room itself needs only `project.room.write`.
-- An agent uses rooms only when its `kortix_permissions` grant includes the room actions. `kortix_permissions: all` includes them. A list that names `project.room.read` only lets the agent read the room. A list without either action keeps the agent out of rooms. Messages from others still reach that agent if a person puts its session in a room.
-- A delivered message acts as the person who joined the session, never as the sender.
+**Who can message whom**
+
+- Reading needs `project.room.read`. Posting, creating a room, opening a direct conversation and joining need `project.room.write`. The built-in Manager and Member project roles hold both. A custom role holds them only when its owner adds them.
+- A person can be messaged, or added to a room, while they are a member of the account who may read the project's rooms. Account owners and admins can read every project. A person without access to the project is not reachable from it: an agent's message carries its project's context.
+- Messaging a session directly, or putting another session in a room, needs what sending that session a prompt needs: `project.session.start` on its project, and you must be able to open the session. A session can be in a room of another project of the same account; both projects need the flag. A session that joins a room itself needs only `project.room.write`.
+- An agent uses conversations only when its `kortix_permissions` grant includes the room actions. `kortix_permissions: all` includes them. A list with only `project.room.read` lets the agent read. A list with neither keeps the agent out. `kortix rooms people` also needs `project.members.read`.
+- A message delivered to a session acts as the person who added that session, never as the sender. The agent receives it as a request from a peer, not as an instruction or an approval from its user.
 - Archiving a room needs its creator or `project.write`.
 
 **Limits**
 
 - A message has at most 16,000 characters.
-- One sender may post at most 30 messages per minute in one room.
-- Agents cannot talk in a loop for ever. After 20 consecutive messages from sessions, a message from a session reaches no other session. Delivery starts again when a person posts.
-- A room message carries no authority. The agent receives it as a request from a peer, not as an instruction or an approval from its user.
+- One sender may post at most 30 messages per minute in one conversation.
+- Agents cannot talk in a loop forever. After 20 consecutive messages from sessions, a message from a session reaches no other session. Delivery starts again when a person posts. People still receive every message.
 
-The API is `/v1/projects/<project_id>/rooms`. A session's own credential reads and posts in its rooms through `/v1/projects/<project_id>/sessions/<session_id>/rooms/<room_id>/messages`.
+The API is `/v1/projects/<project_id>/rooms`; a direct conversation starts with `POST /v1/projects/<project_id>/rooms/direct`. A session's own credential reads and posts in its conversations through `/v1/projects/<project_id>/sessions/<session_id>/rooms/<room_id>/messages`. The SDK exposes the same calls as `kortix.project(id).rooms` and the React hooks `useRoomConversations`, `useRoomMessages`, `useRoom` and `useRooms`.
 
 ## Warm sessions
 
@@ -531,6 +547,7 @@ With the flag off:
 | `shared` | Shared with you | Someone shares a session with you. | On | Digest |
 | `automation_failed` | Failure alert | A trigger or a reminder starts failing. | On | At once |
 | `automation_recovered` | Recovery alert | That trigger or reminder works again. | On | Off. On: at once. |
+| `message` | Message | Someone messages you in a conversation, or in a room you joined. See [Rooms and direct messages](#rooms-and-direct-messages). | On | Digest |
 
 ### Who gets them
 

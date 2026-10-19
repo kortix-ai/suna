@@ -210,3 +210,21 @@ export async function filterRoomRecipients(
     (await mayReadProjectRooms(userId, accountId, [projectId])).has(projectId));
   return people.filter((_, i) => results[i]);
 }
+
+/**
+ * The sessions among `sessionIds` that `userId` may send a prompt to now:
+ * `project.session.start` on the session's project and the session visible to
+ * them. A conversation message reaches a member session only when the
+ * person vouching for the sender passes this, so a room never lets anyone
+ * prompt a session they could not prompt themselves.
+ */
+export async function mayPromptSessions(
+  userId: string,
+  accountId: string,
+  sessionIds: readonly string[],
+): Promise<Set<string>> {
+  if (!userId || sessionIds.length === 0) return new Set();
+  const accessible = await projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  const rows = [...(await loadSessionAccessRows(sessionIds)).values()].filter((row) => allows(accessible, row.projectId));
+  return maySeeSessions(userId, rows);
+}

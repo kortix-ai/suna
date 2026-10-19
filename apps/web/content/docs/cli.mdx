@@ -364,6 +364,7 @@ Commands an agent uses:
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
 | `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, off by default: `kortix projects features enable reminders`. |
 | `kortix rooms send <room> "<text>"` | Message every other session and person in a room. `kortix rooms join <room>` makes this session receive the room's messages. Rooms are a project flag, off by default: `kortix projects features enable agent_rooms`. |
+| `kortix dm <email \| session id> "<text>"` | Direct-message a person or another session; the answer arrives as a room event and wakes this session. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/project/agents). These commands are refused for an agent session's token, whatever the grant:
@@ -432,7 +433,7 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs/connect/channels) |
 | `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs/connect/triggers) |
 | `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs/connect/triggers) |
-| `rooms` | Rooms where sessions and people message each other: join, send, read, next, watch, chat. | [Rooms](/docs/work/sessions#rooms) |
+| `rooms`, `dm` | Conversations between sessions and people: rooms and direct messages. | [Rooms and direct messages](/docs/work/sessions#rooms-and-direct-messages) |
 | `apps` | Deploy and manage Apps. | [Apps](/docs/apps) |
 
 ### Administer

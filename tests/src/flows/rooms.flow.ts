@@ -178,13 +178,24 @@ flow(
       res.status(201).body().has('$.message.seq', 2);
       if (delivery(res.json<PostResult>(), reviewer).state !== 'queued') throw new Error('Reviewer not queued on mention');
     });
+    await ctx.step("no laundering: the owner's private session hears the owner, not a member who could not prompt it", async () => {
+      (await owner.put(SESSION_MEMBER, {}, { params: { ...r, sessionId: secret } })).status(200);
+      const fromMember = await ctx.client.as(member).post(MESSAGES, { text: 'member here' }, { params: r });
+      fromMember.status(201);
+      if (delivery(fromMember.json<PostResult>(), secret).reason !== 'sender_cannot_prompt') throw new Error(`secret got a member's message: ${fromMember.text()}`);
+      if (delivery(fromMember.json<PostResult>(), builder).state !== 'queued') throw new Error('Builder (project-visible) not queued');
+      const fromOwner = await owner.post(MESSAGES, { text: 'owner here' }, { params: r });
+      if (delivery(fromOwner.json<PostResult>(), secret).state !== 'queued') throw new Error(`secret did not get the owner's message: ${fromOwner.text()}`);
+      (await owner.post(MESSAGES, { text: 'owner here' }, { params: r })).status(409).body().has('$.code', 'duplicate_message');
+      (await owner.del(SESSION_MEMBER, { params: { ...r, sessionId: secret } })).status(200);
+    });
     await ctx.step('reply_to beyond the newest seq → 400; empty text → 400', async () => {
       (await owner.post(MESSAGES, { text: 'x', reply_to: 99 }, { params: r })).status(400);
       (await owner.post(MESSAGES, { text: '' }, { params: r })).status(400);
     });
     await ctx.step('messages read newest-last; after=1 reads forward', async () => {
-      (await owner.get(MESSAGES, { params: r })).status(200).body().has('$.messages.length', 2).has('$.last_seq', 2).has('$.messages[1].reply_to_seq', 1);
-      (await owner.get(`${MESSAGES}?after=1`, { params: r })).status(200).body().has('$.messages.length', 1).has('$.messages[0].seq', 2);
+      (await owner.get(MESSAGES, { params: r })).status(200).body().has('$.messages.length', 4).has('$.last_seq', 4).has('$.messages[1].reply_to_seq', 1);
+      (await owner.get(`${MESSAGES}?after=1`, { params: r })).status(200).body().has('$.messages.length', 3).has('$.messages[0].seq', 2);
     });
     await ctx.step('NONMEMBER cannot read or post → 403', async () => {
       (await ctx.client.as(ctx.P.NONMEMBER).get(MESSAGES, { params: r })).status(403);
