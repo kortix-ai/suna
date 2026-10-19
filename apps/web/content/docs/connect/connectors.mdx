@@ -105,7 +105,7 @@ Kortix retires Pipedream. With `connectors_v2` on, a Pipedream connector moves t
 What stays:
 
 - The slug. Agent grants (`agents.<name>.connectors`), triggers, session bindings and every other reference to the slug keep working.
-- The display name and the entry's `policies` and `sensitive` flag.
+- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `slack-delete-*`) names a Pipedream tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
 - Every account row, with its name, owner and audience.
 - Pipedream serves the connector until the sign-in completes.
 
@@ -240,10 +240,10 @@ Content-Type: application/json
 
 | Status | Meaning |
 | --- | --- |
-| `400` | `connection_id` is not an account of this connector. |
-| `403` | `feature_disabled` without `connectors_v2`, or no permission to change the project's connectors. |
-| `404` | No connector with this slug. |
-| `409` | The connector is not a Pipedream connector, or its app has no Kortix equivalent on this deployment. |
+| `400` | `connection_id` is an account of another connector. |
+| `403` | `feature_disabled` without `connectors_v2`, no permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
+| `404` | No connector with this slug, or `connection_id` is an account you cannot change. |
+| `409` | The connector is not a Pipedream connector, its app has no Kortix equivalent on this deployment, or it has tool rules other than `*`. The message names the rules. |
 | `502` | The `kortix.yaml` write failed. Call `move` again. |
 
 The SDK has the same two calls: `p.connectors.listMoves()` and `p.connectors.move(slug, { connectionId })`. See the [SDK reference](/docs/sdk/reference#connectors-and-policies).

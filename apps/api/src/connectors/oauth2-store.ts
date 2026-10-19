@@ -264,7 +264,7 @@ export async function discoverConnectionOAuth2Resource(
     .where(eq(connectorConnections.connectionId, input.connectionId))
     .limit(1);
   if (!row) throw new Error('Connection not found');
-  const moveUrl = await connectionMoveTargetUrl(row);
+  const moveUrl = await connectionMoveTargetUrl({ providerType: row.providerType, connectionId: input.connectionId });
   const own = moveUrl
     ? { url: moveUrl, provider: 'mcp' as const }
     : connectorProtectedResource(row.providerType, (row.config ?? {}) as Record<string, unknown>);
@@ -282,14 +282,10 @@ export async function discoverConnectionOAuth2Resource(
 
 /** A connection that moves its Pipedream connector to Kortix signs in to the
  *  catalogue app's MCP server (connectors/pipedream-move.ts). */
-async function connectionMoveTargetUrl(row: {
-  providerType: string;
-  config: unknown;
-  metadata: Record<string, unknown> | null;
-}): Promise<string | null> {
+async function connectionMoveTargetUrl(row: { providerType: string; connectionId: string }): Promise<string | null> {
   if (row.providerType !== 'pipedream') return null;
-  const { moveTargetUrl } = await import('./pipedream-move');
-  return moveTargetUrl(row.providerType, row.config as Record<string, unknown> | null, row.metadata);
+  const { moveTargetUrlForConnection } = await import('./pipedream-move');
+  return moveTargetUrlForConnection(row.connectionId);
 }
 
 async function kortixClientApplicationForConnection(
@@ -309,7 +305,7 @@ async function kortixClientApplicationForConnection(
   const url =
     row.providerType === 'mcp'
       ? (row.config as { url?: unknown } | null)?.url
-      : await connectionMoveTargetUrl(row);
+      : await connectionMoveTargetUrl({ providerType: row.providerType, connectionId });
   return typeof url === 'string' ? kortixClientApplication(url) : null;
 }
 

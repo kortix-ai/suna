@@ -666,32 +666,45 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     const mcp = await loadMcpConnector(projectId, slug);
     if (mcp) {
       if (finalizeOwner === 'me' && !_userId) return null;
+      // The row `connectorConnect` started on, resolved the same way, never "the
+      // most recently touched": a start updates no row unless a session asked.
+      const connectionId =
+        selector?.connectionId ??
+        (finalizeOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId: _userId! })
+          : await defaultConnectionIdForConnector(mcp.connectorId));
+      if (!connectionId) return { provider: 'mcp', connected: false };
       const [connection] = await db
-        .select({ connectionId: connectorConnections.connectionId, metadata: connectorConnections.metadata })
+        .select({ connectionId: connectorConnections.connectionId })
         .from(connectorConnections)
         .where(
           and(
             eq(connectorConnections.connectorId, mcp.connectorId),
+            eq(connectorConnections.connectionId, connectionId),
             finalizeOwner === 'me'
               ? and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, _userId ?? ''))
               : and(eq(connectorConnections.ownerType, 'project'), isNull(connectorConnections.ownerId)),
-            ...(selector?.connectionId ? [eq(connectorConnections.connectionId, selector.connectionId)] : []),
           ),
         )
-        // The row `connectorConnect` just started is the most recently touched one.
-        .orderBy(desc(connectorConnections.updatedAt))
         .limit(1);
-      if (selector?.connectionId && !connection) throw new HTTPException(404, { message: 'connector connection not found' });
-      if (!connection) return { provider: 'mcp', connected: false };
+      if (!connection) {
+        if (selector?.connectionId) throw new HTTPException(404, { message: 'connector connection not found' });
+        return { provider: 'mcp', connected: false };
+      }
       const connected = (await oauth2ConnectionStatus(connection.connectionId)).status === 'active';
-      const waiting = readRequestingSessionId(connection.metadata);
-      if (connected && waiting) {
-        // Told once: the waiting session is cleared before the agent is notified.
-        await db
-          .update(connectorConnections)
-          .set({ metadata: sql`${connectorConnections.metadata} - 'requesting_session_id'` })
-          .where(eq(connectorConnections.connectionId, connection.connectionId));
-        void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, mcpAppForUrl(mcp.url)?.slug ?? slug);
+      if (connected) {
+        // Told once: only the call that clears the waiting session notifies it.
+        const rows = (await db.execute(sql`
+          update kortix.connector_connections c
+             set metadata = c.metadata - 'requesting_session_id'
+            from (select connection_id, metadata->>'requesting_session_id' as waiting
+                    from kortix.connector_connections
+                   where connection_id = ${connection.connectionId}
+                     for update) old
+           where c.connection_id = old.connection_id and old.waiting is not null
+          returning old.waiting as waiting`)) as unknown as Array<{ waiting: string }>;
+        const waiting = rows[0]?.waiting;
+        if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, mcpAppForUrl(mcp.url)?.slug ?? slug);
       }
       return { provider: 'mcp', connected, connectionId: connection.connectionId };
     }

@@ -7,6 +7,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { loadMutableConnection } from '../lib/connection-mutation';
 
 const ConnectorMoveSchema = z.object({
   slug: z.string(),
@@ -91,6 +92,24 @@ export function registerConnectorMoveRoutes(): void {
       if (!mayWrite) return c.json({ error: 'Forbidden' }, 403);
       const parsed = MoveInputSchema.safeParse(await readJsonObject(c));
       if (!parsed.success) return c.json({ error: 'connection_id must be a string' }, 400);
+      // The caller signs in on the marked account next, so they must be able to:
+      // a named account they may change (404 otherwise, so accounts cannot be
+      // probed), or the project's own account as a connections manager.
+      if (parsed.data.connection_id) {
+        if (!(await loadMutableConnection(c, projectId, parsed.data.connection_id))) {
+          return c.json({ error: 'Connection not found' }, 404);
+        }
+      } else if (
+        !(await projectCapabilityAllowed(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+        ))
+      ) {
+        return c.json({ error: "Only a connections manager can move the project's account" }, 403);
+      }
       const result = await moveConnector({
         projectId,
         slug: c.req.param('slug'),

@@ -736,6 +736,9 @@ flow(
       'GET /v1/projects/:projectId/connector-moves',
       'POST /v1/projects/:projectId/connectors/:slug/move',
       'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policies',
     ],
   },
   async (ctx) => {
@@ -745,6 +748,7 @@ flow(
     type Move = { slug: string; app: string | null; to: { slug: string } | null; connection_id: string | null; signed_in: boolean; accounts: number };
     const moves = async () =>
       (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(200).json<{ moves: Move[] }>().moves;
+    let forgedConnectionId = '';
     const create = async (body: Record<string, unknown>) =>
       (await owner.post('/v1/connectors/projects/:projectId/connectors', { ...body, create_only: true }, { params: { projectId: on.id }, timeoutMs: 60_000 })).status([200, 409]);
 
@@ -765,6 +769,40 @@ flow(
       if (list.some((m) => m.slug === 'desk')) throw new Error('an mcp connector is not a move');
     });
 
+    await ctx.step('a move_to an account owner writes is not a mark: the listing ignores it, and the account has no sign-in target', async () => {
+      const forged = await owner.post(
+        '/v1/projects/:projectId/connections/me',
+        { connector_alias: 'issues', label: 'Forged', metadata: { move_to: 'linear' } },
+        { params: { projectId: on.id } },
+      );
+      forged.status([200, 201]);
+      const connectionId = forged.json<{ connection_id: string }>().connection_id;
+      forgedConnectionId = connectionId;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== null) throw new Error(`a forged mark started a move: ${JSON.stringify(issues)}`);
+      const discover = await owner.post(
+        '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+        {},
+        { params: { projectId: on.id, connectionId } },
+      );
+      if (discover.statusCode !== 400 || !discover.text().includes('no server URL')) {
+        throw new Error(`unexpected discovery answer: ${discover.statusCode} ${discover.text()}`);
+      }
+    });
+
+    await ctx.step('a connector with Pipedream tool rules does not move; a * rule does not block it', async () => {
+      await create({ slug: 'board', name: 'Board', provider: 'pipedream', app: 'clickup', allow_legacy_pipedream: true });
+      const policies = (list: Array<{ match: string; action: string }>) =>
+        owner.put('/v1/connectors/projects/:projectId/connectors/:slug/policies', { policies: list }, { params: { projectId: on.id, slug: 'board' }, timeoutMs: 60_000 });
+      (await policies([{ match: 'clickup-create-task', action: 'block' }])).status(200);
+      const refused = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } });
+      refused.status(409);
+      if (!refused.text().includes('clickup-create-task')) throw new Error(`the refusal does not name the rule: ${refused.text()}`);
+      (await policies([{ match: '*', action: 'require_approval' }])).status(200);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'clickup');
+    });
+
     await ctx.step('a move starts: it marks an account and names the catalogue MCP server to sign in to', async () => {
       const r = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'issues' } });
       r.status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'linear').has('$.to.url', 'https://mcp.linear.app/mcp');
@@ -776,7 +814,7 @@ flow(
         .status(200).body().has('$.provider', 'pipedream');
     });
 
-    await ctx.step('refusals: no Kortix app → 409, not a Pipedream connector → 409, a foreign account → 400, no connector → 404', async () => {
+    await ctx.step('refusals: no Kortix app → 409, not a Pipedream connector → 409, another connector\'s account → 400, an unknown account or connector → 404', async () => {
       const move = (slug: string, body: Record<string, unknown> = {}) =>
         owner.post('/v1/projects/:projectId/connectors/:slug/move', body, { params: { projectId: on.id, slug } });
       const noApp = await move('crm');
@@ -785,7 +823,8 @@ flow(
       const notPipedream = await move('desk');
       notPipedream.status(409);
       if (!notPipedream.text().includes('Only a Pipedream connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
-      (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(400);
+      (await move('board', { connection_id: forgedConnectionId })).status(400);
+      (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(404);
       (await move('no-such-connector')).status(404);
     });
 

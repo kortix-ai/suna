@@ -6,8 +6,9 @@
  * connection rows, so agent grants, triggers, session bindings and other
  * kortix.yaml references do not change.
  *
- *   1. `moveConnector` marks one connection (`metadata.move_to`). Pipedream
- *      still serves the connector.
+ *   1. `moveConnector` marks one connection (`metadata.move_to`, sealed with the
+ *      project's key, so the account's owner cannot forge it). Pipedream still
+ *      serves the connector.
  *   2. The person signs in on that connection with the ordinary OAuth routes.
  *      For a marked connection, the OAuth target is the catalogue app for the
  *      connector's Pipedream `app` (`moveTargetUrl`). It never comes from the
@@ -17,10 +18,11 @@
  *      keep their rows but lose their Pipedream binding, so their owners sign
  *      in again.
  */
-import { connectionCredentials, connectorConnections, connectors, projects } from '@kortix/db';
+import { connectionCredentials, connectorConnections, connectorPolicies, connectors, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
+import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { db } from '../shared/db';
 import { ensureDefaultConnection } from './credentials';
 import { type CrudResult, upsertConnectorInManifest } from './manifest-crud';
@@ -81,15 +83,92 @@ export function mcpAppForPipedreamApp(app: unknown): McpApp | null {
   return target && mcpAppAvailable(target) ? target : null;
 }
 
+/**
+ * The catalogue app a Pipedream connector moves to: from its `app` only. The
+ * MCP server URL a move signs in to never comes from a request or stored data.
+ */
+export function moveTargetApp(providerType: string, config: Record<string, unknown> | null): McpApp | null {
+  return providerType === 'pipedream' ? mcpAppForPipedreamApp(config?.app) : null;
+}
+
+/**
+ * The move mark on a connection (`metadata.move_to`), sealed with the project's
+ * key. Connection metadata is writable by the account's owner, so a plain
+ * string would let a member start a move that only a connector writer may start.
+ */
+function moveMark(projectId: string, connectionId: string, app: string): string {
+  return encryptProjectSecret(projectId, `connector-move/v1:${connectionId}:${app}`);
+}
+
+function isMoveMark(projectId: string, connectionId: string, app: string, value: unknown): boolean {
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    return decryptProjectSecret(projectId, value) === `connector-move/v1:${connectionId}:${app}`;
+  } catch {
+    return false;
+  }
+}
+
+interface MoveConnectionRow {
+  projectId: string;
+  connectionId: string;
+  providerType: string;
+  config: Record<string, unknown> | null;
+  connectionMetadata: Record<string, unknown> | null;
+  projectMetadata: unknown;
+}
+
+/** The app a connection moves its connector to: a sealed mark, in a `connectors_v2` project. */
+function markedMoveApp(row: MoveConnectionRow): McpApp | null {
+  if (!resolveFeatureFlag(row.projectMetadata, 'connectors_v2')) return null;
+  const app = moveTargetApp(row.providerType, row.config);
+  return app && isMoveMark(row.projectId, row.connectionId, app.slug, row.connectionMetadata?.move_to) ? app : null;
+}
+
+async function loadMoveConnection(connectionId: string) {
+  const [row] = await db
+    .select({
+      projectId: connectors.projectId,
+      accountId: connectors.accountId,
+      connectorId: connectors.connectorId,
+      connectionId: connectorConnections.connectionId,
+      slug: connectors.slug,
+      name: connectors.name,
+      providerType: connectors.providerType,
+      config: connectors.config,
+      connectionMetadata: connectorConnections.metadata,
+      kind: connectionCredentials.kind,
+      projectMetadata: projects.metadata,
+    })
+    .from(connectorConnections)
+    .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+    .innerJoin(projects, eq(projects.projectId, connectors.projectId))
+    .leftJoin(connectionCredentials, eq(connectionCredentials.connectionId, connectorConnections.connectionId))
+    .where(eq(connectorConnections.connectionId, connectionId))
+    .limit(1);
+  return row ?? null;
+}
+
 /** The MCP server a marked connection of a Pipedream connector signs in to, else null. */
-export function moveTargetUrl(
-  providerType: string,
-  config: Record<string, unknown> | null,
-  connectionMetadata: Record<string, unknown> | null,
-): string | null {
-  if (providerType !== 'pipedream') return null;
-  const app = mcpAppForPipedreamApp(config?.app);
-  return app && connectionMetadata?.move_to === app.slug ? app.url : null;
+export async function moveTargetUrlForConnection(connectionId: string): Promise<string | null> {
+  const row = await loadMoveConnection(connectionId);
+  return row ? (markedMoveApp(row)?.url ?? null) : null;
+}
+
+/**
+ * Tool rules other than `*` name Pipedream tools. The Kortix app names its
+ * tools differently, so after a move a `block` rule would match nothing.
+ */
+async function pipedreamToolRules(connectorId: string): Promise<string[]> {
+  const rows = await db
+    .select({ match: connectorPolicies.match })
+    .from(connectorPolicies)
+    .where(eq(connectorPolicies.connectorId, connectorId));
+  return rows.map((row) => row.match).filter((match) => match !== '*');
+}
+
+function toolRulesRefusal(slug: string, rules: string[]): string {
+  return `${slug} has tool rules for Pipedream tool names (${rules.join(', ')}). The Kortix app names its tools differently, so those rules would stop matching. Remove them, move, then add rules for the new tool names.`;
 }
 
 export interface ConnectorMove {
@@ -134,7 +213,9 @@ export async function listConnectorMoves(projectId: string): Promise<ConnectorMo
       const app = (row.config as { app?: unknown } | null)?.app;
       const to = mcpAppForPipedreamApp(app);
       const own = connections.filter((connection) => connection.connectorId === row.connectorId);
-      const marked = to ? own.find((connection) => connection.metadata?.move_to === to.slug) : undefined;
+      const marked = to
+        ? own.find((connection) => isMoveMark(projectId, connection.connectionId, to.slug, connection.metadata?.move_to))
+        : undefined;
       return {
         slug: row.slug,
         name: row.name,
@@ -185,13 +266,19 @@ export async function moveConnector(input: {
       error: `Kortix has no connection for ${String(app ?? input.slug)} on this deployment yet. The connector keeps working through Pipedream.`,
     };
   }
+  const rules = await pipedreamToolRules(connector.connectorId);
+  if (rules.length > 0) return { ok: false, status: 409, error: toolRulesRefusal(input.slug, rules) };
 
   const own = await db
     .select({ connectionId: connectorConnections.connectionId, metadata: connectorConnections.metadata, kind: connectionCredentials.kind })
     .from(connectorConnections)
     .leftJoin(connectionCredentials, eq(connectionCredentials.connectionId, connectorConnections.connectionId))
     .where(eq(connectorConnections.connectorId, connector.connectorId));
-  const signedIn = own.find((connection) => connection.metadata?.move_to === to.slug && connection.kind === 'oauth2_delegated');
+  const signedIn = own.find(
+    (connection) =>
+      connection.kind === 'oauth2_delegated' &&
+      isMoveMark(input.projectId, connection.connectionId, to.slug, connection.metadata?.move_to),
+  );
   if (signedIn) {
     const finished = await finishMarkedMove(signedIn.connectionId);
     if (finished && !finished.ok) return { ok: false, status: 502, error: finished.error };
@@ -207,6 +294,7 @@ export async function moveConnector(input: {
     connectorId: connector.connectorId,
     createdBy: input.userId,
   });
+  const mark = moveMark(input.projectId, connectionId, to.slug);
   // One marked account per connector: a second start moves the mark.
   await db.transaction(async (tx) => {
     await tx
@@ -215,7 +303,7 @@ export async function moveConnector(input: {
       .where(and(eq(connectorConnections.connectorId, connector.connectorId), sql`${connectorConnections.metadata}->>'move_to' is not null`));
     await tx
       .update(connectorConnections)
-      .set({ metadata: sql`${connectorConnections.metadata} || ${JSON.stringify({ move_to: to.slug })}::jsonb`, updatedAt: new Date() })
+      .set({ metadata: sql`${connectorConnections.metadata} || ${JSON.stringify({ move_to: mark })}::jsonb`, updatedAt: new Date() })
       .where(eq(connectorConnections.connectionId, connectionId));
   });
   return { ok: true, status: 'sign_in', connection_id: connectionId, to: { slug: to.slug, name: to.name, url: to.url } };
@@ -228,33 +316,21 @@ export async function moveConnector(input: {
  * `moveConnector`.
  */
 export async function finishMarkedMove(connectionId: string): Promise<CrudResult | null> {
-  const [row] = await db
-    .select({
-      projectId: connectors.projectId,
-      accountId: connectors.accountId,
-      connectorId: connectors.connectorId,
-      slug: connectors.slug,
-      name: connectors.name,
-      providerType: connectors.providerType,
-      config: connectors.config,
-      connectionMetadata: connectorConnections.metadata,
-      kind: connectionCredentials.kind,
-      projectMetadata: projects.metadata,
-    })
-    .from(connectorConnections)
-    .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
-    .innerJoin(projects, eq(projects.projectId, connectors.projectId))
-    .leftJoin(connectionCredentials, eq(connectionCredentials.connectionId, connectorConnections.connectionId))
-    .where(eq(connectorConnections.connectionId, connectionId))
-    .limit(1);
-  if (!row || row.kind !== 'oauth2_delegated' || !resolveFeatureFlag(row.projectMetadata, 'connectors_v2')) return null;
-  const url = moveTargetUrl(row.providerType, row.config, row.connectionMetadata);
-  if (!url) return null;
+  const row = await loadMoveConnection(connectionId);
+  if (!row || row.kind !== 'oauth2_delegated') return null;
+  const app = markedMoveApp(row);
+  if (!app) return null;
+  // A rule added after the move started still names a Pipedream tool.
+  const rules = await pipedreamToolRules(row.connectorId);
+  if (rules.length > 0) {
+    logger.warn('[connectors] Pipedream move waits: the connector has Pipedream tool rules', { connectionId });
+    return { ok: false, status: 409, error: toolRulesRefusal(row.slug, rules) };
+  }
 
   const result = await upsertConnectorInManifest(
     row.projectId,
     row.accountId,
-    { slug: row.slug, name: row.name, provider: 'mcp', url, transport: 'http' },
+    { slug: row.slug, name: row.name, provider: 'mcp', url: app.url, transport: 'http' },
     async () => {
       // The other accounts hold Pipedream account ids, which no MCP server accepts:
       // without them, those accounts read "not signed in" and their owners sign in again.

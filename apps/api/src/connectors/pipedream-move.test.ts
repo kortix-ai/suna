@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mcpAppForPipedreamApp, moveTargetUrl } from './pipedream-move';
+import { mcpAppForPipedreamApp, moveTargetApp } from './pipedream-move';
 
 describe('mcpAppForPipedreamApp', () => {
   test('maps Pipedream slugs that differ from the catalogue slug', () => {
@@ -15,21 +15,18 @@ describe('mcpAppForPipedreamApp', () => {
   });
 });
 
-describe('moveTargetUrl', () => {
-  const linear = { app: 'linear_app' };
-
-  test('a marked connection of a Pipedream connector signs in to the catalogue URL', () => {
-    expect(moveTargetUrl('pipedream', linear, { move_to: 'linear' })).toBe('https://mcp.linear.app/mcp');
+describe('moveTargetApp', () => {
+  test('a Pipedream connector moves to the catalogue app for its app', () => {
+    expect(moveTargetApp('pipedream', { app: 'linear_app' })?.url).toBe('https://mcp.linear.app/mcp');
   });
 
-  test('no mark, a mark for another app, or another provider: no target', () => {
-    expect(moveTargetUrl('pipedream', linear, {})).toBeNull();
-    expect(moveTargetUrl('pipedream', linear, { move_to: 'notion' })).toBeNull();
-    expect(moveTargetUrl('mcp', linear, { move_to: 'linear' })).toBeNull();
+  test('another provider has no move target', () => {
+    expect(moveTargetApp('mcp', { app: 'linear_app' })).toBeNull();
+    expect(moveTargetApp('composio', { app: 'linear' })).toBeNull();
   });
 
   test('the URL comes from the catalogue, never from stored data', () => {
-    expect(moveTargetUrl('pipedream', { app: 'linear_app', url: 'https://evil.example/mcp' }, { move_to: 'linear', url: 'https://evil.example/mcp' })).toBe(
+    expect(moveTargetApp('pipedream', { app: 'linear_app', url: 'https://evil.example/mcp' })?.url).toBe(
       'https://mcp.linear.app/mcp',
     );
   });
