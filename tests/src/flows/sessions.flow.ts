@@ -1270,8 +1270,10 @@ flow(
       const db = await openFlowDb(ctx.env);
       try {
         const session = (
-          await db.query<{ status: string; branch_name: string; deleted_at: string | null }>(
-            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at FROM kortix.project_sessions WHERE session_id = $1`,
+          await db.query<{ status: string; branch_name: string; deleted_at: string | null; restored_at: string | null; log_messages: string }>(
+            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at, metadata->>'restoredAt' AS restored_at,
+                    (SELECT count(*) FROM kortix.session_log_messages m WHERE m.session_id = s.session_id AND m.deleted_at IS NULL) AS log_messages
+               FROM kortix.project_sessions s WHERE session_id = $1`,
             [id],
           )
         ).rows[0];
@@ -1410,6 +1412,16 @@ flow(
       // A retired row: no external id, marked so the next open claims it and provisions.
       if (sandbox?.status !== 'stopped' || sandbox.external_id !== null || sandbox.metadata.ephemeralRetiredExternalId !== sessionId) {
         throw new Error(`restored sandbox row: ${JSON.stringify(sandbox)}`);
+      }
+    });
+
+    await ctx.step('the fresh box gets the conversation back: the session is marked to restore from its session log at boot, and its saved transcript is that log', async () => {
+      const { session } = await sessionRows(sessionId);
+      // `restoredAt` turns KORTIX_SESSION_LOG_RESTORE on for this session's
+      // boxes (`session-sandbox-env-build.ts`); the v1 mirror is converted so
+      // the box has a log to restore from.
+      if (!session?.restored_at || Number(session.log_messages) !== 2) {
+        throw new Error(`restored session conversation: ${JSON.stringify(session)}`);
       }
     });
 
