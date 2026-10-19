@@ -17,6 +17,7 @@ import {
   emitJson,
   fail,
   missing,
+  resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -94,6 +95,12 @@ Subcommands:
                            of two deployments of the same repo to stop double-
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
+  pause --account-wide     Pause all automations: every project of the account
+                           stops auto-running its schedules, reminders,
+                           webhooks, app events and monitors. Needs
+                           account.write. Manual \`fire\` still works.
+  resume --account-wide    Resume them. A schedule slot missed while paused
+                           fires once.
   info <slug> [--json]     Show one trigger in full.
   events --apps [--json]   List apps that can trigger events: each app's
                            connectors (profiles) and their shared accounts
@@ -215,6 +222,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let disabled = false;
   let json = false;
   let applyRemote = false;
+  let accountWide = false;
   let members: string[] = [];
   let groups: string[] = [];
   let filters: string[] = [];
@@ -235,6 +243,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     rf.cursor = takeFlagValue(rest, ['--cursor']);
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    accountWide = takeFlagBool(rest, ['--account-wide']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     tf.runAt = takeFlagValue(rest, ['--run-at']);
@@ -328,9 +337,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
         ? triggersToggleLive(positional[0], false, ctxOpts, json)
         : triggersToggle(positional[0], false);
     case 'pause':
-      return triggersActivation(ctxOpts, true);
+      return accountWide ? accountAutomations(true, hostFlag) : triggersActivation(ctxOpts, true);
     case 'resume':
-      return triggersActivation(ctxOpts, false);
+      return accountWide ? accountAutomations(false, hostFlag) : triggersActivation(ctxOpts, false);
     case 'events':
       return triggersEvents({ apps, app: eventsApp, source: tf.source, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
@@ -397,6 +406,11 @@ async function triggersLs(
     return 0;
   }
 
+  if (resp.account_automations_paused) {
+    process.stdout.write(
+      `\n  ${status.warn('All automations are PAUSED for this account')} ${C.dim}— no project's triggers auto-run (manual \`fire\` still works). \`kortix triggers resume --account-wide\` to resume.${C.reset}\n`,
+    );
+  }
   if (resp.triggers_paused) {
     process.stdout.write(
       `\n  ${status.warn('Triggers are PAUSED server-side for this project')} ${C.dim}— crons + webhooks won't auto-run (manual \`fire\` still works). \`kortix triggers resume\` to re-activate.${C.reset}\n`,
@@ -640,6 +654,24 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
     paused
       ? `${status.ok('Triggers PAUSED server-side')} ${C.dim}— this project's crons + webhooks won't auto-run. Manual \`fire\` still works.${C.reset}\n`
       : `${status.ok('Triggers RESUMED server-side')} ${C.dim}— this project's triggers will auto-run again.${C.reset}\n`,
+  );
+  return 0;
+}
+
+// Pause all automations (KRTX-1721): the ACCOUNT's switch, cloud state on the
+// account. Every project of the account stops auto-running its triggers.
+async function accountAutomations(paused: boolean, hostArg: string | undefined): Promise<number> {
+  const ctx = resolveAccountContext({ hostArg });
+  if (!ctx) return 1;
+  try {
+    await ctx.client.patch(`/accounts/${ctx.accountId}/automations`, { paused });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  process.stdout.write(
+    paused
+      ? `${status.ok('All automations PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, app events or monitors auto-run. Manual \`fire\` still works.${C.reset}\n`
+      : `${status.ok('All automations RESUMED for this account')} ${C.dim}— a schedule slot missed while paused fires once.${C.reset}\n`,
   );
   return 0;
 }

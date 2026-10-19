@@ -18,6 +18,7 @@ import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
 import { isPlainObject } from '../../shared/json';
 import { triggersPausedForProject } from './trigger-scheduler-state';
+import { readAccountAutomationPause } from '../../accounts/automation-pause';
 
 // GET /v1/projects
 
@@ -137,6 +138,8 @@ export async function loadTriggersForResponse(
     // true, the platform won't auto-run any of them (cron sweep skips, webhooks
     // ignored), regardless of each trigger's own `enabled`.
     triggers_paused: triggersPausedForProject(project.metadata),
+    // The account's Pause all automations (KRTX-1721): true stops these triggers too.
+    account_automations_paused: (await readAccountAutomationPause(project.accountId)) !== null,
     errors,
   };
 }

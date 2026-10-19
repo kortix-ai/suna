@@ -21968,5 +21968,24 @@
       "showRevoked": "Widerrufene anzeigen ({count})",
       "hideRevoked": "Widerrufene ausblenden"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automatisierungen",
+    "groupDescription": "Zeitpläne, Erinnerungen, Webhooks, App-Ereignisse und Monitore in jedem Projekt dieses Kontos.",
+    "label": "Alle Automatisierungen pausieren",
+    "description": "In keinem Projekt läuft etwas von selbst: kein Zeitplan, keine Erinnerung, kein Webhook, kein App-Ereignis und kein Monitor. Ein manuell ausgeführter Auslöser funktioniert weiterhin.",
+    "readOnlyDescription": "Nur ein Inhaber oder Admin kann Automatisierungen pausieren oder fortsetzen.",
+    "pausedSince": "Pausiert seit {date}.",
+    "pauseTitle": "Alle Automatisierungen pausieren?",
+    "pauseDescription": "Jedes Projekt dieses Kontos startet keine Sitzungen mehr von selbst, bis du fortsetzt. Webhooks werden bestätigt und übersprungen.",
+    "pauseConfirm": "Alle pausieren",
+    "resumeTitle": "Alle Automatisierungen fortsetzen?",
+    "resumeDescription": "Auslöser laufen wieder von selbst. Ein während der Pause verpasster Zeitplan läuft einmal.",
+    "resumeConfirm": "Alle fortsetzen",
+    "pausedToast": "Alle Automatisierungen pausiert",
+    "resumedToast": "Alle Automatisierungen fortgesetzt",
+    "failedToast": "Automatisierungen konnten nicht geändert werden. Versuche es erneut.",
+    "bannerTitle": "Alle Automatisierungen dieses Kontos sind pausiert",
+    "bannerDescription": "Hier läuft nichts von selbst, bis ein Inhaber oder Admin sie in den Kontoeinstellungen fortsetzt. Ein manuell ausgeführter Auslöser funktioniert weiterhin."
   }
 }

@@ -21968,5 +21968,24 @@
       "showRevoked": "Mostrar revogados ({count})",
       "hideRevoked": "Ocultar revogados"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automações",
+    "groupDescription": "Agendamentos, lembretes, webhooks, eventos de apps e monitores em todos os projetos desta conta.",
+    "label": "Pausar todas as automações",
+    "description": "Nada roda sozinho em nenhum projeto: nenhum agendamento, lembrete, webhook, evento de app ou monitor. Executar um gatilho manualmente continua funcionando.",
+    "readOnlyDescription": "Apenas um proprietário ou administrador pode pausar ou retomar as automações.",
+    "pausedSince": "Pausado desde {date}.",
+    "pauseTitle": "Pausar todas as automações?",
+    "pauseDescription": "Nenhum projeto desta conta inicia sessões sozinho até você retomar. Os webhooks são confirmados e ignorados.",
+    "pauseConfirm": "Pausar tudo",
+    "resumeTitle": "Retomar todas as automações?",
+    "resumeDescription": "Os gatilhos voltam a rodar sozinhos. Um agendamento perdido durante a pausa roda uma vez.",
+    "resumeConfirm": "Retomar tudo",
+    "pausedToast": "Todas as automações pausadas",
+    "resumedToast": "Todas as automações retomadas",
+    "failedToast": "Não foi possível alterar as automações. Tente novamente.",
+    "bannerTitle": "Todas as automações desta conta estão pausadas",
+    "bannerDescription": "Nada aqui roda sozinho até que um proprietário ou administrador as retome nas configurações da conta. Executar um gatilho manualmente continua funcionando."
   }
 }

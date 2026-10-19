@@ -21,6 +21,8 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Front {
     pub bundle_id: String,
+    /// The app's other identifiers ([`app_matches`]).
+    pub aliases: Vec<String>,
     pub url: Option<String>,
     pub title: String,
 }
@@ -41,23 +43,78 @@ pub fn looks_private(title: &str) -> bool {
     PRIVATE_MARKERS.iter().any(|m| t.contains(m))
 }
 
-/// Kortix itself: every `com.kortix.*` and `ai.kortix.*` app, and the app the
-/// service runs in (`own`: its bundle id and executable name). Never recorded.
-pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
+/// One app identifier as the app rule compares it: trimmed and lowercase, its
+/// last path component, without a `.exe`, `.app`, `.desktop` or `.appimage`
+/// suffix and without the `maccatalyst.` prefix of a Mac Catalyst bundle id.
+/// `C:\Program Files\Autodesk\acad.exe` → `acad`, `AutoCAD 2025.app` → `autocad 2025`.
+pub fn app_key(id: &str) -> String {
+    let id = id.trim().trim_end_matches(['/', '\\']).to_lowercase();
+    let base = id.rsplit(['/', '\\']).next().unwrap_or("");
+    let base = [".exe", ".app", ".desktop", ".appimage"]
+        .iter()
+        .find_map(|s| base.strip_suffix(s))
+        .unwrap_or(base);
+    base.strip_prefix("maccatalyst.").unwrap_or(base).trim().to_string()
+}
+
+/// The one app rule of Kortix Capture (`fixtures/capture-format-v2/apps.json`;
+/// the macOS engine runs the same vectors). An app has several identifiers:
+/// `bundle_id` (the macOS bundle id, the Windows AppUserModelID of a packaged
+/// app or else the executable file name, the Linux `WM_CLASS` class) and its
+/// `aliases` (the executable, package and display names the OS reports). A list
+/// `entry` names the app when its [`app_key`] equals the key of any identifier.
+/// An entry ending in `*` names every app with an identifier that starts with
+/// the rest (at least 3 characters): `com.autodesk.autocad*`, `vectorworks*`.
+pub fn app_matches(entry: &str, bundle_id: &str, aliases: &[String]) -> bool {
+    let e = app_key(entry);
+    let ids = std::iter::once(bundle_id).chain(aliases.iter().map(String::as_str));
+    match e.strip_suffix('*') {
+        Some(prefix) if prefix.len() >= 3 => ids
+            .map(app_key)
+            .any(|k| k.starts_with(prefix)),
+        Some(_) => false,
+        None => !e.is_empty() && ids.map(app_key).any(|k| k == e),
+    }
+}
+
+/// Some entry of `list` names the app ([`app_matches`]).
+pub fn app_listed(list: &[String], bundle_id: &str, aliases: &[String]) -> bool {
+    list.iter().any(|e| app_matches(e, bundle_id, aliases))
+}
+
+/// Kortix's own programs on Windows and Linux, by the app rule: Capture's
+/// executables, the Kortix desktop app (`kortix.exe`, `WM_CLASS` `kortix`), and a
+/// Capture window whose process runs from a Windows Installer rollback file
+/// during an update (named by its window title, see `capture_engine::win`).
+pub const KORTIX_APPS: &[&str] = &[
+    "kortix-capture",
+    "kortix-tray",
+    "kortix-backend",
+    "kortix-capture-engine",
+    "kortix",
+    "Kortix Capture*",
+];
+
+/// Kortix itself: every `com.kortix.*` and `ai.kortix.*` app, [`KORTIX_APPS`],
+/// and the app the service runs in (`own`: its bundle id and executable name).
+/// Never recorded.
+pub fn is_own_app(bundle_id: &str, aliases: &[String], own: &[String]) -> bool {
     let b = bundle_id.to_ascii_lowercase();
     b.starts_with("com.kortix.")
         || b.starts_with("ai.kortix.")
         || b == "com.kortix"
-        || contains_ci(own, &b)
+        || KORTIX_APPS.iter().any(|k| app_matches(k, bundle_id, aliases))
+        || app_listed(own, bundle_id, aliases)
 }
 
 /// With `record_only_included` on: the app is included, or the page's website is.
 /// With it off, everything is included.
-pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
+pub fn included(s: &Settings, front: &Front) -> bool {
     if !s.record_only_included {
         return true;
     }
-    contains_ci(&s.included_bundle_ids, bundle_id)
+    let url = front.url.as_deref();
+    app_listed(&s.included_bundle_ids, &front.bundle_id, &front.aliases)
         || url.and_then(super::store::normalize_domain).is_some_and(|host| {
             s.effective_included_domains()
                 .iter()
@@ -71,15 +128,15 @@ pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
 /// `not_included` (record only included apps and websites is on).
 pub fn excluded_reason(s: &Settings, front: &Front) -> Option<&'static str> {
     excluded_by_list(s, front).or_else(|| {
-        (!included(s, &front.bundle_id, front.url.as_deref())).then_some("not_included")
+        (!included(s, front)).then_some("not_included")
     })
 }
 
 fn excluded_by_list(s: &Settings, front: &Front) -> Option<&'static str> {
-    if is_own_app(&front.bundle_id, &s.own_bundle_ids) {
+    if is_own_app(&front.bundle_id, &front.aliases, &s.own_bundle_ids) {
         return Some("own_app");
     }
-    if contains_ci(&s.effective_excluded_bundle_ids(), &front.bundle_id) {
+    if app_listed(&s.effective_excluded_bundle_ids(), &front.bundle_id, &front.aliases) {
         return Some("excluded_app");
     }
     if s.exclude_private_browsing && looks_private(&front.title) {
@@ -159,8 +216,9 @@ pub fn change(
     match target {
         Target::App(raw) => {
             let id = raw.trim();
-            if id.is_empty() || id.contains(char::is_whitespace) && !id.ends_with(".exe") {
-                bail!("{raw:?} is not an app bundle id (com.example.App, app.exe or a WM_CLASS)");
+            let short_prefix = id.strip_suffix('*').is_some_and(|p| p.trim().len() < 3);
+            if id.is_empty() || id.starts_with('-') || id.chars().any(char::is_control) || short_prefix {
+                bail!("{raw:?} is not an app (a bundle id, app.exe, an app name or a WM_CLASS; a prefix* needs 3 characters)");
             }
             if excluded {
                 if !contains_ci(&s.excluded_bundle_ids, id) {
@@ -501,7 +559,7 @@ pub fn frontmost_target(paths: &MemoryPaths) -> Result<Target> {
     let Some((id, name)) = frontmost() else {
         bail!("no app is in front (or this OS does not say which)");
     };
-    if is_own_app(&id, &Settings::effective(paths).own_bundle_ids) {
+    if is_own_app(&id, &[], &Settings::effective(paths).own_bundle_ids) {
         bail!("Kortix ({name}) is in front; bring the app to exclude to the front first");
     }
     Ok(Target::App(id))
@@ -558,6 +616,7 @@ mod tests {
     fn front_of(bundle_id: &str) -> Front {
         Front {
             bundle_id: bundle_id.into(),
+            aliases: Vec::new(),
             url: None,
             title: "Kortix Capture".into(),
         }
@@ -578,10 +637,22 @@ mod tests {
                 Some("own_app"),
                 "{own}"
             );
-            assert!(is_own_app(own, &s.own_bundle_ids), "{own}");
+            assert!(is_own_app(own, &[], &s.own_bundle_ids), "{own}");
         }
         assert_eq!(excluded_reason(&s, &front_of("com.apple.Safari")), None);
-        assert!(!is_own_app("com.kortixfan.app", &s.own_bundle_ids));
+        assert!(!is_own_app("com.kortixfan.app", &[], &s.own_bundle_ids));
+        // Windows and Linux: Capture, the Kortix desktop app, and a Capture window
+        // whose process runs from an installer rollback file mid-update.
+        for (bundle, aliases) in [
+            ("kortix-capture.exe", vec![]),
+            ("kortix.exe", vec!["kortix.exe".to_string()]),
+            ("kortix", vec![]),
+            ("cb8f45c.rbf", vec!["cb8f45c.rbf".to_string(), "Kortix Capture".to_string()]),
+        ] {
+            assert!(is_own_app(bundle, &aliases, &[]), "{bundle}");
+        }
+        assert!(!is_own_app("kortixfan.exe", &["Kortixfan".into()], &[]));
+        assert!(!is_own_app("cb8f45c.rbf", &["cb8f45c.rbf".into(), "Setup".into()], &[]));
     }
 
     #[test]
@@ -743,6 +814,8 @@ mod tests {
         assert!(err(Target::Group("nope".into())).contains("unknown group nope"));
         assert!(err(Target::Domain("not a domain".into())).contains("not a website"));
         assert!(err(Target::App("  ".into())).contains("bundle id"));
+        assert!(err(Target::App("ab*".into())).contains("3 characters"));
+        change(&mut s.clone(), &none, &Target::App("AutoCAD 2025".into()), true).unwrap();
         // Recording again an app a group of the person's own still excludes says which group.
         s.enabled_exclusion_groups = vec!["password_managers".into()];
         let e = change(
@@ -895,11 +968,82 @@ mod tests {
         );
     }
 
+    /// The shared app vectors: every OS's identifiers against what an admin types.
+    #[test]
+    fn apps_match_by_the_shared_vectors() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/capture-format-v2/apps.json"
+        );
+        let v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for c in v["matches"].as_array().unwrap() {
+            let app = &c["app"];
+            let bundle = app["bundle_id"].as_str().unwrap_or("");
+            let aliases: Vec<String> = app["aliases"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let entry = c["entry"].as_str().unwrap();
+            assert_eq!(
+                app_matches(entry, bundle, &aliases),
+                c["match"].as_bool().unwrap(),
+                "{c}"
+            );
+            // The same answer through the settings, as exclusion and as inclusion.
+            let front = Front {
+                bundle_id: bundle.into(),
+                aliases: aliases.clone(),
+                ..Front::default()
+            };
+            let mut s = Settings::default();
+            s.excluded_bundle_ids = vec![entry.into()];
+            let want = c["match"].as_bool().unwrap();
+            assert_eq!(excluded_reason(&s, &front) == Some("excluded_app"), want, "exclude {c}");
+            let mut s = Settings::default();
+            s.record_only_included = true;
+            s.included_bundle_ids = vec![entry.into()];
+            assert_eq!(excluded_reason(&s, &front).is_none(), want, "include {c}");
+        }
+        for k in v["keys"].as_array().unwrap() {
+            assert_eq!(app_key(k["input"].as_str().unwrap()), k["key"].as_str().unwrap(), "{k}");
+        }
+    }
+
+    #[test]
+    fn record_only_included_fails_closed_for_an_unknown_app_or_an_unread_url() {
+        let mut s = Settings::default();
+        s.record_only_included = true;
+        s.included_bundle_ids = vec!["acad.exe".into()];
+        s.included_domains = vec!["cad.onshape.com".into()];
+        let front = |b: &str, url: Option<&str>| Front {
+            bundle_id: b.into(),
+            url: url.map(str::to_string),
+            ..Front::default()
+        };
+        // An app the OS did not name, and a browser whose address bar was not read.
+        assert_eq!(excluded_reason(&s, &front("", None)), Some("not_included"));
+        assert_eq!(excluded_reason(&s, &front("msedge.exe", None)), Some("not_included"));
+        assert_eq!(
+            excluded_reason(&s, &front("msedge.exe", Some("https://cad.onshape.com/documents"))),
+            None
+        );
+        // Exclusion keeps recording a browser whose URL is unknown, unless private.
+        let mut s = Settings::default();
+        s.excluded_domains = vec!["example.com".into()];
+        assert_eq!(excluded_reason(&s, &front("msedge.exe", None)), None);
+        assert_eq!(
+            excluded_reason(&s, &front("msedge.exe", Some("https://www.example.com/a"))),
+            Some("excluded_domain")
+        );
+    }
+
     #[test]
     fn record_only_included_records_included_apps_and_sites_and_exclusions_win() {
         let mut s = Settings::default();
         let front = |b: &str, url: Option<&str>| Front {
             bundle_id: b.into(),
+            aliases: Vec::new(),
             url: url.map(str::to_string),
             title: String::new(),
         };

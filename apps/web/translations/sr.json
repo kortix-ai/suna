@@ -21968,5 +21968,24 @@
       "showRevoked": "Прикажи опозване ({count})",
       "hideRevoked": "Сакриј опозване"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automatizacije",
+    "groupDescription": "Rasporedi, podsetnici, webhookovi, događaji aplikacija i monitori u svakom projektu ovog naloga.",
+    "label": "Pauziraj sve automatizacije",
+    "description": "Ništa se ne pokreće samo ni u jednom projektu: nijedan raspored, podsetnik, webhook, događaj aplikacije ni monitor. Ručno pokretanje okidača i dalje radi.",
+    "readOnlyDescription": "Samo vlasnik ili administrator može da pauzira ili nastavi automatizacije.",
+    "pausedSince": "Pauzirano od {date}.",
+    "pauseTitle": "Pauzirati sve automatizacije?",
+    "pauseDescription": "Nijedan projekat ovog naloga ne pokreće sesije sam dok ne nastaviš. Webhookovi se potvrđuju i preskaču.",
+    "pauseConfirm": "Pauziraj sve",
+    "resumeTitle": "Nastaviti sve automatizacije?",
+    "resumeDescription": "Okidači se ponovo pokreću sami. Raspored propušten tokom pauze pokreće se jednom.",
+    "resumeConfirm": "Nastavi sve",
+    "pausedToast": "Sve automatizacije su pauzirane",
+    "resumedToast": "Sve automatizacije su nastavljene",
+    "failedToast": "Automatizacije nije moguće promeniti. Pokušaj ponovo.",
+    "bannerTitle": "Sve automatizacije ovog naloga su pauzirane",
+    "bannerDescription": "Ovde se ništa ne pokreće samo dok ih vlasnik ili administrator ne nastavi u podešavanjima naloga. Ručno pokretanje okidača i dalje radi."
   }
 }
