@@ -15,7 +15,7 @@ const read = (relative: string) =>
 
 const source = read('./project-icon-field.tsx');
 const pickerSource = read('../../../components/ui/emoji-picker.tsx');
-const buttonSource = read('../../../components/ui/button.tsx');
+const buttonSource = read('../../../../../../packages/ui/src/components/ui/button.tsx');
 
 /**
  * Source with comments stripped. Every "the code does X" check below reads

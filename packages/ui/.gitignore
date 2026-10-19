@@ -1,0 +1,3 @@
+# dist/styles.css is committed: the "./styles.css" export points at it and a
+# fresh checkout must resolve it. src/exports.test.ts fails when it drifts.
+!dist/

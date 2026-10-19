@@ -1,11 +1,15 @@
 {
-  "$doc": "THE ONLY FILE WITH VALUES. Every color, type, spacing, radius, motion and effect value for the web app, the mobile app and the portable kit lives here and nowhere else. Guidance files cite token names, never values. To change a value: edit this file, then run `bun .agents/skills/kortix-brand/scripts/generate-tokens.ts`. The script rewrites the marker regions in apps/web/src/app/globals.css and apps/mobile/global.css, plus references/visual/tokens.css and fonts.css. `--check` exits 1 and names the drifted file; tests/unit/brand-kit.test.ts runs it. Web color values are CSS strings exactly as the web ships them. Mobile color values are derived (oklch to sRGB to 'H S% L%', 1 decimal). 'hex' fields are checked against the oklch value by the generator.",
+  "$doc": "THE ONLY FILE WITH VALUES. Every color, type, spacing, radius, motion and effect value for the web app, the mobile app and the portable kit lives here and nowhere else. Guidance files cite token names, never values. To change a value: edit this file, then run `bun .agents/skills/kortix-brand/scripts/generate-tokens.ts`. The script rewrites the marker regions in apps/web/src/app/globals.css, packages/ui/src/styles/theme.css and apps/mobile/global.css, plus the whole files packages/ui/src/styles/tokens.css, packages/ui/src/styles/fonts.css, references/visual/tokens.css, references/visual/fonts.css and apps/api/src/lib/email/brand-tokens.generated.ts. `--check` exits 1 and names the drifted file; tests/unit/brand-kit.test.ts runs it. Web color values are CSS strings exactly as the web ships them. Mobile color values are derived (oklch to sRGB to 'H S% L%', 1 decimal). 'hex' fields are checked against the oklch value by the generator.",
   "version": 1,
   "generates": [
-    "apps/web/src/app/globals.css: region 'kortix-brand' (the :root and .dark token blocks) and region 'kortix-brand theme' (inside @theme inline: type scale, emoji, glyph, motion)",
+    "apps/web/src/app/globals.css: region 'kortix-brand' (the :root and .dark token blocks)",
+    "packages/ui/src/styles/theme.css: region 'kortix-brand theme' (inside @theme inline: type scale, emoji, glyph, motion)",
+    "packages/ui/src/styles/tokens.css: whole file, the @kortix/ui :root and .dark tokens with color-scheme and the system font stacks",
+    "packages/ui/src/styles/fonts.css: whole file, opt-in @font-face for Roobert and Roobert Mono plus --font-roobert and --font-roobert-mono (Kortix-owned surfaces only, D8a)",
     "apps/mobile/global.css: regions 'kortix-brand mobile-light' and 'kortix-brand mobile-dark'",
     ".agents/skills/kortix-brand/references/visual/tokens.css: portable hex variables for HTML, email and OG outside apps/web",
-    ".agents/skills/kortix-brand/references/visual/fonts.css: @font-face for Roobert and Roobert Mono"
+    ".agents/skills/kortix-brand/references/visual/fonts.css: @font-face for Roobert and Roobert Mono",
+    "apps/api/src/lib/email/brand-tokens.generated.ts: the email palette and layout"
   ],
   "when_the_guide_is_silent": "Pick the nearest role token by what the surface IS (canvas, lifted region, inset control, floating panel), never by how it looks. If no role fits, the design is wrong, not the token set. Add a token here only with a role, a use and a decision entry.",
   "color": {

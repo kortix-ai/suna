@@ -44,7 +44,7 @@ Paths are relative to `references/`. "Read" lists files in this kit. "Also load"
 
 ## 3. The values file
 
-`references/visual/visual-system.json` is the only file with values. `scripts/generate-tokens.ts` turns it into the CSS tokens in `apps/web/src/app/globals.css`, `apps/mobile/global.css`, `references/visual/tokens.css` and `apps/api/src/lib/email/brand-tokens.generated.ts` (the email palette and layout). Guidance files cite token names, never a color literal. Never edit a generated region by hand.
+`references/visual/visual-system.json` is the only file with values. `scripts/generate-tokens.ts` turns it into the CSS tokens in `apps/web/src/app/globals.css` (the `:root` and `.dark` region), `packages/ui/src/styles/theme.css` (the `kortix-brand theme` region inside `@theme inline`), `packages/ui/src/styles/tokens.css` and `packages/ui/src/styles/fonts.css` (whole files), `apps/mobile/global.css`, `references/visual/tokens.css`, `references/visual/fonts.css` and `apps/api/src/lib/email/brand-tokens.generated.ts` (the email palette and layout). Guidance files cite token names, never a color literal. Never edit a generated region by hand.
 
 ## 4. Order of rules
 

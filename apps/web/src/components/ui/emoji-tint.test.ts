@@ -271,14 +271,13 @@ describe('emoji-tint — the classes it hands out', () => {
     expect(code).not.toMatch(/emoji-(?:fill|ring)-['"`]\s*\+/);
   });
 
-  test('the tokens it names are the ones globals.css actually defines', () => {
+  test('the tokens it names are the ones globals.css and @kortix/ui theme.css define', () => {
     // The class strings are literals in this file and the tokens are literals
     // in another; nothing else ties them together. A typo'd hue emits a class
     // Tailwind cannot resolve, which fails silently as "no fill, no ring".
-    const globals = readFileSync(
-      fileURLToPath(new URL('../../app/globals.css', import.meta.url)),
-      'utf8',
-    );
+    const globals = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+      .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
+      .join('\n');
 
     for (const hue of EMOJI_HUES) {
       expect(globals).toContain(`--color-emoji-fill-${hue}:`);

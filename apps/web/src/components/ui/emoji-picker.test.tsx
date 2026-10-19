@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(fileURLToPath(new URL('./emoji-picker.tsx', import.meta.url)), 'utf8');
-const globalsCss = readFileSync(
-  fileURLToPath(new URL('../../app/globals.css', import.meta.url)),
-  'utf8',
-);
+// The tokens live in globals.css (:root/.dark) and @kortix/ui theme.css (@theme).
+const globalsCss = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+  .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
+  .join('\n');
 
 /**
  * Source with comments stripped. The file's own comments name the wrong-way-round

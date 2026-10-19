@@ -34,7 +34,7 @@ file (the shadow ladder that never existed, the press value) are recorded in
 
 - **Simplicity is the brand.** Black & white + one accent. Calm, spacious, legible. No decoration that doesn't carry information. Show only important data.
 - **Reuse > Compose > Create.** In that order. Never hand-roll something the system already provides.
-- **Tokens are law.** `apps/web/src/app/globals.css` is the implementation source of truth for every visual property. If a value conflicts with anything else, `globals.css` wins.
+- **Tokens are law.** `apps/web/src/app/globals.css` (the `:root` / `.dark` tokens) and `packages/ui/src/styles/theme.css` (the `@theme inline` keys, `@utility` definitions, keyframes and spinner classes that `@kortix/ui` components use) are the implementation source of truth for every visual property. If a value conflicts with anything else, these two files win.
 - **Fast, or none.** Kortix is a speed product. Motion exists to make the UI feel *faster* and to say where a thing came from — never to be admired. The more you animate, the less each animation is worth. The default answer to "should this animate?" is **no**.
 - **AI-native & self-documenting.** The living styleguide at `/design-system` renders every component. When you add a component, add it there too.
 
@@ -353,7 +353,8 @@ removed and blocked by ESLint (`no-restricted-imports`).
 - Always import the `*Icon`-suffixed exports: `PlusIcon`, `MagnifyingGlassIcon`,
   `CaretRightIcon` — never the deprecated bare names (`Plus`).
 - **Never pass a `weight` prop.** One constant governs the whole app:
-  `DEFAULT_ICON_WEIGHT` in `src/lib/icons/icon-config.ts` (currently `bold`).
+  `DEFAULT_ICON_WEIGHT` in `packages/ui/src/lib/icon-config.ts` (currently `bold`;
+  `apps/web/src/lib/icons/icon-config.ts` is a re-export shim, never edit it).
   Change it, save, and every icon flips; commit it and production renders the
   same. There is no runtime toggle and **no dev/prod branching** — the constant
   is the single source of truth in every environment. Compare all six weights

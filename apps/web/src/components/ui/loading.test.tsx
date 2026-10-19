@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(fileURLToPath(new URL('./loading.tsx', import.meta.url)), 'utf8');
-const css = readFileSync(fileURLToPath(new URL('../../app/globals.css', import.meta.url)), 'utf8');
+// The spinner keyframes and classes moved to @kortix/ui theme.css.
+const css = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+  .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
+  .join('\n');
 
 describe('Loading spokes variant', () => {
   test('the CSS step count matches the number of spokes drawn', () => {

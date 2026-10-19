@@ -12,7 +12,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-19
 
-### K8 `@kortix/ui`: the interactive components for Apps
+### K9 `@kortix/ui`: the shared Tailwind v4 component library
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`) is the one React component library for `apps/web`, Kortix Apps and SDK hosts. Components are the `apps/web/src/components/ui` files, moved with the same Tailwind v4 class strings, under `packages/ui/src/components/ui/`. `apps/web` keeps a one-line shim (`export * from '@kortix/ui/<name>'`) at every old path. Styles ship as `@kortix/ui/tokens.css` (generated, `:root` and `.dark`), `@kortix/ui/theme.css` (the `@theme inline` keys, utilities and keyframes moved out of `apps/web/src/app/globals.css`), `@kortix/ui/styles.css` (prebuilt `dist/styles.css` for hosts without Tailwind) and `@kortix/ui/fonts.css` (Roobert, Kortix-owned surfaces only, D8). White-label hosts override the CSS variables and never fork a component. The kit-styled `Popover`, `OptionList`, `Select` and `FilterBar` of K8 are deleted. `FilterBar` comes back built from the moved `popover`, `select` and `command` components. `kit.css` (`k-*`) stays the kit for plain HTML without React and is not part of `@kortix/ui`.
+- **Why:** two styling systems for one component set drift. One package keeps `apps/web`, the white-label demo and every SDK host on the same components.
+- **Where:** `packages/ui`, `packages/ui/README.md`, `apps/web/src/components/ui/*` (shims), `scripts/generate-tokens.ts`.
+- **Supersedes:** K8. `sync-kortix-brand` in `kortix-ai/company` copies only `visual/fonts.css`, `visual/tokens.css` and `visual/kit.css`, so no App copied the deleted K8 files.
+- **Source:** the `kortix-ui` branch.
+
+### K8 (SUPERSEDED by K9) `@kortix/ui`: the interactive components for Apps
 - **Date:** 2026-10-19
 - **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
 - **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.

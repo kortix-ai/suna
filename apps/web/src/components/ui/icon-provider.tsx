@@ -20,7 +20,8 @@ export const DEFAULT_ICON_SIZE = 32;
 const ICON_DEFAULTS = { weight: DEFAULT_ICON_WEIGHT, size: DEFAULT_ICON_SIZE } as const;
 
 /**
- * Applies the app-wide icon weight (src/lib/icons/icon-config.ts) to every
+ * Applies the app-wide icon weight (packages/ui/src/lib/icon-config.ts; the
+ * apps/web path src/lib/icons/icon-config.ts is a shim) to every
  * Phosphor icon in the client tree — identically in development and
  * production. Icons never need a weight prop; the only intentional override
  * is weight="fill" on solid/status icons.
