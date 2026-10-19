@@ -77,6 +77,7 @@ import {
 const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
+  room: 'arrival.openConversation',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',
   triggers: 'arrival.openTriggers',

@@ -3016,7 +3016,8 @@
       "automation_failed": "Упозорење о грешци",
       "automation_recovered": "Обавештење о опоравку",
       "capture_device_down": "Capture рачунар је стао",
-      "capture_device_recovered": "Capture рачунар поново снима"
+      "capture_device_recovered": "Capture рачунар поново снима",
+      "message": "Poruka"
     },
     "kindDescription": {
       "turn_done": "Потез се завршава.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Окидач или подсетник почиње да не успева.",
       "automation_recovered": "Окидач или подсетник који није успевао поново ради.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
-      "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима."
+      "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
+      "message": "Neko vam piše u razgovoru ili u sobi kojoj ste se pridružili."
     },
     "bell": {
       "label": "Обавештења",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} у пројекту {project}",
       "openSession": "Отвори сесију",
       "openReminders": "Отвори подсетнике",
-      "openTriggers": "Отвори окидаче"
+      "openTriggers": "Отвори окидаче",
+      "openConversation": "Otvori razgovor"
     },
     "session": {
       "mute": "Утишај обавештења",

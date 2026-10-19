@@ -7908,6 +7908,9 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
+  // A conversation message (`kind = 'message'`): the room it was posted in.
+  // No FK, like session_id: the read filter hides a row whose room is gone.
+  roomId: uuid('room_id'),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -7930,7 +7933,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -7978,15 +7981,20 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
- * A room: a named, durable message log in a project that sessions and people
- * talk in (`dev`, `platinum/dev`). `last_seq` numbers the room's messages; a
- * post takes the next value under the row lock, so `seq` is gap-free per room.
+ * A conversation in a project that agent sessions and people talk in.
+ * `kind = 'room'`: a named room (`dev`, `platinum/dev`) anyone with
+ * `project.room.read` can find. `kind = 'direct'`: a direct conversation
+ * between exactly two members, unnamed, found by `direct_key` (the two member
+ * keys, sorted). `last_seq` numbers the messages; a post takes the next value
+ * under the row lock, so `seq` is gap-free per conversation.
  */
 export const rooms = kortixSchema.table('rooms', {
   roomId: uuid('room_id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull(),
   accountId: uuid('account_id').notNull(),
-  name: varchar('name', { length: 64 }).notNull(),
+  kind: varchar('kind', { length: 16 }).default('room').notNull(),
+  name: varchar('name', { length: 64 }),
+  directKey: text('direct_key'),
   topic: text('topic'),
   lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
   createdByUserId: uuid('created_by_user_id'),
@@ -7996,11 +8004,15 @@ export const rooms = kortixSchema.table('rooms', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'rooms_project_fk' }).onDelete('cascade'),
-  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name),
-  check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
+  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name).where(sql`${table.name} is not null`),
+  uniqueIndex('idx_rooms_project_direct').on(table.projectId, table.directKey).where(sql`${table.directKey} is not null`),
+  check(
+    'rooms_kind_check',
+    sql`(${table.kind} = 'room' and ${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$' and ${table.directKey} is null) or (${table.kind} = 'direct' and ${table.name} is null and ${table.directKey} is not null)`,
+  ),
 ]);
 
-/** One message in a room. `sender_kind`: `member` (a person) or `session` (an agent). */
+/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
 export const roomMessages = kortixSchema.table('room_messages', {
   messageId: uuid('message_id').defaultRandom().primaryKey(),
   roomId: uuid('room_id').notNull(),
@@ -8019,23 +8031,39 @@ export const roomMessages = kortixSchema.table('room_messages', {
 ]);
 
 /**
- * A session that listens in a room. A message from anyone else lands in the
- * session's prompt inbox as a steer, acting as `added_by_user_id` — the
- * person who joined it, never the sender. `notify`: `all`, `mentions` or `none`.
+ * A member of a conversation: an agent session or a person.
+ *   session: a message from anyone else reaches the session as a room event at
+ *            its next turn boundary (a stopped session wakes), acting as
+ *            `added_by_user_id` — the person who added it, never the sender.
+ *   person:  a message from anyone else raises their unread count
+ *            (`last_read_seq`) and, with the notification center on, notifies
+ *            them. A person may be a member only while they may read rooms in
+ *            the project; delivery re-checks it.
+ * `notify`: `all`, `mentions` or `none`.
  */
 export const roomMembers = kortixSchema.table('room_members', {
+  memberId: uuid('member_id').defaultRandom().primaryKey(),
   roomId: uuid('room_id').notNull(),
-  sessionId: text('session_id').notNull(),
+  memberKind: varchar('member_kind', { length: 16 }).notNull(),
+  sessionId: text('session_id'),
+  userId: uuid('user_id'),
   projectId: uuid('project_id').notNull(),
   notify: varchar('notify', { length: 16 }).default('all').notNull(),
   addedByUserId: uuid('added_by_user_id').notNull(),
+  lastReadSeq: bigint('last_read_seq', { mode: 'number' }).default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.roomId, table.sessionId] }),
   foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_members_room_fk' }).onDelete('cascade'),
   foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'room_members_session_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_members_room_session').on(table.roomId, table.sessionId).where(sql`${table.sessionId} is not null`),
+  uniqueIndex('idx_room_members_room_user').on(table.roomId, table.userId).where(sql`${table.userId} is not null`),
   index('idx_room_members_session').on(table.sessionId),
+  index('idx_room_members_user').on(table.userId),
   check('room_members_notify_check', sql`${table.notify} in ('all', 'mentions', 'none')`),
+  check(
+    'room_members_kind_check',
+    sql`(${table.memberKind} = 'session' and ${table.sessionId} is not null and ${table.userId} is null) or (${table.memberKind} = 'person' and ${table.userId} is not null and ${table.sessionId} is null)`,
+  ),
 ]);
 
 /**

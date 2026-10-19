@@ -3016,7 +3016,8 @@
       "automation_failed": "Avviso di errore",
       "automation_recovered": "Avviso di ripristino",
       "capture_device_down": "Computer Capture fermo",
-      "capture_device_recovered": "Computer Capture di nuovo in registrazione"
+      "capture_device_recovered": "Computer Capture di nuovo in registrazione",
+      "message": "Messaggio"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Un trigger o un promemoria inizia a fallire.",
       "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
-      "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo."
+      "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
+      "message": "Qualcuno ti scrive in una conversazione o in una stanza a cui ti sei unito."
     },
     "bell": {
       "label": "Notifiche",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} in {project}",
       "openSession": "Apri sessione",
       "openReminders": "Apri promemoria",
-      "openTriggers": "Apri trigger"
+      "openTriggers": "Apri trigger",
+      "openConversation": "Apri conversazione"
     },
     "session": {
       "mute": "Silenzia notifiche",

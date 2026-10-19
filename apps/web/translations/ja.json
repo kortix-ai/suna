@@ -3016,7 +3016,8 @@
       "automation_failed": "失敗アラート",
       "automation_recovered": "復旧アラート",
       "capture_device_down": "Capture のコンピューターが停止",
-      "capture_device_recovered": "Capture のコンピューターが復旧"
+      "capture_device_recovered": "Capture のコンピューターが復旧",
+      "message": "メッセージ"
     },
     "kindDescription": {
       "turn_done": "ターンが終了します。",
@@ -3027,7 +3028,8 @@
       "automation_failed": "トリガーまたはリマインダーが失敗し始めます。",
       "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
-      "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。"
+      "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
+      "message": "会話、または参加したルームで誰かがあなたにメッセージを送ったとき。"
     },
     "bell": {
       "label": "通知",
@@ -3050,7 +3052,8 @@
       "inProject": "{project} の{kind}",
       "openSession": "セッションを開く",
       "openReminders": "リマインダーを開く",
-      "openTriggers": "トリガーを開く"
+      "openTriggers": "トリガーを開く",
+      "openConversation": "会話を開く"
     },
     "session": {
       "mute": "通知をミュート",

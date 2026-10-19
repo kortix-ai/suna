@@ -1,5 +1,5 @@
 {
-  "id": "838c94fb-b9a6-404f-bba0-57136fdba786",
+  "id": "38fa1b63-764b-4c24-851d-7a4cb6652b9b",
   "prevId": "b82ba6fc-9903-4b9c-91e1-0b38126b6374",
   "version": "7",
   "dialect": "postgresql",
@@ -13813,6 +13813,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "room_id": {
+          "name": "room_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -14037,7 +14043,7 @@
       "checkConstraints": {
         "notifications_kind": {
           "name": "notifications_kind",
-          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')"
+          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')"
         }
       },
       "isRLSEnabled": false
@@ -21212,9 +21218,22 @@
       "name": "room_members",
       "schema": "kortix",
       "columns": {
+        "member_id": {
+          "name": "member_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "room_id": {
           "name": "room_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_kind": {
+          "name": "member_kind",
+          "type": "varchar(16)",
           "primaryKey": false,
           "notNull": true
         },
@@ -21222,7 +21241,13 @@
           "name": "session_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "project_id": {
           "name": "project_id",
@@ -21243,6 +21268,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "last_read_seq": {
+          "name": "last_read_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -21252,11 +21284,70 @@
         }
       },
       "indexes": {
+        "idx_room_members_room_session": {
+          "name": "idx_room_members_room_session",
+          "columns": [
+            {
+              "expression": "room_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"room_members\".\"session_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_room_members_room_user": {
+          "name": "idx_room_members_room_user",
+          "columns": [
+            {
+              "expression": "room_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"room_members\".\"user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_room_members_session": {
           "name": "idx_room_members_session",
           "columns": [
             {
               "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_room_members_user": {
+          "name": "idx_room_members_user",
+          "columns": [
+            {
+              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21298,21 +21389,17 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "room_members_room_id_session_id_pk": {
-          "name": "room_members_room_id_session_id_pk",
-          "columns": [
-            "room_id",
-            "session_id"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "room_members_notify_check": {
           "name": "room_members_notify_check",
           "value": "\"kortix\".\"room_members\".\"notify\" in ('all', 'mentions', 'none')"
+        },
+        "room_members_kind_check": {
+          "name": "room_members_kind_check",
+          "value": "(\"kortix\".\"room_members\".\"member_kind\" = 'session' and \"kortix\".\"room_members\".\"session_id\" is not null and \"kortix\".\"room_members\".\"user_id\" is null) or (\"kortix\".\"room_members\".\"member_kind\" = 'person' and \"kortix\".\"room_members\".\"user_id\" is not null and \"kortix\".\"room_members\".\"session_id\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -21457,11 +21544,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'room'"
+        },
         "name": {
           "name": "name",
           "type": "varchar(64)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "direct_key": {
+          "name": "direct_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "topic": {
           "name": "topic",
@@ -21527,6 +21627,29 @@
             }
           ],
           "isUnique": true,
+          "where": "\"kortix\".\"rooms\".\"name\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_rooms_project_direct": {
+          "name": "idx_rooms_project_direct",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "direct_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"rooms\".\"direct_key\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -21552,9 +21675,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "rooms_name_check": {
-          "name": "rooms_name_check",
-          "value": "\"kortix\".\"rooms\".\"name\" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'"
+        "rooms_kind_check": {
+          "name": "rooms_kind_check",
+          "value": "(\"kortix\".\"rooms\".\"kind\" = 'room' and \"kortix\".\"rooms\".\"name\" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$' and \"kortix\".\"rooms\".\"direct_key\" is null) or (\"kortix\".\"rooms\".\"kind\" = 'direct' and \"kortix\".\"rooms\".\"name\" is null and \"kortix\".\"rooms\".\"direct_key\" is not null)"
         }
       },
       "isRLSEnabled": false

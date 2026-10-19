@@ -180,3 +180,33 @@ export async function filterTriggerRecipients(
     (await mayReadProjectTriggers(userId, accountId, [projectId])).has(projectId));
   return people.filter((_, i) => results[i]);
 }
+
+/** The projects among `projectIds` in `accountId` whose rooms `userId` may read now. */
+export async function mayReadProjectRooms(
+  userId: string,
+  accountId: string,
+  projectIds: readonly string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userId || projectIds.length === 0) return out;
+  const accessible = await projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ROOM_READ);
+  for (const projectId of projectIds) if (allows(accessible, projectId)) out.add(projectId);
+  return out;
+}
+
+/**
+ * The people among `userIds` who may take part in a project's conversations
+ * now: members of the account with `project.room.read` on the project. The
+ * one rule for adding a person to a room, opening a direct conversation with
+ * them, and delivering a message to them.
+ */
+export async function filterRoomRecipients(
+  accountId: string,
+  projectId: string,
+  userIds: readonly string[],
+): Promise<string[]> {
+  const people = await personsAmong(accountId, userIds);
+  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await mayReadProjectRooms(userId, accountId, [projectId])).has(projectId));
+  return people.filter((_, i) => results[i]);
+}

@@ -36,6 +36,8 @@ export interface DeliverInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
+  /** A conversation message: the room it was posted in. */
+  roomId?: string | null;
   /** Subject: the session title or the trigger name. */
   title: string;
   /** Detail: question text, error, share line. May be empty. */
@@ -109,6 +111,7 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
+        roomId: input.roomId ?? null,
         kind: input.kind,
         title: input.title,
         body: input.body ?? '',
@@ -135,6 +138,7 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
+        roomId: input.roomId ?? null,
         accountId: input.accountId,
       });
 

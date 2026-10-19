@@ -3016,7 +3016,8 @@
       "automation_failed": "Alerta de falha",
       "automation_recovered": "Alerta de recuperação",
       "capture_device_down": "Computador do Capture parado",
-      "capture_device_recovered": "Computador do Capture gravando de novo"
+      "capture_device_recovered": "Computador do Capture gravando de novo",
+      "message": "Mensagem"
     },
     "kindDescription": {
       "turn_done": "Um turno termina.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Um trigger ou lembrete começa a falhar.",
       "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar.",
       "capture_device_down": "Um computador do Kortix Capture não está gravando. Enviado a quem gerencia o Capture.",
-      "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar."
+      "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
+      "message": "Alguém escreve para você em uma conversa ou em uma sala em que você entrou."
     },
     "bell": {
       "label": "Notificações",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} em {project}",
       "openSession": "Abrir sessão",
       "openReminders": "Abrir lembretes",
-      "openTriggers": "Abrir triggers"
+      "openTriggers": "Abrir triggers",
+      "openConversation": "Abrir conversa"
     },
     "session": {
       "mute": "Silenciar notificações",

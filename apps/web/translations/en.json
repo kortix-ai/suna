@@ -3027,7 +3027,8 @@
       "automation_failed": "Failure alert",
       "automation_recovered": "Recovery alert",
       "capture_device_down": "Capture computer stopped",
-      "capture_device_recovered": "Capture computer recording again"
+      "capture_device_recovered": "Capture computer recording again",
+      "message": "Message"
     },
     "kindDescription": {
       "turn_done": "A turn ends.",
@@ -3038,7 +3039,8 @@
       "automation_failed": "A trigger or a reminder starts failing.",
       "automation_recovered": "A failing trigger or reminder works again.",
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
-      "capture_device_recovered": "A Kortix Capture computer that stopped records again."
+      "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
+      "message": "Someone messages you in a conversation, or in a room you joined."
     },
     "bell": {
       "label": "Notifications",
@@ -3061,7 +3063,8 @@
       "inProject": "{kind} in {project}",
       "openSession": "Open session",
       "openReminders": "Open reminders",
-      "openTriggers": "Open triggers"
+      "openTriggers": "Open triggers",
+      "openConversation": "Open conversation"
     },
     "session": {
       "mute": "Mute notifications",

@@ -84,6 +84,7 @@ export function deliveryForKind(
     case 'question':
     case 'permission':
     case 'shared':
+    case 'message':
       return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
 }

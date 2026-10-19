@@ -3016,7 +3016,8 @@
       "automation_failed": "Fehleralarm",
       "automation_recovered": "Entwarnung",
       "capture_device_down": "Capture-Computer gestoppt",
-      "capture_device_recovered": "Capture-Computer nimmt wieder auf"
+      "capture_device_recovered": "Capture-Computer nimmt wieder auf",
+      "message": "Nachricht"
     },
     "kindDescription": {
       "turn_done": "Ein Durchlauf endet.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Ein Trigger oder eine Erinnerung schlägt fehl.",
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
-      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf."
+      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
+      "message": "Jemand schreibt dir in einer Unterhaltung oder in einem Raum, dem du beigetreten bist."
     },
     "bell": {
       "label": "Benachrichtigungen",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} in {project}",
       "openSession": "Sitzung öffnen",
       "openReminders": "Erinnerungen öffnen",
-      "openTriggers": "Trigger öffnen"
+      "openTriggers": "Trigger öffnen",
+      "openConversation": "Unterhaltung öffnen"
     },
     "session": {
       "mute": "Benachrichtigungen stummschalten",

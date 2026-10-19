@@ -55,6 +55,7 @@ export function notificationUrl(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
+  roomId?: string | null;
   kind?: string;
   accountId?: string;
 }): string {
@@ -62,6 +63,10 @@ export function notificationUrl(input: {
   // A Capture fleet-health alert opens the account's Devices page.
   if (input.kind?.startsWith('capture_device_') && input.accountId) {
     return `/capture/${encodeURIComponent(input.accountId)}/devices${query}`;
+  }
+  // A conversation message opens its room.
+  if (input.projectId && input.roomId) {
+    return `/projects/${encodeURIComponent(input.projectId)}/rooms/${encodeURIComponent(input.roomId)}${query}`;
   }
   if (input.projectId && input.sessionId) {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
@@ -88,6 +93,7 @@ export function buildPushContent(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
+  roomId?: string | null;
   accountId?: string;
 }): NotificationPushContent {
   return {
@@ -116,6 +122,7 @@ const SOUNDS: Record<NotificationKindName, { sound: string; channelId: string }>
   automation_failed: { sound: 'kortix_error.wav', channelId: 'session-error' },
   capture_device_down: { sound: 'kortix_error.wav', channelId: 'session-error' },
   capture_device_recovered: { sound: 'kortix_complete.wav', channelId: 'session-complete' },
+  message: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
 };
 const SILENT_CHANNEL_ID = 'session-silent';
 

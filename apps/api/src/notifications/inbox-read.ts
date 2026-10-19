@@ -6,10 +6,10 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { notifications, projects } from '@kortix/db';
+import { notifications, projects, roomMembers, rooms } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
-import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
+import { loadSessionAccessRows, mayReadProjectRooms, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
 import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
@@ -28,6 +28,8 @@ export interface InboxRowForFilter {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
+  /** Set on a conversation message (`kind = 'message'`). */
+  roomId?: string | null;
   kind: string;
 }
 
@@ -53,6 +55,7 @@ export interface InboxNotification {
   project_name: string | null;
   session_id: string | null;
   trigger_slug: string | null;
+  room_id: string | null;
   actor_user_id: string | null;
   url: string;
   read: boolean;
@@ -75,6 +78,7 @@ const ROW = {
   projectId: notifications.projectId,
   sessionId: notifications.sessionId,
   triggerSlug: notifications.triggerSlug,
+  roomId: notifications.roomId,
   kind: notifications.kind,
   title: notifications.title,
   body: notifications.body,
@@ -128,9 +132,13 @@ async function visible<T extends InboxRowForFilter>(
   const seen = await maySeeSessions(userId, [...loaded.values()]);
   for (const id of seen) sessions.set(id, loaded.get(id)!);
 
+  // A message row: the recipient is still a person member of its room and
+  // may read the project's rooms.
+  const rooms = await readableRoomsOf(userId, open.filter((row) => row.roomId));
+
   const triggerProjects = new Map<string, Set<string>>();
   for (const row of open) {
-    if (row.sessionId || !row.projectId) continue;
+    if (row.roomId || row.sessionId || !row.projectId) continue;
     const ids = triggerProjects.get(row.accountId) ?? new Set<string>();
     ids.add(row.projectId);
     triggerProjects.set(row.accountId, ids);
@@ -141,9 +149,26 @@ async function visible<T extends InboxRowForFilter>(
   }));
 
   const kept = open.filter((row) =>
-    isAccountNotification(row.kind) || (row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
+    isAccountNotification(row.kind) ||
+    (row.roomId ? rooms.has(row.roomId) : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
+}
+
+/** The rooms among `rows` whose messages `userId` may still read: a person member, with project.room.read. */
+async function readableRoomsOf(userId: string, rows: readonly InboxRowForFilter[]): Promise<Set<string>> {
+  const roomIds = [...new Set(rows.flatMap((row) => (row.roomId ? [row.roomId] : [])))];
+  if (roomIds.length === 0) return new Set();
+  const memberships = await db
+    .select({ roomId: roomMembers.roomId, projectId: rooms.projectId, accountId: rooms.accountId })
+    .from(roomMembers)
+    .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
+    .where(and(eq(roomMembers.userId, userId), inArray(roomMembers.roomId, roomIds)));
+  const out = new Set<string>();
+  await Promise.all(memberships.map(async (row) => {
+    if ((await mayReadProjectRooms(userId, row.accountId, [row.projectId])).has(row.projectId)) out.add(row.roomId);
+  }));
+  return out;
 }
 
 /**
@@ -243,12 +268,14 @@ export async function listInbox(
       project_name: row.projectId ? names.get(row.projectId) ?? null : null,
       session_id: row.sessionId,
       trigger_slug: row.triggerSlug,
+      room_id: row.roomId,
       actor_user_id: row.actorUserId,
       url: notificationUrl({
         notificationId: row.notificationId,
         projectId: row.projectId,
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
+        roomId: row.roomId,
         kind: row.kind,
         accountId: row.accountId,
       }),
@@ -268,6 +295,11 @@ async function markWhere(userId: string, where?: SQL): Promise<number> {
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt), where))
     .returning({ id: notifications.notificationId });
   return updated.length;
+}
+
+/** The caller read a conversation: its message rows for them are read. */
+export function markRoomNotificationsRead(userId: string, roomId: string): Promise<number> {
+  return markWhere(userId, eq(notifications.roomId, roomId));
 }
 
 /** The caller opened the session: its rows for them are read. */

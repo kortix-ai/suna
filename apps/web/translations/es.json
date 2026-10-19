@@ -3016,7 +3016,8 @@
       "automation_failed": "Alerta de fallo",
       "automation_recovered": "Alerta de recuperación",
       "capture_device_down": "Ordenador de Capture detenido",
-      "capture_device_recovered": "Ordenador de Capture graba de nuevo"
+      "capture_device_recovered": "Ordenador de Capture graba de nuevo",
+      "message": "Mensaje"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Un trigger o un recordatorio empieza a fallar.",
       "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar.",
       "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
-      "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar."
+      "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar.",
+      "message": "Alguien te escribe en una conversación o en una sala a la que te uniste."
     },
     "bell": {
       "label": "Notificaciones",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} en {project}",
       "openSession": "Abrir sesión",
       "openReminders": "Abrir recordatorios",
-      "openTriggers": "Abrir triggers"
+      "openTriggers": "Abrir triggers",
+      "openConversation": "Abrir conversación"
     },
     "session": {
       "mute": "Silenciar notificaciones",

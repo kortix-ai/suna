@@ -3016,7 +3016,8 @@
       "automation_failed": "Alerte d'échec",
       "automation_recovered": "Alerte de rétablissement",
       "capture_device_down": "Ordinateur Capture arrêté",
-      "capture_device_recovered": "Ordinateur Capture à nouveau en marche"
+      "capture_device_recovered": "Ordinateur Capture à nouveau en marche",
+      "message": "Message"
     },
     "kindDescription": {
       "turn_done": "Un tour se termine.",
@@ -3027,7 +3028,8 @@
       "automation_failed": "Un déclencheur ou un rappel commence à échouer.",
       "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
-      "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau."
+      "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
+      "message": "Quelqu’un vous écrit dans une conversation ou dans un salon que vous avez rejoint."
     },
     "bell": {
       "label": "Notifications",
@@ -3050,7 +3052,8 @@
       "inProject": "{kind} dans {project}",
       "openSession": "Ouvrir la session",
       "openReminders": "Ouvrir les rappels",
-      "openTriggers": "Ouvrir les déclencheurs"
+      "openTriggers": "Ouvrir les déclencheurs",
+      "openConversation": "Ouvrir la conversation"
     },
     "session": {
       "mute": "Mettre les notifications en sourdine",
