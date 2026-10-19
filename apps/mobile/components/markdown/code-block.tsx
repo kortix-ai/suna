@@ -20,7 +20,7 @@ import { CODE_BLOCK, RADIUS } from '@/lib/markdown/markdown-layout';
 import { CopyButton } from './copy-button';
 import { markdownPalette, MONO_FONT } from './markdown-theme';
 
-export interface CodeBlockProps {
+interface CodeBlockProps {
   code: string;
   /** The fence's info-string language hint, raw (`ts`, `py`, `""`). */
   language: string;

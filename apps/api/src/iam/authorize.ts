@@ -467,6 +467,10 @@ export async function filterAccessibleObjects(
   objectIds: readonly string[],
 ): Promise<string[]> {
   if (objectIds.length === 0) return [];
+  // Step 1, as in `authorize`: act-as runs every agent of the target account,
+  // and nothing anywhere else. Checked before the principal memo.
+  if (isImpersonatingAccount(actor.userId, actor.accountId)) return [...objectIds];
+  if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return [];
   const principal = actingPrincipal(actor);
   const rec = await resolvePrincipal(principal, actor.accountId);
   if (!rec) return [];

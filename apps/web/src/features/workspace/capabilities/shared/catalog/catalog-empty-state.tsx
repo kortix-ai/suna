@@ -41,14 +41,7 @@ export function CatalogNoMatch({
       {tI18nComplete.raw('texta8897de42124')}{' '}
       <span className="text-foreground font-mono">{query.trim()}</span>.
       {excludedNoActions > 0 ? (
-        <>
-          {' '}
-          {excludedNoActions === 1
-            ? tI18nComplete.raw('text6c612fd35781')
-            : tI18nComplete('text9241c5f73c2c', { value0: excludedNoActions })}{' '}
-          {tI18nComplete.raw('text121a2886aca0')}
-          {excludedNoActions === 1 ? 'es' : ''} {tI18nComplete.raw('textb2a0a09c5ca4')}
-        </>
+        <> {tI18nComplete('catalogExcludedNoActions', { count: excludedNoActions })}</>
       ) : null}
     </CatalogEmptyNote>
   );

@@ -22,8 +22,8 @@ import type { UiTranslator } from '@/i18n/translator';
  *  global can be `false` for the very same error (the dual-package hazard the
  *  SDK's own guide calls out), and this copy is not worth that risk. */
 function statusOf(error: unknown): number | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const status = (error as { status?: unknown }).status;
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null;
+  const status = error.status;
   return typeof status === 'number' ? status : null;
 }
 
@@ -48,26 +48,19 @@ export function catalogErrorCopy(error: unknown, tI18nComplete: UiTranslator): C
     };
   }
 
-  if (status === 401) {
+  if (status === 401 || status === 403 || status === 404) {
+    // The credentials are wrong (401), the role lacks it (403) or it is gone
+    // (404) — all three are the connection's fault, none is retryable.
+    const [title, description] = (
+      {
+        401: ['texte5ee1e7e84aa', 'text40f531d6cd85'],
+        403: ['text9b1f0823459d', 'text516f7c6c91fd'],
+        404: ['texte3ebaa16dd9d', 'textf7571d57f984'],
+      } as const
+    )[status];
     return {
-      title: tI18nComplete.raw('texte5ee1e7e84aa'),
-      description: tI18nComplete.raw('text40f531d6cd85'),
-      canRetry: false,
-    };
-  }
-
-  if (status === 403) {
-    return {
-      title: tI18nComplete.raw('text9b1f0823459d'),
-      description: tI18nComplete.raw('text516f7c6c91fd'),
-      canRetry: false,
-    };
-  }
-
-  if (status === 404) {
-    return {
-      title: tI18nComplete.raw('texte3ebaa16dd9d'),
-      description: tI18nComplete.raw('textf7571d57f984'),
+      title: tI18nComplete.raw(title),
+      description: tI18nComplete.raw(description),
       canRetry: false,
     };
   }

@@ -80,18 +80,18 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     invalidateAccountBilling();
   });
 
-  test('free plan, no override → managed models withheld (unchanged)', async () => {
-    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(true);
+  test('free plan, no override → managed models offered', async () => {
+    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(false);
   });
 
   test('paid plan, no override → managed models offered (unchanged)', async () => {
     expect((await gateFor({ tier: 'credits' })).freeManagedOnly).toBe(false);
   });
 
-  test('THE BUG: override=true on a free plan now grants managed models', async () => {
-    // Old behavior: freeManagedOnly stayed true because the tier string was
-    // still 'free'. The operator grant was invisible to Slack only.
-    expect((await gateFor({ tier: 'free', entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(
+  test('THE BUG: override=true on an account with no plan grants managed models', async () => {
+    // Old behavior: freeManagedOnly followed the tier string, so the operator
+    // grant was invisible to Slack only.
+    expect((await gateFor({ tier: 'none', entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(
       false,
     );
   });
@@ -103,7 +103,7 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
   });
 
   test('override=null defers to the plan', async () => {
-    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(
+    expect((await gateFor({ tier: 'none' })).freeManagedOnly).toBe(
       true,
     );
     invalidateAccountBilling();
@@ -114,7 +114,7 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
 
   test('trials are removed: a leftover active trial row grants nothing', async () => {
     const row = {
-      tier: 'free',
+      tier: 'none',
       trialStatus: 'active',
       trialTier: 'tier_25_200',
       trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),

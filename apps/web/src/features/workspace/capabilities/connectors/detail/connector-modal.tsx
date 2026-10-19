@@ -1,8 +1,7 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { type AdminConnector, getProjectDetail, listPipedreamApps } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { type AdminConnector, listPipedreamApps } from '@kortix/sdk';
 import { KeyIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useQuery } from '@tanstack/react-query';
@@ -21,8 +20,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
 
@@ -35,14 +33,12 @@ import { cn } from '@/lib/utils';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
-import { ConnectorAccounts } from './connector-accounts';
-import { ConnectorSettings } from './connector-settings';
+import { ConnectorDetailTabs } from './connector-detail-tabs';
 import { CONNECTOR_TAB_LABEL_KEY, type ConnectorTab, connectorTabs } from './connector-tabs';
-import { ConnectorTools } from './connector-tools';
-import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
+import { useConnectorEventTriggers } from './connector-triggers';
 import { useConnectorDetail } from './use-connector-detail';
 
-export interface ConnectorModalProps {
+interface ConnectorModalProps {
   projectId: string;
   /** The connector to show, or `null` when it has not resolved yet. `open` is
    *  driven by the SELECTION, not by this — see `shared/detail-selection.ts`. */
@@ -184,18 +180,9 @@ function ConnectorModalBody({
     computerOpen,
     setComputerOpen,
   } = useConnectorDetail({ projectId, connector, canWrite, onChanged });
-  const tSharing = useTranslations('accessSharing');
   // Opens the account list's "Add account" dialog: name and who may use it.
   const [addRequest, setAddRequest] = useState(0);
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const projectName = projectDetailQuery.data?.project?.name ?? '';
-  const everyoneLabel = projectName
-    ? tSharing('everyone', { project: projectName })
-    : tSharing('visibilityEveryone');
+  const tSharing = useTranslations('accessSharing');
   const isPipedream = connector.provider === 'pipedream';
 
   const eventTriggers = useConnectorEventTriggers(projectId, connector);
@@ -376,70 +363,28 @@ function ConnectorModalBody({
           </TabsList>
 
           <div className="bg-popover min-w-0 flex-1 overflow-hidden overflow-y-auto px-5 py-4 lg:px-6">
-            <TabsContent value="accounts">
-              {connectionsQuery.isError ? (
-                <ErrorState
-                  size="sm"
-                  title={tI18nComplete.raw('textbda9de7688c0')}
-                  description={
-                    connectionsQuery.error instanceof Error
-                      ? connectionsQuery.error.message
-                      : tI18nComplete.raw('textd8eda34a089a')
-                  }
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void connectionsQuery.refetch()}
-                    >
-                      {tI18nComplete.raw('text942087cc2d41')}
-                    </Button>
-                  }
-                />
-              ) : (
-                <ConnectorAccounts
-                  projectId={projectId}
-                  connector={connector}
-                  displayName={displayName}
-                  canWrite={canWrite}
-                  canManageConnections={canManageConnections}
-                  onChanged={onChanged}
-                  onRemoved={onRemoved}
-                  onStartSession={startPrivateSession}
-                  addRequest={addRequest}
-                  onAddRequestHandled={() => setAddRequest(0)}
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="tools">
-              <ConnectorTools
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                canWrite={canWrite}
-                disabled={false}
-                onChanged={onChanged}
-              />
-            </TabsContent>
-
-            <TabsContent value="triggers">
-              <ConnectorTriggers
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-              />
-            </TabsContent>
-
-            <TabsContent value="settings">
-              <ConnectorSettings
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                onChanged={onChanged}
-                onRemoved={onRemoved}
-              />
-            </TabsContent>
+            <ConnectorDetailTabs
+              connectionsQuery={connectionsQuery}
+              accounts={{
+                projectId,
+                connector,
+                displayName,
+                canWrite,
+                canManageConnections,
+                onChanged,
+                onStartSession: startPrivateSession,
+                addRequest,
+                onAddRequestHandled: () => setAddRequest(0),
+                onRemoved,
+              }}
+              settings={{
+                projectId: projectId,
+                connector: connector,
+                displayName: displayName,
+                onChanged: onChanged,
+                onRemoved: onRemoved,
+              }}
+            />
           </div>
         </Tabs>
       </ModalBody>

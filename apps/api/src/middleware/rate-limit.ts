@@ -94,6 +94,7 @@ const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
+const projectWebhookRejectedRunLimiter = new TokenBucketRateLimiter('project_webhook_rejected_run');
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 const feedbackLimiter = new TokenBucketRateLimiter('feedback');
@@ -335,6 +336,20 @@ export function createProjectWebhookRateLimitMiddleware() {
  * Bound forced Git mirror refreshes by project, independent of source IP.
  * Each API replica owns a local mirror, so each replica needs its own budget.
  */
+/**
+ * A webhook delivery rejected before authentication is stored as a run, so
+ * the owner can see it and replay it. Anyone holding the URL can send them,
+ * so at most one is recorded per trigger per 10 s per replica: a request
+ * flood never becomes a database-write flood. Over budget, the route still
+ * answers 401; it only skips the write.
+ */
+export function consumeProjectWebhookRejectedRunBudget(projectId: string, slug: string): boolean {
+  return projectWebhookRejectedRunLimiter.check(`${projectId}:${slug}`, {
+    limit: 1,
+    windowMs: 10_000,
+  }).allowed;
+}
+
 export function consumeProjectWebhookManifestRefreshBudget(projectId: string): boolean {
   return projectWebhookManifestRefreshLimiter.check(projectId, {
     limit: 1,
@@ -393,6 +408,7 @@ export function resetRateLimiters() {
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
+  projectWebhookRejectedRunLimiter.reset();
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
   feedbackLimiter.reset();

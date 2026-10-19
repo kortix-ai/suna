@@ -162,11 +162,8 @@ interface ComposerProps {
    */
   chip?: ComposerChip | null;
   onChipPress?: () => void;
-  className?: string;
   /** A send is in flight: the send slot shows `KortixLoader` instead of the arrow, and stays disabled. */
   sending?: boolean;
-  /** Shows the mic button (voice input into the text field). Default on. */
-  dictation?: boolean;
 }
 
 export function Composer({
@@ -195,16 +192,14 @@ export function Composer({
   onOpenPaste,
   chip,
   onChipPress,
-  className,
   sending = false,
-  dictation: dictationEnabled = true,
 }: ComposerProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const colors = THEME[isDark ? 'dark' : 'light'];
   const canSend = !disabled && (allowEmptySend || value.trim().length > 0 || attachments.length > 0 || pastes.length > 0);
   const dictation = useDictation({ value, onChangeText });
-  const showMic = dictationEnabled && dictation.available;
+  const showMic = dictation.available;
   // A send or a lock ends dictation, keeping the words.
   const { active: dictating, finish: finishDictation } = dictation;
   React.useEffect(() => {
@@ -212,7 +207,7 @@ export function Composer({
   }, [disabled, dictating, finishDictation]);
 
   return (
-    <View className={cn(FROSTED_CARD_CLASS, className)}>
+    <View className={FROSTED_CARD_CLASS}>
       {BLUR_AVAILABLE ? (
         <BlurView
           intensity={FROSTED[isDark ? 'dark' : 'light'].intensity}

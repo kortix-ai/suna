@@ -5,6 +5,7 @@ import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
   FEATURE_FLAG_KEYS,
+  PROVISION_STREAM_UNTERMINATED_CODE,
   type ExperimentalFeatureKey,
   type ExperimentalFeatureView,
   type FeatureFlagKey,
@@ -17,6 +18,7 @@ import {
   createProjectRepo,
   getProject,
   getProjectDetail,
+  getProjectQuota,
   provisionProject,
   provisionProjectStream,
   provisionProjectWithToken,
@@ -695,6 +697,40 @@ describe('provisionProjectStream', () => {
     ).rejects.toThrow();
   });
 
+  // The bare close is an UNKNOWN result, not a known failure: the server may
+  // still be provisioning (the route's handler outlives a lost reader and the
+  // client cannot tell a commit from a rollback). KRTX-1754's host recovers
+  // exactly this case by replaying the same idempotency key over the plain
+  // route — which requires TELLING the bare close apart from every real
+  // failure. A plain `Error` cannot carry that distinction, so the close is
+  // an `ApiError` tagged with a stable code. The message is unchanged: every
+  // existing reader keeps reading the same text.
+  test('tags the no-terminal-event close with PROVISION_STREAM_UNTERMINATED_CODE', async () => {
+    const error = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([]),
+    }).then(
+      () => null,
+      (e) => e,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe(PROVISION_STREAM_UNTERMINATED_CODE);
+    expect((error as ApiError).message).toBe('Provision stream ended without a result');
+  });
+
+  test('a stream that delivered phases and then closed still carries the unterminated code', async () => {
+    const body = 'data: {"type":"phase","phase":"validating"}\n\n';
+    const error = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([body]),
+    }).then(
+      () => null,
+      (e) => e,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe(PROVISION_STREAM_UNTERMINATED_CODE);
+  });
+
   // Not in the brief's draft, added for robustness: the parser must be
   // defensive to frames that aren't a bare `data: <json>` line — an SSE
   // comment line (`: …`) and a leading `event:` line are both spec-legal and
@@ -1154,4 +1190,53 @@ test('a failed repository create does not raise the global error toast', async (
   ).rejects.toThrow();
 
   expect(toasted).toEqual([]);
+});
+
+// ── Project quota pre-check ─────────────────────────────────────────────────
+//
+// `GET /projects/quota` reports the target account's project-cap state so the
+// `/new` page can show the cap up front instead of after a failed submit. The
+// contract: `account_id` rides the query when given (the same resolution the
+// provision POST accepts), is omitted otherwise (the server then resolves the
+// same default account the create itself would target), and the body is the
+// cap state verbatim.
+
+test('getProjectQuota reads the cap state for an explicit account', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentUrl = '';
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    sentUrl = String(input);
+    return new Response(
+      JSON.stringify({ capped: true, limit: 1, count: 1, message: 'Free accounts are limited to 1 project.' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }) as unknown as typeof fetch;
+
+  const quota = await getProjectQuota({ accountId: 'acc-1' });
+
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota?account_id=acc-1');
+  expect(quota.capped).toBe(true);
+  expect(quota.limit).toBe(1);
+  expect(quota.count).toBe(1);
+  expect(quota.message).toBe('Free accounts are limited to 1 project.');
+});
+
+test('getProjectQuota omits account_id to let the server resolve the default', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentUrl = '';
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    sentUrl = String(input);
+    return new Response(JSON.stringify({ capped: false, limit: 5, count: 2, message: null }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  const quota = await getProjectQuota();
+
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota');
+  expect(quota.capped).toBe(false);
+  expect(quota.message).toBeNull();
 });

@@ -29,7 +29,6 @@ import { renderStepSummary, writeResults } from '../src/core/report';
 import { runExitCode } from '../src/core/result';
 import { runAttemptSuffix } from '../src/core/run-identity';
 import { discoverFlows, runSuite } from '../src/core/runner';
-import { writeUiData } from '../src/core/ui-data';
 import { runCoverage } from '../src/coverage/check-coverage';
 import { runGc } from '../src/fixtures/gc';
 import { parseShardSpec, planShard } from '../src/core/shard';
@@ -144,14 +143,6 @@ async function main(): Promise<number> {
     log.info(
       `${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`,
     );
-    return 0;
-  }
-
-  if (cmd === 'ui-data') {
-    const dir = (flags.out as string) ?? resolve(import.meta.dir, '../ui/data');
-    const r = await writeUiData(dir);
-    log.info(`ui data → ${dir}`);
-    log.info(`${r.flows} flows (${r.passed} passed, ${r.skipped} gated/skipped)`);
     return 0;
   }
 

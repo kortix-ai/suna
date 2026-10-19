@@ -9,7 +9,33 @@ export interface ProjectGroupAccessSource {
   role: ProjectRole;
 }
 
+type ProjectAccessPolicy = {
+  policy_id: string;
+  role_id: string;
+  role_key: string;
+  role_name: string;
+  scope_type: 'project' | 'account';
+  expires_at: string | null;
+};
+
+type ProjectAccessResource = {
+  grant_id: string;
+  resource_type: 'agent' | 'skill';
+  resource_id: string;
+  expires_at: string | null;
+};
+
+type ProjectAccessSource = {
+  source: 'direct' | 'group';
+  group_id: string | null;
+  group_name: string | null;
+};
+
 export interface ProjectAccessMember {
+  custom_role_policies?: (ProjectAccessPolicy & ProjectAccessSource)[];
+  resource_grants?: (ProjectAccessResource & Omit<ProjectAccessSource, 'source'> & {
+    source: 'direct' | 'group' | 'project';
+  })[];
   user_id: string;
   email: string | null;
   account_role: AccountRole;
@@ -38,6 +64,13 @@ export interface ProjectAccessResponse {
   can_manage: boolean;
   viewer_user_id: string;
   members: ProjectAccessMember[];
+  group_access?: {
+    group_id: string;
+    group_name: string | null;
+    built_in_role: string | null;
+    custom_role_policies: ProjectAccessPolicy[];
+    resource_grants: ProjectAccessResource[];
+  }[];
 }
 
 export interface ProjectAccessRequest {

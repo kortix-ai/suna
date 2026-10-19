@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import { configureKortix } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
-import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { SANDBOX_HEALTH_QUERY_KEY } from '@/features/workspace/project-sidebar/footer/sandbox-health';
 
 import { prefetchProjectShellReads } from './project-shell-prefetch';
 
@@ -110,6 +110,48 @@ describe('prefetchProjectShellReads', () => {
     const client = new QueryClient();
     expect(() => prefetchProjectShellReads(client, 'P1')).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    client.clear();
+  });
+
+  /**
+   * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
+   * its `fetchQuery` refetches an entry that already settled as error without
+   * data — so returning to the gone screen re-asked its final 404 even after
+   * the mounted hooks stood down. The contract owns retry policy: the prefetch
+   * must leave an errored entry to the remounting hooks (a transient error
+   * retries on their mount; a gone answer stands down).
+   */
+  /**
+   * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
+   * its `fetchQuery` refetches an entry that already settled as error without
+   * data — so returning to the gone screen re-asked its final 404 even after
+   * the mounted hooks stood down. The contract owns retry policy: the prefetch
+   * must leave an errored entry to the remounting hooks (a transient error
+   * retries on their mount; a gone answer stands down). The healthy siblings
+   * (sessions, sandbox health) still prefetch.
+   */
+  test('skips its detail read when the entry already settled as error without data', async () => {
+    const client = new QueryClient();
+    // Settle the shared detail entry the way a returned-to gone screen has it:
+    // error, no data. A gone answer never changes on a retry.
+    await client
+      .fetchQuery({
+        queryKey: qk.project.detail('P1'),
+        queryFn: async () => {
+          throw Object.assign(new Error('Not found'), { status: 404 });
+        },
+        retry: false,
+      })
+      .catch(() => undefined);
+    expect(client.getQueryState(qk.project.detail('P1'))?.status).toBe('error');
+
+    const urls = mockFetch(false);
+    prefetchProjectShellReads(client, 'P1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(urls.filter((u) => u.includes('/projects/P1/detail'))).toHaveLength(0);
+    expect(urls.filter((u) => u.includes('/projects/P1/sessions'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/projects/P1/sandbox-health'))).toHaveLength(1);
     client.clear();
   });
 });

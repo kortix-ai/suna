@@ -10,6 +10,7 @@ import type {
   SessionConfigRelease,
   SessionListState,
   SessionManagedCatalogState,
+  SessionModelUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
@@ -164,6 +165,26 @@ test('listProjectSessionsPage reads the continuation token from X-Next-Cursor', 
   const page = await listProjectSessionsPage('P1', { limit: 1 });
   expect(page.items).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
   expect(page.next_cursor).toBe('NEXT1');
+});
+
+test('listProjectSessionsPage never routes a failure to the host global error handler', async () => {
+  // The project shell prefetches this list before the access gate knows the
+  // caller may read the project, and the sidebar re-polls it every 5s. With
+  // `showErrors` at its TRUE default a non-member's 403 toasted "You do not
+  // have access to this account" over the access-request screen that already
+  // says so. The list's own query state reports the failure.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+
+  nextResponse = { status: 403, body: { error: 'You do not have access to this account' } };
+  await expect(listProjectSessionsPage('P1')).rejects.toMatchObject({ status: 403 });
+  expect(errors).toEqual([]);
+
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 });
 
 test('listProjectSessionsPage reports the last page as next_cursor null', async () => {
@@ -1860,11 +1881,14 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
-  const body = {
-    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  const body: SessionModelUsage = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
     billed_cost: 0.875,
     turns: {
-      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75, fallbacks: [
+        { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'provider_pool_rate_limited' },
+        { requested_model: 'openai/gpt-5.4', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+      ] },
       msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
     },
   };

@@ -31,9 +31,10 @@ account buys, and which features it may use.
 
 | | Free | Credits |
 |---|---|---|
-| Price | $0 | $50–$10,000 a month (any whole amount via sales above the ladder) |
-| Usage | 200 credits a month | Monthly credits, 1-month rollover, top-ups |
-| Features | Core | Core + managed models + credit purchases |
+| Price | $0 | $50–$50,000 a month (25 ladder tiers; sales above it) |
+| Usage | 500 credits a month | Monthly credits, 1-month rollover, top-ups |
+| Features | Every self-serve feature: managed models, credit purchases | Same as Free |
+| Limits | 1 project, free model rate budget | 200 projects, paid model rate budget |
 
 `credit_accounts.tier` is the billing plan: `free` or `credits` (legacy keys
 resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.

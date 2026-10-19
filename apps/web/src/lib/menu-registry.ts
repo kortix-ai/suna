@@ -834,18 +834,6 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'newTerminal',
   },
   {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Blocks,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
-    keywords: 'workspace agents skills commands tools build create',
-  },
-  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,

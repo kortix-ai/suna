@@ -122,14 +122,26 @@ Capture on or off writes `capture.enable` or `capture.disable`.
 One policy applies to every device of the account:
 
 - layers: screen, actions, audio (audio is off until someone turns it on);
-- **Record only these apps and websites** (off by default): every computer
-  records only the apps and websites on the list. An included app is recorded
-  in full; an included website is recorded in any browser. Every other window
-  is blacked out, a display with nothing included writes no frame, and actions
-  in other apps are not recorded. A person can add their own in Kortix Capture
-  (Settings, Record only) but cannot turn it off or remove the organization's.
-  Exclusions still win over inclusions. Audio is not filtered by app: leave the
-  audio layer off when only included apps may be recorded;
+- **Apps and websites**: pick the policy type, then its list.
+  - **Exclusion policy** (the default): record everything except what you
+    exclude: apps, websites, categories (password managers, messaging,
+    banking; **Show list** names every app and website a category covers) and
+    private browsing windows.
+  - **Inclusion policy**: record only the apps and websites you include. An
+    included app is recorded in full; an included website in any browser.
+    Everything else is blacked out. The exclusions still apply as **Never
+    record, even if included**.
+  - **People can add their own included apps and websites** (on by default).
+    Off: computers record only your Included list. People can always add apps
+    and websites to skip, because that only records less.
+  - **Common apps** and **Common websites** add with one click; an app adds its
+    macOS and Windows ids together and shows by name.
+  - Anything skipped is blacked out, a display with nothing left to record
+    writes no frame, and actions in skipped apps are not recorded. A person can
+    add their own entries in Kortix Capture (Settings, Apps and websites) but
+    cannot remove the organization's or switch an inclusion policy back.
+    Audio is not filtered by app: leave the audio layer off under an inclusion
+    policy;
 - an account-wide pause;
 - **Screen frames**: one frame every 0.5 to 10 s, and the resolution (720p to
   4K). Left on **Each computer decides**, a computer uses its own (one frame
@@ -138,15 +150,19 @@ One policy applies to every device of the account:
   pick 1 s when screens change fast without input, such as live dashboards;
 - how long Kortix keeps recordings (`remote_days`);
 - an optional notice: each person sees it once, and again when its text changes;
-- **Experimental → Privacy controls** (off by default) shows two more:
-  personal-data masking on the computer (each computer first downloads a ~1 GB
-  model), and the apps and websites no computer records. Each computer skips
-  those before it records, so they are never saved or uploaded; a person can
-  add their own in Kortix Capture but cannot remove these. Turning the switch
-  off hides the controls; what is set keeps applying.
+- **Experimental → Privacy controls** (off by default) shows personal-data
+  masking on the computer (each computer first downloads a ~1 GB model).
+  Turning the switch off hides it; what is set keeps applying.
 
 Each computer chooses how long it keeps recordings after uploading them
 (7 days by default).
+
+A computer gets the policy the moment it signs in or IT enrolls it, so a new
+computer starts under your exclusion or inclusion policy with nothing to set up.
+Until the policy has arrived (seconds after sign-in), the computer records
+nothing. In Kortix Capture, Settings, Apps and websites says where its rules
+come from: "Synced from" your organization with the policy type, or "Set on
+this computer" when it is not synced to an organization.
 
 Kortix publishes the policy to `orgs/<account_id>/policy.json` in the capture
 store, where every device reads it within a minute. A device cannot write a

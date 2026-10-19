@@ -19,7 +19,7 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep.
  */
-import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
@@ -36,6 +36,7 @@ import {
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
+import { hideSupersededSlack } from './channel-rules';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
@@ -525,11 +526,27 @@ async function syncProjectConnectorsFenced(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are created by pairing a machine, never by kortix.yaml.
-  // Every existing one stays materialized, which also keeps its native catalog
-  // current after a code change.
+  // Computer connectors are created by pairing a machine, never by kortix.yaml
+  // (the parser rejects `provider="computer"`). Every existing one stays
+  // materialized, which also keeps its native catalog current after a code change.
   const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+  // The summary must agree with `connectors ls` (KRTX-2669): the list applies
+  // two hiding predicates (`hideMachinelessComputers` and `hideSupersededSlack`,
+  // see `listConnectors`), so the summary counts a spec only when the list
+  // would show its row after the sync. A machineless computer connector is
+  // re-upserted for catalog freshness but stays out of both; a legacy `slack`
+  // connector stays hidden while the Slack channel exists.
+  const machinelessSlugs = await machinelessComputerSlugs(projectId);
+  const visibleSpecSlugs = new Set(
+    hideSupersededSlack(
+      specs.map((spec) => ({
+        slug: spec.slug,
+        providerType: spec.provider,
+        config: { app: spec.app },
+      })),
+    ).map((view) => view.slug),
+  );
 
   // A connector binding is server-side by definition. Convert legacy runtime
   // rows before catalog discovery or a concurrent sandbox start can read them.
@@ -671,7 +688,7 @@ async function syncProjectConnectorsFenced(
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      synced++;
+      if (!machinelessSlugs.has(spec.slug) && visibleSpecSlugs.has(spec.slug)) synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
@@ -1131,6 +1148,38 @@ async function existingComputerConnectorSpecs(
         sensitive: storedSensitive(row.config),
       }),
     );
+}
+
+/**
+ * Which computer connectors have no machine — no `connector_connections` row
+ * bound to a tunnel. The same predicate `hideMachinelessComputers` applies to
+ * the admin list (KRTX-1492), so the sync summary can count exactly what the
+ * list shows (KRTX-2669). Declared computer specs cannot exist (the parser
+ * rejects `provider="computer"`), so the existing rows are the whole story.
+ */
+async function machinelessComputerSlugs(projectId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ connectorId: connectors.connectorId, slug: connectors.slug })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  if (rows.length === 0) return new Set();
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(
+              connectorConnections.connectorId,
+              rows.map((row) => row.connectorId),
+            ),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  return new Set(rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug));
 }
 
 /**

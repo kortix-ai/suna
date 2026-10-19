@@ -1,7 +1,7 @@
 /**
  * The project gates as route handlers call them: they read the request's
- * principal (`actorOf`), its agent-session binding, its `account_id` and the
- * admin-bypass header, and hand plain values to the cores in
+ * principal (`actorOf`), its agent-session binding and its `account_id`, and
+ * hand plain values to the cores in
  * `project-access.ts` and `project-quota.ts`. Re-exported by `./access`.
  */
 import type { Context } from 'hono';
@@ -134,8 +134,6 @@ export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, 
     // A service account has NO account_members row: the gate skips the human
     // membership hard-gate for it.
     isServiceAccount: c.get('authType') === 'service_account',
-    // The platform-admin READ-ONLY bypass header (see `resolveProjectGate`).
-    bypassHeaderPresent: c.req.header('x-kortix-admin-bypass') === '1',
   });
   c.set('accountId', row.accountId);
 

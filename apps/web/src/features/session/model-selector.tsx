@@ -631,7 +631,7 @@ export function ModelSelector({
             type="button"
             variant={triggerVariant}
             size="sm"
-            className={cn('rounded-lg', triggerVariant === 'ghost' && 'text-muted-foreground')}
+            className={cn('rounded-lg hit-area-y-3', triggerVariant === 'ghost' && 'text-muted-foreground')}
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown

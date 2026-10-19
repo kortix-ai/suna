@@ -12,7 +12,7 @@ import {
 import { isManagedConnectorProvider } from '../provider-label';
 import { AccountInfo } from './account-info';
 
-export interface ConnectorAccountsProps {
+interface ConnectorAccountsProps {
   projectId: string;
   connector: AdminConnector;
   displayName: string;

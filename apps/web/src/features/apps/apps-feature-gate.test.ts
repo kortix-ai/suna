@@ -10,9 +10,19 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 
 // Structural assertions follow the owning modules after extraction.
-const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-releases.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
-  .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
-  .join('\n');
+const appsSource = () =>
+  [
+    'apps-view.tsx',
+    'app-detail.tsx',
+    'app-releases.tsx',
+    'app-shared.tsx',
+    'app-preview.tsx',
+    'app-preview-pool.ts',
+    'app-density.tsx',
+    'app-access.tsx',
+  ]
+    .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
+    .join('\n');
 
 // Mount the production components. Only routing, shell context and permission
 // probes are substituted; inventory and flag reads use real SDK hooks/cache data.
@@ -229,8 +239,11 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   const ROW = 'group/menu-button text-sidebar-foreground relative';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
-  expect(customize).toContain(ROW);
-  expect(apps).toContain(ROW);
+  expect(customize).toContain('<ProjectNavRow');
+  expect(apps).toContain('<ProjectNavRow');
+  expect(
+    readFileSync(resolve(root, 'features/workspace/project-sidebar/project-nav-row.tsx'), 'utf8'),
+  ).toContain(ROW);
   // The glyph keeps its box on a narrow sidebar, like its neighbours.
   expect(apps).toContain('<span className="shrink-0">');
 });
@@ -244,7 +257,9 @@ test('an App with no deployment never claims to be Running', () => {
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
   // `deployed` gates both branches; a static App is live without a runtime
   // (behavior asserted in app-shared.test.ts).
-  expect(view).toContain("const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');");
+  expect(view).toContain(
+    "const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');",
+  );
   expect(view).toContain("!deployed ? 'Not deployed'");
   // The badge and its tint must both follow real state, not intent.
   expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");
@@ -298,31 +313,33 @@ test("the header separates the App's actions from the window's Close", () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
-  // Close used to be the fifth button INSIDE the group, which made "stop this
-  // App" and "shut this panel" read as peers. It sits outside now, and it is
-  // ghost rather than outline because it is chrome, not an action.
-  const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('text7d9eb7acb13e');
-  expect(groupEndsAt).toBeGreaterThan(-1);
-  expect(closeAt).toBeGreaterThan(groupEndsAt);
-  expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
+  // The bar is Refresh, Open, Settings, Close (#10245). Close is window
+  // chrome, not an App action: a divider sets it apart, and it is ghost.
+  const settingsAt = header.indexOf('data-testid="app-settings"');
+  const dividerAt = header.indexOf('<span aria-hidden className="bg-border mx-1.5 h-4 w-px" />');
+  const closeAt = header.indexOf("raw('text7d9eb7acb13e')");
+  expect(settingsAt).toBeGreaterThan(-1);
+  expect(dividerAt).toBeGreaterThan(settingsAt);
+  expect(closeAt).toBeGreaterThan(dividerAt);
+  expect(header.slice(dividerAt)).toContain('variant="ghost"');
 });
 
-test('Delete lives in the header menu, never buried in the version drawer', () => {
+test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
-  // A destructive action reachable only by first opening a history panel is an
-  // action you find by looking for something else.
-  expect(header).toContain("raw('textd1b0a6e3985a')");
-  expect(header).toContain('variant="destructive"');
-  // …and it still goes through the confirm step.
-  expect(view).toContain('<ConfirmDialog');
-  expect(view).toContain('confirmVariant="destructive"');
+  // Delete is configuration, not navigation: the bar over the App never
+  // carries it (#10245).
+  expect(header).not.toContain("raw('textd1b0a6e3985a')");
+  expect(header).not.toContain('variant="destructive"');
 
-  // The versions drawer keeps only the deploy command.
-  const drawer = view.slice(view.indexOf('{versionsOpen ? ('));
-  expect(drawer.slice(0, drawer.indexOf('DeploymentRow'))).not.toContain('Delete App');
+  // The settings modal lists it as its own destructive row…
+  const settings = view.slice(view.indexOf("open={overlay === 'settings'}"), view.indexOf('</Modal>'));
+  expect(settings).toContain("raw('textd1b0a6e3985a')");
+  expect(settings).toContain('variant="destructive" onClick={() => setOverlay(\'delete\')}');
+  // …and it still goes through the confirm step.
+  expect(view).toContain("open={overlay === 'delete'}");
+  expect(view).toContain('confirmVariant="destructive"');
 });
 
 test('internal infrastructure names are not shown to App owners', () => {

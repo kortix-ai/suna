@@ -1,13 +1,17 @@
 'use client';
 
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
+import {
+  projectCapabilityNavHref,
+  projectCapabilityNavTarget,
+} from '../shared/standalone-settings-nav';
 
 import { CountBadge } from '@/components/ui/count-badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
@@ -15,11 +19,7 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import {
-  capabilityTabHref,
-  channelsHref,
-  type CapabilityTab,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
+
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
@@ -179,6 +179,18 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
 
   const activeSection = sections.find((s) => s.key === active);
 
+  const sectionTriggers = (horizontal: boolean) =>
+    sections.map((section) => (
+      <SectionTrigger
+        key={section.key}
+        projectId={projectId}
+        section={section}
+        horizontal={horizontal}
+        count={section.key === 'review' ? reviewNeedsYou : undefined}
+        attention={section.key === 'upgrades' && upgradeAttention}
+      />
+    ));
+
   return (
     <SettingsNavProvider value={settingsNav}>
       <div
@@ -203,16 +215,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
             >
               <Tabs value={active} className="w-fit">
                 <TabsList orientation="horizontal" className="w-fit">
-                  {sections.map((section) => (
-                    <SectionTrigger
-                      key={section.key}
-                      projectId={projectId}
-                      section={section}
-                      horizontal
-                      count={section.key === 'review' ? reviewNeedsYou : undefined}
-                      attention={section.key === 'upgrades' && upgradeAttention}
-                    />
-                  ))}
+                  {sectionTriggers(true)}
                 </TabsList>
               </Tabs>
             </FadedScrollArea>
@@ -249,15 +252,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
                     list, no headings". */}
                 <Tabs value={active} orientation="vertical">
                   <TabsList orientation="vertical" className="w-full">
-                    {sections.map((section) => (
-                      <SectionTrigger
-                        key={section.key}
-                        projectId={projectId}
-                        section={section}
-                        count={section.key === 'review' ? reviewNeedsYou : undefined}
-                        attention={section.key === 'upgrades' && upgradeAttention}
-                      />
-                    ))}
+                    {sectionTriggers(false)}
                   </TabsList>
                 </Tabs>
               </div>
@@ -403,45 +398,10 @@ export function projectSettingsNavTarget(tab: string): ProjectSettingsSectionKey
  * (the overlay's old vocabulary) needs to leave this page entirely, not push a
  * `?section=` this page no longer recognizes.
  */
-export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | 'members' | null {
-  if (tab.startsWith('llm-')) return 'models';
-  // Channels is no longer a tab of its own — it is a scope of Connectors. The
-  // PAGE is the target; `projectCapabilityNavHref` adds the scope.
-  if (tab === 'channels') return 'connectors';
-  if (tab === 'secrets') return 'secrets';
-  // `'members'` — not a `CapabilityTab['key']` any more: Members graduated a
-  // THIRD time, off the project entirely, onto the account hub's Access tab.
-  // Still named here (rather than left to the `isAccountGraduatedSection`
-  // fallback callers reach further down) so the result routes through
-  // `/projects/<id>/members` — the redirect route
-  // (`app/(app)/projects/[id]/(capabilities)/members/page.tsx`) that already
-  // knows how to resolve `account_id` and append the `&project=` scoping —
-  // instead of duplicating that resolution here.
-  if (tab === 'members') return 'members';
-  return null;
-}
-
-/**
- * The href a legacy nav id actually resolves to.
- *
- * For every id but one this is just the tab's route. `channels` is the
- * exception, and it is why this exists at all: its destination is a QUERY on
- * the Connectors page, and `capabilityTabHref` builds paths only. Returning
- * the bare Connectors route instead would land a person who asked for Slack on
- * the connector catalogue — the right page, showing the wrong half of it.
- */
-export function projectCapabilityNavHref(
-  projectId: string,
-  tab: string,
-  target: CapabilityTab['key'] | 'members',
-): string {
-  if (tab === 'channels') return channelsHref(projectId);
-  // `'members'` is not a real `CapabilityTab['key']` — `capabilityTabHref`
-  // would reject it at the type level. The literal route it used to build is
-  // still the right destination: the redirect page at that path.
-  if (target === 'members') return `/projects/${projectId}/members`;
-  return capabilityTabHref(projectId, target);
-}
+export {
+  projectCapabilityNavHref,
+  projectCapabilityNavTarget,
+} from '../shared/standalone-settings-nav';
 
 /**
  * The `SettingsNav` adapter for this page — the second host of that context,

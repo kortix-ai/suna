@@ -66,7 +66,7 @@ mock.module('./components/map', () => ({ GenuiMap: host('genui-map') }));
 mock.module('@/components/kortix/sheet', () => ({ KortixBottomSheetModal: host('sheet') }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetScrollView: host('sheet-scroll') }));
 mock.module('@/components/markdown/markdown-image', () => ({ MarkdownImage: host('markdown-image') }));
-mock.module('@/components/markdown/markdown-text', () => ({ openExternalLink: (href: unknown) => opened.push(href) }));
+mock.module('@/lib/utils/open-link', () => ({ openExternalLink: (href: unknown) => opened.push(href), openLink: async () => {} }));
 mock.module('@/lib/icons', () => ({
   TrendUpIcon: 'trend-up',
   TrendDownIcon: 'trend-down',
@@ -127,7 +127,7 @@ function texts(node: ReactTestInstance): string[] {
 }
 const all = (root: ReactTestInstance, type: string) => root.findAll((n) => n.type === (type as never));
 const className = (n: ReactTestInstance) => String(n.props.className ?? '');
-/** Status chips: the pill View of `StatusChip`, with its label. */
+/** Status chips: the pill View (a /15 tone tint), with its label. */
 const chips = (root: ReactTestInstance) =>
   all(root, 'view')
     .filter((n) => className(n).includes('rounded-full'))
