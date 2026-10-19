@@ -79,25 +79,28 @@ means Files is off for the project: tell the user that a goal needs it.
 <start>
 When the user gives an objective:
 
-0. Mark this session unattended, before anything else:
+1. Create the goal, before anything else:
 
    ```bash
-   kortix sessions update --meta unattended=true
+   kortix goals new "<the objective, as an outcome>" [--shared]
    ```
 
-   From then on a question tool call answers at once with "nobody can
-   answer", and the turn can end. Answers reach you as new messages.
-1. Restate it as an outcome that is true or false, and write 2 to 6 success
-   criteria someone else can check. Each criterion names its proof.
-2. Take constraints from the user's words. Add the obvious ones (no spend
-   above what the user named, nothing that harms the user's other
-   accounts). Ask only when a wrong guess is expensive or irreversible.
-3. Create the folder, `goal.json`, `log.md`, `notes.md`. Slug: short,
-   kebab-case, from the objective.
-4. Arm the heartbeat (see `<wake>`) and save `goal.json`.
-5. Plan the first items. Act on the first one in the same turn.
-6. End the turn with three lines to the user: the outcome, the criteria, and
-   the first thing you need from them (or "nothing for now").
+   It creates the folder (`--shared` puts it in `/drives/company`, else
+   `/drives/me`), marks this session unattended (a question tool call then
+   answers at once and the turn can end), arms the daily heartbeat, records
+   its id in `goal.json`, and installs the on-idle check: after every turn,
+   `kortix goals check --enforce` runs and sends you a `[GOAL CHECK]` prompt
+   when an invariant is broken. It prints the folder.
+2. Restate the objective as an outcome that is true or false, and write 2 to
+   6 success criteria into `goal.json` that someone else can check. Each
+   criterion names its proof.
+3. Take constraints from the user's words. Add the obvious ones (no spend
+   above what the user named, nothing that harms the user's other accounts).
+   Ask only when a wrong guess is expensive or irreversible.
+4. Plan the first items. Act on the first one in the same turn.
+5. Run `kortix goals check`, then end the turn with three lines to the user:
+   the outcome, the criteria, and the first thing you need from them (or
+   "nothing for now").
 </start>
 
 <wake>
@@ -125,11 +128,12 @@ reply, an upload, a worker that finished):
    remove the old reminder (`kortix reminders rm <id>`) and create the new
    one. Wake at the earliest of: the next `due`, the next nag, 15 minutes
    while a worker runs, or 24 hours.
-   After any change, run `kortix reminders ls` and confirm that exactly one
-   active reminder is left and that its id is `reminder_id`. Never write that
-   you created or removed a reminder before `ls` shows it.
+   After any change, run `kortix goals check`: it confirms exactly one active
+   heartbeat whose id is `reminder_id`. Never write that you created or
+   removed a reminder before the check passes.
 
-Never end a turn on an open goal without a reminder armed. If `kortix remind`
+Never end a turn on an open goal without a reminder armed. `kortix goals
+check` must pass before the turn ends; the on-idle hook checks again after it. If `kortix remind`
 answers `feature_disabled`, run `kortix projects features enable reminders`;
 if that is refused, tell the user that the goal cannot wake on its own.
 </wake>
