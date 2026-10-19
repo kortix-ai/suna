@@ -90,7 +90,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'triggers', label: 'Triggers' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'files', label: 'Files' },
+  { key: 'files', label: 'Repo' },
   { key: 'review', label: 'Review' },
   { key: 'config', label: 'Settings' },
 ];
@@ -119,7 +119,7 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   triggers: 'triggers',
   models: 'models',
   secrets: 'secrets',
-  files: 'files',
+  files: 'repo',
   review: 'review',
   config: 'settings',
 };

@@ -58,8 +58,8 @@ describe('capabilityAccess', () => {
     });
   });
 
-  test('a plain member opens only Files: no Agents, no Triggers, no dead-end tab', () => {
-    expect(access(allowOnly(...MEMBER))).toEqual({ settled: true, tabs: ['files'] });
+  test('a plain member opens no tab: no Agents, no Triggers, no Repo, no dead-end tab', () => {
+    expect(access(allowOnly(...MEMBER))).toEqual({ settled: true, tabs: [] });
   });
 
   test('Review shows only to a caller who can act on it, not to one who only reads it', () => {
@@ -127,10 +127,11 @@ describe('capabilityAccess', () => {
     expect(access({})).toEqual({ settled: false, tabs: [] });
   });
 
-  test('Files shows only with the drives flag on, and waits for the flag', () => {
-    const member = allowOnly(...MEMBER);
-    expect(capabilityAccess(member, false)).toEqual({ settled: true, tabs: [] });
-    expect(capabilityAccess(member, undefined)).toEqual({ settled: false, tabs: [] });
+  test('Repo shows only to an admin, only with the drives flag on, and waits for the flag', () => {
+    const admin = allowOnly(...MEMBER, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+    expect(capabilityAccess(admin, true).tabs).toEqual(['files', 'config']);
+    expect(capabilityAccess(admin, false)).toEqual({ settled: true, tabs: ['config'] });
+    expect(capabilityAccess(admin, undefined)).toEqual({ settled: false, tabs: [] });
   });
 
   test('a failed probe settles closed', () => {
@@ -143,37 +144,40 @@ describe('capabilityAccess', () => {
   });
 });
 
-// The sidebar's Files and Customize rows, decided together: a plain member
-// reaches their shared folders from the Files row, never from a Customize row
-// that holds Files alone.
+// The sidebar's file and Customize rows, decided together: with drives on the
+// file row is Drive for every member; the repo browser is Customize → Repo.
 describe('projectNavRows', () => {
   const READ_REPO = PROJECT_ACTIONS.PROJECT_FILE_READ;
   const rows = (caps: Record<string, CanResult>, drives: boolean | undefined = true) =>
-    projectNavRows(capabilityAccess(caps, drives), caps[READ_REPO]);
+    projectNavRows(capabilityAccess(caps, drives), caps[READ_REPO], drives === true);
 
-  test('a plain member with drives on gets a Files row to the folders and no Customize row', () => {
-    expect(rows(allowOnly(...MEMBER))).toEqual({ customize: null, files: 'folders' });
+  test('a plain member with drives on gets a Drive row and no Customize row', () => {
+    expect(rows(allowOnly(...MEMBER))).toEqual({ customize: null, files: 'drive' });
   });
 
   test('a plain member with drives off gets neither row', () => {
     expect(rows(allowOnly(...MEMBER), false)).toEqual({ customize: null, files: null });
   });
 
-  test('a repo reader keeps the repo row, and Files stays a Customize tab', () => {
-    expect(rows(allowOnly(...MEMBER, READ_REPO))).toEqual({ customize: 'files', files: 'repo' });
+  test('a repo reader with drives off keeps the repo row', () => {
+    expect(rows(allowOnly(...MEMBER, READ_REPO), false)).toEqual({ customize: null, files: 'repo' });
   });
 
-  test('a manager lands Customize on its first tab and Files on the repo', () => {
-    expect(rows(every(verdict(true)))).toEqual({ customize: 'agent', files: 'repo' });
+  test('a repo reader with drives on gets Drive, and no Repo tab without admin rights', () => {
+    expect(rows(allowOnly(...MEMBER, READ_REPO))).toEqual({ customize: null, files: 'drive' });
   });
 
-  test('a member who configures something lands Customize past Files', () => {
+  test('a manager lands Customize on its first tab and the file row on Drive', () => {
+    expect(rows(every(verdict(true)))).toEqual({ customize: 'agent', files: 'drive' });
+  });
+
+  test('a member who configures something lands Customize on that tab', () => {
     const caps = allowOnly(
       ...MEMBER,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
     );
-    expect(rows(caps)).toEqual({ customize: 'secrets', files: 'folders' });
+    expect(rows(caps)).toEqual({ customize: 'secrets', files: 'drive' });
   });
 
   test('nothing shows while the batch or the flag is in flight', () => {
@@ -181,9 +185,9 @@ describe('projectNavRows', () => {
     caps[READ_REPO] = inFlight;
     expect(rows(caps)).toEqual({ customize: null, files: null });
     const settledCaps = allowOnly(...MEMBER, READ_REPO);
-    expect(projectNavRows(capabilityAccess(settledCaps, undefined), settledCaps[READ_REPO])).toEqual(
-      { customize: null, files: null },
-    );
+    expect(
+      projectNavRows(capabilityAccess(settledCaps, undefined), settledCaps[READ_REPO], false),
+    ).toEqual({ customize: null, files: null });
     expect(rows({})).toEqual({ customize: null, files: null });
   });
 });
