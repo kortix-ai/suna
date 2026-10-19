@@ -1203,8 +1203,10 @@
     "stopNotAllowed": "Solo el miembro que inició esta ejecución, el propietario de la sesión o un gestor del proyecto puede detenerla."
   },
   "genui": {
+    "call": "Llamar",
     "chartTapHint": "Toca para ver un valor",
     "checklistReady": "{{done}}/{{total}} listos",
+    "directions": "Cómo llegar",
     "map": "Mapa",
     "mapUnavailable": "Mapa no disponible",
     "openImage": "Abrir imagen",
@@ -1212,7 +1214,8 @@
     "pick": "Recomendado",
     "pieFocus": "{{label}} es el {{percent}} % del total",
     "pieOfTotal": "{{value}} de {{total}}",
-    "showData": "Mostrar datos"
+    "showData": "Mostrar datos",
+    "website": "Sitio web"
   },
   "updateRequired": {
     "title": "Actualización necesaria",

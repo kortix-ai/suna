@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import type { ShouldStartLoadRequest, WebViewOpenWindowEvent } from 'react-native-webview/lib/WebViewTypes';
+import type { ShouldStartLoadRequest, WebViewMessageEvent, WebViewOpenWindowEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -21,7 +21,9 @@ import { XIcon } from '@/lib/icons';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
-import { openGenuiLink } from '../components/open-link';
+import type { MapPlace, PlaceAction } from '@/lib/genui/map-geo';
+
+import { openGenuiLink, openPlaceAction } from '../components/open-link';
 import { mapDocument, type MapDocumentInput } from './map-html';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -44,6 +46,25 @@ function guardNavigation(request: ShouldStartLoadRequest): boolean {
 /** A `target="_blank"` link (MapLibre's attribution links) asks for a new window: open it in the browser. */
 const openWindow = (event: WebViewOpenWindowEvent) => openGenuiLink(event.nativeEvent.targetUrl);
 
+const ACTIONS: readonly PlaceAction[] = ['directions', 'website', 'call'];
+
+/**
+ * A popup button's message: `{ type: 'place', index, action }`. The page holds no link, so native looks the
+ * place up and opens its own link; any other message opens nothing.
+ */
+function placeMessage(markers: readonly Omit<MapPlace, 'id'>[], raw: string): void {
+  let message: { type?: unknown; index?: unknown; action?: unknown };
+  try {
+    message = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (message?.type !== 'place' || !Number.isInteger(message.index)) return;
+  const place = markers[message.index as number];
+  const action = ACTIONS.find((a) => a === message.action);
+  if (place && action) openPlaceAction(place, action);
+}
+
 async function readText(moduleId: number): Promise<string> {
   const asset = await Asset.fromModule(moduleId).downloadAsync();
   return new File(asset.localUri ?? asset.uri).text();
@@ -61,7 +82,10 @@ function loadBundle() {
   return bundle;
 }
 
-export type MapSheetData = Omit<MapDocumentInput, 'script' | 'css' | 'background' | 'routeColor' | 'pin' | 'interactive'>;
+export type MapSheetData = Omit<MapDocumentInput, 'script' | 'css' | 'background' | 'routeColor' | 'pin' | 'labels' | 'interactive'>;
+
+/** The route line: the charts' first series colour (`charts.tsx` series 0 is `--chart-3`), as web's `routeRgb`. */
+const ROUTE_COLOR = withAlpha(THEME.chart[2], 1);
 
 /** The map page in a WebView, in theme colors. Still (`interactive={false}`): no pan, zoom, or popups. */
 export function MapWebView({ data, interactive = true }: { data: MapSheetData; interactive?: boolean }) {
@@ -70,6 +94,9 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
   const theme = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const directions = t('genui.directions', 'Directions');
+  const website = t('genui.website', 'Website');
+  const call = t('genui.call', 'Call');
 
   useEffect(() => {
     let alive = true;
@@ -83,8 +110,15 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
             css,
             interactive,
             background: withAlpha(theme.popover, 1),
-            routeColor: withAlpha(theme.foreground, 0.7),
-            pin: { surface: withAlpha(theme.background, 1), ink: withAlpha(theme.foreground, 1), border: withAlpha(theme.border, 1), shadow: withAlpha(theme.foreground, 0.18) },
+            routeColor: ROUTE_COLOR,
+            pin: {
+              surface: withAlpha(theme.background, 1),
+              ink: withAlpha(theme.foreground, 1),
+              border: withAlpha(theme.border, 1),
+              shadow: withAlpha(theme.foreground, 0.18),
+              muted: withAlpha(theme.secondary, 1),
+            },
+            labels: { directions, website, call },
           }),
         );
       },
@@ -93,7 +127,7 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
     return () => {
       alive = false;
     };
-  }, [data, theme, interactive]);
+  }, [data, theme, interactive, directions, website, call]);
 
   if (!html) {
     return (
@@ -108,6 +142,7 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
       originWhitelist={ORIGIN_WHITELIST}
       onShouldStartLoadWithRequest={guardNavigation}
       onOpenWindow={openWindow}
+      onMessage={(event: WebViewMessageEvent) => placeMessage(data.markers, event.nativeEvent.data)}
       javaScriptEnabled
       cacheEnabled={false}
       incognito

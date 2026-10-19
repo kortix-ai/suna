@@ -1205,8 +1205,10 @@
     "stopNotAllowed": "Only the member who started this run, the session owner or a project manager can stop it."
   },
   "genui": {
+    "call": "Call",
     "chartTapHint": "Tap to read a value",
     "checklistReady": "{{done}}/{{total}} ready",
+    "directions": "Directions",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",
@@ -1214,7 +1216,8 @@
     "pick": "Pick",
     "pieFocus": "{{label}} is {{percent}}% of the total",
     "pieOfTotal": "{{value}} of {{total}}",
-    "showData": "Show data"
+    "showData": "Show data",
+    "website": "Website"
   },
   "updateRequired": {
     "title": "Update required",

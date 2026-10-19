@@ -1203,8 +1203,10 @@
     "stopNotAllowed": "この実行を停止できるのは、開始したメンバー、セッションのオーナー、またはプロジェクトのマネージャーのみです。"
   },
   "genui": {
+    "call": "電話",
     "chartTapHint": "タップして値を表示",
     "checklistReady": "{{done}}/{{total}} 完了",
+    "directions": "経路",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",
@@ -1212,7 +1214,8 @@
     "pick": "おすすめ",
     "pieFocus": "{{label}}は合計の{{percent}}%",
     "pieOfTotal": "{{total}}のうち{{value}}",
-    "showData": "データを表示"
+    "showData": "データを表示",
+    "website": "ウェブサイト"
   },
   "updateRequired": {
     "title": "アップデートが必要です",

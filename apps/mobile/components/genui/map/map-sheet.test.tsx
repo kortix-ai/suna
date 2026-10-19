@@ -47,7 +47,12 @@ mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
 mock.module('@/lib/icons', () => ({ XIcon: 'x' }));
-mock.module('@/lib/utils/open-link', () => ({ openExternalLink: (href: string) => opened.push(href), openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({
+  openExternalLink: (href: string) => opened.push(href),
+  openLink: async (href: string) => {
+    opened.push(href);
+  },
+}));
 
 let MapSheet: typeof import('./map-sheet').MapSheet;
 
@@ -67,7 +72,10 @@ afterEach(() => {
 
 const DATA = {
   styleUrl: 'https://tiles.example.com/style.json',
-  markers: [{ lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' }],
+  markers: [
+    { lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' },
+    { lat: 19.04, lng: 72.82, label: 'Taj', href: 'https://taj.example.com/', phone: '+91 22 6668-1234' },
+  ],
   route: [
     [48.85, 2.35],
     [48.86, 2.36],
@@ -107,9 +115,11 @@ describe('MapSheet', () => {
     expect(html).toContain('.maplibregl-map{}');
     expect(html).toContain('"lngLat":[2.35,48.85]');
     expect(html).toContain('https://tiles.example.com/style.json');
-    // Dark theme: the dialog's popover surface behind the tiles, the ink at 70% for the route.
+    // Dark theme: the dialog's popover surface behind the tiles; the route is the charts' first series (--chart-3).
     expect(html).toContain('background:hsla(0, 0%, 7.8%, 1)');
-    expect(html).toContain('"routeColor":"hsla(0, 0%, 100%, 0.7)"');
+    expect(html).toContain('"routeColor":"hsla(30.1, 100%, 44.1%, 1)"');
+    // The popup's buttons are translated.
+    expect(html).toContain('"labels":{"directions":"Directions","website":"Website","call":"Call"}');
     const load = webview!.props.onShouldStartLoadWithRequest as (request: { url: string; isTopFrame?: boolean }) => boolean;
     expect(load({ url: 'about:blank' })).toBe(true);
     expect(load({ url: 'javascript:alert(1)' })).toBe(false);
@@ -142,5 +152,27 @@ describe('MapSheet', () => {
     expect(all(root, 'webview')).toHaveLength(1);
     act(() => (all(root, 'dialog')[0]!.props.onOpenChange as (open: boolean) => void)(false));
     expect(closed).toEqual([1]);
+  });
+
+  test("a popup action reaches native through the message bridge and opens that place's link; anything else opens nothing", async () => {
+    const root = await open();
+    const message = all(root, 'webview')[0]!.props.onMessage as (event: { nativeEvent: { data: string } }) => void;
+    const send = (data: unknown) => message({ nativeEvent: { data: typeof data === 'string' ? data : JSON.stringify(data) } });
+    send({ type: 'place', index: 0, action: 'directions' });
+    send({ type: 'place', index: 1, action: 'website' });
+    send({ type: 'place', index: 1, action: 'call' });
+    // A place without a website or phone, an unknown index or action, and junk open nothing.
+    send({ type: 'place', index: 0, action: 'website' });
+    send({ type: 'place', index: 0, action: 'call' });
+    send({ type: 'place', index: 7, action: 'directions' });
+    send({ type: 'place', index: '1', action: 'website' });
+    send({ type: 'place', index: 1, action: 'open' });
+    send({ type: 'other', index: 0, action: 'directions' });
+    send('not json');
+    expect(opened).toEqual([
+      'https://www.google.com/maps/dir/?api=1&destination=48.85,2.35',
+      'https://taj.example.com/',
+      'tel:+912266681234',
+    ]);
   });
 });

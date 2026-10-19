@@ -1203,8 +1203,10 @@
     "stopNotAllowed": "Seul le membre qui a lancé cette exécution, le propriétaire de la session ou un gestionnaire du projet peut l'arrêter."
   },
   "genui": {
+    "call": "Appeler",
     "chartTapHint": "Touchez pour lire une valeur",
     "checklistReady": "{{done}}/{{total}} prêts",
+    "directions": "Itinéraire",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible",
     "openImage": "Ouvrir l'image",
@@ -1212,7 +1214,8 @@
     "pick": "Recommandé",
     "pieFocus": "{{label}} représente {{percent}} % du total",
     "pieOfTotal": "{{value}} sur {{total}}",
-    "showData": "Afficher les données"
+    "showData": "Afficher les données",
+    "website": "Site web"
   },
   "updateRequired": {
     "title": "Mise à jour requise",

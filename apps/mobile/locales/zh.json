@@ -1203,8 +1203,10 @@
     "stopNotAllowed": "只有发起此次运行的成员、会话所有者或项目管理者可以停止它。"
   },
   "genui": {
+    "call": "致电",
     "chartTapHint": "点按查看数值",
     "checklistReady": "已完成 {{done}}/{{total}}",
+    "directions": "路线",
     "map": "地图",
     "mapUnavailable": "地图不可用",
     "openImage": "打开图片",
@@ -1212,7 +1214,8 @@
     "pick": "推荐",
     "pieFocus": "{{label}} 占总数的 {{percent}}%",
     "pieOfTotal": "{{total}} 中的 {{value}}",
-    "showData": "显示数据"
+    "showData": "显示数据",
+    "website": "网站"
   },
   "updateRequired": {
     "title": "需要更新",
