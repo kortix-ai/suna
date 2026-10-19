@@ -188,7 +188,11 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
  * row (a trigger cannot wait for one), and successful calls are held back:
  * the check writes one `ok` audit row only when it fires something.
  */
-async function checkDeps(stream: PollStream, owner: string, okRecords: ExecutionRecord[]): Promise<GatewayDeps> {
+async function checkDeps(
+  stream: PollStream,
+  owner: string,
+  okRecords: ExecutionRecord[],
+): Promise<{ deps: GatewayDeps; writeAudit: GatewayDeps['recordExecution'] }> {
   const { makeDbGatewayDeps } = await import('../../connectors/db-deps-gateway');
   const base = makeDbGatewayDeps({
     userId: owner,
@@ -200,7 +204,7 @@ async function checkDeps(stream: PollStream, owner: string, okRecords: Execution
     requestedConnectorAccount: stream.connectionId,
   });
   const origin = { origin: 'event_poll', external_id: stream.externalId };
-  return {
+  const deps: GatewayDeps = {
     ...base,
     callTimeoutMs: CALL_TIMEOUT_MS,
     loadAction: async (connectorId, relPath, providerType) => {
@@ -217,6 +221,7 @@ async function checkDeps(stream: PollStream, owner: string, okRecords: Execution
       return base.recordExecution(tagged);
     },
   };
+  return { deps, writeAudit: (rec) => base.recordExecution(rec) };
 }
 
 /** One check of one claimed stream. Never throws. */
@@ -236,7 +241,7 @@ async function check(stream: PollStream, now: number): Promise<void> {
   if (!loaded) return;
   const { def, label, owner } = loaded;
   const okRecords: ExecutionRecord[] = [];
-  const deps = await checkDeps(stream, owner, okRecords);
+  const { deps, writeAudit } = await checkDeps(stream, owner, okRecords);
   const { handleCall } = await import('../../connectors/gateway');
   const floor = floorFor(stream.createdAt.getTime(), now);
   let request;
@@ -306,7 +311,7 @@ async function check(stream: PollStream, now: number): Promise<void> {
   });
 
   if (deliveries.length && okRecords[0]) {
-    await deps.recordExecution({ ...okRecords[0], resultSummary: { ...(okRecords[0].resultSummary ?? {}), fired: deliveries.length } }).catch(() => null);
+    await writeAudit({ ...okRecords[0], resultSummary: { ...(okRecords[0].resultSummary ?? {}), fired: deliveries.length } }).catch(() => null);
   }
   if (plan.dropped > 0) {
     logger.warn('[trigger-events/poll] hourly fire budget spent; items marked seen', {
