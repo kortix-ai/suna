@@ -102,6 +102,7 @@ export {
   sessionLogMessages,
   sessionLogBlobs,
   sessionContentPurges,
+  sessionLogBackfillState,
   accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,

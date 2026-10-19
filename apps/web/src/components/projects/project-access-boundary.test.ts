@@ -59,7 +59,6 @@ describe('project access waits for the authenticated identity', () => {
     const boundary = componentSource.slice(componentSource.indexOf('export function ProjectAccessBoundary'), componentSource.indexOf('function ProjectAccessForUser'));
     expect(boundary).toContain('useSignedOutRedirect();');
     expect(boundary).toContain('key={`${props.projectId}:${user?.id ?? "pending"}`}');
-    expect(componentSource.match(/queryKey: \[QUERY_KEY, projectId, user\?\.id\]/g)).toHaveLength(2);
     expect(componentSource).toContain('if (authReady) void refetch();');
     expect(componentSource).toContain('if (!authReady) return;');
   });

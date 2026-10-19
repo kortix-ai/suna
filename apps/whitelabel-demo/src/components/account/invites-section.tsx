@@ -1,12 +1,12 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Card } from '@kortix/ui/card';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { MailWarning } from 'lucide-react';
+import { EnvelopeSimpleIcon } from '@phosphor-icons/react';
 
 /**
  * Pending invites — `accounts.invites` lists invitations that have been sent
@@ -40,7 +40,7 @@ export function InvitesSection({ accountId }: { accountId: string }) {
         {items.map((inv, i) => (
           <div key={inv.invite_id ?? inv.email ?? i} className="flex items-center gap-3 px-4 py-3">
             <div className="grid size-8 shrink-0 place-items-center rounded-full bg-muted">
-              <MailWarning className="size-4 text-muted-foreground" />
+              <EnvelopeSimpleIcon className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{inv.email ?? 'Invited user'}</div>

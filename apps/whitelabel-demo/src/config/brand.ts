@@ -1,7 +1,8 @@
 /**
- * The white-label seam. This is the ONLY file a customer touches to rebrand —
- * name, accent, and which Kortix deployment to point at. Everything else is
- * generic and flows through `@kortix/sdk`.
+ * The white-label seam: name, tagline, and which Kortix deployment to point
+ * at. Colors are the other half of a rebrand and live in `src/app/globals.css`
+ * as @kortix/ui token overrides. Everything else is generic and flows through
+ * `@kortix/sdk` and `@kortix/ui`.
  */
 export const BRAND = {
   /** Product name shown in the UI. */
@@ -10,11 +11,14 @@ export const BRAND = {
   tagline: 'Your agents, your repos, your brand.',
   /** Kortix API base URL (the SDK `backendUrl`). */
   apiUrl: process.env.NEXT_PUBLIC_KORTIX_API_URL ?? 'https://api.kortix.com/v1',
-  /** Accent color (CSS). */
-  accent: '#6366f1',
 } as const;
 
 export type Brand = typeof BRAND;
+
+/** The model picker's provider line: Kortix-managed models show the brand's name. */
+export function brandProviderLabel(model: { providerID: string; providerName: string }): string {
+  return model.providerID === 'kortix' ? BRAND.name : model.providerName;
+}
 
 /**
  * The backend URL the SDK should target, per mode:

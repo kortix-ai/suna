@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 // The real dialog is a Radix portal; the subject here is what this dialog hands it.
-mock.module('@/components/ui/confirm-dialog', () => ({
+const uiConfirmDialogMock = () => ({
   ConfirmDialog: (props: { open: boolean; title: ReactNode; description: ReactNode; confirmLabel: string }) =>
     props.open ? (
       <div>
@@ -15,7 +15,9 @@ mock.module('@/components/ui/confirm-dialog', () => ({
         <button type="button">{props.confirmLabel}</button>
       </div>
     ) : null,
-}));
+});
+mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
+mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 const { SessionsBulkDeleteDialog } = await import('./sessions-bulk-delete-dialog');
 

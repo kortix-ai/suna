@@ -570,6 +570,45 @@ jobs:
           REQUIRE_NPM_AUTH: '1'
         run: bash ../../scripts/publish-npm-package.sh
 
+  # @kortix/ui peers on @kortix/sdk at the same lockstep version, so it publishes
+  # after the SDK is on the registry. @kortix/shared is inlined by its build.
+  publish-ui:
+    name: Publish @kortix/ui to npm
+    needs: [version, publish-sdk]
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC)
+        working-directory: packages/ui
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
+        run: bash ../../scripts/publish-npm-package.sh
+
   publish-agent-tunnel:
     name: Publish @kortix/agent-tunnel to npm
     needs: version

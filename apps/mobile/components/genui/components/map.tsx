@@ -26,7 +26,7 @@ export function mapStyleUrl(dark: boolean, env: string | undefined = process.env
 type Place = { id: string; lat: number; lng: number; label: string; description?: string; value?: string };
 
 /** The inline map's height: a still picture of the places, as on web; a tap opens it full screen. */
-export const MAP_HEIGHT = 240;
+const MAP_HEIGHT = 240;
 
 /**
  * Web parity: the map itself in the transcript, with web's pins (the figure in a bubble, the name under

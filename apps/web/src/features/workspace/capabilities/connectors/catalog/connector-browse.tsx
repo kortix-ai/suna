@@ -252,6 +252,7 @@ export function ConnectorBrowse({
   install,
   emptyTitle,
   emptyDescription,
+  suppressNoMatch = false,
 }: {
   state: CatalogState;
   connectedKeys: ReadonlySet<string>;
@@ -261,6 +262,10 @@ export function ConnectorBrowse({
   install: CatalogInstall;
   emptyTitle: string;
   emptyDescription: string;
+  /** The caller already shows matches for this query (the project's own
+   *  connectors, KRTX-2531): the catalogue's "No matches" must not contradict
+   *  them underneath. */
+  suppressNoMatch?: boolean;
 }) {
   const { activeQuery, entries, total } = state;
   const searching = activeQuery.length > 0;
@@ -293,14 +298,11 @@ export function ConnectorBrowse({
         isEmpty
         empty={
           searching ? (
-            <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
+            suppressNoMatch ? null : (
+              <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
+            )
           ) : (
-            <EmptyState
-              icon={GlobeIcon}
-              size="sm"
-              title={emptyTitle}
-              description={emptyDescription}
-            />
+            <EmptyState icon={GlobeIcon} size="sm" title={emptyTitle} description={emptyDescription} />
           )
         }
       >
@@ -310,10 +312,8 @@ export function ConnectorBrowse({
   }
 
   const summary = catalogFootSummary({
-    shown: entries.length,
     loaded: entries.length,
     total,
-    categoryLabel: null,
     searching,
     hasMore,
     isLoadingMore: state.isLoadingMore,

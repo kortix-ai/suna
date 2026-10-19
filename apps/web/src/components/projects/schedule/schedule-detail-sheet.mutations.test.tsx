@@ -42,34 +42,55 @@ function Passthrough({ children }: { children?: ReactNode }) {
   return createElement('div', null, children);
 }
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   ...realToast,
   successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
   errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
-}));
-mock.module('@/components/ui/sheet', () => ({
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
+const uiSheetMock = () => ({
   Sheet: Passthrough,
   SheetBody: Passthrough,
   SheetContent: Passthrough,
   SheetDescription: Passthrough,
   SheetHeader: Passthrough,
   SheetTitle: Passthrough,
-}));
-mock.module('@/components/ui/hint', () => ({ default: Passthrough }));
-mock.module('@/components/ui/dropdown-menu', () => ({
+});
+mock.module('@/components/ui/sheet', uiSheetMock);
+mock.module('@kortix/ui/sheet', uiSheetMock);
+const uiHintMock = () => ({ default: Passthrough });
+mock.module('@/components/ui/hint', uiHintMock);
+mock.module('@kortix/ui/hint', uiHintMock);
+// Radix Tabs schedules a requestAnimationFrame this DOM-less renderer lacks. The
+// subject is the Settings tab, so only its content renders.
+const uiTabsMock = () => ({
+  Tabs: Passthrough,
+  TabsList: Passthrough,
+  TabsTrigger: Passthrough,
+  TabsContent: ({ value, children }: { value: string; children?: ReactNode }) =>
+    value === 'settings' ? createElement('div', null, children) : null,
+});
+mock.module('@/components/ui/tabs', uiTabsMock);
+mock.module('@kortix/ui/tabs', uiTabsMock);
+const uiDropdownMenuMock = () => ({
   DropdownMenu: Passthrough,
   DropdownMenuContent: Passthrough,
   DropdownMenuItem: Passthrough,
   DropdownMenuTrigger: Passthrough,
-}));
-mock.module('@/components/ui/select', () => ({
+});
+mock.module('@/components/ui/dropdown-menu', uiDropdownMenuMock);
+mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
+const uiSelectMock = () => ({
   Select: Passthrough,
   SelectContent: Passthrough,
   SelectGroup: Passthrough,
   SelectItem: Passthrough,
   SelectTrigger: Passthrough,
   SelectValue: () => null,
-}));
+});
+mock.module('@/components/ui/select', uiSelectMock);
+mock.module('@kortix/ui/select', uiSelectMock);
 mock.module('@/components/scheduled-tasks/schedule-builder', () => ({
   ScheduleBuilder: (props: ComponentPropsLike) => {
     selectors.scheduleBuilders.push(props);

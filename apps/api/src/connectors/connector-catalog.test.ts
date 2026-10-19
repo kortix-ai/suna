@@ -95,3 +95,33 @@ describe('connector catalogue direct ids', () => {
     expect(ids.get('stripesync')).toBe('stripe-sync');
   });
 });
+
+describe('connector catalogue direct MCP URLs', () => {
+  const mcp = (id: string, name: string, extra: Record<string, unknown>) => ({
+    ...item(id, 'mcp', name, `${id}.example`),
+    ...extra,
+  });
+
+  test('each app maps to its hosted MCP server URL, curated OAuth servers first', async () => {
+    const index = [
+      mcp('linear-discovered', 'Linear', { connectUrl: 'https://mirror.example/linear/mcp' }),
+      mcp('linear-curated', 'Linear', {
+        connectUrl: 'https://mcp.linear.app/mcp',
+        feeds: ['curated'],
+        auth: { kind: 'oauth' },
+      }),
+      mcp('no-url', 'Mural', {}),
+      mcp('local', 'Local', { connectUrl: 'http://localhost:3000/mcp' }),
+    ];
+    const urls = await createConnectorCatalog({
+      fetch: (async () =>
+        new Response(JSON.stringify({ data: index }), {
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    }).directMcpUrls();
+    expect(urls.get('linear')).toBe('https://mcp.linear.app/mcp');
+    expect(urls.has('mural')).toBe(false);
+    // Only https: Install never sends a user to a plain-http server.
+    expect(urls.has('local')).toBe(false);
+  });
+});

@@ -118,6 +118,14 @@ export interface PromptInput {
   noReply?: boolean
   /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
   command?: boolean
+  /**
+   * Every text part was harness context (`synthetic`, KRTX-2597): the
+   * transcript renders the message as a notice, never as a user bubble, and
+   * the turn model reads the prompt as an internal continuation. A prompt
+   * mixing context with the customer's words is NOT synthetic (the initial
+   * prompt's context part rides along a real prompt).
+   */
+  synthetic?: boolean
 }
 
 export class PromptRejected extends Error {}
@@ -147,12 +155,16 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (!Array.isArray(body.parts) || body.parts.length === 0) throw new PromptRejected('parts must be a non-empty array')
   const text: string[] = []
   const files: PromptInput['files'] = []
+  let syntheticTextParts = 0
+  let textParts = 0
   for (const rawPart of body.parts) {
     if (!rawPart || typeof rawPart !== 'object' || Array.isArray(rawPart)) throw new PromptRejected('prompt parts must be objects')
     const part = rawPart as Record<string, unknown>
     if (part.type === 'text') {
       if (typeof part.text !== 'string') throw new PromptRejected('text parts require a string text field')
       text.push(part.text)
+      textParts += 1
+      if (part.synthetic === true) syntheticTextParts += 1
       continue
     }
     if (part.type === 'file') {
@@ -172,6 +184,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
     ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
     text: text.join(''),
     files,
+    ...(textParts > 0 && syntheticTextParts === textParts ? { synthetic: true } : {}),
     ...(typeof body.agent === 'string' ? { agent: body.agent } : {}),
     ...(body.model ? { model: body.model as PromptInput['model'] } : {}),
     ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
@@ -1618,7 +1631,7 @@ export class PiRuntime {
         properties: {
           sessionID,
           time: created,
-          part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID, type: 'text', text: input.text },
+          part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID, type: 'text', text: input.text, ...(input.synthetic ? { synthetic: true } : {}) },
         },
       })
     }

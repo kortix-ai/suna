@@ -588,16 +588,9 @@ export function ProjectScreen() {
   const viewDrawerOpen = threadShown ? false : drawerOpen;
 
   // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
-  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
-  // project sheet (`CustomizeSheet`) is deleted, so no page passes
-  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
-  const pageChrome = useMemo(
-    () => ({
-      onOpenDrawer: openDrawer,
-      isDrawerOpen: viewDrawerOpen,
-    }),
-    [openDrawer, viewDrawerOpen]
-  );
+  // that opened the project sheet is gone (COR-123/COR-160 Task 3): the
+  // project sheet (`CustomizeSheet`) is deleted and PageHeader has no "···".
+  const pageChrome = useMemo(() => ({ onOpenDrawer: openDrawer }), [openDrawer]);
 
   // While the computer wakes, the connecting view shows the session's saved
   // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,

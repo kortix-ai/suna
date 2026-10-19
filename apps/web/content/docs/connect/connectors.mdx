@@ -42,11 +42,13 @@ A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Ko
 
 1. Open **Customize → Connectors**.
 2. On the **All** tab, find the app and select **Install**.
-3. Kortix adds the connector, opens its page and opens **Add account** with **Only you** selected. [Authorize an account](#authorize-an-account) there.
+3. When the app has its own hosted MCP server with one-click sign-in, **Connect** *app* opens. That means OAuth with dynamic client registration, for example Linear, Notion or Sentry. Choose **Who can use it** (**Only you** by default) and select **Connect**. You sign in to the app and return to the connector's page with its tools loaded.
+4. Otherwise Kortix adds the managed app, opens its page and opens **Add account** with **Only you** selected. [Authorize an account](#authorize-an-account) there.
 
 - **Install** shows only to members who can change the project's connectors. Other members add their own account on an installed connector's **Accounts** tab.
 - Installing an app that the project already has adds an account to the existing connector. It does not create a second connector.
 - An app page lists its **Ways to connect** (for example an MCP server and a REST API). **Install** uses the MCP server when the catalog lists one.
+- Kortix checks the app's MCP server when you select **Install**. A server that needs a pasted token, or has no dynamic client registration (for example GitHub's remote MCP server), installs as the managed app instead.
 - For an MCP server, [add it from its URL](#add-an-mcp-server-from-its-url). For another API that is not in the catalog, select **New → Add a custom connector** and choose OpenAPI, Postman, GraphQL, MCP or HTTP. Paste the source URL and Kortix proposes the slug: the document's title, or else the URL's domain. Kortix then opens the connector's page. An MCP server that asks for sign-in (HTTP `401` or `403`) opens **Add account** there, as **Install** does. This needs an auth scheme: one you pick under **Auth**, or one **Auto-detect** finds in the server's `WWW-Authenticate` challenge. Without one, the `401` or `403` is shown as the failure. **New → Create in chat** has an agent scaffold the connector and open a change request.
 - When Kortix cannot load a new connector's tools, the connector's page shows the reason and **Retry**. The connector stays in the project. OAuth 2.0 client credentials entered in the form are saved as well, so **Retry** uses them.
 - With OAuth 2.0 client credentials, **Added and connected** means the tools loaded with them. When the server still refuses them, the page shows the refusal and **Retry**.
@@ -214,7 +216,7 @@ kortix connectors authorize docs-search --status   # exits non-zero on error
 | `--device` | Uses the device flow (RFC 8628): prints a code and a URL, then polls until approval, denial or expiry. |
 | `--scope "a b"` | Requests only these scopes. |
 | `--client-id`, `--client-secret` | Uses an existing OAuth app, for servers without dynamic registration. |
-| `--success-redirect`, `--error-redirect` | Where the browser lands after approval or denial. |
+| `--success-redirect`, `--error-redirect` | Where the browser lands after approval or denial. Without them the browser shows **Connected. You can close this tab and return to Kortix.**, or the failure with its reason code. |
 
 Kortix refreshes the connector's tool catalog when authorization completes. Direct API connectors also support the client credentials grant (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`). Kortix refreshes access tokens before they expire and stores each rotated refresh token.
 

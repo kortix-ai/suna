@@ -7,6 +7,7 @@ import { shareApp } from './routes/share';
 import { isCookieCsrfRefused } from './cookie-csrf';
 import { prefetchSandbox } from './http-prefetch';
 import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
+import { sandboxInflightGate } from './sandbox-inflight';
 import { makeOpenApiApp } from '../openapi';
 import type { Context, Next } from 'hono';
 
@@ -46,6 +47,11 @@ sandboxProxyApp.use('/:sandboxId/:port/*', cookieCsrfGate);
 sandboxProxyApp.use('/:sandboxId/:port', cookieCsrfGate);
 sandboxProxyApp.use('/:sandboxId/:port/*', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port', combinedAuth);
+// Per-sandbox in-flight stamp for the request log (KRTX-471). After auth (only
+// credentialed traffic counts) and before the rate limit, so a herd the limiter
+// sheds is still counted.
+sandboxProxyApp.use('/:sandboxId/:port/*', sandboxInflightGate);
+sandboxProxyApp.use('/:sandboxId/:port', sandboxInflightGate);
 sandboxProxyApp.use('/:sandboxId/:port/*', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);

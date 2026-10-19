@@ -221,7 +221,7 @@ describe('settings tab content width', () => {
   // reason that has nothing to do with a tab picking its own width.
   test('no third width is in use across the whole panel', () => {
     const widths = new Set(
-      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter(Boolean),
+      [...FORM_TABS, ...TABLE_TABS].map((f) => firstContainerWidth(f)).filter((width): width is string => width !== null),
     );
     for (const width of widths) {
       expect(['max-w-2xl', 'max-w-4xl']).toContain(width);

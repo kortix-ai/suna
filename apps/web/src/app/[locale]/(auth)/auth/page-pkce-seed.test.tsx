@@ -1,5 +1,4 @@
 import { afterAll, expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
@@ -103,7 +102,9 @@ mock.module('@/lib/auth/submit-auth', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
+const uiToastMock = () => ({ errorToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
 test('a successful send seeds the verifier cookie the action could not set', async () => {
@@ -112,13 +113,14 @@ test('a successful send seeds the verifier cookie the action could not set', asy
   let root: ReturnType<typeof create> | undefined;
   try {
     await act(async () => {
-      root = create(createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)));
+      root = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
     });
     if (!root) throw new Error('Auth page did not render');
-    const email = root.root.findByProps({ autoComplete: 'email' });
+    const mounted = root;
+    const email = mounted.root.findByProps({ autoComplete: 'email' });
     await act(async () => email.props.onChange({ target: { value: 'synthetic@example.test' } }));
-    await act(async () => root.root.findByType('form').props.onSubmit({ preventDefault() {} }));
-    expect(JSON.stringify(root.toJSON())).toContain('Check your email');
+    await act(async () => mounted.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    expect(JSON.stringify(mounted.toJSON())).toContain('Check your email');
 
     // The cookie the server action's response failed to deliver, seeded by the
     // page from the action result — byte-identical to what the ssr server write
@@ -131,7 +133,7 @@ test('a successful send seeds the verifier cookie the action could not set', asy
     expect(JSON.parse(stashed!)).toMatchObject({ verifier: VERIFIER });
   } finally {
     actionResult = { success: true };
-    if (root) await act(async () => root.unmount());
+    await act(async () => root?.unmount());
   }
 });
 

@@ -14,8 +14,8 @@
 import { scopeBarConnectors } from '@/components/chat/scope-bar-model';
 import { useConnectorBindingChoices } from '@/components/connector-bindings';
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import type { CallSnippetId } from '@/lib/call-snippets';
 import { kortix } from '@/lib/kortix';
@@ -27,13 +27,13 @@ import {
   sessionScopeRows,
 } from '@/lib/session-scope';
 import { useQuery } from '@tanstack/react-query';
-import { Lock, Plug, RefreshCw, Repeat } from 'lucide-react';
+import { ArrowsClockwiseIcon, type Icon, LockIcon, PlugIcon, RepeatIcon } from '@phosphor-icons/react';
 
-const ICONS: Record<ScopeRowKey, typeof Lock> = {
-  model: RefreshCw,
-  agent: Repeat,
-  secrets: Lock,
-  connections: Plug,
+const ICONS: Record<ScopeRowKey, Icon> = {
+  model: ArrowsClockwiseIcon,
+  agent: RepeatIcon,
+  secrets: LockIcon,
+  connections: PlugIcon,
 };
 
 /**
@@ -56,13 +56,13 @@ function ScopeRowCard({
   sessionId: string;
   agentName: string | null;
 }) {
-  const Icon = ICONS[row.key];
+  const RowIcon = ICONS[row.key];
   return (
     <div
       key={row.key}
       className="flex items-start gap-3 rounded-md border border-border bg-card px-3 py-2.5"
     >
-      <Icon className="mt-0.5 size-4 shrink-0 text-brand" />
+      <RowIcon className="mt-0.5 size-4 shrink-0 text-brand" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{row.label}</span>

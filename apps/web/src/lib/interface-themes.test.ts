@@ -307,8 +307,10 @@ describe('themed surface', () => {
     }
   });
 
+  // The ::selection base rule lives in @kortix/ui theme.css, one base for every host.
   test('unthemed pages keep the original inverted selection', () => {
-    expect(globalsCss).toContain(
+    const uiThemeCss = readFileSync(join(import.meta.dir, '../../../../packages/ui/src/styles/theme.css'), 'utf8');
+    expect(uiThemeCss).toContain(
       'background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));',
     );
   });

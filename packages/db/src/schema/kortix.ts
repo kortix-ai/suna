@@ -1883,6 +1883,16 @@ export const projectTriggerExecutions = kortixSchema.table(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Run history (KRTX-1743). Every fire source writes one run row here;
+    // `source` names it (cron | webhook | manual | ...). Non-cron rows are
+    // inserted in a terminal status, so the claim worker never sees them.
+    source: varchar('source', { length: 16 }).default('cron').notNull(),
+    replayOf: uuid('replay_of'),
+    payloadVerified: boolean('payload_verified').default(true).notNull(),
+    // Outcome of the agent turn the run dispatched (running | succeeded | failed).
+    runStatus: varchar('run_status', { length: 16 }),
+    runError: text('run_error'),
+    runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
   },
   (table) => [
     foreignKey({
@@ -1890,6 +1900,11 @@ export const projectTriggerExecutions = kortixSchema.table(
       foreignColumns: [projects.projectId],
       name: 'project_trigger_exec_project_fk',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.replayOf],
+      foreignColumns: [table.executionId],
+      name: 'project_trigger_exec_replay_of_fk',
+    }).onDelete('set null'),
     foreignKey({
       columns: [table.sessionId],
       foreignColumns: [projectSessions.sessionId],
@@ -1907,6 +1922,25 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.lockedUntil,
     ),
     index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
+    index('idx_project_trigger_executions_slug_created').on(
+      table.projectId,
+      table.slug,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_status_created').on(
+      table.projectId,
+      table.status,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_session')
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
+    index('idx_project_trigger_executions_replay_of')
+      .on(table.replayOf)
+      .where(sql`${table.replayOf} is not null`),
+    index('idx_project_trigger_executions_noncron_created')
+      .on(table.createdAt)
+      .where(sql`${table.source} <> 'cron'`),
   ],
 );
 
@@ -2763,6 +2797,19 @@ export const sessionContentPurges = kortixSchema.table(
       .where(sql`${table.objectsPurgedAt} IS NULL`),
   ],
 );
+
+/**
+ * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
+ * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
+ * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
+ * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ */
+export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
+  id: text('id').primaryKey(),
+  state: jsonb('state').notNull(),
+  rev: integer('rev').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 /**
  * UNUSED since decision D6b (2026-10-14): an account closure, read from
@@ -4587,6 +4634,13 @@ export const apps = kortixSchema.table(
     scale: jsonb('scale').default({}).notNull(),
     /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
     display: jsonb('display').default({}).notNull(),
+    /**
+     * An App hosted elsewhere: Kortix lists it and frames this https URL, and
+     * never deploys it. Null for every App Kortix runs.
+     */
+    externalUrl: text('external_url'),
+    /** The external site allows framing (its X-Frame-Options / CSP frame-ancestors, read when the URL was set). */
+    externalFrameable: boolean('external_frameable').default(false).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -7284,8 +7338,8 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
   /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
-   *  only while that sign-in exists. NULL: registered with a personal token,
-   *  or before this column existed. */
+   *  only while that sign-in exists. NULL (registered before this column
+   *  existed) gets no push. */
   authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

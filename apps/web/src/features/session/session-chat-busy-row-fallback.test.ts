@@ -84,12 +84,14 @@ describe('the waiting row has a fallback when no turn owns it', () => {
     expect(chat).toMatch(
       /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.id\s*\}/,
     );
-    // …and the row draws it INSIDE the turn's viewport, after the turn.
+    // …and the row draws it INSIDE the turn's viewport (the slice ends at its
+    // close tag), after the turn. The viewport's own props are not pinned.
     const row = between(turn, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
-    expect(row).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
-    expect(row).toContain(
-      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
-    );
+    const indicator =
+      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}';
+    expect(row).toMatch(/<TurnViewport\s+turnId=\{turnId\}\s+className=\{viewportClassName\}/);
+    expect(row.indexOf(indicator)).toBeGreaterThan(row.indexOf('<SessionTurn {...turnProps} />'));
+    expect(row.indexOf('<SessionTurn {...turnProps} />')).toBeGreaterThan(row.indexOf('<TurnViewport'));
     expect(chat).toContain('fallbackBusyRowAfterTurnId({');
   });
 });
@@ -232,6 +234,15 @@ describe('waiting on the user is not the agent working', () => {
     const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
     expect(label).toContain('agentWorking');
     expect(turn).toContain('if (!agentWorking) return;');
+  });
+
+  test('the clock also covers a silent turn (KRTX-1872): it never gates on the status phrase', () => {
+    // The status phrase stays empty until the turn's first assistant message,
+    // and the label used to be gated on it — a fresh account's first turn sat
+    // ~5 minutes on a bare "Thinking" with no clock and read as frozen. The
+    // phrase must stay a content claim; the clock runs on the agent alone.
+    const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).not.toContain('throttledStatus');
   });
 
   test('`working` itself is untouched — the turn IS still open', () => {

@@ -31,7 +31,16 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'files' | 'config';
+  key:
+    | 'agent'
+    | 'connectors'
+    | 'skills'
+    | 'triggers'
+    | 'models'
+    | 'secrets'
+    | 'files'
+    | 'review'
+    | 'config';
   label: string;
 }
 
@@ -65,9 +74,10 @@ export interface CapabilityTab {
  * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher).
  * `settings-tabs.ts` redirects every retired `/config?section=` link.
  *
- * Review is not a tab. It was one from 2026-09-02 until 2026-10-02, when it
- * left Customize for its own full-height page (`reviewHref`): the inbox where
- * a person approves what agents do is a primary surface, not configuration.
+ * Review is a tab again (Marko, 2026-10-17). It was one from 2026-09-02 to
+ * 2026-10-02, then its own sidebar row and page. That row showed an empty
+ * inbox to members who can act on nothing in it. As a tab it follows the
+ * Customize rule: only a caller holding `project.review.act` sees it.
  *
  * One tab is flag-gated: Files, the project's shared folders, shows only
  * when the project has the `drives` feature flag on (`capability-tabs.tsx`).
@@ -80,7 +90,8 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'triggers', label: 'Triggers' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'files', label: 'Files' },
+  { key: 'files', label: 'Repo' },
+  { key: 'review', label: 'Review' },
   { key: 'config', label: 'Settings' },
 ];
 
@@ -108,7 +119,8 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   triggers: 'triggers',
   models: 'models',
   secrets: 'secrets',
-  files: 'files',
+  files: 'repo',
+  review: 'review',
   config: 'settings',
 };
 
@@ -123,11 +135,11 @@ export function capabilityTabHref(projectId: string, key: CapabilityTab['key']):
 }
 
 /**
- * The Review Center: a project page of its own, outside Customize and its tab
- * bar. `/projects/<id>/customize/review` redirects here.
+ * The Review Center: the Customize Review tab. `/projects/<id>/review`, its
+ * address from 2026-10-02 to 2026-10-17, redirects here.
  */
 export function reviewHref(projectId: string): string {
-  return `/projects/${projectId}/review`;
+  return capabilityTabHref(projectId, 'review');
 }
 
 /**

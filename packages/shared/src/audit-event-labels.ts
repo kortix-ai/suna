@@ -40,6 +40,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'enterprise.contract.end.operator': 'Enterprise contract ended by an operator',
   'enterprise.contract.end.term_over': 'Enterprise contract ended at its term',
   'enterprise.contract.end.stripe_subscription_deleted': 'Enterprise contract ended: subscription cancelled',
+  'legal.subprocessor_notice.sent': 'Sent subprocessor change notice',
   'admin.account.temporary_access.grant': 'Granted temporary account access',
   'enterprise_demo.set': 'Recorded Enterprise demo change',
   'enterprise_demo.enable': 'Turned the Enterprise demo on',

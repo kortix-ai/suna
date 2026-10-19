@@ -33,12 +33,9 @@ interface BrowserPageProps {
   page: PageTab;
   onBack: () => void;
   onOpenDrawer: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
-export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: BrowserPageProps) {
+export function BrowserPage({ page, onBack, onOpenDrawer }: BrowserPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
@@ -204,9 +201,6 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         title={addressField}
         fillTitle
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
         {hasPage ? (

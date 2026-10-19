@@ -43,7 +43,7 @@ import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile } from './dockerfile-layer';
-import { stageOpencodeConfigTree, stageStarterOpencodeConfig } from './opencode-config-stage';
+import { stageOpencodeConfigTree } from './opencode-config-stage';
 
 const execFileAsyncBC = promisify(execFile);
 
@@ -64,12 +64,11 @@ const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-// The OpenCode config the layer warms a real opencode project instance with at
-// build time (see dockerfile-layer.ts `opencodeConfigPath`): an explicit config
-// dir, else one composed from the starter's pty extension
-// (`stageStarterOpencodeConfig`) — a v3 starter has no config dir of its own.
-const opencodeConfigOverridePath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH || null;
-const starterPtyExtensionPath = () => resolve(REPO_ROOT, 'packages/starter/templates/base/extensions/pty');
+// Canonical starter OpenCode config dir (pty plugin + standard tools).
+// Staged into the context so the layer can warm a real opencode project
+// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
+const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
+  || resolve(REPO_ROOT, 'packages/starter/templates/base/harnesses/opencode');
 const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
@@ -274,8 +273,7 @@ export async function stageBuildContext(
   const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const OPENCODE_CONFIG_OVERRIDE_PATH = opencodeConfigOverridePath();
-  const STARTER_PTY_EXTENSION_PATH = starterPtyExtensionPath();
+  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
   const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
   const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
@@ -323,13 +321,9 @@ export async function stageBuildContext(
     // Best effort: if it's missing, skip the warm-up (the build still succeeds and
     // sessions just pay the first-instance cost at runtime as before).
     let opencodeConfigPath: string | undefined;
-    if (OPENCODE_CONFIG_OVERRIDE_PATH ? await isDir(OPENCODE_CONFIG_OVERRIDE_PATH) : await isDir(STARTER_PTY_EXTENSION_PATH)) {
+    if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
       opencodeConfigPath = 'kortix-opencode-config';
-      if (OPENCODE_CONFIG_OVERRIDE_PATH) {
-        await stageOpencodeConfigTree(OPENCODE_CONFIG_OVERRIDE_PATH, join(contextDir, opencodeConfigPath));
-      } else {
-        await stageStarterOpencodeConfig(STARTER_PTY_EXTENSION_PATH, join(contextDir, opencodeConfigPath));
-      }
+      await stageOpencodeConfigTree(OPENCODE_CONFIG_SRC_PATH, join(contextDir, opencodeConfigPath));
     }
 
     // Bake the FULL gateway model catalog into the image. The no-restart warm seed

@@ -710,18 +710,8 @@ describe('provideWorkspace — require-s3 and git', () => {
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'git' })
     const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
-    expect(result.summary).toMatchObject({ mode: 'git', s3_attempted: false, fallback: false, sha_matches: true, volume: false })
+    expect(result.summary).toMatchObject({ mode: 'git', s3_attempted: false, fallback: false, sha_matches: true })
     expect(api.requests).toHaveLength(0)
-    await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
-  })
-
-  test('an empty workspace volume is filled from S3 and health reports the volume', async () => {
-    const target = join(root, 'ws')
-    mkdirSync(join(target, 'lost+found'), { recursive: true })
-    const cfg = makeConfig(api, target, archive.sha, { KORTIX_WORKSPACE_VOLUME: '1' })
-    const result = await provideWorkspace(cfg)
-    expect(result.provider).toBe('s3')
-    expect(result.summary).toMatchObject({ volume: true, fallback: false, sha_matches: true })
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 

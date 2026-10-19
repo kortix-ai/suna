@@ -39,7 +39,7 @@ export function connectorStatusTone(
  * accounts, or it needs no sign-in and has an account to run as.
  */
 export function connectorUsable(status: ConnectorSetupStatus, accountCount: number): boolean {
-  if (status === 'connected' || status === 'user_managed') return true;
+  if (status === 'connected') return true;
   return status === 'no_auth' && accountCount > 0;
 }
 

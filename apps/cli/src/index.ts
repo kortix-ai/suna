@@ -1,11 +1,15 @@
 #!/usr/bin/env bun
+import { loadAuth } from './api/auth.ts';
 import { printBanner } from './banner.ts';
+import { liftLeadingGlobalFlags } from './command-argv.ts';
+import { type Command, TIERS } from './command-table.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
 import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
+import { runCapture } from './commands/capture.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -23,11 +27,13 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
+import { runMigrate } from './commands/migrate.ts';
 import { runModels } from './commands/models.ts';
 import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runReminders } from './commands/reminders.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -40,17 +46,13 @@ import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
+import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runReminders } from './commands/reminders.ts';
-import { runCapture } from './commands/capture.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
-import { runMigrate } from './commands/migrate.ts';
-import { runTools } from './commands/tools.ts';
-import { runWhoami } from './commands/whoami.ts';
-import { type Command, TIERS } from './command-table.ts';
+import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
@@ -103,6 +105,9 @@ function renderHelp(): string {
   lines.push('');
   lines.push(
     `  ${C.dim}Run${C.reset} ${C.cyan}kortix <subcommand> --help${C.reset} ${C.dim}for command-specific options.${C.reset}`,
+  );
+  lines.push(
+    '  --debug  Print resolved host, account and credential source to stderr (also KORTIX_DEBUG=1).',
   );
   lines.push('');
   return lines.join('\n');
@@ -211,7 +216,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   logout: (rest) => runLogout(rest),
   whoami: (rest) => runWhoami(rest),
   doctor: (rest) => runDoctor(rest),
-  token: (rest) => runWhoami(['--token-only', ...rest]),
+  token: (rest) => runToken(rest),
   hosts: (rest) => runHosts(rest),
   accounts: (rest) => runAccounts(rest),
   members: (rest) => runMembers(rest),
@@ -264,7 +269,30 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   uninstall: (rest) => runUninstall(rest),
 };
 
-async function main(argv: string[]): Promise<number> {
+async function main(rawArgv: string[]): Promise<number> {
+  let argv = rawArgv;
+  const separator = argv.indexOf('--');
+  const options = separator < 0 ? argv : argv.slice(0, separator);
+  // Trade-off (accepted): a `--debug` sitting in a value slot (e.g.
+  // `kortix whoami --host --debug x`) is stripped here rather than surfacing
+  // as a usage error. takeFlagValue rejects `-`-prefixed values anyway.
+  if (options.includes('--debug')) {
+    process.env.KORTIX_DEBUG = '1';
+    argv = [
+      ...options.filter((arg) => arg !== '--debug'),
+      ...(separator < 0 ? [] : argv.slice(separator)),
+    ];
+  }
+  if (process.env.KORTIX_DEBUG === '1') loadAuth();
+  // A per-invocation global flag may lead the line (KRTX-2603):
+  // `kortix --host <name> sessions ls` is `sessions ls --host <name>`.
+  // With a `--` separator the position IS the meaning — leave argv alone.
+  let liftedGlobals = 0;
+  if (separator < 0) {
+    const lift = liftLeadingGlobalFlags(argv);
+    argv = lift.argv;
+    liftedGlobals = lift.lifted;
+  }
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
   // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
@@ -278,8 +306,42 @@ async function main(argv: string[]): Promise<number> {
   // for to READ something, and it must never block on a question. Bare
   // `kortix` must ALWAYS land here — the interactive session picker is an
   // explicit verb (`kortix connect`), never the front door.
+  //
+  // `kortix help <topic>` prints the topic's own help (the git/npm/gh
+  // convention, KRTX-2604): a known command's usage, `version`'s version,
+  // an unknown topic's suggestion. Bare `help` and a flag-shaped or absent
+  // topic stay the landing screen.
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding({ offerUpdate: argv.length === 0 });
+    const topic = argv[0] === 'help' ? argv[1] : undefined;
+    if (!topic || topic.startsWith('-')) {
+      await printLanding({ offerUpdate: argv.length === 0 });
+      return 0;
+    }
+    if (topic === 'help') {
+      // `kortix help help` — the landing screen IS the help about help.
+      await printLanding({ offerUpdate: false });
+      return 0;
+    }
+    if (topic === 'version') {
+      printVersion();
+      return 0;
+    }
+    const topicHandler = COMMAND_HANDLERS[topic];
+    if (topicHandler) return topicHandler(['--help'], topic);
+    const topicSuggestion = closestCommand(topic);
+    const topicLines = [`${C.red}kortix:${C.reset} unknown help topic \`${topic}\``];
+    if (topicSuggestion)
+      topicLines.push(`       Did you mean ${C.cyan}kortix help ${topicSuggestion}${C.reset}?`);
+    topicLines.push(`       Run ${C.cyan}kortix --help${C.reset} for the full list.`);
+    process.stderr.write(`${topicLines.join('\n')}\n`);
+    return 2;
+  }
+  // The documented global flags were understood but no command follows
+  // (`kortix --host x`, `kortix --host x --help`): the landing screen names
+  // the verbs — there is nothing else to report, and blaming a flag the CLI
+  // just honored would be absurd.
+  if (liftedGlobals > 0 && argv[0]?.startsWith('-')) {
+    await printLanding({ offerUpdate: false });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -302,6 +364,18 @@ async function main(argv: string[]): Promise<number> {
   if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
+  }
+  // A flag is never a command name (KRTX-2603): after the lift, anything
+  // still leading the line flag-shaped was never a documented global flag —
+  // name the option instead of reporting `unknown command`.
+  if (argv[0].startsWith('-')) {
+    const lines = [
+      `${C.red}kortix:${C.reset} unknown option \`${argv[0]}\` in command position`,
+      '       Global flags (--host <name>, --project <id>) work before the command too.',
+      `       Run ${C.cyan}kortix --help${C.reset} for the command list.`,
+    ];
+    process.stderr.write(`${lines.join('\n')}\n`);
+    return 2;
   }
   // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
   // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→

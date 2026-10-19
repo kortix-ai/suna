@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import type { MiddlewareHandler } from 'hono';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@kortix/shared/notification-kinds';
 import type { PushDeviceTokenRow, PushDeviceTokenStore, UpsertDeviceTokenInput } from './device-tokens';
+import { resetRateLimiters } from '../middleware/rate-limit';
 import { createNotificationsApp, type NotificationServices } from './routes';
 import { validateWebPushSubscriptionInput } from './web-push-subscriptions';
 
@@ -86,8 +87,8 @@ function appFor(store: PushDeviceTokenStore) {
   return { as };
 }
 
-const userA = { userId: USER_A, authType: 'supabase' };
-const userB = { userId: USER_B, authType: 'supabase' };
+const userA = { userId: USER_A, authType: 'supabase', sessionId: '11111111-2222-4333-8444-55555555555a' };
+const userB = { userId: USER_B, authType: 'supabase', sessionId: '11111111-2222-4333-8444-55555555555b' };
 const register = { device_token: TOKEN, device_type: 'ios', provider: 'expo' };
 
 describe('POST /device-token', () => {
@@ -98,20 +99,27 @@ describe('POST /device-token', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true, message: 'Device token registered' });
     expect(upserts).toEqual([
-      { token: TOKEN, userId: USER_A, platform: 'ios', provider: 'expo', authSessionId: null, preferences: undefined },
+      { token: TOKEN, userId: USER_A, platform: 'ios', provider: 'expo', authSessionId: userA.sessionId, preferences: undefined },
     ]);
     expect(rows.get(TOKEN)).toMatchObject({ userId: USER_A, enabled: true, playSound: true });
   });
 
-  // KRTX-1722: a push goes only while the registering sign-in exists.
-  test("a sign-in JWT records its session; a personal token and a malformed id record none", async () => {
-    const { store, upserts } = memoryStore();
-    const signIn = '11111111-2222-4333-8444-555555555555';
-    await appFor(store).as({ ...userA, sessionId: signIn }).post(register);
-    await appFor(store).as({ ...userA, sessionId: 'not-a-uuid' }).post(register);
-    await appFor(store).as({ userId: USER_A, authType: 'pat' }).post(register);
-    expect(upserts.map((u) => u.authSessionId)).toEqual([signIn, null, null]);
-  });
+  // KRTX-1722 / KRTX-2242: a push goes only while the registering sign-in
+  // exists, so a registration without one is refused instead of stored.
+  const unbound: [string, Identity][] = [
+    ['a personal CLI PAT', { userId: USER_A, authType: 'pat' }],
+    ['a JWT without a session id', { userId: USER_A, authType: 'supabase' }],
+    ['a JWT with a malformed session id', { userId: USER_A, authType: 'supabase', sessionId: 'not-a-uuid' }],
+  ];
+  for (const [name, identity] of unbound) {
+    test(`${name} → 403 and nothing is stored`, async () => {
+      const { store, upserts } = memoryStore();
+      const res = await appFor(store).as(identity).post(register);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: true, message: 'Device tokens require an app sign-in', status: 403 });
+      expect(upserts).toEqual([]);
+    });
+  }
 
   test('snake_case preferences map to the store fields; omitted keys stay undefined', async () => {
     const { store, upserts } = memoryStore();
@@ -194,12 +202,6 @@ describe('POST /device-token', () => {
       expect(upserts).toEqual([]);
     });
   }
-
-  test('a personal CLI PAT may register', async () => {
-    const { store } = memoryStore();
-    const res = await appFor(store).as({ userId: USER_A, authType: 'pat' }).post(register);
-    expect(res.status).toBe(200);
-  });
 });
 
 describe('DELETE /device-token/:token', () => {
@@ -247,6 +249,85 @@ describe('DELETE /device-token/:token', () => {
     const app = appFor(store);
     expect((await app.as(null).del(TOKEN)).status).toBe(401);
     expect((await app.as({ userId: USER_A, authType: 'service_account' }).del(TOKEN)).status).toBe(403);
+  });
+});
+
+// KRTX-2242: a signed-out app removes its row from a backend it can no
+// longer authenticate to.
+describe('POST /device-token/release', () => {
+  function release(store: PushDeviceTokenStore, body: unknown) {
+    const deleted: string[][] = [];
+    const spy: PushDeviceTokenStore = {
+      ...store,
+      deleteTokens: async (tokens) => {
+        deleted.push([...tokens]);
+        return store.deleteTokens(tokens);
+      },
+    };
+    const res = createNotificationsApp({ store: spy, authMiddleware }).request('/device-token/release', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
+    return { res, deleted };
+  }
+
+  test('no credential deletes the row by token → 200 { ok: true }', async () => {
+    const { store, rows } = memoryStore();
+    await appFor(store).as(userA).post(register);
+    const { res, deleted } = release(store, { device_token: TOKEN });
+    expect((await res).status).toBe(200);
+    expect(await (await res).json()).toEqual({ ok: true });
+    expect(deleted).toEqual([[TOKEN]]);
+    expect(rows.has(TOKEN)).toBe(false);
+  });
+
+  test('an unknown token gets the same answer', async () => {
+    const { store } = memoryStore();
+    const { res, deleted } = release(store, { device_token: 'ExponentPushToken[unknown]' });
+    expect((await res).status).toBe(200);
+    expect(await (await res).json()).toEqual({ ok: true });
+    expect(deleted).toEqual([['ExponentPushToken[unknown]']]);
+  });
+
+  const invalidRelease: [string, unknown][] = [
+    ['missing token', {}],
+    ['empty token', { device_token: '' }],
+    ['token over 512 chars', { device_token: 'x'.repeat(513) }],
+    ['malformed JSON', '{"device_token":'],
+  ];
+  for (const [name, body] of invalidRelease) {
+    test(`${name} → 400 and nothing is deleted`, async () => {
+      const { store } = memoryStore();
+      const { res, deleted } = release(store, body);
+      expect((await res).status).toBe(400);
+      expect(deleted).toEqual([]);
+    });
+  }
+
+  test('one client gets 30 releases a minute, then 429', async () => {
+    resetRateLimiters();
+    const { store } = memoryStore();
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) statuses.push((await release(store, { device_token: TOKEN }).res).status);
+    resetRateLimiters();
+    expect(statuses.slice(0, 30).every((s) => s === 200)).toBe(true);
+    expect(statuses[30]).toBe(429);
+  });
+
+  test('the limit counts only the release POST, not DELETE /device-token/release', async () => {
+    resetRateLimiters();
+    const { store } = memoryStore();
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) statuses.push((await appFor(store).as(userA).del('release')).status);
+    resetRateLimiters();
+    expect(statuses.every((s) => s === 200)).toBe(true);
+  });
+
+  test('the other device-token routes still require a credential', async () => {
+    const { store } = memoryStore();
+    expect((await appFor(store).as(null).post(register)).status).toBe(401);
+    expect((await appFor(store).as(null).del('release')).status).toBe(401);
   });
 });
 

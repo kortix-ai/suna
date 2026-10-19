@@ -783,7 +783,7 @@ fn http_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(300))
         .connect_timeout(Duration::from_secs(30))
-        .user_agent(format!("kortix-capture/{}", RELEASE_TAG.unwrap_or("dev")))
+        .user_agent(crate::memory::sync::user_agent())
         .redirect(reqwest::redirect::Policy::custom(move |a| {
             let u = a.url();
             if a.previous().len() >= 5 {

@@ -20,7 +20,7 @@ import { isUniqueViolation } from '../shared/postgres-errors';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
-import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
+import { nativeOAuth2CallbackResponse, nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {
   createStoredDelegatedCredential,
   parseDelegatedCredential,
@@ -676,11 +676,5 @@ export async function handleNativeOAuth2Callback(requestUrl: string) {
     callbackUrl: callback,
     issuer: url.searchParams.get('iss') ?? undefined,
   });
-  if (!result.redirectUri) {
-    return { status: 400 as const, body: 'OAuth2 authorization failed' };
-  }
-  const redirect = new URL(result.redirectUri);
-  redirect.searchParams.set('oauth2', result.ok ? 'connected' : 'error');
-  if (result.errorCode) redirect.searchParams.set('oauth2_error', result.errorCode);
-  return { status: 302 as const, location: redirect.href };
+  return nativeOAuth2CallbackResponse(result);
 }

@@ -10,15 +10,26 @@ const Grid = host('grid');
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
-mock.module('@/components/ui/button', () => ({ Button: host('button') }));
-mock.module('@/components/ui/input', () => ({ Input: host('input') }));
-mock.module('@/components/ui/loading', () => ({ default: host('loading') }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {}, successToast: () => {} }));
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }));
+const uiButtonMock = () => ({ Button: host('button') });
+mock.module('@/components/ui/button', uiButtonMock);
+mock.module('@kortix/ui/button', uiButtonMock);
+const uiInputMock = () => ({ Input: host('input') });
+mock.module('@/components/ui/input', uiInputMock);
+mock.module('@kortix/ui/input', uiInputMock);
+const uiLoadingMock = () => ({ default: host('loading') });
+mock.module('@/components/ui/loading', uiLoadingMock);
+mock.module('@kortix/ui/loading', uiLoadingMock);
+const uiToastMock = () => ({ errorToast: () => {}, successToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
+const uiLibUtilsMock = () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') });
+mock.module('@/lib/utils', uiLibUtilsMock);
+mock.module('@kortix/ui/lib/utils', uiLibUtilsMock);
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
+mock.module('@kortix/ui/hooks/use-is-dark', () => ({ useIsDark: () => false }));
 mock.module('ag-grid-react', () => ({ AgGridReact: Grid }));
 mock.module('@/features/files/api/runtime-files', () => ({
-  readFileAsBlob: async () => new Blob([createDatabaseBytes()]),
+  readFileAsBlob: async () => new Blob([new Uint8Array(createDatabaseBytes())]),
 }));
 mock.module('@/features/files/api/runtime-file-read', () => ({
   readRuntimeFileWithRetry: (_path: string, read: () => Promise<Blob>) => read(),
@@ -92,7 +103,7 @@ test('mounted initialization reads quoted tables/views, counts, schema defaults 
   expect(sidebar(view).map((node) => node.findAllByType('span').map((span) => span.children.join(''))))
     .toEqual([['a"table', '2'], ['b"table', '0'], ['v"view', '0']]);
   expect(sidebar(view)[0].props.className).toContain('bg-accent');
-  expect(view.root.findByType('grid').props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
+  expect(view.root.findByType(Grid).props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
     .toEqual(['font-semibold', '']);
   for (const name of ['a""table', 'b""table', 'v""view']) {
     expect(queries).toContain(`SELECT COUNT(*) FROM "${name}"`);

@@ -1,5 +1,6 @@
 'use client';
 
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 import { CapabilityScrollRootProvider, useCapabilityScrollRootRef } from './capability-scroll-root';
@@ -19,6 +20,13 @@ interface CapabilityPageShellProps {
   /** The `max-w-7xl` column, for a gallery whose tiles need the width (Apps:
    *  a 5xl column made four-across tiles 230px, too small to read an App). */
   wide?: boolean;
+  /**
+   * Stack the header at every width: the heading on top, then search and
+   * actions on one full-width row with the search taking what is left. For a
+   * shell rendered in a narrow column (Triggers, beside an open trigger),
+   * where the side-by-side header is wider than the column. Default off.
+   */
+  stacked?: boolean;
   children: ReactNode;
 }
 
@@ -46,6 +54,7 @@ export function CapabilityPageShell({
   search,
   filters,
   wide = false,
+  stacked = false,
   children,
 }: CapabilityPageShellProps) {
   const scrollRef = useCapabilityScrollRootRef();
@@ -58,7 +67,12 @@ export function CapabilityPageShell({
             : 'mx-auto w-full max-w-5xl space-y-5 px-4 py-10 pb-20 lg:py-14'
         }
       >
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <header
+          className={cn(
+            'flex flex-col gap-3',
+            !stacked && 'sm:flex-row sm:items-start sm:justify-between',
+          )}
+        >
           {/* `sm:max-w-md` fixes where the description wraps. Without it the
               text column took whatever the right-hand group left, and that
               group fills in after data and permissions resolve — so the
@@ -76,8 +90,12 @@ export function CapabilityPageShell({
               the middle of the header — visually detached from both the
               heading it did not belong to and the search it sat next to. */}
           {search || action ? (
-            <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-              {search ? <div className="min-w-0 flex-1 sm:w-64 sm:flex-none">{search}</div> : null}
+            <div className={cn('flex w-full shrink-0 items-center gap-2', !stacked && 'sm:w-auto')}>
+              {search ? (
+                <div className={cn('min-w-0 flex-1', !stacked && 'sm:w-64 sm:flex-none')}>
+                  {search}
+                </div>
+              ) : null}
               {action}
             </div>
           ) : null}

@@ -50,7 +50,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
-import { extractAgents, grantsByAgent } from '../agents';
+import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -283,6 +283,18 @@ export function registerAgentConfigRoutes(): void {
       const read = readAgentBlockV2(manifest, agentName);
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
+      // A name the manifest does not declare is a 404, not an empty success:
+      // the dashboard's editor contract says a missing agent answers 404 (its
+      // not-found state comes from /detail), and the CLI's `agents config` /
+      // `agents scope --show` must not exit 0 on a phantom agent
+      // (KRTX-2071/KRTX-2535). v1 keeps its declared-agent null block (v1
+      // always reads back null), so the declared check runs on the manifest's
+      // own roster.
+      if (read.block === null) {
+        const notDeclared = agentNotDeclaredError(manifest, agentName);
+        if (notDeclared) return c.json(notDeclared, 404);
+      }
+
       let block:
         | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
         | null = read.block;
@@ -352,7 +364,7 @@ export function registerAgentConfigRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -456,7 +468,7 @@ export function registerAgentConfigRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const agentName = c.req.param('agentName');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(

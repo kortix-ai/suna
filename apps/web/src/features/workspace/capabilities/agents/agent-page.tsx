@@ -1,4 +1,7 @@
 'use client';
+import { EntityFilePane } from '../shared/entity/entity-modal';
+import { agentStatus } from './agent-status';
+import { useDefaultAgent } from './use-default-agent';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
@@ -48,7 +51,6 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * remounts every draft rather than carrying one agent's edits onto another.
  */
 
-import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -102,9 +104,8 @@ import {
   getProjectDetail,
   type ProjectConfigSummary,
   readProjectFile,
-  updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   BookOpenTextIcon,
@@ -115,6 +116,7 @@ import {
   DotsThreeIcon,
   FileTextIcon,
   GlobeIcon,
+  HardDriveIcon,
   type Icon,
   KeyIcon,
   PlayIcon,
@@ -129,7 +131,7 @@ import {
   UsersIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -138,14 +140,13 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  isMarkdownPath,
-  languageForPath,
-} from '@/features/workspace/capabilities/shared/entity/entity-files';
 import { useIsMobile } from '@/hooks/utils';
 
 import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 
+import { AgentDrivesSection } from '@/features/drives/agent-drives-section';
+
+import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import {
   AppsGrantPage,
@@ -153,7 +154,6 @@ import {
   SecretsGrantPage,
   SkillsGrantPage,
 } from './agent-grant-pages';
-import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -174,6 +174,7 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   connectors: PlugsConnectedIcon,
   secrets: KeyIcon,
   apps: GlobeIcon,
+  drives: HardDriveIcon,
   actions: TerminalWindowIcon,
   model: CpuIcon,
   tools: WrenchIcon,
@@ -487,16 +488,7 @@ function AgentActions({
         ? 'Subagents are called by other agents, not started directly.'
         : null;
 
-  const makeDefault = useMutation({
-    mutationFn: () => updateProjectDefaultAgent(projectId, agent.name),
-    onSuccess: async (result) => {
-      successToast(
-        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
-      );
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
-  });
+  const makeDefault = useDefaultAgent(projectId);
 
   const pathname = usePathname();
   return (
@@ -536,7 +528,7 @@ function AgentActions({
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               disabled={isDefault || agent.enabled === false || makeDefault.isPending}
-              onSelect={() => makeDefault.mutate()}
+              onSelect={() => makeDefault.mutate(agent.name)}
             >
               <StarIcon className="size-4" />
               {isDefault
@@ -583,11 +575,10 @@ function AgentChips({
   size: 'sm' | 'xs';
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const mode = agent.mode?.toLowerCase();
-  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  const { showMode, isDefault, disabled } = agentStatus(agent, config);
   return (
     <span className="flex items-center gap-1.5">
-      {mode && mode !== 'primary' ? (
+      {showMode ? (
         <Badge variant="outline" size={size} className="text-muted-foreground font-medium">
           {formatMode(agent.mode ?? '')}
         </Badge>
@@ -598,7 +589,7 @@ function AgentChips({
           {tI18nComplete.raw('text21b111cbfe6e')}
         </Badge>
       ) : null}
-      {agent.enabled === false ? (
+      {disabled ? (
         <Badge variant="muted" size={size}>
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
@@ -696,7 +687,12 @@ function EditableAgentPage({
     description: skill.description ?? undefined,
   }));
   const pathname = usePathname();
-  const sections = useMemo(() => agentConfigSectionKeys(schemaVersion), [schemaVersion]);
+  // Drives exists only with Volumes on (the project's derived `drives` flag).
+  const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
+  const sections = useMemo(
+    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
+    [schemaVersion, drivesOn],
+  );
   const registryOptions = useMemo(
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
@@ -737,6 +733,7 @@ function EditableAgentPage({
           connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
           secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
+          drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
           overview={
             <OverviewPane
               description={editor.oc.description ?? ''}
@@ -1086,49 +1083,18 @@ function ReadOnlyAgentPage({
           <span className="font-mono">{sourcePath}</span>
         </p>
       </div>
-      {fileQuery.isLoading ? (
-        <div className="space-y-2.5 p-4">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-11/12" />
-          <Skeleton className="h-4 w-10/12" />
-          <Skeleton className="h-4 w-9/12" />
-        </div>
-      ) : fileQuery.isError ? (
-        <div className="p-4">
-          <ErrorState
-            size="sm"
-            title={tI18nComplete.raw('text2f2f540650bf')}
-            description={
-              fileQuery.error instanceof Error
-                ? fileQuery.error.message
-                : tI18nComplete.raw('text553d1ec7c9e6')
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
-                {tI18nComplete.raw('text942087cc2d41')}
-              </Button>
-            }
-          />
-        </div>
-      ) : isMarkdownPath(sourcePath) ? (
-        <div className="p-4">
-          <MarkdownWithFrontmatter content={fileQuery.data?.content ?? ''} documentPath={sourcePath} />
-        </div>
-      ) : (
-        <pre
-          className={cn(
-            'overflow-x-auto p-4',
-            'text-foreground font-mono text-sm leading-[1.65]',
-            '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit',
-            '[&_.shiki]:!bg-transparent [&_span]:border-none [&_span]:!bg-transparent [&_span]:outline-none',
-          )}
-        >
-          <HighlightedCode
-            code={fileQuery.data?.content ?? ''}
-            language={languageForPath(sourcePath)}
-          />
-        </pre>
-      )}
+      <EntityFilePane
+        path={sourcePath}
+        content={fileQuery.data?.content}
+        isLoading={fileQuery.isLoading}
+        isError={fileQuery.isError}
+        error={fileQuery.error}
+        onRetry={() => {
+          void fileQuery.refetch();
+        }}
+        skeletonRows={4}
+        errorTitle={tI18nComplete.raw('text2f2f540650bf')}
+      />
     </section>
   );
 

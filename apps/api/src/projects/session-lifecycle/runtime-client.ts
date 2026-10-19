@@ -24,6 +24,7 @@ import {
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { isRuntimeUnavailableError } from '../lib/runtime-read-failure';
 import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
@@ -386,11 +387,17 @@ export async function readInboxTranscriptState(
     );
     return { newest, answered, read: true, tip };
   } catch (err) {
-    console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', {
-      sessionId: row.sessionId,
-      commandId: row.commandId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    const error = err instanceof Error ? err.message : String(err);
+    const context = { sessionId: row.sessionId, commandId: row.commandId, error };
+    if (isRuntimeUnavailableError(err)) {
+      // A stopped, gone, or cold sandbox is the EXPECTED state of an idle
+      // session (Platinum auto-stops idle boxes by design). The read is
+      // optional and fails open — see above — so that degrade is info, not
+      // a warning. Only an unexpected failure warns.
+      logger.info('[session-lifecycle] inbox transcript read deferred — proceeding without it', context);
+    } else {
+      console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', context);
+    }
     return empty;
   }
 }

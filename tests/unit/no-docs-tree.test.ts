@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { gitOrEmpty } from '../src/fixtures/git-or-empty';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -21,18 +21,6 @@ const CITATION = [
 
 const citation = new RegExp(CITATION, 'm');
 
-function git(args: string[]): string[] {
-  try {
-    return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
-      .split('\n')
-      .filter(Boolean);
-  } catch (error) {
-    // `git grep` exits 1 when nothing matches.
-    if ((error as { status?: number }).status === 1) return [];
-    throw error;
-  }
-}
-
 describe('the top-level documentation tree', () => {
   it('rejects root and relative citations while allowing nested trees and URLs', () => {
     for (const text of [
@@ -51,7 +39,7 @@ describe('the top-level documentation tree', () => {
   });
 
   it('tracks no file', () => {
-    expect(git(['ls-files', '--', `${TREE}/`])).toEqual([]);
+    expect(gitOrEmpty(['ls-files', '--', `${TREE}/`])).toEqual([]);
   });
 
   it('is cited by no tracked file', () => {
@@ -65,7 +53,7 @@ describe('the top-level documentation tree', () => {
       ':!packages/sdk/src/core/turns/tools/skill-helpers.test.ts',
     ];
     // V8 checks the candidates without the slow second Git regex scan or unbounded grep output.
-    const candidates = git(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
+    const candidates = gitOrEmpty(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
     const offenders = candidates.filter((path) =>
       citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
     );

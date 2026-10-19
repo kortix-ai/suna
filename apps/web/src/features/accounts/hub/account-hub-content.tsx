@@ -45,7 +45,6 @@ import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dial
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
-import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
@@ -201,6 +200,7 @@ export function AccountHubContent() {
     canCreateGroup,
     canManageGroupMembers,
     canManageRoles,
+    canCreateToken,
     sectionVisible,
     activeSection,
   } = useAccountHubSection(accountId);
@@ -262,12 +262,6 @@ export function AccountHubContent() {
   // a detail view is a URL, not a route change, and the left rail never
   // disappears underneath it.
   const selectedAccessProjectId = searchParams.get('project');
-  // Set only by the Customize bar's "Members" link
-  // (`capabilities/shared/capability-tabs.tsx`). It means this hub was opened
-  // FROM a project, so the project panel offers a way back to it — landing
-  // someone on the account hub with only an "All projects" breadcrumb strands
-  // them one level above where they started.
-  const cameFromCustomize = searchParams.get('from') === 'customize';
   const selectedAccessGroupId = searchParams.get('group');
   // `sso` | `scim`: a guided wizard standing in for the Identity pane.
   const rawSetup = searchParams.get('setup');
@@ -354,7 +348,7 @@ export function AccountHubContent() {
         /* Keyed remount on section switch, no transition: a settings tab is
            switched many times a session, and a rise on every switch read as lag. */
         <div key={activeSection} className="min-w-0">
-          {activeSection === 'billing' && canWriteAccount ? (
+          {activeSection === 'billing' && sectionVisible.billing ? (
             <div className="space-y-6">
               {/* Scope every billing hook nested below to this account so a
                   multi-account user doesn't see (or mutate) their primary
@@ -382,7 +376,7 @@ export function AccountHubContent() {
             </div>
           ) : null}
 
-          {activeSection === 'transactions' && canWriteAccount ? (
+          {activeSection === 'transactions' && sectionVisible.transactions ? (
             <BillingAccountProvider accountId={account.account_id}>
               <TransactionsTab />
             </BillingAccountProvider>
@@ -451,14 +445,6 @@ export function AccountHubContent() {
             )
           ) : null}
 
-          {/* Page chrome, not panel chrome: `fixed`, so it costs this
-              layout no height and the panel's own "All projects" breadcrumb
-              is untouched. Only on the project panel — the section the
-              Customize bar's "Members" link actually opens. */}
-          {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
-            <BackToCustomizeOverlay />
-          ) : null}
-
           {activeSection === 'access-projects' ? (
             <AccessProjectsTab
               accountId={account.account_id}
@@ -523,14 +509,14 @@ export function AccountHubContent() {
               `ApiKeysSection` carries the one line that points there. Both
               components carry their own section headers, so the pane header
               above is the only other chrome. */}
-          {activeSection === 'tokens' && canWriteAccount ? (
+          {activeSection === 'tokens' && sectionVisible.tokens ? (
             <div className="space-y-10">
-              <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+              <ApiKeysSection accountId={account.account_id} canManage={canCreateToken === true} />
               {/* OAuth apps — "Sign in with Kortix" clients. A client secret
                   is a credential the account issues to a machine, so it
                   sits with the other machine credentials and under the same
                   `token.*` permissions. */}
-              <OAuthAppsCard accountId={account.account_id} canManage={canWriteAccount} />
+              <OAuthAppsCard accountId={account.account_id} canManage={canCreateToken === true} />
               <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
             </div>
           ) : null}

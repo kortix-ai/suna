@@ -1974,7 +1974,7 @@
   },
   "src/projects/reaping/stop-box.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/reaping/stuck-provisioning.ts": {
@@ -2314,9 +2314,6 @@
     }
   },
   "src/projects/routes/review-items.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 5
     }

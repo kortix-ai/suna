@@ -14,7 +14,9 @@ import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-
  * keeps its place here and simply does not render.
  */
 
-export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'review', 'reminders', 'files'] as const;
+// Review left the sidebar for the Customize Review tab (2026-10-17). A saved
+// layout that still names it drops the id in `normalizeSidebarNav`.
+export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'reminders', 'files'] as const;
 export type SidebarNavItemId = (typeof SIDEBAR_NAV_ITEM_IDS)[number];
 
 /**
@@ -30,19 +32,15 @@ export interface SidebarNavEntry {
   visibility: SidebarNavVisibility;
 }
 
-export const SIDEBAR_NAV_ACTIVITY_ITEMS: ReadonlySet<SidebarNavItemId> = new Set([
-  'review',
-  'reminders',
-]);
+export const SIDEBAR_NAV_ACTIVITY_ITEMS: ReadonlySet<SidebarNavItemId> = new Set(['reminders']);
 
 /** The layout before anyone customizes it. Reminders keeps its old rule: it
  *  shows while a reminder can still fire. */
 export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'customize', visibility: 'always' },
-  { id: 'apps', visibility: 'always' },
-  { id: 'review', visibility: 'always' },
-  { id: 'reminders', visibility: 'active' },
   { id: 'files', visibility: 'always' },
+  { id: 'apps', visibility: 'always' },
+  { id: 'reminders', visibility: 'active' },
 ];
 
 function isItemId(value: unknown): value is SidebarNavItemId {

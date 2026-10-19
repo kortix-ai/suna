@@ -9,7 +9,7 @@ import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigg
 import { connectionIdentity } from '../trigger-events/subscriptions';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -195,6 +195,8 @@ export interface TriggerDraft {
   intervalSeconds: number | null;
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expectEventWithinSeconds: number | null;
+  /** For type=cron only — the misfire bound (`max_lateness`), in whole seconds. */
+  maxLatenessSeconds?: number;
   /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;
   sessionMode: GitTriggerSessionMode;
@@ -248,9 +250,14 @@ export function parseTriggerDraft(
   const { filter } = parsedFilter;
 
   const common = { slug, name, agent, model, enabled, promptTemplate, sessionMode, pinnedSessionId, sessionKey, filter };
+  const lateness = parseMaxLateness(body, type);
+  if ('error' in lateness) return lateness;
   if (type === 'event') return parseEventDraft(body, common);
   if (type === 'monitor') return parseMonitorDraft(body, common);
-  if (type === 'cron') return parseCronDraft(body, common);
+  if (type === 'cron') {
+    const draft = parseCronDraft(body, common);
+    return 'error' in draft ? draft : { ...draft, ...lateness };
+  }
   return parseWebhookDraft(body, common);
 }
 
@@ -446,6 +453,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
       spec.expectEventWithinSeconds === null
         ? null
         : formatDurationSeconds(spec.expectEventWithinSeconds),
+    max_lateness: spec.maxLatenessSeconds ? formatDurationSeconds(spec.maxLatenessSeconds) : null,
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
@@ -491,6 +499,7 @@ export function draftToSpec(
     monitorMode: draft.monitorMode,
     intervalSeconds: draft.intervalSeconds,
     expectEventWithinSeconds: draft.expectEventWithinSeconds,
+    ...(draft.maxLatenessSeconds ? { maxLatenessSeconds: draft.maxLatenessSeconds } : {}),
     event: draft.event,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,

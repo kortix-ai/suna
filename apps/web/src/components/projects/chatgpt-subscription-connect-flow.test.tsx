@@ -25,7 +25,9 @@ const refreshProvider = mock((_queryClient: unknown, _projectId: string, _opts?:
 const realToast = await import('@/components/ui/toast');
 const realSdkReact = await import('@kortix/sdk/react');
 
-mock.module('@/components/ui/toast', () => ({ ...realToast, successToast: toastSuccess }));
+const uiToastMock = () => ({ ...realToast, successToast: toastSuccess });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   refreshProjectProviderState: refreshProvider,

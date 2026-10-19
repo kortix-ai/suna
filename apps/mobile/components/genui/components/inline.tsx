@@ -14,7 +14,7 @@ import { TYPE } from '@/lib/markdown/markdown-layout';
 import { openGenuiLink } from './open-link';
 
 // Web's Paper Badge 01: the tone paints the /15 tint and the label. Neutral is the secondary well in ink.
-export const BADGE_TONE = {
+const BADGE_TONE = {
   neutral: { well: 'bg-secondary', label: 'text-foreground', dot: 'bg-muted-foreground' },
   good: { well: 'bg-kortix-green/15', label: 'text-kortix-green', dot: 'bg-kortix-green' },
   warn: { well: 'bg-kortix-orange/15', label: 'text-kortix-orange', dot: 'bg-kortix-orange' },

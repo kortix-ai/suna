@@ -134,6 +134,57 @@ function completedMetadata(value: PromptAttachment): PromptAttachment {
   };
 }
 
+/** The upload progress throttle: a whole-percent change only, at most one
+ *  snapshot per interval. Returns the transport chain's `onProgress` /
+ *  `onProcessing` handlers plus the `clear` for the settle path. */
+function progressHandlers(
+  entry: { item: PromptAttachmentItem },
+  current: () => boolean,
+  emit: () => void,
+): {
+  onProgress: (receivedBytes: number) => void;
+  onProcessing: () => void;
+  clear: () => void;
+} {
+  let unseenBytes: number | undefined;
+  let seenAt = 0;
+  let progressTimer: ReturnType<typeof setTimeout> | undefined;
+  const showProgress = () => {
+    progressTimer = undefined;
+    if (!current() || entry.item.status !== 'uploading' || unseenBytes === undefined) return;
+    entry.item = { ...entry.item, receivedBytes: unseenBytes };
+    unseenBytes = undefined;
+    seenAt = Date.now();
+    emit();
+  };
+  const percent = (bytes: number) => Math.floor((bytes * 100) / entry.item.size);
+  const clearTimer = () => {
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = undefined;
+  };
+  return {
+    onProgress: (receivedBytes) => {
+      if (!current() || percent(receivedBytes) === percent(entry.item.receivedBytes)) return;
+      unseenBytes = receivedBytes;
+      if (progressTimer) return;
+      const wait = seenAt + PROGRESS_INTERVAL_MS - Date.now();
+      if (wait <= 0) return showProgress();
+      progressTimer = setTimeout(showProgress, wait);
+      if (typeof progressTimer === 'object' && 'unref' in progressTimer) progressTimer.unref();
+    },
+    onProcessing: () => {
+      // Every byte is sent. A throttled percent still waiting would be stale.
+      clearTimer();
+      unseenBytes = undefined;
+      if (current()) {
+        entry.item = { ...entry.item, status: 'processing', receivedBytes: entry.item.size };
+        emit();
+      }
+    },
+    clear: clearTimer,
+  };
+}
+
 /** Own one composer selection. Plain-object methods also preserve createScopedKortix isolation. */
 export function createPromptAttachmentController(
   projectId: string | null | undefined,
@@ -237,6 +288,62 @@ export function createPromptAttachmentController(
     if (total > MAX_PROMPT_ATTACHMENTS_BYTES) throw new Error('Message attachments exceed 100 MiB');
   }
 
+  /** One entry's upload: status wiring, progress throttle and the transport chain.
+   *  `pump` owns slot-taking; `onSettled` runs when this upload's slot frees. */
+  function startUpload(entry: Entry, file: File, onSettled: () => void) {
+    const generation = ++entry.generation;
+    const abort = new AbortController();
+    entry.abort = abort;
+    entry.item = { ...entry.item, status: 'uploading', error: undefined };
+    const current = () =>
+      (!disposed || entry.handedOff === true) &&
+      entries.get(entry.item.id) === entry &&
+      entry.generation === generation;
+    const progress = progressHandlers(entry, current, emit);
+    void uploadPromptAttachment(projectId!, file, {
+      resume: entry.upload,
+      signal: abort.signal,
+      onUpload: (upload) => {
+        entry.upload = upload;
+        // An initiation response can race explicit removal before its handle was
+        // known. `remove` deliberately left that request running so this id would
+        // arrive: stop the transfer before a byte is sent, and delete the row.
+        if (entry.removed) {
+          abort.abort();
+          deleteAfterRemoval(entry, upload.attachment_id);
+        }
+      },
+      ...progress,
+    })
+      .then((attachment) => {
+        if (current()) {
+          entry.item = {
+            ...entry.item,
+            status: 'ready',
+            attachment: completedMetadata(attachment),
+            receivedBytes: attachment.size,
+          };
+        }
+      })
+      .catch((error: unknown) => {
+        // The server failed this handle for good. Retry uploads the same File as a new attachment.
+        if (error instanceof ApiError && FAILED_HANDLE_CODES.has(error.code ?? ''))
+          entry.upload = undefined;
+        if (current())
+          entry.item = {
+            ...entry.item,
+            status: error instanceof ApiError && error.code === 'ABORTED' ? 'aborted' : 'error',
+            error: error instanceof Error ? error : new Error(String(error)),
+          };
+      })
+      .finally(() => {
+        progress.clear();
+        if (entry.abort === abort) entry.abort = undefined;
+        // After dispose this settles waiters and starts the next handed-off upload.
+        onSettled();
+      });
+  }
+
   function pump() {
     for (const entry of entries.values()) {
       if (active >= concurrency) break;
@@ -244,89 +351,11 @@ export function createPromptAttachmentController(
       if (disposed && !entry.handedOff) continue;
       const file = entry.item.file;
       active++;
-      const generation = ++entry.generation;
-      const abort = new AbortController();
-      entry.abort = abort;
-      entry.item = { ...entry.item, status: 'uploading', error: undefined };
-      const current = () =>
-        (!disposed || entry.handedOff === true) &&
-        entries.get(entry.item.id) === entry &&
-        entry.generation === generation;
-      // Progress snapshots: a whole-percent change only, at most one per interval.
-      let unseenBytes: number | undefined;
-      let seenAt = 0;
-      let progressTimer: ReturnType<typeof setTimeout> | undefined;
-      const showProgress = () => {
-        progressTimer = undefined;
-        if (!current() || entry.item.status !== 'uploading' || unseenBytes === undefined) return;
-        entry.item = { ...entry.item, receivedBytes: unseenBytes };
-        unseenBytes = undefined;
-        seenAt = Date.now();
+      startUpload(entry, file, () => {
+        active--;
         emit();
-      };
-      const percent = (bytes: number) => Math.floor((bytes * 100) / entry.item.size);
-      void uploadPromptAttachment(projectId!, file, {
-        resume: entry.upload,
-        signal: abort.signal,
-        onUpload: (upload) => {
-          entry.upload = upload;
-          // An initiation response can race explicit removal before its handle was
-          // known. `remove` deliberately left that request running so this id would
-          // arrive: stop the transfer before a byte is sent, and delete the row.
-          if (entry.removed) {
-            abort.abort();
-            deleteAfterRemoval(entry, upload.attachment_id);
-          }
-        },
-        onProgress: (receivedBytes) => {
-          if (!current() || percent(receivedBytes) === percent(entry.item.receivedBytes)) return;
-          unseenBytes = receivedBytes;
-          if (progressTimer) return;
-          const wait = seenAt + PROGRESS_INTERVAL_MS - Date.now();
-          if (wait <= 0) return showProgress();
-          progressTimer = setTimeout(showProgress, wait);
-          if (typeof progressTimer === 'object' && 'unref' in progressTimer) progressTimer.unref();
-        },
-        onProcessing: () => {
-          // Every byte is sent. A throttled percent still waiting would be stale.
-          if (progressTimer) clearTimeout(progressTimer);
-          progressTimer = undefined;
-          unseenBytes = undefined;
-          if (current()) {
-            entry.item = { ...entry.item, status: 'processing', receivedBytes: entry.item.size };
-            emit();
-          }
-        },
-      })
-        .then((attachment) => {
-          if (current()) {
-            entry.item = {
-              ...entry.item,
-              status: 'ready',
-              attachment: completedMetadata(attachment),
-              receivedBytes: attachment.size,
-            };
-          }
-        })
-        .catch((error: unknown) => {
-          // The server failed this handle for good. Retry uploads the same File as a new attachment.
-          if (error instanceof ApiError && FAILED_HANDLE_CODES.has(error.code ?? ''))
-            entry.upload = undefined;
-          if (current())
-            entry.item = {
-              ...entry.item,
-              status: error instanceof ApiError && error.code === 'ABORTED' ? 'aborted' : 'error',
-              error: error instanceof Error ? error : new Error(String(error)),
-            };
-        })
-        .finally(() => {
-          active--;
-          if (progressTimer) clearTimeout(progressTimer);
-          if (entry.abort === abort) entry.abort = undefined;
-          // After dispose this settles waiters and starts the next handed-off upload.
-          emit();
-          pump();
-        });
+        pump();
+      });
     }
     emit();
   }
