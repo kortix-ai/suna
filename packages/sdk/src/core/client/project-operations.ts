@@ -44,6 +44,10 @@ export function bindProjectOperations(
         set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
           P.setConnectorPolicies(projectId, ...a),
       },
+      /** Pipedream connectors and the Kortix app each moves to (`connectors_v2`). */
+      listMoves: () => P.listConnectorMoves(projectId),
+      /** Move a Pipedream connector to its Kortix app; it keeps its slug. */
+      move: (...a: DropFirst<Parameters<typeof P.moveConnector>>) => P.moveConnector(projectId, ...a),
       /** Easy-connect (Pipedream): app catalog + connect/finalize handshake. */
       pipedream: {
         listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>

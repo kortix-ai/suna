@@ -205,7 +205,7 @@ export function registerSetupLinksRoutes(): void {
             {
               error:
                 `"${slug}" is a ${eligibility.providerType} connector, and setup links are hosted ` +
-                'authorization pages, which only Composio and Pipedream connectors have. It is ' +
+                'authorization pages, which only Composio, Pipedream and one-click MCP sign-in connectors have. It is ' +
                 'already on this project — connect it the way that provider is connected rather ' +
                 'than adding it to kortix.yaml again.',
               code: 'CONNECTOR_PROVIDER_UNSUPPORTED',

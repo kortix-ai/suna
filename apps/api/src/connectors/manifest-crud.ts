@@ -175,11 +175,15 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
-/** Create/update a connector in kortix.yaml, then materialize it. */
+/**
+ * Create/update a connector in kortix.yaml, then materialize it. `beforeSync`
+ * runs after the commit and before the sync (a Pipedream move swaps credentials there).
+ */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
   draft: ConnectorDraft,
+  beforeSync?: () => Promise<void>,
 ): Promise<CrudResult> {
   // Slack is a first-class channel connector — reserve its namespace so a new
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
@@ -221,6 +225,7 @@ export async function upsertConnectorInManifest(
 
   const result = await upsertConnectorInManifestWithRetry(gitProject, draft);
   if (!result.ok) return result;
+  await beforeSync?.();
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };

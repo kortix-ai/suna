@@ -563,6 +563,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|connections|:connectionId|share",
   "GET|v1|projects|:projectId|connections|all",
   "POST|v1|projects|:projectId|connections|me",
+  "GET|v1|projects|:projectId|connector-moves",
+  "POST|v1|projects|:projectId|connectors|:slug|move",
   "POST|v1|projects|:projectId|connectors|:slug|oauth2|connection",
   "PUT|v1|projects|:projectId|default-agent",
   "GET|v1|projects|:projectId|detail",

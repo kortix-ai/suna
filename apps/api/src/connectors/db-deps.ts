@@ -64,7 +64,8 @@ import {
   connectorCatalogDirectMcpUrls,
   listConnectorCatalog,
 } from './connector-catalog';
-import { kortixMcpCatalog } from './mcp-apps';
+import { kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
   createComputerConnector,
@@ -83,6 +84,7 @@ import {
   connectLinkEligibility,
   loadComposioAdapter,
   loadComposioConnector,
+  loadMcpConnector,
   loadPipedreamConnector,
   mergeRequestingSession,
   readRequestingSessionId,
@@ -501,6 +503,24 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         isNoAuth: result.isNoAuth,
       };
     }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      // Kortix runs the sign-in itself: the link is the provider's consent page,
+      // and the OAuth callback stores the token on the connection.
+      if (!userId) return null;
+      const connectionId =
+        connectOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId })
+          : await ensureDefaultConnection({ projectId, connectorId: mcp.connectorId });
+      await mergeRequestingSession(connectionId, requestingSessionId);
+      const connectUrl = await startConnectionSignIn({
+        identity: { accountId: mcp.accountId, projectId, connectorId: mcp.connectorId, connectionId },
+        initiatedBy: userId,
+        redirects,
+      });
+      if (!connectUrl) return null;
+      return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connectUrl, connectionId };
+    }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
     if (!pipedream) return null;
@@ -642,6 +662,38 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         connectedAs,
         ...(label ? { label } : {}),
       };
+    }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      if (finalizeOwner === 'me' && !_userId) return null;
+      const [connection] = await db
+        .select({ connectionId: connectorConnections.connectionId, metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, mcp.connectorId),
+            finalizeOwner === 'me'
+              ? and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, _userId ?? ''))
+              : and(eq(connectorConnections.ownerType, 'project'), isNull(connectorConnections.ownerId)),
+            ...(selector?.connectionId ? [eq(connectorConnections.connectionId, selector.connectionId)] : []),
+          ),
+        )
+        // The row `connectorConnect` just started is the most recently touched one.
+        .orderBy(desc(connectorConnections.updatedAt))
+        .limit(1);
+      if (selector?.connectionId && !connection) throw new HTTPException(404, { message: 'connector connection not found' });
+      if (!connection) return { provider: 'mcp', connected: false };
+      const connected = (await oauth2ConnectionStatus(connection.connectionId)).status === 'active';
+      const waiting = readRequestingSessionId(connection.metadata);
+      if (connected && waiting) {
+        // Told once: the waiting session is cleared before the agent is notified.
+        await db
+          .update(connectorConnections)
+          .set({ metadata: sql`${connectorConnections.metadata} - 'requesting_session_id'` })
+          .where(eq(connectorConnections.connectionId, connection.connectionId));
+        void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, mcpAppForUrl(mcp.url)?.slug ?? slug);
+      }
+      return { provider: 'mcp', connected, connectionId: connection.connectionId };
     }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
