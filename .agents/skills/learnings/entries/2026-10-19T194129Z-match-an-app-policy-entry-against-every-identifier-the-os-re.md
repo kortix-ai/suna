@@ -1,5 +1,5 @@
 ---
-recorded: 
+recorded: 2026-10-19T194129
 incident_date: 2026-10-19
 ---
 # Match an app policy entry against every identifier the OS reports, and test it on a packaged Windows app
