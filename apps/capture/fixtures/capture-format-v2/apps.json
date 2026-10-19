@@ -1,0 +1,1180 @@
+{
+  "description": "The one app rule of Kortix Capture. An app has identifiers: `bundle_id` (macOS bundle id; Windows AppUserModelID of a packaged app, else the executable file name; Linux WM_CLASS class) and `aliases` (Windows: executable, package family, package name, display name; macOS: app name, executable name; Linux: WM_CLASS instance, process name, display name, executable, Snap, Flatpak and AppImage names). `keys`: an identifier as compared: trimmed, lowercase, its last path component, without .exe/.app/.desktop/.appimage and without the maccatalyst. prefix. `matches`: an entry names an app when its key equals the key of any identifier; an entry ending in * names every app with an identifier key that starts with the rest (at least 3 characters). Rust (memory::exclusions::app_matches) and the macOS engine (via _app_match) run these same vectors.",
+  "keys": [
+    {
+      "input": "  Notepad.EXE ",
+      "key": "notepad"
+    },
+    {
+      "input": "C:\\Program Files\\Autodesk\\acad.exe",
+      "key": "acad"
+    },
+    {
+      "input": "/Applications/AutoCAD 2025.app",
+      "key": "autocad 2025"
+    },
+    {
+      "input": "/Applications/AutoCAD 2025.app/",
+      "key": "autocad 2025"
+    },
+    {
+      "input": "org.gnome.TextEditor.desktop",
+      "key": "org.gnome.texteditor"
+    },
+    {
+      "input": "FreeCAD-0.21.AppImage",
+      "key": "freecad-0.21"
+    },
+    {
+      "input": "maccatalyst.com.example.Notes",
+      "key": "com.example.notes"
+    },
+    {
+      "input": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+      "key": "microsoft.windowsnotepad_8wekyb3d8bbwe!app"
+    },
+    {
+      "input": "com.tinyspeck.slackmacgap",
+      "key": "com.tinyspeck.slackmacgap"
+    }
+  ],
+  "matches": [
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "notepad.exe",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "NOTEPAD.EXE",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "notepad",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "C:\\Windows\\System32\\notepad.exe",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "Notepad",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "notepad*",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "notepad2.exe",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "classic Win32 exe (Windows 10 Notepad)",
+      "entry": "msedge.exe",
+      "app": {
+        "bundle_id": "notepad.exe",
+        "aliases": [
+          "notepad.exe",
+          "Notepad"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "notepad.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "Notepad",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "microsoft.windowsnotepad_8wekyb3d8bbwe!app",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "Microsoft.WindowsNotepad",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsNotepad_11.2312.18.0_x64__8wekyb3d8bbwe\\Notepad\\Notepad.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "msedge.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "packaged MSIX app (Windows 11 Notepad)",
+      "entry": "Microsoft.Windows",
+      "app": {
+        "bundle_id": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+        "aliases": [
+          "notepad.exe",
+          "Microsoft.WindowsNotepad_8wekyb3d8bbwe",
+          "Microsoft.WindowsNotepad",
+          "Notepad"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, app process found (Windows 11 Calculator)",
+      "entry": "calculatorapp.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "calculatorapp.exe",
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator",
+          "Calculator"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, app process found (Windows 11 Calculator)",
+      "entry": "Calculator",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "calculatorapp.exe",
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator",
+          "Calculator"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, app process found (Windows 11 Calculator)",
+      "entry": "Microsoft.WindowsCalculator",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "calculatorapp.exe",
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator",
+          "Calculator"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, app process found (Windows 11 Calculator)",
+      "entry": "applicationframehost.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "calculatorapp.exe",
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator",
+          "Calculator"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, app process found (Windows 11 Calculator)",
+      "entry": "calc.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "calculatorapp.exe",
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator",
+          "Calculator"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, named by the window's AppUserModelID",
+      "entry": "Microsoft.WindowsCalculator",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, named by the window's AppUserModelID",
+      "entry": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "UWP app in ApplicationFrameHost, named by the window's AppUserModelID",
+      "entry": "applicationframehost.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+        "aliases": [
+          "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+          "Microsoft.WindowsCalculator"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows Terminal)",
+      "entry": "windowsterminal.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+        "aliases": [
+          "windowsterminal.exe",
+          "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+          "Microsoft.WindowsTerminal",
+          "Windows Terminal"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows Terminal)",
+      "entry": "Windows Terminal",
+      "app": {
+        "bundle_id": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+        "aliases": [
+          "windowsterminal.exe",
+          "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+          "Microsoft.WindowsTerminal",
+          "Windows Terminal"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows Terminal)",
+      "entry": "wt.exe",
+      "app": {
+        "bundle_id": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+        "aliases": [
+          "windowsterminal.exe",
+          "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+          "Microsoft.WindowsTerminal",
+          "Windows Terminal"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows 11 Paint)",
+      "entry": "mspaint.exe",
+      "app": {
+        "bundle_id": "Microsoft.Paint_8wekyb3d8bbwe!App",
+        "aliases": [
+          "mspaint.exe",
+          "Microsoft.Paint_8wekyb3d8bbwe",
+          "Microsoft.Paint",
+          "Paint"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows 11 Paint)",
+      "entry": "Paint",
+      "app": {
+        "bundle_id": "Microsoft.Paint_8wekyb3d8bbwe!App",
+        "aliases": [
+          "mspaint.exe",
+          "Microsoft.Paint_8wekyb3d8bbwe",
+          "Microsoft.Paint",
+          "Paint"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "packaged app (Windows 11 Paint)",
+      "entry": "Microsoft.Paint",
+      "app": {
+        "bundle_id": "Microsoft.Paint_8wekyb3d8bbwe!App",
+        "aliases": [
+          "mspaint.exe",
+          "Microsoft.Paint_8wekyb3d8bbwe",
+          "Microsoft.Paint",
+          "Paint"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "elevated process the recorder cannot open (snapshot name only)",
+      "entry": "regedit.exe",
+      "app": {
+        "bundle_id": "regedit.exe",
+        "aliases": [
+          "regedit.exe",
+          "regedit"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "elevated process the recorder cannot open (snapshot name only)",
+      "entry": "regedit",
+      "app": {
+        "bundle_id": "regedit.exe",
+        "aliases": [
+          "regedit.exe",
+          "regedit"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "Java host: every Java app is javaw.exe",
+      "entry": "javaw.exe",
+      "app": {
+        "bundle_id": "javaw.exe",
+        "aliases": [
+          "javaw.exe",
+          "Java(TM) Platform SE binary"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "Java host: every Java app is javaw.exe",
+      "entry": "java.exe",
+      "app": {
+        "bundle_id": "javaw.exe",
+        "aliases": [
+          "javaw.exe",
+          "Java(TM) Platform SE binary"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "Electron app with its own exe name",
+      "entry": "slack.exe",
+      "app": {
+        "bundle_id": "slack.exe",
+        "aliases": [
+          "slack.exe",
+          "Slack"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "Electron app with its own exe name",
+      "entry": "Slack",
+      "app": {
+        "bundle_id": "slack.exe",
+        "aliases": [
+          "slack.exe",
+          "Slack"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "Electron app with its own exe name",
+      "entry": "electron.exe",
+      "app": {
+        "bundle_id": "slack.exe",
+        "aliases": [
+          "slack.exe",
+          "Slack"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "acad.exe",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "acad",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "ACAD.EXE",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\acad.exe",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "autocad*",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "AutoCAD Application",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "AutoCAD",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "ac*",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "windows",
+      "case": "CAD app (AutoCAD)",
+      "entry": "*",
+      "app": {
+        "bundle_id": "acad.exe",
+        "aliases": [
+          "acad.exe",
+          "AutoCAD Application"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "com.autodesk.AutoCAD2025",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "com.autodesk.autocad*",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "AutoCAD 2025",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "AutoCAD 2025.app",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "/Applications/Autodesk/AutoCAD 2025/AutoCAD 2025.app",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "AutoCAD",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "com.autodesk",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "macos",
+      "case": "bundle id with a version (AutoCAD for Mac)",
+      "entry": "acad.exe",
+      "app": {
+        "bundle_id": "com.autodesk.AutoCAD2025",
+        "aliases": [
+          "AutoCAD 2025",
+          "AutoCAD"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "macos",
+      "case": "Electron app (VS Code: executable Electron)",
+      "entry": "com.microsoft.VSCode",
+      "app": {
+        "bundle_id": "com.microsoft.VSCode",
+        "aliases": [
+          "Code",
+          "Electron"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "Electron app (VS Code: executable Electron)",
+      "entry": "com.microsoft.vscode",
+      "app": {
+        "bundle_id": "com.microsoft.VSCode",
+        "aliases": [
+          "Code",
+          "Electron"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "Electron app (VS Code: executable Electron)",
+      "entry": "Code",
+      "app": {
+        "bundle_id": "com.microsoft.VSCode",
+        "aliases": [
+          "Code",
+          "Electron"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "Electron app (VS Code: executable Electron)",
+      "entry": "com.microsoft.VSCodeInsiders",
+      "app": {
+        "bundle_id": "com.microsoft.VSCode",
+        "aliases": [
+          "Code",
+          "Electron"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "macos",
+      "case": "Mac Catalyst app",
+      "entry": "com.example.Notes",
+      "app": {
+        "bundle_id": "maccatalyst.com.example.Notes",
+        "aliases": [
+          "Notes"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "Mac Catalyst app",
+      "entry": "maccatalyst.com.example.Notes",
+      "app": {
+        "bundle_id": "maccatalyst.com.example.Notes",
+        "aliases": [
+          "Notes"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "macos",
+      "case": "Mac Catalyst app",
+      "entry": "Notes",
+      "app": {
+        "bundle_id": "maccatalyst.com.example.Notes",
+        "aliases": [
+          "Notes"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "any",
+      "case": "app the OS did not name (no bundle id, no window owner)",
+      "entry": "",
+      "app": {
+        "bundle_id": "",
+        "aliases": []
+      },
+      "match": false
+    },
+    {
+      "os": "any",
+      "case": "app the OS did not name (no bundle id, no window owner)",
+      "entry": "java",
+      "app": {
+        "bundle_id": "",
+        "aliases": []
+      },
+      "match": false
+    },
+    {
+      "os": "any",
+      "case": "app the OS did not name (no bundle id, no window owner)",
+      "entry": "unknown*",
+      "app": {
+        "bundle_id": "",
+        "aliases": []
+      },
+      "match": false
+    },
+    {
+      "os": "linux",
+      "case": "X11 WM_CLASS app (gedit)",
+      "entry": "gedit",
+      "app": {
+        "bundle_id": "gedit",
+        "aliases": [
+          "gedit",
+          "gedit",
+          "Text Editor",
+          "gedit"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "X11 WM_CLASS app (gedit)",
+      "entry": "Gedit",
+      "app": {
+        "bundle_id": "gedit",
+        "aliases": [
+          "gedit",
+          "gedit",
+          "Text Editor",
+          "gedit"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "X11 WM_CLASS app (gedit)",
+      "entry": "Text Editor",
+      "app": {
+        "bundle_id": "gedit",
+        "aliases": [
+          "gedit",
+          "gedit",
+          "Text Editor",
+          "gedit"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "X11 WM_CLASS app (gedit)",
+      "entry": "org.gnome.gedit",
+      "app": {
+        "bundle_id": "gedit",
+        "aliases": [
+          "gedit",
+          "gedit",
+          "Text Editor",
+          "gedit"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "linux",
+      "case": "Flatpak app",
+      "entry": "org.gnome.TextEditor",
+      "app": {
+        "bundle_id": "org.gnome.texteditor",
+        "aliases": [
+          "org.gnome.TextEditor",
+          "gnome-text-editor",
+          "Text Editor",
+          "gnome-text-editor",
+          "org.gnome.TextEditor"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Flatpak app",
+      "entry": "org.gnome.TextEditor.desktop",
+      "app": {
+        "bundle_id": "org.gnome.texteditor",
+        "aliases": [
+          "org.gnome.TextEditor",
+          "gnome-text-editor",
+          "Text Editor",
+          "gnome-text-editor",
+          "org.gnome.TextEditor"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Flatpak app",
+      "entry": "gnome-text-editor",
+      "app": {
+        "bundle_id": "org.gnome.texteditor",
+        "aliases": [
+          "org.gnome.TextEditor",
+          "gnome-text-editor",
+          "Text Editor",
+          "gnome-text-editor",
+          "org.gnome.TextEditor"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Flatpak app",
+      "entry": "org.gnome.*",
+      "app": {
+        "bundle_id": "org.gnome.texteditor",
+        "aliases": [
+          "org.gnome.TextEditor",
+          "gnome-text-editor",
+          "Text Editor",
+          "gnome-text-editor",
+          "org.gnome.TextEditor"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Flatpak app",
+      "entry": "gedit",
+      "app": {
+        "bundle_id": "org.gnome.texteditor",
+        "aliases": [
+          "org.gnome.TextEditor",
+          "gnome-text-editor",
+          "Text Editor",
+          "gnome-text-editor",
+          "org.gnome.TextEditor"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "linux",
+      "case": "Snap app",
+      "entry": "firefox",
+      "app": {
+        "bundle_id": "firefox",
+        "aliases": [
+          "navigator",
+          "firefox",
+          "Firefox",
+          "firefox",
+          "firefox"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Snap app",
+      "entry": "Firefox",
+      "app": {
+        "bundle_id": "firefox",
+        "aliases": [
+          "navigator",
+          "firefox",
+          "Firefox",
+          "firefox",
+          "firefox"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Snap app",
+      "entry": "chromium",
+      "app": {
+        "bundle_id": "firefox",
+        "aliases": [
+          "navigator",
+          "firefox",
+          "Firefox",
+          "firefox",
+          "firefox"
+        ]
+      },
+      "match": false
+    },
+    {
+      "os": "linux",
+      "case": "AppImage",
+      "entry": "freecad",
+      "app": {
+        "bundle_id": "freecad",
+        "aliases": [
+          "freecad",
+          "freecad",
+          "FreeCAD",
+          "freecad",
+          "FreeCAD.AppImage"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "AppImage",
+      "entry": "FreeCAD.AppImage",
+      "app": {
+        "bundle_id": "freecad",
+        "aliases": [
+          "freecad",
+          "freecad",
+          "FreeCAD",
+          "freecad",
+          "FreeCAD.AppImage"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "AppImage",
+      "entry": "/home/u/Apps/FreeCAD.AppImage",
+      "app": {
+        "bundle_id": "freecad",
+        "aliases": [
+          "freecad",
+          "freecad",
+          "FreeCAD",
+          "freecad",
+          "FreeCAD.AppImage"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Java app with the AWT default class",
+      "entry": "java",
+      "app": {
+        "bundle_id": "sun-awt-x11-xframepeer",
+        "aliases": [
+          "sun-awt-X11-XFramePeer",
+          "java",
+          "java"
+        ]
+      },
+      "match": true
+    },
+    {
+      "os": "linux",
+      "case": "Java app with the AWT default class",
+      "entry": "sun-awt-X11-XFramePeer",
+      "app": {
+        "bundle_id": "sun-awt-x11-xframepeer",
+        "aliases": [
+          "sun-awt-X11-XFramePeer",
+          "java",
+          "java"
+        ]
+      },
+      "match": true
+    }
+  ]
+}

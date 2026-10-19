@@ -18,11 +18,14 @@
 //!
 //! `bundle_id` scheme (stable key for the `application` table):
 //! * Windows: the AppUserModelID for packaged (UWP/MSIX) processes, else the
-//!   lowercase executable file name, for example `chrome.exe`. `exe` is always
-//!   the executable file name: an app list entry matches either
-//!   (`memory::exclusions::app_matches`), so `notepad.exe` also names the
-//!   packaged Windows 11 Notepad.
+//!   lowercase executable file name, for example `chrome.exe`.
 //! * Linux: the lowercase X11 `WM_CLASS` class, for example `firefox`.
+//!
+//! `aliases` hold the app's other identifiers (Windows: executable, package
+//! and display names; Linux: `WM_CLASS` instance, process, executable,
+//! Flatpak, Snap and AppImage names). App lists match any of them by the one
+//! rule, `memory::exclusions::app_matches`: `notepad.exe` names the classic and
+//! the packaged Windows 11 Notepad.
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
@@ -63,8 +66,49 @@ const ALWAYS_EXCLUDED: &[&str] = &["logonui.exe", "lockapp.exe", "consent.exe"];
 
 /// Kortix itself, never recorded: its own executables and the app the service
 /// runs in (`own`, from the request's `own_bundle_ids`).
-pub fn is_own(bundle: &str, exe: &str, own: &[String]) -> bool {
-    OWN_APPS.iter().any(|o| app_matches(o, bundle, exe)) || app_listed(own, bundle, exe)
+pub fn is_own(bundle: &str, aliases: &[String], own: &[String]) -> bool {
+    OWN_APPS.iter().any(|o| app_matches(o, bundle, aliases)) || app_listed(own, bundle, aliases)
+}
+
+/// The package family and package name of a packaged Windows app's
+/// AppUserModelID: `Microsoft.WindowsNotepad_8wekyb3d8bbwe!App` →
+/// `Microsoft.WindowsNotepad_8wekyb3d8bbwe`, `Microsoft.WindowsNotepad`.
+pub fn packaged_aliases(aumid: &str) -> Vec<String> {
+    let Some((family, _)) = aumid.split_once('!') else {
+        return Vec::new();
+    };
+    let mut out = vec![family.to_string()];
+    if let Some((name, _)) = family.rsplit_once('_') {
+        out.push(name.to_string());
+    }
+    out
+}
+
+/// A Linux process's other names: its executable's file name, its Snap name
+/// (`/snap/<name>/…`), its Flatpak app id (the `app-flatpak-<id>-<n>.scope`
+/// cgroup) and its AppImage file name (`APPIMAGE` in its environment).
+pub fn process_aliases(exe: &str, cgroup: &str, environ: &[u8]) -> Vec<String> {
+    let base = |p: &str| p.rsplit('/').next().unwrap_or("").to_string();
+    let exe = exe.trim_end_matches(" (deleted)");
+    let mut out = vec![base(exe)];
+    if let Some(rest) = exe.strip_prefix("/snap/") {
+        out.push(rest.split('/').next().unwrap_or("").to_string());
+    }
+    if let Some(scope) = cgroup
+        .split(['/', '\n'])
+        .find_map(|seg| seg.strip_prefix("app-flatpak-"))
+    {
+        let scope = scope.trim_end_matches(".scope");
+        out.push(scope.rsplit_once('-').map_or(scope, |(id, _)| id).to_string());
+    }
+    if let Some(image) = environ
+        .split(|&b| b == 0)
+        .find_map(|kv| kv.strip_prefix(b"APPIMAGE="))
+    {
+        out.push(base(&String::from_utf8_lossy(image)));
+    }
+    out.retain(|a| !a.is_empty());
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,8 +150,8 @@ pub struct Foreground {
     pub id: u64,
     pub pid: u32,
     pub bundle_id: String,
-    /// Windows: the lowercase executable file name. Empty elsewhere.
-    pub exe: String,
+    /// The app's other identifiers (see the module doc).
+    pub aliases: Vec<String>,
     pub name: String,
     pub version: String,
     pub title: String,
@@ -119,8 +163,8 @@ pub struct WinInfo {
     pub id: u64,
     pub pid: u32,
     pub bundle_id: String,
-    /// Windows: the lowercase executable file name. Empty elsewhere.
-    pub exe: String,
+    /// The app's other identifiers (see the module doc).
+    pub aliases: Vec<String>,
     pub app_name: String,
     pub title: String,
     pub rect: Rect,
@@ -177,9 +221,9 @@ impl Include {
     }
 
     /// The app is included, or the page's website is. Off: always true.
-    pub fn allows(&self, bundle: &str, exe: &str, url: Option<&str>) -> bool {
+    pub fn allows(&self, bundle: &str, aliases: &[String], url: Option<&str>) -> bool {
         !self.on
-            || app_listed(&self.apps, bundle, exe)
+            || app_listed(&self.apps, bundle, aliases)
             || url.is_some_and(|u| url_excluded(u, &self.domains))
     }
 }
@@ -193,7 +237,7 @@ pub fn plan_displays<'a>(
     windows: &'a [WinInfo],
     displays: &[DisplayInfo],
     url_of: &dyn Fn(&WinInfo) -> Option<String>,
-    excluded_app: &dyn Fn(&str, &str) -> bool,
+    excluded_app: &dyn Fn(&str, &[String]) -> bool,
     excluded_domains: &[String],
     exclude_private: bool,
     record_unknown: bool,
@@ -205,10 +249,10 @@ pub fn plan_displays<'a>(
             return !record_unknown || include.on;
         }
         let url = url_of(w);
-        excluded_app(&bundle, &w.exe)
+        excluded_app(&bundle, &w.aliases)
             || (exclude_private && looks_private(&w.title))
             || url.as_deref().is_some_and(|u| url_excluded(u, excluded_domains))
-            || !include.allows(&bundle, &w.exe, url.as_deref())
+            || !include.allows(&bundle, &w.aliases, url.as_deref())
     };
     let hidden: HashSet<u64> = windows
         .iter()
@@ -396,8 +440,8 @@ fn probe(_req: &Value) -> Result<Value> {
     let Some(fg) = os::foreground() else {
         return skip(res, "no_frontmost_app");
     };
-    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name});
-    if is_own(&fg.bundle_id, &fg.exe, &[]) {
+    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "aliases": fg.aliases, "name": fg.name});
+    if is_own(&fg.bundle_id, &fg.aliases, &[]) {
         return skip(res, "self_on_screen");
     }
     res["title"] = json!(fg.title);
@@ -481,15 +525,15 @@ fn capture(req: &Value) -> Result<Value> {
     let Some(fg) = os::foreground() else {
         return skip(res, "no_frontmost_app");
     };
-    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name, "version": fg.version});
+    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "aliases": fg.aliases, "name": fg.name, "version": fg.version});
     let fg_id = fg.bundle_id.to_lowercase();
     if fg_id.is_empty() && !record_unknown {
         return skip(res, "unknown_bundle");
     }
-    if app_listed(&excluded, &fg_id, &fg.exe) {
+    if app_listed(&excluded, &fg_id, &fg.aliases) {
         return skip(res, "excluded_app");
     }
-    if is_own(&fg_id, &fg.exe, &[]) {
+    if is_own(&fg_id, &fg.aliases, &[]) {
         return skip(res, "self_on_screen");
     }
 
@@ -510,7 +554,7 @@ fn capture(req: &Value) -> Result<Value> {
     {
         return skip(res, "excluded_domain");
     }
-    if !include.allows(&fg_id, &fg.exe, url.as_deref()) {
+    if !include.allows(&fg_id, &fg.aliases, url.as_deref()) {
         return skip(res, "not_included");
     }
     if want_ax {
@@ -529,7 +573,7 @@ fn capture(req: &Value) -> Result<Value> {
 
     let mut shot = os::screenshot(fg.rect).map_err(|e| anyhow!("capture_failed: {e:#}"))?;
     let hide = |w: &WinInfo| {
-        app_listed(&excluded, &w.bundle_id, &w.exe) || is_own(&w.bundle_id, &w.exe, &[])
+        app_listed(&excluded, &w.bundle_id, &w.aliases) || is_own(&w.bundle_id, &w.aliases, &[])
     };
     redact(&mut shot.image, &shot.display.rect, &windows, &hide);
     let image = fit(shot.image, max_width, max_height);
@@ -613,20 +657,20 @@ fn capture_all(req: &Value) -> Result<Value> {
     }
     let own = strings("own_bundle_ids");
     let excluded_app =
-        |b: &str, exe: &str| app_listed(&excluded, b, exe) || is_own(b, exe, &own);
+        |b: &str, aliases: &[String]| app_listed(&excluded, b, aliases) || is_own(b, aliases, &own);
     let fg = os::foreground();
     let fg_url = fg.as_ref().and_then(os::browser_url);
     if let Some(fg) = &fg {
         let id = fg.bundle_id.to_lowercase();
-        let hidden = excluded_app(&id, &fg.exe)
+        let hidden = excluded_app(&id, &fg.aliases)
             || (id.is_empty() && !record_unknown)
             || (exclude_private && looks_private(&fg.title))
             || fg_url
                 .as_deref()
                 .is_some_and(|u| url_excluded(u, &excluded_domains))
-            || !include.allows(&id, &fg.exe, fg_url.as_deref());
+            || !include.allows(&id, &fg.aliases, fg_url.as_deref());
         if !hidden {
-            res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name, "version": fg.version});
+            res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "aliases": fg.aliases, "name": fg.name, "version": fg.version});
             res["title"] = json!(fg.title);
             if let Some(u) = &fg_url {
                 res["url"] = json!(u);
@@ -1238,7 +1282,7 @@ mod tests {
             id,
             pid: 1,
             bundle_id: bundle.into(),
-            exe: String::new(),
+            aliases: Vec::new(),
             app_name: bundle.into(),
             title: String::new(),
             rect: Rect { x, y, w, h },
@@ -1292,8 +1336,9 @@ mod tests {
         ];
         let url = |w: &WinInfo| (w.id == 40).then(|| "https://login.bank.example/s".to_string());
         let own = vec!["kortix.exe".to_string()];
-        let excluded =
-            |bundle: &str, exe: &str| bundle == "1password.exe" || is_own(bundle, exe, &own);
+        let excluded = |bundle: &str, aliases: &[String]| {
+            bundle == "1password.exe" || is_own(bundle, aliases, &own)
+        };
         let plan = plan_displays(
             &windows,
             &displays,
@@ -1342,13 +1387,15 @@ mod tests {
             plan.hidden.contains(&40),
             "a website not included is hidden, even in a browser"
         );
-        let slack_excluded = |b: &str, _: &str| b == "slack.exe";
+        let slack_excluded = |b: &str, _: &[String]| b == "slack.exe";
         let plan = plan_displays(&windows, &displays, &gh, &slack_excluded, &[], true, false, &include);
         assert!(plan.hidden.contains(&30), "an exclusion wins over an inclusion");
     }
 
+    /// Per-window masking and inclusion use the same identifiers as the front app:
+    /// a packaged Windows 11 Notepad beside the focused window.
     #[test]
-    fn a_packaged_windows_app_matches_its_exe_name_in_every_list() {
+    fn a_packaged_windows_app_is_masked_and_included_by_its_exe_name() {
         let display = [DisplayInfo {
             id: 1,
             rect: Rect {
@@ -1361,16 +1408,17 @@ mod tests {
             main: true,
             scale: 1.0,
         }];
-        // Windows 11 Notepad: a packaged app, its id an AppUserModelID.
         let aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App";
-        let mut notepad = win(1, aumid, 0, 0, 1920, 1080);
-        notepad.exe = "notepad.exe".into();
-        let mut edge = win(2, "msedge.exe", 0, 0, 1920, 1080);
-        edge.exe = "msedge.exe".into();
-        let windows = vec![notepad, edge];
+        let mut edge = win(1, "msedge.exe", 0, 0, 960, 1080);
+        edge.aliases = vec!["msedge.exe".into(), "Microsoft Edge".into()];
+        edge.focused = true;
+        let mut notepad = win(2, aumid, 960, 0, 960, 1080);
+        notepad.aliases = packaged_aliases(aumid);
+        notepad.aliases.extend(["notepad.exe".into(), "Notepad".into()]);
+        let windows = vec![edge, notepad];
         let no_url = |_: &WinInfo| None;
         let listed = vec!["notepad.exe".to_string()];
-        let excluded = |b: &str, exe: &str| app_listed(&listed, b, exe);
+        let excluded = |b: &str, aliases: &[String]| app_listed(&listed, b, aliases);
         let plan = plan_displays(
             &windows,
             &display,
@@ -1381,30 +1429,67 @@ mod tests {
             false,
             &Include::default(),
         );
-        assert!(plan.hidden.contains(&1), "excluded by its exe name");
-        assert!(plan.covered.contains(&1), "it fills the display: no frame");
-
-        let none = |_: &str, _: &str| false;
-        let include = Include {
-            on: true,
-            apps: vec!["notepad.exe".into()],
-            domains: vec![],
-        };
-        let plan = plan_displays(&windows, &display, &no_url, &none, &[], true, false, &include);
-        assert!(!plan.hidden.contains(&1), "Notepad is included");
-        assert!(plan.hidden.contains(&2), "Edge is not");
+        assert_eq!(
+            plan.hidden.iter().copied().collect::<Vec<_>>(),
+            [2],
+            "masked while not in front"
+        );
         assert_eq!(plan.top.get(&1).map(|w| w.id), Some(1));
-        // The AppUserModelID still names it.
-        let by_aumid = Include {
-            on: true,
-            apps: vec![aumid.to_lowercase()],
-            domains: vec![],
-        };
-        assert!(by_aumid.allows(aumid, "notepad.exe", None));
-        assert!(!by_aumid.allows("msedge.exe", "msedge.exe", None));
+
+        let none = |_: &str, _: &[String]| false;
+        for entry in ["notepad.exe", "Microsoft.WindowsNotepad", aumid] {
+            let include = Include {
+                on: true,
+                apps: vec![entry.to_lowercase()],
+                domains: vec![],
+            };
+            let plan = plan_displays(&windows, &display, &no_url, &none, &[], true, false, &include);
+            assert_eq!(
+                plan.hidden.iter().copied().collect::<Vec<_>>(),
+                [1],
+                "{entry}: only Notepad"
+            );
+        }
         // Kortix's own executables, packaged or not.
-        assert!(is_own("Kortix.Capture_x!App", "kortix-capture.exe", &[]));
-        assert!(!is_own("msedge.exe", "msedge.exe", &[]));
+        assert!(is_own("Kortix.Capture_x!App", &["kortix-capture.exe".into()], &[]));
+        assert!(!is_own("msedge.exe", &["msedge.exe".into()], &[]));
+    }
+
+    #[test]
+    fn a_linux_process_is_also_named_by_its_executable_snap_flatpak_and_appimage() {
+        assert_eq!(process_aliases("/usr/bin/gnome-text-editor", "0::/user.slice", b""), ["gnome-text-editor"]);
+        assert_eq!(
+            process_aliases("/snap/firefox/4793/usr/lib/firefox/firefox", "", b""),
+            ["firefox", "firefox"]
+        );
+        assert_eq!(
+            process_aliases(
+                "/app/bin/gnome-text-editor",
+                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-org.gnome.TextEditor-12345.scope\n",
+                b""
+            ),
+            ["gnome-text-editor", "org.gnome.TextEditor"]
+        );
+        assert_eq!(
+            process_aliases(
+                "/tmp/.mount_FreeCAD/usr/bin/freecad (deleted)",
+                "",
+                b"HOME=/home/u\0APPIMAGE=/home/u/Apps/FreeCAD.AppImage\0"
+            ),
+            ["freecad", "FreeCAD.AppImage"]
+        );
+        let aliases = process_aliases("/app/bin/x", "0::/app-flatpak-org.gnome.TextEditor-1.scope", b"");
+        assert!(app_listed(&["org.gnome.texteditor".into()], "gnome-text-editor", &aliases));
+        assert!(app_listed(&["freecad".into()], "", &process_aliases("/x", "", b"APPIMAGE=/a/FreeCAD.AppImage")));
+    }
+
+    #[test]
+    fn a_packaged_app_is_also_named_by_its_package() {
+        assert_eq!(
+            packaged_aliases("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"),
+            ["Microsoft.WindowsNotepad_8wekyb3d8bbwe", "Microsoft.WindowsNotepad"]
+        );
+        assert!(packaged_aliases("notepad.exe").is_empty());
     }
 
     #[test]

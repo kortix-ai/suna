@@ -155,6 +155,7 @@ fn window_rect(k: &Conn, w: Window) -> Option<Rect> {
 #[derive(Clone, Default)]
 struct AppMeta {
     bundle_id: String,
+    aliases: Vec<String>,
     name: String,
     pid: u32,
 }
@@ -244,17 +245,21 @@ fn app_meta(k: &Conn, w: Window) -> AppMeta {
         .and_then(|v| v.first().copied())
         .unwrap_or(0);
     // WM_CLASS is "instance\0Class\0"; the class part is the stable identity.
-    let class = prop_bytes(k, w, "WM_CLASS", AtomEnum::STRING)
+    let (instance, class) = prop_bytes(k, w, "WM_CLASS", AtomEnum::STRING)
         .map(|b| {
-            let parts: Vec<&[u8]> = b.split(|&c| c == 0).filter(|p| !p.is_empty()).collect();
-            String::from_utf8_lossy(parts.get(1).or(parts.first()).copied().unwrap_or(b""))
-                .to_lowercase()
+            let parts: Vec<String> = b
+                .split(|&c| c == 0)
+                .filter(|p| !p.is_empty())
+                .map(|p| String::from_utf8_lossy(p).to_lowercase())
+                .collect();
+            let class = parts.get(1).or(parts.first()).cloned().unwrap_or_default();
+            (parts.first().cloned().unwrap_or_default(), class)
         })
         .unwrap_or_default();
+    let proc_file = |f: &str| std::fs::read(format!("/proc/{pid}/{f}")).unwrap_or_default();
+    let comm = String::from_utf8_lossy(&proc_file("comm")).trim().to_lowercase();
     let bundle_id = if class.is_empty() && pid != 0 {
-        std::fs::read_to_string(format!("/proc/{pid}/comm"))
-            .map(|s| s.trim().to_lowercase())
-            .unwrap_or_default()
+        comm.clone()
     } else {
         class
     };
@@ -262,8 +267,18 @@ fn app_meta(k: &Conn, w: Window) -> AppMeta {
         .map(|e| e.name)
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| bundle_id.clone());
+    let mut aliases = vec![instance, comm, name.clone()];
+    if pid != 0 {
+        let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let cgroup = String::from_utf8_lossy(&proc_file("cgroup")).into_owned();
+        aliases.extend(process_aliases(&exe, &cgroup, &proc_file("environ")));
+    }
+    aliases.retain(|a| !a.is_empty());
     AppMeta {
         bundle_id,
+        aliases,
         name,
         pid,
     }
@@ -288,7 +303,7 @@ pub fn foreground() -> Option<Foreground> {
             id: active as u64,
             pid: m.pid,
             bundle_id: m.bundle_id,
-            exe: String::new(),
+            aliases: m.aliases,
             name: m.name,
             version: String::new(),
             title: window_title(k, active),
@@ -345,7 +360,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 id: w as u64,
                 pid: m.pid,
                 bundle_id: m.bundle_id,
-                exe: String::new(),
+                aliases: m.aliases,
                 app_name: m.name,
                 title: window_title(k, w),
                 rect,

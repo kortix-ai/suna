@@ -6,6 +6,10 @@
 //!   window list, because a desktop grab cannot exclude windows.
 //! * Foreground / process: `GetForegroundWindow`, `QueryFullProcessImageNameW`,
 //!   `GetApplicationUserModelId` for packaged apps, version resource for name.
+//!   A process the recorder may not open (an elevated or protected one) keeps
+//!   its executable name from a process snapshot, so it is never "unknown". A
+//!   frame-hosted UWP window whose app process is not found is named by the
+//!   window's AppUserModelID property.
 //! * URL and AX tree: UI Automation.
 //! * OCR: `Windows.Media.Ocr` (needs an installed OCR language pack).
 //! * Icons: `IShellItemImageFactory`. Video: Media Foundation H.264.
@@ -59,6 +63,9 @@ use windows::Win32::UI::HiDpi::{
     MDT_EFFECTIVE_DPI,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+use windows::Win32::UI::Shell::PropertiesSystem::{
+    IPropertyStore, SHGetPropertyStoreForWindow, PROPERTYKEY,
+};
 use windows::Win32::UI::Shell::{
     IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SIGDN_NORMALDISPLAY,
     SIIGBF_ICONONLY,
@@ -117,6 +124,8 @@ struct ProcInfo {
     bundle_id: String,
     /// The lowercase executable file name, also for packaged apps.
     exe: String,
+    /// Every other identifier: executable, package family and package name, display name.
+    aliases: Vec<String>,
     name: String,
     version: String,
     path: String,
@@ -243,29 +252,97 @@ fn proc_info(pid: u32) -> Option<ProcInfo> {
             return Some(info.clone());
         }
     }
-    let (path, aumid) = exe_and_aumid(pid)?;
+    // Not openable (elevated, protected): the snapshot still names its executable.
+    let (path, aumid) = exe_and_aumid(pid).or_else(|| Some((snapshot_exe(pid)?, None)))?;
     let file = Path::new(&path)
         .file_name()?
         .to_string_lossy()
         .to_lowercase();
-    let (desc, version) = version_info(&path);
+    let (desc, version) = if path.contains('\\') {
+        version_info(&path)
+    } else {
+        Default::default()
+    };
     let stem = Path::new(&path)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let name = if desc.trim().is_empty() {
+        stem
+    } else {
+        desc.trim().to_string()
+    };
+    let aumid = aumid.filter(|a| !a.is_empty());
+    let mut aliases = vec![file.clone()];
+    aliases.extend(aumid.as_deref().map(packaged_aliases).unwrap_or_default());
+    aliases.push(name.clone());
     let info = ProcInfo {
-        bundle_id: aumid.filter(|a| !a.is_empty()).unwrap_or_else(|| file.clone()),
+        bundle_id: aumid.unwrap_or_else(|| file.clone()),
         exe: file,
-        name: if desc.trim().is_empty() {
-            stem
-        } else {
-            desc.trim().to_string()
-        },
+        aliases,
+        name,
         version,
         path,
     };
     cache.insert(pid, (Instant::now(), info.clone()));
     Some(info)
+}
+
+/// The executable file name of `pid` from a process snapshot, which needs no
+/// access to the process itself.
+fn snapshot_exe(pid: u32) -> Option<String> {
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+        let mut entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut found = None;
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                if entry.th32ProcessID == pid {
+                    found = Some(wide_to_string(&entry.szExeFile)).filter(|n| !n.is_empty());
+                    break;
+                }
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+        found
+    }
+}
+
+/// The window's AppUserModelID property (`PKEY_AppUserModel_ID`), which a UWP
+/// frame window carries even when its app process is not found.
+fn window_aumid(hwnd: HWND) -> Option<String> {
+    const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 5,
+    };
+    unsafe {
+        let store: IPropertyStore = SHGetPropertyStoreForWindow(hwnd).ok()?;
+        let value = store.GetValue(&PKEY_APP_USER_MODEL_ID).ok()?;
+        Some(value.to_string()).filter(|a| !a.is_empty())
+    }
+}
+
+/// The app of a window: its process's, or for a frame-hosted UWP window whose
+/// app process is not found, the window's own AppUserModelID.
+fn window_app(hwnd: HWND, pid: u32) -> ProcInfo {
+    let info = proc_info(pid).unwrap_or_default();
+    if info.exe != "applicationframehost.exe" {
+        return info;
+    }
+    match window_aumid(hwnd) {
+        Some(aumid) => ProcInfo {
+            aliases: packaged_aliases(&aumid),
+            bundle_id: aumid,
+            ..info
+        },
+        None => info,
+    }
 }
 
 /// Windows hosts UWP windows in `ApplicationFrameHost.exe`; the app's own
@@ -333,12 +410,12 @@ pub fn foreground() -> Option<Foreground> {
             return None;
         }
         let pid = real_pid(hwnd, window_pid(hwnd));
-        let info = proc_info(pid).unwrap_or_default();
+        let info = window_app(hwnd, pid);
         Some(Foreground {
             id: hwnd_id(hwnd),
             pid,
             bundle_id: info.bundle_id,
-            exe: info.exe,
+            aliases: info.aliases,
             name: info.name,
             version: info.version,
             title: window_text(hwnd),
@@ -393,12 +470,12 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 continue;
             }
             let pid = real_pid(hwnd, window_pid(hwnd));
-            let info = proc_info(pid).unwrap_or_default();
+            let info = window_app(hwnd, pid);
             out.push(WinInfo {
                 id: hwnd_id(hwnd),
                 pid,
                 bundle_id: info.bundle_id,
-                exe: info.exe,
+                aliases: info.aliases,
                 app_name: info.name,
                 title,
                 rect,

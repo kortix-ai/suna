@@ -256,7 +256,11 @@ fn front_of(resp: &Value) -> Option<Front> {
     let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     Some(Front {
         bundle_id: s(app, "bundle_id"),
-        exe: s(app, "exe").to_lowercase(),
+        aliases: app
+            .get("aliases")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default(),
         url: resp.get("url").and_then(Value::as_str).map(str::to_string),
         title: s(resp, "title"),
     })
@@ -348,7 +352,7 @@ pub(crate) mod tests {
     pub fn front(bundle_id: &str, url: Option<&str>, title: &str) -> Front {
         Front {
             bundle_id: bundle_id.into(),
-            exe: String::new(),
+            aliases: Vec::new(),
             url: url.map(str::to_string),
             title: title.into(),
         }
