@@ -21318,7 +21318,12 @@
     "resultSpecific": "{count, plural, one {Само администратори пројекта и # који си изабрао могу да отворе ову фасциклу.} few {Само администратори пројекта и # које си изабрао могу да отворе ову фасциклу.} other {Само администратори пројекта и # које си изабрао могу да отворе ову фасциклу.}}",
     "you": "Ти",
     "manageFolderAccess": "Управљај приступом",
-    "viewFolderAccess": "Прикажи приступ"
+    "viewFolderAccess": "Прикажи приступ",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Прикажи податке",

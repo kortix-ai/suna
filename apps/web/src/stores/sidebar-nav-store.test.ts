@@ -33,7 +33,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'settings', visibility: 'always' },
       { id: 'files', visibility: 'never' },
     ]);
-    expect(ids(out)).toEqual(['customize', 'apps', 'reminders', 'files']);
+    expect(ids(out)).toEqual(['customize', 'files', 'apps', 'reminders']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
 
@@ -44,9 +44,9 @@ describe('normalizeSidebarNav', () => {
     ]);
     expect(out).toEqual([
       { id: 'customize', visibility: 'always' },
+      { id: 'files', visibility: 'always' },
       { id: 'apps', visibility: 'never' },
       { id: 'reminders', visibility: 'active' },
-      { id: 'files', visibility: 'always' },
     ]);
   });
 
@@ -59,9 +59,9 @@ describe('normalizeSidebarNav', () => {
 describe('moveSidebarNavItem', () => {
   test('moves a row one step and stops at the edges', () => {
     const items = normalizeSidebarNav(null);
-    expect(ids(moveSidebarNavItem(items, 'apps', -1)).slice(0, 2)).toEqual(['apps', 'customize']);
+    expect(ids(moveSidebarNavItem(items, 'files', -1)).slice(0, 2)).toEqual(['files', 'customize']);
     expect(ids(moveSidebarNavItem(items, 'customize', -1))).toEqual(ids(items));
-    expect(ids(moveSidebarNavItem(items, 'files', 1))).toEqual(ids(items));
+    expect(ids(moveSidebarNavItem(items, 'reminders', 1))).toEqual(ids(items));
   });
 });
 

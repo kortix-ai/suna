@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import Loading from '@/components/ui/loading';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -89,7 +90,9 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
+  trailing,
   rootLabel,
+  rootIcon,
   listingAs,
   panels,
   children,
@@ -101,6 +104,13 @@ export function DriveExplorer({
    * strip. Sharing the row is what lets that host drop its own header.
    */
   leading?: ReactNode;
+  /**
+   * Host actions for the END of the action row. When set, New, the view menu
+   * and these sit in one secondary button group, `trailing` last.
+   */
+  trailing?: ReactNode;
+  /** Glyph before the first crumb. */
+  rootIcon?: ReactNode;
   /** The first crumb of the path bar (default: the store root's name). */
   rootLabel?: string;
   /**
@@ -768,34 +778,51 @@ export function DriveExplorer({
     >
       <div className={DRIVE_ACTION_ROW_CLASS}>
         {leading}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <DriveNewMenu
-            compact={embedded}
-            onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
-            onNewFile={
-              canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setIsCreatingFile(true) : undefined
-            }
-            onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
-          />
-          <DriveViewMenu
-            showSearch={capabilities.search}
-            showHiddenToggle={capabilities.hiddenToggle}
-            onRefresh={() => refetchFiles()}
-            isRefreshing={isFetching}
-            onDownloadDir={() => {
-              const dirName = isRootPath
-                ? 'workspace'
-                : currentPath.split('/').filter(Boolean).pop() || 'directory';
-              const dirPath = isRootPath ? '/workspace' : currentPath;
-              downloadDir(dirPath, dirName);
-            }}
-            isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-            sortDisabled={partial}
-          />
-        </div>
+        {(() => {
+          const newMenu = (
+            <DriveNewMenu
+              compact={embedded}
+              onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
+              onNewFile={
+                canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setIsCreatingFile(true) : undefined
+              }
+              onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
+            />
+          );
+          const viewMenu = (
+            <DriveViewMenu
+              variant={trailing ? 'secondary' : 'ghost'}
+              showSearch={capabilities.search}
+              showHiddenToggle={capabilities.hiddenToggle}
+              onRefresh={() => refetchFiles()}
+              isRefreshing={isFetching}
+              onDownloadDir={() => {
+                const dirName = isRootPath
+                  ? 'workspace'
+                  : currentPath.split('/').filter(Boolean).pop() || 'directory';
+                const dirPath = isRootPath ? '/workspace' : currentPath;
+                downloadDir(dirPath, dirName);
+              }}
+              isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+              sortDisabled={partial}
+            />
+          );
+          return trailing ? (
+            <ButtonGroup className="ml-auto shrink-0">
+              {newMenu}
+              {viewMenu}
+              {trailing}
+            </ButtonGroup>
+          ) : (
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {newMenu}
+              {viewMenu}
+            </div>
+          );
+        })()}
       </div>
 
-      <DrivePathBar as="row" rootLabel={rootLabel} />
+      <DrivePathBar as="row" rootLabel={rootLabel} rootIcon={rootIcon} />
 
       {/* Search overlay */}
       {capabilities.search && isSearchOpen && <FileSearch />}

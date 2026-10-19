@@ -8,24 +8,22 @@ import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 import { CountBadge } from '@/components/ui/count-badge';
-import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useProjectNavRows } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { getProject } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
-import { FoldersIcon, GitBranchIcon } from '@phosphor-icons/react';
+import { contract, qk } from '@kortix/sdk/react';
+import { FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 
 import { filesRow } from './files-nav-label';
 
 /**
- * Top-level Files entry, decided by `useProjectNavRows` (the same rule the
- * More menu and the Customize row read). For a caller with `project.file.read`
- * it is the repo browser: Repo when the project has Volumes on (the shared
- * folders are then Files, a tab under Customize), Files otherwise. That leaf
- * is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
- * `member` role), so a plain member never gets the repo browser: with Volumes
- * on, this row opens their shared folders instead, and carries their conflict
- * count. Absent until the probe answers.
+ * Top-level file entry, decided by `useProjectNavRows` (the same rule the
+ * More menu and the Customize row read). With Volumes on it is Drive, the
+ * shared folders, for every member: what each person sees follows folder
+ * access, and the row carries their open conflict count. The repo browser is
+ * then Customize → Repo, admins only. With Volumes off it is Files, the repo
+ * browser, for a caller with `project.file.read` (editor-tier since IAM v1).
+ * Absent until the probe answers.
  *
  * A real `<Link prefetch>`, not `router.push`. The button form could not be
  * prefetched, so every click paid for the route's RSC payload AND its JS chunk
@@ -51,16 +49,15 @@ export function ProjectFilesNavItem() {
   const projectId = params?.id;
   const target = useProjectNavRows(projectId).files;
   const queryClient = useQueryClient();
-  // Volumes on for the project (its derived `drives` flag).
-  const volumes = useFeatureFlag(projectId, 'drives');
   const tDrives = useTranslations('drives');
-  const drive = useProjectDrive(projectId, target === 'folders');
-  const conflicts = target === 'folders' ? (drive.data?.openConflicts ?? 0) : 0;
+  const drive = useProjectDrive(projectId, target === 'drive');
+  const conflicts = target === 'drive' ? (drive.data?.openConflicts ?? 0) : 0;
   const isActive =
     !!pathname &&
-    (target === 'folders'
-      ? activeCapabilityTab(pathname) === 'files'
-      : /^\/projects\/[^/]+\/files(\/|$)/.test(pathname));
+    (target === 'drive'
+      ? /^\/projects\/[^/]+\/drive(\/|$)/
+      : /^\/projects\/[^/]+\/files(\/|$)/
+    ).test(pathname);
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,
   // `project-layout/resolve-files-ref.ts`) until it knows the project's
@@ -85,7 +82,7 @@ export function ProjectFilesNavItem() {
   // No project id means no valid href. The old onClick already no-op'd in this
   // case, so rendering a dead button was never useful.
   if (!target || !projectId) return null;
-  const { label, href } = filesRow(projectId, target, volumes.enabled);
+  const { label, href } = filesRow(projectId, target);
 
   return (
     <ProjectNavRow
@@ -98,7 +95,7 @@ export function ProjectFilesNavItem() {
       onFocus={prefetchSummary}
       onTouchStart={prefetchSummary}
     >
-      {label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />}
+      {label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />}
       {t(label)}
       {conflicts > 0 ? (
         <span className="ml-auto flex shrink-0 items-center gap-1">

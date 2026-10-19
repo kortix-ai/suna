@@ -8,6 +8,7 @@ import { NOTIFICATION_KINDS, type NotificationKindName, type NotificationKindPre
 import type { AppEnv } from '../types';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { supabaseAuth } from '../middleware/auth';
+import { createDeviceTokenReleaseRateLimitMiddleware } from '../middleware/rate-limit';
 import { isUuid } from '../shared/validate';
 import { pushDeviceTokenStore, type PushDeviceTokenStore } from './device-tokens';
 import { isNotificationEmailAvailable } from './email-delivery';
@@ -44,6 +45,8 @@ const RegisterBodySchema = z
     preferences: PreferencesSchema.optional(),
   })
   .openapi('RegisterDeviceTokenRequest');
+
+const ReleaseBodySchema = z.object({ device_token: DeviceToken }).openapi('ReleaseDeviceTokenRequest');
 
 const RegisterResponseSchema = z
   .object({ success: z.literal(true), message: z.string() })
@@ -205,7 +208,34 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
   const store = () => deps.store ?? pushDeviceTokenStore();
   const services: NotificationServices = { ...LIVE_SERVICES, ...deps.services };
   const app = makeOpenApiApp<AppEnv>();
-  app.use('*', deps.authMiddleware ?? supabaseAuth);
+  const authMiddleware = deps.authMiddleware ?? supabaseAuth;
+  const isRelease = (c: Context) => c.req.method === 'POST' && c.req.path.endsWith('/device-token/release');
+  // The release route is public: a signed-out app has no credential left.
+  app.use('*', (c, next) => (isRelease(c) ? next() : authMiddleware(c, next)));
+  app.on('POST', '/device-token/release', createDeviceTokenReleaseRateLimitMiddleware());
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/device-token/release',
+      tags: ['notifications'],
+      summary: 'Release a push device token after sign-out',
+      description:
+        'Deletes the row for this device token, whoever owns it. No credential: a signed-out app calls it when it could not ' +
+        'unregister while signed in. An Expo push token is unguessable, and whoever holds one can already push to that device, ' +
+        'so deleting by token gives a caller nothing new. Always 200 `{ ok: true }`, so the answer does not tell whether the token existed.',
+      request: { body: { required: true, content: { 'application/json': { schema: ReleaseBodySchema } } } },
+      responses: {
+        200: json(OkSchema, 'Token removed or already absent'),
+        ...errors(400, 429),
+      },
+    }),
+    async (c) => {
+      const { device_token } = c.req.valid('json');
+      await store().deleteTokens([device_token]);
+      return c.json({ ok: true as const }, 200);
+    },
+  );
 
   app.openapi(
     createRoute({
@@ -215,6 +245,7 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
       summary: 'Register this device for push notifications',
       description:
         'Upserts the device token for the caller. A token registered by another user moves to the caller. ' +
+        'Only an app sign-in (a session JWT) may register; a personal token gets 403. ' +
         'Omitted preference keys keep their stored value (true for a new token).',
       ...auth,
       request: {
@@ -228,6 +259,9 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
     async (c: any) => {
       const owner = deviceOwner(c);
       if (owner instanceof Response) return owner;
+      // A push goes only while the registering sign-in exists, so a row without one would never be pushed.
+      const signIn = signInOf(c);
+      if (!signIn) return c.json({ error: true, message: 'Device tokens require an app sign-in', status: 403 }, 403);
       const body = c.req.valid('json') as z.infer<typeof RegisterBodySchema>;
       const p = body.preferences;
       await store().upsert({
@@ -235,7 +269,7 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
         userId: owner,
         platform: body.device_type,
         provider: body.provider,
-        authSessionId: signInOf(c),
+        authSessionId: signIn,
         preferences: p && {
           enabled: p.enabled,
           onCompletion: p.on_completion,

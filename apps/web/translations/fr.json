@@ -21318,7 +21318,12 @@
     "resultSpecific": "{count, plural, one {Seuls les administrateurs du projet et celui que vous avez choisi peuvent ouvrir ce dossier.} other {Seuls les administrateurs du projet et les # que vous avez choisis peuvent ouvrir ce dossier.}}",
     "you": "Vous",
     "manageFolderAccess": "Gérer l’accès",
-    "viewFolderAccess": "Voir l’accès"
+    "viewFolderAccess": "Voir l’accès",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Afficher les données",

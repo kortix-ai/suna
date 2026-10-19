@@ -12,13 +12,12 @@ import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
@@ -148,16 +147,12 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Files is the one flag-gated tab: the project's shared folders exist only
-  // once the project turns `drives` on. Loading counts as off.
-  const drivesGate = useFeatureFlag(projectId, 'drives');
-  const drive = useProjectDrive(projectId, drivesGate.enabled);
-  const conflicts = drive.data?.openConflicts ?? 0;
-  const tDrives = useTranslations('drives');
+  // Repo (key `files`) is the one flag-gated tab: it exists only once the
+  // project turns `drives` on, and only for admins. `capabilityAccess()`
+  // applies both; before it settles the bar is invisible and Repo is left out.
   const access = useCapabilityAccess(projectId);
-  // `capabilityAccess()` already drops Files while `drives` is off.
   const tabs = allTabs.filter((tab) =>
-    access.settled ? access.tabs.includes(tab.key) : drivesGate.enabled || tab.key !== 'files',
+    access.settled ? access.tabs.includes(tab.key) : tab.key !== 'files',
   );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
@@ -168,14 +163,6 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
       <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
         {tab.label}
-        {tab.key === 'files' && conflicts > 0 ? (
-          <span
-            className="text-kortix-orange ml-1 text-xs font-medium tabular-nums"
-            aria-label={tDrives('conflictCount', { count: conflicts })}
-          >
-            {conflicts}
-          </span>
-        ) : null}
       </Link>
     </TabsTrigger>
   );
