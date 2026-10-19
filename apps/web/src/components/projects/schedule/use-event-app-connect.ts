@@ -28,7 +28,7 @@ import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { createConnector, listConnections, listConnectors } from '@kortix/sdk';
+import { createConnector, getConnectionOAuth2Status, listConnections, listConnectors } from '@kortix/sdk';
 import {
   contract,
   projectTriggerEventAppsKey,
@@ -60,14 +60,18 @@ async function connectMcpApp(
 ): Promise<string> {
   let slug = target.connector ?? '';
   let connectionId: string | null = null;
+  // The token the account held before this sign-in: done means a new one, not the old one
+  // (a parked trigger's account still holds the token the app refused).
+  let tokenBefore: string | null = null;
   const returnUrl = (connector: string) =>
     `${window.location.origin}${connectorHref(projectId, connector)}`;
   await runConnectLinkFlow(
     async () => {
       let signInUrl: string | null;
       if (slug) {
-        connectionId = (await options.deps.projectAccount(projectId, slug, target.name))
-          .connection_id;
+        connectionId = await sharedAccountOf(projectId, slug, target, options.deps);
+        const before = await getConnectionOAuth2Status(projectId, connectionId).catch(() => null);
+        tokenBefore = before?.status === 'active' ? (before.expires_at ?? 'active') : null;
         signInUrl = await options.deps.startSignIn(projectId, connectionId, returnUrl(slug));
       } else {
         if (!target.mcpUrl) throw new Error(`${target.name} has no MCP server to install.`);
@@ -76,6 +80,7 @@ async function connectMcpApp(
           {
             url: target.mcpUrl,
             appName: target.name,
+            ...(target.newConnectorSlug ? { slug: target.newConnectorSlug } : {}),
             signIn: true,
             audience: 'project',
             takenSlugs: options.takenSlugs,
@@ -94,19 +99,38 @@ async function connectMcpApp(
       return { connectUrl: signInUrl };
     },
     async () => {
-      const [{ connections }, { connectors }] = await Promise.all([
-        listConnections(projectId),
+      if (!connectionId) return { connected: false };
+      const [status, { connectors }] = await Promise.all([
+        getConnectionOAuth2Status(projectId, connectionId),
         listConnectors(projectId, { includeSchemas: false }),
       ]);
-      // The sign-in stores the credential, then re-reads the server's tools: the
-      // app's events exist only after both.
-      const signedIn = connections.some(
-        (c) => c.connection_id === connectionId && c.authorized === true,
-      );
+      // This sign-in stored a new token, then the server's tools were read again:
+      // the app's events exist only after both.
+      const signedIn = status.status === 'active' && (status.expires_at ?? 'active') !== tokenBefore;
       return { connected: signedIn && connectors.find((c) => c.slug === slug)?.status !== 'error' };
     },
   );
   return slug;
+}
+
+/**
+ * The project-owned account a trigger runs on: the one it names, else the
+ * connector's default, else the first. None yet: the connector's own.
+ */
+async function sharedAccountOf(
+  projectId: string,
+  slug: string,
+  target: EventAppTarget,
+  deps: AddMcpServerDeps,
+): Promise<string> {
+  const { connections } = await listConnections(projectId);
+  const shared = connections.filter((c) => c.connector_alias === slug && c.owner_type === 'project');
+  const picked = target.account
+    ? shared.find((c) => c.label === target.account)
+    : (shared.find((c) => c.is_default) ?? shared[0]);
+  if (picked) return picked.connection_id;
+  if (target.account) throw new Error(`${target.name} has no shared account labelled "${target.account}".`);
+  return (await deps.projectAccount(projectId, slug, target.name)).connection_id;
 }
 
 export function useEventAppConnect(projectId: string) {
@@ -158,6 +182,7 @@ export function useEventAppConnect(projectId: string) {
           {
             url: target.mcpUrl,
             appName: target.name,
+            ...(target.newConnectorSlug ? { slug: target.newConnectorSlug } : {}),
             audience: 'project',
             takenSlugs: takenSlugs(),
             returnUrl: () => window.location.href,

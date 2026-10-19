@@ -83,6 +83,16 @@ describe('addMcpServer', () => {
     expect(result.signInUrl).not.toBeNull();
   });
 
+  test('an app installed from a trigger takes the slug the API picked, and never replaces a taken one', async () => {
+    const { deps, drafts } = fakes({ signInPending: false });
+    await addMcpServer(
+      'p1',
+      { url: 'https://slack.example.test/mcp', appName: 'Slack', slug: 'slack-events', audience: 'project', takenSlugs: [], returnUrl: () => 'http://app/x' },
+      deps,
+    );
+    expect(drafts[0]).toMatchObject({ slug: 'slack-events', name: 'Slack', create_only: true });
+  });
+
   test('"Only you" makes no shared account and signs in a private one', async () => {
     const { deps, calls, drafts } = fakes();
     const result = await addMcpServer(

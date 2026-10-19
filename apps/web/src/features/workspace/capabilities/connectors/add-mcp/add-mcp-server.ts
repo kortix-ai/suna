@@ -86,6 +86,8 @@ export async function addMcpServer(
     url: string;
     /** A catalogue app's own server: the connector is named after the app. */
     appName?: string;
+    /** The slug to use, when the caller has one the API picked (never reserved or taken). */
+    slug?: string;
     /** Sign in even when the server lists its tools without a credential
      *  (Google's do): the caller already knows the sign-in is one click. */
     signIn?: boolean;
@@ -109,7 +111,9 @@ export async function addMcpServer(
   syncError: string | null;
 }> {
   const identity = input.appName
-    ? mcpAppIdentity(input.appName, input.takenSlugs)
+    ? input.slug
+      ? { slug: input.slug, name: input.appName }
+      : mcpAppIdentity(input.appName, input.takenSlugs)
     : mcpServerIdentity(input.url, input.takenSlugs);
   if (!identity) throw new Error('Enter the MCP server URL, starting with https://');
   const { slug, name } = identity;
@@ -120,6 +124,8 @@ export async function addMcpServer(
     url: input.url.trim(),
     transport: 'http',
     authorization_strategy: input.audience === 'private' ? 'user' : 'project',
+    // A slug another connector already has answers 409; it never replaces that connector.
+    create_only: true,
   });
   const account =
     input.audience === 'private'

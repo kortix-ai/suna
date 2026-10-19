@@ -793,7 +793,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <EventAppsStrip
                 projectId={projectId}
                 disabled={!canWrite}
-                onPick={(app) => openCreate('event', { app: app.app })}
+                onPick={(app) => openCreate('event', { app: app.app, source: app.source, provider: app.provider })}
               />
             ) : null}
 

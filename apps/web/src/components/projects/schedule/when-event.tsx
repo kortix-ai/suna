@@ -56,6 +56,7 @@ import {
   withEventPicked,
   withProfilePicked,
 } from './trigger-composer-logic';
+import { EventCount } from './event-count';
 import { useEventAppConnect } from './use-event-app-connect';
 
 function Skeletons() {
@@ -94,15 +95,6 @@ function SearchField({
 }
 
 /* ─── (a) No app yet: browse every app ──────────────────────────────────── */
-
-/** "3 events", or for an MCP app not connected yet, that its events come with the connection (its list and search tools). */
-function EventCount({ app }: { app: EventApp }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tComposer = useI18nTranslations('triggerComposer');
-  return eventAppSource(app) === 'mcp' && app.event_count === 0 && !app.connected
-    ? tComposer('mcpEventsOnConnect')
-    : tI18nComplete('text6e4a170bdf81', { count: app.event_count });
-}
 
 function AppTile({ app, onPick }: { app: EventApp; onPick: () => void }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');

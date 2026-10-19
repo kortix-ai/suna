@@ -27,9 +27,11 @@ export function EventCheckTimes({ trigger, now }: { trigger: ProjectTrigger; now
   if (event.status !== 'active' && event.status !== 'error') return null;
   const checked = event.checked_at ? relativeMinutes(event.checked_at, locale, now) : null;
   const next = event.next_check_at ? relativeMinutes(event.next_check_at, locale, now) : null;
+  // "Not checked yet" only for a live trigger: one in error may have stopped checking.
   const parts = [
-    checked ? t('mcpCheckedAt', { when: checked }) : t('mcpNotChecked'),
+    ...(checked ? [t('mcpCheckedAt', { when: checked })] : event.status === 'active' ? [t('mcpNotChecked')] : []),
     ...(next ? [t('mcpNextCheck', { when: next })] : []),
   ];
+  if (parts.length === 0) return null;
   return <p className="text-muted-foreground text-xs">{parts.join(' · ')}</p>;
 }

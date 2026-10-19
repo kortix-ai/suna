@@ -503,6 +503,8 @@ export interface EventAppTarget {
   source?: string;
   /** Source `mcp`: the catalogue MCP server to install. Null for a project MCP server, which has its connector. */
   mcpUrl?: string | null;
+  /** The shared account label the trigger names; null or absent: the connector's default. */
+  account?: string | null;
 }
 
 /** The add/connect target of an app in the picker. */

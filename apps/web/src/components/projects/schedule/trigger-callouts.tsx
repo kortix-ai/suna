@@ -90,6 +90,7 @@ export function TriggerCallouts({
                     name: app,
                     connector: event.connector,
                     source: event.source ?? event.provider ?? undefined,
+                    account: event.account,
                   })
                 }
               >
