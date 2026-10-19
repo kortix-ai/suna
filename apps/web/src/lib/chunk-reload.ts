@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/chunk-reload';
+export * from '@kortix/ui/internal/lib/chunk-reload';

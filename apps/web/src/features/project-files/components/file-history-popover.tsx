@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/file-history-popover';
+export * from '@kortix/ui/files/project/components/file-history-popover';

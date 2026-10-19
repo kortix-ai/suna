@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-body';
+export * from '@kortix/ui/session/thread/session-body';

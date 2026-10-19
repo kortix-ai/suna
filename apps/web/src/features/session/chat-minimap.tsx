@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/chat-minimap';
+export * from '@kortix/ui/session/thread/chat-minimap';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/components/index';
+export * from '@kortix/ui/files/project/components/index';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/hooks/server-health-state';
+export * from '@kortix/ui/files/runtime/hooks/server-health-state';

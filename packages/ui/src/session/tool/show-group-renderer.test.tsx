@@ -1,7 +1,7 @@
 import './tools/register';
-import { TooltipProvider } from '../../components/ui/tooltip';
+import { TooltipProvider } from '../../primitives/tooltip';
 import { IntlTestProvider } from '../../test-utils/intl';
-import type { ToolPart } from '../../shared/ui';
+import type { ToolPart } from '../../internal/session-types';
 import { sessionLogShowGroupCall, toolCallBlock } from '@kortix/sdk';
 import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/use-session-public-shares';
+export * from '@kortix/ui/internal/share/use-session-public-shares';

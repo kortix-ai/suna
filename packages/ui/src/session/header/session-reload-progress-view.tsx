@@ -1,8 +1,8 @@
-import Loading from '../../components/ui/loading';
+import Loading from '../../primitives/loading';
 import {
   RELOAD_PROGRESS_STEPS,
   reloadProgressPosition,
-} from '../../shared/hooks/projects/session-reload-progress';
+} from '../../internal/hooks/projects/session-reload-progress';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import type { SessionReloadPhase } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';

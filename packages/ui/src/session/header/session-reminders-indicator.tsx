@@ -11,23 +11,23 @@
  * their reminders here.
  */
 
-import { HoverPrefetchLink } from '../../shared/components/common/hover-prefetch-link';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { ConfirmDialog } from '../../components/ui/confirm-dialog';
-import Hint from '../../components/ui/hint';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
-import { errorToast, successToast } from '../../components/ui/toast';
-import { remindersHref } from '../../shared/features/workspace/capabilities/shared/capability-tab-routes';
-import { useCapabilityAccess } from '../../shared/features/workspace/project-sidebar/project-settings-nav';
+import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
+import { Badge } from '../../primitives/badge';
+import { Button } from '../../primitives/button';
+import { ConfirmDialog } from '../../primitives/confirm-dialog';
+import Hint from '../../primitives/hint';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { errorToast, successToast } from '../../primitives/toast';
+import { remindersHref } from '../../internal/lib/capability-tab-routes';
+import { useCapabilityAccess } from '../../internal/layout/project-settings-nav';
 import {
   formatFireTime,
   reminderTitle,
-} from '../../shared/features/workspace/project-reminders/reminder-format';
+} from '../../internal/reminders/reminder-format';
 import {
   useNow,
   useRefetchAfterFire,
-} from '../../shared/features/workspace/project-reminders/use-refetch-after-fire';
+} from '../../internal/reminders/use-refetch-after-fire';
 import { useLocale, useTranslations } from '../../i18n';
 import type { SessionReminder } from '@kortix/sdk';
 import { qk, useFeatureFlag, useSessionReminders, useSessionWorking } from '@kortix/sdk/react';

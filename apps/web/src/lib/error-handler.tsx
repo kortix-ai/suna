@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/error-handler';
+export * from '@kortix/ui/internal/lib/error-handler';

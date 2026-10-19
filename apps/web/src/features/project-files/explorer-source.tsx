@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/explorer-source';
+export * from '@kortix/ui/files/project/explorer-source';

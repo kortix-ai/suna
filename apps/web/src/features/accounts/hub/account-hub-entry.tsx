@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/accounts/hub/account-hub-entry';
+export * from '@kortix/ui/internal/account-hub/account-hub-entry';

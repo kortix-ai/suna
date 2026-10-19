@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/path-detection';
+export * from '@kortix/ui/internal/lib/utils/path-detection';

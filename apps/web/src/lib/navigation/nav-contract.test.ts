@@ -197,7 +197,7 @@ describe('nav contract — every URL written to history is a real route', () => 
   test('the canonical builder exists and is project-scoped', () => {
     // The source moved to @kortix/ui; the web path is a re-export.
     const source = readFileSync(
-      resolve(WEB_ROOT, '../../packages/ui/src/shared/lib/navigation/session-href.ts'),
+      resolve(WEB_ROOT, '../../packages/ui/src/internal/lib/navigation/session-href.ts'),
       'utf8',
     );
     expect(source).toContain('export function projectSessionHref');

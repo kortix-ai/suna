@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/plan-surface';
+export * from '@kortix/ui/session/thread/plan-surface';

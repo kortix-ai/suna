@@ -1,10 +1,10 @@
 'use client';
 
-import { HoverPrefetchLink } from '../../shared/components/common/hover-prefetch-link';
-import { FadedScrollArea } from '../../components/ui/faded-scroll-area';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../components/ui/hover-card';
-import { menuRow } from '../../components/ui/menu-recipe';
-import { shortRelative } from '../../shared/features/workspace/project-sidebar/project-session-list-helpers';
+import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
+import { menuRow } from '../../primitives/menu-recipe';
+import { shortRelative } from '../actions/project-session-list-helpers';
 import { useTranslations } from '../../i18n';
 import type { ProjectRuntimeSession } from '@kortix/sdk';
 import { formatDistanceToNowStrict } from 'date-fns';

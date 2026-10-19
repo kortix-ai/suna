@@ -16,7 +16,7 @@ export type ToolComponent = ComponentType<ToolProps>;
 
 export interface BasicToolProps {
   icon?: React.ReactNode;
-  trigger: import('../../../shared/ui').TriggerTitle | React.ReactNode;
+  trigger: import('../../../internal/session-types').TriggerTitle | React.ReactNode;
   children?: React.ReactNode;
   defaultOpen?: boolean;
   forceOpen?: boolean;

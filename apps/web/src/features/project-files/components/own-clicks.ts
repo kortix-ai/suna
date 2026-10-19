@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/components/own-clicks';
+export * from '@kortix/ui/files/project/components/own-clicks';

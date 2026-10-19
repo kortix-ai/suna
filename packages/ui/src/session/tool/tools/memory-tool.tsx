@@ -1,6 +1,6 @@
 'use client';
 
-import { FadedScrollArea } from '../../../components/ui/faded-scroll-area';
+import { FadedScrollArea } from '../../../primitives/faded-scroll-area';
 import {
   BasicTool,
   InlineDiffView,
@@ -21,7 +21,7 @@ import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
 import { cn } from '../../../lib/utils';
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import {
   BrainIcon as Brain,
   CaretRightIcon as ChevronRight,

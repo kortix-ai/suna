@@ -4,12 +4,12 @@ import { useTranslations } from '../../i18n';
 import type { FlatModel, ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
 
-import { Button } from '../../components/ui/button';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../components/ui/hover-card';
-import Loading from '../../components/ui/loading';
-import type { ModelDefaultControls } from '../model-selector';
-import { ModelSelector } from '../model-selector';
-import { ReasoningEffortSelector } from '../reasoning-effort-selector';
+import { Button } from '../../primitives/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
+import Loading from '../../primitives/loading';
+import type { ModelDefaultControls } from '../models/model-selector';
+import { ModelSelector } from '../models/model-selector';
+import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import { SendStopControl } from './send-stop-control';
 
 /**

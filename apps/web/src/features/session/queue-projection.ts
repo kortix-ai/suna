@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/queue-projection';
+export * from '@kortix/ui/session/composer/queue-projection';

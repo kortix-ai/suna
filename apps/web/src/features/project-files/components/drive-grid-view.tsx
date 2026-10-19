@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/drive-grid-view';
+export * from '@kortix/ui/files/project/components/drive-grid-view';

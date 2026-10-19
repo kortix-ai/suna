@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/context';
+export * from '@kortix/ui/files/project/context';

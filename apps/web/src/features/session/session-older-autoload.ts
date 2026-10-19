@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-older-autoload';
+export * from '@kortix/ui/session/thread/session-older-autoload';

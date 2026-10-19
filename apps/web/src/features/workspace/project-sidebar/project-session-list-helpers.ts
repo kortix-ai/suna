@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/project-session-list-helpers';
+export * from '@kortix/ui/session/actions/project-session-list-helpers';

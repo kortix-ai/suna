@@ -1,15 +1,15 @@
 'use client';
 
-import { HoverPrefetchLink } from '../../shared/components/common/hover-prefetch-link';
-import { UserAvatar } from '../../components/ui/user-avatar';
+import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
+import { UserAvatar } from '../../primitives/user-avatar';
 import { Copy } from '../../icons/copy';
-import { useCopy } from '../../shared/hooks/use-copy';
+import { useCopy } from '../../internal/hooks/use-copy';
 import { cn } from '../../lib/utils';
 import { useTranslations } from '../../i18n';
-import { useProjectSessionHref } from '../../shared/lib/navigation/session-href';
+import { useProjectSessionHref } from '../../internal/lib/navigation/session-href';
 import type { SessionMessageAuthor } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
-import { KortixLogo } from '../../components/ui/kortix-logo';
+import { KortixLogo } from '../../primitives/kortix-logo';
 import { SourceCard, SourcePill } from './source-pill';
 
 /** The sending session's name, as a link to it when the project route resolves. */

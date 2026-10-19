@@ -1,8 +1,8 @@
 'use client';
 
-import { PreWithPaths } from '../../../shared/components/common/clickable-path';
-import { Badge } from '../../../components/ui/badge';
-import { StatusDot } from '../../../components/ui/status';
+import { PreWithPaths } from '../../../internal/components/clickable-path';
+import { Badge } from '../../../primitives/badge';
+import { StatusDot } from '../../../primitives/status';
 import {
   BasicTool,
   isErrorOutput,
@@ -15,7 +15,7 @@ import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
 import { useTranslations } from '../../../i18n';
-import { stripAnsi } from '../../../shared/ui';
+import { stripAnsi } from '../../../internal/session-types';
 import { ptyOutputBlock } from '@kortix/shared/tool-output';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useMemo } from 'react';

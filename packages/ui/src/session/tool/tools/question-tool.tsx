@@ -1,7 +1,7 @@
 'use client';
 
 import { UnifiedMarkdown } from '../../../markdown/unified-markdown';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   MD_FLUSH_CLASSES,

@@ -22,7 +22,7 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 
 ### Paper shaders: Grain, Neuro, Beams
 
-- **What:** `GrainShader` (a soft banded gradient with a fine film-grain finish), `NeuroShader` (neuro-noise) and `BeamsShader` (light beams through grained paper, then four crisp 1px hairlines at fixed percent positions) in `apps/web/src/components/ui/paper-wallpaper-shaders.tsx`. Built on `@paper-design/shaders-react`, single-pass WebGL2.
+- **What:** `GrainShader` (a soft banded gradient with a fine film-grain finish), `NeuroShader` (neuro-noise) and `BeamsShader` (light beams through grained paper, then four crisp 1px hairlines at fixed percent positions) in `packages/ui/src/primitives/paper-wallpaper-shaders.tsx`. Built on `@paper-design/shaders-react`, single-pass WebGL2.
 - **Where:** Beams on the art pane of the connect modal (`features/tunnel/computer-connect.tsx`) and on the `/download` card (`features/marketing/download/card-images.tsx`). Grain and Neuro as wallpapers.
 - **Not:** inside a data panel. Beams is static. It does not animate.
 - **Mobile:** metal and dither shaders (`apps/mobile/lib/effects/`, `dithering-sksl.ts`, `heatmap-sksl.ts`).

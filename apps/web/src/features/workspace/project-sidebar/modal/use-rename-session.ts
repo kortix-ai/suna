@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/modal/use-rename-session';
+export * from '@kortix/ui/session/actions/use-rename-session';

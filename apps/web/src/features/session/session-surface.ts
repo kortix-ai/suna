@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-surface';
+export * from '@kortix/ui/session/status/session-surface';

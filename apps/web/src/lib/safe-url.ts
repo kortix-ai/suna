@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/safe-url';
+export * from '@kortix/ui/internal/lib/safe-url';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/apps/app-in-browser';
+export * from '@kortix/ui/apps/app-in-browser';

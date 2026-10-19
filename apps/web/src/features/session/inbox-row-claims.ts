@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/inbox-row-claims';
+export * from '@kortix/ui/session/composer/inbox-row-claims';

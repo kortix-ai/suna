@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-browser/hooks/use-file-events';
+export * from '@kortix/ui/files/tree/hooks/use-file-events';

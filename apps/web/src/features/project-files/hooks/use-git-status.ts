@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/hooks/use-git-status';
+export * from '@kortix/ui/files/project/hooks/use-git-status';

@@ -2,7 +2,7 @@
 // Heavy or app-shaped modules are reachable only through their own subpath,
 // never from here: charts ('@kortix/ui/chart'), maps ('@kortix/ui/map'), grids
 // ('@kortix/ui/data-grid'), mermaid, emoji data ('@kortix/ui/emoji-picker'),
-// toasts ('@kortix/ui/toast', sonner) and the session UI ('@kortix/ui/chat').
+// toasts ('@kortix/ui/toast', sonner) and the session UI ('@kortix/ui/session').
 // Names are explicit (no `export *`): src/skill.test.ts checks that the
 // kortix-ui skill lists every one.
 export { cn } from './lib/utils';
@@ -43,11 +43,11 @@ export {
   Button,
   buttonVariants,
   type ButtonProps,
-} from './components/ui/button';
+} from './primitives/button';
 export {
   Badge,
   badgeVariants,
-} from './components/ui/badge';
+} from './primitives/badge';
 export {
   Card,
   CardAction,
@@ -68,13 +68,13 @@ export {
   type CardGroupProps,
   type CardLogo,
   type CardProps,
-} from './components/ui/card';
+} from './primitives/card';
 export {
   Separator,
-} from './components/ui/separator';
+} from './primitives/separator';
 export {
   Skeleton,
-} from './components/ui/skeleton';
+} from './primitives/skeleton';
 export {
   Input,
   inputFocusClasses,
@@ -82,25 +82,25 @@ export {
   inputSurfaceClasses,
   inputTransitionClasses,
   type InputProps,
-} from './components/ui/input';
+} from './primitives/input';
 export {
   useAutosizeTextArea,
   Textarea,
   type AutosizeTextAreaRef,
   type AutosizeTextAreaProps,
-} from './components/ui/textarea';
+} from './primitives/textarea';
 export {
   Label,
-} from './components/ui/label';
+} from './primitives/label';
 export {
   Checkbox,
   type CheckboxProps,
   type CheckboxVariant,
-} from './components/ui/checkbox';
+} from './primitives/checkbox';
 export {
   Switch,
   type SwitchProps,
-} from './components/ui/switch';
+} from './primitives/switch';
 export {
   Select,
   SelectContent,
@@ -113,7 +113,7 @@ export {
   SelectTrigger,
   SelectValue,
   type SelectTriggerProps,
-} from './components/ui/select';
+} from './primitives/select';
 export {
   Dialog,
   DialogClose,
@@ -125,7 +125,7 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
-} from './components/ui/dialog';
+} from './primitives/dialog';
 export {
   Modal,
   ModalBody,
@@ -139,8 +139,8 @@ export {
   ModalPortal,
   ModalTitle,
   ModalTrigger,
-} from './components/ui/modal';
-export { Hint, type HintProps } from './components/ui/hint';
+} from './primitives/modal';
+export { Hint, type HintProps } from './primitives/hint';
 // Dialog and Tooltip are the primitives Modal and Hint build on. Feature code
 // uses Modal and Hint (the kortix-ui skill, section 3); both carry @deprecated.
 export {
@@ -148,13 +148,13 @@ export {
   PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
-} from './components/ui/popover';
+} from './primitives/popover';
 export {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from './components/ui/tooltip';
+} from './primitives/tooltip';
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -171,7 +171,7 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from './components/ui/dropdown-menu';
+} from './primitives/dropdown-menu';
 export {
   FilterBar,
   FilterBarItem,
@@ -189,14 +189,14 @@ export {
   type TabsTriggerSize,
   type TabsTriggerVariant,
   type TabsUnderlineSize,
-} from './components/ui/tabs';
+} from './primitives/tabs';
 export {
   Bubble,
   BubbleContent,
   BubbleGroup,
   BubbleReactions,
   bubbleVariants,
-} from './components/ui/bubble';
+} from './primitives/bubble';
 export {
   Message,
   MessageAvatar,
@@ -204,10 +204,10 @@ export {
   MessageFooter,
   MessageGroup,
   MessageHeader,
-} from './components/ui/message';
+} from './primitives/message';
 export {
   Marker,
   MarkerContent,
   MarkerIcon,
   markerVariants,
-} from './components/ui/marker';
+} from './primitives/marker';

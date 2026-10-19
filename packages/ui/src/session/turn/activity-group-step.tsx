@@ -1,8 +1,8 @@
 'use client';
 
-import { ChainOfThought, ChainOfThoughtStep } from '../../components/ui/chain-of-thought';
-import { DisclosureContent } from '../../components/ui/disclosure';
-import { TextShimmer } from '../../components/ui/text-shimmer';
+import { ChainOfThought, ChainOfThoughtStep } from '../../primitives/chain-of-thought';
+import { DisclosureContent } from '../../primitives/disclosure';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import { memo } from 'react';
 import type { ToolCallBlock } from '@kortix/sdk';
 import type { Step } from '@kortix/sdk';

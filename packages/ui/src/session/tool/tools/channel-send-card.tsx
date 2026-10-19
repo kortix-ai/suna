@@ -2,7 +2,7 @@
 
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from '../../turn/channel-brand';
 import { slackConversationName, type ChannelPlatform } from '../../turn/channel-message';
-import { useChannelBindings } from '../../../shared/hooks/channels/use-channel-bindings';
+import { useChannelBindings } from '../../../internal/hooks/use-channel-bindings';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { PaperclipIcon } from '@phosphor-icons/react';

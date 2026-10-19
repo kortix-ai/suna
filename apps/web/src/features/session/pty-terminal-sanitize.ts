@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/pty-terminal-sanitize';
+export * from '@kortix/ui/terminal/pty-terminal-sanitize';

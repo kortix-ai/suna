@@ -21,8 +21,8 @@ import {
 } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { PROJECT_ACTIONS } from '../../shared/lib/project-actions';
-import { useProjectPageCans } from '../../shared/lib/use-project-can';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectPageCans } from '../../internal/lib/use-project-can';
 
 import {
   buildSessionScopeSelectionCatalog,

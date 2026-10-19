@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/onboarding-mode-store';
+export * from '@kortix/ui/internal/stores/onboarding-mode-store';

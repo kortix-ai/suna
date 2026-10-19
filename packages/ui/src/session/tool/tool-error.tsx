@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../primitives/badge';
 import { parseErrorContent } from './shared/error-and-connector';
 import { ToolResultCard } from './shared/result-card';
 import { StructuredOutput } from './shared/structured-output';
@@ -9,7 +9,7 @@ import {
   hasStructuredContent,
   normalizeToolOutput,
   parseStructuredOutput,
-} from '../../shared/lib/utils/structured-output';
+} from '../../internal/lib/utils/structured-output';
 import {
   ProhibitIcon as Ban,
   CaretRightIcon as ChevronRight,

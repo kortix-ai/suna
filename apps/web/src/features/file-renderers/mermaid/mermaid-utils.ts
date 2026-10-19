@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/mermaid/mermaid-utils';
+export * from '@kortix/ui/files/renderers/mermaid/mermaid-utils';

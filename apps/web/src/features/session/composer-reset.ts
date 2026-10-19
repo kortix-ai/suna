@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/composer-reset';
+export * from '@kortix/ui/session/composer/composer-reset';

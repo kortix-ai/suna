@@ -20,7 +20,7 @@
 
 import { toDaemonPath } from '@kortix/sdk';
 
-import type { ContextItem, OutputItem } from '../../action-panel/shared/derive-panels';
+import type { ContextItem, OutputItem } from '../../panel/shared/derive-panels';
 
 /** Which card a file came from — decides the section it renders under. */
 export type SlashFileOrigin = 'output' | 'context';

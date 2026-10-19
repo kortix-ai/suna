@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '../../../lib/utils';
-import { getDirectory, getFilename } from '../../../shared/ui';
+import { getDirectory, getFilename } from '../../../internal/session-types';
 import type { GrepFileGroup } from '@kortix/shared/tool-output';
 import { CaretRightIcon as ChevronRight, FileTextIcon as FileText } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';

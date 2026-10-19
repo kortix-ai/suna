@@ -1,4 +1,4 @@
-import type { StatusTone } from '../../components/ui/status';
+import type { StatusTone } from '../../primitives/status';
 import type { SessionLogMessage } from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 

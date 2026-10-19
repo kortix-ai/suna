@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/outcomes/outcome-vocabulary';
+export * from '@kortix/ui/internal/outcomes/outcome-vocabulary';

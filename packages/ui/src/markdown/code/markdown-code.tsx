@@ -1,16 +1,16 @@
 'use client';
 
-import { ErrorBoundary } from '../../components/ui/error-boundary';
+import { ErrorBoundary } from '../../primitives/error-boundary';
 import type { MarkdownTrust, MarkdownVariant } from '../markdown-policy';
 import { KaTeXBlock } from '../katex-block';
 import { KATEX_FENCE_LANGUAGES } from '../katex-markdown';
 import { UnifiedMarkdown } from '../unified-markdown';
-import { SetupLinkButton } from '../../shared/components/setup-links/setup-link-button';
-import { parseSetupLinkHref } from '../../shared/components/setup-links/util';
-import { GenuiTelemetryContext, markGenuiWatched } from '../../shared/features/genui/block-telemetry';
-import { genuiBlockText } from '../../shared/features/genui/to-markdown';
-import { withStaleChunkRecovery } from '../../shared/lib/chunk-reload';
-import { isMermaidCode } from '../../shared/lib/mermaid-utils';
+import { SetupLinkButton } from '../setup-links/setup-link-button';
+import { parseSetupLinkHref } from '../setup-links/util';
+import { GenuiTelemetryContext, markGenuiWatched } from '../genui/block-telemetry';
+import { genuiBlockText } from '../genui/to-markdown';
+import { withStaleChunkRecovery } from '../../internal/lib/chunk-reload';
+import { isMermaidCode } from '../../internal/lib/mermaid-utils';
 import React, { lazy, Suspense, useContext, useEffect, useState } from 'react';
 
 import { childrenToText } from './children-text';
@@ -20,7 +20,7 @@ import { ClickableInlineCode } from './inline-code';
 
 // Mermaid pulls in a multi-hundred-KB renderer; load it only once a diagram exists.
 const MermaidRenderer = lazy(() =>
-  import('../../components/ui/mermaid-renderer').then((mod) => ({
+  import('../../primitives/mermaid-renderer').then((mod) => ({
     default: mod.MermaidRenderer,
   })),
 );
@@ -28,7 +28,7 @@ const MermaidRenderer = lazy(() =>
 // Generative UI pulls in lang-core and the block components; load it only once a block exists.
 // A stale deploy's missing chunk reloads the tab once (KRTX-1613); any other failure lands on the
 // block's own boundary below, never on the chat's.
-const GenuiMessageBlock = lazy(withStaleChunkRecovery(() => import('../../shared/features/genui/genui-message-block')));
+const GenuiMessageBlock = lazy(withStaleChunkRecovery(() => import('../genui/genui-message-block')));
 
 interface GenuiFenceProps {
   code: string;

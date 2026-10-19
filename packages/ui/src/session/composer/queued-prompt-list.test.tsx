@@ -4,8 +4,8 @@ import { IntlTestProvider } from '../../test-utils/intl';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TooltipProvider } from '../../components/ui/tooltip';
-import type { QueueRow } from '../queue-projection';
+import { TooltipProvider } from '../../primitives/tooltip';
+import type { QueueRow } from './queue-projection';
 import {
   QueuedPromptList,
   queuedRowActions,

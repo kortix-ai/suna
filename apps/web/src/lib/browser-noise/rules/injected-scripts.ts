@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/browser-noise/rules/injected-scripts';
+export * from '@kortix/ui/internal/lib/browser-noise/rules/injected-scripts';

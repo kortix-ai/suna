@@ -4,7 +4,7 @@ import { toSandboxAbsolutePath } from '@kortix/sdk';
 
 import { useTranslations } from '../i18n';
 
-import { ClickablePath, wrapChildrenWithPaths } from '../shared/components/common/clickable-path';
+import { ClickablePath, wrapChildrenWithPaths } from '../internal/components/clickable-path';
 import { MarkdownCode } from './code';
 import { closeOpenGenuiFence, openGenuiFence, separateGenuiClosers } from './code/genui-fence';
 import { parseFileLinkHref, remarkWorkspaceFileLinks } from './file-links';
@@ -34,11 +34,11 @@ import {
 } from './unified-markdown-utils';
 import { remarkSetupLinkBlocks } from './setup-link-blocks';
 import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from './stream-words';
-import { SetupLinkButton, SetupLinkInlineContext } from '../shared/components/setup-links/setup-link-button';
-import { parsePendingSetupLinkHref, parseSetupLinkHref } from '../shared/components/setup-links/util';
-import { Button } from '../components/ui/button';
-import { Checkbox } from '../components/ui/checkbox';
-import { useSandboxProxy } from '../shared/hooks/use-sandbox-proxy';
+import { SetupLinkButton, SetupLinkInlineContext } from './setup-links/setup-link-button';
+import { parsePendingSetupLinkHref, parseSetupLinkHref } from './setup-links/util';
+import { Button } from '../primitives/button';
+import { Checkbox } from '../primitives/checkbox';
+import { useSandboxProxy } from '../internal/hooks/use-sandbox-proxy';
 import { cn } from '../lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../providers/ui-provider';

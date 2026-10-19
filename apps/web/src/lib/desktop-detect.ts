@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/desktop-detect';
+export * from '@kortix/ui/internal/lib/desktop-detect';

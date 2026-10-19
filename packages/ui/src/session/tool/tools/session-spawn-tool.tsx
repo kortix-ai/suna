@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '../../../components/ui/button';
-import { SubSessionModal } from '../../sub-session-modal';
+import { Button } from '../../../primitives/button';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import { partInput, partStatus } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import {
@@ -12,7 +12,7 @@ import {
 import type { ToolProps } from '../shared/types';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
-import { getChildSessionId, getToolInfo } from '../../../shared/ui';
+import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
 import { useUiLink, useUiPathname } from '../../../providers/ui-provider';

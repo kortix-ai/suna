@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-files-explorer-logic';
+export * from '@kortix/ui/session/panel/session-files-explorer-logic';

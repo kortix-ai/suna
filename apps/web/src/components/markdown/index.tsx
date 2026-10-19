@@ -1,1 +1,1 @@
-export * from '@kortix/ui/markdown/index';
+export * from '@kortix/ui/markdown';

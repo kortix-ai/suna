@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/sent-attachment-previews';
+export * from '@kortix/ui/session/composer/sent-attachment-previews';

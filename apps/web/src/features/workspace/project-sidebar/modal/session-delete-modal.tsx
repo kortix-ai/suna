@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/modal/session-delete-modal';
+export * from '@kortix/ui/session/actions/session-delete-modal';

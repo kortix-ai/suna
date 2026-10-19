@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/outcomes/outcome-types';
+export * from '@kortix/ui/internal/outcomes/outcome-types';

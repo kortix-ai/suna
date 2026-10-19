@@ -5,7 +5,7 @@ import {
 } from '@kortix/shared';
 import type { PromptAttachmentItem, SessionPromptPart } from '@kortix/sdk';
 
-import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
+import { adoptSentAttachmentPreviews } from './sent-attachment-previews';
 import type { AttachmentUploadStatus } from '../turn/user-message';
 import { deliverInOrder, deliveryPending } from './delivery-chain';
 import { holdUntilSent } from './held-send-guard';

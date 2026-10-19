@@ -1,5 +1,5 @@
 import { KATEX_FENCE_LANGUAGES } from '../katex-markdown';
-import { probeFileAvailability, resetFileAvailability } from '../../session/file-availability';
+import { probeFileAvailability, resetFileAvailability } from '../../internal/files/file-availability';
 import { UiProvider } from '../../providers/ui-provider';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';

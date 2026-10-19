@@ -1,6 +1,6 @@
 'use client';
 
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../components/ui/hover-card';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { cn } from '../../lib/utils';
 
 /**

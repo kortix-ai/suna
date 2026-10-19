@@ -3,7 +3,7 @@
 import { CopyButton } from '../../../markdown/copy-button';
 import { UnifiedMarkdown } from '../../../markdown/unified-markdown';
 import { WarningCircleIcon as CircleAlert } from '@phosphor-icons/react';
-import { STATUS_BG, STATUS_TEXT } from '../../../components/ui/status';
+import { STATUS_BG, STATUS_TEXT } from '../../../primitives/status';
 import { ToolResultCard } from './result-card';
 import { useToolCardFrame, useToolCardPad, useToolIndent } from './surface';
 import { type ParsedJsonFailure } from './types';

@@ -1,5 +1,5 @@
-import { DisclosureTrigger } from '../../components/ui/disclosure';
-import { TextShimmer } from '../../components/ui/text-shimmer';
+import { DisclosureTrigger } from '../../primitives/disclosure';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import { cn } from '../../lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
 

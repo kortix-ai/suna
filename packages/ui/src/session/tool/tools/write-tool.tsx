@@ -20,8 +20,8 @@ import type { ToolProps } from '../shared/types';
 import { inputPath } from '@kortix/sdk';
 import { useTranslations } from '../../../i18n';
 
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
-import { getFilename } from '../../../shared/ui';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { getFilename } from '../../../internal/session-types';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useCallback, useContext, useMemo } from 'react';
 

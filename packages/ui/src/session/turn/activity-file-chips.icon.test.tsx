@@ -1,12 +1,12 @@
-import type { Part } from '../../shared/ui';
+import type { Part } from '../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Disclosure } from '../../components/ui/disclosure';
+import { Disclosure } from '../../primitives/disclosure';
 import { toolCallBlock } from '@kortix/sdk';
-import type { ToolPart } from '../../shared/ui';
+import type { ToolPart } from '../../internal/session-types';
 import { ActivityFileChipStep } from './activity-file-chips';
 
 /** The first path segment of Phosphor's `PencilSimple`, the write family glyph. */

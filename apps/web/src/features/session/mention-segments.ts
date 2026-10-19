@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/mention-segments';
+export * from '@kortix/ui/session/thread/mention-segments';

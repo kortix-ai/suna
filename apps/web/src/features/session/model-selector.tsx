@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/model-selector';
+export * from '@kortix/ui/session/models/model-selector';

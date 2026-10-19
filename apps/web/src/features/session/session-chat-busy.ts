@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-chat-busy';
+export * from '@kortix/ui/session/status/session-chat-busy';

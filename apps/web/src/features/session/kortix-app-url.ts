@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/kortix-app-url';
+export * from '@kortix/ui/apps/kortix-app-url';

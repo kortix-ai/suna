@@ -20,23 +20,23 @@ import { useTranslations } from '../../i18n';
  */
 
 import { CopyButton } from '../../markdown/copy-button';
-import { Button } from '../../components/ui/button';
-import { ConfirmDialog } from '../../components/ui/confirm-dialog';
-import Hint from '../../components/ui/hint';
-import Loading from '../../components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
-import { errorToast, successToast } from '../../components/ui/toast';
-import { genuiBadgeClass } from '../../shared/features/genui/components/inline';
-import { SolidCheckIcon } from '../../shared/features/icon/icons/solid-check-icon';
-import { buildAgentGitReconciliationPrompt } from '../agent-git-reconciliation';
-import { reloadProgressText } from '../../shared/hooks/projects/session-reload-progress';
+import { Button } from '../../primitives/button';
+import { ConfirmDialog } from '../../primitives/confirm-dialog';
+import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { errorToast, successToast } from '../../primitives/toast';
+import { genuiBadgeClass } from '../../markdown/genui/components/inline';
+import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
+import { buildAgentGitReconciliationPrompt } from '../status/agent-git-reconciliation';
+import { reloadProgressText } from '../../internal/hooks/projects/session-reload-progress';
 import {
   type ReloadBusyReason,
   type SessionConfigNotice,
   useSessionConfigFreshness,
-} from '../../shared/hooks/projects/use-session-config-freshness';
+} from '../../internal/hooks/projects/use-session-config-freshness';
 import { cn } from '../../lib/utils';
-import { useChatSendStore } from '../../shared/stores/chat-send-store';
+import { useChatSendStore } from '../../internal/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
 import { ArrowsClockwiseIcon, WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';

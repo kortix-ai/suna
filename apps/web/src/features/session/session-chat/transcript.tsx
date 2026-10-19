@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-chat/transcript';
+export * from '@kortix/ui/session/thread/transcript';

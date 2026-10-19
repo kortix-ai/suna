@@ -1,19 +1,19 @@
 'use client';
 
-import { Button } from '../../../components/ui/button';
-import Hint from '../../../components/ui/hint';
-import Loading from '../../../components/ui/loading';
-import { framePolicy, serviceFrameContent } from '../../../shared/features/file-viewer/preview-policy';
-import { openSessionQuickView } from '../../open-session-quick-view';
+import { Button } from '../../../primitives/button';
+import Hint from '../../../primitives/hint';
+import Loading from '../../../primitives/loading';
+import { framePolicy, serviceFrameContent } from '../../../files/viewer/preview-policy';
+import { openSessionQuickView } from '../../panel/open-session-quick-view';
 import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
-import { useSandboxProxy } from '../../../shared/hooks/use-sandbox-proxy';
+import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
 import { useTranslations } from '../../../i18n';
-import { openSafeExternalUrl } from '../../../shared/lib/safe-url';
+import { openSafeExternalUrl } from '../../../internal/lib/safe-url';
 import { cn } from '../../../lib/utils';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
-import { enrichPreviewMetadata, getActiveSessionContext } from '../../../shared/lib/utils/session-context';
-import { getActivePanelSessionId, sessionPreviewTabId } from '../../../shared/stores/session-browser-store';
-import { openTabAndNavigate, useTabStore } from '../../../shared/stores/tab-store';
+import { enrichPreviewMetadata, getActiveSessionContext } from '../../../internal/lib/utils/session-context';
+import { getActivePanelSessionId, sessionPreviewTabId } from '../../../internal/stores/session-browser-store';
+import { openTabAndNavigate, useTabStore } from '../../../internal/stores/tab-store';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   PREVIEW_BUILDING_STATES,

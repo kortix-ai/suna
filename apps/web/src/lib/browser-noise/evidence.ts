@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/browser-noise/evidence';
+export * from '@kortix/ui/internal/lib/browser-noise/evidence';

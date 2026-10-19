@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/stop-refusal';
+export * from '@kortix/ui/session/status/stop-refusal';

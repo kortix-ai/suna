@@ -60,7 +60,7 @@ LOGO_RE='(/features/icon/icons/(apple-cursor|chat-gpt|claude|gemini|github|gmail
 CONST_RE=':[0-9]+: *(export )?const [A-Z][A-Z0-9_]* ='
 
 # The one sanctioned spinner and the one sanctioned uppercase chip. They live in
-# packages/ui/src/components/ui/ (@kortix/ui); the apps/web/src/components/ui/
+# packages/ui/src/primitives/ (@kortix/ui); the apps/web/src/components/ui/
 # path is the re-export shim. The unanchored /components/ui/ matches both.
 LOADING_RE='(/components/ui/(loading|kortix-loader)\.)'
 BADGE_RE='(/components/ui/badge\.)'

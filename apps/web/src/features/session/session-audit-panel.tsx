@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-audit-panel';
+export * from '@kortix/ui/session/panel/session-audit-panel';

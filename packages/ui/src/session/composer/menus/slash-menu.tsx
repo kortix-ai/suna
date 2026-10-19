@@ -1,7 +1,7 @@
 'use client';
 
-import { Kbd } from '../../../components/ui/kbd';
-import { getFileIcon } from '../../../shared/features/project-files/components/file-icon';
+import { Kbd } from '../../../primitives/kbd';
+import { getFileIcon } from '../../../files/project/components/file-icon';
 import { cn } from '../../../lib/utils';
 import {
   ArrowsClockwiseIcon,
@@ -15,7 +15,7 @@ import {
   TerminalWindowIcon,
 } from '@phosphor-icons/react';
 
-import { ProgressRing } from '../../../components/ui/progress-ring';
+import { ProgressRing } from '../../../primitives/progress-ring';
 import { useTranslations } from '../../../i18n';
 
 import { ContextRing } from '../context-ring';

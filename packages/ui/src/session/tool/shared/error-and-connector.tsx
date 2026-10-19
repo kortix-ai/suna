@@ -1,6 +1,6 @@
 'use client';
 
-import { STATUS_TEXT } from '../../../components/ui/status';
+import { STATUS_TEXT } from '../../../primitives/status';
 import { OutputBlock } from './output-block';
 import { cn } from '../../../lib/utils';
 

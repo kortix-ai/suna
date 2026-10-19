@@ -108,7 +108,7 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 | `@kortix/ui/session` (whole thread) | `SessionThread`, `SessionThreadProps` |
 | `@kortix/ui/session` (blocks) | `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `ToolPartRenderer`, `SessionChatInput`, `SessionChatInputProps`, `AgentSelector`, `ModelSelector`, `ModelSelectorProps`, `SessionPermissionPrompt`, `QuestionPrompt`, `QuestionPromptHandle`, `TurnErrorDisplay`, `SessionBusyIndicator`, `SessionStartingLoader` |
 | `@kortix/ui/session` (tool rows) | `ToolRegistry`, `ToolProps`, `ToolComponent`, `BasicTool`, `BasicToolProps`, `GenericTool` |
-| `@kortix/ui/chat` | `SessionThread` (the same one), `SessionThreadProps`; pickers for a form outside a session: `ModelPicker`, `filterModels`, `AgentPicker` |
+| `@kortix/ui/session` | `SessionThread` (the same one), `SessionThreadProps`; pickers for a form outside a session: `ModelPicker`, `filterModels`, `AgentPicker` |
 
 Every other component is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>`
 for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` and `@kortix/ui/icons/<name>`. Host-free helpers: `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures; `UiTranslator`, `UiI18nHost`, `UiMessages`, `UiUseTranslations`, `defaultUiMessages`: the bundled English catalog; `createTranslator`), `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event` so tsc checks event names), `lib/lazy-client` (`lazyClient(load, { fallback })`: `next/dynamic` `ssr: false` without Next), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`; reports to `captureException`).
@@ -144,4 +144,4 @@ In `kortix-ai/suna`, these skills are the law and win over this file:
 - `kortix-brand` (values, voice, decisions): https://github.com/kortix-ai/suna/blob/dev/.agents/skills/kortix-brand/SKILL.md
 - `kortix-design-system` (which component, reference screens): https://github.com/kortix-ai/suna/blob/dev/.agents/skills/kortix-design-system/SKILL.md
 - `apps/web` imports keep their old paths (`@/components/ui/<name>`): those files are one-line shims.
-  Edit the component in `packages/ui/src/components/ui/<name>.tsx`, never the shim.
+  Edit the component in `packages/ui/src/primitives/<name>.tsx`, never the shim.

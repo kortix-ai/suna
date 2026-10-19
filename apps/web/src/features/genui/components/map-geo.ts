@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/genui/components/map-geo';
+export * from '@kortix/ui/markdown/genui/components/map-geo';

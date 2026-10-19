@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/api/commits';
+export * from '@kortix/ui/files/project/api/commits';

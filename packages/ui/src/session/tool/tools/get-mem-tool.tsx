@@ -1,6 +1,6 @@
 'use client';
 
-import { STATUS_TEXT, StatusDot } from '../../../components/ui/status';
+import { STATUS_TEXT, StatusDot } from '../../../primitives/status';
 import {
   BasicTool,
   ToolEmptyState,

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/upgrade-dialog-store';
+export * from '@kortix/ui/internal/stores/upgrade-dialog-store';

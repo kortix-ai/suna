@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/components/projects/public-share-link-confirm';
+export * from '@kortix/ui/internal/share/public-share-link-confirm';

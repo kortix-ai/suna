@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/provider-modal-store';
+export * from '@kortix/ui/internal/stores/provider-modal-store';

@@ -6,8 +6,8 @@ import type { SessionLogMessage } from '@kortix/sdk';
 import type { Agent, FlatModel } from '@kortix/sdk/react';
 import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 
-import { Button } from '../../components/ui/button';
-import Hint from '../../components/ui/hint';
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
 import { AgentSelector } from './agent-selector';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';

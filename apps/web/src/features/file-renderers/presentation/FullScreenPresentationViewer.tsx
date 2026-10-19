@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/presentation/FullScreenPresentationViewer';
+export * from '@kortix/ui/files/renderers/presentation/FullScreenPresentationViewer';

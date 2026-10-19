@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { Badge } from '../../../primitives/badge';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   isErrorOutput,

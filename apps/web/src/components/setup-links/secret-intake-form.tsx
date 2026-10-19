@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/components/setup-links/secret-intake-form';
+export * from '@kortix/ui/markdown/setup-links/secret-intake-form';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/footer/files-nav-label';
+export * from '@kortix/ui/internal/layout/files-nav-label';

@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
-import { STATUS_TEXT } from '../../components/ui/status';
-import { QuestionPrompt } from '../question-prompt';
+import { Button } from '../../primitives/button';
+import { STATUS_TEXT } from '../../primitives/status';
+import { QuestionPrompt } from '../prompts/question-prompt';
 import { GenericTool } from './generic-tool';
 import {
   BasicTool,
@@ -20,7 +20,7 @@ import {
 import { ToolRegistry } from './shared/registry';
 import { ToolError } from './tool-error';
 import { type InlinePermissionReply, replyToInlinePermission } from './inline-permission-reply';
-import { errorToast } from '../../components/ui/toast';
+import { errorToast } from '../../primitives/toast';
 import { cn } from '../../lib/utils';
 import { partError, partStreamingInput } from './shared/infrastructure-parts';
 import {
@@ -29,7 +29,7 @@ import {
   type QuestionRequest,
   getChildSessionId,
   shouldShowToolPart,
-} from '../../shared/ui';
+} from '../../internal/session-types';
 import { sessionLogCallStatus, sessionLogOpenCall, toolKind, type ToolCallBlock } from '@kortix/sdk';
 import { useTranslations } from '../../i18n';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';

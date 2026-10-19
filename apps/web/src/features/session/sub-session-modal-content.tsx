@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/sub-session-modal-content';
+export * from '@kortix/ui/session/thread/sub-session-modal-content';

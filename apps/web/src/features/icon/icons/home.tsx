@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/icon/icons/home';
+export * from '@kortix/ui/internal/icons/home';

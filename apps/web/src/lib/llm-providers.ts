@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/llm-providers';
+export * from '@kortix/ui/internal/lib/llm-providers';

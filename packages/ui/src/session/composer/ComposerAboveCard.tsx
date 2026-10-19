@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
+import { Button } from '../../primitives/button';
 import { cn } from '../../lib/utils';
-import Loading from '../../components/ui/loading';
+import Loading from '../../primitives/loading';
 import { SESSION_NOTICE } from '@kortix/sdk';
 import { MoonIcon } from '@phosphor-icons/react';
 

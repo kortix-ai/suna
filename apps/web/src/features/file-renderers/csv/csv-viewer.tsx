@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/csv/csv-viewer';
+export * from '@kortix/ui/files/renderers/csv/csv-viewer';

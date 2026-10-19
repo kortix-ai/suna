@@ -1,8 +1,8 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
-import { DiffStat } from '../../../components/ui/status';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { Badge } from '../../../primitives/badge';
+import { DiffStat } from '../../../primitives/status';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   InlineDiffView,
@@ -17,8 +17,8 @@ import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
 import { cn } from '../../../lib/utils';
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
-import { getDirectory, getFilename } from '../../../shared/ui';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { getDirectory, getFilename } from '../../../internal/session-types';
 import {
   CaretRightIcon as ChevronRight,
   FileMinusIcon,

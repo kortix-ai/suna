@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 let leaves: Record<string, { allowed: boolean }> = {};
 const projectCan = await import('@/lib/use-project-can');
-mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...projectCan,
   useProjectCans: (_projectId: string, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, leaves[action] ?? { allowed: false }])),

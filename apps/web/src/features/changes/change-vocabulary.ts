@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/changes/change-vocabulary';
+export * from '@kortix/ui/changes/change-vocabulary';

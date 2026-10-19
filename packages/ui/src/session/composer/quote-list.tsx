@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
+import { Button } from '../../primitives/button';
 import { cn } from '../../lib/utils';
 import { CaretUpIcon, XIcon } from '@phosphor-icons/react';
 import { useId, useState } from 'react';

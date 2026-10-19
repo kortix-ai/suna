@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/chat-minimap-items';
+export * from '@kortix/ui/session/thread/chat-minimap-items';

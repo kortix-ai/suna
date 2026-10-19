@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/session-context';
+export * from '@kortix/ui/internal/lib/utils/session-context';

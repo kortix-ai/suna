@@ -93,7 +93,7 @@ const uiSelectMock = () => ({
 });
 mock.module('@/components/ui/select', uiSelectMock);
 mock.module('@kortix/ui/select', uiSelectMock);
-mock.module('@/features/workspace/shared/access', () => ({ ...realAccess, CopyRow: Pass }));
+mock.module('@kortix/ui/access/access/index', () => ({ ...realAccess, CopyRow: Pass }));
 
 const translate = (key: string) => key.split('.').pop() || key;
 mock.module('@/i18n/use-translations', () => ({

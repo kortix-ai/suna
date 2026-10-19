@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/diagnostics-store';
+export * from '@kortix/ui/internal/stores/diagnostics-store';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/pdf/pdf-thumbnail-utils';
+export * from '@kortix/ui/files/renderers/pdf/pdf-thumbnail-utils';

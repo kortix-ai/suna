@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
-import { InlineMeta } from '../../components/ui/inline-meta';
+import { Button } from '../../primitives/button';
+import { InlineMeta } from '../../primitives/inline-meta';
 import { useTranslations } from '../../i18n';
 
 /** Pending text stays legible while the active turn continues above it. */

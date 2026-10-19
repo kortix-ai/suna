@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/file-editors/external-content';
+export * from '@kortix/ui/files/editor/external-content';

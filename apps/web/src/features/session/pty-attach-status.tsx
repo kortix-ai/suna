@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/pty-attach-status';
+export * from '@kortix/ui/terminal/pty-attach-status';

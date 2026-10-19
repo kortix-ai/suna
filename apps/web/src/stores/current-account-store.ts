@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/current-account-store';
+export * from '@kortix/ui/internal/stores/current-account-store';

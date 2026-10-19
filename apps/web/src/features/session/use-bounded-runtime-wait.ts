@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/use-bounded-runtime-wait';
+export * from '@kortix/ui/internal/hooks/use-bounded-runtime-wait';

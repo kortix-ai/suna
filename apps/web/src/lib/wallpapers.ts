@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/wallpapers';
+export * from '@kortix/ui/internal/lib/wallpapers';

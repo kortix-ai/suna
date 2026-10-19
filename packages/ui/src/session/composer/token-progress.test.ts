@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { STATUS_TEXT } from '../../components/ui/status';
+import { STATUS_TEXT } from '../../primitives/status';
 import { sessionLogOfV1Rows } from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 import {

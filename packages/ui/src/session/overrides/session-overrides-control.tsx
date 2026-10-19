@@ -1,9 +1,9 @@
 'use client';
 
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import Loading from '../../components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import { Badge } from '../../primitives/badge';
+import { Button } from '../../primitives/button';
+import Loading from '../../primitives/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { ResetAxisButton } from '../scope/session-scope-control';
 import { cn } from '../../lib/utils';
 import type { Icon } from '@phosphor-icons/react';

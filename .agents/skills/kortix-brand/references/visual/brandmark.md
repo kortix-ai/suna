@@ -46,7 +46,7 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 | --- | --- | --- | --- |
 | `KortixLogo` | `apps/web/src/components/ui/kortix-logo.tsx` | `icon` (symbol), `brandmark` (logo) | Canonical. Renders `currentColor`. **Naming conflict:** its `brandmark` variant is the logo, but the brand kit and D6 use "brandmark" for the symbol and the wallpaper. OPEN: rename the variants to `symbol` and `logo` and migrate importers. Organization branding replaces the mark through `useBranding()` (Enterprise entitlement). |
 | `KortixLogo` shim | `apps/web/src/components/sidebar/kortix-logo.tsx` | `symbol`, `logomark` | Legacy re-export. New code imports the canonical file. |
-| `Kortix` glyph | `apps/web/src/features/icon/icons/kortix.tsx` | size-4 symbol | A house glyph, `currentColor`. |
+| `Kortix` glyph | `packages/ui/src/internal/icons/kortix.tsx` | size-4 symbol | A house glyph, `currentColor`. |
 | `KortixHyperLogo` | `apps/web/src/components/ui/marketing/kortix-hyper-logo.tsx` | animated dissolve of the symbol | Marketing art. |
 | Mobile `KortixLogo` | `apps/mobile/components/kortix/KortixLogo.tsx` | `symbol`, `logomark`, `text` | `color="dark"` renders the white file: the prop names the surface, not the ink. |
 | `MetalKortixLogo` | `apps/mobile/components/kortix/MetalKortixLogo.tsx` | Skia metal symbol | Mobile hero art. |

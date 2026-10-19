@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { STATUS_RING, STATUS_RING_OUTER_RADIUS } from '../../../components/ui/status-ring';
+import { STATUS_RING, STATUS_RING_OUTER_RADIUS } from '../../../primitives/status-ring';
 
 import { TodoStatusIcon, parseTodos, type TodoItem } from './todo-helpers';
 

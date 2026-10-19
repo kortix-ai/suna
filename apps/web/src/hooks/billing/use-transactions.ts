@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/billing/use-transactions';
+export * from '@kortix/ui/internal/billing/use-transactions';

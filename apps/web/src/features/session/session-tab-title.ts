@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-tab-title';
+export * from '@kortix/ui/session/status/session-tab-title';

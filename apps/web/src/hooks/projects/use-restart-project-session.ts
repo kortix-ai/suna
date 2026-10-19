@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/projects/use-restart-project-session';
+export * from '@kortix/ui/internal/hooks/projects/use-restart-project-session';

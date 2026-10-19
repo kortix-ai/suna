@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/files/hooks/use-file-refresh';
+export * from '@kortix/ui/files/runtime/hooks/use-file-refresh';

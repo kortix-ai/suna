@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
+import { Badge } from '../../../primitives/badge';
 import {
   BasicTool,
   isErrorOutput,
@@ -16,7 +16,7 @@ import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useMemo } from 'react';
 
-import { type ConnectorEntry, parseConnectorListOutput } from '../../../shared/lib/utils/kortix-tool-output';
+import { type ConnectorEntry, parseConnectorListOutput } from '../../../internal/lib/utils/kortix-tool-output';
 
 export function ConnectorListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

@@ -30,7 +30,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { AgentPicker, ModelPicker } from '@kortix/ui/chat';
+import { AgentPicker, ModelPicker } from '@kortix/ui/session';
 import { brandProviderLabel } from '@/config/brand';
 import { ArrowUpIcon, SparkleIcon } from '@phosphor-icons/react';
 

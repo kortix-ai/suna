@@ -10,7 +10,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 import { useTranslations } from '../../../i18n';
-import type { TriggerTitle } from '../../../shared/ui';
+import type { TriggerTitle } from '../../../internal/session-types';
 import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 

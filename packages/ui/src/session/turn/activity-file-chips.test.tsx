@@ -1,6 +1,6 @@
-import { ChainOfThoughtStep } from '../../components/ui/chain-of-thought';
-import { STATUS_TEXT } from '../../components/ui/status';
-import type { Part, ToolPart } from '../../shared/ui';
+import { ChainOfThoughtStep } from '../../primitives/chain-of-thought';
+import { STATUS_TEXT } from '../../primitives/status';
+import type { Part, ToolPart } from '../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../test-utils/intl';

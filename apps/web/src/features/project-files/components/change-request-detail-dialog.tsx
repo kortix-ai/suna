@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/change-request-detail-dialog';
+export * from '@kortix/ui/files/project/components/change-request-detail-dialog';

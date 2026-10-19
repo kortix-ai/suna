@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-composer-readiness';
+export * from '@kortix/ui/session/composer/session-composer-readiness';

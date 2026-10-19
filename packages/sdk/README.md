@@ -938,7 +938,7 @@ function Turn({ message }: { message: MessageWithParts }) {
 }
 ```
 
-The living reference is `packages/ui/src/session/session-chat/transcript.tsx`
+The living reference is `packages/ui/src/session/thread/transcript.tsx`
 (the transcript of `SessionThread` in `@kortix/ui/session`), on the
 session-log message. For a
 memoized message-list binding use `useChatTurns(messages)` (`@kortix/sdk/react`);

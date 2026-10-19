@@ -1,8 +1,8 @@
 'use client';
 
-import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '../../../components/ui/status';
+import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '../../../primitives/status';
 import { useToolNavigation } from './infrastructure';
-import { useProjectSessionHref } from '../../../shared/lib/navigation/session-href';
+import { useProjectSessionHref } from '../../../internal/lib/navigation/session-href';
 import { cn } from '../../../lib/utils';
 import {
   ArrowSquareOutIcon as ExternalLink,

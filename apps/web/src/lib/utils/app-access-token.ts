@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/app-access-token';
+export * from '@kortix/ui/internal/lib/utils/app-access-token';

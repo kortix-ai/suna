@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
+import { Badge } from '../../../primitives/badge';
 import {
   BasicTool,
   partInput,
@@ -15,7 +15,7 @@ import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useMemo } from 'react';
 
-import { parseConnectorGetOutput } from '../../../shared/lib/utils/kortix-tool-output';
+import { parseConnectorGetOutput } from '../../../internal/lib/utils/kortix-tool-output';
 
 export function ConnectorGetTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

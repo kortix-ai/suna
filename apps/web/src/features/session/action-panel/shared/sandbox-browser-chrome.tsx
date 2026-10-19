@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/action-panel/shared/sandbox-browser-chrome';
+export * from '@kortix/ui/browser/sandbox-browser-chrome';

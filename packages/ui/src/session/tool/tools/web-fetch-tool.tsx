@@ -11,7 +11,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
-import { openSafeExternalUrl } from '../../../shared/lib/safe-url';
+import { openSafeExternalUrl } from '../../../internal/lib/safe-url';
 import { cn } from '../../../lib/utils';
 import {
   CaretRightIcon as ChevronRight,
@@ -20,8 +20,8 @@ import {
 import { useTranslations } from '../../../i18n';
 import { useCallback, useMemo, useState } from 'react';
 
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../components/ui/disclosure';
-import { FaviconAvatar } from '../../../components/ui/favicon-avatar';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
+import { FaviconAvatar } from '../../../primitives/favicon-avatar';
 import { looksLikeHtml, wsDomain } from '@kortix/sdk';
 
 export function WebFetchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {

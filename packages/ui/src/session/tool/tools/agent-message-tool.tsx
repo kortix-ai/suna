@@ -1,6 +1,6 @@
 'use client';
 
-import { SubSessionModal } from '../../sub-session-modal';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import {
   BasicTool,
   isErrorOutput,
@@ -12,7 +12,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 import { useTranslations } from '../../../i18n';
-import { getChildSessionId } from '../../../shared/ui';
+import { getChildSessionId } from '../../../internal/session-types';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 

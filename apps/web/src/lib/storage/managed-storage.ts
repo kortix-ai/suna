@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/storage/managed-storage';
+export * from '@kortix/ui/internal/lib/storage/managed-storage';

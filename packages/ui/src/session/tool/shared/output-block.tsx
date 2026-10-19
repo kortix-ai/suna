@@ -7,7 +7,7 @@
  */
 
 import { UnifiedMarkdown } from '../../../markdown/unified-markdown';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
 import { cn } from '../../../lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { useState } from 'react';

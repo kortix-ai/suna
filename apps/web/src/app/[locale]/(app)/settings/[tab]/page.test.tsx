@@ -19,7 +19,7 @@ mock.module('@/hooks/account/use-ensure-selected-account', () => ({
 mock.module('@/features/workspace/settings/use-settings-account-id', () => ({
   useSettingsAccountId: () => 'stale-account',
 }));
-mock.module('@/hooks/account/use-accounts-list', () => ({
+mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
   useAccountsList: () => ({
     data: accounts,
     isPending: pending,
@@ -34,7 +34,7 @@ mock.module('@/features/workspace/settings/standalone-settings-route', () => ({
   STANDALONE_DEFAULT_SETTINGS_TAB: 'profile',
   StandaloneSettingsRoute: ({ tab }: { tab: string }) => createElement('main', null, tab),
 }));
-mock.module('@kortix/ui/shared/features/layout/section/error-state', () => ({
+mock.module('@kortix/ui/error-state', () => ({
   ErrorState: ({ title, action }: { title: string; action: React.ReactNode }) =>
     createElement('section', null, title, action),
 }));

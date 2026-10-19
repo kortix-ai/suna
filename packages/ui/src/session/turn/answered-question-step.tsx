@@ -19,7 +19,7 @@ import { useTranslations } from '../../i18n';
  */
 
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
-import { DisclosureContent } from '../../components/ui/disclosure';
+import { DisclosureContent } from '../../primitives/disclosure';
 import { toToolView, type ToolCallBlock } from '@kortix/sdk';
 import { ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/browser-noise/rules/chunk-load';
+export * from '@kortix/ui/internal/lib/browser-noise/rules/chunk-load';

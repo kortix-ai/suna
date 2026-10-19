@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-layout/sidebar-toggle';
+export * from '@kortix/ui/internal/layout/sidebar-toggle';

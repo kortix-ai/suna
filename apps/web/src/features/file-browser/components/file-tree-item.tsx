@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-browser/components/file-tree-item';
+export * from '@kortix/ui/files/tree/components/file-tree-item';

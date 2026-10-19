@@ -1,7 +1,7 @@
 import { toolCallBlock } from '@kortix/sdk';
-import { TooltipProvider } from '../../../components/ui/tooltip';
+import { TooltipProvider } from '../../../primitives/tooltip';
 import { IntlTestProvider } from '../../../test-utils/intl';
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '../../../internal/session-types';
 import { ArrowSquareOutIcon, FileCsvIcon, FilePdfIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';

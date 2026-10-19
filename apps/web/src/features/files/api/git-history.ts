@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/api/git-history';
+export * from '@kortix/ui/internal/files/git-history';

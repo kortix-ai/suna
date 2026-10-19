@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/tab-store';
+export * from '@kortix/ui/internal/stores/tab-store';

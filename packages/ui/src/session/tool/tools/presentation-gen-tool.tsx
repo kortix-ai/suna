@@ -1,5 +1,5 @@
 'use client';
-import { STATUS_TEXT } from '../../../components/ui/status';
+import { STATUS_TEXT } from '../../../primitives/status';
 import {
   BasicTool,
   InlineServicePreview,
@@ -11,7 +11,7 @@ import {
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
-import { useSandboxProxy } from '../../../shared/hooks/use-sandbox-proxy';
+import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
 import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '../../../lib/utils';
 import {

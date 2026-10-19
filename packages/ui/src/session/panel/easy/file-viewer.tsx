@@ -1,0 +1,391 @@
+'use client';
+
+import { useTranslations } from '../../../i18n';
+/**
+ * `FileViewer` — one file, shown the way that file wants to be read.
+ *
+ * The view toggle is not a universal control, because "source" only means
+ * something for a file whose rendered form differs from its text:
+ *
+ *   - **HTML, SVG and Mermaid** render to something you can look at AND are code you
+ *     might want to read. They are the file types that earn a Preview/Source
+ *     toggle, so that toggle sits before the address pill.
+ *   - **Markdown** is meant to be read as a document. A non-technical user has
+ *     no reason to see `##` and `**`, so there is no toggle — just the document.
+ *   - **Everything else** is source. Showing it is the whole job; a toggle
+ *     would have one meaningful position.
+ *
+ * So the toolbar is one address pill — the file's folders and name, with
+ * Refresh, Copy and Copy link at its trailing edge — then Download, full screen
+ * and close outside it. Every file gets the same pill and actions, built by
+ * `ViewerPathPill` and `ViewerActions`, so the actions never move and this
+ * toolbar cannot drift from `PreviewShell`'s.
+ */
+
+import { HighlightedCode } from '../../../markdown/code';
+import { MarkdownWithFrontmatter } from '../../../markdown/markdown-frontmatter';
+import { ButtonGroup } from '../../../primitives/button-group';
+import { ImageRenderer } from '../../../files/renderers/image-renderer';
+import { MermaidDiagram } from '../../../files/renderers/mermaid/mermaid-diagram';
+import { isMermaidFile } from '../../../files/renderers/mermaid/mermaid-utils';
+import { HtmlPreview, SaveAsPdfButton } from '../../../files/viewer';
+import { getFileCategory, getLanguageFromExt } from '../../../files/viewer/preview-policy';
+import { getFileIcon } from '../../../files/project/components/file-icon';
+import { useIsMobile } from '../../../internal/hooks';
+import { cn } from '../../../lib/utils';
+import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { CloseButton, DetailSidebarToggle } from './detail-view';
+import {
+  PanelWidthButton,
+  RefreshButton,
+  type ShareContext,
+  ViewerActions,
+  ViewerDownloadAction,
+  ViewerPathPill,
+  fileShareInput,
+} from './viewer-actions';
+
+type View = 'preview' | 'source';
+
+function extensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  return dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
+}
+
+export function languageFor(fileName: string): string {
+  const language = getLanguageFromExt(fileName);
+  return extensionOf(fileName) === 'svg'
+    ? 'xml'
+    : extensionOf(fileName) === 'htm'
+      ? 'html'
+      : language === 'plaintext'
+        ? 'text'
+        : language;
+}
+
+export function isMarkdown(fileName: string): boolean {
+  return getLanguageFromExt(fileName) === 'markdown';
+}
+
+/** HTML has a rendered form and a source, and both are worth seeing. */
+export function isHtml(fileName: string): boolean {
+  return getFileCategory(fileName) === 'html';
+}
+
+/**
+ * SVG is the other one. It classifies as an *image* everywhere else in the app
+ * (`getFileCategory`), which is true of how it looks and wrong about what it
+ * is: the daemon deliberately keeps `.svg` out of its binary-extension set
+ * ("svg is XML text", `file-mime.ts`), so the bytes that arrive here are
+ * readable markup. `FilePreview` uses this to route SVG down the text path
+ * instead of the image one, which is the only reason a source view is possible
+ * at all.
+ */
+export function isSvg(fileName: string): boolean {
+  return extensionOf(fileName) === 'svg';
+}
+
+export function FileViewer({
+  content,
+  fileName,
+  path,
+  shareContext,
+  onClose,
+  refresh,
+  reloadKey,
+  className,
+}: {
+  content: string;
+  fileName: string;
+  /** Sandbox path — needed to download the real bytes. */
+  path?: string;
+  /** Forwarded to `ViewerActions`, exactly as `PreviewShell` does. This toolbar
+   *  and `PreviewShell`'s are required to render the same controls (see the
+   *  contract in `viewer-actions.tsx`); omitting it here is what left every
+   *  text and markdown file with no way to produce a public link. */
+  shareContext?: ShareContext;
+  onClose?: () => void;
+  /** Re-reads the file on demand. Omitted where there is no file on disk to
+   *  re-read, in which case the control is omitted too. */
+  refresh?: { onRefresh: () => void; refreshing: boolean };
+  /** Reloads the HTML preview in place when it changes. See `HtmlPreview`. */
+  reloadKey?: string | number;
+  className?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Previewable only WITH a path. The preview is the file served by the
+  // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
+  // to serve there is no rendered form — and therefore no second view to
+  // toggle to. `FilePreview` always passes one.
+  const html = isHtml(fileName) && !!path;
+  const svg = isSvg(fileName);
+  const markdown = isMarkdown(fileName);
+  const mermaid = isMermaidFile(fileName);
+  // The files whose rendered form and source are both worth seeing — the ones
+  // that earn the toggle, and the ones whose preview owns the pane's scrolling
+  // instead of the pane owning theirs.
+  const renders = html || svg || mermaid;
+  const [view, setView] = useState<View>('preview');
+
+  const isMobile = useIsMobile();
+
+  return (
+    <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
+      <div className="flex shrink-0 items-center gap-1 border-b px-2.5 py-2">
+        <DetailSidebarToggle className="size-7" />
+        {/* Same actions in the same place for every file — they never move.
+            Text is the one kind whose content a clipboard can hold, so `Copy`
+            here copies the file itself. */}
+        {/* A file with both a rendered form and a source shows the Preview /
+            Code switch in the pill's icon slot: it changes what the pill's
+            name is showing you, and the type glyph says nothing the name
+            does not. Every other file keeps its type glyph there. */}
+        <ViewerPathPill
+          icon={
+            renders ? (
+              <span role="radiogroup" className="flex items-center gap-px">
+                <ViewSwitchButton
+                  active={view === 'preview'}
+                  label={tI18nComplete.raw('text324b134f57c7')}
+                  onSelect={() => setView('preview')}
+                >
+                  <Eye className="size-3.5" />
+                </ViewSwitchButton>
+                <ViewSwitchButton
+                  active={view === 'source'}
+                  label={tI18nComplete.raw('text0e570ca6fabe')}
+                  onSelect={() => setView('source')}
+                >
+                  <Code2 className="size-3.5" />
+                </ViewSwitchButton>
+              </span>
+            ) : (
+              getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })
+            )
+          }
+          path={path}
+          fileName={fileName}
+        >
+          {refresh && (
+            <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          )}
+          <ViewerActions
+            copy={{
+              run: () => navigator.clipboard.writeText(content),
+              ariaLabel: tI18nComplete.raw('textb3278e5f53cc'),
+            }}
+            shareContext={shareContext}
+            shareInput={fileShareInput(path, fileName)}
+          />
+        </ViewerPathPill>
+
+        {/* `*:size-8`: every member matches the `h-8` path pill beside it. The
+            shared buttons default to `size-7` for the shorter app and detail
+            headers. */}
+        <ButtonGroup className="shrink-0 *:size-8">
+          {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
+          {markdown && (
+            <SaveAsPdfButton
+              variant="secondary"
+              fileName={fileName}
+              content={content}
+              iconClassName="size-3.5"
+            />
+          )}
+          <ViewerDownloadAction download={path ? { path, fileName } : undefined} />
+          <PanelWidthButton isMobile={isMobile} />
+          {onClose && <CloseButton onClose={onClose} />}
+        </ButtonGroup>
+      </div>
+
+      {/* Only scrolling and sizing live here. Padding belongs to each view (see
+          `FileBody`): the rendered HTML page owns the pane edge to edge, while
+          markdown and source both need their inset. Sharing one class string
+          between them is how the text views lost their padding when HTML's was
+          removed. */}
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1',
+          renders && view === 'preview' ? 'overflow-hidden' : 'overflow-auto',
+        )}
+      >
+        <FileBody
+          content={content}
+          fileName={fileName}
+          path={path}
+          html={html}
+          svg={svg}
+          mermaid={mermaid}
+          markdown={markdown}
+          view={view}
+          reloadKey={reloadKey}
+          onShowSource={() => setView('source')}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SVG source text → a URL an `<img>` can load.
+ *
+ * A blob URL rather than a `data:` URI: `btoa` chokes on any SVG containing
+ * non-Latin1 characters (an embedded label in any non-Latin script), and the
+ * percent-encoded alternative inflates large traced artwork into a megabyte-long
+ * attribute. The blob is created in an effect, never in `useMemo` —
+ * `URL.createObjectURL` doesn't exist during SSR, and a memo is allowed to be
+ * recomputed and discarded, which would leak the URL it created. Returns null
+ * for the first client frame, which is why the caller gates on it.
+ */
+function useSvgObjectUrl(content: string, enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }));
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [content, enabled]);
+
+  return url;
+}
+
+function FileBody({
+  content,
+  fileName,
+  path,
+  html,
+  svg,
+  mermaid,
+  markdown,
+  view,
+  reloadKey,
+  onShowSource,
+}: {
+  content: string;
+  fileName: string;
+  path?: string;
+  html: boolean;
+  svg: boolean;
+  mermaid: boolean;
+  markdown: boolean;
+  view: View;
+  reloadKey?: string | number;
+  onShowSource: () => void;
+}) {
+  const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
+
+  // The rendered page IS the document: it owns the pane edge to edge, and its
+  // own <body> sets whatever margin it wants. Padding it would frame someone
+  // else's page inside ours.
+  //
+  // Served by the sandbox's own static file server, never handed to the frame
+  // as `srcDoc`. `srcDoc` gives the document no URL, so `./style.css`,
+  // `img/logo.png` and `app.js` have nothing to resolve against: a page written
+  // as a page arrived as unstyled text, with its scripts inert on top of it.
+  // `HtmlPreview` owns the whole exchange, and is the same component the files
+  // viewer uses — one answer to "what does an HTML file look like".
+  if (html && path && view === 'preview') {
+    return <HtmlPreview path={path} fileName={fileName} reloadKey={reloadKey} />;
+  }
+
+  // SVG stays inline, and stays inert: loaded through `<img>` it renders in the
+  // browser's secure static mode — no script execution, no external fetches, no
+  // interactivity. That matters here because an agent wrote this file, and
+  // `isBrowserViewable` already refuses to open SVG in a real tab for exactly
+  // that reason. HTML earns a real browser (see `HtmlPreview`) because a page
+  // without its scripts is a screenshot; an SVG without its scripts is the
+  // picture, whole.
+  //
+  // Everything else — zoom, pan, wheel, fit-to-screen, the % reset readout — is
+  // `ImageRenderer`'s, unchanged. The backdrop swatches are the one thing it
+  // gains here: SVG artwork is usually transparent, so which background it sits
+  // on is a question only the viewer can answer.
+  if (svg && view === 'preview') {
+    if (!svgUrl) return null;
+    return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
+  }
+
+  // A Mermaid file previews as its diagram. Same component as the Files viewer
+  // and the `show` card, so the three agree on what a `.mmd` looks like.
+  if (mermaid && view === 'preview') {
+    return <MermaidDiagram source={content} fileName={fileName} onShowSource={onShowSource} />;
+  }
+
+  if (markdown) {
+    // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
+    // the raw file, markdown reads the block as prose: the opening `---` is a
+    // thematic break and the closing `---` is a setext underline, so an agent
+    // definition rendered as a stray horizontal rule followed by its entire
+    // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
+    // off and renders the body as a document (embedded markup stays text), the
+    // same component the chat's inline preview uses.
+    return <MarkdownWithFrontmatter content={content} documentPath={path} className="p-6" />;
+  }
+
+  // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
+  // document-style card — a tinted surface, a language chip, and its own copy
+  // button. That chrome is right for a snippet embedded IN prose. Here the code
+  // IS the document, so the chrome just boxes the file inside a second box and
+  // puts a second copy button next to the toolbar's. Plain highlighted text,
+  // filling the pane, is the whole job — which is exactly what HighlightedCode
+  // renders, so none of the old override classes are needed to strip it.
+  //
+  // No palette override: there is only one. This pane and the diff viewer beside
+  // it both render under min-dark / min-light (see @/lib/code-theme). The
+  // CodeMirror editor still carries its own Pierre-derived theme and does NOT
+  // match — a known, accepted gap, not an oversight.
+  //
+  // Inset on every side: the detail layer opens a file with `padded: false`
+  // (the viewer owns its toolbar), so this view supplies its own frame, the
+  // same 4-step the toolbar and the rest of the panel use. Markdown gets its
+  // `p-6` above; without this the code sat flush against the panel's left
+  // edge under a padded toolbar.
+  //
+  // `w-fit min-w-full`: the scroller is the parent. Padding on a block child
+  // ends where the viewport ends, so a long line scrolled to its end would
+  // touch the right edge. Sized to its content, the wrapper carries its own
+  // right inset to the end of the scroll.
+  return (
+    <div className="w-fit min-w-full p-4 [&_code]:text-[13px]">
+      <HighlightedCode code={content} language={languageFor(fileName)} />
+    </div>
+  );
+}
+
+/** One option of the Preview / Code switch: a 24px square that matches the
+ *  pill's row, filled with the page background when selected. */
+function ViewSwitchButton({
+  active,
+  label,
+  onSelect,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      onClick={onSelect}
+      className={cn(
+        'flex size-6 items-center justify-center rounded-sm transition-colors',
+        'focus-visible:ring-ring outline-none focus-visible:ring-2',
+        active
+          ? 'bg-background text-foreground shadow-xs'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  );
+}

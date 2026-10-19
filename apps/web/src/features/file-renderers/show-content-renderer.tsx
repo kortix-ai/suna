@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/show-content-renderer';
+export * from '@kortix/ui/files/renderers/show-content-renderer';

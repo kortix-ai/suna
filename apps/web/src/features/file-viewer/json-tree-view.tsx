@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-viewer/json-tree-view';
+export * from '@kortix/ui/files/viewer/json-tree-view';

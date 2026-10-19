@@ -9,13 +9,13 @@ import {
   peekFileAvailability,
   probeFileAvailability,
   type FileAvailability,
-} from '../../session/file-availability';
-import { resolveRuntimePath } from '../../session/use-oc-file-open';
-import { useSandboxProxy } from '../../shared/hooks/use-sandbox-proxy';
+} from '../../internal/files/file-availability';
+import { resolveRuntimePath } from '../../internal/files/use-oc-file-open';
+import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { useFilePreviewStore } from '../../shared/stores/file-preview-store';
-import { useSessionBrowserStore } from '../../shared/stores/session-browser-store';
+import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
+import { useSessionBrowserStore } from '../../internal/stores/session-browser-store';
 import { useUiLink } from '../../providers/ui-provider';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useInsideLink } from './inside-link-context';

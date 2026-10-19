@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/ask-owner-for-credits-button';
+export * from '@kortix/ui/session/models/ask-owner-for-credits-button';

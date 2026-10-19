@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/strip-html-tags';
+export * from '@kortix/ui/internal/lib/utils/strip-html-tags';

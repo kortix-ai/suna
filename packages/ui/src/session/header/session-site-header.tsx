@@ -1,11 +1,11 @@
 'use client';
 
 import { useTranslations } from '../../i18n';
-import { useSessionListActions } from '../../shared/features/workspace/project-sidebar/use-session-list-actions';
+import { useSessionListActions } from '../actions/use-session-list-actions';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 
-import { Button } from '../../components/ui/button';
-import { sessionCanBeStopped } from '../../shared/components/projects/session-label';
+import { Button } from '../../primitives/button';
+import { sessionCanBeStopped } from '../actions/session-label';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -13,18 +13,18 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import Hint from '../../components/ui/hint';
-import Loading from '../../components/ui/loading';
-import { Skeleton } from '../../components/ui/skeleton';
-import { useSidebar } from '../../components/ui/sidebar';
-import { errorToast, successToast } from '../../components/ui/toast';
-import { copyToClipboard } from '../../shared/lib/utils/clipboard';
+} from '../../primitives/dropdown-menu';
+import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
+import { Skeleton } from '../../primitives/skeleton';
+import { useSidebar } from '../../primitives/sidebar';
+import { errorToast, successToast } from '../../primitives/toast';
+import { copyToClipboard } from '../../internal/lib/utils/clipboard';
 import { CompactModal } from './compact-modal';
 import { ExportTranscriptModal } from './export-transcript-modal';
 import { SessionChangesIndicator } from './session-changes-indicator';
 import { SessionParticipantStack } from '../participants/session-participants';
-import { PreviousRepositoryNotice } from '../previous-repository-session';
+import { PreviousRepositoryNotice } from '../status/previous-repository-session';
 import {
   SessionConfigIndicator,
   SessionConfigReloadConfirm,
@@ -35,29 +35,29 @@ import { SessionTitleInput } from './session-title-input';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';
 import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
 import { Copy } from '../../icons/copy';
-import { Home } from '../../shared/features/icon/icons/home';
-import { openSessionQuickView } from '../open-session-quick-view';
-import { useDesktopShell } from '../../shared/features/workspace/project-layout/sidebar-opener';
-import { SidebarToggle } from '../../shared/features/workspace/project-layout/sidebar-toggle';
-import { useRenameSession } from '../../shared/features/workspace/project-sidebar/modal/use-rename-session';
-import { SessionDeleteModal } from '../../shared/features/workspace/project-sidebar/modal/session-delete-modal';
-import { useNotificationCenter } from '../../shared/features/notifications/use-notification-center';
+import { Home } from '../../internal/icons/home';
+import { openSessionQuickView } from '../panel/open-session-quick-view';
+import { useDesktopShell } from '../../internal/layout/sidebar-opener';
+import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { useRenameSession } from '../actions/use-rename-session';
+import { SessionDeleteModal } from '../actions/session-delete-modal';
+import { useNotificationCenter } from '../../internal/hooks/use-notification-center';
 import {
   useUiComponents,
   useUiPathname,
   useUiRouter,
   useUiViewerId,
 } from '../../providers/ui-provider';
-import { getSessionDisplayTitle } from '../../shared/features/workspace/project-sidebar/project-session-list-helpers';
-import { useReloadSessionConfig } from '../../shared/hooks/projects/use-session-config-freshness';
+import { getSessionDisplayTitle } from '../actions/project-session-list-helpers';
+import { useReloadSessionConfig } from '../../internal/hooks/projects/use-session-config-freshness';
 import { cn } from '../../lib/utils';
-import { useSessionHistoryViewStore } from '../../shared/stores/session-history-view-store';
+import { useSessionHistoryViewStore } from '../../internal/stores/session-history-view-store';
 import {
   type QuickView,
   useIsActionPanelOpen,
   useReadyChip,
   useToggleActionPanel,
-} from '../../shared/stores/kortix-computer-store';
+} from '../../internal/stores/kortix-computer-store';
 import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,

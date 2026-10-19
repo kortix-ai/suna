@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/use-instant-session-send';
+export * from '@kortix/ui/session/composer/use-instant-session-send';

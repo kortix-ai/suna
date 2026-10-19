@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/load-more-row';
+export * from '@kortix/ui/files/project/components/load-more-row';

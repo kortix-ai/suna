@@ -30,13 +30,13 @@ const uiToastMock = () => ({
   successToast: (message: string) => { toasts.push(message); },
   errorToast: () => {},
 });
-mock.module('@kortix/ui/toast', uiToastMock);
-mock.module('@kortix/ui/toast', uiToastMock);
+mock.module('../../primitives/toast', uiToastMock);
+mock.module('../../primitives/toast', uiToastMock);
 mock.module('../../i18n', () => ({
   useTranslations: () => Object.assign((key: string, values?: { count: number }) =>
     values ? `${key}:${values.count}` : key, { raw: (key: string) => key }),
 }));
-mock.module('../../shared/lib/use-project-can', () => ({
+mock.module('../../internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: secretAllowed, isLoading: false }),
 }));
 mock.module('../scope/use-session-scope', () => ({

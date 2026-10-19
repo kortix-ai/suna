@@ -1,6 +1,6 @@
 import './tools/register';
-import { TooltipProvider } from '../../components/ui/tooltip';
-import type { ToolPart } from '../../shared/ui';
+import { TooltipProvider } from '../../primitives/tooltip';
+import type { ToolPart } from '../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../test-utils/intl';

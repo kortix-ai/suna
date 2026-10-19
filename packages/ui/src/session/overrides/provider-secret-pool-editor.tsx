@@ -8,14 +8,14 @@ import {
   type AccountSecretResource, getProjectDetail,
 } from '@kortix/sdk';
 import { useAccountSecretResources, useModelAccess, useProjectSession, useSessionProviderSecretPools } from '@kortix/sdk/react';
-import { Button } from '../../components/ui/button';
-import { Checkbox } from '../../components/ui/checkbox';
-import Loading from '../../components/ui/loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { ErrorState } from '../../shared/features/layout/section/error-state';
-import { needsReconnection } from '../../shared/features/workspace/customize/sections/view/account-secret-access';
-import { LLM_PROVIDER_BY_ID } from '../../shared/lib/llm-providers';
-import { Field, FieldLabel } from '../../components/ui/field';
+import { Button } from '../../primitives/button';
+import { Checkbox } from '../../primitives/checkbox';
+import Loading from '../../primitives/loading';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
+import { ErrorState } from '../../primitives/error-state';
+import { needsReconnection } from '../../internal/lib/account-secret-access';
+import { LLM_PROVIDER_BY_ID } from '../../internal/lib/llm-providers';
+import { Field, FieldLabel } from '../../primitives/field';
 import { keysForSession, normalizePoolSelection, sessionPersonalKeys, type PersonalKeysReason, type ProviderPoolDrafts } from './provider-pool-draft';
 
 function useResources(projectId: string) {

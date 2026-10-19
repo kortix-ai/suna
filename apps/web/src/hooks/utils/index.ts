@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/utils/index';
+export * from '@kortix/ui/internal/hooks/index';

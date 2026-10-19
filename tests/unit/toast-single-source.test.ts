@@ -15,7 +15,7 @@ const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB = 'apps/web/src';
 const SCOPES = [WEB, 'packages/ui/src', 'apps/whitelabel-demo/src'];
 const SONNER_ALLOWED = new Set([
-  'packages/ui/src/components/ui/toast.tsx',
+  'packages/ui/src/primitives/toast.tsx',
   'apps/web/src/app/[locale]/layout.tsx',
 ]);
 const BANNED_IMPORT = /from\s+['"](sonner|@\/lib\/toast)['"]/;

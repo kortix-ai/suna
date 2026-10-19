@@ -14,7 +14,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
-import { useOcFileOpen } from '../../use-oc-file-open';
+import { useOcFileOpen } from '../../../internal/files/use-oc-file-open';
 import { cn } from '../../../lib/utils';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';

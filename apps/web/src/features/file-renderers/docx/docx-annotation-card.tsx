@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/docx/docx-annotation-card';
+export * from '@kortix/ui/files/renderers/docx/docx-annotation-card';

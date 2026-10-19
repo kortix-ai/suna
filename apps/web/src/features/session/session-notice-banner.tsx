@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-notice-banner';
+export * from '@kortix/ui/session/status/session-notice-banner';

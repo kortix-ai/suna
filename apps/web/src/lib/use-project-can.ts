@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/lib/use-project-can';
+export * from '@kortix/ui/internal/lib/use-project-can';

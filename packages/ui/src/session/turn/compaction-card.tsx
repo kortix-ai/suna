@@ -22,12 +22,12 @@ import { useTranslations } from '../../i18n';
 import { CaretDownIcon, CaretRightIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { memo, useState } from 'react';
 
-import { Checkpoint, CheckpointIcon, CheckpointLabel } from '../../shared/components/ai-elements/checkpoint';
-import { TextShimmer } from '../../components/ui/text-shimmer';
+import { Checkpoint, CheckpointIcon, CheckpointLabel } from './checkpoint';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import { cn } from '../../lib/utils';
 
-import Loading from '../../components/ui/loading';
-import { SandboxUrlDetector } from '../sandbox-url-detector';
+import Loading from '../../primitives/loading';
+import { SandboxUrlDetector } from '../media/sandbox-url-detector';
 
 const PILL_CLASS = 'bg-muted/80 flex shrink-0 items-center gap-2 rounded-md  px-3 py-1.5';
 const PILL_LABEL_CLASS = 'text-muted-foreground text-xs tracking-wide';

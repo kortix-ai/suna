@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/shared/viewer-copy-menu';
+export * from '@kortix/ui/files/renderers/shared/viewer-copy-menu';

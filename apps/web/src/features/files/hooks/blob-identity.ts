@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/hooks/blob-identity';
+export * from '@kortix/ui/files/runtime/hooks/blob-identity';

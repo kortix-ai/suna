@@ -3,19 +3,19 @@ import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TooltipProvider } from '../../components/ui/tooltip';
-import { MentionChip, chipClass } from '../mention-chip';
+import { TooltipProvider } from '../../primitives/tooltip';
+import { MentionChip, chipClass } from '../thread/mention-chip';
 import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
 import { defaultUiMessages as enMessages } from '../../i18n';
-import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
+import { adoptSentAttachmentPreviews } from '../composer/sent-attachment-previews';
 import {
   buildOptimisticPromptTextWithUploads,
   promptFileParts,
   sentAttachmentsOf,
   uploadedFileRefXml,
-} from '../uploaded-file-refs';
+} from '../composer/uploaded-file-refs';
 import { serializePromptWithPastes } from '@kortix/shared';
 import {
   MessageAttachments,
@@ -26,7 +26,7 @@ import {
   normalizeAttachments,
   userMessageCopyText,
 } from './user-message';
-import { pastedTextCounts } from '../pasted-text';
+import { pastedTextCounts } from '../composer/pasted-text';
 
 /** A v1 store row: the fixtures are written as v1 rows and read through the converter. */
 type V1Row = Parameters<typeof sessionLogOfV1Rows>[2][number];

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-files-store-registry';
+export * from '@kortix/ui/session/panel/session-files-store-registry';

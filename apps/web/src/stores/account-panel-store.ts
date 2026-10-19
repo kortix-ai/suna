@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/account-panel-store';
+export * from '@kortix/ui/internal/stores/account-panel-store';

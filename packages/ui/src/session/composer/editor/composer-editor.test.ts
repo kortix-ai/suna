@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
+import { mergeFailedSubmissionText } from '../composer-draft-recovery';
 import { planPrefillMerge, textToDocument } from '../composer-logic';
 import {
   createSubmitOnEnterHandler,

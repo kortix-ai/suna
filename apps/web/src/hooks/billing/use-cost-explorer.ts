@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/billing/use-cost-explorer';
+export * from '@kortix/ui/internal/billing/use-cost-explorer';

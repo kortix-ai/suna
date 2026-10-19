@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/components/file-editors/code-editor';
+export * from '@kortix/ui/files/editor/code-editor';

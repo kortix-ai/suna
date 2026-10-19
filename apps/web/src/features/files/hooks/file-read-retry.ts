@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/hooks/file-read-retry';
+export * from '@kortix/ui/internal/files/file-read-retry';

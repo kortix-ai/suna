@@ -18,19 +18,19 @@ import { useTranslations } from '../../i18n';
 
 import { WarningIcon } from '@phosphor-icons/react';
 
-import { DisclosureContent } from '../../components/ui/disclosure';
-import { STATUS_TEXT } from '../../components/ui/status';
-import { TextShimmer } from '../../components/ui/text-shimmer';
+import { DisclosureContent } from '../../primitives/disclosure';
+import { STATUS_TEXT } from '../../primitives/status';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import {
   partOutcome,
   partOutput,
   partStreamingInput,
 } from '../tool/shared/infrastructure';
 import { parseReadOutput } from '@kortix/sdk';
-import { useOcFileOpen } from '../use-oc-file-open';
+import { useOcFileOpen } from '../../internal/files/use-oc-file-open';
 import { cn } from '../../lib/utils';
-import { fileIconFor, getFilename, getFileType, getTypeLabel } from '../../shared/lib/utils/file-utils';
-import { useFilePreviewStore } from '../../shared/stores/file-preview-store';
+import { fileIconFor, getFilename, getFileType, getTypeLabel } from '../../internal/lib/utils/file-utils';
+import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import type { ToolCallBlock } from '@kortix/sdk';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '@kortix/sdk';

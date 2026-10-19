@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/sandbox-proxy';
+export * from '@kortix/ui/internal/lib/utils/sandbox-proxy';

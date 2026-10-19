@@ -1,7 +1,7 @@
 'use client';
 
-import { STATUS_TEXT } from '../../../components/ui/status';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { STATUS_TEXT } from '../../../primitives/status';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import { filePhase, fileVerb } from '@kortix/sdk';
 import {
   BasicTool,
@@ -20,9 +20,9 @@ import { parseReadOutput } from '@kortix/sdk';
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
-import { useOcFileOpen } from '../../use-oc-file-open';
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
-import { getFilename } from '../../../shared/ui';
+import { useOcFileOpen } from '../../../internal/files/use-oc-file-open';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { getFilename } from '../../../internal/session-types';
 import { FileIcon, FolderIcon as Folder, ReadCvLogoIcon } from '@phosphor-icons/react';
 import { inputPath } from '@kortix/sdk';
 import { useTranslations } from '../../../i18n';

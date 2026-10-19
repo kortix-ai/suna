@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/codemirror-pierre-theme';
+export * from '@kortix/ui/internal/lib/codemirror-pierre-theme';

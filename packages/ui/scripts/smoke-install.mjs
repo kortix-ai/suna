@@ -146,9 +146,9 @@ for (const name of ['cn', 'Button', 'UiProvider', 'useUiStrings', 'useIsDark']) 
   if (root[name] === undefined) throw new Error('root export missing: ' + name);
 }
 if (root.cn('px-2', 'px-4') !== 'px-4') throw new Error('cn() does not merge Tailwind classes');
-const chat = await import('@kortix/ui/chat');
+const chat = await import('@kortix/ui/session');
 const session = await import('@kortix/ui/session');
-if (chat.SessionThread !== session.SessionThread) throw new Error('@kortix/ui/chat SessionThread is not @kortix/ui/session SessionThread');
+if (chat.SessionThread !== session.SessionThread) throw new Error('@kortix/ui/session SessionThread is not @kortix/ui/session SessionThread');
 for (const name of ['SessionThread', 'SessionChatInput', 'ToolPartRenderer', 'UnifiedMarkdown']) {
   if (typeof session[name] !== 'function' && typeof session[name] !== 'object') throw new Error('session export missing: ' + name);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ContextItem, OutputItem } from '../../action-panel/shared/derive-panels';
+import type { ContextItem, OutputItem } from '../../panel/shared/derive-panels';
 import { filterSlashFiles, sessionSlashFiles, type SlashFile } from './slash-files';
 
 const output = (partial: Partial<OutputItem> & { path?: string }): OutputItem =>

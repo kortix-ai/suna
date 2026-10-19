@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/site-metadata';
+export * from '@kortix/ui/internal/lib/site-metadata';

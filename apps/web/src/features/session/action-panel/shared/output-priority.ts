@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/output-priority';
+export * from '@kortix/ui/session/panel/shared/output-priority';

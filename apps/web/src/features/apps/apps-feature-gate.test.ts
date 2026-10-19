@@ -46,15 +46,15 @@ mock.module('next/link', () => ({
   default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
     React.createElement('a', { href, ...props }, children),
 }));
-mock.module('@kortix/ui/shared/hooks/utils/index', () => ({ useIsMobile: () => false }));
+mock.module('@kortix/ui/internal/hooks/index', () => ({ useIsMobile: () => false }));
 mock.module('@kortix/ui/sidebar', () => ({
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
   SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
 }));
-mock.module('@kortix/ui/shared/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
-mock.module('@kortix/ui/shared/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
+mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
 
 // The detail modal is outside the empty-inventory path under test.
 mock.module('./app-detail', () => ({ AppDetailModal: () => null }));

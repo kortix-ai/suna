@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/setup-links/util';
+export * from '@kortix/ui/markdown/setup-links/util';

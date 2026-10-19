@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/kortix-cli';
+export * from '@kortix/ui/internal/lib/kortix-cli';

@@ -1,13 +1,13 @@
 'use client';
 
-import { DiffStat, STATUS_TEXT } from '../../../components/ui/status';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { DiffStat, STATUS_TEXT } from '../../../primitives/status';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { useToolOpen } from './infrastructure-contexts';
 import { type ToolOutcome } from '@kortix/sdk';
-import { type TriggerTitle } from '../../../shared/ui';
+import { type TriggerTitle } from '../../../internal/session-types';
 import { isTriggerTitle } from './infrastructure-parts';
 
 // Shared class for the compact single-line "row" layout used by every inline mode.

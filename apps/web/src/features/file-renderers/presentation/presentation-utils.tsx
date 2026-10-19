@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/presentation/presentation-utils';
+export * from '@kortix/ui/files/renderers/presentation/presentation-utils';

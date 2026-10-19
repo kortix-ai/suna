@@ -1,6 +1,6 @@
 'use client';
 
-import { ScopedCache } from '../../../shared/lib/storage/managed-storage';
+import { ScopedCache } from '../../../internal/lib/storage/managed-storage';
 
 import {
   type DraftScope,

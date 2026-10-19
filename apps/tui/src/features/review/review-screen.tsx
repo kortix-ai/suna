@@ -20,7 +20,7 @@
  * - `a` approve → NOTHING. A Kortix change request has three states
  *   (`open|merged|closed`); there is no approve write and no approved state.
  *   `apps/web` maps its "Ship it" button straight onto merge
- *   (`apps/web/src/features/review-center/review-center-connected.tsx`), so the
+ *   (`packages/ui/src/workspace/review/review-center-connected.tsx`), so the
  *   key renders greyed and says to use `m` instead of quietly doing something
  *   else under an approve label.
  */

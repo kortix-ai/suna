@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/random-uuid';
+export * from '@kortix/ui/internal/lib/utils/random-uuid';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/outcomes/outcome-card';
+export * from '@kortix/ui/internal/outcomes/outcome-card';

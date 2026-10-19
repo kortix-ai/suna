@@ -11,7 +11,7 @@
  * parent at settle and remount them.
  */
 
-import { Disclosure, DisclosureContent } from '../../components/ui/disclosure';
+import { Disclosure, DisclosureContent } from '../../primitives/disclosure';
 import { workedForLabel } from '@kortix/sdk';
 import { createContext, type ReactNode } from 'react';
 import { BurstSummaryTrigger } from './burst-summary-trigger';

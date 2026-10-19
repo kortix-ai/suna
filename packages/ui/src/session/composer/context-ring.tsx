@@ -14,8 +14,8 @@
  * (this repo's `bun test` has no DOM to assert the SVG itself).
  */
 
-import { ProgressRing } from '../../components/ui/progress-ring';
-import { STATUS_TEXT } from '../../components/ui/status';
+import { ProgressRing } from '../../primitives/progress-ring';
+import { STATUS_TEXT } from '../../primitives/status';
 
 import type { ContextReading } from './context-usage';
 

@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import Hint from '../../components/ui/hint';
+import Hint from '../../primitives/hint';
 import { cn } from '../../lib/utils';
 
 import { type MessageTimeOptions, formatMessageDay, formatMessageExact } from '@kortix/sdk';

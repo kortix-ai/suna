@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 
-import { SessionDrivesChip } from '../../shared/features/drives/session-drives-chip';
+import { SessionDrivesChip } from '../../files/drives/session-drives-chip';
 import type { SessionScopeCommit } from '../scope/session-scope-model';
 import { useProjectSession } from '@kortix/sdk/react';
 

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/persisted-turn-failure';
+export * from '@kortix/ui/session/thread/persisted-turn-failure';

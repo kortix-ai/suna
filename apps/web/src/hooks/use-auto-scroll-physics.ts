@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/use-auto-scroll-physics';
+export * from '@kortix/ui/internal/hooks/use-auto-scroll-physics';

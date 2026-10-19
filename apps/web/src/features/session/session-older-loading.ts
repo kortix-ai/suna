@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-older-loading';
+export * from '@kortix/ui/session/thread/session-older-loading';

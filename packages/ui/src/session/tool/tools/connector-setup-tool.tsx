@@ -14,7 +14,7 @@ import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useMemo } from 'react';
 
-import { parseConnectorSetupOutput } from '../../../shared/lib/utils/kortix-tool-output';
+import { parseConnectorSetupOutput } from '../../../internal/lib/utils/kortix-tool-output';
 
 export function ConnectorSetupTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');

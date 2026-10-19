@@ -11,16 +11,16 @@ import { useTranslations } from '../../i18n';
  * It shares its query with {@link SessionAuditPanel} so the two never disagree.
  */
 
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
-import { openSessionQuickView } from '../open-session-quick-view';
+import { Badge } from '../../primitives/badge';
+import { Button } from '../../primitives/button';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { openSessionQuickView } from '../panel/open-session-quick-view';
 import {
   isPendingAction,
   relativeTime,
   riskTone,
   useSessionAudit,
-} from '../session-audit-shared';
+} from '../panel/session-audit-shared';
 import { ArrowSquareOutIcon, ShieldWarningIcon } from '@phosphor-icons/react';
 import { useSessionIds } from '../../providers/session-ids';
 import { useState } from 'react';

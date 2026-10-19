@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/sandbox-url-detector';
+export * from '@kortix/ui/session/media/sandbox-url-detector';

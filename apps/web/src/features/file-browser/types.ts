@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-browser/types';
+export * from '@kortix/ui/internal/files/types';

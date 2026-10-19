@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/model-grouping';
+export * from '@kortix/ui/session/models/model-grouping';

@@ -3,11 +3,11 @@
 import type { SessionParticipant, SessionParticipants } from '@kortix/sdk';
 import { useState, type ReactNode } from 'react';
 
-import { AvatarGroup, AvatarGroupCount } from '../../components/ui/avatar';
-import { FadedScrollArea } from '../../components/ui/faded-scroll-area';
-import Hint from '../../components/ui/hint';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../components/ui/hover-card';
-import { UserAvatar } from '../../components/ui/user-avatar';
+import { AvatarGroup, AvatarGroupCount } from '../../primitives/avatar';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import Hint from '../../primitives/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
+import { UserAvatar } from '../../primitives/user-avatar';
 import { useTranslations } from '../../i18n';
 
 /** Faces shown in the header before the rest collapse into a count. */

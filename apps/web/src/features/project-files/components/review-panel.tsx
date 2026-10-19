@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/review-panel';
+export * from '@kortix/ui/files/project/components/review-panel';

@@ -15,7 +15,7 @@ import type {
 } from 'react';
 import { lazy, Suspense, useRef } from 'react';
 
-import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
+import { ImagesUnsupportedBar, ModelConnectionBar } from '../models/model-connection-gate';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { AttachmentTiles } from './attachment-tiles';
 import {

@@ -1,6 +1,6 @@
-import { holdPendingSetupLink } from '../shared/components/setup-links/util';
-import { stripKortixSystemTags } from '../shared/lib/utils/kortix-system-tags';
-import { looksLikeFilePath as sharedLooksLikeFilePath } from '../shared/lib/utils/path-detection';
+import { holdPendingSetupLink } from './setup-links/util';
+import { stripKortixSystemTags } from '../internal/lib/utils/kortix-system-tags';
+import { looksLikeFilePath as sharedLooksLikeFilePath } from '../internal/lib/utils/path-detection';
 import { autoLinkUrls } from '@kortix/shared';
 import { hasReferenceDefinitionOutsideFences, prepareMarkdownForMath } from '@kortix/shared/markdown-math';
 

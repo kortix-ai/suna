@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/use-auto-scroll';
+export * from '@kortix/ui/internal/hooks/use-auto-scroll';

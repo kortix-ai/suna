@@ -31,8 +31,8 @@ import { useTranslations } from '../../i18n';
 import { useRuntimeSessionTodo } from '@kortix/sdk/react';
 import { useId, useMemo, useState } from 'react';
 
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../components/ui/disclosure';
-import { STATUS_RING, STATUS_RING_PITCH } from '../../components/ui/status-ring';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
+import { STATUS_RING, STATUS_RING_PITCH } from '../../primitives/status-ring';
 import {
   parseTodos,
   TodoStatusIcon,

@@ -19,10 +19,10 @@
  * height is always one row.
  */
 
-import { ChainOfThought, ChainOfThoughtStep } from '../../components/ui/chain-of-thought';
-import { Disclosure, DisclosureContent } from '../../components/ui/disclosure';
+import { ChainOfThought, ChainOfThoughtStep } from '../../primitives/chain-of-thought';
+import { Disclosure, DisclosureContent } from '../../primitives/disclosure';
 import { ToolActivateContext } from '../tool/shared/infrastructure';
-import type { ConversationDensity } from '../../shared/stores/user-preferences-store';
+import type { ConversationDensity } from '../../internal/stores/user-preferences-store';
 import {
   sessionLogBurstRunning,
   sessionLogBurstSteps,

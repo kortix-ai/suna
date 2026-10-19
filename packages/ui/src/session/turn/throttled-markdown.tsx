@@ -6,7 +6,7 @@ import { memo, useMemo } from 'react';
 
 import { openGenuiFence } from '../../markdown/code/genui-fence';
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
-import { stripKortixSystemTags } from '../../shared/lib/utils/kortix-system-tags';
+import { stripKortixSystemTags } from '../../internal/lib/utils/kortix-system-tags';
 
 import { useStreamingCadence } from './streaming-cadence';
 

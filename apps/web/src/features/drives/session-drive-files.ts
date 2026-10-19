@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/drives/session-drive-files';
+export * from '@kortix/ui/internal/files/session-drive-files';

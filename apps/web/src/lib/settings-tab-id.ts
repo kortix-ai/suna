@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/settings-tab-id';
+export * from '@kortix/ui/internal/lib/settings-tab-id';

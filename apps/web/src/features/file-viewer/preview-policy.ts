@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-viewer/preview-policy';
+export * from '@kortix/ui/files/viewer/preview-policy';

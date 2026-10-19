@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/workspace/project-reminders/reminder-format';
+export * from '@kortix/ui/internal/reminders/reminder-format';

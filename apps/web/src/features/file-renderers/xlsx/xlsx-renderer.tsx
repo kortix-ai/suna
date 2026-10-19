@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/xlsx/xlsx-renderer';
+export * from '@kortix/ui/files/renderers/xlsx/xlsx-renderer';

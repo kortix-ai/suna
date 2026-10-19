@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-history-scroll';
+export * from '@kortix/ui/session/thread/session-history-scroll';

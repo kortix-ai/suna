@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/file-preview-store';
+export * from '@kortix/ui/internal/stores/file-preview-store';

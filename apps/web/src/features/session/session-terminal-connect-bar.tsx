@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-terminal-connect-bar';
+export * from '@kortix/ui/terminal/session-terminal-connect-bar';

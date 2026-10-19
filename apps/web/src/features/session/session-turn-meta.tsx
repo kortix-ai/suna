@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-turn-meta';
+export * from '@kortix/ui/session/thread/session-turn-meta';

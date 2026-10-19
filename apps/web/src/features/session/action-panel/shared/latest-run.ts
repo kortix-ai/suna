@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/latest-run';
+export * from '@kortix/ui/session/panel/shared/latest-run';

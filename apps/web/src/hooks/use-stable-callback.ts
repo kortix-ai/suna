@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/use-stable-callback';
+export * from '@kortix/ui/internal/hooks/use-stable-callback';

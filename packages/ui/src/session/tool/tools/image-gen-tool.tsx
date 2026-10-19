@@ -1,7 +1,7 @@
 'use client';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
-import { useFileContent } from '../../../shared/features/files/hooks/use-file-content';
-import { parseImageOutput } from '../../image-output-path';
+import { TextShimmer } from '../../../primitives/text-shimmer';
+import { useFileContent } from '../../../files/runtime/hooks/use-file-content';
+import { parseImageOutput } from '../../media/image-output-path';
 import {
   BasicTool,
   isLocalSandboxFilePath,

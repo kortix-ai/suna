@@ -1,7 +1,7 @@
 'use client';
 
-import { Input } from '../../components/ui/input';
-import { MAX_SESSION_NAME_LENGTH } from '../../shared/features/workspace/project-sidebar/modal/use-rename-session';
+import { Input } from '../../primitives/input';
+import { MAX_SESSION_NAME_LENGTH } from '../actions/use-rename-session';
 import { useEffect, useRef, useState } from 'react';
 
 /**

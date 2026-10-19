@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-context-modal';
+export * from '@kortix/ui/session/thread/session-context-modal';

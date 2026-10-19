@@ -1,7 +1,7 @@
 'use client';
 
 import { HighlightedCode } from '../../../markdown/code';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   partInput,
@@ -35,8 +35,8 @@ import {
   hasStructuredContent,
   normalizeToolOutput,
   parseStructuredOutput,
-} from '../../../shared/lib/utils/structured-output';
-import { shellExitCode, stripAnsi } from '../../../shared/ui';
+} from '../../../internal/lib/utils/structured-output';
+import { shellExitCode, stripAnsi } from '../../../internal/session-types';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { toolKind } from '@kortix/sdk';
 import { useContext, useMemo } from 'react';

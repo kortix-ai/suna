@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/security/privileged-frame-origins';
+export * from '@kortix/ui/internal/lib/security/privileged-frame-origins';

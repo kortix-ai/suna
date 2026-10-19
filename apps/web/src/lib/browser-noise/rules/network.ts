@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/browser-noise/rules/network';
+export * from '@kortix/ui/internal/lib/browser-noise/rules/network';

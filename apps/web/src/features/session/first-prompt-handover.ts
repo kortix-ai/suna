@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/first-prompt-handover';
+export * from '@kortix/ui/session/thread/first-prompt-handover';

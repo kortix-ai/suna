@@ -1,11 +1,11 @@
 import { sessionLogOfV1Rows, toolCallBlock } from '@kortix/sdk';
 import './register';
-import { TooltipProvider } from '../../../components/ui/tooltip';
+import { TooltipProvider } from '../../../primitives/tooltip';
 import {
   BoundActivateContext,
   ToolSurfaceContext,
 } from '../shared/infrastructure';
-import type { MessageWithParts, ToolPart } from '../../../shared/ui';
+import type { MessageWithParts, ToolPart } from '../../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { IntlTestProvider } from '../../../test-utils/intl';
@@ -56,8 +56,8 @@ await mock.module('@kortix/sdk/react', () => ({
   },
 }));
 
-const realSubSessionModal = await import('../../sub-session-modal');
-await mock.module('../../sub-session-modal', () => ({
+const realSubSessionModal = await import('../../thread/sub-session-modal');
+await mock.module('../../thread/sub-session-modal', () => ({
   ...realSubSessionModal,
   SubSessionModal: ({
     open,

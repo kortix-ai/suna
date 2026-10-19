@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/utils/use-github-stars';
+export * from '@kortix/ui/internal/hooks/use-github-stars';

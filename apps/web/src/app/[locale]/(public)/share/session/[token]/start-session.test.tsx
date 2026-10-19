@@ -47,9 +47,9 @@ const uiButtonMock = () => ({ Button: host });
 mock.module('@/components/ui/button', uiButtonMock);
 mock.module('@kortix/ui/button', uiButtonMock);
 const presentation = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-mock.module('@/features/auth/auth-card-shell', () => ({ AuthFrame: presentation }));
-mock.module('@/features/auth/auth-consent', () => ({ OutcomeTitle: presentation }));
-mock.module('@/features/auth/auth-primitives', () => ({ Rise: presentation, StepHeader: presentation }));
+mock.module('@kortix/ui/internal/auth/auth-card-shell', () => ({ AuthFrame: presentation }));
+mock.module('@kortix/ui/internal/auth/auth-consent', () => ({ OutcomeTitle: presentation }));
+mock.module('@kortix/ui/internal/auth/auth-primitives', () => ({ Rise: presentation, StepHeader: presentation }));
 const uiHintMock = () => ({
   default: ({ children }: { children?: ReactNode }) => children,
 });

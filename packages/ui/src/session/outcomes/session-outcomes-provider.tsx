@@ -44,11 +44,11 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 // NOT `@kortix/sdk/react`'s change-request hook. See the note above — this is
 // a cache-coherence requirement, not a style preference.
-import { useSessionChangeRequests } from '../../shared/features/project-files/hooks/use-change-requests';
+import { useSessionChangeRequests } from '../../files/project/hooks/use-change-requests';
 
 import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
 import { changeRequestOutcomes } from './change-request-outcomes';
-import type { Outcome } from './outcome-types';
+import type { Outcome } from '../../internal/outcomes/outcome-types';
 
 interface OutcomesValue {
   byTurn: Map<string, Outcome[]>;

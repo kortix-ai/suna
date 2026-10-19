@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/search/workspace-search-service';
+export * from '@kortix/ui/files/runtime/search/workspace-search-service';

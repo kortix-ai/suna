@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/genui/block-telemetry';
+export * from '@kortix/ui/markdown/genui/block-telemetry';

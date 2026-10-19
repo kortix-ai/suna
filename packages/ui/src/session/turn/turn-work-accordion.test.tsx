@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
 import { TurnWorkAccordion } from './turn-work-accordion';
-import { Disclosure } from '../../components/ui/disclosure';
+import { Disclosure } from '../../primitives/disclosure';
 
 const STEP = <div>synthetic step content</div>;
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createTranslator } from 'use-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TooltipProvider } from '../../components/ui/tooltip';
+import { TooltipProvider } from '../../primitives/tooltip';
 import { defaultUiMessages as en } from '../../i18n';
 import { QuoteList, type QuoteListLabels, type QuoteListProps } from './quote-list';
 

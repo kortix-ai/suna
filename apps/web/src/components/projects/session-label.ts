@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/projects/session-label';
+export * from '@kortix/ui/session/actions/session-label';

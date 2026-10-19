@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/security/iframe-sandbox';
+export * from '@kortix/ui/internal/lib/security/iframe-sandbox';

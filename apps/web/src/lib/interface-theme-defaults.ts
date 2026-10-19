@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/interface-theme-defaults';
+export * from '@kortix/ui/internal/lib/interface-theme-defaults';

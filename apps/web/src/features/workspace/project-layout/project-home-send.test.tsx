@@ -25,7 +25,7 @@ mock.module('@kortix/ui/providers/ui-provider', () => ({
   ...realUiProvider,
   useUiSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
 }));
-mock.module('@kortix/ui/session/composer-chat-input', () => ({
+mock.module('@kortix/ui/session/composer/composer-chat-input', () => ({
   ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
@@ -41,7 +41,7 @@ mock.module('@/i18n/use-translations', () => ({
 }));
 // Zustand hooks read the store's initial state under `renderToStaticMarkup`, so
 // the pending flag is set here rather than through the store.
-mock.module('@/stores/first-chat-store', () => ({
+mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
   ...realFirstChatStore,
   useFirstChatPending: () => firstChatPending,
 }));
@@ -49,11 +49,11 @@ mock.module('@tanstack/react-query', () => ({
   ...realQuery,
   useQuery: () => ({ data: undefined }),
 }));
-mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
   useProjectCan: () => ({ allowed: false }),
 }));
-mock.module('@kortix/ui/shared/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
+mock.module('@kortix/ui/internal/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
   ...realSdk,
   getProjectDetail: mock(),
@@ -73,18 +73,18 @@ mock.module('@kortix/sdk/react', () => ({
     },
   },
 }));
-mock.module('@kortix/ui/shared/features/workspace/project-layout/sidebar-toggle', () => ({
+mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({
   SidebarToggle: () => null,
 }));
-mock.module('./home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
-mock.module('./home/sandbox-picker', () => ({ SandboxPicker: () => null }));
-mock.module('./home/first-chat', () => ({
+mock.module('@kortix/ui/workspace/home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
+mock.module('@kortix/ui/workspace/home/sandbox-picker', () => ({ SandboxPicker: () => null }));
+mock.module('@kortix/ui/workspace/home/first-chat', () => ({
   FirstChat: (props: ComponentProps<typeof FirstChat>) => {
     firstChat = props;
     return props.composer;
   },
 }));
-mock.module('@kortix/ui/shared/features/workspace/project-layout/home/welcome-body', () => ({
+mock.module('@kortix/ui/workspace/home/welcome-body', () => ({
   ProjectHomeWallpaper: () => null,
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
 }));

@@ -47,7 +47,7 @@ const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8')
 
 test('account settings keeps Back to app left and utilities right in web browsers', () => {
   const sidebar = readFileSync(
-    join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-sidebar.tsx'),
+    join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'),
     'utf8',
   );
   expect(codeOnly(sidebar)).toMatch(/kx-overlay-sidebar-titlebar[^'"\n]*justify-between/);
@@ -70,7 +70,7 @@ test('desktop native theme waits for next-themes hydration', () => {
     join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
     'utf8',
   );
-  const bridgeSource = readFileSync(join(repoRoot, 'apps/web/src/lib/desktop.ts'), 'utf8');
+  const bridgeSource = readFileSync(join(repoRoot, 'packages/ui/src/internal/lib/desktop.ts'), 'utf8');
   expect(chromeSource).toContain('if (!isDesktop() || !theme) return;');
   expect(bridgeSource).toContain("if (typeof window === 'undefined' || !theme) return;");
 });
@@ -216,7 +216,7 @@ describe('no app control overlaps the macOS traffic lights', () => {
  * out, or the alignment above is silently wrong by a factor of the zoom.
  */
 describe('the shell zoom does not drag the band off the OS controls', () => {
-  const desktopLib = readFileSync(join(repoRoot, 'apps/web/src/lib/desktop.ts'), 'utf8');
+  const desktopLib = readFileSync(join(repoRoot, 'packages/ui/src/internal/lib/desktop.ts'), 'utf8');
   const baseBlock = css.match(/html\[data-desktop='true'\]\s*\{([^}]*)\}/);
 
   test('CSS seeds the same factor the shell actually applies', () => {
@@ -256,7 +256,7 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
       /--kx-titlebar-control-size:\s*calc\(\s*28px\s*\/\s*var\(--kx-desktop-zoom\)/,
     );
     const control = readFileSync(
-      join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+      join(repoRoot, 'packages/ui/src/internal/desktop/titlebar-control.ts'),
       'utf8',
     );
     expect(control).toContain('h-[var(--kx-titlebar-control-size)]');
@@ -288,11 +288,11 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
 describe('nothing re-hard-codes the band', () => {
   const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
   const control = readFileSync(
-    join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+    join(repoRoot, 'packages/ui/src/internal/desktop/titlebar-control.ts'),
     'utf8',
   );
   const backButton = readFileSync(
-    join(repoRoot, 'apps/web/src/components/desktop/desktop-back-button.tsx'),
+    join(repoRoot, 'packages/ui/src/internal/desktop/desktop-back-button.tsx'),
     'utf8',
   );
   const sessionHeader = readFileSync(
@@ -434,7 +434,7 @@ describe('nothing re-hard-codes the band', () => {
 
 describe('sidebar hover peek owns one toggle and no title-bar gap', () => {
   const sidebar = readFileSync(
-    join(repoRoot, 'apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx'),
+    join(repoRoot, 'packages/ui/src/workspace/sidebar/project-sidebar.tsx'),
     'utf8',
   );
 
@@ -460,7 +460,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
     presentation: readFileSync(
       join(
         repoRoot,
-        'packages/ui/src/shared/features/file-renderers/presentation/FullScreenPresentationViewer.tsx',
+        'packages/ui/src/files/renderers/presentation/FullScreenPresentationViewer.tsx',
       ),
       'utf8',
     ),
@@ -487,8 +487,8 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
   });
 
   test('account hub actions and breadcrumb share the titlebar band', () => {
-    const sidebar = codeOnly(readFileSync(join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-sidebar.tsx'), 'utf8'));
-    const shell = codeOnly(readFileSync(join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-shell.tsx'), 'utf8'));
+    const sidebar = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'), 'utf8'));
+    const shell = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-shell.tsx'), 'utf8'));
     expect(sidebar).toContain('kx-titlebar-row kx-titlebar-band-height');
     expect(shell).toContain('kx-titlebar-row kx-titlebar-band-height');
     expect(shell).toContain('data-sidebar-collapsed={open ? undefined :');
@@ -501,7 +501,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
   });
 
   test('project-only top inset does not push the account sidebar below its breadcrumb', () => {
-    const projectSidebar = readFileSync(join(repoRoot, 'apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx'), 'utf8');
+    const projectSidebar = readFileSync(join(repoRoot, 'packages/ui/src/workspace/sidebar/project-sidebar.tsx'), 'utf8');
     expect(projectSidebar).toContain('kx-project-sidebar-header');
     expect(css).toContain("html[data-desktop-platform='macos'] .kx-project-sidebar-header {");
     expect(css).not.toContain("[data-side='left'] [data-sidebar='header']");
@@ -527,11 +527,11 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     'project-home.tsx': join(import.meta.dir, 'project-home.tsx'),
     'project-sessions-view.tsx': join(
       repoRoot,
-      'apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx',
+      'packages/ui/src/workspace/sessions/project-sessions-view.tsx',
     ),
     'capability-tabs.tsx': join(
       repoRoot,
-      'apps/web/src/features/workspace/capabilities/shared/capability-tabs.tsx',
+      'packages/ui/src/customize/shared/capability-tabs.tsx',
     ),
     'session-site-header.tsx': join(
       repoRoot,
@@ -539,12 +539,12 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     ),
     'drive-header.tsx': join(
       repoRoot,
-      'packages/ui/src/shared/features/project-files/components/drive-header.tsx',
+      'packages/ui/src/files/project/components/drive-header.tsx',
     ),
     // Apps draws its opener through this shared header.
     'project-page-header.tsx': join(
       repoRoot,
-      'packages/ui/src/shared/features/workspace/project-layout/project-page-header.tsx',
+      'packages/ui/src/internal/layout/project-page-header.tsx',
     ),
     // The route that had NO opener on any of its headerless surfaces, which is
     // why the component exists. See HeaderlessSessionSurface.

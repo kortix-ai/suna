@@ -13,10 +13,10 @@ import { useTranslations } from '../../i18n';
  * ("N more in this session") and nothing re-renders those cards elsewhere.
  */
 
-import { ItemGroup } from '../../components/ui/item';
+import { ItemGroup } from '../../primitives/item';
 
-import { OutcomeCard } from './outcome-card';
-import type { Outcome } from './outcome-types';
+import { OutcomeCard } from '../../internal/outcomes/outcome-card';
+import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { useOutcomeOpen, useTurnOutcomes } from './session-outcomes-provider';
 
 export const MAX_VISIBLE_OUTCOMES = 4;

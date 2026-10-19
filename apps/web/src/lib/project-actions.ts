@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/project-actions';
+export * from '@kortix/ui/internal/lib/project-actions';

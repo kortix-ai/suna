@@ -1,9 +1,9 @@
 'use client';
 
-import { errorToast } from '../../components/ui/toast';
+import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { isImageFile } from '../../shared/lib/utils/file-utils';
+import { isImageFile } from '../../internal/lib/utils/file-utils';
 import type {
   Agent,
   Command,
@@ -30,20 +30,20 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { extractClipboardFiles } from '../clipboard-files';
-import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
-import { resolveComposerResetOnSend, type ComposerSendReset } from '../composer-reset';
-import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
+import { extractClipboardFiles } from './clipboard-files';
+import { mergeFailedSubmissionFiles } from './composer-draft-recovery';
+import { resolveComposerResetOnSend, type ComposerSendReset } from './composer-reset';
+import { disownSentAttachmentPreviews, revokeUnsentPreview } from './sent-attachment-previews';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
   modelRejectingAttachedImages,
-} from '../model-availability';
-import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
-import { type ModelDefaultControls } from '../model-selector';
-import { useModelConnectionGate } from '../use-model-connection-gate';
+} from '../models/model-availability';
+import { ImagesUnsupportedBar, ModelConnectionBar } from '../models/model-connection-gate';
+import { type ModelDefaultControls } from '../models/model-selector';
+import { useModelConnectionGate } from '../models/use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import { useComposerDropZone } from './composer-drop-zone';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
@@ -56,10 +56,10 @@ import {
 } from './ComposerAboveCard';
 import { ComposerCard, type ComposerCardDerived } from './ComposerCard';
 
-import { Button } from '../../components/ui/button';
-import Loading from '../../components/ui/loading';
+import { Button } from '../../primitives/button';
+import Loading from '../../primitives/loading';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
-import { handleBillingError } from '../../shared/lib/error-handler';
+import { handleBillingError } from '../../internal/lib/error-handler';
 import {
   attachedFileUploadId,
   attachmentsBlockSend,

@@ -4,10 +4,10 @@ import { CaretRightIcon, WarningIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 
-import { Button } from '../../components/ui/button';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../components/ui/hover-card';
-import { Progress } from '../../components/ui/progress';
-import { STATUS_DOT, STATUS_TEXT, type StatusTone } from '../../components/ui/status';
+import { Button } from '../../primitives/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
+import { Progress } from '../../primitives/progress';
+import { STATUS_DOT, STATUS_TEXT, type StatusTone } from '../../primitives/status';
 
 import { cn } from '../../lib/utils';
 import type { SessionLogMessage } from '@kortix/sdk';

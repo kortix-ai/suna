@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-viewer/use-content-revision';
+export * from '@kortix/ui/files/viewer/use-content-revision';

@@ -1,7 +1,7 @@
 'use client';
 
-import { InfoBanner } from '../../components/ui/info-banner';
-import { successToast } from '../../components/ui/toast';
+import { InfoBanner } from '../../primitives/info-banner';
+import { successToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import type { SessionScope } from '@kortix/sdk';
 import {
@@ -35,8 +35,8 @@ import {
   useProjectSession,
   useSessionProviderSecretPools,
 } from '@kortix/sdk/react';
-import { PROJECT_ACTIONS } from '../../shared/lib/project-actions';
-import { useProjectCan } from '../../shared/lib/use-project-can';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectCan } from '../../internal/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
 import { useProviderPoolEditingState } from './provider-pool-draft-context';

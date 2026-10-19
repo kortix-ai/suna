@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/files/hooks/use-server-health';
+export * from '@kortix/ui/files/runtime/hooks/use-server-health';

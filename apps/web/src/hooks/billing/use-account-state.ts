@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/billing/use-account-state';
+export * from '@kortix/ui/internal/billing/use-account-state';

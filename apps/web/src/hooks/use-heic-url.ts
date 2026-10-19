@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/use-heic-url';
+export * from '@kortix/ui/internal/hooks/use-heic-url';

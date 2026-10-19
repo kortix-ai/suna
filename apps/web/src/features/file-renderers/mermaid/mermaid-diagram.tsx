@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/mermaid/mermaid-diagram';
+export * from '@kortix/ui/files/renderers/mermaid/mermaid-diagram';

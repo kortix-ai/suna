@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/components/file-route-state';
+export * from '@kortix/ui/files/project/components/file-route-state';

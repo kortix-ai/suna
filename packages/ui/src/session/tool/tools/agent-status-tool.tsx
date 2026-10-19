@@ -1,9 +1,9 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
-import Loading from '../../../components/ui/loading';
-import { STATUS_TEXT } from '../../../components/ui/status';
-import { SubSessionModal } from '../../sub-session-modal';
+import { Badge } from '../../../primitives/badge';
+import Loading from '../../../primitives/loading';
+import { STATUS_TEXT } from '../../../primitives/status';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import {
   BasicTool,
   isErrorOutput,

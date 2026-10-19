@@ -1,7 +1,7 @@
 import '../tool/tools/register';
-import { ChainOfThoughtStep } from '../../components/ui/chain-of-thought';
+import { ChainOfThoughtStep } from '../../primitives/chain-of-thought';
 import { ToolPartRenderer } from '../tool/tool-renderers';
-import type { Part, ToolPart } from '../../shared/ui';
+import type { Part, ToolPart } from '../../internal/session-types';
 import {
   sessionLogBurstRunning,
   sessionLogBurstSteps,

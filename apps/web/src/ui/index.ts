@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/ui/index';
+export * from '@kortix/ui/internal/session-types/index';

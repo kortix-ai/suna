@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/workspace/capabilities/shared/capability-tab-routes';
+export * from '@kortix/ui/internal/lib/capability-tab-routes';

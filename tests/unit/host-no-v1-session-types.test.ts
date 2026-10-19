@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 //
 // Scope: every tracked `.ts`/`.tsx` under apps/web/src, apps/mobile and packages/ui/src (the
 // session UI moved there). Not scanned: tests (they build v1 fixtures on purpose),
-// `apps/web/src/ui/`, `packages/ui/src/shared/ui/` and the shims (a file that only re-exports
+// `apps/web/src/ui/`, `packages/ui/src/internal/session-types/` and the shims (a file that only re-exports
 // an SDK module, such as `lib/iam-client.ts`): they are the SDK surface. An import from any of
 // them counts as an import from the SDK. Each host resolves `@/` to its own root.
 
@@ -48,8 +48,8 @@ const V1_NAMES = new Set([
 const ALLOWED: Record<string, string> = {
   'apps/mobile/lib/projects/projects-client.ts: *':
     'a namespace import of the SDK REST client (projects, secrets, connectors, change requests); it reads no transcript',
-  'packages/ui/src/chat/user-message-parts.ts: ClassifiedPart':
-    'the public @kortix/ui/chat API (#10257) renders classified v1 parts; it moves to blocks with that API',
+  'packages/ui/src/session/pickers/user-message-parts.ts: ClassifiedPart':
+    'the public @kortix/ui/session API (#10257) renders classified v1 parts; it moves to blocks with that API',
 };
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;
@@ -156,7 +156,7 @@ describe('host files import no v1 part or turn type', () => {
     const planted = [
       "import { ToolPart } from '@/lib/iam-client';",
       "import { useRuntimeMessages } from '@/hooks/tunnel/use-tunnel';",
-      "import type { Part } from '@kortix/ui/shared/ui/types';",
+      "import type { Part } from '@kortix/ui/internal/session-types/types';",
       "import type { TextPart } from '../../../../ui';",
       "export * from '@/ui';",
       'import {\n  // a comment\n  SessionLogBlock, /* another */ Turn,\n} from "@kortix/sdk";',
@@ -164,7 +164,7 @@ describe('host files import no v1 part or turn type', () => {
     expect(v1Imports(planted, at)).toEqual([
       'ToolPart (@/lib/iam-client)',
       'useRuntimeMessages (@/hooks/tunnel/use-tunnel)',
-      'Part (@kortix/ui/shared/ui/types)',
+      'Part (@kortix/ui/internal/session-types/types)',
       'TextPart (../../../../ui)',
       'Turn (@kortix/sdk)',
       'export * (@/ui)',

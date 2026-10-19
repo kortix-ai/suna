@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/model-availability';
+export * from '@kortix/ui/session/models/model-availability';

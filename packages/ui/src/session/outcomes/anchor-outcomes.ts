@@ -9,7 +9,7 @@
  * every card.
  */
 
-import type { Outcome } from './outcome-types';
+import type { Outcome } from '../../internal/outcomes/outcome-types';
 
 export interface TurnSpan {
   /** The same key `session-chat.tsx` renders the turn under. */

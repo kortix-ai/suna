@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/lib/use-permission';
+export * from '@kortix/ui/internal/lib/use-permission';

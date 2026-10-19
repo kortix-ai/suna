@@ -1,11 +1,11 @@
 'use client';
 
-import { ChainOfThoughtStep } from '../../components/ui/chain-of-thought';
-import { DisclosureContent } from '../../components/ui/disclosure';
-import { FadedScrollArea } from '../../components/ui/faded-scroll-area';
-import { TextShimmer } from '../../components/ui/text-shimmer';
+import { ChainOfThoughtStep } from '../../primitives/chain-of-thought';
+import { DisclosureContent } from '../../primitives/disclosure';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import { cn } from '../../lib/utils';
-import { formatDuration } from '../../shared/ui';
+import { formatDuration } from '../../internal/session-types';
 import { CircleDashedIcon } from '@phosphor-icons/react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { ChainStepTrigger } from './chain-step-trigger';

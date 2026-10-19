@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/reload-forensics';
+export * from '@kortix/ui/session/status/reload-forensics';

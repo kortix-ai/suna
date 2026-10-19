@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/mobile-tool-drawer';
+export * from '@kortix/ui/session/panel/mobile-tool-drawer';

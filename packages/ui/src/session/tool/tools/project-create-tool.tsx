@@ -14,7 +14,7 @@ import { PlusIcon as Plus } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useCallback, useMemo } from 'react';
 
-import { parseProjectCreateOutput } from '../../../shared/lib/utils/kortix-tool-output';
+import { parseProjectCreateOutput } from '../../../internal/lib/utils/kortix-tool-output';
 
 export function ProjectCreateTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

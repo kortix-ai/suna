@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-viewer/save-as-pdf-button';
+export * from '@kortix/ui/files/viewer/save-as-pdf-button';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/drives/use-drives';
+export * from '@kortix/ui/files/drives/use-drives';

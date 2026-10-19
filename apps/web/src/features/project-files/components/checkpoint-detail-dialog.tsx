@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/checkpoint-detail-dialog';
+export * from '@kortix/ui/files/project/components/checkpoint-detail-dialog';

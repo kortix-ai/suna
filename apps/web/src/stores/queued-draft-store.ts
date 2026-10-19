@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/queued-draft-store';
+export * from '@kortix/ui/session/composer/stores/queued-draft-store';

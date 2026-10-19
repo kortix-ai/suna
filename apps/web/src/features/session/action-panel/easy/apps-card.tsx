@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/action-panel/easy/apps-card';
+export * from '@kortix/ui/session/panel/easy/apps-card';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/pdf/pdf-renderer';
+export * from '@kortix/ui/files/renderers/pdf/pdf-renderer';

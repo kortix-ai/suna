@@ -1,6 +1,6 @@
 'use client';
 
-import { SubSessionModal } from '../../sub-session-modal';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import {
   BasicTool,
   firstMeaningfulLine,
@@ -21,7 +21,7 @@ import {
   useSubAgentThread,
 } from '../shared/sub-agent';
 import type { ToolProps } from '../shared/types';
-import { getChildSessionId, getToolInfo } from '../../../shared/ui';
+import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { CheckIcon as Check, CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useContext, useMemo, useState } from 'react';

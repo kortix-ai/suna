@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/notifications/use-notification-center';
+export * from '@kortix/ui/internal/hooks/use-notification-center';

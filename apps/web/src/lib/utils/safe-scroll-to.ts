@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/safe-scroll-to';
+export * from '@kortix/ui/internal/lib/utils/safe-scroll-to';

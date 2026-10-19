@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/docx/docx-renderer';
+export * from '@kortix/ui/files/renderers/docx/docx-renderer';

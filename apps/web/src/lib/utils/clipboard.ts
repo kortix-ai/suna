@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/clipboard';
+export * from '@kortix/ui/internal/lib/utils/clipboard';

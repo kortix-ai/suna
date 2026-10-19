@@ -20,22 +20,22 @@ import type { PromptAttachmentItem } from '@kortix/sdk';
 import type { PastedContent } from '@kortix/shared';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
-import { Button } from '../../components/ui/button';
-import Hint from '../../components/ui/hint';
-import { IconRefresh } from '../../components/ui/kortix-icons';
-import { ProgressRing } from '../../components/ui/progress-ring';
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
+import { IconRefresh } from '../../primitives/kortix-icons';
+import { ProgressRing } from '../../primitives/progress-ring';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { convertHeicBlobToJpeg, isHeicFile } from '../../shared/lib/utils/heic-convert';
-import { PastedTextModal } from '../pasted-text';
-import { holdConvertedPreview } from '../sent-attachment-previews';
+import { convertHeicBlobToJpeg, isHeicFile } from '../../internal/lib/utils/heic-convert';
+import { PastedTextModal } from './pasted-text';
+import { holdConvertedPreview } from './sent-attachment-previews';
 
 import {
   AttachmentRemoveButton,
   AttachmentTile,
   PASTE_PREVIEW_CHARS,
   isPreviewableImage,
-} from '../attachment-tile';
+} from './attachment-tile';
 import {
   attachmentFailureReason,
   attachmentFailureRetryable,

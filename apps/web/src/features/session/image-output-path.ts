@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/image-output-path';
+export * from '@kortix/ui/session/media/image-output-path';

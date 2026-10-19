@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/focus-without-scroll';
+export * from '@kortix/ui/internal/lib/utils/focus-without-scroll';

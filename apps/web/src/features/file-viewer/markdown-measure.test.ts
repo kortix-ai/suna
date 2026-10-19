@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { getLanguageFromExt } from './preview-policy';
 
-const src = readFileSync(resolve(import.meta.dir, '../../../../../packages/ui/src/shared/features/file-viewer/file-content-renderer.tsx'), 'utf8');
+const src = readFileSync(resolve(import.meta.dir, '../../../../../packages/ui/src/files/viewer/file-content-renderer.tsx'), 'utf8');
 
 /**
  * Markdown is prose and gets a reading measure; code does not. These pin the

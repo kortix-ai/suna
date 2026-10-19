@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '../../components/ui/tooltip';
+import { TooltipProvider } from '../../primitives/tooltip';
 import { ComposerToolbar } from './composer-toolbar';
 
 /**

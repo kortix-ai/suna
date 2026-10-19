@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/provisioning-failure';
+export * from '@kortix/ui/session/status/provisioning-failure';

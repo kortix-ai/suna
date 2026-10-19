@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
+import { Button } from '../../primitives/button';
 import {
   Modal,
   ModalBody,
@@ -9,8 +9,8 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '../../components/ui/modal';
-import { errorToast } from '../../components/ui/toast';
+} from '../../primitives/modal';
+import { errorToast } from '../../primitives/toast';
 import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
 import { useTranslations } from '../../i18n';
 import { useCallback } from 'react';

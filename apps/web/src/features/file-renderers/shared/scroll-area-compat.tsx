@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/shared/scroll-area-compat';
+export * from '@kortix/ui/files/renderers/shared/scroll-area-compat';

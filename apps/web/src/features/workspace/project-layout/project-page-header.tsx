@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-layout/project-page-header';
+export * from '@kortix/ui/internal/layout/project-page-header';

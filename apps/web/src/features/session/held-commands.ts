@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/held-commands';
+export * from '@kortix/ui/session/composer/held-commands';

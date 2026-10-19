@@ -1,5 +1,5 @@
 import { normalizeLanguage } from '../unified-markdown-utils';
-import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName } from '../../shared/lib/code-theme';
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName } from '../../internal/lib/code-theme';
 import { cn } from '../../lib/utils';
 import { createHighlighterCore, type HighlighterCore, type ShikiTransformer } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';

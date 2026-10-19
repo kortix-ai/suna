@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Outcome } from './outcome-types';
+import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { MAX_VISIBLE_OUTCOMES, visibleOutcomes } from './turn-outcomes';
 
 const make = (n: number): Outcome[] =>

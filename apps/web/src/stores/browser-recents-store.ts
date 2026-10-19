@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/browser-recents-store';
+export * from '@kortix/ui/internal/stores/browser-recents-store';

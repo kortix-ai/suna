@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { QueueRow } from '../queue-projection';
+import type { QueueRow } from './queue-projection';
 import { queuedRowActions } from './queued-prompt-list';
 
 const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({

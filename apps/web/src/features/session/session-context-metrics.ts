@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-context-metrics';
+export * from '@kortix/ui/session/thread/session-context-metrics';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/composer-chat-input';
+export * from '@kortix/ui/session/composer/composer-chat-input';

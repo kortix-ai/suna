@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/session-composer-handoff-store';
+export * from '@kortix/ui/session/composer/stores/session-composer-handoff-store';

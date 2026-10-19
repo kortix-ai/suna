@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/file-editors/codemirror-diagnostics';
+export * from '@kortix/ui/files/editor/codemirror-diagnostics';

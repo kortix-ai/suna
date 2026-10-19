@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/code-theme';
+export * from '@kortix/ui/internal/lib/code-theme';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/zip/zip-entries';
+export * from '@kortix/ui/files/renderers/zip/zip-entries';

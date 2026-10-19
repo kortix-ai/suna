@@ -1,15 +1,15 @@
 'use client';
 
 import { stripBashMetadata } from '@kortix/shared/tool-output';
-import { type TriggerTitle } from '../../../shared/ui';
+import { type TriggerTitle } from '../../../internal/session-types';
 import { toolCallMetadata, toolCallRawOutput, type ToolCallBlock } from '@kortix/sdk';
 
 // The SDK's block readers, under the names the renderers use: the status in their words
 // (`completed`, not `complete`), the raw output of a completed call, a failed call's error text.
 export { toolCallError as partError, toolCallRawOutput as partRawOutput, toolCallStatus as partStatus } from '@kortix/sdk';
 import { CheckIcon as Check, WarningCircleIcon as CircleAlert, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import Loading from '../../../components/ui/loading';
-import { STATUS_TEXT } from '../../../components/ui/status';
+import Loading from '../../../primitives/loading';
+import { STATUS_TEXT } from '../../../primitives/status';
 import { cn } from '../../../lib/utils';
 
 export function parsePartialJSON(raw: string): Record<string, unknown> {

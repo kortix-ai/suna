@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '../../../components/ui/button';
-import Hint from '../../../components/ui/hint';
-import Loading from '../../../components/ui/loading';
-import { SessionDotMatrix } from '../../../components/ui/dot-matrix/session-dot-matrix';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { Button } from '../../../primitives/button';
+import Hint from '../../../primitives/hint';
+import Loading from '../../../primitives/loading';
+import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   isShowContentUnavailable,
   isShowPayloadEmpty,

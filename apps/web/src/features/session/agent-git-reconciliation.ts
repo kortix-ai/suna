@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/agent-git-reconciliation';
+export * from '@kortix/ui/session/status/agent-git-reconciliation';

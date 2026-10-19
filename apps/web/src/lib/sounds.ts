@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/sounds';
+export * from '@kortix/ui/internal/lib/sounds';

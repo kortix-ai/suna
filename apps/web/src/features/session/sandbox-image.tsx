@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/sandbox-image';
+export * from '@kortix/ui/session/media/sandbox-image';

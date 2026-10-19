@@ -27,7 +27,7 @@ function sourceFiles(dir: string): string[] {
 
 /** The short keys, read from the one alias table in the store. */
 function hubParamKeys(): string[] {
-  const store = readFileSync(join(webSrc, '../../../packages/ui/src/shared/stores/account-panel-store.ts'), 'utf8');
+  const store = readFileSync(join(webSrc, '../../../packages/ui/src/internal/stores/account-panel-store.ts'), 'utf8');
   const table = store.match(/const HUB_PARAM_ALIASES = \{([\s\S]*?)\} as const/);
   if (!table) throw new Error('HUB_PARAM_ALIASES not found in account-panel-store.ts');
   return [...table[1].matchAll(/^\s*(\w+): 'account\w+',$/gm)].map((m) => m[1]);

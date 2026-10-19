@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/csv/csv-copy';
+export * from '@kortix/ui/files/renderers/csv/csv-copy';

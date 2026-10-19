@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/project-preamble';
+export * from '@kortix/ui/internal/lib/project-preamble';

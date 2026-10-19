@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/hooks/use-file-list';
+export * from '@kortix/ui/files/project/hooks/use-file-list';

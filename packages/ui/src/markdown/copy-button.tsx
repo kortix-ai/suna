@@ -6,8 +6,8 @@ import { cn } from '../lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Hint from '../components/ui/hint';
-import { errorToast, successToast } from '../components/ui/toast';
+import Hint from '../primitives/hint';
+import { errorToast, successToast } from '../primitives/toast';
 
 export function CopyButton({
   code,

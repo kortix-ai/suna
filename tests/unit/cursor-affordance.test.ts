@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 // same line.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
-const SCOPES = ['packages/ui/src/components/ui', 'apps/web/src/components/ui'];
+const SCOPES = ['packages/ui/src/primitives', 'apps/web/src/components/ui'];
 const REASON = 'cursor-default:';
 
 function trackedFiles(): string[] {

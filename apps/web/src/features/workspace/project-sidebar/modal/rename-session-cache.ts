@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/modal/rename-session-cache';
+export * from '@kortix/ui/session/actions/rename-session-cache';

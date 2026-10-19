@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/project-nav-row';
+export * from '@kortix/ui/internal/layout/project-nav-row';

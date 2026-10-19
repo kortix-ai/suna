@@ -15,8 +15,8 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
-import { useOcFileOpen } from '../../use-oc-file-open';
-import { getDirectory } from '../../../shared/ui';
+import { useOcFileOpen } from '../../../internal/files/use-oc-file-open';
+import { getDirectory } from '../../../internal/session-types';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { toolKind } from '@kortix/sdk';

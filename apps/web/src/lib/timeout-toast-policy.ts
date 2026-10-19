@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/timeout-toast-policy';
+export * from '@kortix/ui/internal/lib/timeout-toast-policy';

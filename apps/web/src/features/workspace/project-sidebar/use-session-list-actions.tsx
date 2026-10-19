@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/workspace/project-sidebar/use-session-list-actions';
+export * from '@kortix/ui/session/actions/use-session-list-actions';

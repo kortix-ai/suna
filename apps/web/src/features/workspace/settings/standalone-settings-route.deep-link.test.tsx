@@ -40,7 +40,7 @@ mock.module('@/hooks/account/use-ensure-selected-account', () => ({
 // The route's decision is what this file pins; the panel rendering it is
 // `settings-panel.test.tsx`'s subject, and its body cannot mount here.
 mock.module('./settings-panel', () => ({ SettingsPanel: () => null }));
-mock.module('@/lib/onboarding/last-project-cookie', () => ({
+mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
   readLastProjectId: () => null,
 }));
 

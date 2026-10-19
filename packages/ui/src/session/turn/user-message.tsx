@@ -2,7 +2,7 @@
 
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
-import { errorToast } from '../../components/ui/toast';
+import { errorToast } from '../../primitives/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
@@ -32,24 +32,24 @@ import {
 } from '@phosphor-icons/react';
 
 import { CopyButton } from '../../markdown/copy-button';
-import { HoverPrefetchLink } from '../../shared/components/common/hover-prefetch-link';
-import { Button } from '../../components/ui/button';
-import Hint from '../../components/ui/hint';
-import { InlineMeta } from '../../components/ui/inline-meta';
-import Loading from '../../components/ui/loading';
+import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
+import { InlineMeta } from '../../primitives/inline-meta';
+import Loading from '../../primitives/loading';
 import {
   PreviewImage,
   PreviewImageContent,
   PreviewImageTrigger,
-} from '../../components/ui/preview-image';
-import { detectCommandFromText } from '../detect-command';
-import { useSandboxImageSrc } from '../sandbox-image';
+} from '../../primitives/preview-image';
+import { detectCommandFromText } from '../thread/detect-command';
+import { useSandboxImageSrc } from '../media/sandbox-image';
 import { cn } from '../../lib/utils';
-import { getFilename } from '../../shared/lib/utils/file-utils';
-import { stripKortixSystemTags } from '../../shared/lib/utils/kortix-system-tags';
-import { useKortixComputerStore } from '../../shared/stores/kortix-computer-store';
-import { openTabAndNavigate } from '../../shared/stores/tab-store';
-import type { Command } from '../../shared/ui';
+import { getFilename } from '../../internal/lib/utils/file-utils';
+import { stripKortixSystemTags } from '../../internal/lib/utils/kortix-system-tags';
+import { useKortixComputerStore } from '../../internal/stores/kortix-computer-store';
+import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import type { Command } from '../../internal/session-types';
 import {
   AttachmentRemoveButton,
   AttachmentTile,
@@ -57,23 +57,23 @@ import {
   TILE_INTERACTIVE,
   TILE_SURFACE,
   isPreviewableImage,
-} from '../attachment-tile';
-import { MentionChip } from '../mention-chip';
+} from '../composer/attachment-tile';
+import { MentionChip } from '../thread/mention-chip';
 import {
   releaseSentAttachmentPreview,
   sentAttachmentPreview,
   type SentAttachment,
-} from '../sent-attachment-previews';
+} from '../composer/sent-attachment-previews';
 import type { AttachedFile } from '../composer/types';
-import { uploadedFileRefXml } from '../uploaded-file-refs';
+import { uploadedFileRefXml } from '../composer/uploaded-file-refs';
 import {
   buildMentionSegments,
   type MentionSegment,
   type MentionSourceRef,
-} from '../mention-segments';
+} from '../thread/mention-segments';
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
-import { useChannelBindings } from '../../shared/hooks/channels/use-channel-bindings';
+import { useChannelBindings } from '../../internal/hooks/use-channel-bindings';
 import { useSessionIds } from '../../providers/session-ids';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
@@ -94,9 +94,9 @@ import {
   stripReplyContexts,
   stripSystemPtyText,
   SystemNotificationCard,
-} from '../message-parsing';
+} from '../thread/message-parsing';
 
-import { useProjectSessionHref } from '../../shared/lib/navigation/session-href';
+import { useProjectSessionHref } from '../../internal/lib/navigation/session-href';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
 
@@ -1699,7 +1699,7 @@ export function UserMessage({
 
   const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
 
-  // Build highlighted text segments — see `../mention-segments.ts`. The walk
+  // Build highlighted text segments — see `../thread/mention-segments.ts`. The walk
   // used to live inline here and in `optimistic-turn.tsx`, and the two copies
   // had already diverged.
   const segments = useMemo(

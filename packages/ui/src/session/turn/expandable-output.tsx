@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
+import { Button } from '../../primitives/button';
 import { cn } from '../../lib/utils';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 

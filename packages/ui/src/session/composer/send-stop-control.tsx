@@ -1,13 +1,13 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
-import Hint from '../../components/ui/hint';
-import { Kbd } from '../../components/ui/kbd';
-import Loading from '../../components/ui/loading';
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
+import { Kbd } from '../../primitives/kbd';
+import Loading from '../../primitives/loading';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '../../i18n';
-import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
+import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../models/model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =

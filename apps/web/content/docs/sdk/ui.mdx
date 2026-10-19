@@ -16,7 +16,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
 | `@kortix/ui/session` | The session thread: `SessionThread` and its building blocks. It needs `@kortix/sdk` and its React peers. |
-| `@kortix/ui/chat` | The same `SessionThread`, plus `ModelPicker` and `AgentPicker` for a form outside a session. |
+| `@kortix/ui/session` | The same `SessionThread`, plus `ModelPicker` and `AgentPicker` for a form outside a session. |
 | `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
 | `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
@@ -26,7 +26,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | You use | Also install |
 | --- | --- |
 | `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
-| `@kortix/ui/session` or `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| `@kortix/ui/session` or `@kortix/ui/session`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
 | The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
 After the first npm release:
@@ -267,7 +267,7 @@ The parent sets the height, and the thread fills it. Everything reads off `sessi
 | `readOnly` | Hides the composer: a transcript to read. |
 | `className` | Classes on the thread's root. |
 
-`@kortix/ui/chat` exports the same `SessionThread`, plus `ModelPicker` and `AgentPicker`: controlled pickers over a plain list, for a form outside a session such as a new-session form. `providerLabel` on `ModelPicker` relabels a provider (a white-label returns its own name for `model.providerID === 'kortix'`).
+`@kortix/ui/session` exports the same `SessionThread`, plus `ModelPicker` and `AgentPicker`: controlled pickers over a plain list, for a form outside a session such as a new-session form. `providerLabel` on `ModelPicker` relabels a provider (a white-label returns its own name for `model.providerID === 'kortix'`).
 
 ### Replace one tool row
 

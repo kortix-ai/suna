@@ -53,7 +53,7 @@ test('overlays portal to a themed host in body; a nested scope host carries both
   // Radix picks its layout-effect hook when the module loads, so it loads after the DOM globals.
   const { createRoot } = await import('react-dom/client');
   const DialogPrimitive = await import('@radix-ui/react-dialog');
-  const { DialogPortal } = await import('../components/ui/dialog');
+  const { DialogPortal } = await import('../primitives/dialog');
   const container = win.document.createElement('div');
   win.document.body.appendChild(container);
   const root = createRoot(container as never);

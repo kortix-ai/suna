@@ -1,4 +1,4 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/genui/components/charts';
-export { default } from '@kortix/ui/shared/features/genui/components/charts';
+export * from '@kortix/ui/markdown/genui/components/charts';
+export { default } from '@kortix/ui/markdown/genui/components/charts';

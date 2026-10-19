@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/billing/account-state-gating';
+export * from '@kortix/ui/internal/billing/account-state-gating';

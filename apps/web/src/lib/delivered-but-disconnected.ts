@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/delivered-but-disconnected';
+export * from '@kortix/ui/internal/lib/delivered-but-disconnected';

@@ -1,6 +1,6 @@
 import { toolCallBlock } from '@kortix/sdk';
 import { memoryRelPath, parseMemoryView } from '@kortix/sdk';
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '../../../internal/session-types';
 import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';

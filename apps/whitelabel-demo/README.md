@@ -21,7 +21,7 @@ Client code imports only:
 
 - `@kortix/sdk`
 - `@kortix/sdk/react`
-- `@kortix/ui/<name>` (primitives), `@kortix/ui/chat` (the chat) and
+- `@kortix/ui/<name>` (primitives), `@kortix/ui/session` (the chat) and
   `@kortix/ui/toast` (toasts)
 - `@phosphor-icons/react` (the icon set @kortix/ui renders)
 - Local application modules

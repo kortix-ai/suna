@@ -1,4 +1,4 @@
-import { parsePendingSetupLinkHref, parseSetupLinkHref } from '../shared/components/setup-links/util';
+import { parsePendingSetupLinkHref, parseSetupLinkHref } from './setup-links/util';
 
 /**
  * The slice of an mdast node this transform reads. Declared here rather than

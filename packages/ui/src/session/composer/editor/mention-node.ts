@@ -1,6 +1,6 @@
 import { Editor, Node, mergeAttributes } from '@tiptap/core';
 
-import { chipAriaLabel, chipClass, chipText } from '../../mention-chip';
+import { chipAriaLabel, chipClass, chipText } from '../../thread/mention-chip';
 import type { ChipKind } from '../types';
 
 export interface MentionAttrs {
@@ -14,7 +14,7 @@ export interface MentionAttrs {
 // draw the identical chip — see that module's header for what was broken
 // while this file was their only home. Re-exported because this node is the
 // composer's canonical entry point for them.
-export { chipAriaLabel, chipClass, chipPrefix, chipText } from '../../mention-chip';
+export { chipAriaLabel, chipClass, chipPrefix, chipText } from '../../thread/mention-chip';
 
 /**
  * An indivisible inline badge — an `@` mention or a `/` command.

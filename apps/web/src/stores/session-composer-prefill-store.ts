@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/session-composer-prefill-store';
+export * from '@kortix/ui/session/composer/stores/session-composer-prefill-store';

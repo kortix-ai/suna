@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/api/runtime-file-read';
+export * from '@kortix/ui/internal/files/runtime-file-read';

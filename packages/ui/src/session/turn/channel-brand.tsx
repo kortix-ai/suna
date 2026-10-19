@@ -1,7 +1,7 @@
 'use client';
 
-import { MicrosoftTeams } from '../../shared/features/icon/icons/microsoft-teams';
-import { Slack } from '../../shared/features/icon/icons/slack';
+import { MicrosoftTeams } from '../../internal/icons/microsoft-teams';
+import { Slack } from '../../internal/icons/slack';
 import type { UiTranslator } from '../../i18n';
 import type { ChannelPlatform } from './channel-message';
 

@@ -19,7 +19,7 @@
  */
 import './tool/tools/register';
 
-export { SessionThread, type SessionThreadProps } from './session-thread';
+export { SessionThread, type SessionThreadProps } from './thread/session-thread';
 export { UserMessage } from './turn/user-message';
 export { ThrottledMarkdown } from './turn/throttled-markdown';
 export { UnifiedMarkdown, type UnifiedMarkdownProps } from '../markdown/unified-markdown';
@@ -28,11 +28,11 @@ export { ToolRegistry } from './tool/shared/registry';
 export type { BasicToolProps, ToolComponent, ToolProps } from './tool/shared/types';
 export { BasicTool } from './tool/shared/infrastructure-rows';
 export { GenericTool } from './tool/generic-tool';
-export { SessionChatInput, type SessionChatInputProps } from './session-chat-input';
+export { SessionChatInput, type SessionChatInputProps } from './composer/session-chat-input';
 export { AgentSelector } from './composer/agent-selector';
-export { ModelSelector, type ModelSelectorProps } from './model-selector';
-export { SessionPermissionPrompt } from './session-permission-prompt';
-export { QuestionPrompt, type QuestionPromptHandle } from './question-prompt';
-export { TurnErrorDisplay } from './session-error-banner';
-export { SessionBusyIndicator } from './session-busy-indicator';
-export { SessionStartingLoader } from './session-starting-loader';
+export { ModelSelector, type ModelSelectorProps } from './models/model-selector';
+export { SessionPermissionPrompt } from './prompts/session-permission-prompt';
+export { QuestionPrompt, type QuestionPromptHandle } from './prompts/question-prompt';
+export { TurnErrorDisplay } from './status/session-error-banner';
+export { SessionBusyIndicator } from './status/session-busy-indicator';
+export { SessionStartingLoader } from './status/session-starting-loader';

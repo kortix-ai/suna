@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/use-drive-row-interactions';
+export * from '@kortix/ui/files/project/components/use-drive-row-interactions';

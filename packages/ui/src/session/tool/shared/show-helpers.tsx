@@ -1,19 +1,19 @@
 'use client';
 
-import { Button } from '../../../components/ui/button';
-import Hint from '../../../components/ui/hint';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../../components/ui/hover-card';
-import Loading from '../../../components/ui/loading';
-import type { ShowCarouselItem } from '../../../shared/features/file-renderers/show-content-renderer';
+import { Button } from '../../../primitives/button';
+import Hint from '../../../primitives/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../../primitives/hover-card';
+import Loading from '../../../primitives/loading';
+import type { ShowCarouselItem } from '../../../files/renderers/show-content-renderer';
 import {
   getShowCarouselItemLabel,
   ShowCarousel,
   ShowContentRenderer,
   showDomain,
-} from '../../../shared/features/file-renderers/show-content-renderer';
-import { getFileCategory } from '../../../shared/features/file-viewer/preview-policy';
-import { binaryBlobKeys } from '../../../shared/features/files/hooks/use-binary-blob';
-import { fileContentKeys } from '../../../shared/features/files/hooks/use-file-content';
+} from '../../../files/renderers/show-content-renderer';
+import { getFileCategory } from '../../../files/viewer/preview-policy';
+import { binaryBlobKeys } from '../../../files/runtime/hooks/use-binary-blob';
+import { fileContentKeys } from '../../../files/runtime/hooks/use-file-content';
 import {
   ServicePreviewViewport,
   useProxyUrl,
@@ -24,15 +24,15 @@ import { ToolActionBar } from './tool-action-bar';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
-import { enrichPreviewMetadata } from '../../../shared/lib/utils/session-context';
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
-import { useKortixComputerStore } from '../../../shared/stores/kortix-computer-store';
+import { enrichPreviewMetadata } from '../../../internal/lib/utils/session-context';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
 import { safeHttpUrl } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { type KeyboardEvent, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { CopyButton } from '../../../markdown/copy-button';
-import { STATUS_BORDER } from '../../../components/ui/status';
+import { STATUS_BORDER } from '../../../primitives/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import {

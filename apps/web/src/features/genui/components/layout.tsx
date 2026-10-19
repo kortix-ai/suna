@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/genui/components/layout';
+export * from '@kortix/ui/markdown/genui/components/layout';

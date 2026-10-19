@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-chat-input';
+export * from '@kortix/ui/session/composer/session-chat-input';

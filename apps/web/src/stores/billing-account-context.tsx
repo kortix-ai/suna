@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/stores/billing-account-context';
+export * from '@kortix/ui/internal/stores/billing-account-context';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-start-gate';
+export * from '@kortix/ui/session/status/session-start-gate';

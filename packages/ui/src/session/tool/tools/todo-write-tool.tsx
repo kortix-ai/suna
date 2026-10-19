@@ -1,7 +1,7 @@
 'use client';
 
-import { Progress } from '../../../components/ui/progress';
-import { Stepper, StepperItem, StepperSeparator, StepperTrigger } from '../../../components/ui/stepper';
+import { Progress } from '../../../primitives/progress';
+import { Stepper, StepperItem, StepperSeparator, StepperTrigger } from '../../../primitives/stepper';
 import {
   BasicTool,
   partInput,

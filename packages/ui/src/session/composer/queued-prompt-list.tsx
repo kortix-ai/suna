@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
-import Loading from '../../components/ui/loading';
+import { Button } from '../../primitives/button';
+import Loading from '../../primitives/loading';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import {
@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
+} from '../../primitives/dropdown-menu';
 import {
   ArrowClockwiseIcon,
   ArrowUpIcon,
@@ -22,7 +22,7 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { Fragment, useId, useState, type ReactNode } from 'react';
-import type { QueueRow } from '../queue-projection';
+import type { QueueRow } from './queue-projection';
 
 const STEER_FALLBACK_KEY = {
   unsupported: 'steerFallbackUnsupported',

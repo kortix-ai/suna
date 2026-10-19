@@ -58,7 +58,7 @@ mock.module('@/lib/iam-client', () => ({
   getPatPolicy: async () => null,
 }));
 
-mock.module('@kortix/ui/shared/lib/use-permission', () => ({
+mock.module('@kortix/ui/internal/lib/use-permission', () => ({
   usePermission: () => ({ allowed: true, isLoading: false }),
 }));
 
@@ -105,12 +105,12 @@ function makeKebab() {
   return Kebab;
 }
 const RowKebabMock = makeKebab();
-mock.module('@/features/workspace/shared/access/access-row', () => ({ RowKebab: RowKebabMock }));
-mock.module('@/features/workspace/shared/access', () => ({ CopyRow: Pass }));
+mock.module('@kortix/ui/access/access/access-row', () => ({ RowKebab: RowKebabMock }));
+mock.module('@kortix/ui/access/access/index', () => ({ CopyRow: Pass }));
 
-mock.module('./connected-apps', () => ({ ConnectedApps: () => null }));
-mock.module('../settings-tab-header', () => ({ SettingsTabHeader: () => null }));
-mock.module('@kortix/ui/shared/features/accounts/hub/account-hub-location', () => ({
+mock.module('@kortix/ui/customize/settings/tabs/connected-apps', () => ({ ConnectedApps: () => null }));
+mock.module('@kortix/ui/customize/settings/settings-tab-header', () => ({ SettingsTabHeader: () => null }));
+mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({
   HubLink: ({ children }: { children?: ReactNode }) => createElement(Fragment, null, children),
 }));
 

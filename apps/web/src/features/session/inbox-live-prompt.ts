@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/inbox-live-prompt';
+export * from '@kortix/ui/session/composer/inbox-live-prompt';

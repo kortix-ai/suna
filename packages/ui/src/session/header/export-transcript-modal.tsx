@@ -2,15 +2,15 @@
 
 import { useTranslations } from '../../i18n';
 
-import { Button } from '../../components/ui/button';
+import { Button } from '../../primitives/button';
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldGroup,
   FieldTitle,
-} from '../../components/ui/field';
-import Loading from '../../components/ui/loading';
+} from '../../primitives/field';
+import Loading from '../../primitives/loading';
 import {
   Modal,
   ModalBody,
@@ -19,11 +19,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '../../components/ui/modal';
-import { Switch } from '../../components/ui/switch';
-import { errorToast, successToast } from '../../components/ui/toast';
-import { useGenuiCopyMessages } from '../../shared/features/genui/to-markdown';
-import { getSessionDisplayTitle } from '../../shared/features/workspace/project-sidebar/project-session-list-helpers';
+} from '../../primitives/modal';
+import { Switch } from '../../primitives/switch';
+import { errorToast, successToast } from '../../primitives/toast';
+import { useGenuiCopyMessages } from '../../markdown/genui/to-markdown';
+import { getSessionDisplayTitle } from '../actions/project-session-list-helpers';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -42,7 +42,7 @@ import {
   CopyIcon as Copy,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download } from '../../shared/features/icon/icons/download';
+import { Download } from '../../internal/icons/download';
 
 // ============================================================================
 // Export Modal

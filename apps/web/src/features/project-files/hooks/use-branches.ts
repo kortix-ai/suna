@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/hooks/use-branches';
+export * from '@kortix/ui/files/project/hooks/use-branches';

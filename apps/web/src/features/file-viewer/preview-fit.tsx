@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-viewer/preview-fit';
+export * from '@kortix/ui/files/viewer/preview-fit';

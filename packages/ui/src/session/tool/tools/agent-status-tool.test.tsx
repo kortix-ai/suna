@@ -1,5 +1,5 @@
 import { toolCallBlock } from '@kortix/sdk';
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '../../../internal/session-types';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 

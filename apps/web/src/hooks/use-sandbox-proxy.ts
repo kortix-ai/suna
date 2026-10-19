@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/use-sandbox-proxy';
+export * from '@kortix/ui/internal/hooks/use-sandbox-proxy';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/zip/zip-renderer';
+export * from '@kortix/ui/files/renderers/zip/zip-renderer';

@@ -28,7 +28,7 @@ let quotaData: { capped: boolean; message: string | null } | undefined;
 /** Account ids the page asked the quota for, in order. */
 const quotaCalls: (string | null | undefined)[] = [];
 
-mock.module('@/features/workspace/new/use-project-quota', () => ({
+mock.module('@kortix/ui/workspace/new/use-project-quota', () => ({
   useProjectQuota: (accountId: string | null | undefined) => {
     quotaCalls.push(accountId);
     return { data: quotaData };
@@ -48,7 +48,7 @@ mock.module('@/features/providers/auth-provider', () => ({
   }),
 }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
-mock.module('@/hooks/account/use-accounts-list', () => ({
+mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
   useAccountsList: () => ({
     data: [
       { account_id: 'user-1', name: 'Personal', account_role: 'owner', is_primary_owner: true },
@@ -56,7 +56,7 @@ mock.module('@/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-mock.module('@/features/workspace/new/use-creatable-accounts', () => ({
+mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
   useCreatableAccounts: (accounts: unknown[]) => accounts,
 }));
 // The upgrade modal's content runs react-query git/billing queries against no
@@ -65,7 +65,7 @@ mock.module('@/features/workspace/new/use-creatable-accounts', () => ({
 mock.module('@/features/billing/global-upgrade-modal', () => ({
   GlobalUpgradeModal: () => createElement('div', { 'data-testid': 'upgrade-modal-stub' }),
 }));
-mock.module('@/features/workspace/new/use-create-workspace', () => ({
+mock.module('@kortix/ui/workspace/new/use-create-workspace', () => ({
   useCreateWorkspace: () => ({
     create: () => {
       creates += 1;
@@ -83,7 +83,7 @@ mock.module('@/features/workspace/new/use-create-workspace', () => ({
 mock.module('@/features/workspace/account-top-bar', () => ({
   AccountTopBar: () => createElement('header'),
 }));
-mock.module('@/features/workspace/new/advanced-fields', () => ({
+mock.module('@kortix/ui/workspace/new/advanced-fields', () => ({
   AdvancedFields: () => createElement('div', { 'data-testid': 'advanced-stub' }),
 }));
 

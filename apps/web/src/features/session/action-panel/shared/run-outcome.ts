@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/run-outcome';
+export * from '@kortix/ui/session/panel/shared/run-outcome';

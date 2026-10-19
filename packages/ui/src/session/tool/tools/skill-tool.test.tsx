@@ -1,6 +1,6 @@
 import { toolCallBlock } from '@kortix/sdk';
 import { ToolSurfaceContext } from '../shared/infrastructure';
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '../../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../../test-utils/intl';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/pty-connection';
+export * from '@kortix/ui/terminal/pty-connection';

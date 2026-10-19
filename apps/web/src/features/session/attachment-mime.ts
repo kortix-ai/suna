@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/attachment-mime';
+export * from '@kortix/ui/internal/lib/attachment-mime';

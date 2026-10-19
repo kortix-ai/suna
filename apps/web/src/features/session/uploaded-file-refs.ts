@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/uploaded-file-refs';
+export * from '@kortix/ui/session/composer/uploaded-file-refs';

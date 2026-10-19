@@ -1,10 +1,10 @@
 'use client';
 
-import { SessionRetryDisplay, TurnErrorDisplay } from '../../session-error-banner';
+import { SessionRetryDisplay, TurnErrorDisplay } from '../../status/session-error-banner';
 import { ToolSurfaceContext, useToolIndent } from './surface';
 import { ToolPartRenderer } from '../tool-part-renderer';
 import { cn } from '../../../lib/utils';
-import { getRetryInfo, getRetryMessage } from '../../../shared/ui';
+import { getRetryInfo, getRetryMessage } from '../../../internal/session-types';
 import { classifySessionLogMessage, type SessionLogThread, type ToolCallBlock } from '@kortix/sdk';
 import { canQueryRuntimeSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 import { useSessionIds } from '../../../providers/session-ids';

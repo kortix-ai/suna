@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/files/hooks/system-dir';
+export * from '@kortix/ui/files/runtime/hooks/system-dir';

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/files/sandbox-file-explorer';
+export * from '@kortix/ui/files/runtime/sandbox-file-explorer';

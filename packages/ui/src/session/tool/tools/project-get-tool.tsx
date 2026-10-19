@@ -1,6 +1,6 @@
 'use client';
 
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   isErrorOutput,

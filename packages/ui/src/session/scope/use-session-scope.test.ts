@@ -267,7 +267,7 @@ describe('loadSessionScopeCatalog', () => {
 // edit away from silently sending the request again.
 const scopeSrc = await Bun.file(new URL('./use-session-scope.ts', import.meta.url).pathname).text();
 const gateSrc = await Bun.file(
-  new URL('../use-model-connection-gate.tsx', import.meta.url).pathname,
+  new URL('../models/use-model-connection-gate.tsx', import.meta.url).pathname,
 ).text();
 
 describe('project-home makes no request it knows will 403', () => {

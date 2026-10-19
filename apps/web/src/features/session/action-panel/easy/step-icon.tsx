@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/action-panel/easy/step-icon';
+export * from '@kortix/ui/session/panel/easy/step-icon';

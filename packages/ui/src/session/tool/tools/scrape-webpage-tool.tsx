@@ -6,9 +6,9 @@ import {
   DisclosureBody,
   DisclosureContent,
   DisclosureTrigger,
-} from '../../../components/ui/disclosure';
-import { FaviconAvatar } from '../../../components/ui/favicon-avatar';
-import { STATUS_TEXT } from '../../../components/ui/status';
+} from '../../../primitives/disclosure';
+import { FaviconAvatar } from '../../../primitives/favicon-avatar';
+import { STATUS_TEXT } from '../../../primitives/status';
 import {
   BasicTool,
   MD_FLUSH_CLASSES,

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/esc-to-stop';
+export * from '@kortix/ui/session/composer/esc-to-stop';

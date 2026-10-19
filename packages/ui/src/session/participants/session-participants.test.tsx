@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TooltipProvider } from '../../components/ui/tooltip';
+import { TooltipProvider } from '../../primitives/tooltip';
 
 import { defaultUiMessages as enMessages } from '../../i18n';
 import {

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/derive-panels';
+export * from '@kortix/ui/session/panel/shared/derive-panels';

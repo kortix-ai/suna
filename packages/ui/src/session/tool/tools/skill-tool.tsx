@@ -18,7 +18,7 @@ import {
   skillInputDir,
 } from '@kortix/sdk';
 import type { ToolProps } from '../shared/types';
-import { useFilePreviewStore } from '../../../shared/stores/file-preview-store';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { skillDocumentBody } from '@kortix/shared/tool-output';
 import { FileDashedIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';

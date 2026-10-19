@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/action-navigator-logic';
+export * from '@kortix/ui/session/panel/shared/action-navigator-logic';

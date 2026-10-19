@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/clipboard-files';
+export * from '@kortix/ui/session/composer/clipboard-files';

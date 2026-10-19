@@ -13,7 +13,7 @@ import { FolderIcon as Folder } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useMemo } from 'react';
 
-import { type ProjectEntry, parseProjectListOutput } from '../../../shared/lib/utils/kortix-tool-output';
+import { type ProjectEntry, parseProjectListOutput } from '../../../internal/lib/utils/kortix-tool-output';
 
 export function ProjectListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

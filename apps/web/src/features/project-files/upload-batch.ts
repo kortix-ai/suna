@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/upload-batch';
+export * from '@kortix/ui/files/project/upload-batch';

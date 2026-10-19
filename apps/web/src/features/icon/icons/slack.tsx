@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/icon/icons/slack';
+export * from '@kortix/ui/internal/icons/slack';

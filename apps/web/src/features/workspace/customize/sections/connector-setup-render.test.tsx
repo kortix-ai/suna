@@ -33,13 +33,13 @@ mock.module('motion/react', () => ({
 const uiToastMock = () => ({ successToast: () => {} });
 mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
-mock.module('./component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
+mock.module('@kortix/ui/customize/sections/component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
 mock.module('@kortix/ui/markdown/copy-button', () => ({ CopyButton: host('span') }));
 const mutation = {
   isPending: false,
   mutate: (_value: unknown, options: { onSuccess: () => void }) => options.onSuccess(),
 };
-mock.module('@/hooks/channels/use-channels-installations', () => ({
+mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () => ({
   useConnectSlack: () => mutation,
   useSlackManifest: () => ({ data: '{}' }),
 }));

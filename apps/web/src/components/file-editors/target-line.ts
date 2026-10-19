@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/file-editors/target-line';
+export * from '@kortix/ui/files/editor/target-line';

@@ -3,7 +3,7 @@
  * file and everything under `composer/` can depend on them without a
  * circular import (the UI pieces that used to live inline there now live in
  * sibling files here). `session-chat-input.tsx` re-exports these so the many
- * existing `from '../session-chat-input'` importers across
+ * existing `from './session-chat-input'` importers across
  * the app keep working unchanged.
  */
 

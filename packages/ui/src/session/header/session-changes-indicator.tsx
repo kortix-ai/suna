@@ -23,21 +23,21 @@
  * plus a real word (`CHANGE_STATUS_META`) instead.
  */
 
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { FadedScrollArea } from '../../components/ui/faded-scroll-area';
-import Hint from '../../components/ui/hint';
-import Loading from '../../components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
-import { STATUS_DOT } from '../../components/ui/status';
-import { openSessionQuickView } from '../open-session-quick-view';
+import { Badge } from '../../primitives/badge';
+import { Button } from '../../primitives/button';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { STATUS_DOT } from '../../primitives/status';
+import { openSessionQuickView } from '../panel/open-session-quick-view';
 import {
   CHANGE_STATUS_META,
   useOpenChangeRequest,
   useSessionBaseRef,
   useSessionChanges,
-} from '../session-changes-shared';
-import { useProjectCans } from '../../shared/lib/use-project-can';
+} from '../panel/session-changes-shared';
+import { useProjectCans } from '../../internal/lib/use-project-can';
 import { cn } from '../../lib/utils';
 import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import { ArrowRightIcon, FilesIcon } from '@phosphor-icons/react';

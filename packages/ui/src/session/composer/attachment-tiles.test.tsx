@@ -10,7 +10,7 @@ import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 
-import { TILE_SURFACE } from '../attachment-tile';
+import { TILE_SURFACE } from './attachment-tile';
 import { AttachmentTiles, attachmentTileCopy, subscribeWhenDue } from './attachment-tiles';
 import type { AttachedFile } from './types';
 

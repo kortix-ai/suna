@@ -68,13 +68,13 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
-mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   useProjectCans: () => ({
     [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: true },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
   }),
 }));
-mock.module('@/features/projects/modal/project-icon-field', () => ({
+mock.module('@kortix/ui/workspace/projects/modal/project-icon-field', () => ({
   ProjectIconField: Passthrough,
 }));
 

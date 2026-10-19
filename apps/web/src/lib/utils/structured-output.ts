@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/utils/structured-output';
+export * from '@kortix/ui/internal/lib/utils/structured-output';

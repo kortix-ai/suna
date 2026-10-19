@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/action-panel/advanced/advanced-panel';
+export * from '@kortix/ui/session/panel/advanced/advanced-panel';

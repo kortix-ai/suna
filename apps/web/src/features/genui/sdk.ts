@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/genui/sdk';
+export * from '@kortix/ui/markdown/genui/sdk';

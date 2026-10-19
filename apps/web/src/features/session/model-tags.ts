@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/model-tags';
+export * from '@kortix/ui/session/models/model-tags';

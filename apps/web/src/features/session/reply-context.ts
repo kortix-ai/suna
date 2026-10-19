@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/reply-context';
+export * from '@kortix/ui/session/thread/reply-context';

@@ -1,8 +1,8 @@
 'use client';
 
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '../../../components/ui/status';
+import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '../../../primitives/status';
 import { cn } from '../../../lib/utils';
-import type { OutputSection } from '../../../shared/lib/utils/structured-output';
+import type { OutputSection } from '../../../internal/lib/utils/structured-output';
 import {
   ProhibitIcon as Ban,
   CheckCircleIcon as CheckCircle,

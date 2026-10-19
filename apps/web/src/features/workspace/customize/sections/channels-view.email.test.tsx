@@ -22,10 +22,10 @@ mock.module('@kortix/sdk/react', () => ({
   flattenModels: () => [],
   modelProviderMode: () => 'gateway' as const,
 }));
-mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: canWrite }),
 }));
-mock.module('@/hooks/channels/use-channels-installations', () => ({
+mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () => ({
   useSlackInstall: disconnected,
   useSlackMode: disconnected,
   useEmailInstall: emailInstall,
@@ -41,7 +41,7 @@ mock.module('@/hooks/channels/use-teams-installations', () => ({
   useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
   useTeamsManifest: () => ({ data: null }),
 }));
-mock.module('@kortix/ui/shared/hooks/channels/use-channel-bindings', () => ({
+mock.module('@kortix/ui/internal/hooks/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),
   useUpdateChannelBinding: disconnect,
 }));
@@ -52,17 +52,17 @@ mock.module('next/navigation', () => ({
 }));
 // Unrelated channel setup and session pickers need live runtime providers.
 // Keep the actual ChannelsSection, EmailChannelRow, ChannelRow and Button/Link.
-mock.module('@/features/workspace/customize/sections/component/slack-connect-card', () => ({
+mock.module('@kortix/ui/customize/sections/component/slack-connect-card', () => ({
   SlackConnectCard: () => null,
 }));
 mock.module('@/features/workspace/customize/sections/teams-channel-panel', () => ({
   TeamsChannelPanel: () => null,
 }));
-mock.module('@/features/workspace/customize/sections/connectors-view', () => ({
+mock.module('@kortix/ui/customize/sections/connectors-view', () => ({
   EmailConnectForm: () => null,
 }));
-mock.module('@kortix/ui/session/model-selector', () => ({ ModelSelector: () => null }));
-mock.module('@kortix/ui/session/session-chat-input', () => ({
+mock.module('@kortix/ui/session/models/model-selector', () => ({ ModelSelector: () => null }));
+mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
   AgentSelector: () => null,
 }));
 

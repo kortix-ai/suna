@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/project-files/api/change-requests';
+export * from '@kortix/ui/files/project/api/change-requests';

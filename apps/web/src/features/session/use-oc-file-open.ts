@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/use-oc-file-open';
+export * from '@kortix/ui/internal/files/use-oc-file-open';

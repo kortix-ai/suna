@@ -1,4 +1,4 @@
-import { DisclosureTrigger } from '../../components/ui/disclosure';
+import { DisclosureTrigger } from '../../primitives/disclosure';
 import { cn } from '../../lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';

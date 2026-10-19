@@ -1,6 +1,6 @@
 'use client';
 
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
 import { SidebarToggle as PanelRight } from '../../../icons/sidebar-toggle';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { cn } from '../../../lib/utils';
@@ -11,7 +11,7 @@ import { PanelRowTitle, TOOL_ROW_CLASS, ToolHeaderRow, ToolOutcomeIcon } from '.
 import { isTriggerTitle } from './infrastructure-parts';
 import { type BasicToolProps } from './types';
 import { type ToolOutcome } from '@kortix/sdk';
-import { type TriggerTitle } from '../../../shared/ui';
+import { type TriggerTitle } from '../../../internal/session-types';
 
 /**
  * Side-panel surface: one closed-by-default disclosure row per tool call.

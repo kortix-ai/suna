@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/file-renderers/pptx-i18n';
+export * from '@kortix/ui/files/renderers/pptx-i18n';

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/stores/message-jump-store';
+export * from '@kortix/ui/internal/stores/message-jump-store';

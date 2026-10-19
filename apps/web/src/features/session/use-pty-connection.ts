@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/use-pty-connection';
+export * from '@kortix/ui/terminal/use-pty-connection';

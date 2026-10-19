@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '../../components/ui/button';
-import { Checkbox } from '../../components/ui/checkbox';
-import { InfoBanner } from '../../components/ui/info-banner';
-import Loading from '../../components/ui/loading';
+import { Button } from '../../primitives/button';
+import { Checkbox } from '../../primitives/checkbox';
+import { InfoBanner } from '../../primitives/info-banner';
+import Loading from '../../primitives/loading';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwise } from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
 

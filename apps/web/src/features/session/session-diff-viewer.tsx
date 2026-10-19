@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/session-diff-viewer';
+export * from '@kortix/ui/session/panel/session-diff-viewer';

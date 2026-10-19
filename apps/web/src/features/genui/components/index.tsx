@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/genui/components/index';
+export * from '@kortix/ui/markdown/genui/components/index';

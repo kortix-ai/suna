@@ -9,7 +9,7 @@
  */
 
 import type { Command } from '@kortix/sdk/react';
-import { appendMentionRefs, type MentionRefLike } from '../../shared/lib/project-preamble';
+import { appendMentionRefs, type MentionRefLike } from '../../internal/lib/project-preamble';
 import {
   PASTED_INLINE_MAX_BYTES,
   type PastedContent,
@@ -22,8 +22,8 @@ import type { JSONContent } from '@tiptap/core';
 import {
   mergeFailedSubmissionDocument,
   mergeFailedSubmissionFiles,
-} from '../composer-draft-recovery';
-import { parseReplyContexts, serializeReplyContext, stripReplyContexts } from '../reply-context';
+} from './composer-draft-recovery';
+import { parseReplyContexts, serializeReplyContext, stripReplyContexts } from '../thread/reply-context';
 import type { AttachedFile } from './types';
 
 /**

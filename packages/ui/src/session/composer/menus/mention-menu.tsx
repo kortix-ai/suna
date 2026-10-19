@@ -1,7 +1,7 @@
 'use client';
 
-import Loading from '../../../components/ui/loading';
-import { getFileIcon } from '../../../shared/features/project-files/components/file-icon';
+import Loading from '../../../primitives/loading';
+import { getFileIcon } from '../../../files/project/components/file-icon';
 import type { Agent, Session } from '@kortix/sdk/react';
 import { ChatIcon, FolderIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';

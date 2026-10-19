@@ -42,7 +42,7 @@ import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { AgentPicker } from '@kortix/ui/chat';
+import { AgentPicker } from '@kortix/ui/session';
 
 export function NewSessionDialog({
   projectId,

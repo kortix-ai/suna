@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
-import { searchWorkspaceFiles } from '../../../shared/features/files';
+import { searchWorkspaceFiles } from '../../../files/runtime';
 import { qk, runtimeKeys, useActiveSandboxProxyContext } from '@kortix/sdk/react';
 import type { QueryKey } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';

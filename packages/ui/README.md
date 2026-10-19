@@ -182,7 +182,7 @@ import { SessionThread } from '@kortix/ui/session';
 `SessionThread` is the thread apps/web renders: transcript, tool rows,
 permission and question prompts, the composer with its model and agent
 pickers. `hideHeader` hides its title row; `readOnly` hides the composer. The
-parent sets the height. `@kortix/ui/chat` exports the same `SessionThread`,
+parent sets the height. `@kortix/ui/session` exports the same `SessionThread`,
 plus `ModelPicker` and `AgentPicker` for a form outside a session.
 
 `src/session/index.ts` lists the building blocks for a host that composes its

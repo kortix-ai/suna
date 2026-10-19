@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-viewer/markdown-pdf';
+export * from '@kortix/ui/files/viewer/markdown-pdf';

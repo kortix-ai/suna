@@ -1,6 +1,6 @@
 'use client';
 
-import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from '../shared/lib/code-theme';
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from '../internal/lib/code-theme';
 import { cn } from '../lib/utils';
 import type { FileDiffOptions } from '@pierre/diffs';
 import { PatchDiff } from '@pierre/diffs/react';

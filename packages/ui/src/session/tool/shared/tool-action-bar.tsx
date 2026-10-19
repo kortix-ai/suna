@@ -1,14 +1,14 @@
 'use client';
 
-import { Button } from '../../../components/ui/button';
-import { ButtonGroup } from '../../../components/ui/button-group';
+import { Button } from '../../../primitives/button';
+import { ButtonGroup } from '../../../primitives/button-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../../components/ui/dropdown-menu';
-import Hint from '../../../components/ui/hint';
+} from '../../../primitives/dropdown-menu';
+import Hint from '../../../primitives/hint';
 import { cn } from '../../../lib/utils';
 import { ArrowClockwiseIcon, DotsThreeIcon, type Icon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';

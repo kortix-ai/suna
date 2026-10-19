@@ -92,14 +92,14 @@ describe('account creation handoff', () => {
           replace: navigate('replace'),
         }),
       }));
-      mock.module('@/hooks/account/use-accounts-list', () => ({
+      mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
         useAccountsQueryKey: () => key,
         useAccountsList: () => ({ data: [], isLoading: false, isError: false }),
       }));
       mock.module('@/hooks/account/use-ensure-selected-account', () => ({
         useEnsureSelectedAccount() {},
       }));
-      mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
+      mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
       mock.module('@/features/providers/auth-provider', () => ({
         useAuth: () => ({ user: { id: 'synthetic-reader' }, isLoading: false }),
       }));
@@ -142,17 +142,17 @@ describe('account creation handoff', () => {
         ThemeSubmenu: () => null,
         useLogoutFlow: () => ({ openConfirm() {}, dialog: null }),
       }));
-      mock.module('@/features/tunnel/computer-connect', () => ({
+      mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
         COMPUTER_SETUP_EVENT: 'synthetic-setup',
       }));
       mock.module('@/features/tunnel/local-computer-modal', () => ({
         LocalComputerModal: () => null,
       }));
-      mock.module('@/features/workspace/project-sidebar/workspace-menu-section', () => ({
+      mock.module('@kortix/ui/workspace/sidebar/workspace-menu-section', () => ({
         WorkspaceMenuSection: () => null,
       }));
       mock.module('./hub/account-pane', () => ({ AccountPane: children }));
-      mock.module('@kortix/ui/shared/features/accounts/hub/account-hub-location', () => ({ HubLink: children }));
+      mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({ HubLink: children }));
       // The child is an external creation boundary. Execute the real host's callback.
       function CreationBoundary(_props: { onCreated: (value: KortixAccount) => void }) {
         return null;

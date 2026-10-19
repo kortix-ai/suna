@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/file-renderers/show-type-utils';
+export * from '@kortix/ui/files/renderers/show-type-utils';

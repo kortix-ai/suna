@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/instant-session-shell';
+export * from '@kortix/ui/workspace/instant-session-shell';

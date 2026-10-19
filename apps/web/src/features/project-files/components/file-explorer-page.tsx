@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/project-files/components/file-explorer-page';
+export * from '@kortix/ui/files/project/components/file-explorer-page';

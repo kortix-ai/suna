@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/hooks/use-copy';
+export * from '@kortix/ui/internal/hooks/use-copy';

@@ -1,7 +1,7 @@
 'use client';
 
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../components/ui/disclosure';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '../../../components/ui/status';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
+import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '../../../primitives/status';
 import {
   BasicTool,
   isErrorOutput,

@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/chatgpt-connection-action';
+export * from '@kortix/ui/session/models/chatgpt-connection-action';

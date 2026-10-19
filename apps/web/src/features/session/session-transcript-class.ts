@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/session-transcript-class';
+export * from '@kortix/ui/session/thread/session-transcript-class';

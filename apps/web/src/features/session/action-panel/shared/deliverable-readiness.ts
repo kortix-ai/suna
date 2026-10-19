@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/action-panel/shared/deliverable-readiness';
+export * from '@kortix/ui/session/panel/shared/deliverable-readiness';

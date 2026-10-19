@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/components/setup-links/connector-link-info';
+export * from '@kortix/ui/markdown/setup-links/connector-link-info';

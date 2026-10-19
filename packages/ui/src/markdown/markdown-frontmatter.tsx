@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge } from '../components/ui/badge';
-import { FadedScrollArea } from '../components/ui/faded-scroll-area';
+import { Badge } from '../primitives/badge';
+import { FadedScrollArea } from '../primitives/faded-scroll-area';
 import { useTranslations } from '../i18n';
 import { cn } from '../lib/utils';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';

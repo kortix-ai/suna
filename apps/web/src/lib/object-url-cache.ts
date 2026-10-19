@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/lib/object-url-cache';
+export * from '@kortix/ui/internal/lib/object-url-cache';

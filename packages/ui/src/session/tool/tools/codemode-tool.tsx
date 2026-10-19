@@ -2,8 +2,8 @@
 
 import { HighlightedCode } from '../../../markdown/code';
 import { CopyButton } from '../../../markdown/copy-button';
-import Loading from '../../../components/ui/loading';
-import { TextShimmer } from '../../../components/ui/text-shimmer';
+import Loading from '../../../primitives/loading';
+import { TextShimmer } from '../../../primitives/text-shimmer';
 import {
   BasicTool,
   partError,

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/use-model-connection-gate';
+export * from '@kortix/ui/session/models/use-model-connection-gate';

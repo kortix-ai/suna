@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/files/hooks/use-workspace-search';
+export * from '@kortix/ui/files/runtime/hooks/use-workspace-search';

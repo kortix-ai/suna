@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { toolCallBlock } from '@kortix/sdk';
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '../../../internal/session-types';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 

@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/action-panel/shared/browser-landing';
+export * from '@kortix/ui/browser/browser-landing';

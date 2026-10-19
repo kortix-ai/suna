@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/layout/section/error-state';
+export * from '@kortix/ui/error-state';

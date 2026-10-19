@@ -1,6 +1,6 @@
 'use client';
 
-import { StatusDot } from '../../../components/ui/status';
+import { StatusDot } from '../../../primitives/status';
 import {
   BasicTool,
   isErrorOutput,

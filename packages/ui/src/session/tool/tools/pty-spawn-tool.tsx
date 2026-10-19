@@ -1,8 +1,8 @@
 'use client';
 
-import { Badge } from '../../../components/ui/badge';
-import { InlineMeta } from '../../../components/ui/inline-meta';
-import { StatusDot } from '../../../components/ui/status';
+import { Badge } from '../../../primitives/badge';
+import { InlineMeta } from '../../../primitives/inline-meta';
+import { StatusDot } from '../../../primitives/status';
 import {
   BasicTool,
   isErrorOutput,

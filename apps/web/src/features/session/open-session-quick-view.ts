@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/session/open-session-quick-view';
+export * from '@kortix/ui/session/panel/open-session-quick-view';

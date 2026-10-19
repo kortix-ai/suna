@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/features/files/hooks/use-file-history';
+export * from '@kortix/ui/files/runtime/hooks/use-file-history';

@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
+import { Badge } from '../../primitives/badge';
+import { Button } from '../../primitives/button';
 import {
   CommandGroup,
   CommandInput,
@@ -11,8 +11,8 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
   CommandSeparator,
-} from '../../components/ui/command';
-import Hint from '../../components/ui/hint';
+} from '../../primitives/command';
+import Hint from '../../primitives/hint';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import type { Agent } from '@kortix/sdk/react';

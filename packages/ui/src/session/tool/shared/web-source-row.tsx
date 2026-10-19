@@ -1,6 +1,6 @@
 'use client';
 
-import { FaviconAvatar } from '../../../components/ui/favicon-avatar';
+import { FaviconAvatar } from '../../../primitives/favicon-avatar';
 import { wsDomain } from '@kortix/sdk';
 import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '../../../lib/utils';

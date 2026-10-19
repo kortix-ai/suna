@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/entitlements-pending';
+export * from '@kortix/ui/session/composer/entitlements-pending';

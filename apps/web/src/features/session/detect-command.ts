@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/detect-command';
+export * from '@kortix/ui/session/thread/detect-command';

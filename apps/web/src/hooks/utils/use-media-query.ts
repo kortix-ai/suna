@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/hooks/utils/use-media-query';
+export * from '@kortix/ui/internal/hooks/use-media-query';

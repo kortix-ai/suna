@@ -1,6 +1,6 @@
 'use client';
 
-import { SubSessionModal } from '../../sub-session-modal';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import {
   BasicTool,
   firstMeaningfulLine,
@@ -18,7 +18,7 @@ import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
-import { getChildSessionId, getToolInfo } from '../../../shared/ui';
+import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
 import { subAgentCalls } from '@kortix/sdk';

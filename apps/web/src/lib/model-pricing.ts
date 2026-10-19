@@ -1,3 +1,3 @@
 'use client';
 
-export * from '@kortix/ui/shared/lib/model-pricing';
+export * from '@kortix/ui/internal/lib/model-pricing';

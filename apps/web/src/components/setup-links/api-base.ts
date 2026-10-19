@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/components/setup-links/api-base';
+export * from '@kortix/ui/markdown/setup-links/api-base';

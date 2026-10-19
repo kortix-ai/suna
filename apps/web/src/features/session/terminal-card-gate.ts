@@ -1,1 +1,1 @@
-export * from '@kortix/ui/session/terminal-card-gate';
+export * from '@kortix/ui/terminal/terminal-card-gate';

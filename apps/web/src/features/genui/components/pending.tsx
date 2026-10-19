@@ -1,1 +1,1 @@
-export * from '@kortix/ui/shared/features/genui/components/pending';
+export * from '@kortix/ui/markdown/genui/components/pending';

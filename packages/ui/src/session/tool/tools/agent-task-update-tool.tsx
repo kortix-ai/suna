@@ -1,6 +1,6 @@
 'use client';
 
-import { STATUS_TEXT } from '../../../components/ui/status';
+import { STATUS_TEXT } from '../../../primitives/status';
 import { BasicTool, partInput } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';

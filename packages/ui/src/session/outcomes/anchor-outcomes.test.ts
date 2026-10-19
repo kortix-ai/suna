@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
-import type { Outcome } from './outcome-types';
+import type { Outcome } from '../../internal/outcomes/outcome-types';
 
 function outcome(id: string, at: number): Outcome {
   return {

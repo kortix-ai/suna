@@ -16,7 +16,7 @@ import { REMAINING_UI_TRANSLATION_KEYS } from '../../i18n/ui-catalog/remaining-u
 import type { UiTranslator } from '../../i18n';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
 
-import type { Outcome, OutcomeTone } from './outcome-types';
+import type { Outcome, OutcomeTone } from '../../internal/outcomes/outcome-types';
 
 /**
  * The word a reader sees for each status.

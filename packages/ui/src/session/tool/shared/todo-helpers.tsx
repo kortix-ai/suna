@@ -2,8 +2,8 @@
 
 import { useId } from 'react';
 
-import Loading from '../../../components/ui/loading';
-import { STATUS_RING, STATUS_RING_OUTER_RADIUS } from '../../../components/ui/status-ring';
+import Loading from '../../../primitives/loading';
+import { STATUS_RING, STATUS_RING_OUTER_RADIUS } from '../../../primitives/status-ring';
 import { cn } from '../../../lib/utils';
 
 export interface TodoItem {

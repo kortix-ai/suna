@@ -18,7 +18,7 @@ mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate
 mock.module('@kortix/ui/i18n/ui-catalog/use-localized-ui-catalog', () => ({
   translateUiCatalogText: (_catalog: unknown, key: string) => key,
 }));
-mock.module('@/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
 mock.module('@phosphor-icons/react', () => ({
   WarningCircleIcon: passthrough,
   ArrowLeftIcon: passthrough,
