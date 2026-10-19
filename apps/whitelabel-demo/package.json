@@ -9,8 +9,8 @@
     "build": "pnpm lint:sdk-boundary && next build",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/e2e && vitest run\"",
-    "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/unit && vitest run\"",
+    "test:unit": "pnpm lint:sdk-boundary && bun test tests/unit",
     "test:convex": "vitest run",
     "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p convex",
     "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev --local-cloud-port ${CONVEX_PORT:-3030} --local-site-port ${CONVEX_SITE_PORT:-3031}"

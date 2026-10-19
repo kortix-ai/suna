@@ -92,8 +92,9 @@ preview` gets the same stand-in, so you can test the built `dist/` locally.
 
 **Boundary.** `pnpm --filter @kortix/internal-app-demo lint:sdk-boundary`
 applies Lumen's rules (no OpenCode SDK, no runtime internals, no hand-built
-runtime URLs, controls from `@kortix/ui`, no second UI kit) plus two of its
-own: no `fetch` at all, and only one-segment `@kortix/ui/<module>` entries.
+runtime URLs, controls from `@kortix/ui`, no second UI kit, only one-segment
+`@kortix/ui/<module>` entries, only the public `@kortix/sdk` entries) plus one
+rule of its own: no `fetch` at all.
 
 **Checks.**
 

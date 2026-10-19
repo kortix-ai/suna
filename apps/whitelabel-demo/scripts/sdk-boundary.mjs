@@ -32,6 +32,34 @@ const ALLOWED_CLIENT_BFF_ROUTES = [
   '/api/session-model',
 ];
 
+/** Any `@kortix/sdk/<subpath>` outside the public entries. */
+const SDK_SUBPATH_OUTSIDE_PUBLIC = /['"`]@kortix\/sdk\/(?!(?:react|server|genui(?:\/react|\/fence)?)['"`])[^'"`]+['"`]/g;
+
+/**
+ * Ways to reach the network without a direct `fetch(` call. They apply to
+ * the browser, the Next.js server and Convex alike: Kortix calls go through
+ * @kortix/sdk (the proxy through forwardKortixRequest).
+ */
+const SDK_SUBPATH_MESSAGE =
+  'Import @kortix/sdk, @kortix/sdk/react, @kortix/sdk/genui* (and @kortix/sdk/server on the server) only: every other subpath is deprecated or internal.';
+
+const TRANSPORT_RULES = [
+  {
+    scope: 'all',
+    rule: 'aliased-fetch',
+    // `const f = fetch`, `{ fetch: fetch }`, `call(fetch)`, `return fetch`, `fetch.call(...)`.
+    pattern: /(?:[=:,(]\s*|\breturn\s+)fetch\b(?!\s*\()|\bfetch\s*\.\s*(?:call|apply|bind)\b/g,
+    message: 'Do not alias fetch: Kortix calls go through @kortix/sdk.',
+  },
+  {
+    scope: 'all',
+    rule: 'raw-transport-import',
+    pattern:
+      /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)['"`](?:node:)?(?:https?|http2|net|tls|undici|axios|ky|got|node-fetch|cross-fetch)['"`]|\bnavigator\s*\.\s*sendBeacon\b/gm,
+    message: 'Do not open a raw HTTP client: Kortix calls go through @kortix/sdk.',
+  },
+];
+
 const RULES = [
   {
     scope: 'all',
@@ -42,16 +70,17 @@ const RULES = [
   {
     scope: 'all',
     rule: 'direct-runtime-import',
-    pattern:
-      /['"]@kortix\/sdk\/(?:event-stream|idb-sync-cache|opencode(?:-[^'"]*)?|sandbox(?:-[^'"]*)?|server-store|session|sync-store)['"]/gi,
-    message: 'Client code must use @kortix/sdk and @kortix/sdk/react only.',
+    // An allowlist: every other subpath is deprecated or internal.
+    pattern: SDK_SUBPATH_OUTSIDE_PUBLIC,
+    message: SDK_SUBPATH_MESSAGE,
   },
   {
     scope: 'client',
     rule: 'client-server-sdk',
-    pattern: /['"]@kortix\/sdk\/server['"]/g,
+    pattern: /['"`]@kortix\/sdk\/server['"`]/g,
     message: 'Browser code must not import @kortix/sdk/server: it carries Kortix credentials. Use it in src/server or src/app/api.',
   },
+  ...TRANSPORT_RULES,
   {
     scope: 'client',
     rule: 'raw-transport',
@@ -199,6 +228,13 @@ export function isLocalUiFile(path) {
  */
 export function scanConvexSource(source) {
   const violations = rawFetchViolations(source, false);
+  for (const { rule, pattern, message } of [
+    ...TRANSPORT_RULES,
+    { rule: 'direct-runtime-import', pattern: SDK_SUBPATH_OUTSIDE_PUBLIC, message: SDK_SUBPATH_MESSAGE },
+  ]) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) violations.push({ rule, index: match.index, match: match[0], message });
+  }
   if (!/^\s*["']use node["'];/.test(source)) {
     // Static `from`, dynamic `import()` and `require()` alike.
     for (const match of source.matchAll(
@@ -288,7 +324,7 @@ export function scanWhiteLabelTestBoundary() {
 export function listWhiteLabelTestFiles() {
   const localTests = sourceFiles(TEST_ROOT, { extensions: SOURCE_EXTENSIONS }).filter(
     (path) =>
-      /\.test\.[cm]?[jt]sx?$/.test(path) && !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
+      /\.test\.[cm]?[jt]sx?$/.test(path) && !path.endsWith(join('unit', 'sdk-boundary.test.ts')),
   );
   const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT, {
     extensions: SOURCE_EXTENSIONS,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { tagSessionCreate } from '../../convex/tags';
+import { tagSessionCreate, tagSessionPatch } from '../../convex/tags';
 
 const who = { orgId: 'org_b', userId: 'user_b' };
 
@@ -36,5 +36,29 @@ describe('session create tagging: Lumen ids are the source of truth', () => {
       lumen_workspace_id: 'ws_b',
       lumen_user_id: 'user_b',
     });
+  });
+});
+
+describe('session PATCH tagging: the create-time attribution cannot change', () => {
+  const current = ['lumen-user:user_a', 'lumen-workspace:ws_a', 'old'];
+
+  test('forged lumen- labels are replaced by the current ones; lumen_ metadata keys drop', () => {
+    const out = tagSessionPatch(
+      {
+        labels: ['lumen-user:SOMEONE_ELSE', 'lumen-workspace:ws_b', 'new'],
+        metadata: { lumen_org_id: 'forged', LUMEN_user_id: 'forged', lumen_workspace_id: null, ticket: 'T-2' },
+      },
+      current,
+    );
+    expect(out.labels).toEqual(['lumen-user:user_a', 'lumen-workspace:ws_a', 'new']);
+    expect(out.metadata).toEqual({ ticket: 'T-2' });
+  });
+
+  test('an empty label list cannot erase the Lumen labels', () => {
+    expect(tagSessionPatch({ labels: [] }, current).labels).toEqual(['lumen-user:user_a', 'lumen-workspace:ws_a']);
+  });
+
+  test('a rename passes through untouched', () => {
+    expect(tagSessionPatch({ name: 'Renamed' }, current)).toEqual({ name: 'Renamed' });
   });
 });

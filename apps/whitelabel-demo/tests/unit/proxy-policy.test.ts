@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SESSION_CREATE, blockedReason, localAnswer } from '../../src/server/proxy-policy';
+import { SESSION_CREATE, SESSION_ONE, blockedReason, localAnswer } from '../../src/server/proxy-policy';
 
 const P = 'projects/0b8c9d3e-1111-4222-8333-944455556666';
 const S = `${P}/sessions/7a1b2c3d-1111-4222-8333-944455556666`;
@@ -61,6 +61,11 @@ describe('proxy policy: what a member token may do', () => {
     expect(blockedReason('POST', `${P}/sessions`)).toBeNull();
     expect(SESSION_CREATE.test(`${P}/sessions`)).toBe(true);
     expect(SESSION_CREATE.test(`${S}/start`)).toBe(false);
+  });
+
+  test('a session update is routed through the tag filter (patchSession)', () => {
+    expect(SESSION_ONE.test(S)).toBe(true);
+    expect(SESSION_ONE.test(`${S}/start`)).toBe(false);
   });
 
   test('warm sessions are refused: they skip the Lumen tags and are shared by every member', () => {

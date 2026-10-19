@@ -13,6 +13,7 @@ import { Button } from '@kortix/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import type { ReactNode } from 'react';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { START_NEW_SESSION_ACTION } from '../scope-bar-model';
 import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 
@@ -152,6 +153,7 @@ export function StartWithScope({
         {pending ? <Loading className="size-3.5" /> : <PlusIcon className="size-3.5" />}
         {START_NEW_SESSION_ACTION}
       </Button>
+      <CallSnippet id="session.create" />
     </div>
   );
 }

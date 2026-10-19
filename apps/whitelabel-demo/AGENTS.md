@@ -10,8 +10,9 @@ has the authority split, the id mapping and the credential flow.
 
 1. `src/lib/kortix.ts` owns the only browser SDK client.
 2. `useSession(projectId, sessionId)` owns the complete workbench session.
-3. Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`
-   and `@kortix/ui`.
+3. Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`,
+   `@kortix/sdk/genui*` and `@kortix/ui`. Every other `@kortix/sdk/<subpath>`
+   is deprecated or internal, and the boundary refuses it.
 4. Client code does not implement runtime transport logic.
 5. Server Kortix calls use `@kortix/sdk/server`.
 6. The `/api/kortix` route delegates upstream forwarding to `forwardKortixRequest()`.
@@ -32,7 +33,11 @@ Do not add:
 rules. Update its tests when a new same-origin application route is intentional.
 
 Browser code never imports `@kortix/sdk/server` and never opens its own
-transport (`EventSource`, `XMLHttpRequest`, `WebSocket`, an aliased `fetch`).
+transport (`EventSource`, `XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`,
+an aliased `fetch` such as `const f = fetch` or `fetch.call(...)`). No source
+file, Convex included, imports a raw HTTP client (`node:http(s)`, `undici`,
+`axios`, `ky`, `got`, `node-fetch`, `cross-fetch`). The boundary is a source
+scan: it catches these forms, not every way to write them.
 
 ## Server boundary
 
@@ -47,7 +52,7 @@ transport (`EventSource`, `XMLHttpRequest`, `WebSocket`, an aliased `fetch`).
   Next.js never reads it. Member tokens never reach a response body.
 - The proxy allowlists reads and writes. A new proxied route is an explicit
   entry in `src/server/proxy-policy.ts` with a test in
-  `tests/e2e/proxy-policy.test.ts`. Never allow an account route, a credential
+  `tests/unit/proxy-policy.test.ts`. Never allow an account route, a credential
   route or a member list: the member token is the operator's user.
 - Never return a Kortix token to the browser, a preview URL included. A
   preview is a public preview share (`/api/preview-url`).
@@ -83,7 +88,8 @@ The app has no UI kit of its own. `src/components/ui/` does not exist and must
 not come back.
 
 - Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
-  `textarea`, `select`, `switch`, `dialog`, `card`, `badge`, `tabs`, …).
+  `textarea`, `select`, `switch`, `modal`, `confirm-dialog`, `card`, `badge`,
+  `tabs`, …). Never `@kortix/ui/dialog`: it is the primitive `modal` builds on.
 - The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
   thread apps/web renders. Lumen adds only its scope bar under it. Never
   re-implement the transcript, composer or prompts.
@@ -114,8 +120,8 @@ A missing primitive or chat slot is added to `packages/ui`, not to this app.
 `scripts/sdk-boundary.mjs` rejects: any file under `src/components/ui`,
 imports of a local UI primitive, `lucide-react`, `radix-ui`, `@radix-ui/*`,
 `class-variance-authority`, `next-themes` or `react-markdown`, a direct sonner
-`toast` import, native feature controls (`<button>`, `<input>`, …) and
-feature-level spinners.
+`toast` import, `@kortix/ui/dialog` (use `modal` or `confirm-dialog`), native
+feature controls (`<button>`, `<input>`, …) and feature-level spinners.
 
 ## Structure
 
@@ -128,7 +134,7 @@ feature-level spinners.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.
 - `convex/**`: Lumen's backend (schema, auth, workspaces, threads, Kortix actions).
-- `tests/e2e/**`: Unit tests under bun (proxy policy, tagging, member cache, boundary, UI helpers).
+- `tests/unit/**`: unit tests under bun (proxy policy, tagging, member cache, boundary, UI helpers).
 - `tests/convex/**`: Convex backend tests under vitest + `convex-test`.
 
 ## Required checks
@@ -138,7 +144,7 @@ Run these commands before each commit:
 ```bash
 pnpm --filter @kortix/whitelabel-demo typecheck
 pnpm --filter @kortix/whitelabel-demo build
-cd apps/whitelabel-demo && bun test tests/e2e/<the files you touched> && pnpm test:convex
+cd apps/whitelabel-demo && bun test tests/unit/<the files you touched> && pnpm test:convex
 ```
 
 All three commands must exit `0`. The SDK boundary must report `0 violations`.

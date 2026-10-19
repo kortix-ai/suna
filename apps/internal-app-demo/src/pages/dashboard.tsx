@@ -26,6 +26,12 @@ export function DashboardPage() {
   if (projects.isPending || lists.some((l) => l.isPending)) return <Loading className="size-5 text-muted-foreground" />;
   if (projects.isError) return <ErrorState title="Could not load projects" description={String(projects.error)} />;
 
+  // A project whose list failed (403, 5xx) drops out of the rows and the totals, so say so.
+  const failedProjects = active.filter((_, i) => lists[i]?.isError).map((p) => p.name);
+  if (active.length > 0 && failedProjects.length === active.length) {
+    return <ErrorState title="Could not load sessions" description={String(lists[0]?.error)} />;
+  }
+
   const names = new Map(active.map((p) => [p.project_id, p.name]));
   const rows: ProjectSession[] = lists
     .flatMap((l) => l.data ?? [])
@@ -41,6 +47,11 @@ export function DashboardPage() {
         <Stat label="Running" value={running} />
         <Stat label="Failed" value={failed} />
       </div>
+      {failedProjects.length > 0 && (
+        <p role="status" className="mb-3 text-sm text-destructive">
+          Could not load sessions for {failedProjects.length} project{failedProjects.length === 1 ? '' : 's'} ({failedProjects.join(', ')}). The rows and totals leave them out.
+        </p>
+      )}
       <Table>
         <TableHeader>
           <TableRow>

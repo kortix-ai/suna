@@ -18,6 +18,14 @@ describe('internal app SDK boundary', () => {
     );
   });
 
+  test('refuses deprecated SDK entries and an aliased fetch', () => {
+    const fixture = `
+      import { backendApi } from '@kortix/sdk/api-client';
+      const f = fetch;
+    `;
+    expect(scanSource(fixture).map((v) => v.rule)).toEqual(['direct-runtime-import', 'aliased-fetch']);
+  });
+
   test('permits the SDK client, curated @kortix/ui entries and cn from the root', () => {
     const fixture = `
       import { createKortix } from '@kortix/sdk';

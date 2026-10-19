@@ -99,7 +99,8 @@ wire from OpenCode and pi) has ~50 part variants.
 It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
-text with the exact same code `whitelabel-demo` renders to React.
+text with the exact same code the TUI renders from
+(`apps/tui/src/features/session/transcript/turn.tsx`).
 
 ### Recipe: adding a new capability, end to end
 

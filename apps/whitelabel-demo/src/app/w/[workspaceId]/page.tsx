@@ -1,6 +1,5 @@
 'use client';
 
-import { CallSnippet } from '@/components/dev/call-snippet';
 import { templateIcon } from '@/components/template-icon';
 import { NotAvailable, SignedIn, threadPath } from '@/components/workspace-access';
 import { relativeTime } from '@/lib/utils';
@@ -63,8 +62,6 @@ function Workspace({ workspaceId: raw }: { workspaceId: string }) {
         {ws?.status === 'ready' && ws.kortixProjectId && (
           <>
             <NewThread workspaceId={workspaceId} />
-            {/* What Lumen's backend sends Kortix for a new thread (convex/kortix.ts createThread). */}
-            <CallSnippet id="session.create" context={{ projectId: ws.kortixProjectId }} className="mt-3" />
             <Threads workspaceId={workspaceId} projectId={ws.kortixProjectId} />
           </>
         )}

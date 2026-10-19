@@ -1,17 +1,18 @@
 'use client';
 
 /**
- * The API call behind the control you are looking at.
+ * The API call behind the control you are looking at: a developer panel.
  *
- * Lumen exists to show a wrapper author what to call, and until this panel
- * existed every answer lived in the source: the dialog started a session and
- * nothing on screen said which request that was. So each KaaB control carries
- * its own disclosure, showing the SDK call this app runs and the HTTP request
- * that reaches Kortix — next to the button that performs it, not in a README.
+ * It shows a wrapper author the SDK call this app runs and the HTTP request
+ * that reaches Kortix, next to the control that performs it. It names Kortix,
+ * project ids and source paths, so a customer must never see it: it renders
+ * only when `NEXT_PUBLIC_LUMEN_DEV_PANELS=1` at build time, and nothing
+ * otherwise.
  *
  * Both blocks are copy-pasteable, and neither ever carries real credentials:
- * the bearer is always the `$KORTIX_API_KEY` placeholder and secret values are
- * never rendered at all (`src/lib/call-snippets.ts` has nowhere to put one).
+ * the bearer is always the `$KORTIX_MEMBER_TOKEN` placeholder (the token the
+ * proxy swaps in) and secret values are never rendered at all
+ * (`src/lib/call-snippets.ts` has nowhere to put one).
  *
  * Colouring is presentation and nothing else. The tokenizer
  * (`src/lib/syntax-highlight.ts`) only ever slices the snippet, so this file
@@ -53,6 +54,7 @@ export function CallSnippet({
   className?: string;
   defaultOpen?: boolean;
 }) {
+  if (process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS !== '1') return null;
   const snippet = callSnippet(id, context ?? {});
   const http = renderHttp(snippet.http);
 
@@ -125,10 +127,10 @@ export function CallSnippet({
           </ul>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            <span className="font-mono">$KORTIX_API_KEY</span> is a placeholder.
-            Nothing here ever renders a real key, token or secret value — the
-            key stays on your server, and the end user&apos;s own token never
-            reaches Kortix.
+            <span className="font-mono">$KORTIX_MEMBER_TOKEN</span> is a placeholder for
+            the member&apos;s project-scoped token. Lumen&apos;s server holds it and
+            adds it to the request; the browser never holds a Kortix token, and
+            nothing here renders a real token or secret value.
           </p>
         </div>
       </CollapsibleContent>

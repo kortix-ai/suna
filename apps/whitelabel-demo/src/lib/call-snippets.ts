@@ -1,5 +1,6 @@
 /**
- * The API call behind every KaaB action this app performs.
+ * The API call behind every Kortix action this app performs (the developer
+ * panel, `src/components/dev/call-snippet.tsx`; off unless NEXT_PUBLIC_LUMEN_DEV_PANELS=1).
  *
  * A reference wrapper's real job is to teach what to call, and a screenshot of a
  * dialog teaches nothing. So each action carries the two forms a wrapper author
@@ -48,12 +49,12 @@ const PLACEHOLDER = {
 } as const;
 
 /**
- * Every KaaB action this app performs, in the order a wrapper author meets
+ * Every Kortix action this app performs, in the order a wrapper author meets
  * them: provision a project, see what may be bound to a session, start one,
  * talk to it, read what it cost, end it, and manage the secrets behind it.
  *
  * An action the app performs with no id here is an action whose call the demo
- * hides — `tests/e2e/call-snippets-coverage.test.ts` reads the app's own source
+ * hides — `tests/unit/call-snippets-coverage.test.ts` reads the app's own source
  * to make that a test failure rather than an omission nobody notices.
  */
 export const CALL_SNIPPET_IDS = [
@@ -173,7 +174,7 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
     },
     serverInjected: [],
     notes: [
-      "Lumen makes this call from its backend (convex/kortix.ts `createThread`) with the operator credential, and adds `labels` and `metadata` that carry its own org, workspace and user ids. Sessions created from the session UI pass through the proxy, which adds the same tags.",
+      "The browser sends this call to Lumen's proxy (`src/app/api/kortix/[...path]/route.ts`), which swaps in the member token and adds `labels` and `metadata` that carry Lumen's org, workspace and user ids. Lumen's \"New thread\" button makes the same create from Convex (`convex/kortix.ts` `createThread`, `kortix.projects.createSession`) with the operator token and the same tags.",
       '`agent_name` and runtime context are create options. The scope endpoint reads and replaces `secrets` and `connector_bindings` later.',
       '`secrets` lists secret IDENTIFIERS, not env KEYs. Two identifiers may share one KEY, and naming both in one create is refused 409 SECRET_IDENTIFIER_KEY_COLLISION.',
       '`inherit_unbound: true` accompanies any binding so the aliases nobody chose keep their project default instead of being switched off.',

@@ -136,6 +136,37 @@ describe('white-label SDK boundary', () => {
     ]);
   });
 
+  test('only the public SDK entries pass: deprecated and internal subpaths are refused', () => {
+    for (const entry of ['api-client', 'platform-client', 'instance-routes', 'internal/managed-storage', 'auth', 'config', 'session/url', 'turns']) {
+      expect([entry, scanSource(`import x from '@kortix/sdk/${entry}';`).map((v) => v.rule)]).toEqual([entry, ['direct-runtime-import']]);
+      expect([entry, scanConvexSource(`"use node";\nimport x from '@kortix/sdk/${entry}';`).map((v) => v.rule)]).toEqual([
+        entry,
+        ['direct-runtime-import'],
+      ]);
+    }
+    const ok = `import a from '@kortix/sdk';\nimport b from '@kortix/sdk/react';\nimport c from '@kortix/sdk/genui/react';`;
+    expect(scanSource(ok)).toEqual([]);
+    expect(scanSource(`import { f } from '@kortix/sdk/server';`, { client: false })).toEqual([]);
+  });
+
+  test('an aliased fetch, a raw HTTP client or a backtick server import is refused', () => {
+    const client = [
+      "const f = fetch; f('https://api.kortix.com/v1/accounts/me');",
+      "fetch.call(null, 'https://api.kortix.com/v1/accounts/me');",
+      "navigator.sendBeacon('https://api.kortix.com/v1/x');",
+      "import axios from 'axios';",
+    ];
+    expect(client.map((src) => scanSource(src).map((v) => v.rule))).toEqual([
+      ['aliased-fetch'],
+      ['aliased-fetch'],
+      ['raw-transport-import'],
+      ['raw-transport-import'],
+    ]);
+    expect(scanSource('const m = await import(`@kortix/sdk/server`);').map((v) => v.rule)).toEqual(['client-server-sdk']);
+    const convex = [`"use node";\nimport https from 'node:https';`, `"use node";\nconst f = fetch;\nawait f(url);`];
+    expect(convex.map((src) => scanConvexSource(src).map((v) => v.rule))).toEqual([['raw-transport-import'], ['aliased-fetch']]);
+  });
+
   test('detects provider names embedded inside legacy identifiers', () => {
     const fixture = `useCanonicalOpenCodeSession(projectId);`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(
@@ -192,6 +223,6 @@ describe('white-label SDK boundary', () => {
     // reset (2026-10-16); a new white-label or sdk-only spec joins by name.
     const files = listWhiteLabelTestFiles();
 
-    expect(files.some((path) => path.endsWith('/tests/e2e/proxy-policy.test.ts'))).toBe(true);
+    expect(files.some((path) => path.endsWith('/tests/unit/proxy-policy.test.ts'))).toBe(true);
   });
 });

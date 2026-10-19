@@ -16,6 +16,7 @@ Object.defineProperties(globalThis, {
 const success = mock();
 const error = mock();
 mock.module('@kortix/ui/toast', () => ({ successToast: success, errorToast: error }));
+process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS = '1';
 const { CallSnippet } = await import('../../src/components/dev/call-snippet');
 let root: Root | undefined;
 
@@ -97,4 +98,17 @@ test('successful copy resets after 1500ms and clears the reset on unmount', asyn
   act(() => root?.unmount());
   root = undefined;
   expect(jest.getTimerCount()).toBe(0);
+});
+
+test('the panel renders nothing unless NEXT_PUBLIC_LUMEN_DEV_PANELS=1 (customers never see it)', async () => {
+  process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS = '';
+  try {
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => root?.render(<CallSnippet id="session.create" defaultOpen />));
+    expect(host.innerHTML).toBe('');
+  } finally {
+    process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS = '1';
+  }
 });

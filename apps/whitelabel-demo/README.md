@@ -46,6 +46,17 @@ writes on each session (below). No Kortix API has a Lumen concept in it.
   the platform, provider or model (`AS_LUMEN` in `convex/templates.ts`). A
   workspace keeps the prompt it was provisioned with; re-run
   `templates:seed` and create a new workspace to pick up a change.
+- The session UI shows the session model id, which names the provider: the
+  composer's model label and the Scope panel's "Model" row (for example
+  `kortix/deepseek-v4.1-flash`). Give your agents models whose ids you are
+  willing to show, or hide those controls in your own session screen.
+- A session PATCH through the proxy keeps the session's `lumen-` labels and
+  drops client `lumen_` metadata keys (`tagSessionPatch` in
+  `convex/tags.ts`). A member can rename and relabel a thread, but cannot
+  change who or which workspace it is attributed to.
+- The developer panel "The API call" (`src/components/dev/call-snippet.tsx`)
+  names Kortix, project ids and source paths. It renders only when the app is
+  built with `NEXT_PUBLIC_LUMEN_DEV_PANELS=1`. Leave it unset in production.
 
 ## Id mapping
 
@@ -194,12 +205,14 @@ from `emailVerification.sendVerificationEmail` and adds
 
 Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`,
 `@kortix/ui`, `@kortix/ui/<entry>` and `@phosphor-icons/react`. It never
-imports `@kortix/sdk/server` and never opens its own transport (`EventSource`,
-`XMLHttpRequest`, `WebSocket`, an aliased `fetch`). Its own `fetch` calls go
+imports `@kortix/sdk/server` or any other `@kortix/sdk/<subpath>` (they are
+deprecated or internal) and never opens its own transport (`EventSource`,
+`XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`, `const f = fetch`,
+`fetch.call(...)`, a raw HTTP client import such as `axios` or `node:https`). Its own `fetch` calls go
 to `/api/auth`, `/api/connections`, `/api/preview-url` and
 `/api/session-model` only. Convex files import `@kortix/sdk` (statically,
-with `import()` or with `require()`) only in `"use node"` files and never call
-`fetch`. `scripts/sdk-boundary.mjs` enforces these rules and runs before
+with `import()` or with `require()`) only in `"use node"` files, never call
+or alias `fetch` and never import a raw HTTP client. `scripts/sdk-boundary.mjs` enforces these rules and runs before
 `build`, `test` and `typecheck`. A rule is a source scan: it catches the
 patterns above, not every way to write them.
 
@@ -208,11 +221,11 @@ patterns above, not every way to write them.
 ```bash
 pnpm --filter @kortix/whitelabel-demo typecheck   # boundary + tsgo (app) + tsgo -p convex
 pnpm --filter @kortix/whitelabel-demo build
-cd apps/whitelabel-demo && bun test tests/e2e/proxy-policy.test.ts   # one file
+cd apps/whitelabel-demo && bun test tests/unit/proxy-policy.test.ts   # one file
 cd apps/whitelabel-demo && pnpm test:convex                          # the Convex backend, in memory
 ```
 
-- `tests/e2e/*.test.ts` (bun): the proxy policy and local answers, session
+- `tests/unit/*.test.ts` (bun): the proxy policy and local answers, session
   tagging, the preview request, the member cache and its in-flight sharing,
   upstream path validation, the SDK boundary and the session UI helpers.
 - `tests/convex/*.test.ts` (vitest + `convex-test`, with the Better Auth

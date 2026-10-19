@@ -405,7 +405,7 @@ function tokenizeHeaderLine(line: string, tokens: Token[]): void {
   const valueStart = runEnd(rest, 0, isWhitespace);
   push(tokens, rest.slice(0, valueStart), 'plain');
   // Coloured as a value because that is what it is — including the
-  // `$KORTIX_API_KEY` placeholder, which is the line most worth reading.
+  // `$KORTIX_MEMBER_TOKEN` placeholder, which is the line most worth reading.
   push(tokens, rest.slice(valueStart), 'string');
 }
 
