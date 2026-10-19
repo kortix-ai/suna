@@ -10,6 +10,7 @@ import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-
 import { useSession } from './opencode';
 import { useSessionLogThread } from './use-session-log';
 import { qk } from './query-keys';
+import { resetSessionOpenBundles } from '../core/session/open-bundle';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -89,6 +90,23 @@ describe('useSession negotiates the session log without its chat engine', () => 
     act(() => setRuntimeCapabilities(['session.log.v2']));
     await flush();
     expect(urls.some((u) => u.startsWith(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log`))).toBe(true);
+  });
+
+  test.each([true, false])('chatEngine false, flag %p known at the open: the snapshot asks a transcript window only with the flag off', async (flag) => {
+    // A host that reads its own transcript paints the log on v2: the snapshot's v1 window is never read.
+    resetSessionOpenBundles();
+    queryClient.setQueryData(qk.project.detail(PROJECT_ID), { project: { project_id: PROJECT_ID, experimental: { session_log: flag } }, config: {} });
+    function Host() {
+      useSession(PROJECT_ID, SESSION_ID, { chatEngine: false, replayStartStash: false });
+      return null;
+    }
+    act(() => {
+      renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+    });
+    await flush();
+    const snapshots = urls.filter((u) => u.includes('/snapshot'));
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toContain(flag ? 'transcript=0' : 'transcript=40');
   });
 
   test('disabled: no log request', async () => {
