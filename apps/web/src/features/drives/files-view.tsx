@@ -1,46 +1,55 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@/features/project-files';
-import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
-import { useTranslations } from '@/i18n/use-translations';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
-import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Skeleton } from '@/components/ui/skeleton';
+import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
+import { Home } from '@/features/icon/icons/home';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
-  FolderSimpleIcon,
-  HardDriveIcon,
-  HouseIcon,
-  type Icon,
-  ShareNetworkIcon,
-  SquaresFourIcon,
-  UsersThreeIcon,
-} from '@phosphor-icons/react';
+  DriveExplorer,
+  FileExplorerSourceProvider,
+  FilesStoreProvider,
+} from '@/features/project-files';
+import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
+import { useTranslations } from '@/i18n/use-translations';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
+import {
+  CaretDownIcon,
+  FolderSimpleIcon,
+  HardDriveIcon,
+  ShareNetworkIcon,
+  SquaresFourIcon,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ComponentType, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBar } from './drive-conflicts-bar';
-import { DriveFilesProvider, driveExplorerSource, parentDrivePath, toDrivePath } from './drive-explorer-source';
+import {
+  DriveFilesProvider,
+  driveExplorerSource,
+  parentDrivePath,
+  toDrivePath,
+} from './drive-explorer-source';
 import { FolderAccessDialog } from './folder-access-dialog';
 import { FolderAccessPanel } from './folder-access-panel';
 
 /**
  * /projects/[id]/drive — the project's Drive, a sidebar page: one folder tree
- * everyone in the project works in, in the same explorer as Repo. A rail
- * beside the explorer separates My drive, folders shared with the caller, and
- * the shared drives (each top-level folder, its own volume). What each person sees and
+ * everyone in the project works in, in the same explorer as Repo. A switcher
+ * in the explorer's header picks the drive: My drive, folders shared with the
+ * caller, or a company drive (each top-level folder, its own volume). Share,
+ * beside it, shows who can open the folder in view. What each person sees and
  * may change follows folder access; their own folder (`Users/<name>`) is
  * private until they share it and is the desktop of their sessions.
  */
@@ -89,11 +98,7 @@ export function FilesView({ projectId }: { projectId: string }) {
     body = <FilesBrowser drive={drive.data} projectId={projectId} />;
   }
 
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-1 flex-col">
-      {body}
-    </div>
-  );
+  return <div className="bg-background flex h-full min-h-0 flex-1 flex-col">{body}</div>;
 }
 
 function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string }) {
@@ -123,10 +128,12 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   const access = folder.data?.access ?? 'none';
   const canWrite = access === 'write' || access === 'manage';
   const [sharing, setSharing] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
 
   // A folder that is gone (deleted, moved, or never there) is not an error
   // page: step up to the nearest folder that lists.
-  const missing = folder.isError && path !== '/' && (folder.error as { status?: number } | null)?.status === 404;
+  const missing =
+    folder.isError && path !== '/' && (folder.error as { status?: number } | null)?.status === 404;
   useEffect(() => {
     if (!missing) return;
     navigateToPath(parentDrivePath(path).replace(/^\//, '') || '/');
@@ -135,73 +142,53 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   // Upload, new folder, rename and delete only where the caller may write;
   // the API refuses the rest anyway.
   const source = useMemo(
-    () => ({ ...driveExplorerSource, capabilities: { ...driveExplorerSource.capabilities, write: canWrite } }),
+    () => ({
+      ...driveExplorerSource,
+      capabilities: { ...driveExplorerSource.capabilities, write: canWrite },
+    }),
     [canWrite],
   );
+  const open = (p: string) => navigateToPath(p.replace(/^\//, '') || '/');
 
-  const leading = (
-    <div className="flex items-center gap-1">
-      {drive.personalFolder ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="md:hidden"
-          onClick={() => navigateToPath(drive.personalFolder!.replace(/^\//, ''))}
-          title={t('myFolderHint')}
-        >
-          <HouseIcon className="size-4" />
-          <span className="hidden sm:inline">{t('myFolder')}</span>
-        </Button>
-      ) : null}
-      {drive.sharedWithMe?.length ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="md:hidden" title={t('sharedWithMeHint')}>
-              <UsersThreeIcon className="size-4" />
-              <span className="hidden sm:inline">{t('sharedWithMe')}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-w-80">
-            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-              {t('sharedWithMeHint')}
-            </DropdownMenuLabel>
-            {drive.sharedWithMe.map((folder) => (
-              <DropdownMenuItem key={folder.path} onSelect={() => navigateToPath(folder.path.replace(/^\//, ''))}>
-                <FolderSimpleIcon className="size-4 shrink-0" />
-                <span className="truncate" title={folder.path}>
-                  {folder.path.replace(/^\//, '')}
-                </span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
-      {path !== '/' ? (
-        <Button type="button" variant="ghost" size="sm" onClick={() => setSharing(true)}>
-          <ShareNetworkIcon className="size-4" />
-          <span className="hidden sm:inline">{t('shareFolder')}</span>
-        </Button>
-      ) : null}
-    </div>
-  );
+  const leading = <DriveSwitcher drive={drive} path={path} onOpen={open} />;
+  // Share closes the action group, after New and the view menu.
+  const trailing =
+    path !== '/' ? (
+      <Popover open={accessOpen} onOpenChange={setAccessOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-1.5 active:scale-[0.96]"
+          >
+            <ShareNetworkIcon className="size-3.5 shrink-0" />
+            <span className="hidden sm:inline">{t('shareFolder')}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-88 p-4">
+          <FolderAccessPanel
+            driveId={drive.driveId}
+            path={path}
+            onManage={() => {
+              setAccessOpen(false);
+              setSharing(true);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    ) : undefined;
 
   return (
     <FileExplorerSourceProvider value={source}>
-      <div className="flex min-h-0 flex-1">
-        <DriveRail drive={drive} path={path} onOpen={(p) => navigateToPath(p.replace(/^\//, '') || '/')} />
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <DriveExplorer leading={leading} rootLabel={t('driveLabel')} />
-          <DriveConflictsBar
-            driveId={drive.driveId}
-            onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
-          />
-        </div>
-        {/* Who can open the folder in view, beside it: the same section an
-            agent's page shows for who can use the agent. */}
-        <aside className="hidden w-80 shrink-0 overflow-y-auto border-l p-4 lg:block">
-          <FolderAccessPanel driveId={drive.driveId} path={path} onManage={() => setSharing(true)} />
-        </aside>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <DriveExplorer
+          leading={leading}
+          trailing={trailing}
+          rootLabel={t('driveLabel')}
+          rootIcon={<HardDriveIcon className="text-muted-foreground" />}
+        />
+        <DriveConflictsBar driveId={drive.driveId} onOpenFolder={open} />
       </div>
       <FolderAccessDialog
         driveId={drive.driveId}
@@ -221,113 +208,113 @@ function isUnder(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
+function absolute(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
 /**
  * Where a person goes in Drive, in the order they reach for it: their own
- * drive, what others shared with them, then the shared drives. A shared
+ * drive, what others shared with them, then the company drives. A company
  * drive is its own volume (sessions mount it alone under /drives), so it
- * carries the drive glyph; a folder inside one carries the folder glyph in
- * the explorer. The glyph is the whole volume-or-folder signal: no badge.
+ * carries the drive glyph; a folder carries the folder glyph. The trigger
+ * names the drive in view, so the header always answers "where am I".
  */
-function DriveRail({ drive, path, onOpen }: { drive: Drive; path: string; onOpen: (path: string) => void }) {
+function DriveSwitcher({
+  drive,
+  path,
+  onOpen,
+}: {
+  drive: Drive;
+  path: string;
+  onOpen: (path: string) => void;
+}) {
   const t = useTranslations('drives');
   const root = useDriveFolder(drive.driveId, '/');
-  const sharedDrives = (root.data?.entries ?? []).filter(
-    (e) => e.type === 'dir' && !isUnder(e.path.startsWith('/') ? e.path : `/${e.path}`, PEOPLE_ROOT),
-  );
+  const companyDrives = (root.data?.entries ?? [])
+    .filter((e) => e.type === 'dir' && !isUnder(absolute(e.path), PEOPLE_ROOT))
+    .map((e) => ({ name: e.name, path: absolute(e.path) }));
   const personal = drive.personalFolder;
-  const inPersonal = !!personal && isUnder(path, personal);
   const shared = drive.sharedWithMe ?? [];
   const isAdmin = drive.access === 'manage';
 
+  const sharedHere = shared.find((f) => isUnder(path, f.path));
+  const companyHere = companyDrives.find((d) => isUnder(path, d.path));
+  const current: { icon: ComponentType<{ className?: string }>; label: string } =
+    personal && isUnder(path, personal)
+      ? { icon: Home, label: t('myDrive') }
+      : companyHere
+        ? { icon: HardDriveIcon, label: companyHere.name }
+        : sharedHere
+          ? {
+              icon: FolderSimpleIcon,
+              label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
+            }
+          : { icon: SquaresFourIcon, label: t('allFiles') };
+  const CurrentGlyph = current.icon;
+
   return (
-    <nav aria-label={t('driveLabel')} className="hidden w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r px-2 py-3 md:flex">
-      <ul className="space-y-px">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="gap-1.5 font-medium active:scale-[0.96]"
+        >
+          <CurrentGlyph className="size-4 shrink-0" />
+          <span className="max-w-40 truncate">{current.label}</span>
+          <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
         {personal ? (
-          <RailRow icon={HouseIcon} label={t('myDrive')} hint={t('myFolderHint')} active={inPersonal} onClick={() => onOpen(personal)} />
+          <DropdownMenuItem onSelect={() => onOpen(personal)} title={t('myFolderHint')}>
+            <Home className="size-4 shrink-0" />
+            <span className="flex-1 truncate">{t('myDrive')}</span>
+          </DropdownMenuItem>
         ) : null}
         {isAdmin ? (
-          <RailRow icon={SquaresFourIcon} label={t('allFiles')} active={path === '/'} onClick={() => onOpen('/')} />
+          <DropdownMenuItem onSelect={() => onOpen('/')}>
+            <SquaresFourIcon className="size-4 shrink-0" />
+            <span className="flex-1 truncate">{t('allFiles')}</span>
+          </DropdownMenuItem>
         ) : null}
-      </ul>
-
-      {shared.length > 0 ? (
-        <RailGroup label={t('sharedWithMe')}>
-          {shared.map((f) => (
-            <RailRow
-              key={f.path}
-              icon={FolderSimpleIcon}
-              label={f.path.split('/').filter(Boolean).pop() ?? f.path}
-              hint={f.path}
-              active={isUnder(path, f.path)}
-              onClick={() => onOpen(f.path)}
-            />
-          ))}
-        </RailGroup>
-      ) : null}
-
-      <RailGroup label={t('companyDrives')}>
+        {shared.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+              {t('sharedWithMe')}
+            </DropdownMenuLabel>
+            {shared.map((f) => (
+              <DropdownMenuItem key={f.path} onSelect={() => onOpen(f.path)} title={f.path}>
+                <FolderSimpleIcon className="size-4 shrink-0" />
+                <span className="flex-1 truncate">
+                  {f.path.split('/').filter(Boolean).pop() ?? f.path}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+          {t('companyDrives')}
+        </DropdownMenuLabel>
         {root.isLoading ? (
-          <li className="space-y-1 px-2">
+          <div className="space-y-1 px-2 py-1">
             <Skeleton className="h-6 w-full rounded-sm" />
             <Skeleton className="h-6 w-3/4 rounded-sm" />
-          </li>
-        ) : sharedDrives.length === 0 ? (
-          <li className="text-muted-foreground px-2 py-1 text-xs">{t('noCompanyDrives')}</li>
+          </div>
+        ) : companyDrives.length === 0 ? (
+          <p className="text-muted-foreground px-2 py-1.5 text-xs">{t('noCompanyDrives')}</p>
         ) : (
-          sharedDrives.map((e) => {
-            const p = e.path.startsWith('/') ? e.path : `/${e.path}`;
-            return (
-              <RailRow
-                key={p}
-                icon={HardDriveIcon}
-                label={e.name}
-                hint={t('volumeHint')}
-                active={isUnder(path, p)}
-                onClick={() => onOpen(p)}
-              />
-            );
-          })
+          companyDrives.map((d) => (
+            <DropdownMenuItem key={d.path} onSelect={() => onOpen(d.path)} title={t('volumeHint')}>
+              <HardDriveIcon className="size-4 shrink-0" />
+              <span className="flex-1 truncate">{d.name}</span>
+            </DropdownMenuItem>
+          ))
         )}
-      </RailGroup>
-    </nav>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
-}
-
-function RailGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <section className="space-y-1">
-      <h3 className="text-muted-foreground px-2 text-xs font-medium">{label}</h3>
-      <ul className="space-y-px">{children}</ul>
-    </section>
-  );
-}
-
-function RailRow({
-  icon: Glyph,
-  label,
-  hint,
-  active,
-  onClick,
-}: {
-  icon: Icon;
-  label: string;
-  hint?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const row = (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors duration-fast',
-        active ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-      )}
-    >
-      <Glyph className="size-4 shrink-0" />
-      <span className="truncate">{label}</span>
-    </button>
-  );
-  return <li>{hint ? <Hint label={hint} side="right">{row}</Hint> : row}</li>;
 }
