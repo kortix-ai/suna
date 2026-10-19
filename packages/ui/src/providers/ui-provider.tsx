@@ -323,6 +323,11 @@ export interface UiHostComponents {
   }>;
   /** The decorative background of an empty session. Without it, the plain surface. */
   Wallpaper?: React.ComponentType;
+  /**
+   * The host's own announcement on the project home, once onboarding is done
+   * (apps/web: its mobile app). Without it, nothing is shown.
+   */
+  HomeAnnouncement?: React.ComponentType;
   /** Who can open a session, and its public link. Without it, the header has no Share button. */
   ShareSessionModal?: React.ComponentType<{
     projectId: string;

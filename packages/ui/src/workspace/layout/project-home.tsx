@@ -15,7 +15,8 @@ import { useIsMobile } from '../../internal/hooks';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { isFirstChatRequested, useFirstChatPending } from '../../internal/stores/first-chat-store';
-import { useUiSearchParams } from '../../providers/ui-provider';
+import { SessionIdsProvider } from '../../providers/session-ids';
+import { useUiComponents, useUiSearchParams } from '../../providers/ui-provider';
 import {
   getProjectDetail,
   listProjectAccessRequests,
@@ -29,9 +30,9 @@ import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
 import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
 import { FirstChat } from '../home/first-chat';
-import { MobileAppPromo } from '../home/mobile-app-promo';
 import { SandboxPicker } from '../home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from '../home/welcome-body';
+import { useProjectHomeSend } from './use-project-home-send';
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
@@ -56,20 +57,46 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
  * `ProjectHomeWelcomeBody` because the instant session shell renders that same
  * column with none of this wiring.
  */
-export function ProjectHome({
-  projectId,
-  onSend,
-  busy,
-}: {
+export type ProjectHomeProps = {
   projectId: string;
-  onSend: (
+  /**
+   * Replaces the send. Default: `useProjectHomeSend` creates the session with
+   * the prompt and opens it.
+   */
+  onSend?: (
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
     attachments?: AttachmentSubmission,
   ) => void | Promise<void>;
-  busy: boolean;
-}) {
+  /** With `onSend`: a create is in flight. */
+  busy?: boolean;
+  /** With the default send: runs first; throw to refuse the send (the draft stays). */
+  beforeSend?: () => Promise<void>;
+};
+
+/**
+ * Self-contained: the composer and its pickers read the project from
+ * `SessionIdsProvider`, so the home provides it for its own subtree.
+ */
+export function ProjectHome(props: ProjectHomeProps) {
+  return (
+    <SessionIdsProvider projectId={props.projectId}>
+      <ProjectHomeView {...props} />
+    </SessionIdsProvider>
+  );
+}
+
+function ProjectHomeView({
+  projectId,
+  onSend,
+  busy,
+  beforeSend,
+}: ProjectHomeProps) {
+  const defaultSend = useProjectHomeSend(projectId, { beforeSend });
+  const { HomeAnnouncement } = useUiComponents();
+  const send = onSend ?? defaultSend.send;
+  const creating = onSend ? !!busy : defaultSend.sending;
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tFirstChat = useTranslations('firstChat');
   // The first chat never ends, but it opens only when asked for
@@ -158,7 +185,7 @@ export function ProjectHome({
       options: ComposerOptions,
       attachments?: AttachmentSubmission,
     ) => {
-      const sent = onSend(
+      const sent = send(
         text,
         files,
         {
@@ -173,7 +200,7 @@ export function ProjectHome({
       );
       return sent;
     },
-    [metaSelected, selectedSlug, onSend],
+    [metaSelected, selectedSlug, send],
   );
 
   const isMobile = useIsMobile();
@@ -248,8 +275,8 @@ export function ProjectHome({
       // `busy` here means "create in flight" — spinner in the send slot,
       // input locked. NOT isBusy (that renders agent-running stop-button
       // semantics, which leave the composer with no button at all here).
-      isSending={busy}
-      disabled={busy}
+      isSending={creating}
+      disabled={creating}
       // The home composer navigates to the new session on send — don't
       // clear it first (that would drop the text on a gated send). The
       // message rides across via `create.pending_prompt` and reappears
@@ -300,7 +327,7 @@ export function ProjectHome({
           the project page the user just asked for (KRTX-2635). On later
           projects, which the create flow stamps without a wizard, the era
           never starts and the promo shows as before. */}
-      {firstChatPending || !onboarded ? null : <MobileAppPromo />}
+      {firstChatPending || !onboarded || !HomeAnnouncement ? null : <HomeAnnouncement />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the
@@ -312,7 +339,7 @@ export function ProjectHome({
           projectId={projectId}
           inviteTo={canManageMembers ? accessRequestsTo : null}
           composer={composer}
-          busy={busy}
+          busy={creating}
           // Both starters send at once, each into a new session. Through the
           // composer's own submit, not `sendOutsideComposer`: the send carries
           // the agent and model the composer shows, and a missing model refuses

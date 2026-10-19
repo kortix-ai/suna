@@ -409,7 +409,6 @@
     "./session": "./src/session/index.ts",
     "./session-panel": "./src/session/panel/index.ts",
     "./session/actions/session-label": "./src/session/actions/session-label.ts",
-    "./session/composer/attachment-submission": "./src/session/composer/attachment-submission.ts",
     "./session/composer/attachment-tiles": "./src/session/composer/attachment-tiles.tsx",
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-chat-input": "./src/session/composer/composer-chat-input.tsx",
@@ -417,7 +416,6 @@
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
-    "./session/composer/uploaded-file-refs": "./src/session/composer/uploaded-file-refs.ts",
     "./session/models/model-grouping": "./src/session/models/model-grouping.ts",
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
@@ -497,9 +495,9 @@
     "./workspace": "./src/workspace/index.ts",
     "./workspace/home/access-requests-bell": "./src/workspace/home/access-requests-bell.tsx",
     "./workspace/home/first-chat": "./src/workspace/home/first-chat.tsx",
+    "./workspace/home/mobile-app-promo": "./src/workspace/home/mobile-app-promo.tsx",
     "./workspace/home/sandbox-picker": "./src/workspace/home/sandbox-picker.tsx",
     "./workspace/home/welcome-body": "./src/workspace/home/welcome-body.tsx",
-    "./workspace/layout/new-session-create": "./src/workspace/layout/new-session-create.ts",
     "./workspace/layout/project-files-skeleton": "./src/workspace/layout/project-files-skeleton.tsx",
     "./workspace/layout/project-home": "./src/workspace/layout/project-home.tsx",
     "./workspace/layout/session-route-cache": "./src/workspace/layout/session-route-cache.tsx",
@@ -2081,10 +2079,6 @@
         "types": "./dist/session/actions/session-label.d.ts",
         "import": "./dist/session/actions/session-label.js"
       },
-      "./session/composer/attachment-submission": {
-        "types": "./dist/session/composer/attachment-submission.d.ts",
-        "import": "./dist/session/composer/attachment-submission.js"
-      },
       "./session/composer/attachment-tiles": {
         "types": "./dist/session/composer/attachment-tiles.d.ts",
         "import": "./dist/session/composer/attachment-tiles.js"
@@ -2112,10 +2106,6 @@
       "./session/composer/session-chat-input": {
         "types": "./dist/session/composer/session-chat-input.d.ts",
         "import": "./dist/session/composer/session-chat-input.js"
-      },
-      "./session/composer/uploaded-file-refs": {
-        "types": "./dist/session/composer/uploaded-file-refs.d.ts",
-        "import": "./dist/session/composer/uploaded-file-refs.js"
       },
       "./session/models/model-grouping": {
         "types": "./dist/session/models/model-grouping.d.ts",
@@ -2421,6 +2411,10 @@
         "types": "./dist/workspace/home/first-chat.d.ts",
         "import": "./dist/workspace/home/first-chat.js"
       },
+      "./workspace/home/mobile-app-promo": {
+        "types": "./dist/workspace/home/mobile-app-promo.d.ts",
+        "import": "./dist/workspace/home/mobile-app-promo.js"
+      },
       "./workspace/home/sandbox-picker": {
         "types": "./dist/workspace/home/sandbox-picker.d.ts",
         "import": "./dist/workspace/home/sandbox-picker.js"
@@ -2428,10 +2422,6 @@
       "./workspace/home/welcome-body": {
         "types": "./dist/workspace/home/welcome-body.d.ts",
         "import": "./dist/workspace/home/welcome-body.js"
-      },
-      "./workspace/layout/new-session-create": {
-        "types": "./dist/workspace/layout/new-session-create.d.ts",
-        "import": "./dist/workspace/layout/new-session-create.js"
       },
       "./workspace/layout/project-files-skeleton": {
         "types": "./dist/workspace/layout/project-files-skeleton.d.ts",

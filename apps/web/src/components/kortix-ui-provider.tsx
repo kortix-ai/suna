@@ -90,6 +90,10 @@ function useViewer(): UiViewer | undefined {
 // root bundle stays small. The wallpaper is static: it paints on first frame.
 const components: UiHostComponents = {
   Wallpaper: WallpaperBackground,
+  // The project home's announcement: the Kortix mobile app.
+  HomeAnnouncement: lazyClient(() =>
+    import('@kortix/ui/workspace/home/mobile-app-promo').then((m) => m.MobileAppPromo),
+  ),
   // Only the `codex` pooled provider exists today; the dialog ignores `providerId`.
   ProviderAccountsModal: lazyClient(() =>
     import('@/features/providers/chatgpt-accounts-dialog').then((m) => m.ChatGptAccountsDialog),
