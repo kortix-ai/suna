@@ -14,6 +14,7 @@ import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
+import { repinSessionReminder } from '../lib/session-reminders';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -428,6 +429,8 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           triggerSlug: action.triggerSlug,
         });
+      } else if (action.type === 'repin_reminder') {
+        await repinSessionReminder(input.projectId, action.reminderId, input.sessionId, new Date());
       }
     }
     return { ok: true };

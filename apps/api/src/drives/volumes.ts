@@ -245,9 +245,8 @@ let mountLimitCache: { value: number; at: number } | null = null;
 const MOUNT_LIMIT_TTL_MS = 10 * 60_000;
 
 /**
- * How many volumes one sandbox may mount, from Platinum's own limits (never
- * above its hard cap of {@link DEFAULT_SANDBOX_MOUNT_LIMIT}). Cached; falls
- * back to that cap when the limits cannot be read.
+ * How many volumes one sandbox may mount, from Platinum's own limits. Cached;
+ * falls back to {@link DEFAULT_SANDBOX_MOUNT_LIMIT} when they cannot be read.
  */
 export async function sandboxMountLimit(): Promise<number> {
   if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
@@ -257,7 +256,7 @@ export async function sandboxMountLimit(): Promise<number> {
       signal: AbortSignal.timeout(5_000),
     });
     const max = Number(limits.max_mounts_per_sandbox);
-    if (Number.isFinite(max) && max >= 1) value = Math.min(DEFAULT_SANDBOX_MOUNT_LIMIT, Math.floor(max));
+    if (Number.isFinite(max) && max >= 1) value = Math.floor(max);
   } catch (err) {
     logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
     return value;
@@ -325,6 +324,7 @@ export async function attachSandboxVolume(
         volume: input.volume,
         read_only: input.readOnly,
         ...(input.subdir ? { subdir: input.subdir } : {}),
+        share: 'node',
       }),
       signal: AbortSignal.timeout(45_000),
     });

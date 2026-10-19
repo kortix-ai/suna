@@ -47,6 +47,11 @@ export type SessionLifecyclePostCreateAction =
       /** Resolve at execution time so queued creates never capture stale access. */
       type: 'apply_trigger_session_access';
       triggerSlug: string;
+    }
+  | {
+      /** Move a session reminder to the new session (its session failed). */
+      type: 'repin_reminder';
+      reminderId: string;
     };
 
 export type SessionLifecycleStatus =

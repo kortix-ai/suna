@@ -409,3 +409,27 @@ export async function disableSessionReminder(projectId: string, id: string, now:
     .set({ enabled: false, nextFireAt: null, updatedAt: now })
     .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
 }
+
+/**
+ * Move a reminder to another session of the same project (its session failed)
+ * and re-arm it from now: the move also ends the pause a queued successor holds.
+ */
+export async function repinSessionReminder(projectId: string, id: string, sessionId: string, now: Date): Promise<void> {
+  const [row] = await db
+    .select({ spec: projectTriggerRuntime.scheduleSpec })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow))
+    .limit(1);
+  if (!row) return;
+  const spec = { ...(row.spec as unknown as GitTriggerSpec), pinnedSessionId: sessionId };
+  await db
+    .update(projectTriggerRuntime)
+    .set({
+      sessionId,
+      scheduleSpec: spec as unknown as Record<string, unknown>,
+      enabled: true,
+      nextFireAt: spec.runAt ? null : nextTriggerScheduleSlot(spec, now),
+      updatedAt: now,
+    })
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
+}

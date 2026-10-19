@@ -83,7 +83,7 @@ export interface CreateSandboxOpts {
    * Volumes mounted at create, keyed by guest mount path: the session's
    * drives. Platinum only; every other provider ignores it.
    */
-  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string }>;
+  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string; share?: 'node' | 'private' }>;
   /**
    * The box keeps its state on its `volumes` (an App machine), so Platinum's
    * periodic whole-box backup is off. (A create refused over any `volumes`
