@@ -26,7 +26,7 @@ describe('package.json exports', () => {
   test('every source file is an export target or a listed internal', () => {
     // './src/...' paths that are deliberately not exported (gen-exports INTERNAL).
     const INTERNAL = new Set<string>([...(INTERNAL_MODULES as Set<string>)].map((p) => `./src/${p}`));
-    const SKIP = /\.test\.tsx?$|\.d\.ts$|\/__snapshots__\/|^\.\/src\/test-utils\/|^\.\/src\/(chat|i18n)\/(?!index\.tsx?$)/;
+    const SKIP = /\.test\.tsx?$|\.d\.ts$|\/__snapshots__\/|^\.\/src\/test-utils\/|^\.\/src\/i18n\/(?!index\.tsx?$)/;
     const src = fileURLToPath(new URL('.', import.meta.url));
     const files = readdirSync(src, { recursive: true, withFileTypes: true })
       .filter((d) => d.isFile())

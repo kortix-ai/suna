@@ -14,3 +14,9 @@ export {
   type ThemeTextStep,
 } from './theme';
 export { ThemeScope, type ThemeScopeProps } from './theme-scope';
+export {
+  DEFAULT_WALLPAPER_ID,
+  WALLPAPERS,
+  getWallpaperById,
+  type Wallpaper,
+} from '../internal/lib/wallpapers';

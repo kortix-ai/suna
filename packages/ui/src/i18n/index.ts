@@ -31,17 +31,8 @@ export type UiTranslator = ReturnType<
 /** use-intl's framework-free translator, for a host that types its own catalog. */
 export { createTranslator };
 
-/** What a host passes as `<UiProvider i18n>`. Pass a stable object. */
-export interface UiI18nHost {
-  /** The host's translation hook. Wins over `messages`. */
-  useTranslations?: UiUseTranslations;
-  /** The host's locale hook. Wins over `locale`. */
-  useLocale?: () => string;
-  /** Default: 'en'. */
-  locale?: string;
-  /** Default: the bundled English catalog. */
-  messages?: AbstractIntlMessages;
-}
+/** What a host passes as `<UiProvider i18n>` (defined beside the provider). */
+export type { UiI18nHost } from '../providers/ui-provider';
 
 function useCatalogTranslations(namespace?: string) {
   const host = useUiI18nHost();
@@ -66,3 +57,5 @@ export function useLocale(): string {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useHost ? useHost() : (host?.locale ?? 'en');
 }
+export { localizeUiCatalog, translateUiCatalogText } from './ui-catalog/localize-ui-catalog';
+export { useLocalizedUiCatalog } from './ui-catalog/use-localized-ui-catalog';

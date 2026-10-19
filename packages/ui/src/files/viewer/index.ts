@@ -1,8 +1,8 @@
 /**
- * file-viewer — the single, surface-agnostic file content renderer.
+ * @kortix/ui/file-viewer — The single, surface-agnostic file content renderer.
  *
- * The renderer is presentation-only. Each surface (the live workspace in
- * `features/files`, a project's git-ref view in `features/project-files`)
+ * The renderer is presentation-only. Each surface (a live session's sandbox
+ * files in `files/runtime`, a project's git-ref view in `files/project`)
  * provides data access through a <FileSourceProvider>. See ./file-source.
  */
 export { FileContentRenderer } from './file-content-renderer';
@@ -23,3 +23,5 @@ export { PreviewFitProvider, isUsableIntrinsicSize } from './preview-fit';
 export { SaveAsPdfButton } from './save-as-pdf-button';
 export { framePolicy, getFileCategory, getLanguageFromExt } from './preview-policy';
 export type { FileCategory, FrameContent, FramePolicy } from './preview-policy';
+export { FileViewer } from '../../session/panel/easy/file-viewer';
+export { type ShowCarouselItem } from '../renderers/show-content-renderer';

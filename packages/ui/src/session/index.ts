@@ -1,5 +1,5 @@
 /**
- * @kortix/ui/session — the Kortix session thread for `@kortix/sdk` hosts.
+ * @kortix/ui/session — The Kortix session thread for `@kortix/sdk` hosts.
  *
  * Drop-in (the thread apps/web renders):
  *
@@ -36,3 +36,72 @@ export { QuestionPrompt, type QuestionPromptHandle } from './prompts/question-pr
 export { TurnErrorDisplay } from './status/session-error-banner';
 export { SessionBusyIndicator } from './status/session-busy-indicator';
 export { SessionStartingLoader } from './status/session-starting-loader';
+export { type SessionStatus } from '../internal/session-types/types';
+export {
+  UNTITLED_SESSION_LABEL,
+  getSessionDisplayTitle,
+  groupChangeRequestsBySession,
+  hasSessionAwaitingTitle,
+  isAwaitingTitle,
+  projectSessionsRefetchInterval,
+  resolveSessionListViewState,
+  sessionLastActivityAt,
+  sessionTitleHasLanded,
+  shortRelative,
+  sortSessionsByLastActivity,
+  starterSectionOf,
+} from './actions/project-session-list-helpers';
+export { SessionDeleteModal } from './actions/session-delete-modal';
+export {
+  isLegacyMigratedSession,
+  matchesSourceFilters,
+  matchesStatusFilters,
+  sessionDisplayLabel,
+  sessionSource,
+  type SessionSourceFilter,
+} from './actions/session-label';
+export { useRenameSession } from './actions/use-rename-session';
+export { useSessionListActions } from './actions/use-session-list-actions';
+export { CompactModal } from './header/compact-modal';
+export { ProviderFailureRecovery } from './models/provider-failure-recovery';
+export { useModelConnectionGate } from './models/use-model-connection-gate';
+export { AgentPicker } from './pickers/agent-picker';
+export { ModelPicker, filterModels } from './pickers/model-picker';
+export {
+  ApprovalAgentContext,
+  ApprovalDecisionActions,
+  ApprovalParameters,
+  approvalReviewable,
+  useApprovalWaitingText,
+} from './prompts/approval-request';
+export { SessionApprovalNotice } from './prompts/session-approval-prompt';
+export { createScopedSession } from './scope/create-scoped-session';
+export { SandboxLoadingBoundary } from './status/sandbox-loading-boundary';
+export { SessionNoticeBanner } from './status/session-notice-banner';
+export { SessionConnectingBanner } from './status/session-starting-loader';
+export { ChatMinimap } from './thread/chat-minimap';
+export { SessionChat } from './thread/session-chat';
+export { SessionTurn, TranscriptTurnRow, TurnAssistantBlock } from './thread/transcript';
+export { ToolSurfaceContext, partOutcome } from './tool/shared/infrastructure';
+export { ToolOutcomeContext } from './tool/shared/infrastructure-contexts';
+export { ToolOutputFallback } from './tool/shared/infrastructure-output';
+export {
+  ServicePreviewActions,
+  type ServicePreviewState,
+} from './tool/shared/infrastructure-preview';
+export { ServicePreviewViewport } from './tool/shared/show-helpers';
+export { ToolActivateContext, TurnLiveContext } from './tool/tool-renderers';
+export { ActivityBurst } from './turn/activity-burst';
+export { PlanCard } from './turn/plan-card';
+export { TurnViewport } from './turn/turn-viewport';
+export {
+  ATTACHMENT_TILE_CAP,
+  BUBBLE_SURFACE,
+  ChannelOrigin,
+  UserMessageBubble,
+  mergeSentAttachments,
+  normalizeAttachments,
+  planAttachmentGrid,
+  type ChannelMessage,
+  type NormalizedAttachment,
+} from './turn/user-message';

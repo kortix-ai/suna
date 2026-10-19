@@ -103,7 +103,9 @@ register('./css-loader.mjs', import.meta.url);
 
 const pkg = JSON.parse(readFileSync(new URL('./node_modules/@kortix/ui/package.json', import.meta.url), 'utf8'));
 if (pkg.version !== '${VERSION}') throw new Error('installed @kortix/ui is not the packed tarball: ' + pkg.version);
-if (pkg.dependencies?.['@kortix/shared']) throw new Error('published manifest depends on the private @kortix/shared');
+for (const name of ['@kortix/shared', '@kortix/manifest-schema']) {
+  if (pkg.dependencies?.[name]) throw new Error(`published manifest depends on the private ${name}`);
+}
 for (const file of ${JSON.stringify(shipped)}) {
   if (!existsSync(new URL('./node_modules/@kortix/ui/' + file, import.meta.url))) throw new Error('tarball is missing ' + file);
 }
@@ -126,7 +128,7 @@ for (const key of keys) {
       continue;
     }
     const file = fileURLToPath(import.meta.resolve(spec));
-    if (/['"]@kortix\\/shared/.test(readFileSync(file, 'utf8'))) throw new Error('imports @kortix/shared');
+    if (/['"]@kortix\\/(?:shared|manifest-schema)/.test(readFileSync(file, 'utf8'))) throw new Error('imports a private @kortix/ package');
     if (BROWSER_ONLY.includes(key)) {
       browserOnly += 1;
       continue;

@@ -211,3 +211,28 @@ export {
   MarkerIcon,
   markerVariants,
 } from './primitives/marker';
+export { useDebounce } from './hooks/use-debounce';
+export { useIsMobile } from './hooks/use-mobile';
+export { useMediaQuery } from './internal/hooks/use-media-query';
+export { useSlashFocus } from './internal/hooks/use-slash-focus';
+export { faviconUrlForHostname } from './lib/favicon';
+export { setUiHostEnv } from './lib/host-env';
+export { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from './lib/icon-config';
+export { lazyClient } from './lib/lazy-client';
+export { spring } from './lib/springs';
+export { setUiTelemetry } from './lib/telemetry';
+export {
+  dialogContentZ,
+  dialogOverlayZ,
+  floatingZ,
+  hasOpenFloatingLayer,
+  hasOpenNestedDialog,
+  useDialogDepth,
+} from './lib/z-stack';
+export {
+  UiImage,
+  UiLink,
+  useUiViewer,
+  type UiHostComponents,
+  type UiViewer,
+} from './providers/ui-provider';

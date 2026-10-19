@@ -5,7 +5,19 @@ import * as React from 'react';
 
 import type { ProjectSession } from '@kortix/sdk';
 
-import type { UiI18nHost } from '../i18n';
+import type { AbstractIntlMessages, useTranslations as useIntlTranslations } from 'use-intl';
+
+/** What a host passes as `<UiProvider i18n>`. Pass a stable object. */
+export interface UiI18nHost {
+  /** The host's translation hook (use-intl's or next-intl's `useTranslations`). Wins over `messages`. */
+  useTranslations?: typeof useIntlTranslations;
+  /** The host's locale hook. Wins over `locale`. */
+  useLocale?: () => string;
+  /** Default: 'en'. */
+  locale?: string;
+  /** Default: the bundled English catalog. */
+  messages?: AbstractIntlMessages;
+}
 
 /**
  * The host adapters for @kortix/ui: the copy components render when the
@@ -20,7 +32,7 @@ import type { UiI18nHost } from '../i18n';
  * `@kortix/ui/lib/host-env`.
  */
 /**
- * The copy of the @kortix/ui/chat pickers (`ModelPicker`, `AgentPicker`).
+ * The copy of the @kortix/ui/session pickers (`ModelPicker`, `AgentPicker`).
  * Every key has an English default; a host passes the keys it translates as
  * `strings.chat`. The session thread reads the i18n catalog instead
  * (`UiProvider` `i18n`).

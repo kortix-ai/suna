@@ -73,7 +73,7 @@ export function planAnchorMessageId(turns: ReadonlyArray<Pick<SessionLogTurn, 'i
  * and the transcript is the only surface always on screen.
  *
  * Advanced mode is deliberately NOT a condition either. It renders a stepper
- * with no Plan card, but it is commented out today (`action-panel/index.tsx`)
+ * with no Plan card, but it is commented out today (`panel/action-panel.tsx`)
  * and every user gets the Easy panel whatever their stored `panelMode`, so a
  * branch here would only misroute the plan. Re-enabling Advanced must give it
  * a Plan card of its own — see the note at that commented-out branch.

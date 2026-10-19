@@ -44,7 +44,7 @@
 
 import Hint from '../../primitives/hint';
 import { Kbd, KbdGroup } from '../../primitives/kbd';
-import { ActionPanel } from '.';
+import { ActionPanel } from './action-panel';
 import { useOptionalSessionPanel } from './session-panel-provider';
 import { useIsMobile } from '../../internal/hooks';
 import { cn } from '../../lib/utils';

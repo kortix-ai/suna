@@ -1,1 +1,1 @@
-export * from '../../node_modules/shaders/dist/react/index.js';
+export * from 'shaders/react';

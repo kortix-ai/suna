@@ -9,11 +9,13 @@
 // 2. tsc-alias --resolve-full-paths adds the .js / /index.js suffixes Node ESM needs.
 // 3. src/styles/*.css are copied to dist/styles/ (theme.css's `@source "../"` then
 //    scans dist/, the published class strings).
-// 4. @kortix/shared is private, so it is inlined: the names dist imports from its root
-//    or a subpath are bundled (tree-shaken) into dist/_vendor/kortix-shared.js; the
+// 4. @kortix/shared and @kortix/manifest-schema are private, so they are inlined: the
+//    names dist imports from their roots or subpaths are bundled (tree-shaken) into
+//    dist/_vendor/kortix-shared.js; the
 //    shared modules a .d.ts names get declarations in dist/_vendor/shared/. Every
-//    '@kortix/shared[/…]' specifier in dist/**/*.{js,d.ts} is rewritten to them.
-// 5. Guards: no '@kortix/shared' specifier is left, every source 'use client' survives,
+//    '@kortix/shared[/…]' / '@kortix/manifest-schema[/…]' specifier in dist/**/*.{js,d.ts}
+//    is rewritten to them. A .d.ts may name @kortix/shared types only.
+// 5. Guards: no private '@kortix/…' specifier is left, every source 'use client' survives,
 //    every publishConfig.exports target exists, the i18n and provider entries load in Node.
 // dist/styles.css is built separately (scripts/build-styles.mjs) and committed; this
 // script keeps it.
@@ -27,8 +29,10 @@ const SRC = join(PKG_DIR, 'src');
 const DIST = join(PKG_DIR, 'dist');
 const BIN = join(PKG_DIR, 'node_modules', '.bin');
 const KEEP = new Set(['styles.css']);
-const SHARED = /(['"])(@kortix\/shared(?:\/[\w./-]+)?)\1/g;
-const SHARED_ANY = /['"]@kortix\/shared(?:\/[\w./-]+)?['"]/;
+// Private workspace packages dist must not import (npm cannot install them).
+const PRIVATE_PKGS = { '@kortix/shared': 'shared', '@kortix/manifest-schema': 'manifest-schema' };
+const SHARED = /(['"])(@kortix\/(?:shared|manifest-schema)(?:\/[\w./-]+)?)\1/g;
+const SHARED_ANY = /['"]@kortix\/(?:shared|manifest-schema)(?:\/[\w./-]+)?['"]/;
 const posix = (p) => p.split(sep).join('/');
 
 function walk(dir) {
@@ -67,11 +71,14 @@ for (const css of walk(SRC).filter((p) => p.endsWith('.css') && !p.startsWith(jo
 // declarations, emitted by tsc into dist/_vendor/shared/. Then every
 // '@kortix/shared[/…]' specifier points at the vendored file.
 const SHARED_DIR = join(PKG_DIR, '..', 'shared');
-const sharedExports = JSON.parse(readFileSync(join(SHARED_DIR, 'package.json'), 'utf8')).exports;
+const privateName = (spec) => Object.keys(PRIVATE_PKGS).find((n) => spec === n || spec.startsWith(`${n}/`));
 const sharedSource = (spec) => {
-  const target = sharedExports[spec === '@kortix/shared' ? '.' : `./${spec.slice('@kortix/shared/'.length)}`];
-  if (typeof target !== 'string') fail(`'${spec}' is not an export of @kortix/shared`);
-  return join(SHARED_DIR, target);
+  const name = privateName(spec);
+  const dir = join(PKG_DIR, '..', PRIVATE_PKGS[name]);
+  const exports = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).exports;
+  const target = exports[spec === name ? '.' : `./${spec.slice(name.length + 1)}`];
+  if (typeof target !== 'string') fail(`'${spec}' is not an export of ${name}`);
+  return join(dir, target);
 };
 const emitted = walk(DIST).filter((p) => /\.(js|d\.ts)$/.test(p));
 const values = new Map(); // name → specifier
@@ -81,13 +88,16 @@ for (const file of emitted) {
   if (!SHARED_ANY.test(text)) continue;
   const at = posix(relative(PKG_DIR, file));
   if (file.endsWith('.d.ts')) {
-    for (const m of text.matchAll(SHARED)) typeSpecs.add(m[2]);
+    for (const m of text.matchAll(SHARED)) {
+      if (privateName(m[2]) !== '@kortix/shared') fail(`${at}: a declaration names '${m[2]}'; only @kortix/shared types can be vendored`);
+      typeSpecs.add(m[2]);
+    }
     continue;
   }
-  if (/import\s*\*\s*as\s+\w+\s+from\s*['"]@kortix\/shared|export\s*\*\s*from\s*['"]@kortix\/shared/.test(text)) {
-    fail(`${at}: only named imports from '@kortix/shared' can be inlined`);
+  if (/import\s*\*\s*as\s+\w+\s+from\s*['"]@kortix\/(?:shared|manifest-schema)|export\s*\*\s*from\s*['"]@kortix\/(?:shared|manifest-schema)/.test(text)) {
+    fail(`${at}: only named imports from a private '@kortix/…' package can be inlined`);
   }
-  for (const m of text.matchAll(/(?:import|export)\s*\{([^}]*)\}\s*from\s*['"](@kortix\/shared[^'"]*)['"]/g)) {
+  for (const m of text.matchAll(/(?:import|export)\s*\{([^}]*)\}\s*from\s*['"](@kortix\/(?:shared|manifest-schema)[^'"]*)['"]/g)) {
     for (const name of m[1].split(',').map((x) => x.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
       const prev = values.get(name);
       if (prev && prev !== m[2]) fail(`'${name}' is imported from both '${prev}' and '${m[2]}'`);
@@ -118,7 +128,7 @@ if (values.size > 0) {
     bundle: true,
     splitting: false,
     treeshake: true,
-    noExternal: [/^@kortix\/shared/],
+    noExternal: [/^@kortix\/(?:shared|manifest-schema)/],
     tsconfig: join(PKG_DIR, 'tsconfig.json'),
     silent: true,
     clean: false,
@@ -136,7 +146,7 @@ if (values.size > 0) {
               resolveDir: args.resolveDir,
               pluginData: { inner: true },
             });
-            if (errors.length || external || !/[\\/]packages[\\/]shared[\\/]src[\\/]/.test(path)) return undefined;
+            if (errors.length || external || !/[\\/]packages[\\/](?:shared|manifest-schema)[\\/]src[\\/]/.test(path)) return undefined;
             return { path, sideEffects: false };
           });
         },
@@ -186,8 +196,8 @@ for (const file of emitted) {
 // 5. Guards.
 const leftover = walk(DIST)
   .filter((p) => /\.(js|d\.ts)$/.test(p))
-  .filter((p) => /from\s*['"]@kortix\/shared|import\(\s*['"]@kortix\/shared/.test(readFileSync(p, 'utf8')));
-if (leftover.length) fail(`'@kortix/shared' is still imported by: ${leftover.map((p) => posix(relative(PKG_DIR, p))).join(', ')}`);
+  .filter((p) => /from\s*['"]@kortix\/(?:shared|manifest-schema)|import\(\s*['"]@kortix\/(?:shared|manifest-schema)/.test(readFileSync(p, 'utf8')));
+if (leftover.length) fail(`a private '@kortix/…' package is still imported by: ${leftover.map((p) => posix(relative(PKG_DIR, p))).join(', ')}`);
 
 const DIRECTIVE = /^['"]use client['"]/;
 const lostDirective = walk(SRC)
@@ -217,5 +227,5 @@ for (const entry of ['dist/i18n/index.js', 'dist/providers/session-ids.js', 'dis
 
 const js = walk(DIST).filter((p) => p.endsWith('.js')).length;
 console.log(
-  `build: dist/ ${js} .js modules, ${targets.length} export targets present, @kortix/shared inlined (${values.size} values; types of ${typeSpecs.size} modules)`,
+  `build: dist/ ${js} .js modules, ${targets.length} export targets present, @kortix/shared + @kortix/manifest-schema inlined (${values.size} values; types of ${typeSpecs.size} modules)`,
 );
