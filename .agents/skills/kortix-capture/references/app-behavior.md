@@ -1142,8 +1142,13 @@ Build: `cargo build --release --features capture-engine --bin kortix-capture-eng
 Swift engine and `engine::locate()` prefers it there.
 
 `bundle_id`: Windows = AppUserModelID for packaged apps, else lowercase exe name
-(`chrome.exe`). Linux = lowercase `WM_CLASS` class. Exclusion lists match
-case-insensitively; the built-in groups carry Windows and Linux ids.
+(`chrome.exe`). Linux = lowercase `WM_CLASS` class. Exclusion and inclusion
+lists match case-insensitively; the built-in groups carry Windows and Linux ids.
+On Windows a list entry matches the `bundle_id` or the executable file name,
+with or without `.exe` (`memory::exclusions::app_matches`). So `notepad.exe`
+names the classic Notepad and the packaged Windows 11 Notepad
+(`Microsoft.WindowsNotepad_8wekyb3d8bbwe!App`). The engine reports the file
+name as `app.exe`.
 
 | | Windows | Linux (X11) |
 |---|---|---|

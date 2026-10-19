@@ -18,7 +18,10 @@
 //!
 //! `bundle_id` scheme (stable key for the `application` table):
 //! * Windows: the AppUserModelID for packaged (UWP/MSIX) processes, else the
-//!   lowercase executable file name, for example `chrome.exe`.
+//!   lowercase executable file name, for example `chrome.exe`. `exe` is always
+//!   the executable file name: an app list entry matches either
+//!   (`memory::exclusions::app_matches`), so `notepad.exe` also names the
+//!   packaged Windows 11 Notepad.
 //! * Linux: the lowercase X11 `WM_CLASS` class, for example `firefox`.
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -60,9 +63,8 @@ const ALWAYS_EXCLUDED: &[&str] = &["logonui.exe", "lockapp.exe", "consent.exe"];
 
 /// Kortix itself, never recorded: its own executables and the app the service
 /// runs in (`own`, from the request's `own_bundle_ids`).
-pub fn is_own(bundle: &str, own: &[String]) -> bool {
-    let b = bundle.to_lowercase();
-    OWN_APPS.contains(&b.as_str()) || own.iter().any(|o| o.eq_ignore_ascii_case(&b))
+pub fn is_own(bundle: &str, exe: &str, own: &[String]) -> bool {
+    OWN_APPS.iter().any(|o| app_matches(o, bundle, exe)) || app_listed(own, bundle, exe)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +106,8 @@ pub struct Foreground {
     pub id: u64,
     pub pid: u32,
     pub bundle_id: String,
+    /// Windows: the lowercase executable file name. Empty elsewhere.
+    pub exe: String,
     pub name: String,
     pub version: String,
     pub title: String,
@@ -115,6 +119,8 @@ pub struct WinInfo {
     pub id: u64,
     pub pid: u32,
     pub bundle_id: String,
+    /// Windows: the lowercase executable file name. Empty elsewhere.
+    pub exe: String,
     pub app_name: String,
     pub title: String,
     pub rect: Rect,
@@ -171,9 +177,9 @@ impl Include {
     }
 
     /// The app is included, or the page's website is. Off: always true.
-    pub fn allows(&self, bundle: &str, url: Option<&str>) -> bool {
+    pub fn allows(&self, bundle: &str, exe: &str, url: Option<&str>) -> bool {
         !self.on
-            || self.apps.iter().any(|a| a.eq_ignore_ascii_case(bundle))
+            || app_listed(&self.apps, bundle, exe)
             || url.is_some_and(|u| url_excluded(u, &self.domains))
     }
 }
@@ -187,7 +193,7 @@ pub fn plan_displays<'a>(
     windows: &'a [WinInfo],
     displays: &[DisplayInfo],
     url_of: &dyn Fn(&WinInfo) -> Option<String>,
-    excluded_app: &dyn Fn(&str) -> bool,
+    excluded_app: &dyn Fn(&str, &str) -> bool,
     excluded_domains: &[String],
     exclude_private: bool,
     record_unknown: bool,
@@ -199,10 +205,10 @@ pub fn plan_displays<'a>(
             return !record_unknown || include.on;
         }
         let url = url_of(w);
-        excluded_app(&bundle)
+        excluded_app(&bundle, &w.exe)
             || (exclude_private && looks_private(&w.title))
             || url.as_deref().is_some_and(|u| url_excluded(u, excluded_domains))
-            || !include.allows(&bundle, url.as_deref())
+            || !include.allows(&bundle, &w.exe, url.as_deref())
     };
     let hidden: HashSet<u64> = windows
         .iter()
@@ -369,7 +375,7 @@ fn ensure_parent(path: &str) -> Result<()> {
 // ----------------------------------------------------------------- privacy
 
 /// One list for the engine and the action recorder (`memory::exclusions`).
-pub use crate::memory::exclusions::{looks_private, url_excluded};
+pub use crate::memory::exclusions::{app_listed, app_matches, looks_private, url_excluded};
 
 // ----------------------------------------------------------------- capture
 
@@ -390,8 +396,8 @@ fn probe(_req: &Value) -> Result<Value> {
     let Some(fg) = os::foreground() else {
         return skip(res, "no_frontmost_app");
     };
-    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "name": fg.name});
-    if OWN_APPS.contains(&fg.bundle_id.to_lowercase().as_str()) {
+    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name});
+    if is_own(&fg.bundle_id, &fg.exe, &[]) {
         return skip(res, "self_on_screen");
     }
     res["title"] = json!(fg.title);
@@ -475,16 +481,15 @@ fn capture(req: &Value) -> Result<Value> {
     let Some(fg) = os::foreground() else {
         return skip(res, "no_frontmost_app");
     };
-    res["app"] =
-        json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "name": fg.name, "version": fg.version});
+    res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name, "version": fg.version});
     let fg_id = fg.bundle_id.to_lowercase();
     if fg_id.is_empty() && !record_unknown {
         return skip(res, "unknown_bundle");
     }
-    if excluded.contains(&fg_id) {
+    if app_listed(&excluded, &fg_id, &fg.exe) {
         return skip(res, "excluded_app");
     }
-    if OWN_APPS.contains(&fg_id.as_str()) {
+    if is_own(&fg_id, &fg.exe, &[]) {
         return skip(res, "self_on_screen");
     }
 
@@ -505,7 +510,7 @@ fn capture(req: &Value) -> Result<Value> {
     {
         return skip(res, "excluded_domain");
     }
-    if !include.allows(&fg_id, url.as_deref()) {
+    if !include.allows(&fg_id, &fg.exe, url.as_deref()) {
         return skip(res, "not_included");
     }
     if want_ax {
@@ -524,8 +529,7 @@ fn capture(req: &Value) -> Result<Value> {
 
     let mut shot = os::screenshot(fg.rect).map_err(|e| anyhow!("capture_failed: {e:#}"))?;
     let hide = |w: &WinInfo| {
-        let id = w.bundle_id.to_lowercase();
-        excluded.contains(&id) || OWN_APPS.contains(&id.as_str())
+        app_listed(&excluded, &w.bundle_id, &w.exe) || is_own(&w.bundle_id, &w.exe, &[])
     };
     redact(&mut shot.image, &shot.display.rect, &windows, &hide);
     let image = fit(shot.image, max_width, max_height);
@@ -608,20 +612,21 @@ fn capture_all(req: &Value) -> Result<Value> {
         return Ok(res);
     }
     let own = strings("own_bundle_ids");
-    let excluded_app = |b: &str| excluded.iter().any(|e| e == b) || is_own(b, &own);
+    let excluded_app =
+        |b: &str, exe: &str| app_listed(&excluded, b, exe) || is_own(b, exe, &own);
     let fg = os::foreground();
     let fg_url = fg.as_ref().and_then(os::browser_url);
     if let Some(fg) = &fg {
         let id = fg.bundle_id.to_lowercase();
-        let hidden = excluded_app(&id)
+        let hidden = excluded_app(&id, &fg.exe)
             || (id.is_empty() && !record_unknown)
             || (exclude_private && looks_private(&fg.title))
             || fg_url
                 .as_deref()
                 .is_some_and(|u| url_excluded(u, &excluded_domains))
-            || !include.allows(&id, fg_url.as_deref());
+            || !include.allows(&id, &fg.exe, fg_url.as_deref());
         if !hidden {
-            res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "name": fg.name, "version": fg.version});
+            res["app"] = json!({"pid": fg.pid, "bundle_id": fg.bundle_id, "exe": fg.exe, "name": fg.name, "version": fg.version});
             res["title"] = json!(fg.title);
             if let Some(u) = &fg_url {
                 res["url"] = json!(u);
@@ -1233,6 +1238,7 @@ mod tests {
             id,
             pid: 1,
             bundle_id: bundle.into(),
+            exe: String::new(),
             app_name: bundle.into(),
             title: String::new(),
             rect: Rect { x, y, w, h },
@@ -1286,7 +1292,8 @@ mod tests {
         ];
         let url = |w: &WinInfo| (w.id == 40).then(|| "https://login.bank.example/s".to_string());
         let own = vec!["kortix.exe".to_string()];
-        let excluded = |bundle: &str| bundle == "1password.exe" || is_own(bundle, &own);
+        let excluded =
+            |bundle: &str, exe: &str| bundle == "1password.exe" || is_own(bundle, exe, &own);
         let plan = plan_displays(
             &windows,
             &displays,
@@ -1335,9 +1342,69 @@ mod tests {
             plan.hidden.contains(&40),
             "a website not included is hidden, even in a browser"
         );
-        let slack_excluded = |b: &str| b == "slack.exe";
+        let slack_excluded = |b: &str, _: &str| b == "slack.exe";
         let plan = plan_displays(&windows, &displays, &gh, &slack_excluded, &[], true, false, &include);
         assert!(plan.hidden.contains(&30), "an exclusion wins over an inclusion");
+    }
+
+    #[test]
+    fn a_packaged_windows_app_matches_its_exe_name_in_every_list() {
+        let display = [DisplayInfo {
+            id: 1,
+            rect: Rect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+            name: "DISPLAY1".into(),
+            main: true,
+            scale: 1.0,
+        }];
+        // Windows 11 Notepad: a packaged app, its id an AppUserModelID.
+        let aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App";
+        let mut notepad = win(1, aumid, 0, 0, 1920, 1080);
+        notepad.exe = "notepad.exe".into();
+        let mut edge = win(2, "msedge.exe", 0, 0, 1920, 1080);
+        edge.exe = "msedge.exe".into();
+        let windows = vec![notepad, edge];
+        let no_url = |_: &WinInfo| None;
+        let listed = vec!["notepad.exe".to_string()];
+        let excluded = |b: &str, exe: &str| app_listed(&listed, b, exe);
+        let plan = plan_displays(
+            &windows,
+            &display,
+            &no_url,
+            &excluded,
+            &[],
+            true,
+            false,
+            &Include::default(),
+        );
+        assert!(plan.hidden.contains(&1), "excluded by its exe name");
+        assert!(plan.covered.contains(&1), "it fills the display: no frame");
+
+        let none = |_: &str, _: &str| false;
+        let include = Include {
+            on: true,
+            apps: vec!["notepad.exe".into()],
+            domains: vec![],
+        };
+        let plan = plan_displays(&windows, &display, &no_url, &none, &[], true, false, &include);
+        assert!(!plan.hidden.contains(&1), "Notepad is included");
+        assert!(plan.hidden.contains(&2), "Edge is not");
+        assert_eq!(plan.top.get(&1).map(|w| w.id), Some(1));
+        // The AppUserModelID still names it.
+        let by_aumid = Include {
+            on: true,
+            apps: vec![aumid.to_lowercase()],
+            domains: vec![],
+        };
+        assert!(by_aumid.allows(aumid, "notepad.exe", None));
+        assert!(!by_aumid.allows("msedge.exe", "msedge.exe", None));
+        // Kortix's own executables, packaged or not.
+        assert!(is_own("Kortix.Capture_x!App", "kortix-capture.exe", &[]));
+        assert!(!is_own("msedge.exe", "msedge.exe", &[]));
     }
 
     #[test]

@@ -115,6 +115,8 @@ pub fn session_locked() -> bool {
 #[derive(Clone, Default)]
 struct ProcInfo {
     bundle_id: String,
+    /// The lowercase executable file name, also for packaged apps.
+    exe: String,
     name: String,
     version: String,
     path: String,
@@ -252,7 +254,8 @@ fn proc_info(pid: u32) -> Option<ProcInfo> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     let info = ProcInfo {
-        bundle_id: aumid.filter(|a| !a.is_empty()).unwrap_or(file),
+        bundle_id: aumid.filter(|a| !a.is_empty()).unwrap_or_else(|| file.clone()),
+        exe: file,
         name: if desc.trim().is_empty() {
             stem
         } else {
@@ -269,7 +272,7 @@ fn proc_info(pid: u32) -> Option<ProcInfo> {
 /// process owns a `CoreWindow` child.
 fn real_pid(hwnd: HWND, host_pid: u32) -> u32 {
     let is_frame_host = proc_info(host_pid)
-        .map(|p| p.bundle_id == "applicationframehost.exe")
+        .map(|p| p.exe == "applicationframehost.exe")
         .unwrap_or(false);
     if !is_frame_host {
         return host_pid;
@@ -335,6 +338,7 @@ pub fn foreground() -> Option<Foreground> {
             id: hwnd_id(hwnd),
             pid,
             bundle_id: info.bundle_id,
+            exe: info.exe,
             name: info.name,
             version: info.version,
             title: window_text(hwnd),
@@ -394,6 +398,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 id: hwnd_id(hwnd),
                 pid,
                 bundle_id: info.bundle_id,
+                exe: info.exe,
                 app_name: info.name,
                 title,
                 rect,

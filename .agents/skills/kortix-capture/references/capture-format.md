@@ -149,7 +149,8 @@ null), `domain_icon`, `display` (`x`, `y`, `w`, `h`, and since multi-display
 - **Idleness.** No keyboard or mouse input never stops capture: reading or
   watching records too. Frames taken `inactivity_seconds` (5 s) after the last
   input are marked `inactive`. Only the lock screen, sleep, the screensaver,
-  the person's pause and the organization's pause stop capture.
+  the person's pause and the organization's pause stop capture. Readers keep
+  inactive frames: the timeline's runs and player include them.
 - **Exclusions are per window.** Excluded apps, private browser windows and
   excluded websites are hidden window by window on every display (on Windows
   and Linux painted black); their titles and URLs never reach a frame line. A

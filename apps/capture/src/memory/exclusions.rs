@@ -21,6 +21,8 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Front {
     pub bundle_id: String,
+    /// Windows: the lowercase executable file name (`notepad.exe`). Empty elsewhere.
+    pub exe: String,
     pub url: Option<String>,
     pub title: String,
 }
@@ -41,6 +43,24 @@ pub fn looks_private(title: &str) -> bool {
     PRIVATE_MARKERS.iter().any(|m| t.contains(m))
 }
 
+/// `entry` (an app id in a policy or the settings) names the app `bundle_id`.
+/// On Windows a packaged app's `bundle_id` is its AppUserModelID
+/// (`Microsoft.WindowsNotepad_8wekyb3d8bbwe!App`), so an entry also matches
+/// its executable file name `exe`, with or without `.exe`. Case-insensitive.
+pub fn app_matches(entry: &str, bundle_id: &str, exe: &str) -> bool {
+    entry.eq_ignore_ascii_case(bundle_id)
+        || (!exe.is_empty()
+            && (entry.eq_ignore_ascii_case(exe)
+                || exe
+                    .strip_suffix(".exe")
+                    .is_some_and(|stem| entry.eq_ignore_ascii_case(stem))))
+}
+
+/// Some entry of `list` names the app ([`app_matches`]).
+pub fn app_listed(list: &[String], bundle_id: &str, exe: &str) -> bool {
+    list.iter().any(|e| app_matches(e, bundle_id, exe))
+}
+
 /// Kortix itself: every `com.kortix.*` and `ai.kortix.*` app, and the app the
 /// service runs in (`own`: its bundle id and executable name). Never recorded.
 pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
@@ -53,11 +73,12 @@ pub fn is_own_app(bundle_id: &str, own: &[String]) -> bool {
 
 /// With `record_only_included` on: the app is included, or the page's website is.
 /// With it off, everything is included.
-pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
+pub fn included(s: &Settings, front: &Front) -> bool {
     if !s.record_only_included {
         return true;
     }
-    contains_ci(&s.included_bundle_ids, bundle_id)
+    let url = front.url.as_deref();
+    app_listed(&s.included_bundle_ids, &front.bundle_id, &front.exe)
         || url.and_then(super::store::normalize_domain).is_some_and(|host| {
             s.effective_included_domains()
                 .iter()
@@ -71,15 +92,17 @@ pub fn included(s: &Settings, bundle_id: &str, url: Option<&str>) -> bool {
 /// `not_included` (record only included apps and websites is on).
 pub fn excluded_reason(s: &Settings, front: &Front) -> Option<&'static str> {
     excluded_by_list(s, front).or_else(|| {
-        (!included(s, &front.bundle_id, front.url.as_deref())).then_some("not_included")
+        (!included(s, front)).then_some("not_included")
     })
 }
 
 fn excluded_by_list(s: &Settings, front: &Front) -> Option<&'static str> {
-    if is_own_app(&front.bundle_id, &s.own_bundle_ids) {
+    if is_own_app(&front.bundle_id, &s.own_bundle_ids)
+        || (!front.exe.is_empty() && is_own_app(&front.exe, &s.own_bundle_ids))
+    {
         return Some("own_app");
     }
-    if contains_ci(&s.effective_excluded_bundle_ids(), &front.bundle_id) {
+    if app_listed(&s.effective_excluded_bundle_ids(), &front.bundle_id, &front.exe) {
         return Some("excluded_app");
     }
     if s.exclude_private_browsing && looks_private(&front.title) {
@@ -558,6 +581,7 @@ mod tests {
     fn front_of(bundle_id: &str) -> Front {
         Front {
             bundle_id: bundle_id.into(),
+            exe: String::new(),
             url: None,
             title: "Kortix Capture".into(),
         }
@@ -896,10 +920,46 @@ mod tests {
     }
 
     #[test]
+    fn a_windows_exe_name_matches_the_packaged_app_and_the_classic_one() {
+        let aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App";
+        let app = |bundle_id: &str, exe: &str| Front {
+            bundle_id: bundle_id.into(),
+            exe: exe.into(),
+            ..Front::default()
+        };
+        // Windows 11 Notepad (packaged) and Windows 10 Notepad (classic).
+        let win11 = app(aumid, "notepad.exe");
+        let win10 = app("notepad.exe", "notepad.exe");
+        let edge = app("msedge.exe", "msedge.exe");
+        for entry in ["notepad.exe", "Notepad.EXE", "notepad"] {
+            let mut s = Settings::default();
+            s.excluded_bundle_ids = vec![entry.into()];
+            assert_eq!(excluded_reason(&s, &win11), Some("excluded_app"), "{entry}");
+            assert_eq!(excluded_reason(&s, &win10), Some("excluded_app"), "{entry}");
+            assert_eq!(excluded_reason(&s, &edge), None, "{entry}");
+            let mut s = Settings::default();
+            s.record_only_included = true;
+            s.included_bundle_ids = vec![entry.into()];
+            assert_eq!(excluded_reason(&s, &win11), None, "{entry}");
+            assert_eq!(excluded_reason(&s, &win10), None, "{entry}");
+            assert_eq!(excluded_reason(&s, &edge), Some("not_included"), "{entry}");
+        }
+        // The AppUserModelID itself still names the packaged app, in any case.
+        let mut s = Settings::default();
+        s.excluded_bundle_ids = vec![aumid.to_lowercase()];
+        assert_eq!(excluded_reason(&s, &win11), Some("excluded_app"));
+        assert_eq!(excluded_reason(&s, &edge), None);
+        // No exe (macOS, Linux): the bundle id alone, never a stem.
+        assert!(!app_matches("notepad", "notepad.exe", ""));
+        assert!(app_matches("com.tinyspeck.SlackMacGap", "com.tinyspeck.slackmacgap", ""));
+    }
+
+    #[test]
     fn record_only_included_records_included_apps_and_sites_and_exclusions_win() {
         let mut s = Settings::default();
         let front = |b: &str, url: Option<&str>| Front {
             bundle_id: b.into(),
+            exe: String::new(),
             url: url.map(str::to_string),
             title: String::new(),
         };
