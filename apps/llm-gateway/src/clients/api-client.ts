@@ -214,21 +214,13 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.holdUsd ? { holdUsd: result.holdUsd } : undefined;
     },
     assertBudget: async (principal) => {
-      const result = await post<{ exceeded: boolean; message?: string; warnings?: string[] }>(
+      // Admission evaluates 'block' budgets only. The API evaluates 'warn'
+      // budgets after it writes the request's trace row (persistGatewayTrace).
+      const result = await post<{ exceeded: boolean; message?: string }>(
         '/internal/gateway/budget-check',
         { principal },
         RETRY_SLOW,
       );
-      // A 'warn' budget must never block — but it must not be a silent no-op
-      // either (see checkBudget in the API's budgets.ts). This granular
-      // fallback path isn't on the standalone gateway's hot path (it always
-      // sets the combined `authorize` hook instead), but keep it honest too.
-      for (const message of result.warnings ?? []) {
-        console.warn(`[gateway] budget warn threshold reached: ${message}`, {
-          accountId: principal.accountId,
-          projectId: principal.projectId,
-        });
-      }
       if (result.exceeded) {
         throw new Error(result.message ?? 'Budget exceeded');
       }

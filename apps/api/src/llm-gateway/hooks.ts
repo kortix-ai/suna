@@ -161,7 +161,8 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
 
 /**
  * A 'warn' gateway budget is a soft cap: it never blocks a request. Each
- * exhausted one becomes a structured, alertable log line at settlement.
+ * exhausted one becomes a structured, alertable log line once the request's
+ * trace row is written (`persistGatewayTrace`).
  */
 function logGatewayBudgetWarnings(
   principal: Pick<AuthedPrincipal, 'accountId' | 'projectId' | 'userId'>,
@@ -193,24 +194,27 @@ function alertBudgetCrossings(principal: Pick<AuthedPrincipal, 'projectId'>, cro
 }
 
 /**
- * Evaluate the 'warn' budgets once a request settles. A warn budget never
- * denies, so the admission path does not wait on its spend query.
- * Fire-and-forget: a failure is logged, never thrown into settlement.
+ * Evaluate the 'warn' budgets after the request's trace row is written. That
+ * row is the first place its cost is visible to the spend query, so the
+ * request that crosses 80% / 100% is the one that reports it. A warn budget
+ * never denies, so admission does not wait on this query. A row that adds no
+ * spend cannot cross a threshold and is skipped. Errors are logged, never thrown.
  */
-function settleWarnBudgets(event: UsageEvent): void {
-  if (!event.projectId) return;
-  const principal = { accountId: event.accountId, projectId: event.projectId, userId: event.actorUserId };
-  void checkBudget(principal, 'warn')
-    .then(({ warnings, crossings }) => {
-      logGatewayBudgetWarnings(principal, warnings);
-      alertBudgetCrossings(principal, crossings);
-    })
-    .catch((err: unknown) =>
-      logger.warn('[gateway] warn budget check failed', {
-        projectId: event.projectId,
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    );
+async function settleWarnBudgets(trace: GatewayTrace): Promise<void> {
+  if (!trace.projectId || !(trace.finalCost || trace.upstreamCost)) return;
+  const principal = { accountId: trace.accountId, projectId: trace.projectId, userId: trace.actorUserId };
+  try {
+    const { warnings, crossings } = await checkBudget(principal, 'warn');
+    logGatewayBudgetWarnings(principal, warnings);
+    if (crossings?.length) {
+      await (await import('./budget-alerts')).alertBudgetCrossings(trace.projectId, crossings);
+    }
+  } catch (err) {
+    logger.warn('[gateway] warn budget check failed', {
+      projectId: trace.projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
@@ -413,10 +417,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   releaseBudgetReservation(event.projectId, event.actorUserId);
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
-  if (!pureHoldRefund) {
-    extendDeadlineForLlmActivity(event.sessionId);
-    settleWarnBudgets(event);
-  }
+  if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
   // On a customer's own key the only Kortix charge is the BYOK fee.
   const byokFee = pureHoldRefund ? 0 : await byokFeeFor(event);
 
@@ -593,7 +594,7 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
   }
 }
 
-/** Persist a request trace to gateway_request_logs (skips unauthenticated traces). */
+/** Persist a request trace to gateway_request_logs (skips unauthenticated traces), then evaluate warn budgets. */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   // Unknown credentials carry no accountId — nothing useful to attribute.
   if (!trace.accountId) return;
@@ -639,4 +640,5 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
+  await settleWarnBudgets(trace);
 }

@@ -79,10 +79,19 @@ mock.module('../repositories/account-tokens', () => ({
         : { isValid: false, ...(accountTokenExtra ?? {}) },
 }));
 
-// Settlement stops at the usage write: the warn-budget check runs before it.
+// The order of the trace row write and the budget checks, per test.
+let calls: string[] = [];
+
+// Settlement stops at the usage write.
 mock.module('../shared/usage-events', () => ({
   recordUsageEvent: async () => {
     throw new Error('usage write not under test');
+  },
+}));
+
+mock.module('../shared/gateway-logs', () => ({
+  recordGatewayTrace: async () => {
+    calls.push('trace row');
   },
 }));
 
@@ -94,6 +103,7 @@ mock.module('./budgets', () => ({
   checkBudget: async (_principal: unknown, action?: string) => {
     budgetCalls += 1;
     budgetActions.push(action);
+    calls.push(`checkBudget ${action ?? 'block'}`);
     return { exceeded: false };
   },
   releaseBudgetReservation: () => {},
@@ -120,7 +130,8 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal, recordGatewayUsage } = await import('./hooks');
+const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal, recordGatewayUsage, persistGatewayTrace } =
+  await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
@@ -329,26 +340,48 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
   });
 });
 
-describe('warn budgets run at settlement, not at admission', () => {
+describe('warn budgets run after the trace row is written, not at admission', () => {
+  const usage = { promptTokens: 10, completionTokens: 5, cachedTokens: 0, cacheWriteTokens: 0 };
   const settled = {
     accountId: 'acct-1',
     actorUserId: 'user-1',
     projectId: 'proj-1',
     provider: 'kortix',
     model: 'm',
-    promptTokens: 10,
-    completionTokens: 5,
-    cachedTokens: 0,
-    cacheWriteTokens: 0,
+    ...usage,
     upstreamCost: 0.01,
     finalCost: 0.01,
     billingMode: 'credits' as const,
     streaming: true,
     requestId: 'req-1',
   };
+  const trace = {
+    requestId: 'req-1',
+    startedAt: new Date(0).toISOString(),
+    accountId: 'acct-1',
+    actorUserId: 'user-1',
+    projectId: 'proj-1',
+    requestedModel: 'm',
+    resolvedModel: 'm',
+    provider: 'kortix',
+    billingMode: 'credits' as const,
+    streaming: true,
+    status: 200,
+    ok: true,
+    latencyMs: 1,
+    attempts: 1,
+    candidatesTried: ['kortix'],
+    usage,
+    upstreamCost: 0.01,
+    finalCost: 0.01,
+    request: {},
+    response: {},
+    metadata: {},
+  };
 
   beforeEach(() => {
     budgetActions = [];
+    calls = [];
     billingThrow = null;
   });
 
@@ -357,15 +390,20 @@ describe('warn budgets run at settlement, not at admission', () => {
     expect(budgetActions).toEqual([undefined]);
   });
 
-  test('a settled request evaluates the warn budgets', async () => {
-    await recordGatewayUsage(settled).catch(() => {});
-    expect(budgetActions).toEqual(['warn']);
+  // The spend query reads gateway_request_logs. The check must run after this
+  // request's row exists, or the request that crosses a threshold is not counted.
+  test('a persisted trace evaluates the warn budgets after its row is written', async () => {
+    await persistGatewayTrace(trace);
+    expect(calls).toEqual(['trace row', 'checkBudget warn']);
   });
 
-  test('a pure hold refund (no upstream call) evaluates nothing', async () => {
-    await recordGatewayUsage({ ...settled, promptTokens: 0, completionTokens: 0, finalCost: 0, billingHoldUsd: 0.01 }).catch(
-      () => {},
-    );
+  test('a trace that adds no spend evaluates nothing', async () => {
+    await persistGatewayTrace({ ...trace, ok: false, status: 502, upstreamCost: 0, finalCost: 0 });
+    expect(calls).toEqual(['trace row']);
+  });
+
+  test('the usage write evaluates no budget: its trace row does not exist yet', async () => {
+    await recordGatewayUsage(settled).catch(() => {});
     expect(budgetActions).toEqual([]);
   });
 });

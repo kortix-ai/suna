@@ -12,6 +12,7 @@ import { eq, like, sql } from 'drizzle-orm';
 import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
 import { alertBudgetCrossings, forgetHandledBudgetAlertsForTest } from '../llm-gateway/budget-alerts';
 import { checkBudget } from '../llm-gateway/budgets';
+import { persistGatewayTrace } from '../llm-gateway/hooks';
 import type { EmailMessage } from '../lib/email/types';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -41,6 +42,35 @@ async function spend(usd: number) {
     ok: true,
     finalCost: String(usd),
     billingMode: 'credits',
+  });
+}
+
+// One gateway request through the trace route's write path: the row, then the
+// warn-budget check and its alert emails.
+async function settle(usd: number) {
+  spendRow += 1;
+  await persistGatewayTrace({
+    requestId: `budget-alert-${project.project_id}-${spendRow}`,
+    startedAt: new Date().toISOString(),
+    accountId: project.account_id,
+    actorUserId: MEMBER,
+    projectId: project.project_id,
+    requestedModel: 'm',
+    resolvedModel: 'm',
+    provider: 'test',
+    billingMode: 'credits',
+    streaming: true,
+    status: 200,
+    ok: true,
+    latencyMs: 1,
+    attempts: 1,
+    candidatesTried: ['test'],
+    usage: { promptTokens: 1, completionTokens: 1, cachedTokens: 0, cacheWriteTokens: 0 },
+    upstreamCost: usd,
+    finalCost: usd,
+    request: {},
+    response: {},
+    metadata: {},
   });
 }
 
@@ -103,11 +133,10 @@ describe('a warn budget reaches its thresholds', () => {
     expect(await check()).toEqual({ crossings: undefined, sent: 0 });
   });
 
-  test('at 85%: one email to each budget manager (owner, admin, project manager), not the member', async () => {
-    await spend(1);
-    const result = await check();
-    expect(result.crossings).toMatchObject([{ threshold: 80, action: 'warn', period: 'day', limitUsd: 10, spentUsd: 8.5 }]);
-    expect(result.sent).toBe(3);
+  // The request that crosses 80% reports it: its own cost is in the spend
+  // the check reads, so no later request is needed.
+  test('at 85%: the crossing request emails each budget manager (owner, admin, project manager), not the member', async () => {
+    await settle(1);
     expect(recipients()).toEqual(managers());
     expect(sent[0]!.subject).toBe('budget-alerts reached 80% of its gateway budget');
     expect(sent[0]!.text).toContain('The daily budget of budget-alerts is at 850 of 1,000 credits (85%).');
