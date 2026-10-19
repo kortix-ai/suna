@@ -20,9 +20,11 @@
  *  - `log.thread`: the thread head replaces the one held.
  *  - `log.state`: an older `generation` (a zombie box) is ignored; the session fields merge.
  *  - A page carries no revs: a page message never replaces a message the stream delivered,
- *    and never revives a tombstoned one. Within its window (from its first `seq`, or the
- *    whole thread without `has_more`) a page drops a held message it lacks unless the stream
- *    revised it: that message was deleted, or came from an older saved copy.
+ *    and never revives a tombstoned one. Within its window (from its first `seq`, or from the
+ *    start without `has_more`, up to its `before_seq` for an older page) a page drops a held
+ *    message it lacks unless the stream revised it: that message was deleted, or came from
+ *    an older saved copy.
+ *  - `older` keeps each thread's `has_more` from the oldest page read (`useSessionLogOlder`).
  *  - A streaming put (`status: 'streaming'`) is an ordinary put: the deltas that follow
  *    append to its blocks, and the final put (a higher `rev`) replaces it.
  *
@@ -179,11 +181,6 @@ export function applySessionLogPage(state: SessionLogState, page: SessionLogPage
     messages,
     older,
   };
-}
-
-/** The oldest page read of `threadId` said older messages exist; undefined before a page of it. */
-export function sessionLogHasOlder(state: SessionLogState, threadId: string): boolean | undefined {
-  return state.older[threadId];
 }
 
 const logs = new WeakMap<SessionLogState, SessionLog | null>();

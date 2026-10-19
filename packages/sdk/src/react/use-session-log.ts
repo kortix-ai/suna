@@ -82,23 +82,29 @@ export function useSessionLogRecord(session: Pick<SessionMessagesSource, 'sessio
   return useSyncStore((state) => state.sessionLogs[session.sessionId]?.session ?? null);
 }
 
-/** Reads a sub-agent thread's first page. Internal; tests replace it (`undefined` restores the default). */
+/** The thread pages in flight, one per session and thread, however many rows show the thread. */
+const threadReads = new Set<string>();
+/** When a thread's read last failed (the journal had not posted it yet): it is retried after {@link THREAD_RETRY_MS}. */
+const threadFailedAt = new Map<string, number>();
+const THREAD_RETRY_MS = 5_000;
+
+/** Reads a sub-agent thread's first page. Internal; tests replace it (`undefined` restores the default) and start clean. */
 let threadLoader: LoadSessionLogPage | null = loadSessionLogPage;
 export function setSessionLogThreadLoader(loader: LoadSessionLogPage | null | undefined): void {
   threadLoader = loader === undefined ? loadSessionLogPage : loader;
+  threadFailedAt.clear();
 }
-
-/** The thread pages in flight, one per session and thread, however many rows show the thread. */
-const threadReads = new Set<string>();
 
 function readThread(projectId: string, sessionId: string, threadId: string): void {
   const key = `${sessionId}\u0000${threadId}`;
-  if (!threadLoader || threadReads.has(key)) return;
+  if (!threadLoader || threadReads.has(key) || Date.now() - (threadFailedAt.get(key) ?? -Infinity) < THREAD_RETRY_MS) return;
   threadReads.add(key);
   void fetchSessionLogPage(threadLoader, projectId, sessionId, { thread: threadId, limit: SESSION_LOG_FIRST_PAGE_LIMIT })
     .then((page) => {
+      if (page?.thread_id !== threadId) return void threadFailedAt.set(key, Date.now());
+      threadFailedAt.delete(key);
       // The log may have gone (the session left v2) while the page was read.
-      if (page?.thread_id === threadId && useSyncStore.getState().sessionLogs[sessionId]) useSyncStore.getState().applySessionLogPage(sessionId, page);
+      if (useSyncStore.getState().sessionLogs[sessionId]) useSyncStore.getState().applySessionLogPage(sessionId, page);
     })
     .finally(() => threadReads.delete(key));
 }
@@ -113,7 +119,9 @@ function readThread(projectId: string, sessionId: string, threadId: string): voi
  * both paths as {@link useSessionMessages} paces the v1 rows: a transcript reads a streaming turn
  * at most once per window (leading and trailing edge; the last change always lands).
  * On v2 a sub-agent thread the log names but has not read yet loads its newest page
- * (`GET …/log?thread=`), once per session and thread; the root thread is `useSession`'s.
+ * (`GET …/log?thread=`), once per session and thread; the root thread is `useSession`'s. A
+ * failed read (the journal has not posted the thread yet) retries when the thread's next
+ * message arrives, at most every 5 s.
  */
 export function useSessionLogThread(
   session: SessionMessagesSource,
@@ -134,14 +142,15 @@ export function useSessionLogThread(
   const paced = usePacedStoreValue(select, `${session.sessionId}/${threadId ?? ''}`, throttleMs);
   const v2 = live === PACED ? paced : live;
   const v1 = useV1SessionLog(session, threadId, v2 === undefined, options);
+  // -1: nothing to read. Else the thread's message count: a failed read retries when it grows.
   const unread = useSyncStore((state) => {
     const log = threadId ? state.sessionLogs[session.sessionId] : undefined;
     const head = threadId ? log?.threads[threadId] : undefined;
-    return !!head && head.parent_thread_id !== null && log!.older[threadId!] === undefined;
+    return head && head.parent_thread_id !== null && log!.older[threadId!] === undefined ? (log!.messages[threadId!]?.length ?? 0) : -1;
   });
   const { projectId, sessionId } = session;
   useEffect(() => {
-    if (unread && projectId && threadId) readThread(projectId, sessionId, threadId);
+    if (unread >= 0 && projectId && threadId) readThread(projectId, sessionId, threadId);
   }, [unread, projectId, sessionId, threadId]);
   return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
 }
@@ -302,7 +311,10 @@ export function useSessionLogSync(
     })();
     // A tab that comes back is the least sure it has every frame (a background tab can lose
     // its stream silently): read the newest page again, as the v1 transcript reads its tail.
-    const stopVisible = onTabVisible(() => void (onV2 ? load() : attempt()));
+    // A refused session waits for its next turn end or reconnect instead.
+    const stopVisible = onTabVisible(() => {
+      if (onV2) void load();
+    });
     return () => {
       stopVisible();
       stopped = true;

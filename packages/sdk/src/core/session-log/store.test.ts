@@ -8,7 +8,6 @@ import {
   applySessionLogPage,
   selectSessionLog,
   selectSessionLogThread,
-  sessionLogHasOlder,
   type SessionLogState,
 } from './store';
 import type { SessionLog, SessionLogMessage, TextBlock } from './types';
@@ -97,24 +96,24 @@ describe('applySessionLogPage', () => {
   });
 });
 
-describe('sessionLogHasOlder: the oldest page read decides', () => {
+describe('older (has_more): the oldest page read decides', () => {
   const window = (messages: SessionLogMessage[], has_more: boolean, thread = ROOT) => ({ ...page(messages), thread_id: thread, has_more });
   test('undefined before any page of the thread; the first page answers its has_more', () => {
     const all = rootMessages();
-    expect(sessionLogHasOlder(EMPTY_SESSION_LOG_STATE, ROOT)).toBeUndefined();
-    expect(sessionLogHasOlder(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true)), ROOT)).toBe(true);
-    expect(sessionLogHasOlder(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all, false)), ROOT)).toBe(false);
+    expect(EMPTY_SESSION_LOG_STATE.older[ROOT]).toBeUndefined();
+    expect(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true)).older[ROOT]).toBe(true);
+    expect(applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all, false)).older[ROOT]).toBe(false);
   });
 
   test('an older page answers for the thread; the newest page read again does not undo it', () => {
     const all = rootMessages();
     let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true));
     state = applySessionLogPage(state, window(all.slice(0, 4), false), all[4]!.seq);
-    expect(sessionLogHasOlder(state, ROOT)).toBe(false);
+    expect(state.older[ROOT]).toBe(false);
     expect(ids(state)).toEqual(all.map((m) => m.message_id));
     // A reconnect reads the newest page again: it still says has_more, but the thread is whole.
     state = applySessionLogPage(state, window(all.slice(4), true));
-    expect(sessionLogHasOlder(state, ROOT)).toBe(false);
+    expect(state.older[ROOT]).toBe(false);
     expect(ids(state)).toEqual(all.map((m) => m.message_id));
   });
 
@@ -130,8 +129,8 @@ describe('sessionLogHasOlder: the oldest page read decides', () => {
     const all = rootMessages();
     let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, window(all.slice(4), true));
     state = applySessionLogPage(state, window([], false, CHILD));
-    expect(sessionLogHasOlder(state, ROOT)).toBe(true);
-    expect(sessionLogHasOlder(state, CHILD)).toBe(false);
+    expect(state.older[ROOT]).toBe(true);
+    expect(state.older[CHILD]).toBe(false);
   });
 });
 

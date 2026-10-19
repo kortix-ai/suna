@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -625,6 +625,32 @@ describe('useSessionLogThread on v2: a sub-agent thread loads its first page', (
     await flush();
     expect(calls).toEqual([[PROJECT, SESSION, { thread: CHILD, limit: 40 }]]);
     expect(seen.at(-1)!.messages.map((m) => m.message_id)).toEqual(log.threads[1]!.messages.map((m) => m.message_id));
+  });
+
+  test('a failed read (the journal has not posted the thread yet) retries when the thread\'s next message arrives, at most every 5 s', async () => {
+    let fail = true;
+    setSessionLogThreadLoader(async (...a: unknown[]) => { calls.push(a.slice(0, 3)); if (fail) throw new Error('404'); return childPage(); });
+    const t0 = Date.parse('2026-10-19T12:00:00Z');
+    setSystemTime(t0);
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const put = (i: number) => act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: { ...log.threads[1]!.messages[0]!, message_id: `msg_zlive${i}`, seq: 900 + i } } }));
+    let seen: ReturnType<typeof useSessionLogThread> = null;
+    render(() => {
+      seen = useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, CHILD);
+      return null;
+    });
+    await flush();
+    expect(calls).toHaveLength(1);
+    put(1);
+    await flush();
+    expect(calls).toHaveLength(1); // inside 5 s of the failed read
+    fail = false;
+    setSystemTime(t0 + 6_000);
+    put(2);
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(seen!.messages.map((m) => m.message_id)).toEqual([...log.threads[1]!.messages.map((m) => m.message_id), 'msg_zlive1', 'msg_zlive2']);
+    setSystemTime();
   });
 
   test('no request on v1 (no log), for the root thread, or for a thread already read', async () => {

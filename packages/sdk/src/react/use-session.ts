@@ -1377,8 +1377,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
   // On v2 the session log is the saved copy: its page, or the device's saved v2 copy.
   const logHistory = useSyncStore((state): 'loading' | 'present' | 'absent' => {
+    const log = logOwned ? state.sessionLogs[sessionId] : undefined;
+    return !log ? 'loading' : sessionLogRoot(log)?.hasMessages ? 'present' : 'absent';
+  });
+  // The log's page proves the conversation empty (as the v1 saved copy's `total: 0` did).
+  const logEmptyRoot = useSyncStore((state) => {
     const root = logOwned ? sessionLogRoot(state.sessionLogs[sessionId]) : null;
-    return !root ? 'loading' : root.hasMessages ? 'present' : 'absent';
+    return root?.empty ? root.runtimeSessionId : null;
   });
   const logOlder = useSessionLogOlder({ projectId, sessionId }, undefined, { enabled: logOwned });
 
@@ -1669,7 +1674,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     openTurnToken: working.serverOpenTurnToken,
     lastEndedToken,
   });
-  const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
+  const savedEmptyRoot = !transcriptHistoryEnabled ? null : logOwned ? logEmptyRoot : transcriptHistory.emptyRootSessionId;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and

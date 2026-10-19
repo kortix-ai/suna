@@ -34,6 +34,7 @@ const SESSION_ID = 'kses_log_host';
 let urls: string[];
 let serveLog = false;
 let pagedLog = false;
+let emptyLog = false;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
@@ -41,6 +42,7 @@ beforeEach(() => {
   urls = [];
   serveLog = false;
   pagedLog = false;
+  emptyLog = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
@@ -48,6 +50,7 @@ beforeEach(() => {
     const path = parsed.pathname;
     urls.push(path + parsed.search);
     if (serveLog && path.endsWith('/log')) {
+      if (emptyLog) return Response.json({ ...page(), messages: [], has_more: false });
       if (!pagedLog) return Response.json(page());
       // Paged: the newest page holds all but the first four messages.
       const before = parsed.searchParams.get('before_seq');
@@ -56,6 +59,8 @@ beforeEach(() => {
     }
     // The session stream: an open SSE body that never ends.
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
+    // The turn record of a session that never ran a turn.
+    if (emptyLog && path.endsWith('/turn')) return Response.json({ turns: [], last_ended: null });
     if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
     return Response.json({}, { status: 404 });
   }) as unknown as typeof fetch;
@@ -164,6 +169,16 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(urls).toContain(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log?thread=${root.thread_id}&before_seq=${root.messages[4]!.seq}&limit=100`);
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.hasOlder).toBe(false);
+  });
+
+  test('a stored log with an empty root thread proves the conversation empty: the composer, not the boot screen', async () => {
+    serveLog = true;
+    emptyLog = true;
+    const seen = mountHost(true);
+    await flush();
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.savedTranscript).toBe('none');
+    expect(seen.result!.conversationEmpty).toBe(true);
   });
 
   test('flag off: the open reads the saved copy as before (no log request)', async () => {
