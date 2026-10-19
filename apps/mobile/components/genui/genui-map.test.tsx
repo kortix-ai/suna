@@ -183,7 +183,7 @@ describe('mobile genui Map', () => {
     let root = renderMap(
       `root = Stack([m])
 m = Map([a], "places tool")
-a = Marker(19.04, 72.82, "Taj Lands End", "Bandstand", "★ 4.6")`,
+a = Marker(19.04, 72.82, "Harbor Hotel", "Seafront", "★ 4.6")`,
       '',
     );
     const data = all(root, 'map-webview')[0]!.props.data as { styleUrl: string; markers: { value?: string }[] };
@@ -207,7 +207,7 @@ a = Marker(19.04, 72.82, "Taj Lands End", "Bandstand", "★ 4.6")`,
     const root = renderMap(
       `root = Stack([m])
 m = Map([a, b], "places tool")
-a = Marker(19.04, 72.82, "Taj Lands End", "Bandstand", "★ 4.6", "https://taj.example.com/", "https://img.example.com/taj.jpg", "+91 22 6668-1234", "Hotel")
+a = Marker(19.04, 72.82, "Harbor Hotel", "Seafront", "★ 4.6", "https://harbor.example.com/", "https://img.example.com/harbor.jpg", "+1 555 0100", "Hotel")
 b = Marker(19.05, 72.83, "Kiosk", null, null, null, null, "12")`,
       'off',
     );
@@ -217,8 +217,8 @@ b = Marker(19.05, 72.83, "Kiosk", null, null, null, null, "12")`,
     for (const button of buttons) press(button);
     expect(opened).toEqual([
       'https://www.google.com/maps/dir/?api=1&destination=19.04,72.82',
-      'https://taj.example.com/',
-      'tel:+912266681234',
+      'https://harbor.example.com/',
+      'tel:+15550100',
       'https://www.google.com/maps/dir/?api=1&destination=19.05,72.83',
     ]);
   });
@@ -289,7 +289,7 @@ b = Marker(19.05, 72.83, "Kiosk", null, null, null, null, "12")`,
     const root = renderMap(
       `root = Stack([m])
 m = Map([a], "places tool")
-a = Marker(19.04, 72.82, "Taj Lands End", "Bandstand", "★ 4.6", "https://taj.example.com/", "https://img.example.com/taj.jpg", "+91 22 6668-1234", "Hotel")`,
+a = Marker(19.04, 72.82, "Harbor Hotel", "Seafront", "★ 4.6", "https://harbor.example.com/", "https://img.example.com/harbor.jpg", "+1 555 0100", "Hotel")`,
       STYLE_URL,
     );
     const data = all(root, 'map-webview')[0]!.props.data as { markers: unknown[] };
@@ -298,12 +298,12 @@ a = Marker(19.04, 72.82, "Taj Lands End", "Bandstand", "★ 4.6", "https://taj.e
         id: 'a',
         lat: 19.04,
         lng: 72.82,
-        label: 'Taj Lands End',
-        description: 'Bandstand',
+        label: 'Harbor Hotel',
+        description: 'Seafront',
         value: '★ 4.6',
-        href: 'https://taj.example.com/',
-        image: 'https://img.example.com/taj.jpg',
-        phone: '+91 22 6668-1234',
+        href: 'https://harbor.example.com/',
+        image: 'https://img.example.com/harbor.jpg',
+        phone: '+1 555 0100',
         kind: 'Hotel',
       },
     ]);

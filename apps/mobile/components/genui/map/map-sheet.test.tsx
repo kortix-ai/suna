@@ -77,7 +77,7 @@ const DATA = {
   styleUrl: 'https://tiles.example.com/style.json',
   markers: [
     { id: 'a', lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' },
-    { id: 'b', lat: 19.04, lng: 72.82, label: 'Taj', href: 'https://taj.example.com/', phone: '+91 22 6668-1234' },
+    { id: 'b', lat: 19.04, lng: 72.82, label: 'Harbor Hotel', href: 'https://harbor.example.com/', phone: '+1 555 0100' },
   ],
   route: [
     [48.85, 2.35],
@@ -95,7 +95,7 @@ async function open(Sheet: typeof MapSheet = MapSheet) {
 const all = (root: ReactTestInstance, type: string) => root.findAll((n) => n.type === (type as never));
 const texts = (root: ReactTestInstance) => all(root, 'text').flatMap((n) => n.children.filter((c) => typeof c === 'string'));
 /** The place rows: what a failed basemap shows in its place, with every button. */
-const ROWS = ['Louvre', 'Museum', 'Directions', 'Taj', 'Directions', 'Website', 'Call'];
+const ROWS = ['Louvre', 'Museum', 'Directions', 'Harbor Hotel', 'Directions', 'Website', 'Call'];
 const send = (root: ReactTestInstance, data: unknown) =>
   act(() => (all(root, 'webview')[0]!.props.onMessage as (event: { nativeEvent: { data: string } }) => void)({ nativeEvent: { data: JSON.stringify(data) } }));
 
@@ -179,8 +179,8 @@ describe('MapSheet', () => {
     send('not json');
     expect(opened).toEqual([
       'https://www.google.com/maps/dir/?api=1&destination=48.85,2.35',
-      'https://taj.example.com/',
-      'tel:+912266681234',
+      'https://harbor.example.com/',
+      'tel:+15550100',
     ]);
   });
 
@@ -199,7 +199,7 @@ describe('MapSheet', () => {
     expect(opened).toEqual(['https://www.google.com/maps/dir/?api=1&destination=48.85,2.35']);
   });
 
-  for (const handler of ['onError', 'onHttpError'] as const) {
+  for (const handler of ['onError', 'onHttpError', 'onContentProcessDidTerminate', 'onRenderProcessGone'] as const) {
     test(`a WebView ${handler} swaps the map for the place rows`, async () => {
       const root = await open();
       act(() => (all(root, 'webview')[0]!.props[handler] as (event: unknown) => void)({ nativeEvent: {} }));

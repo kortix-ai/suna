@@ -101,7 +101,7 @@ const ROUTE_COLOR = withAlpha(THEME.chart[2], 1);
 /**
  * The map page in a WebView, in theme colors. Still (`interactive={false}`): no pan, zoom, or popups.
  * `onFail` fires once when the basemap cannot draw (web `map.tsx` `fallback`): the bundled assets fail to read,
- * the page reports a style error, the WebView reports a load or HTTP error, or no `load` comes within
+ * the page reports a style error, the WebView reports a load or HTTP error or its web process dies, or no `load` comes within
  * `MAP_LOAD_TIMEOUT_MS`. The parent then shows the place rows in its place.
  */
 export function MapWebView({ data, interactive = true, onFail }: { data: MapSheetData; interactive?: boolean; onFail?: () => void }) {
@@ -180,6 +180,8 @@ export function MapWebView({ data, interactive = true, onFail }: { data: MapShee
       }
       onError={fail}
       onHttpError={fail}
+      onContentProcessDidTerminate={fail}
+      onRenderProcessGone={fail}
       javaScriptEnabled
       cacheEnabled={false}
       incognito
