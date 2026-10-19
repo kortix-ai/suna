@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 /**
  * The live-preview surface for a session.
@@ -12,28 +12,28 @@ import Loading from '@/components/ui/loading';
  */
 
 import { useWrapperMode } from '@/app/providers';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { PublicSharesList, SessionSharing } from '@/components/workbench/session-sharing';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { authHeaders, getSessionToken } from '@/lib/session';
 import type { SessionPreviewCandidate } from '@kortix/sdk';
 import { type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query';
-import { ExternalLink, Globe, Link2, MonitorPlay, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast } from '@kortix/ui/toast';
+import { ArrowsClockwiseIcon, ArrowSquareOutIcon, GlobeIcon, LinkSimpleIcon, MonitorPlayIcon } from '@phosphor-icons/react';
 
 function statusVariant(status?: string) {
   if (status === 'online') return 'default' as const;
@@ -160,7 +160,7 @@ export function PreviewPanel({
     },
     onError: (error, { popup }) => {
       popup.close();
-      toast.error(error instanceof Error ? error.message : 'Could not resolve preview URL');
+      errorToast(error instanceof Error ? error.message : 'Could not resolve preview URL');
     },
   });
 
@@ -169,7 +169,7 @@ export function PreviewPanel({
     if (!targetUrl) return;
     const popup = window.open('about:blank', '_blank', 'noopener,noreferrer');
     if (!popup) {
-      toast.error('Allow pop-ups to open this preview');
+      errorToast('Allow pop-ups to open this preview');
       return;
     }
     openLocalhostMut.mutate({ targetUrl, popup });
@@ -181,7 +181,7 @@ export function PreviewPanel({
     <div className="flex h-full min-h-0 flex-col gap-3">
       {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <MonitorPlay className="size-4 shrink-0 text-muted-foreground" />
+        <MonitorPlayIcon className="size-4 shrink-0 text-muted-foreground" />
         <span className="text-sm font-medium text-foreground">Preview</span>
 
         {candidates.length > 0 && (
@@ -218,7 +218,7 @@ export function PreviewPanel({
             {previewsQuery.isFetching ? (
               <Loading className="size-3.5" />
             ) : (
-              <RefreshCw className="size-3.5" />
+              <ArrowsClockwiseIcon className="size-3.5" />
             )}
             Refresh
           </Button>
@@ -226,7 +226,7 @@ export function PreviewPanel({
           {previewSrc && (
             <Button asChild variant="outline" size="sm" className="h-8 gap-1.5">
               <a href={previewSrc} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3.5" />
+                <ArrowSquareOutIcon className="size-3.5" />
                 Open in new tab
               </a>
             </Button>
@@ -252,7 +252,7 @@ export function PreviewPanel({
       {/* Open a localhost link — proxy a URL the agent printed */}
       <div className="shrink-0 space-y-2">
         <div className="flex items-center gap-2">
-          <Link2 className="size-3.5 text-muted-foreground" />
+          <LinkSimpleIcon className="size-3.5 text-muted-foreground" />
           <span className="text-xs font-medium text-foreground">Open a localhost link</span>
         </div>
         <Separator />
@@ -279,7 +279,7 @@ export function PreviewPanel({
             {openLocalhostMut.isPending ? (
               <Loading className="size-3.5" />
             ) : (
-              <ExternalLink className="size-3.5" />
+              <ArrowSquareOutIcon className="size-3.5" />
             )}
             Open
           </Button>
@@ -311,7 +311,7 @@ function PreviewSurface({
         </div>
       ) : previewUrlQuery.isError ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-          <Globe className="size-8 text-destructive/60" />
+          <GlobeIcon className="size-8 text-destructive/60" />
           <p className="text-sm font-medium text-foreground">Preview unavailable</p>
           <p className="max-w-md text-xs text-muted-foreground">
             {previewUrlQuery.error instanceof Error
@@ -329,7 +329,7 @@ function PreviewSurface({
         />
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-          <Globe className="size-8 text-muted-foreground/50" />
+          <GlobeIcon className="size-8 text-muted-foreground/50" />
           <p className="text-sm font-medium text-foreground">No preview yet</p>
           <p className="max-w-xs text-xs text-muted-foreground">
             The agent hasn't exposed a port. Once it starts a dev server the preview will appear

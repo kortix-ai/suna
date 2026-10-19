@@ -15,13 +15,12 @@ import {
   ScopeEditor,
   StartWithScope,
 } from '@/components/chat/scope-bar/chip';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { Switch } from '@kortix/ui/switch';
 import type { ProjectSecret, SessionScope } from '@kortix/sdk';
-import { Lock } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import {
   MISSING_SECRET_NOTE,
@@ -34,6 +33,7 @@ import {
   hasScopeDraft,
   scopeControl,
 } from '../scope-bar-model';
+import { LockIcon } from '@phosphor-icons/react';
 
 interface SecretsChipProps {
   projectId: string;
@@ -66,7 +66,7 @@ export function SecretsScopeChip({
 }: SecretsChipProps) {
   return (
     <ScopeChip
-      icon={<Lock className="size-3" />}
+      icon={<LockIcon className="size-3" />}
       label="Secrets"
       // Derived from the session's own allowlist, so it stays true even when
       // the project's secret list is the thing that failed to load.
@@ -144,7 +144,7 @@ function SecretsChipRows({
             <div className="truncate font-mono text-[11px] text-muted-foreground">{row.name}</div>
           </div>
           <Badge
-            variant={row.membership === 'allowed' ? 'outline' : 'ghost'}
+            variant={row.membership === 'allowed' ? 'outline' : 'muted'}
             className={row.membership === 'excluded' ? 'text-muted-foreground' : undefined}
           >
             {SECRET_MEMBERSHIP_LABEL[row.membership]}

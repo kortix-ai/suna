@@ -5,7 +5,9 @@ let mutation: Record<string, (...args: any[]) => any>;
 const queryClient = { invalidateQueries: ({ queryKey }: { queryKey: unknown }) => calls.push(JSON.stringify(queryKey)), refetchQueries: () => Promise.resolve() };
 
 mock.module('@/i18n/use-translations', () => ({ useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }) }));
-mock.module('@/components/ui/toast', () => ({ successToast: (message: string) => calls.push(`success:${message}`), errorToast: (message: string) => calls.push(`error:${message}`), infoToast: () => {} }));
+const uiToastMock = () => ({ successToast: (message: string) => calls.push(`success:${message}`), errorToast: (message: string) => calls.push(`error:${message}`), infoToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/stores/billing-account-context', () => ({ useBillingAccountId: () => 'synthetic-account', useBillingAccountResolved: () => true }));
 mock.module('@tanstack/react-query', () => ({ useMutation: (options: typeof mutation) => { mutation = options; return options; }, useQuery: () => ({}), useQueryClient: () => queryClient }));
 

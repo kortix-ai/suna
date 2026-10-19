@@ -15,7 +15,7 @@ Object.defineProperties(globalThis, {
 });
 const success = mock();
 const error = mock();
-mock.module('sonner', () => ({ toast: { success, error } }));
+mock.module('@kortix/ui/toast', () => ({ successToast: success, errorToast: error }));
 const { CallSnippet } = await import('../../src/components/dev/call-snippet');
 let root: Root | undefined;
 
@@ -45,11 +45,11 @@ test('clipboard denial reports failure, leaves no copied state, and allows retry
   await act(async () => button.click());
   expect(error).toHaveBeenCalledWith('Could not copy');
   expect(success).not.toHaveBeenCalled();
-  expect(button.querySelector('.lucide-check')).toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(false);
   writeText.mockImplementation(async () => {});
   await act(async () => button.click());
   expect(success).toHaveBeenCalledWith('SDK call copied');
-  expect(button.querySelector('.lucide-check')).not.toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(true);
   expect(writeText.mock.calls[0]?.[0] ?? '').toBe(document.querySelector('pre code')?.textContent ?? '');
 });
 
@@ -59,7 +59,7 @@ test('missing clipboard reports failure without success feedback', async () => {
   await act(async () => button.click());
   expect(error).toHaveBeenCalledWith('Could not copy');
   expect(success).not.toHaveBeenCalled();
-  expect(button.querySelector('.lucide-check')).toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(false);
 });
 
 test('a clipboard write completing after unmount creates no timer or feedback', async () => {
@@ -85,13 +85,13 @@ test('successful copy resets after 1500ms and clears the reset on unmount', asyn
   const button = await mount();
   jest.useFakeTimers();
   await act(async () => button.click());
-  expect(button.querySelector('.lucide-check')).not.toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(true);
   act(() => jest.advanceTimersByTime(1000));
   await act(async () => button.click());
   act(() => jest.advanceTimersByTime(500));
-  expect(button.querySelector('.lucide-check')).not.toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(true);
   act(() => jest.advanceTimersByTime(1000));
-  expect(button.querySelector('.lucide-check')).toBeNull();
+  expect(button.hasAttribute('data-copied')).toBe(false);
   await act(async () => button.click());
   expect(jest.getTimerCount()).toBe(1);
   act(() => root?.unmount());

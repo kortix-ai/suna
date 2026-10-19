@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 /**
  * FilesPanel — a compact two-pane workspace file browser for the white-label
@@ -17,30 +17,23 @@ import Loading from '@/components/ui/loading';
  * live under `files/`.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { FileViewer } from '@/components/workbench/files/file-viewer';
 import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
 import { kortix } from '@/lib/kortix';
 import { fmtDate } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui/lib/utils';
 import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Download,
-  File as FileIcon,
-  FileText,
-  GitCommitHorizontal,
-  History,
-  Search,
-} from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
+import { ClockCounterClockwiseIcon, DownloadSimpleIcon, FileIcon, FileTextIcon, GitCommitIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 
 function basename(p: string): string {
   return p.split('/').filter(Boolean).pop() ?? p;
@@ -83,7 +76,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
       {/* Header — title + download */}
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <div className="flex items-center gap-2">
-          <FileText className="size-4 text-muted-foreground" />
+          <FileTextIcon className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Files</span>
         </div>
         <Button
@@ -95,7 +88,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
           {download.isPending ? (
             <Loading className="size-3.5" />
           ) : (
-            <Download className="size-3.5" />
+            <DownloadSimpleIcon className="size-3.5" />
           )}
           Download
         </Button>
@@ -123,7 +116,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
             <FileViewer projectId={projectId} path={selected} files={listItems} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-              <FileText className="size-6 text-muted-foreground" />
+              <FileTextIcon className="size-6 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">Select a file to view its contents.</p>
             </div>
           )}
@@ -157,7 +150,7 @@ function FileListPane({
   return (
     <div className="flex w-72 min-h-0 shrink-0 flex-col border-r border-border">
       <div className="relative shrink-0 p-2">
-        <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <MagnifyingGlassIcon className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
@@ -274,12 +267,12 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
           aria-label={`History for ${basename(path)}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <History className="size-3.5" />
+          <ClockCounterClockwiseIcon className="size-3.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center gap-2 px-3 py-2">
-          <History className="size-3.5 text-muted-foreground" />
+          <ClockCounterClockwiseIcon className="size-3.5 text-muted-foreground" />
           <span className="truncate font-mono text-xs text-foreground">{basename(path)}</span>
         </div>
         <Separator />
@@ -306,7 +299,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
                   key={`${sha}-${i}`}
                   className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                 >
-                  <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                  <GitCommitIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs text-foreground">
                       {c?.subject ?? '(no subject)'}

@@ -62,14 +62,16 @@ mock.module('@/lib/use-permission', () => ({
   usePermission: () => ({ allowed: true, isLoading: false }),
 }));
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Modal and ConfirmDialog are Radix portals; the wiring under test is
 // which action a row offers and what confirming calls. Keep both assertable.
-mock.module('@/components/ui/modal', () => ({
+const uiModalMock = () => ({
   Modal: ({ open, children }: { open: boolean; children?: ReactNode }) =>
     open ? createElement('div', null, children) : null,
   ModalBody: Pass,
@@ -78,8 +80,10 @@ mock.module('@/components/ui/modal', () => ({
   ModalFooter: Pass,
   ModalHeader: Pass,
   ModalTitle: Pass,
-}));
-mock.module('@/components/ui/confirm-dialog', () => ({
+});
+mock.module('@/components/ui/modal', uiModalMock);
+mock.module('@kortix/ui/modal', uiModalMock);
+const uiConfirmDialogMock = () => ({
   ConfirmDialog: ({
     open,
     onConfirm,
@@ -92,7 +96,9 @@ mock.module('@/components/ui/confirm-dialog', () => ({
     open
       ? createElement('button', { onClick: onConfirm, 'data-testid': 'confirm-action' }, confirmLabel ?? 'confirm')
       : null,
-}));
+});
+mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
+mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 function makeKebab() {
   const Kebab = (props: { items: unknown[]; label?: string }) => null;
