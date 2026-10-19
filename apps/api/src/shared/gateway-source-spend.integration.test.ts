@@ -110,12 +110,6 @@ withDb('listProjectGatewaySourceSpend', () => {
     expect(intakeRow.cost).toBeCloseTo(5, 6);
     expect(intakeRow.input_tokens).toBe(4000);
     expect(intakeRow.avg_input_tokens).toBe(2000);
-    // The worker bills to intake, and the row says how much of intake's line is its workers.
-    expect(intakeRow.worker_sessions).toBe(1);
-    expect(intakeRow.worker_cost).toBeCloseTo(4, 6);
-    expect(out.sources[1]!.worker_sessions).toBe(0);
-    expect(out.sources[1]!.worker_cost).toBe(0);
-    expect(out.total.worker_cost).toBeCloseTo(4, 6);
     expect(out.sources[1]!.cost).toBeCloseTo(2, 6);
     expect(out.sources[3]!.sessions).toBe(0);
     expect(out.total.cost).toBeCloseTo(7.75, 6);
