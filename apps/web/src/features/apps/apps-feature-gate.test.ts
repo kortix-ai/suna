@@ -46,8 +46,8 @@ mock.module('@/components/ui/sidebar', () => ({
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
   SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
 }));
-mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
-mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
+mock.module('@kortix/ui/shared/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
 
 // The detail modal is outside the empty-inventory path under test.
 mock.module('./app-detail', () => ({ AppDetailModal: () => null }));

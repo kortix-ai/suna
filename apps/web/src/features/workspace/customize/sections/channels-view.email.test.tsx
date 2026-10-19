@@ -22,7 +22,7 @@ mock.module('@kortix/sdk/react', () => ({
   flattenModels: () => [],
   modelProviderMode: () => 'gateway' as const,
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: canWrite }),
 }));
 mock.module('@/hooks/channels/use-channels-installations', () => ({
@@ -61,8 +61,8 @@ mock.module('@/features/workspace/customize/sections/teams-channel-panel', () =>
 mock.module('@/features/workspace/customize/sections/connectors-view', () => ({
   EmailConnectForm: () => null,
 }));
-mock.module('@/features/session/model-selector', () => ({ ModelSelector: () => null }));
-mock.module('@/features/session/session-chat-input', () => ({
+mock.module('@kortix/ui/session/model-selector', () => ({ ModelSelector: () => null }));
+mock.module('@kortix/ui/session/session-chat-input', () => ({
   AgentSelector: () => null,
 }));
 

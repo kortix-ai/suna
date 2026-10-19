@@ -131,6 +131,7 @@
     "./i18n": "./src/i18n/index.ts",
     "./i18n/en": "./src/i18n/en.ts",
     "./i18n/ui-catalog/localize-ui-catalog": "./src/i18n/ui-catalog/localize-ui-catalog.ts",
+    "./i18n/ui-catalog/product-catalog-translation-keys.generated": "./src/i18n/ui-catalog/product-catalog-translation-keys.generated.ts",
     "./i18n/ui-catalog/remaining-ui-translation-keys.generated": "./src/i18n/ui-catalog/remaining-ui-translation-keys.generated.ts",
     "./i18n/ui-catalog/use-localized-ui-catalog": "./src/i18n/ui-catalog/use-localized-ui-catalog.ts",
     "./icon-provider": "./src/components/ui/icon-provider.tsx",
@@ -171,18 +172,23 @@
     "./markdown/code/code-block": "./src/markdown/code/code-block.tsx",
     "./markdown/code/copy-overlay": "./src/markdown/code/copy-overlay.tsx",
     "./markdown/code/genui-fence": "./src/markdown/code/genui-fence.ts",
+    "./markdown/code/index": "./src/markdown/code/index.ts",
     "./markdown/code/inline-chip": "./src/markdown/code/inline-chip.tsx",
     "./markdown/code/inline-code": "./src/markdown/code/inline-code.tsx",
     "./markdown/code/inside-link-context": "./src/markdown/code/inside-link-context.ts",
+    "./markdown/code/markdown-code": "./src/markdown/code/markdown-code.tsx",
     "./markdown/code/shiki-highlighter": "./src/markdown/code/shiki-highlighter.ts",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/file-links": "./src/markdown/file-links.ts",
+    "./markdown/index": "./src/markdown/index.tsx",
     "./markdown/katex-block": "./src/markdown/katex-block.tsx",
     "./markdown/katex-markdown": "./src/markdown/katex-markdown.ts",
+    "./markdown/markdown-frontmatter": "./src/markdown/markdown-frontmatter.tsx",
     "./markdown/markdown-policy": "./src/markdown/markdown-policy.ts",
     "./markdown/ordered-list": "./src/markdown/ordered-list.tsx",
     "./markdown/setup-link-blocks": "./src/markdown/setup-link-blocks.ts",
     "./markdown/stream-words": "./src/markdown/stream-words.tsx",
+    "./markdown/unified-markdown": "./src/markdown/unified-markdown.tsx",
     "./markdown/unified-markdown-utils": "./src/markdown/unified-markdown-utils.ts",
     "./marker": "./src/components/ui/marker.tsx",
     "./menu-recipe": "./src/components/ui/menu-recipe.ts",
@@ -209,17 +215,32 @@
     "./section-card": "./src/components/ui/section-card.tsx",
     "./select": "./src/components/ui/select.tsx",
     "./separator": "./src/components/ui/separator.tsx",
+    "./session/action-panel/advanced/advanced-panel": "./src/session/action-panel/advanced/advanced-panel.tsx",
+    "./session/action-panel/browser-panel": "./src/session/action-panel/browser-panel.tsx",
+    "./session/action-panel/easy/app-preview": "./src/session/action-panel/easy/app-preview.tsx",
     "./session/action-panel/easy/apps-card": "./src/session/action-panel/easy/apps-card.tsx",
+    "./session/action-panel/easy/context-card": "./src/session/action-panel/easy/context-card.tsx",
+    "./session/action-panel/easy/detail-view": "./src/session/action-panel/easy/detail-view.tsx",
+    "./session/action-panel/easy/easy-panel": "./src/session/action-panel/easy/easy-panel.tsx",
     "./session/action-panel/easy/easy-panel-logic": "./src/session/action-panel/easy/easy-panel-logic.ts",
+    "./session/action-panel/easy/file-preview": "./src/session/action-panel/easy/file-preview.tsx",
+    "./session/action-panel/easy/file-viewer": "./src/session/action-panel/easy/file-viewer.tsx",
     "./session/action-panel/easy/outputs-card": "./src/session/action-panel/easy/outputs-card.tsx",
     "./session/action-panel/easy/panel-card": "./src/session/action-panel/easy/panel-card.tsx",
     "./session/action-panel/easy/plan-card": "./src/session/action-panel/easy/plan-card.tsx",
+    "./session/action-panel/easy/step-detail-body": "./src/session/action-panel/easy/step-detail-body.tsx",
     "./session/action-panel/easy/step-icon": "./src/session/action-panel/easy/step-icon.tsx",
     "./session/action-panel/easy/viewer-actions": "./src/session/action-panel/easy/viewer-actions.tsx",
+    "./session/action-panel/index": "./src/session/action-panel/index.tsx",
+    "./session/action-panel/session-detail-panel": "./src/session/action-panel/session-detail-panel.tsx",
+    "./session/action-panel/session-panel-provider": "./src/session/action-panel/session-panel-provider.tsx",
     "./session/action-panel/shared/action-navigator": "./src/session/action-panel/shared/action-navigator.tsx",
     "./session/action-panel/shared/action-navigator-logic": "./src/session/action-panel/shared/action-navigator-logic.ts",
+    "./session/action-panel/shared/browser-landing": "./src/session/action-panel/shared/browser-landing.tsx",
+    "./session/action-panel/shared/collect-tool-parts": "./src/session/action-panel/shared/collect-tool-parts.ts",
     "./session/action-panel/shared/deliverable-readiness": "./src/session/action-panel/shared/deliverable-readiness.ts",
     "./session/action-panel/shared/derive-panels": "./src/session/action-panel/shared/derive-panels.ts",
+    "./session/action-panel/shared/latest-run": "./src/session/action-panel/shared/latest-run.ts",
     "./session/action-panel/shared/output-priority": "./src/session/action-panel/shared/output-priority.ts",
     "./session/action-panel/shared/run-outcome": "./src/session/action-panel/shared/run-outcome.ts",
     "./session/action-panel/shared/sandbox-browser-chrome": "./src/session/action-panel/shared/sandbox-browser-chrome.tsx",
@@ -232,36 +253,62 @@
     "./session/chat-minimap-items": "./src/session/chat-minimap-items.ts",
     "./session/chatgpt-connection-action": "./src/session/chatgpt-connection-action.ts",
     "./session/clipboard-files": "./src/session/clipboard-files.ts",
+    "./session/composer-chat-input": "./src/session/composer-chat-input.tsx",
+    "./session/composer-draft-recovery": "./src/session/composer-draft-recovery.ts",
+    "./session/composer-reset": "./src/session/composer-reset.ts",
+    "./session/composer/ComposerAboveCard": "./src/session/composer/ComposerAboveCard.tsx",
+    "./session/composer/ComposerCard": "./src/session/composer/ComposerCard.tsx",
+    "./session/composer/__harness__/entry": "./src/session/composer/__harness__/entry.tsx",
     "./session/composer/agent-selector": "./src/session/composer/agent-selector.tsx",
     "./session/composer/animated-placeholder": "./src/session/composer/animated-placeholder.tsx",
+    "./session/composer/attachment-submission": "./src/session/composer/attachment-submission.ts",
+    "./session/composer/attachment-tiles": "./src/session/composer/attachment-tiles.tsx",
     "./session/composer/command-attachments": "./src/session/composer/command-attachments.ts",
+    "./session/composer/composer": "./src/session/composer/composer.tsx",
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-drop-zone": "./src/session/composer/composer-drop-zone.tsx",
+    "./session/composer/composer-logic": "./src/session/composer/composer-logic.ts",
     "./session/composer/composer-text-metrics": "./src/session/composer/composer-text-metrics.ts",
+    "./session/composer/composer-toolbar": "./src/session/composer/composer-toolbar.tsx",
     "./session/composer/composer-underbar": "./src/session/composer/composer-underbar.tsx",
     "./session/composer/context-ring": "./src/session/composer/context-ring.tsx",
     "./session/composer/context-usage": "./src/session/composer/context-usage.ts",
     "./session/composer/delivery-chain": "./src/session/composer/delivery-chain.ts",
+    "./session/composer/draft/composer-draft": "./src/session/composer/draft/composer-draft.ts",
+    "./session/composer/draft/composer-draft-store": "./src/session/composer/draft/composer-draft-store.ts",
+    "./session/composer/draft/draft-uploads": "./src/session/composer/draft/draft-uploads.ts",
+    "./session/composer/draft/use-composer-draft": "./src/session/composer/draft/use-composer-draft.ts",
+    "./session/composer/editor/composer-editor": "./src/session/composer/editor/composer-editor.tsx",
     "./session/composer/editor/extensions": "./src/session/composer/editor/extensions.ts",
     "./session/composer/editor/first-visual-line": "./src/session/composer/editor/first-visual-line.ts",
+    "./session/composer/editor/mention-node": "./src/session/composer/editor/mention-node.ts",
+    "./session/composer/editor/serialize": "./src/session/composer/editor/serialize.ts",
     "./session/composer/editor/suggestion": "./src/session/composer/editor/suggestion.ts",
     "./session/composer/held-send-guard": "./src/session/composer/held-send-guard.ts",
     "./session/composer/hooks/use-composer-focus": "./src/session/composer/hooks/use-composer-focus.ts",
     "./session/composer/hooks/use-debounced-value": "./src/session/composer/hooks/use-debounced-value.ts",
+    "./session/composer/hooks/use-file-search": "./src/session/composer/hooks/use-file-search.ts",
     "./session/composer/hooks/use-latest-ref": "./src/session/composer/hooks/use-latest-ref.ts",
+    "./session/composer/menus/mention-controller": "./src/session/composer/menus/mention-controller.ts",
+    "./session/composer/menus/mention-menu": "./src/session/composer/menus/mention-menu.tsx",
+    "./session/composer/menus/menu-items": "./src/session/composer/menus/menu-items.ts",
     "./session/composer/menus/menu-nav-state": "./src/session/composer/menus/menu-nav-state.ts",
     "./session/composer/menus/menu-navigation": "./src/session/composer/menus/menu-navigation.ts",
     "./session/composer/menus/menu-selection": "./src/session/composer/menus/menu-selection.ts",
     "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
     "./session/composer/menus/mount": "./src/session/composer/menus/mount.ts",
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
+    "./session/composer/menus/slash-controller": "./src/session/composer/menus/slash-controller.ts",
     "./session/composer/menus/slash-files": "./src/session/composer/menus/slash-files.ts",
     "./session/composer/menus/slash-items": "./src/session/composer/menus/slash-items.ts",
     "./session/composer/menus/slash-menu": "./src/session/composer/menus/slash-menu.tsx",
+    "./session/composer/queued-prompt-list": "./src/session/composer/queued-prompt-list.tsx",
+    "./session/composer/quote-list": "./src/session/composer/quote-list.tsx",
     "./session/composer/send-blockers": "./src/session/composer/send-blockers.ts",
     "./session/composer/send-stop-control": "./src/session/composer/send-stop-control.tsx",
     "./session/composer/submit-latch": "./src/session/composer/submit-latch.ts",
     "./session/composer/token-progress": "./src/session/composer/token-progress.tsx",
+    "./session/composer/types": "./src/session/composer/types.ts",
     "./session/detect-command": "./src/session/detect-command.ts",
     "./session/diff-dialog": "./src/session/diff-dialog.tsx",
     "./session/entitlements-pending": "./src/session/entitlements-pending.ts",
@@ -270,22 +317,32 @@
     "./session/first-prompt-handover": "./src/session/first-prompt-handover.ts",
     "./session/header/compact-modal": "./src/session/header/compact-modal.tsx",
     "./session/header/export-transcript-modal": "./src/session/header/export-transcript-modal.tsx",
+    "./session/header/session-changes-indicator": "./src/session/header/session-changes-indicator.tsx",
+    "./session/header/session-config-indicator": "./src/session/header/session-config-indicator.tsx",
     "./session/header/session-pending-approvals-indicator": "./src/session/header/session-pending-approvals-indicator.tsx",
     "./session/header/session-reload-progress-view": "./src/session/header/session-reload-progress-view.tsx",
+    "./session/header/session-reminders-indicator": "./src/session/header/session-reminders-indicator.tsx",
+    "./session/header/session-site-header": "./src/session/header/session-site-header.tsx",
     "./session/header/session-title-input": "./src/session/header/session-title-input.tsx",
     "./session/header/subagent-hover-card": "./src/session/header/subagent-hover-card.tsx",
+    "./session/held-commands": "./src/session/held-commands.ts",
     "./session/image-output-path": "./src/session/image-output-path.ts",
     "./session/image-preview": "./src/session/image-preview.tsx",
     "./session/inbox-live-prompt": "./src/session/inbox-live-prompt.ts",
     "./session/inbox-row-claims": "./src/session/inbox-row-claims.ts",
+    "./session/instant-session-shell": "./src/session/instant-session-shell.tsx",
     "./session/kortix-app-url": "./src/session/kortix-app-url.ts",
     "./session/mention-chip": "./src/session/mention-chip.tsx",
     "./session/mention-segments": "./src/session/mention-segments.ts",
     "./session/message-parsing": "./src/session/message-parsing.tsx",
+    "./session/mobile-tool-drawer": "./src/session/mobile-tool-drawer.tsx",
     "./session/model-availability": "./src/session/model-availability.ts",
+    "./session/model-connection-gate": "./src/session/model-connection-gate.tsx",
     "./session/model-grouping": "./src/session/model-grouping.ts",
+    "./session/model-selector": "./src/session/model-selector.tsx",
     "./session/model-tags": "./src/session/model-tags.ts",
     "./session/open-session-quick-view": "./src/session/open-session-quick-view.ts",
+    "./session/optimistic-turn": "./src/session/optimistic-turn.tsx",
     "./session/outcomes/anchor-outcomes": "./src/session/outcomes/anchor-outcomes.ts",
     "./session/outcomes/change-request-outcomes": "./src/session/outcomes/change-request-outcomes.ts",
     "./session/outcomes/outcome-card": "./src/session/outcomes/outcome-card.tsx",
@@ -295,8 +352,12 @@
     "./session/outcomes/turn-outcomes": "./src/session/outcomes/turn-outcomes.tsx",
     "./session/overrides/provider-pool-draft": "./src/session/overrides/provider-pool-draft.ts",
     "./session/overrides/provider-pool-draft-context": "./src/session/overrides/provider-pool-draft-context.tsx",
+    "./session/overrides/provider-secret-pool-editor": "./src/session/overrides/provider-secret-pool-editor.tsx",
+    "./session/overrides/session-overrides-composer": "./src/session/overrides/session-overrides-composer.tsx",
     "./session/overrides/session-overrides-control": "./src/session/overrides/session-overrides-control.tsx",
+    "./session/overrides/session-overrides-toolbar": "./src/session/overrides/session-overrides-toolbar.tsx",
     "./session/participants/session-participants": "./src/session/participants/session-participants.tsx",
+    "./session/pasted-text": "./src/session/pasted-text.tsx",
     "./session/persisted-turn-failure": "./src/session/persisted-turn-failure.ts",
     "./session/pinned-root-session": "./src/session/pinned-root-session.ts",
     "./session/plan-surface": "./src/session/plan-surface.ts",
@@ -312,42 +373,58 @@
     "./session/pty-terminal": "./src/session/pty-terminal.tsx",
     "./session/pty-terminal-sanitize": "./src/session/pty-terminal-sanitize.ts",
     "./session/question-prompt": "./src/session/question-prompt.tsx",
+    "./session/queue-projection": "./src/session/queue-projection.ts",
     "./session/queued-message-restore": "./src/session/queued-message-restore.ts",
+    "./session/queued-prompt-edit": "./src/session/queued-prompt-edit.ts",
     "./session/reasoning-effort-selector": "./src/session/reasoning-effort-selector.tsx",
     "./session/reload-forensics": "./src/session/reload-forensics.ts",
     "./session/reply-context": "./src/session/reply-context.ts",
     "./session/sandbox-image": "./src/session/sandbox-image.tsx",
     "./session/sandbox-loading-boundary": "./src/session/sandbox-loading-boundary.tsx",
+    "./session/sandbox-url-detector": "./src/session/sandbox-url-detector.tsx",
+    "./session/saved-session-skeleton": "./src/session/saved-session-skeleton.tsx",
     "./session/saved-session-skeleton-rows": "./src/session/saved-session-skeleton-rows.tsx",
     "./session/saved-session-skeleton-shape": "./src/session/saved-session-skeleton-shape.ts",
     "./session/scope/create-scoped-session": "./src/session/scope/create-scoped-session.ts",
     "./session/scope/session-scope-control": "./src/session/scope/session-scope-control.tsx",
     "./session/scope/session-scope-model": "./src/session/scope/session-scope-model.ts",
     "./session/scope/session-scope-toolbar": "./src/session/scope/session-scope-toolbar.tsx",
+    "./session/scope/use-session-scope": "./src/session/scope/use-session-scope.ts",
+    "./session/sent-attachment-previews": "./src/session/sent-attachment-previews.ts",
+    "./session/session-action-panel-column": "./src/session/session-action-panel-column.tsx",
     "./session/session-approval-prompt": "./src/session/session-approval-prompt.tsx",
     "./session/session-approval-review": "./src/session/session-approval-review.ts",
     "./session/session-audit-panel": "./src/session/session-audit-panel.tsx",
     "./session/session-audit-shared": "./src/session/session-audit-shared.tsx",
+    "./session/session-body": "./src/session/session-body.tsx",
     "./session/session-busy-indicator": "./src/session/session-busy-indicator.tsx",
     "./session/session-changes-shared": "./src/session/session-changes-shared.tsx",
+    "./session/session-chat": "./src/session/session-chat.tsx",
     "./session/session-chat-busy": "./src/session/session-chat-busy.ts",
+    "./session/session-chat-input": "./src/session/session-chat-input.tsx",
+    "./session/session-chat/transcript": "./src/session/session-chat/transcript.tsx",
     "./session/session-composer-readiness": "./src/session/session-composer-readiness.ts",
     "./session/session-context-message-explorer": "./src/session/session-context-message-explorer.tsx",
     "./session/session-context-metrics": "./src/session/session-context-metrics.ts",
     "./session/session-context-modal": "./src/session/session-context-modal.tsx",
     "./session/session-context-sub-sessions": "./src/session/session-context-sub-sessions.tsx",
     "./session/session-diff-viewer": "./src/session/session-diff-viewer.tsx",
+    "./session/session-error-banner": "./src/session/session-error-banner.tsx",
+    "./session/session-files-explorer": "./src/session/session-files-explorer.tsx",
     "./session/session-files-explorer-logic": "./src/session/session-files-explorer-logic.ts",
     "./session/session-files-panel": "./src/session/session-files-panel.tsx",
     "./session/session-files-store-registry": "./src/session/session-files-store-registry.ts",
     "./session/session-history": "./src/session/session-history.tsx",
     "./session/session-history-scroll": "./src/session/session-history-scroll.ts",
+    "./session/session-layout": "./src/session/session-layout.tsx",
     "./session/session-load-state": "./src/session/session-load-state.ts",
     "./session/session-notice-banner": "./src/session/session-notice-banner.tsx",
     "./session/session-older-autoload": "./src/session/session-older-autoload.ts",
     "./session/session-older-loading": "./src/session/session-older-loading.ts",
     "./session/session-panel-header": "./src/session/session-panel-header.tsx",
+    "./session/session-permission-prompt": "./src/session/session-permission-prompt.tsx",
     "./session/session-resume": "./src/session/session-resume.ts",
+    "./session/session-route-prefetch": "./src/session/session-route-prefetch.ts",
     "./session/session-start-gate": "./src/session/session-start-gate.ts",
     "./session/session-starting-loader": "./src/session/session-starting-loader.tsx",
     "./session/session-surface": "./src/session/session-surface.ts",
@@ -360,32 +437,112 @@
     "./session/session-turn-meta": "./src/session/session-turn-meta.tsx",
     "./session/session-turn-meta-rows": "./src/session/session-turn-meta-rows.ts",
     "./session/session-wallpaper-layer": "./src/session/session-wallpaper-layer.tsx",
+    "./session/session-welcome": "./src/session/session-welcome.tsx",
     "./session/stop-refusal": "./src/session/stop-refusal.ts",
+    "./session/sub-session-modal": "./src/session/sub-session-modal.tsx",
+    "./session/sub-session-modal-content": "./src/session/sub-session-modal-content.tsx",
     "./session/terminal-card-gate": "./src/session/terminal-card-gate.ts",
     "./session/tool/foreign-tool-calls": "./src/session/tool/foreign-tool-calls.ts",
+    "./session/tool/generic-tool": "./src/session/tool/generic-tool.tsx",
     "./session/tool/inline-permission-reply": "./src/session/tool/inline-permission-reply.ts",
+    "./session/tool/shared/error-and-connector": "./src/session/tool/shared/error-and-connector.tsx",
     "./session/tool/shared/file-list": "./src/session/tool/shared/file-list.tsx",
+    "./session/tool/shared/infrastructure": "./src/session/tool/shared/infrastructure.tsx",
     "./session/tool/shared/infrastructure-contexts": "./src/session/tool/shared/infrastructure-contexts.tsx",
+    "./session/tool/shared/infrastructure-files": "./src/session/tool/shared/infrastructure-files.tsx",
+    "./session/tool/shared/infrastructure-output": "./src/session/tool/shared/infrastructure-output.tsx",
     "./session/tool/shared/infrastructure-parts": "./src/session/tool/shared/infrastructure-parts.tsx",
+    "./session/tool/shared/infrastructure-preview": "./src/session/tool/shared/infrastructure-preview.tsx",
     "./session/tool/shared/infrastructure-row-header": "./src/session/tool/shared/infrastructure-row-header.tsx",
     "./session/tool/shared/infrastructure-rows": "./src/session/tool/shared/infrastructure-rows.tsx",
+    "./session/tool/shared/output-block": "./src/session/tool/shared/output-block.tsx",
     "./session/tool/shared/patch-helpers": "./src/session/tool/shared/patch-helpers.tsx",
     "./session/tool/shared/registry": "./src/session/tool/shared/registry.ts",
     "./session/tool/shared/result-card": "./src/session/tool/shared/result-card.tsx",
+    "./session/tool/shared/session-helpers": "./src/session/tool/shared/session-helpers.tsx",
+    "./session/tool/shared/show-helpers": "./src/session/tool/shared/show-helpers.tsx",
     "./session/tool/shared/structured-output": "./src/session/tool/shared/structured-output.tsx",
+    "./session/tool/shared/sub-agent": "./src/session/tool/shared/sub-agent.tsx",
     "./session/tool/shared/surface": "./src/session/tool/shared/surface.tsx",
     "./session/tool/shared/todo-helpers": "./src/session/tool/shared/todo-helpers.tsx",
     "./session/tool/shared/tool-action-bar": "./src/session/tool/shared/tool-action-bar.tsx",
     "./session/tool/shared/types": "./src/session/tool/shared/types.ts",
     "./session/tool/shared/web-source-row": "./src/session/tool/shared/web-source-row.tsx",
+    "./session/tool/show-group-renderer": "./src/session/tool/show-group-renderer.tsx",
+    "./session/tool/tool-error": "./src/session/tool/tool-error.tsx",
     "./session/tool/tool-meta": "./src/session/tool/tool-meta.ts",
+    "./session/tool/tool-part-renderer": "./src/session/tool/tool-part-renderer.tsx",
+    "./session/tool/tool-renderers": "./src/session/tool/tool-renderers.tsx",
+    "./session/tool/tools/agent-message-tool": "./src/session/tool/tools/agent-message-tool.tsx",
+    "./session/tool/tools/agent-spawn-tool": "./src/session/tool/tools/agent-spawn-tool.tsx",
+    "./session/tool/tools/agent-status-tool": "./src/session/tool/tools/agent-status-tool.tsx",
+    "./session/tool/tools/agent-stop-tool": "./src/session/tool/tools/agent-stop-tool.tsx",
+    "./session/tool/tools/agent-task-update-tool": "./src/session/tool/tools/agent-task-update-tool.tsx",
+    "./session/tool/tools/apply-patch-tool": "./src/session/tool/tools/apply-patch-tool.tsx",
+    "./session/tool/tools/bash-tool": "./src/session/tool/tools/bash-tool.tsx",
     "./session/tool/tools/channel-send": "./src/session/tool/tools/channel-send.ts",
     "./session/tool/tools/channel-send-card": "./src/session/tool/tools/channel-send-card.tsx",
+    "./session/tool/tools/codemode-tool": "./src/session/tool/tools/codemode-tool.tsx",
+    "./session/tool/tools/connector-get-tool": "./src/session/tool/tools/connector-get-tool.tsx",
+    "./session/tool/tools/connector-list-tool": "./src/session/tool/tools/connector-list-tool.tsx",
+    "./session/tool/tools/connector-setup-tool": "./src/session/tool/tools/connector-setup-tool.tsx",
+    "./session/tool/tools/connector-tools": "./src/session/tool/tools/connector-tools.tsx",
+    "./session/tool/tools/edit-tool": "./src/session/tool/tools/edit-tool.tsx",
+    "./session/tool/tools/get-mem-tool": "./src/session/tool/tools/get-mem-tool.tsx",
+    "./session/tool/tools/glob-tool": "./src/session/tool/tools/glob-tool.tsx",
+    "./session/tool/tools/grep-tool": "./src/session/tool/tools/grep-tool.tsx",
+    "./session/tool/tools/image-gen-tool": "./src/session/tool/tools/image-gen-tool.tsx",
+    "./session/tool/tools/image-search-tool": "./src/session/tool/tools/image-search-tool.tsx",
+    "./session/tool/tools/list-tool": "./src/session/tool/tools/list-tool.tsx",
+    "./session/tool/tools/memory-search-tool": "./src/session/tool/tools/memory-search-tool.tsx",
+    "./session/tool/tools/memory-tool": "./src/session/tool/tools/memory-tool.tsx",
+    "./session/tool/tools/presentation-gen-tool": "./src/session/tool/tools/presentation-gen-tool.tsx",
+    "./session/tool/tools/project-create-tool": "./src/session/tool/tools/project-create-tool.tsx",
+    "./session/tool/tools/project-delete-tool": "./src/session/tool/tools/project-delete-tool.tsx",
+    "./session/tool/tools/project-get-tool": "./src/session/tool/tools/project-get-tool.tsx",
+    "./session/tool/tools/project-list-tool": "./src/session/tool/tools/project-list-tool.tsx",
+    "./session/tool/tools/project-select-tool": "./src/session/tool/tools/project-select-tool.tsx",
+    "./session/tool/tools/pty-kill-tool": "./src/session/tool/tools/pty-kill-tool.tsx",
+    "./session/tool/tools/pty-read-tool": "./src/session/tool/tools/pty-read-tool.tsx",
+    "./session/tool/tools/pty-spawn-tool": "./src/session/tool/tools/pty-spawn-tool.tsx",
+    "./session/tool/tools/pty-write-tool": "./src/session/tool/tools/pty-write-tool.tsx",
+    "./session/tool/tools/question-tool": "./src/session/tool/tools/question-tool.tsx",
+    "./session/tool/tools/read-tool": "./src/session/tool/tools/read-tool.tsx",
+    "./session/tool/tools/register": "./src/session/tool/tools/register.ts",
+    "./session/tool/tools/removed-connector-tool": "./src/session/tool/tools/removed-connector-tool.tsx",
+    "./session/tool/tools/scrape-webpage-tool": "./src/session/tool/tools/scrape-webpage-tool.tsx",
+    "./session/tool/tools/session-get-tool": "./src/session/tool/tools/session-get-tool.tsx",
+    "./session/tool/tools/session-lineage-tool": "./src/session/tool/tools/session-lineage-tool.tsx",
+    "./session/tool/tools/session-list-background-tool": "./src/session/tool/tools/session-list-background-tool.tsx",
+    "./session/tool/tools/session-message-tool": "./src/session/tool/tools/session-message-tool.tsx",
+    "./session/tool/tools/session-read-tool": "./src/session/tool/tools/session-read-tool.tsx",
+    "./session/tool/tools/session-search-tool": "./src/session/tool/tools/session-search-tool.tsx",
+    "./session/tool/tools/session-spawn-tool": "./src/session/tool/tools/session-spawn-tool.tsx",
     "./session/tool/tools/session-spawn-urls": "./src/session/tool/tools/session-spawn-urls.ts",
+    "./session/tool/tools/session-stats-tool": "./src/session/tool/tools/session-stats-tool.tsx",
+    "./session/tool/tools/show-tool": "./src/session/tool/tools/show-tool.tsx",
+    "./session/tool/tools/skill-tool": "./src/session/tool/tools/skill-tool.tsx",
+    "./session/tool/tools/task-delete-tool": "./src/session/tool/tools/task-delete-tool.tsx",
+    "./session/tool/tools/task-done-tool": "./src/session/tool/tools/task-done-tool.tsx",
+    "./session/tool/tools/task-list-tool": "./src/session/tool/tools/task-list-tool.tsx",
+    "./session/tool/tools/task-tool": "./src/session/tool/tools/task-tool.tsx",
+    "./session/tool/tools/todo-write-tool": "./src/session/tool/tools/todo-write-tool.tsx",
+    "./session/tool/tools/triggers-tool": "./src/session/tool/tools/triggers-tool.tsx",
+    "./session/tool/tools/video-gen-tool": "./src/session/tool/tools/video-gen-tool.tsx",
+    "./session/tool/tools/web-fetch-tool": "./src/session/tool/tools/web-fetch-tool.tsx",
+    "./session/tool/tools/web-search-tool": "./src/session/tool/tools/web-search-tool.tsx",
+    "./session/tool/tools/write-tool": "./src/session/tool/tools/write-tool.tsx",
+    "./session/turn/activity-burst": "./src/session/turn/activity-burst.tsx",
+    "./session/turn/activity-file-chips": "./src/session/turn/activity-file-chips.tsx",
+    "./session/turn/activity-group-step": "./src/session/turn/activity-group-step.tsx",
+    "./session/turn/activity-step": "./src/session/turn/activity-step.tsx",
+    "./session/turn/answered-question-step": "./src/session/turn/answered-question-step.tsx",
+    "./session/turn/burst-step-body": "./src/session/turn/burst-step-body.tsx",
     "./session/turn/burst-summary-trigger": "./src/session/turn/burst-summary-trigger.tsx",
     "./session/turn/chain-step-trigger": "./src/session/turn/chain-step-trigger.tsx",
     "./session/turn/channel-brand": "./src/session/turn/channel-brand.tsx",
     "./session/turn/channel-message": "./src/session/turn/channel-message.ts",
+    "./session/turn/compaction-card": "./src/session/turn/compaction-card.tsx",
     "./session/turn/expandable-output": "./src/session/turn/expandable-output.tsx",
     "./session/turn/fallback-row": "./src/session/turn/fallback-row.tsx",
     "./session/turn/message-author": "./src/session/turn/message-author.ts",
@@ -400,36 +557,145 @@
     "./session/turn/status-elapsed": "./src/session/turn/status-elapsed.ts",
     "./session/turn/streaming-cadence": "./src/session/turn/streaming-cadence.ts",
     "./session/turn/thought-chain-step": "./src/session/turn/thought-chain-step.tsx",
+    "./session/turn/throttled-markdown": "./src/session/turn/throttled-markdown.tsx",
     "./session/turn/turn-viewport": "./src/session/turn/turn-viewport.tsx",
     "./session/turn/turn-work-accordion": "./src/session/turn/turn-work-accordion.tsx",
+    "./session/turn/user-message": "./src/session/turn/user-message.tsx",
+    "./session/uploaded-file-refs": "./src/session/uploaded-file-refs.ts",
     "./session/use-bounded-runtime-wait": "./src/session/use-bounded-runtime-wait.ts",
+    "./session/use-instant-session-send": "./src/session/use-instant-session-send.ts",
+    "./session/use-model-connection-gate": "./src/session/use-model-connection-gate.tsx",
     "./session/use-oc-file-open": "./src/session/use-oc-file-open.ts",
     "./session/use-pty-connection": "./src/session/use-pty-connection.ts",
     "./session/use-readiness-settling": "./src/session/use-readiness-settling.ts",
     "./session/use-session-panel-layout": "./src/session/use-session-panel-layout.ts",
     "./session/use-session-panel-state": "./src/session/use-session-panel-state.ts",
     "./shader-safe": "./src/components/ui/shader-safe.tsx",
+    "./shared/components/ai-elements/checkpoint": "./src/shared/components/ai-elements/checkpoint.tsx",
     "./shared/components/approvals/approval-request": "./src/shared/components/approvals/approval-request.tsx",
+    "./shared/components/common/clickable-path": "./src/shared/components/common/clickable-path.tsx",
     "./shared/components/common/hover-prefetch-link": "./src/shared/components/common/hover-prefetch-link.tsx",
+    "./shared/components/file-editors/code-editor": "./src/shared/components/file-editors/code-editor.tsx",
+    "./shared/components/file-editors/codemirror-diagnostics": "./src/shared/components/file-editors/codemirror-diagnostics.ts",
+    "./shared/components/file-editors/external-content": "./src/shared/components/file-editors/external-content.ts",
+    "./shared/components/file-editors/lazy-code-editor": "./src/shared/components/file-editors/lazy-code-editor.tsx",
+    "./shared/components/file-editors/target-line": "./src/shared/components/file-editors/target-line.ts",
     "./shared/components/iam/audit-credential-label": "./src/shared/components/iam/audit-credential-label.ts",
+    "./shared/components/projects/public-share-link-button": "./src/shared/components/projects/public-share-link-button.tsx",
+    "./shared/components/projects/public-share-link-confirm": "./src/shared/components/projects/public-share-link-confirm.tsx",
     "./shared/components/projects/session-label": "./src/shared/components/projects/session-label.ts",
+    "./shared/components/projects/session-shares-modal": "./src/shared/components/projects/session-shares-modal.tsx",
+    "./shared/components/setup-links/api-base": "./src/shared/components/setup-links/api-base.ts",
+    "./shared/components/setup-links/connector-handshake": "./src/shared/components/setup-links/connector-handshake.tsx",
+    "./shared/components/setup-links/connector-link-info": "./src/shared/components/setup-links/connector-link-info.ts",
+    "./shared/components/setup-links/secret-intake-form": "./src/shared/components/setup-links/secret-intake-form.tsx",
+    "./shared/components/setup-links/setup-link-button": "./src/shared/components/setup-links/setup-link-button.tsx",
+    "./shared/components/setup-links/setup-link-close-finalize": "./src/shared/components/setup-links/setup-link-close-finalize.ts",
     "./shared/components/setup-links/util": "./src/shared/components/setup-links/util.ts",
+    "./shared/features/accounts/hub/account-hub-entry": "./src/shared/features/accounts/hub/account-hub-entry.tsx",
+    "./shared/features/accounts/hub/account-hub-location": "./src/shared/features/accounts/hub/account-hub-location.tsx",
+    "./shared/features/apps/app-in-browser": "./src/shared/features/apps/app-in-browser.ts",
+    "./shared/features/apps/app-preview": "./src/shared/features/apps/app-preview.tsx",
+    "./shared/features/apps/app-preview-pool": "./src/shared/features/apps/app-preview-pool.ts",
+    "./shared/features/apps/app-shared": "./src/shared/features/apps/app-shared.tsx",
     "./shared/features/changes/change-list": "./src/shared/features/changes/change-list.tsx",
     "./shared/features/changes/change-vocabulary": "./src/shared/features/changes/change-vocabulary.ts",
     "./shared/features/changes/index": "./src/shared/features/changes/index.ts",
     "./shared/features/drives/session-drive-files": "./src/shared/features/drives/session-drive-files.ts",
+    "./shared/features/drives/session-drives-chip": "./src/shared/features/drives/session-drives-chip.tsx",
+    "./shared/features/file-browser/components/file-tree-item": "./src/shared/features/file-browser/components/file-tree-item.tsx",
+    "./shared/features/file-browser/hooks/use-file-events": "./src/shared/features/file-browser/hooks/use-file-events.ts",
     "./shared/features/file-browser/store/files-store": "./src/shared/features/file-browser/store/files-store.ts",
     "./shared/features/file-browser/types": "./src/shared/features/file-browser/types.ts",
+    "./shared/features/file-renderers/csv/csv-copy": "./src/shared/features/file-renderers/csv/csv-copy.ts",
+    "./shared/features/file-renderers/csv/csv-renderer": "./src/shared/features/file-renderers/csv/csv-renderer.tsx",
+    "./shared/features/file-renderers/csv/csv-viewer": "./src/shared/features/file-renderers/csv/csv-viewer.tsx",
+    "./shared/features/file-renderers/docx/docx-annotation-card": "./src/shared/features/file-renderers/docx/docx-annotation-card.tsx",
+    "./shared/features/file-renderers/docx/docx-renderer": "./src/shared/features/file-renderers/docx/docx-renderer.tsx",
+    "./shared/features/file-renderers/docx/docx-viewer": "./src/shared/features/file-renderers/docx/docx-viewer.tsx",
+    "./shared/features/file-renderers/image-renderer": "./src/shared/features/file-renderers/image-renderer.tsx",
+    "./shared/features/file-renderers/mermaid/mermaid-diagram": "./src/shared/features/file-renderers/mermaid/mermaid-diagram.tsx",
+    "./shared/features/file-renderers/mermaid/mermaid-utils": "./src/shared/features/file-renderers/mermaid/mermaid-utils.ts",
+    "./shared/features/file-renderers/pdf/pdf-renderer": "./src/shared/features/file-renderers/pdf/pdf-renderer.tsx",
+    "./shared/features/file-renderers/pdf/pdf-thumbnail-utils": "./src/shared/features/file-renderers/pdf/pdf-thumbnail-utils.ts",
+    "./shared/features/file-renderers/pdf/pdf-viewer": "./src/shared/features/file-renderers/pdf/pdf-viewer.tsx",
+    "./shared/features/file-renderers/pptx-i18n": "./src/shared/features/file-renderers/pptx-i18n.ts",
+    "./shared/features/file-renderers/pptx-renderer": "./src/shared/features/file-renderers/pptx-renderer.tsx",
+    "./shared/features/file-renderers/presentation/FullScreenPresentationViewer": "./src/shared/features/file-renderers/presentation/FullScreenPresentationViewer.tsx",
+    "./shared/features/file-renderers/presentation/presentation-utils": "./src/shared/features/file-renderers/presentation/presentation-utils.tsx",
+    "./shared/features/file-renderers/shared/document-viewer-sidebar": "./src/shared/features/file-renderers/shared/document-viewer-sidebar.tsx",
+    "./shared/features/file-renderers/shared/file-thumbnail": "./src/shared/features/file-renderers/shared/file-thumbnail.tsx",
+    "./shared/features/file-renderers/shared/scroll-area-compat": "./src/shared/features/file-renderers/shared/scroll-area-compat.tsx",
+    "./shared/features/file-renderers/shared/select-compat": "./src/shared/features/file-renderers/shared/select-compat.tsx",
+    "./shared/features/file-renderers/shared/spinner": "./src/shared/features/file-renderers/shared/spinner.tsx",
+    "./shared/features/file-renderers/shared/use-viewer-search": "./src/shared/features/file-renderers/shared/use-viewer-search.ts",
+    "./shared/features/file-renderers/shared/viewer-copy-menu": "./src/shared/features/file-renderers/shared/viewer-copy-menu.tsx",
     "./shared/features/file-renderers/shared/viewer-download-button": "./src/shared/features/file-renderers/shared/viewer-download-button.tsx",
+    "./shared/features/file-renderers/shared/viewer-file-name": "./src/shared/features/file-renderers/shared/viewer-file-name.tsx",
+    "./shared/features/file-renderers/shared/viewer-frame": "./src/shared/features/file-renderers/shared/viewer-frame.tsx",
+    "./shared/features/file-renderers/show-content-renderer": "./src/shared/features/file-renderers/show-content-renderer.tsx",
+    "./shared/features/file-renderers/show-type-utils": "./src/shared/features/file-renderers/show-type-utils.ts",
+    "./shared/features/file-renderers/sqlite-renderer": "./src/shared/features/file-renderers/sqlite-renderer.tsx",
+    "./shared/features/file-renderers/video-renderer": "./src/shared/features/file-renderers/video-renderer.tsx",
+    "./shared/features/file-renderers/xlsx/xlsx-renderer": "./src/shared/features/file-renderers/xlsx/xlsx-renderer.tsx",
+    "./shared/features/file-renderers/xlsx/xlsx-viewer": "./src/shared/features/file-renderers/xlsx/xlsx-viewer.tsx",
+    "./shared/features/file-renderers/zip/zip-entries": "./src/shared/features/file-renderers/zip/zip-entries.ts",
+    "./shared/features/file-renderers/zip/zip-renderer": "./src/shared/features/file-renderers/zip/zip-renderer.tsx",
+    "./shared/features/file-viewer/file-content-renderer": "./src/shared/features/file-viewer/file-content-renderer.tsx",
+    "./shared/features/file-viewer/file-header": "./src/shared/features/file-viewer/file-header.tsx",
+    "./shared/features/file-viewer/file-preview-modal": "./src/shared/features/file-viewer/file-preview-modal.tsx",
+    "./shared/features/file-viewer/file-source": "./src/shared/features/file-viewer/file-source.tsx",
+    "./shared/features/file-viewer/html-preview": "./src/shared/features/file-viewer/html-preview.tsx",
+    "./shared/features/file-viewer/index": "./src/shared/features/file-viewer/index.ts",
+    "./shared/features/file-viewer/json-tree-view": "./src/shared/features/file-viewer/json-tree-view.tsx",
+    "./shared/features/file-viewer/markdown-pdf": "./src/shared/features/file-viewer/markdown-pdf.ts",
+    "./shared/features/file-viewer/preview-fit": "./src/shared/features/file-viewer/preview-fit.tsx",
+    "./shared/features/file-viewer/preview-policy": "./src/shared/features/file-viewer/preview-policy.ts",
+    "./shared/features/file-viewer/print-document": "./src/shared/features/file-viewer/print-document.ts",
+    "./shared/features/file-viewer/save-as-pdf-button": "./src/shared/features/file-viewer/save-as-pdf-button.tsx",
+    "./shared/features/file-viewer/use-content-revision": "./src/shared/features/file-viewer/use-content-revision.ts",
+    "./shared/features/file-viewer/use-file-content-state": "./src/shared/features/file-viewer/use-file-content-state.ts",
+    "./shared/features/files/api/git-history": "./src/shared/features/files/api/git-history.ts",
     "./shared/features/files/api/runtime-file-read": "./src/shared/features/files/api/runtime-file-read.ts",
     "./shared/features/files/api/runtime-files": "./src/shared/features/files/api/runtime-files.ts",
+    "./shared/features/files/components/file-content-renderer": "./src/shared/features/files/components/file-content-renderer.tsx",
+    "./shared/features/files/file-source": "./src/shared/features/files/file-source.tsx",
+    "./shared/features/files/hooks/blob-identity": "./src/shared/features/files/hooks/blob-identity.ts",
     "./shared/features/files/hooks/file-read-retry": "./src/shared/features/files/hooks/file-read-retry.ts",
+    "./shared/features/files/hooks/index": "./src/shared/features/files/hooks/index.ts",
     "./shared/features/files/hooks/server-health-state": "./src/shared/features/files/hooks/server-health-state.ts",
     "./shared/features/files/hooks/system-dir": "./src/shared/features/files/hooks/system-dir.ts",
+    "./shared/features/files/hooks/use-binary-blob": "./src/shared/features/files/hooks/use-binary-blob.ts",
+    "./shared/features/files/hooks/use-directory-download": "./src/shared/features/files/hooks/use-directory-download.ts",
     "./shared/features/files/hooks/use-file-content": "./src/shared/features/files/hooks/use-file-content.ts",
+    "./shared/features/files/hooks/use-file-history": "./src/shared/features/files/hooks/use-file-history.ts",
+    "./shared/features/files/hooks/use-file-list": "./src/shared/features/files/hooks/use-file-list.ts",
+    "./shared/features/files/hooks/use-file-mutations": "./src/shared/features/files/hooks/use-file-mutations.ts",
+    "./shared/features/files/hooks/use-file-refresh": "./src/shared/features/files/hooks/use-file-refresh.ts",
+    "./shared/features/files/hooks/use-file-search": "./src/shared/features/files/hooks/use-file-search.ts",
     "./shared/features/files/hooks/use-git-status": "./src/shared/features/files/hooks/use-git-status.ts",
     "./shared/features/files/hooks/use-server-health": "./src/shared/features/files/hooks/use-server-health.ts",
+    "./shared/features/files/hooks/use-workspace-search": "./src/shared/features/files/hooks/use-workspace-search.ts",
+    "./shared/features/files/index": "./src/shared/features/files/index.ts",
+    "./shared/features/files/path-utils": "./src/shared/features/files/path-utils.ts",
+    "./shared/features/files/sandbox-explorer-source": "./src/shared/features/files/sandbox-explorer-source.ts",
+    "./shared/features/files/sandbox-file-explorer": "./src/shared/features/files/sandbox-file-explorer.tsx",
+    "./shared/features/files/search/workspace-search-service": "./src/shared/features/files/search/workspace-search-service.ts",
+    "./shared/features/genui/block-telemetry": "./src/shared/features/genui/block-telemetry.ts",
+    "./shared/features/genui/components/charts": "./src/shared/features/genui/components/charts.tsx",
+    "./shared/features/genui/components/data": "./src/shared/features/genui/components/data.tsx",
+    "./shared/features/genui/components/index": "./src/shared/features/genui/components/index.tsx",
+    "./shared/features/genui/components/inline": "./src/shared/features/genui/components/inline.tsx",
+    "./shared/features/genui/components/layout": "./src/shared/features/genui/components/layout.tsx",
+    "./shared/features/genui/components/map": "./src/shared/features/genui/components/map.tsx",
+    "./shared/features/genui/components/map-canvas": "./src/shared/features/genui/components/map-canvas.tsx",
+    "./shared/features/genui/components/map-geo": "./src/shared/features/genui/components/map-geo.ts",
+    "./shared/features/genui/components/pending": "./src/shared/features/genui/components/pending.tsx",
+    "./shared/features/genui/genui-message-block": "./src/shared/features/genui/genui-message-block.tsx",
+    "./shared/features/genui/sdk": "./src/shared/features/genui/sdk.ts",
     "./shared/features/genui/to-markdown": "./src/shared/features/genui/to-markdown.ts",
+    "./shared/features/genui/use-genui-enabled": "./src/shared/features/genui/use-genui-enabled.ts",
+    "./shared/features/icon/icons/customize": "./src/shared/features/icon/icons/customize.tsx",
     "./shared/features/icon/icons/download": "./src/shared/features/icon/icons/download.tsx",
     "./shared/features/icon/icons/home": "./src/shared/features/icon/icons/home.tsx",
     "./shared/features/icon/icons/microsoft-teams": "./src/shared/features/icon/icons/microsoft-teams.tsx",
@@ -437,55 +703,192 @@
     "./shared/features/icon/icons/solid-check-icon": "./src/shared/features/icon/icons/solid-check-icon.tsx",
     "./shared/features/layout/section/empty-state": "./src/shared/features/layout/section/empty-state.tsx",
     "./shared/features/layout/section/error-state": "./src/shared/features/layout/section/error-state.tsx",
+    "./shared/features/notifications/use-notification-center": "./src/shared/features/notifications/use-notification-center.ts",
     "./shared/features/project-files/api/branches": "./src/shared/features/project-files/api/branches.ts",
     "./shared/features/project-files/api/change-requests": "./src/shared/features/project-files/api/change-requests.ts",
     "./shared/features/project-files/api/commits": "./src/shared/features/project-files/api/commits.ts",
+    "./shared/features/project-files/api/git-history": "./src/shared/features/project-files/api/git-history.ts",
+    "./shared/features/project-files/api/runtime-files": "./src/shared/features/project-files/api/runtime-files.ts",
+    "./shared/features/project-files/change-request-recovery": "./src/shared/features/project-files/change-request-recovery.ts",
+    "./shared/features/project-files/components/change-request-detail-dialog": "./src/shared/features/project-files/components/change-request-detail-dialog.tsx",
+    "./shared/features/project-files/components/change-requests-panel": "./src/shared/features/project-files/components/change-requests-panel.tsx",
+    "./shared/features/project-files/components/checkpoint-detail-dialog": "./src/shared/features/project-files/components/checkpoint-detail-dialog.tsx",
+    "./shared/features/project-files/components/checkpoints-panel": "./src/shared/features/project-files/components/checkpoints-panel.tsx",
+    "./shared/features/project-files/components/diff-preview-banner": "./src/shared/features/project-files/components/diff-preview-banner.tsx",
+    "./shared/features/project-files/components/diff-renderer": "./src/shared/features/project-files/components/diff-renderer.tsx",
+    "./shared/features/project-files/components/drive-explorer": "./src/shared/features/project-files/components/drive-explorer.tsx",
+    "./shared/features/project-files/components/drive-folder-thumbnail": "./src/shared/features/project-files/components/drive-folder-thumbnail.tsx",
+    "./shared/features/project-files/components/drive-grid-view": "./src/shared/features/project-files/components/drive-grid-view.tsx",
+    "./shared/features/project-files/components/drive-header": "./src/shared/features/project-files/components/drive-header.tsx",
+    "./shared/features/project-files/components/drive-list-view": "./src/shared/features/project-files/components/drive-list-view.tsx",
+    "./shared/features/project-files/components/drive-toolbar": "./src/shared/features/project-files/components/drive-toolbar.tsx",
+    "./shared/features/project-files/components/file-breadcrumbs": "./src/shared/features/project-files/components/file-breadcrumbs.tsx",
+    "./shared/features/project-files/components/file-content-renderer": "./src/shared/features/project-files/components/file-content-renderer.tsx",
+    "./shared/features/project-files/components/file-explorer-page": "./src/shared/features/project-files/components/file-explorer-page.tsx",
+    "./shared/features/project-files/components/file-history-popover": "./src/shared/features/project-files/components/file-history-popover.tsx",
     "./shared/features/project-files/components/file-icon": "./src/shared/features/project-files/components/file-icon.tsx",
+    "./shared/features/project-files/components/file-preview-modal": "./src/shared/features/project-files/components/file-preview-modal.tsx",
+    "./shared/features/project-files/components/file-route-state": "./src/shared/features/project-files/components/file-route-state.ts",
+    "./shared/features/project-files/components/file-search": "./src/shared/features/project-files/components/file-search.tsx",
+    "./shared/features/project-files/components/file-thumbnail": "./src/shared/features/project-files/components/file-thumbnail.tsx",
+    "./shared/features/project-files/components/index": "./src/shared/features/project-files/components/index.ts",
+    "./shared/features/project-files/components/load-more-row": "./src/shared/features/project-files/components/load-more-row.tsx",
+    "./shared/features/project-files/components/open-change-request-dialog": "./src/shared/features/project-files/components/open-change-request-dialog.tsx",
+    "./shared/features/project-files/components/own-clicks": "./src/shared/features/project-files/components/own-clicks.ts",
+    "./shared/features/project-files/components/review-panel": "./src/shared/features/project-files/components/review-panel.tsx",
+    "./shared/features/project-files/components/use-drive-row-interactions": "./src/shared/features/project-files/components/use-drive-row-interactions.ts",
+    "./shared/features/project-files/components/version-selector": "./src/shared/features/project-files/components/version-selector.tsx",
     "./shared/features/project-files/context": "./src/shared/features/project-files/context.tsx",
+    "./shared/features/project-files/explorer-source": "./src/shared/features/project-files/explorer-source.tsx",
+    "./shared/features/project-files/file-source": "./src/shared/features/project-files/file-source.tsx",
+    "./shared/features/project-files/git-ref-explorer-source": "./src/shared/features/project-files/git-ref-explorer-source.ts",
+    "./shared/features/project-files/hooks/index": "./src/shared/features/project-files/hooks/index.ts",
+    "./shared/features/project-files/hooks/use-binary-blob": "./src/shared/features/project-files/hooks/use-binary-blob.ts",
     "./shared/features/project-files/hooks/use-branches": "./src/shared/features/project-files/hooks/use-branches.ts",
+    "./shared/features/project-files/hooks/use-change-request-recovery": "./src/shared/features/project-files/hooks/use-change-request-recovery.ts",
     "./shared/features/project-files/hooks/use-change-requests": "./src/shared/features/project-files/hooks/use-change-requests.ts",
     "./shared/features/project-files/hooks/use-commits": "./src/shared/features/project-files/hooks/use-commits.ts",
+    "./shared/features/project-files/hooks/use-directory-download": "./src/shared/features/project-files/hooks/use-directory-download.ts",
+    "./shared/features/project-files/hooks/use-file-content": "./src/shared/features/project-files/hooks/use-file-content.ts",
+    "./shared/features/project-files/hooks/use-file-history": "./src/shared/features/project-files/hooks/use-file-history.ts",
+    "./shared/features/project-files/hooks/use-file-list": "./src/shared/features/project-files/hooks/use-file-list.ts",
+    "./shared/features/project-files/hooks/use-file-mutations": "./src/shared/features/project-files/hooks/use-file-mutations.ts",
+    "./shared/features/project-files/hooks/use-file-search": "./src/shared/features/project-files/hooks/use-file-search.ts",
+    "./shared/features/project-files/hooks/use-git-status": "./src/shared/features/project-files/hooks/use-git-status.ts",
+    "./shared/features/project-files/hooks/use-server-health": "./src/shared/features/project-files/hooks/use-server-health.ts",
+    "./shared/features/project-files/index": "./src/shared/features/project-files/index.ts",
+    "./shared/features/project-files/search/workspace-search-service": "./src/shared/features/project-files/search/workspace-search-service.ts",
+    "./shared/features/project-files/store/version-store": "./src/shared/features/project-files/store/version-store.ts",
+    "./shared/features/project-files/upload-batch": "./src/shared/features/project-files/upload-batch.ts",
+    "./shared/features/providers/provider-branding": "./src/shared/features/providers/provider-branding.tsx",
+    "./shared/features/review-center/hooks/use-review-session-summary": "./src/shared/features/review-center/hooks/use-review-session-summary.ts",
+    "./shared/features/workspace/capabilities/shared/capability-tab-routes": "./src/shared/features/workspace/capabilities/shared/capability-tab-routes.ts",
+    "./shared/features/workspace/customize/migrate-to-v2/manifest-version": "./src/shared/features/workspace/customize/migrate-to-v2/manifest-version.ts",
+    "./shared/features/workspace/customize/sections/view/account-secret-access": "./src/shared/features/workspace/customize/sections/view/account-secret-access.ts",
+    "./shared/features/workspace/project-layout/home/home-greeting": "./src/shared/features/workspace/project-layout/home/home-greeting.ts",
+    "./shared/features/workspace/project-layout/home/welcome-body": "./src/shared/features/workspace/project-layout/home/welcome-body.tsx",
+    "./shared/features/workspace/project-layout/project-page-header": "./src/shared/features/workspace/project-layout/project-page-header.tsx",
+    "./shared/features/workspace/project-layout/sidebar-opener": "./src/shared/features/workspace/project-layout/sidebar-opener.ts",
+    "./shared/features/workspace/project-layout/sidebar-toggle": "./src/shared/features/workspace/project-layout/sidebar-toggle.tsx",
+    "./shared/features/workspace/project-reminders/reminder-format": "./src/shared/features/workspace/project-reminders/reminder-format.ts",
+    "./shared/features/workspace/project-reminders/use-refetch-after-fire": "./src/shared/features/workspace/project-reminders/use-refetch-after-fire.ts",
+    "./shared/features/workspace/project-sidebar/footer/files-nav-label": "./src/shared/features/workspace/project-sidebar/footer/files-nav-label.ts",
     "./shared/features/workspace/project-sidebar/modal/rename-session-cache": "./src/shared/features/workspace/project-sidebar/modal/rename-session-cache.ts",
+    "./shared/features/workspace/project-sidebar/modal/session-delete-modal": "./src/shared/features/workspace/project-sidebar/modal/session-delete-modal.tsx",
     "./shared/features/workspace/project-sidebar/modal/use-rename-session": "./src/shared/features/workspace/project-sidebar/modal/use-rename-session.ts",
+    "./shared/features/workspace/project-sidebar/project-nav-row": "./src/shared/features/workspace/project-sidebar/project-nav-row.tsx",
     "./shared/features/workspace/project-sidebar/project-session-list-helpers": "./src/shared/features/workspace/project-sidebar/project-session-list-helpers.ts",
+    "./shared/features/workspace/project-sidebar/project-settings-nav": "./src/shared/features/workspace/project-sidebar/project-settings-nav.tsx",
+    "./shared/features/workspace/project-sidebar/use-session-list-actions": "./src/shared/features/workspace/project-sidebar/use-session-list-actions.tsx",
+    "./shared/hooks/billing/account-state-gating": "./src/shared/hooks/billing/account-state-gating.ts",
+    "./shared/hooks/billing/index": "./src/shared/hooks/billing/index.ts",
+    "./shared/hooks/billing/use-account-state": "./src/shared/hooks/billing/use-account-state.ts",
+    "./shared/hooks/billing/use-cost-explorer": "./src/shared/hooks/billing/use-cost-explorer.ts",
+    "./shared/hooks/billing/use-download-restriction": "./src/shared/hooks/billing/use-download-restriction.ts",
+    "./shared/hooks/billing/use-session-costs": "./src/shared/hooks/billing/use-session-costs.ts",
+    "./shared/hooks/billing/use-transactions": "./src/shared/hooks/billing/use-transactions.ts",
     "./shared/hooks/channels/use-channel-bindings": "./src/shared/hooks/channels/use-channel-bindings.ts",
+    "./shared/hooks/drives/use-drives": "./src/shared/hooks/drives/use-drives.ts",
     "./shared/hooks/projects/session-reload-progress": "./src/shared/hooks/projects/session-reload-progress.ts",
+    "./shared/hooks/projects/use-agent-config": "./src/shared/hooks/projects/use-agent-config.ts",
     "./shared/hooks/projects/use-restart-project-session": "./src/shared/hooks/projects/use-restart-project-session.ts",
+    "./shared/hooks/projects/use-session-config-freshness": "./src/shared/hooks/projects/use-session-config-freshness.ts",
+    "./shared/hooks/use-auto-scroll": "./src/shared/hooks/use-auto-scroll.ts",
+    "./shared/hooks/use-auto-scroll-physics": "./src/shared/hooks/use-auto-scroll-physics.ts",
     "./shared/hooks/use-copy": "./src/shared/hooks/use-copy.ts",
+    "./shared/hooks/use-heic-url": "./src/shared/hooks/use-heic-url.ts",
     "./shared/hooks/use-public-share-link": "./src/shared/hooks/use-public-share-link.ts",
     "./shared/hooks/use-sandbox-proxy": "./src/shared/hooks/use-sandbox-proxy.ts",
     "./shared/hooks/use-session-public-shares": "./src/shared/hooks/use-session-public-shares.ts",
+    "./shared/hooks/use-stable-callback": "./src/shared/hooks/use-stable-callback.ts",
     "./shared/hooks/utils/index": "./src/shared/hooks/utils/index.ts",
     "./shared/hooks/utils/use-github-stars": "./src/shared/hooks/utils/use-github-stars.ts",
     "./shared/hooks/utils/use-media-query": "./src/shared/hooks/utils/use-media-query.ts",
+    "./shared/hooks/utils/use-opened-once": "./src/shared/hooks/utils/use-opened-once.ts",
     "./shared/hooks/utils/use-slash-focus": "./src/shared/hooks/utils/use-slash-focus.ts",
+    "./shared/lib/browser-error-noise": "./src/shared/lib/browser-error-noise.ts",
+    "./shared/lib/browser-noise/evidence": "./src/shared/lib/browser-noise/evidence.ts",
+    "./shared/lib/browser-noise/rules/chunk-load": "./src/shared/lib/browser-noise/rules/chunk-load.ts",
+    "./shared/lib/browser-noise/rules/expected-states": "./src/shared/lib/browser-noise/rules/expected-states.ts",
+    "./shared/lib/browser-noise/rules/extensions": "./src/shared/lib/browser-noise/rules/extensions.ts",
+    "./shared/lib/browser-noise/rules/graphics": "./src/shared/lib/browser-noise/rules/graphics.ts",
+    "./shared/lib/browser-noise/rules/injected-scripts": "./src/shared/lib/browser-noise/rules/injected-scripts.ts",
+    "./shared/lib/browser-noise/rules/messages": "./src/shared/lib/browser-noise/rules/messages.ts",
+    "./shared/lib/browser-noise/rules/network": "./src/shared/lib/browser-noise/rules/network.ts",
+    "./shared/lib/browser-noise/rules/old-browsers": "./src/shared/lib/browser-noise/rules/old-browsers.ts",
+    "./shared/lib/browser-noise/rules/pdf": "./src/shared/lib/browser-noise/rules/pdf.ts",
+    "./shared/lib/browser-noise/rules/react": "./src/shared/lib/browser-noise/rules/react.ts",
+    "./shared/lib/browser-noise/rules/rejections": "./src/shared/lib/browser-noise/rules/rejections.ts",
+    "./shared/lib/browser-noise/rules/storage": "./src/shared/lib/browser-noise/rules/storage.ts",
+    "./shared/lib/browser-noise/rules/webview": "./src/shared/lib/browser-noise/rules/webview.ts",
+    "./shared/lib/chunk-reload": "./src/shared/lib/chunk-reload.ts",
     "./shared/lib/code-theme": "./src/shared/lib/code-theme.ts",
+    "./shared/lib/codemirror-pierre-theme": "./src/shared/lib/codemirror-pierre-theme.ts",
+    "./shared/lib/delivered-but-disconnected": "./src/shared/lib/delivered-but-disconnected.ts",
+    "./shared/lib/desktop-detect": "./src/shared/lib/desktop-detect.ts",
+    "./shared/lib/error-handler": "./src/shared/lib/error-handler.tsx",
     "./shared/lib/interface-theme-defaults": "./src/shared/lib/interface-theme-defaults.ts",
     "./shared/lib/kortix-cli": "./src/shared/lib/kortix-cli.ts",
+    "./shared/lib/llm-gateway": "./src/shared/lib/llm-gateway.ts",
+    "./shared/lib/llm-providers": "./src/shared/lib/llm-providers.ts",
+    "./shared/lib/mermaid-utils": "./src/shared/lib/mermaid-utils.ts",
     "./shared/lib/model-pricing": "./src/shared/lib/model-pricing.ts",
     "./shared/lib/navigation/session-href": "./src/shared/lib/navigation/session-href.ts",
     "./shared/lib/object-url-cache": "./src/shared/lib/object-url-cache.ts",
+    "./shared/lib/project-actions": "./src/shared/lib/project-actions.ts",
+    "./shared/lib/project-preamble": "./src/shared/lib/project-preamble.ts",
+    "./shared/lib/safe-url": "./src/shared/lib/safe-url.ts",
+    "./shared/lib/security/iframe-sandbox": "./src/shared/lib/security/iframe-sandbox.ts",
+    "./shared/lib/security/privileged-frame-origins": "./src/shared/lib/security/privileged-frame-origins.ts",
+    "./shared/lib/settings-tab-id": "./src/shared/lib/settings-tab-id.ts",
     "./shared/lib/site-metadata": "./src/shared/lib/site-metadata.ts",
+    "./shared/lib/sounds": "./src/shared/lib/sounds.ts",
     "./shared/lib/storage/managed-storage": "./src/shared/lib/storage/managed-storage.ts",
+    "./shared/lib/timeout-toast-policy": "./src/shared/lib/timeout-toast-policy.ts",
     "./shared/lib/use-deployment-cli-install-command": "./src/shared/lib/use-deployment-cli-install-command.ts",
+    "./shared/lib/use-permission": "./src/shared/lib/use-permission.ts",
+    "./shared/lib/use-project-can": "./src/shared/lib/use-project-can.ts",
     "./shared/lib/utils": "./src/shared/lib/utils.ts",
     "./shared/lib/utils/app-access-token": "./src/shared/lib/utils/app-access-token.ts",
     "./shared/lib/utils/clipboard": "./src/shared/lib/utils/clipboard.ts",
+    "./shared/lib/utils/download": "./src/shared/lib/utils/download.ts",
     "./shared/lib/utils/file-utils": "./src/shared/lib/utils/file-utils.ts",
+    "./shared/lib/utils/focus-without-scroll": "./src/shared/lib/utils/focus-without-scroll.ts",
+    "./shared/lib/utils/heic-convert": "./src/shared/lib/utils/heic-convert.ts",
     "./shared/lib/utils/kortix-system-tags": "./src/shared/lib/utils/kortix-system-tags.ts",
+    "./shared/lib/utils/kortix-tool-output": "./src/shared/lib/utils/kortix-tool-output.ts",
     "./shared/lib/utils/path-detection": "./src/shared/lib/utils/path-detection.ts",
+    "./shared/lib/utils/random-uuid": "./src/shared/lib/utils/random-uuid.ts",
+    "./shared/lib/utils/safe-scroll-to": "./src/shared/lib/utils/safe-scroll-to.ts",
     "./shared/lib/utils/sandbox-proxy": "./src/shared/lib/utils/sandbox-proxy.ts",
+    "./shared/lib/utils/session-context": "./src/shared/lib/utils/session-context.ts",
     "./shared/lib/utils/strip-html-tags": "./src/shared/lib/utils/strip-html-tags.ts",
     "./shared/lib/utils/structured-output": "./src/shared/lib/utils/structured-output.ts",
     "./shared/lib/wallpapers": "./src/shared/lib/wallpapers.ts",
+    "./shared/stores/account-panel-store": "./src/shared/stores/account-panel-store.ts",
+    "./shared/stores/account-settings-modal-store": "./src/shared/stores/account-settings-modal-store.ts",
+    "./shared/stores/billing-account-context": "./src/shared/stores/billing-account-context.tsx",
     "./shared/stores/browser-recents-store": "./src/shared/stores/browser-recents-store.ts",
     "./shared/stores/chat-send-store": "./src/shared/stores/chat-send-store.ts",
+    "./shared/stores/current-account-store": "./src/shared/stores/current-account-store.ts",
+    "./shared/stores/diagnostics-store": "./src/shared/stores/diagnostics-store.ts",
     "./shared/stores/file-preview-store": "./src/shared/stores/file-preview-store.ts",
     "./shared/stores/kortix-computer-store": "./src/shared/stores/kortix-computer-store.ts",
+    "./shared/stores/message-jump-store": "./src/shared/stores/message-jump-store.ts",
+    "./shared/stores/onboarding-mode-store": "./src/shared/stores/onboarding-mode-store.ts",
     "./shared/stores/persisted-store-registry": "./src/shared/stores/persisted-store-registry.ts",
+    "./shared/stores/presentation-viewer-store": "./src/shared/stores/presentation-viewer-store.tsx",
+    "./shared/stores/provider-modal-store": "./src/shared/stores/provider-modal-store.ts",
+    "./shared/stores/queued-draft-store": "./src/shared/stores/queued-draft-store.ts",
     "./shared/stores/session-browser-store": "./src/shared/stores/session-browser-store.ts",
+    "./shared/stores/session-composer-handoff-store": "./src/shared/stores/session-composer-handoff-store.ts",
+    "./shared/stores/session-composer-prefill-store": "./src/shared/stores/session-composer-prefill-store.ts",
+    "./shared/stores/session-history-view-store": "./src/shared/stores/session-history-view-store.ts",
     "./shared/stores/session-panel-memory-store": "./src/shared/stores/session-panel-memory-store.ts",
+    "./shared/stores/sound-store": "./src/shared/stores/sound-store.ts",
+    "./shared/stores/subscription-store": "./src/shared/stores/subscription-store.tsx",
     "./shared/stores/tab-store": "./src/shared/stores/tab-store.ts",
+    "./shared/stores/upgrade-dialog-store": "./src/shared/stores/upgrade-dialog-store.ts",
     "./shared/stores/user-preferences-store": "./src/shared/stores/user-preferences-store.ts",
     "./shared/ui/index": "./src/shared/ui/index.ts",
     "./shared/ui/types": "./src/shared/ui/types.ts",
@@ -961,6 +1364,10 @@
         "types": "./dist/i18n/ui-catalog/localize-ui-catalog.d.ts",
         "import": "./dist/i18n/ui-catalog/localize-ui-catalog.js"
       },
+      "./i18n/ui-catalog/product-catalog-translation-keys.generated": {
+        "types": "./dist/i18n/ui-catalog/product-catalog-translation-keys.generated.d.ts",
+        "import": "./dist/i18n/ui-catalog/product-catalog-translation-keys.generated.js"
+      },
       "./i18n/ui-catalog/remaining-ui-translation-keys.generated": {
         "types": "./dist/i18n/ui-catalog/remaining-ui-translation-keys.generated.d.ts",
         "import": "./dist/i18n/ui-catalog/remaining-ui-translation-keys.generated.js"
@@ -1121,6 +1528,10 @@
         "types": "./dist/markdown/code/genui-fence.d.ts",
         "import": "./dist/markdown/code/genui-fence.js"
       },
+      "./markdown/code/index": {
+        "types": "./dist/markdown/code/index.d.ts",
+        "import": "./dist/markdown/code/index.js"
+      },
       "./markdown/code/inline-chip": {
         "types": "./dist/markdown/code/inline-chip.d.ts",
         "import": "./dist/markdown/code/inline-chip.js"
@@ -1132,6 +1543,10 @@
       "./markdown/code/inside-link-context": {
         "types": "./dist/markdown/code/inside-link-context.d.ts",
         "import": "./dist/markdown/code/inside-link-context.js"
+      },
+      "./markdown/code/markdown-code": {
+        "types": "./dist/markdown/code/markdown-code.d.ts",
+        "import": "./dist/markdown/code/markdown-code.js"
       },
       "./markdown/code/shiki-highlighter": {
         "types": "./dist/markdown/code/shiki-highlighter.d.ts",
@@ -1145,6 +1560,10 @@
         "types": "./dist/markdown/file-links.d.ts",
         "import": "./dist/markdown/file-links.js"
       },
+      "./markdown/index": {
+        "types": "./dist/markdown/index.d.ts",
+        "import": "./dist/markdown/index.js"
+      },
       "./markdown/katex-block": {
         "types": "./dist/markdown/katex-block.d.ts",
         "import": "./dist/markdown/katex-block.js"
@@ -1152,6 +1571,10 @@
       "./markdown/katex-markdown": {
         "types": "./dist/markdown/katex-markdown.d.ts",
         "import": "./dist/markdown/katex-markdown.js"
+      },
+      "./markdown/markdown-frontmatter": {
+        "types": "./dist/markdown/markdown-frontmatter.d.ts",
+        "import": "./dist/markdown/markdown-frontmatter.js"
       },
       "./markdown/markdown-policy": {
         "types": "./dist/markdown/markdown-policy.d.ts",
@@ -1168,6 +1591,10 @@
       "./markdown/stream-words": {
         "types": "./dist/markdown/stream-words.d.ts",
         "import": "./dist/markdown/stream-words.js"
+      },
+      "./markdown/unified-markdown": {
+        "types": "./dist/markdown/unified-markdown.d.ts",
+        "import": "./dist/markdown/unified-markdown.js"
       },
       "./markdown/unified-markdown-utils": {
         "types": "./dist/markdown/unified-markdown-utils.d.ts",
@@ -1270,13 +1697,45 @@
         "types": "./dist/components/ui/separator.d.ts",
         "import": "./dist/components/ui/separator.js"
       },
+      "./session/action-panel/advanced/advanced-panel": {
+        "types": "./dist/session/action-panel/advanced/advanced-panel.d.ts",
+        "import": "./dist/session/action-panel/advanced/advanced-panel.js"
+      },
+      "./session/action-panel/browser-panel": {
+        "types": "./dist/session/action-panel/browser-panel.d.ts",
+        "import": "./dist/session/action-panel/browser-panel.js"
+      },
+      "./session/action-panel/easy/app-preview": {
+        "types": "./dist/session/action-panel/easy/app-preview.d.ts",
+        "import": "./dist/session/action-panel/easy/app-preview.js"
+      },
       "./session/action-panel/easy/apps-card": {
         "types": "./dist/session/action-panel/easy/apps-card.d.ts",
         "import": "./dist/session/action-panel/easy/apps-card.js"
       },
+      "./session/action-panel/easy/context-card": {
+        "types": "./dist/session/action-panel/easy/context-card.d.ts",
+        "import": "./dist/session/action-panel/easy/context-card.js"
+      },
+      "./session/action-panel/easy/detail-view": {
+        "types": "./dist/session/action-panel/easy/detail-view.d.ts",
+        "import": "./dist/session/action-panel/easy/detail-view.js"
+      },
+      "./session/action-panel/easy/easy-panel": {
+        "types": "./dist/session/action-panel/easy/easy-panel.d.ts",
+        "import": "./dist/session/action-panel/easy/easy-panel.js"
+      },
       "./session/action-panel/easy/easy-panel-logic": {
         "types": "./dist/session/action-panel/easy/easy-panel-logic.d.ts",
         "import": "./dist/session/action-panel/easy/easy-panel-logic.js"
+      },
+      "./session/action-panel/easy/file-preview": {
+        "types": "./dist/session/action-panel/easy/file-preview.d.ts",
+        "import": "./dist/session/action-panel/easy/file-preview.js"
+      },
+      "./session/action-panel/easy/file-viewer": {
+        "types": "./dist/session/action-panel/easy/file-viewer.d.ts",
+        "import": "./dist/session/action-panel/easy/file-viewer.js"
       },
       "./session/action-panel/easy/outputs-card": {
         "types": "./dist/session/action-panel/easy/outputs-card.d.ts",
@@ -1290,6 +1749,10 @@
         "types": "./dist/session/action-panel/easy/plan-card.d.ts",
         "import": "./dist/session/action-panel/easy/plan-card.js"
       },
+      "./session/action-panel/easy/step-detail-body": {
+        "types": "./dist/session/action-panel/easy/step-detail-body.d.ts",
+        "import": "./dist/session/action-panel/easy/step-detail-body.js"
+      },
       "./session/action-panel/easy/step-icon": {
         "types": "./dist/session/action-panel/easy/step-icon.d.ts",
         "import": "./dist/session/action-panel/easy/step-icon.js"
@@ -1297,6 +1760,18 @@
       "./session/action-panel/easy/viewer-actions": {
         "types": "./dist/session/action-panel/easy/viewer-actions.d.ts",
         "import": "./dist/session/action-panel/easy/viewer-actions.js"
+      },
+      "./session/action-panel/index": {
+        "types": "./dist/session/action-panel/index.d.ts",
+        "import": "./dist/session/action-panel/index.js"
+      },
+      "./session/action-panel/session-detail-panel": {
+        "types": "./dist/session/action-panel/session-detail-panel.d.ts",
+        "import": "./dist/session/action-panel/session-detail-panel.js"
+      },
+      "./session/action-panel/session-panel-provider": {
+        "types": "./dist/session/action-panel/session-panel-provider.d.ts",
+        "import": "./dist/session/action-panel/session-panel-provider.js"
       },
       "./session/action-panel/shared/action-navigator": {
         "types": "./dist/session/action-panel/shared/action-navigator.d.ts",
@@ -1306,6 +1781,14 @@
         "types": "./dist/session/action-panel/shared/action-navigator-logic.d.ts",
         "import": "./dist/session/action-panel/shared/action-navigator-logic.js"
       },
+      "./session/action-panel/shared/browser-landing": {
+        "types": "./dist/session/action-panel/shared/browser-landing.d.ts",
+        "import": "./dist/session/action-panel/shared/browser-landing.js"
+      },
+      "./session/action-panel/shared/collect-tool-parts": {
+        "types": "./dist/session/action-panel/shared/collect-tool-parts.d.ts",
+        "import": "./dist/session/action-panel/shared/collect-tool-parts.js"
+      },
       "./session/action-panel/shared/deliverable-readiness": {
         "types": "./dist/session/action-panel/shared/deliverable-readiness.d.ts",
         "import": "./dist/session/action-panel/shared/deliverable-readiness.js"
@@ -1313,6 +1796,10 @@
       "./session/action-panel/shared/derive-panels": {
         "types": "./dist/session/action-panel/shared/derive-panels.d.ts",
         "import": "./dist/session/action-panel/shared/derive-panels.js"
+      },
+      "./session/action-panel/shared/latest-run": {
+        "types": "./dist/session/action-panel/shared/latest-run.d.ts",
+        "import": "./dist/session/action-panel/shared/latest-run.js"
       },
       "./session/action-panel/shared/output-priority": {
         "types": "./dist/session/action-panel/shared/output-priority.d.ts",
@@ -1362,6 +1849,30 @@
         "types": "./dist/session/clipboard-files.d.ts",
         "import": "./dist/session/clipboard-files.js"
       },
+      "./session/composer-chat-input": {
+        "types": "./dist/session/composer-chat-input.d.ts",
+        "import": "./dist/session/composer-chat-input.js"
+      },
+      "./session/composer-draft-recovery": {
+        "types": "./dist/session/composer-draft-recovery.d.ts",
+        "import": "./dist/session/composer-draft-recovery.js"
+      },
+      "./session/composer-reset": {
+        "types": "./dist/session/composer-reset.d.ts",
+        "import": "./dist/session/composer-reset.js"
+      },
+      "./session/composer/ComposerAboveCard": {
+        "types": "./dist/session/composer/ComposerAboveCard.d.ts",
+        "import": "./dist/session/composer/ComposerAboveCard.js"
+      },
+      "./session/composer/ComposerCard": {
+        "types": "./dist/session/composer/ComposerCard.d.ts",
+        "import": "./dist/session/composer/ComposerCard.js"
+      },
+      "./session/composer/__harness__/entry": {
+        "types": "./dist/session/composer/__harness__/entry.d.ts",
+        "import": "./dist/session/composer/__harness__/entry.js"
+      },
       "./session/composer/agent-selector": {
         "types": "./dist/session/composer/agent-selector.d.ts",
         "import": "./dist/session/composer/agent-selector.js"
@@ -1370,9 +1881,21 @@
         "types": "./dist/session/composer/animated-placeholder.d.ts",
         "import": "./dist/session/composer/animated-placeholder.js"
       },
+      "./session/composer/attachment-submission": {
+        "types": "./dist/session/composer/attachment-submission.d.ts",
+        "import": "./dist/session/composer/attachment-submission.js"
+      },
+      "./session/composer/attachment-tiles": {
+        "types": "./dist/session/composer/attachment-tiles.d.ts",
+        "import": "./dist/session/composer/attachment-tiles.js"
+      },
       "./session/composer/command-attachments": {
         "types": "./dist/session/composer/command-attachments.d.ts",
         "import": "./dist/session/composer/command-attachments.js"
+      },
+      "./session/composer/composer": {
+        "types": "./dist/session/composer/composer.d.ts",
+        "import": "./dist/session/composer/composer.js"
       },
       "./session/composer/composer-agent-access": {
         "types": "./dist/session/composer/composer-agent-access.d.ts",
@@ -1382,9 +1905,17 @@
         "types": "./dist/session/composer/composer-drop-zone.d.ts",
         "import": "./dist/session/composer/composer-drop-zone.js"
       },
+      "./session/composer/composer-logic": {
+        "types": "./dist/session/composer/composer-logic.d.ts",
+        "import": "./dist/session/composer/composer-logic.js"
+      },
       "./session/composer/composer-text-metrics": {
         "types": "./dist/session/composer/composer-text-metrics.d.ts",
         "import": "./dist/session/composer/composer-text-metrics.js"
+      },
+      "./session/composer/composer-toolbar": {
+        "types": "./dist/session/composer/composer-toolbar.d.ts",
+        "import": "./dist/session/composer/composer-toolbar.js"
       },
       "./session/composer/composer-underbar": {
         "types": "./dist/session/composer/composer-underbar.d.ts",
@@ -1402,6 +1933,26 @@
         "types": "./dist/session/composer/delivery-chain.d.ts",
         "import": "./dist/session/composer/delivery-chain.js"
       },
+      "./session/composer/draft/composer-draft": {
+        "types": "./dist/session/composer/draft/composer-draft.d.ts",
+        "import": "./dist/session/composer/draft/composer-draft.js"
+      },
+      "./session/composer/draft/composer-draft-store": {
+        "types": "./dist/session/composer/draft/composer-draft-store.d.ts",
+        "import": "./dist/session/composer/draft/composer-draft-store.js"
+      },
+      "./session/composer/draft/draft-uploads": {
+        "types": "./dist/session/composer/draft/draft-uploads.d.ts",
+        "import": "./dist/session/composer/draft/draft-uploads.js"
+      },
+      "./session/composer/draft/use-composer-draft": {
+        "types": "./dist/session/composer/draft/use-composer-draft.d.ts",
+        "import": "./dist/session/composer/draft/use-composer-draft.js"
+      },
+      "./session/composer/editor/composer-editor": {
+        "types": "./dist/session/composer/editor/composer-editor.d.ts",
+        "import": "./dist/session/composer/editor/composer-editor.js"
+      },
       "./session/composer/editor/extensions": {
         "types": "./dist/session/composer/editor/extensions.d.ts",
         "import": "./dist/session/composer/editor/extensions.js"
@@ -1409,6 +1960,14 @@
       "./session/composer/editor/first-visual-line": {
         "types": "./dist/session/composer/editor/first-visual-line.d.ts",
         "import": "./dist/session/composer/editor/first-visual-line.js"
+      },
+      "./session/composer/editor/mention-node": {
+        "types": "./dist/session/composer/editor/mention-node.d.ts",
+        "import": "./dist/session/composer/editor/mention-node.js"
+      },
+      "./session/composer/editor/serialize": {
+        "types": "./dist/session/composer/editor/serialize.d.ts",
+        "import": "./dist/session/composer/editor/serialize.js"
       },
       "./session/composer/editor/suggestion": {
         "types": "./dist/session/composer/editor/suggestion.d.ts",
@@ -1426,9 +1985,25 @@
         "types": "./dist/session/composer/hooks/use-debounced-value.d.ts",
         "import": "./dist/session/composer/hooks/use-debounced-value.js"
       },
+      "./session/composer/hooks/use-file-search": {
+        "types": "./dist/session/composer/hooks/use-file-search.d.ts",
+        "import": "./dist/session/composer/hooks/use-file-search.js"
+      },
       "./session/composer/hooks/use-latest-ref": {
         "types": "./dist/session/composer/hooks/use-latest-ref.d.ts",
         "import": "./dist/session/composer/hooks/use-latest-ref.js"
+      },
+      "./session/composer/menus/mention-controller": {
+        "types": "./dist/session/composer/menus/mention-controller.d.ts",
+        "import": "./dist/session/composer/menus/mention-controller.js"
+      },
+      "./session/composer/menus/mention-menu": {
+        "types": "./dist/session/composer/menus/mention-menu.d.ts",
+        "import": "./dist/session/composer/menus/mention-menu.js"
+      },
+      "./session/composer/menus/menu-items": {
+        "types": "./dist/session/composer/menus/menu-items.d.ts",
+        "import": "./dist/session/composer/menus/menu-items.js"
       },
       "./session/composer/menus/menu-nav-state": {
         "types": "./dist/session/composer/menus/menu-nav-state.d.ts",
@@ -1454,6 +2029,10 @@
         "types": "./dist/session/composer/menus/slash-actions.d.ts",
         "import": "./dist/session/composer/menus/slash-actions.js"
       },
+      "./session/composer/menus/slash-controller": {
+        "types": "./dist/session/composer/menus/slash-controller.d.ts",
+        "import": "./dist/session/composer/menus/slash-controller.js"
+      },
       "./session/composer/menus/slash-files": {
         "types": "./dist/session/composer/menus/slash-files.d.ts",
         "import": "./dist/session/composer/menus/slash-files.js"
@@ -1465,6 +2044,14 @@
       "./session/composer/menus/slash-menu": {
         "types": "./dist/session/composer/menus/slash-menu.d.ts",
         "import": "./dist/session/composer/menus/slash-menu.js"
+      },
+      "./session/composer/queued-prompt-list": {
+        "types": "./dist/session/composer/queued-prompt-list.d.ts",
+        "import": "./dist/session/composer/queued-prompt-list.js"
+      },
+      "./session/composer/quote-list": {
+        "types": "./dist/session/composer/quote-list.d.ts",
+        "import": "./dist/session/composer/quote-list.js"
       },
       "./session/composer/send-blockers": {
         "types": "./dist/session/composer/send-blockers.d.ts",
@@ -1481,6 +2068,10 @@
       "./session/composer/token-progress": {
         "types": "./dist/session/composer/token-progress.d.ts",
         "import": "./dist/session/composer/token-progress.js"
+      },
+      "./session/composer/types": {
+        "types": "./dist/session/composer/types.d.ts",
+        "import": "./dist/session/composer/types.js"
       },
       "./session/detect-command": {
         "types": "./dist/session/detect-command.d.ts",
@@ -1514,6 +2105,14 @@
         "types": "./dist/session/header/export-transcript-modal.d.ts",
         "import": "./dist/session/header/export-transcript-modal.js"
       },
+      "./session/header/session-changes-indicator": {
+        "types": "./dist/session/header/session-changes-indicator.d.ts",
+        "import": "./dist/session/header/session-changes-indicator.js"
+      },
+      "./session/header/session-config-indicator": {
+        "types": "./dist/session/header/session-config-indicator.d.ts",
+        "import": "./dist/session/header/session-config-indicator.js"
+      },
       "./session/header/session-pending-approvals-indicator": {
         "types": "./dist/session/header/session-pending-approvals-indicator.d.ts",
         "import": "./dist/session/header/session-pending-approvals-indicator.js"
@@ -1522,6 +2121,14 @@
         "types": "./dist/session/header/session-reload-progress-view.d.ts",
         "import": "./dist/session/header/session-reload-progress-view.js"
       },
+      "./session/header/session-reminders-indicator": {
+        "types": "./dist/session/header/session-reminders-indicator.d.ts",
+        "import": "./dist/session/header/session-reminders-indicator.js"
+      },
+      "./session/header/session-site-header": {
+        "types": "./dist/session/header/session-site-header.d.ts",
+        "import": "./dist/session/header/session-site-header.js"
+      },
       "./session/header/session-title-input": {
         "types": "./dist/session/header/session-title-input.d.ts",
         "import": "./dist/session/header/session-title-input.js"
@@ -1529,6 +2136,10 @@
       "./session/header/subagent-hover-card": {
         "types": "./dist/session/header/subagent-hover-card.d.ts",
         "import": "./dist/session/header/subagent-hover-card.js"
+      },
+      "./session/held-commands": {
+        "types": "./dist/session/held-commands.d.ts",
+        "import": "./dist/session/held-commands.js"
       },
       "./session/image-output-path": {
         "types": "./dist/session/image-output-path.d.ts",
@@ -1546,6 +2157,10 @@
         "types": "./dist/session/inbox-row-claims.d.ts",
         "import": "./dist/session/inbox-row-claims.js"
       },
+      "./session/instant-session-shell": {
+        "types": "./dist/session/instant-session-shell.d.ts",
+        "import": "./dist/session/instant-session-shell.js"
+      },
       "./session/kortix-app-url": {
         "types": "./dist/session/kortix-app-url.d.ts",
         "import": "./dist/session/kortix-app-url.js"
@@ -1562,13 +2177,25 @@
         "types": "./dist/session/message-parsing.d.ts",
         "import": "./dist/session/message-parsing.js"
       },
+      "./session/mobile-tool-drawer": {
+        "types": "./dist/session/mobile-tool-drawer.d.ts",
+        "import": "./dist/session/mobile-tool-drawer.js"
+      },
       "./session/model-availability": {
         "types": "./dist/session/model-availability.d.ts",
         "import": "./dist/session/model-availability.js"
       },
+      "./session/model-connection-gate": {
+        "types": "./dist/session/model-connection-gate.d.ts",
+        "import": "./dist/session/model-connection-gate.js"
+      },
       "./session/model-grouping": {
         "types": "./dist/session/model-grouping.d.ts",
         "import": "./dist/session/model-grouping.js"
+      },
+      "./session/model-selector": {
+        "types": "./dist/session/model-selector.d.ts",
+        "import": "./dist/session/model-selector.js"
       },
       "./session/model-tags": {
         "types": "./dist/session/model-tags.d.ts",
@@ -1577,6 +2204,10 @@
       "./session/open-session-quick-view": {
         "types": "./dist/session/open-session-quick-view.d.ts",
         "import": "./dist/session/open-session-quick-view.js"
+      },
+      "./session/optimistic-turn": {
+        "types": "./dist/session/optimistic-turn.d.ts",
+        "import": "./dist/session/optimistic-turn.js"
       },
       "./session/outcomes/anchor-outcomes": {
         "types": "./dist/session/outcomes/anchor-outcomes.d.ts",
@@ -1614,13 +2245,29 @@
         "types": "./dist/session/overrides/provider-pool-draft-context.d.ts",
         "import": "./dist/session/overrides/provider-pool-draft-context.js"
       },
+      "./session/overrides/provider-secret-pool-editor": {
+        "types": "./dist/session/overrides/provider-secret-pool-editor.d.ts",
+        "import": "./dist/session/overrides/provider-secret-pool-editor.js"
+      },
+      "./session/overrides/session-overrides-composer": {
+        "types": "./dist/session/overrides/session-overrides-composer.d.ts",
+        "import": "./dist/session/overrides/session-overrides-composer.js"
+      },
       "./session/overrides/session-overrides-control": {
         "types": "./dist/session/overrides/session-overrides-control.d.ts",
         "import": "./dist/session/overrides/session-overrides-control.js"
       },
+      "./session/overrides/session-overrides-toolbar": {
+        "types": "./dist/session/overrides/session-overrides-toolbar.d.ts",
+        "import": "./dist/session/overrides/session-overrides-toolbar.js"
+      },
       "./session/participants/session-participants": {
         "types": "./dist/session/participants/session-participants.d.ts",
         "import": "./dist/session/participants/session-participants.js"
+      },
+      "./session/pasted-text": {
+        "types": "./dist/session/pasted-text.d.ts",
+        "import": "./dist/session/pasted-text.js"
       },
       "./session/persisted-turn-failure": {
         "types": "./dist/session/persisted-turn-failure.d.ts",
@@ -1682,9 +2329,17 @@
         "types": "./dist/session/question-prompt.d.ts",
         "import": "./dist/session/question-prompt.js"
       },
+      "./session/queue-projection": {
+        "types": "./dist/session/queue-projection.d.ts",
+        "import": "./dist/session/queue-projection.js"
+      },
       "./session/queued-message-restore": {
         "types": "./dist/session/queued-message-restore.d.ts",
         "import": "./dist/session/queued-message-restore.js"
+      },
+      "./session/queued-prompt-edit": {
+        "types": "./dist/session/queued-prompt-edit.d.ts",
+        "import": "./dist/session/queued-prompt-edit.js"
       },
       "./session/reasoning-effort-selector": {
         "types": "./dist/session/reasoning-effort-selector.d.ts",
@@ -1705,6 +2360,14 @@
       "./session/sandbox-loading-boundary": {
         "types": "./dist/session/sandbox-loading-boundary.d.ts",
         "import": "./dist/session/sandbox-loading-boundary.js"
+      },
+      "./session/sandbox-url-detector": {
+        "types": "./dist/session/sandbox-url-detector.d.ts",
+        "import": "./dist/session/sandbox-url-detector.js"
+      },
+      "./session/saved-session-skeleton": {
+        "types": "./dist/session/saved-session-skeleton.d.ts",
+        "import": "./dist/session/saved-session-skeleton.js"
       },
       "./session/saved-session-skeleton-rows": {
         "types": "./dist/session/saved-session-skeleton-rows.d.ts",
@@ -1730,6 +2393,18 @@
         "types": "./dist/session/scope/session-scope-toolbar.d.ts",
         "import": "./dist/session/scope/session-scope-toolbar.js"
       },
+      "./session/scope/use-session-scope": {
+        "types": "./dist/session/scope/use-session-scope.d.ts",
+        "import": "./dist/session/scope/use-session-scope.js"
+      },
+      "./session/sent-attachment-previews": {
+        "types": "./dist/session/sent-attachment-previews.d.ts",
+        "import": "./dist/session/sent-attachment-previews.js"
+      },
+      "./session/session-action-panel-column": {
+        "types": "./dist/session/session-action-panel-column.d.ts",
+        "import": "./dist/session/session-action-panel-column.js"
+      },
       "./session/session-approval-prompt": {
         "types": "./dist/session/session-approval-prompt.d.ts",
         "import": "./dist/session/session-approval-prompt.js"
@@ -1746,6 +2421,10 @@
         "types": "./dist/session/session-audit-shared.d.ts",
         "import": "./dist/session/session-audit-shared.js"
       },
+      "./session/session-body": {
+        "types": "./dist/session/session-body.d.ts",
+        "import": "./dist/session/session-body.js"
+      },
       "./session/session-busy-indicator": {
         "types": "./dist/session/session-busy-indicator.d.ts",
         "import": "./dist/session/session-busy-indicator.js"
@@ -1754,9 +2433,21 @@
         "types": "./dist/session/session-changes-shared.d.ts",
         "import": "./dist/session/session-changes-shared.js"
       },
+      "./session/session-chat": {
+        "types": "./dist/session/session-chat.d.ts",
+        "import": "./dist/session/session-chat.js"
+      },
       "./session/session-chat-busy": {
         "types": "./dist/session/session-chat-busy.d.ts",
         "import": "./dist/session/session-chat-busy.js"
+      },
+      "./session/session-chat-input": {
+        "types": "./dist/session/session-chat-input.d.ts",
+        "import": "./dist/session/session-chat-input.js"
+      },
+      "./session/session-chat/transcript": {
+        "types": "./dist/session/session-chat/transcript.d.ts",
+        "import": "./dist/session/session-chat/transcript.js"
       },
       "./session/session-composer-readiness": {
         "types": "./dist/session/session-composer-readiness.d.ts",
@@ -1782,6 +2473,14 @@
         "types": "./dist/session/session-diff-viewer.d.ts",
         "import": "./dist/session/session-diff-viewer.js"
       },
+      "./session/session-error-banner": {
+        "types": "./dist/session/session-error-banner.d.ts",
+        "import": "./dist/session/session-error-banner.js"
+      },
+      "./session/session-files-explorer": {
+        "types": "./dist/session/session-files-explorer.d.ts",
+        "import": "./dist/session/session-files-explorer.js"
+      },
       "./session/session-files-explorer-logic": {
         "types": "./dist/session/session-files-explorer-logic.d.ts",
         "import": "./dist/session/session-files-explorer-logic.js"
@@ -1801,6 +2500,10 @@
       "./session/session-history-scroll": {
         "types": "./dist/session/session-history-scroll.d.ts",
         "import": "./dist/session/session-history-scroll.js"
+      },
+      "./session/session-layout": {
+        "types": "./dist/session/session-layout.d.ts",
+        "import": "./dist/session/session-layout.js"
       },
       "./session/session-load-state": {
         "types": "./dist/session/session-load-state.d.ts",
@@ -1822,9 +2525,17 @@
         "types": "./dist/session/session-panel-header.d.ts",
         "import": "./dist/session/session-panel-header.js"
       },
+      "./session/session-permission-prompt": {
+        "types": "./dist/session/session-permission-prompt.d.ts",
+        "import": "./dist/session/session-permission-prompt.js"
+      },
       "./session/session-resume": {
         "types": "./dist/session/session-resume.d.ts",
         "import": "./dist/session/session-resume.js"
+      },
+      "./session/session-route-prefetch": {
+        "types": "./dist/session/session-route-prefetch.d.ts",
+        "import": "./dist/session/session-route-prefetch.js"
       },
       "./session/session-start-gate": {
         "types": "./dist/session/session-start-gate.d.ts",
@@ -1874,9 +2585,21 @@
         "types": "./dist/session/session-wallpaper-layer.d.ts",
         "import": "./dist/session/session-wallpaper-layer.js"
       },
+      "./session/session-welcome": {
+        "types": "./dist/session/session-welcome.d.ts",
+        "import": "./dist/session/session-welcome.js"
+      },
       "./session/stop-refusal": {
         "types": "./dist/session/stop-refusal.d.ts",
         "import": "./dist/session/stop-refusal.js"
+      },
+      "./session/sub-session-modal": {
+        "types": "./dist/session/sub-session-modal.d.ts",
+        "import": "./dist/session/sub-session-modal.js"
+      },
+      "./session/sub-session-modal-content": {
+        "types": "./dist/session/sub-session-modal-content.d.ts",
+        "import": "./dist/session/sub-session-modal-content.js"
       },
       "./session/terminal-card-gate": {
         "types": "./dist/session/terminal-card-gate.d.ts",
@@ -1886,21 +2609,45 @@
         "types": "./dist/session/tool/foreign-tool-calls.d.ts",
         "import": "./dist/session/tool/foreign-tool-calls.js"
       },
+      "./session/tool/generic-tool": {
+        "types": "./dist/session/tool/generic-tool.d.ts",
+        "import": "./dist/session/tool/generic-tool.js"
+      },
       "./session/tool/inline-permission-reply": {
         "types": "./dist/session/tool/inline-permission-reply.d.ts",
         "import": "./dist/session/tool/inline-permission-reply.js"
+      },
+      "./session/tool/shared/error-and-connector": {
+        "types": "./dist/session/tool/shared/error-and-connector.d.ts",
+        "import": "./dist/session/tool/shared/error-and-connector.js"
       },
       "./session/tool/shared/file-list": {
         "types": "./dist/session/tool/shared/file-list.d.ts",
         "import": "./dist/session/tool/shared/file-list.js"
       },
+      "./session/tool/shared/infrastructure": {
+        "types": "./dist/session/tool/shared/infrastructure.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure.js"
+      },
       "./session/tool/shared/infrastructure-contexts": {
         "types": "./dist/session/tool/shared/infrastructure-contexts.d.ts",
         "import": "./dist/session/tool/shared/infrastructure-contexts.js"
       },
+      "./session/tool/shared/infrastructure-files": {
+        "types": "./dist/session/tool/shared/infrastructure-files.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-files.js"
+      },
+      "./session/tool/shared/infrastructure-output": {
+        "types": "./dist/session/tool/shared/infrastructure-output.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-output.js"
+      },
       "./session/tool/shared/infrastructure-parts": {
         "types": "./dist/session/tool/shared/infrastructure-parts.d.ts",
         "import": "./dist/session/tool/shared/infrastructure-parts.js"
+      },
+      "./session/tool/shared/infrastructure-preview": {
+        "types": "./dist/session/tool/shared/infrastructure-preview.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-preview.js"
       },
       "./session/tool/shared/infrastructure-row-header": {
         "types": "./dist/session/tool/shared/infrastructure-row-header.d.ts",
@@ -1909,6 +2656,10 @@
       "./session/tool/shared/infrastructure-rows": {
         "types": "./dist/session/tool/shared/infrastructure-rows.d.ts",
         "import": "./dist/session/tool/shared/infrastructure-rows.js"
+      },
+      "./session/tool/shared/output-block": {
+        "types": "./dist/session/tool/shared/output-block.d.ts",
+        "import": "./dist/session/tool/shared/output-block.js"
       },
       "./session/tool/shared/patch-helpers": {
         "types": "./dist/session/tool/shared/patch-helpers.d.ts",
@@ -1922,9 +2673,21 @@
         "types": "./dist/session/tool/shared/result-card.d.ts",
         "import": "./dist/session/tool/shared/result-card.js"
       },
+      "./session/tool/shared/session-helpers": {
+        "types": "./dist/session/tool/shared/session-helpers.d.ts",
+        "import": "./dist/session/tool/shared/session-helpers.js"
+      },
+      "./session/tool/shared/show-helpers": {
+        "types": "./dist/session/tool/shared/show-helpers.d.ts",
+        "import": "./dist/session/tool/shared/show-helpers.js"
+      },
       "./session/tool/shared/structured-output": {
         "types": "./dist/session/tool/shared/structured-output.d.ts",
         "import": "./dist/session/tool/shared/structured-output.js"
+      },
+      "./session/tool/shared/sub-agent": {
+        "types": "./dist/session/tool/shared/sub-agent.d.ts",
+        "import": "./dist/session/tool/shared/sub-agent.js"
       },
       "./session/tool/shared/surface": {
         "types": "./dist/session/tool/shared/surface.d.ts",
@@ -1946,9 +2709,53 @@
         "types": "./dist/session/tool/shared/web-source-row.d.ts",
         "import": "./dist/session/tool/shared/web-source-row.js"
       },
+      "./session/tool/show-group-renderer": {
+        "types": "./dist/session/tool/show-group-renderer.d.ts",
+        "import": "./dist/session/tool/show-group-renderer.js"
+      },
+      "./session/tool/tool-error": {
+        "types": "./dist/session/tool/tool-error.d.ts",
+        "import": "./dist/session/tool/tool-error.js"
+      },
       "./session/tool/tool-meta": {
         "types": "./dist/session/tool/tool-meta.d.ts",
         "import": "./dist/session/tool/tool-meta.js"
+      },
+      "./session/tool/tool-part-renderer": {
+        "types": "./dist/session/tool/tool-part-renderer.d.ts",
+        "import": "./dist/session/tool/tool-part-renderer.js"
+      },
+      "./session/tool/tool-renderers": {
+        "types": "./dist/session/tool/tool-renderers.d.ts",
+        "import": "./dist/session/tool/tool-renderers.js"
+      },
+      "./session/tool/tools/agent-message-tool": {
+        "types": "./dist/session/tool/tools/agent-message-tool.d.ts",
+        "import": "./dist/session/tool/tools/agent-message-tool.js"
+      },
+      "./session/tool/tools/agent-spawn-tool": {
+        "types": "./dist/session/tool/tools/agent-spawn-tool.d.ts",
+        "import": "./dist/session/tool/tools/agent-spawn-tool.js"
+      },
+      "./session/tool/tools/agent-status-tool": {
+        "types": "./dist/session/tool/tools/agent-status-tool.d.ts",
+        "import": "./dist/session/tool/tools/agent-status-tool.js"
+      },
+      "./session/tool/tools/agent-stop-tool": {
+        "types": "./dist/session/tool/tools/agent-stop-tool.d.ts",
+        "import": "./dist/session/tool/tools/agent-stop-tool.js"
+      },
+      "./session/tool/tools/agent-task-update-tool": {
+        "types": "./dist/session/tool/tools/agent-task-update-tool.d.ts",
+        "import": "./dist/session/tool/tools/agent-task-update-tool.js"
+      },
+      "./session/tool/tools/apply-patch-tool": {
+        "types": "./dist/session/tool/tools/apply-patch-tool.d.ts",
+        "import": "./dist/session/tool/tools/apply-patch-tool.js"
+      },
+      "./session/tool/tools/bash-tool": {
+        "types": "./dist/session/tool/tools/bash-tool.d.ts",
+        "import": "./dist/session/tool/tools/bash-tool.js"
       },
       "./session/tool/tools/channel-send": {
         "types": "./dist/session/tool/tools/channel-send.d.ts",
@@ -1958,9 +2765,229 @@
         "types": "./dist/session/tool/tools/channel-send-card.d.ts",
         "import": "./dist/session/tool/tools/channel-send-card.js"
       },
+      "./session/tool/tools/codemode-tool": {
+        "types": "./dist/session/tool/tools/codemode-tool.d.ts",
+        "import": "./dist/session/tool/tools/codemode-tool.js"
+      },
+      "./session/tool/tools/connector-get-tool": {
+        "types": "./dist/session/tool/tools/connector-get-tool.d.ts",
+        "import": "./dist/session/tool/tools/connector-get-tool.js"
+      },
+      "./session/tool/tools/connector-list-tool": {
+        "types": "./dist/session/tool/tools/connector-list-tool.d.ts",
+        "import": "./dist/session/tool/tools/connector-list-tool.js"
+      },
+      "./session/tool/tools/connector-setup-tool": {
+        "types": "./dist/session/tool/tools/connector-setup-tool.d.ts",
+        "import": "./dist/session/tool/tools/connector-setup-tool.js"
+      },
+      "./session/tool/tools/connector-tools": {
+        "types": "./dist/session/tool/tools/connector-tools.d.ts",
+        "import": "./dist/session/tool/tools/connector-tools.js"
+      },
+      "./session/tool/tools/edit-tool": {
+        "types": "./dist/session/tool/tools/edit-tool.d.ts",
+        "import": "./dist/session/tool/tools/edit-tool.js"
+      },
+      "./session/tool/tools/get-mem-tool": {
+        "types": "./dist/session/tool/tools/get-mem-tool.d.ts",
+        "import": "./dist/session/tool/tools/get-mem-tool.js"
+      },
+      "./session/tool/tools/glob-tool": {
+        "types": "./dist/session/tool/tools/glob-tool.d.ts",
+        "import": "./dist/session/tool/tools/glob-tool.js"
+      },
+      "./session/tool/tools/grep-tool": {
+        "types": "./dist/session/tool/tools/grep-tool.d.ts",
+        "import": "./dist/session/tool/tools/grep-tool.js"
+      },
+      "./session/tool/tools/image-gen-tool": {
+        "types": "./dist/session/tool/tools/image-gen-tool.d.ts",
+        "import": "./dist/session/tool/tools/image-gen-tool.js"
+      },
+      "./session/tool/tools/image-search-tool": {
+        "types": "./dist/session/tool/tools/image-search-tool.d.ts",
+        "import": "./dist/session/tool/tools/image-search-tool.js"
+      },
+      "./session/tool/tools/list-tool": {
+        "types": "./dist/session/tool/tools/list-tool.d.ts",
+        "import": "./dist/session/tool/tools/list-tool.js"
+      },
+      "./session/tool/tools/memory-search-tool": {
+        "types": "./dist/session/tool/tools/memory-search-tool.d.ts",
+        "import": "./dist/session/tool/tools/memory-search-tool.js"
+      },
+      "./session/tool/tools/memory-tool": {
+        "types": "./dist/session/tool/tools/memory-tool.d.ts",
+        "import": "./dist/session/tool/tools/memory-tool.js"
+      },
+      "./session/tool/tools/presentation-gen-tool": {
+        "types": "./dist/session/tool/tools/presentation-gen-tool.d.ts",
+        "import": "./dist/session/tool/tools/presentation-gen-tool.js"
+      },
+      "./session/tool/tools/project-create-tool": {
+        "types": "./dist/session/tool/tools/project-create-tool.d.ts",
+        "import": "./dist/session/tool/tools/project-create-tool.js"
+      },
+      "./session/tool/tools/project-delete-tool": {
+        "types": "./dist/session/tool/tools/project-delete-tool.d.ts",
+        "import": "./dist/session/tool/tools/project-delete-tool.js"
+      },
+      "./session/tool/tools/project-get-tool": {
+        "types": "./dist/session/tool/tools/project-get-tool.d.ts",
+        "import": "./dist/session/tool/tools/project-get-tool.js"
+      },
+      "./session/tool/tools/project-list-tool": {
+        "types": "./dist/session/tool/tools/project-list-tool.d.ts",
+        "import": "./dist/session/tool/tools/project-list-tool.js"
+      },
+      "./session/tool/tools/project-select-tool": {
+        "types": "./dist/session/tool/tools/project-select-tool.d.ts",
+        "import": "./dist/session/tool/tools/project-select-tool.js"
+      },
+      "./session/tool/tools/pty-kill-tool": {
+        "types": "./dist/session/tool/tools/pty-kill-tool.d.ts",
+        "import": "./dist/session/tool/tools/pty-kill-tool.js"
+      },
+      "./session/tool/tools/pty-read-tool": {
+        "types": "./dist/session/tool/tools/pty-read-tool.d.ts",
+        "import": "./dist/session/tool/tools/pty-read-tool.js"
+      },
+      "./session/tool/tools/pty-spawn-tool": {
+        "types": "./dist/session/tool/tools/pty-spawn-tool.d.ts",
+        "import": "./dist/session/tool/tools/pty-spawn-tool.js"
+      },
+      "./session/tool/tools/pty-write-tool": {
+        "types": "./dist/session/tool/tools/pty-write-tool.d.ts",
+        "import": "./dist/session/tool/tools/pty-write-tool.js"
+      },
+      "./session/tool/tools/question-tool": {
+        "types": "./dist/session/tool/tools/question-tool.d.ts",
+        "import": "./dist/session/tool/tools/question-tool.js"
+      },
+      "./session/tool/tools/read-tool": {
+        "types": "./dist/session/tool/tools/read-tool.d.ts",
+        "import": "./dist/session/tool/tools/read-tool.js"
+      },
+      "./session/tool/tools/register": {
+        "types": "./dist/session/tool/tools/register.d.ts",
+        "import": "./dist/session/tool/tools/register.js"
+      },
+      "./session/tool/tools/removed-connector-tool": {
+        "types": "./dist/session/tool/tools/removed-connector-tool.d.ts",
+        "import": "./dist/session/tool/tools/removed-connector-tool.js"
+      },
+      "./session/tool/tools/scrape-webpage-tool": {
+        "types": "./dist/session/tool/tools/scrape-webpage-tool.d.ts",
+        "import": "./dist/session/tool/tools/scrape-webpage-tool.js"
+      },
+      "./session/tool/tools/session-get-tool": {
+        "types": "./dist/session/tool/tools/session-get-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-get-tool.js"
+      },
+      "./session/tool/tools/session-lineage-tool": {
+        "types": "./dist/session/tool/tools/session-lineage-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-lineage-tool.js"
+      },
+      "./session/tool/tools/session-list-background-tool": {
+        "types": "./dist/session/tool/tools/session-list-background-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-list-background-tool.js"
+      },
+      "./session/tool/tools/session-message-tool": {
+        "types": "./dist/session/tool/tools/session-message-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-message-tool.js"
+      },
+      "./session/tool/tools/session-read-tool": {
+        "types": "./dist/session/tool/tools/session-read-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-read-tool.js"
+      },
+      "./session/tool/tools/session-search-tool": {
+        "types": "./dist/session/tool/tools/session-search-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-search-tool.js"
+      },
+      "./session/tool/tools/session-spawn-tool": {
+        "types": "./dist/session/tool/tools/session-spawn-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-spawn-tool.js"
+      },
       "./session/tool/tools/session-spawn-urls": {
         "types": "./dist/session/tool/tools/session-spawn-urls.d.ts",
         "import": "./dist/session/tool/tools/session-spawn-urls.js"
+      },
+      "./session/tool/tools/session-stats-tool": {
+        "types": "./dist/session/tool/tools/session-stats-tool.d.ts",
+        "import": "./dist/session/tool/tools/session-stats-tool.js"
+      },
+      "./session/tool/tools/show-tool": {
+        "types": "./dist/session/tool/tools/show-tool.d.ts",
+        "import": "./dist/session/tool/tools/show-tool.js"
+      },
+      "./session/tool/tools/skill-tool": {
+        "types": "./dist/session/tool/tools/skill-tool.d.ts",
+        "import": "./dist/session/tool/tools/skill-tool.js"
+      },
+      "./session/tool/tools/task-delete-tool": {
+        "types": "./dist/session/tool/tools/task-delete-tool.d.ts",
+        "import": "./dist/session/tool/tools/task-delete-tool.js"
+      },
+      "./session/tool/tools/task-done-tool": {
+        "types": "./dist/session/tool/tools/task-done-tool.d.ts",
+        "import": "./dist/session/tool/tools/task-done-tool.js"
+      },
+      "./session/tool/tools/task-list-tool": {
+        "types": "./dist/session/tool/tools/task-list-tool.d.ts",
+        "import": "./dist/session/tool/tools/task-list-tool.js"
+      },
+      "./session/tool/tools/task-tool": {
+        "types": "./dist/session/tool/tools/task-tool.d.ts",
+        "import": "./dist/session/tool/tools/task-tool.js"
+      },
+      "./session/tool/tools/todo-write-tool": {
+        "types": "./dist/session/tool/tools/todo-write-tool.d.ts",
+        "import": "./dist/session/tool/tools/todo-write-tool.js"
+      },
+      "./session/tool/tools/triggers-tool": {
+        "types": "./dist/session/tool/tools/triggers-tool.d.ts",
+        "import": "./dist/session/tool/tools/triggers-tool.js"
+      },
+      "./session/tool/tools/video-gen-tool": {
+        "types": "./dist/session/tool/tools/video-gen-tool.d.ts",
+        "import": "./dist/session/tool/tools/video-gen-tool.js"
+      },
+      "./session/tool/tools/web-fetch-tool": {
+        "types": "./dist/session/tool/tools/web-fetch-tool.d.ts",
+        "import": "./dist/session/tool/tools/web-fetch-tool.js"
+      },
+      "./session/tool/tools/web-search-tool": {
+        "types": "./dist/session/tool/tools/web-search-tool.d.ts",
+        "import": "./dist/session/tool/tools/web-search-tool.js"
+      },
+      "./session/tool/tools/write-tool": {
+        "types": "./dist/session/tool/tools/write-tool.d.ts",
+        "import": "./dist/session/tool/tools/write-tool.js"
+      },
+      "./session/turn/activity-burst": {
+        "types": "./dist/session/turn/activity-burst.d.ts",
+        "import": "./dist/session/turn/activity-burst.js"
+      },
+      "./session/turn/activity-file-chips": {
+        "types": "./dist/session/turn/activity-file-chips.d.ts",
+        "import": "./dist/session/turn/activity-file-chips.js"
+      },
+      "./session/turn/activity-group-step": {
+        "types": "./dist/session/turn/activity-group-step.d.ts",
+        "import": "./dist/session/turn/activity-group-step.js"
+      },
+      "./session/turn/activity-step": {
+        "types": "./dist/session/turn/activity-step.d.ts",
+        "import": "./dist/session/turn/activity-step.js"
+      },
+      "./session/turn/answered-question-step": {
+        "types": "./dist/session/turn/answered-question-step.d.ts",
+        "import": "./dist/session/turn/answered-question-step.js"
+      },
+      "./session/turn/burst-step-body": {
+        "types": "./dist/session/turn/burst-step-body.d.ts",
+        "import": "./dist/session/turn/burst-step-body.js"
       },
       "./session/turn/burst-summary-trigger": {
         "types": "./dist/session/turn/burst-summary-trigger.d.ts",
@@ -1977,6 +3004,10 @@
       "./session/turn/channel-message": {
         "types": "./dist/session/turn/channel-message.d.ts",
         "import": "./dist/session/turn/channel-message.js"
+      },
+      "./session/turn/compaction-card": {
+        "types": "./dist/session/turn/compaction-card.d.ts",
+        "import": "./dist/session/turn/compaction-card.js"
       },
       "./session/turn/expandable-output": {
         "types": "./dist/session/turn/expandable-output.d.ts",
@@ -2034,6 +3065,10 @@
         "types": "./dist/session/turn/thought-chain-step.d.ts",
         "import": "./dist/session/turn/thought-chain-step.js"
       },
+      "./session/turn/throttled-markdown": {
+        "types": "./dist/session/turn/throttled-markdown.d.ts",
+        "import": "./dist/session/turn/throttled-markdown.js"
+      },
       "./session/turn/turn-viewport": {
         "types": "./dist/session/turn/turn-viewport.d.ts",
         "import": "./dist/session/turn/turn-viewport.js"
@@ -2042,9 +3077,25 @@
         "types": "./dist/session/turn/turn-work-accordion.d.ts",
         "import": "./dist/session/turn/turn-work-accordion.js"
       },
+      "./session/turn/user-message": {
+        "types": "./dist/session/turn/user-message.d.ts",
+        "import": "./dist/session/turn/user-message.js"
+      },
+      "./session/uploaded-file-refs": {
+        "types": "./dist/session/uploaded-file-refs.d.ts",
+        "import": "./dist/session/uploaded-file-refs.js"
+      },
       "./session/use-bounded-runtime-wait": {
         "types": "./dist/session/use-bounded-runtime-wait.d.ts",
         "import": "./dist/session/use-bounded-runtime-wait.js"
+      },
+      "./session/use-instant-session-send": {
+        "types": "./dist/session/use-instant-session-send.d.ts",
+        "import": "./dist/session/use-instant-session-send.js"
+      },
+      "./session/use-model-connection-gate": {
+        "types": "./dist/session/use-model-connection-gate.d.ts",
+        "import": "./dist/session/use-model-connection-gate.js"
       },
       "./session/use-oc-file-open": {
         "types": "./dist/session/use-oc-file-open.d.ts",
@@ -2070,25 +3121,113 @@
         "types": "./dist/components/ui/shader-safe.d.ts",
         "import": "./dist/components/ui/shader-safe.js"
       },
+      "./shared/components/ai-elements/checkpoint": {
+        "types": "./dist/shared/components/ai-elements/checkpoint.d.ts",
+        "import": "./dist/shared/components/ai-elements/checkpoint.js"
+      },
       "./shared/components/approvals/approval-request": {
         "types": "./dist/shared/components/approvals/approval-request.d.ts",
         "import": "./dist/shared/components/approvals/approval-request.js"
+      },
+      "./shared/components/common/clickable-path": {
+        "types": "./dist/shared/components/common/clickable-path.d.ts",
+        "import": "./dist/shared/components/common/clickable-path.js"
       },
       "./shared/components/common/hover-prefetch-link": {
         "types": "./dist/shared/components/common/hover-prefetch-link.d.ts",
         "import": "./dist/shared/components/common/hover-prefetch-link.js"
       },
+      "./shared/components/file-editors/code-editor": {
+        "types": "./dist/shared/components/file-editors/code-editor.d.ts",
+        "import": "./dist/shared/components/file-editors/code-editor.js"
+      },
+      "./shared/components/file-editors/codemirror-diagnostics": {
+        "types": "./dist/shared/components/file-editors/codemirror-diagnostics.d.ts",
+        "import": "./dist/shared/components/file-editors/codemirror-diagnostics.js"
+      },
+      "./shared/components/file-editors/external-content": {
+        "types": "./dist/shared/components/file-editors/external-content.d.ts",
+        "import": "./dist/shared/components/file-editors/external-content.js"
+      },
+      "./shared/components/file-editors/lazy-code-editor": {
+        "types": "./dist/shared/components/file-editors/lazy-code-editor.d.ts",
+        "import": "./dist/shared/components/file-editors/lazy-code-editor.js"
+      },
+      "./shared/components/file-editors/target-line": {
+        "types": "./dist/shared/components/file-editors/target-line.d.ts",
+        "import": "./dist/shared/components/file-editors/target-line.js"
+      },
       "./shared/components/iam/audit-credential-label": {
         "types": "./dist/shared/components/iam/audit-credential-label.d.ts",
         "import": "./dist/shared/components/iam/audit-credential-label.js"
+      },
+      "./shared/components/projects/public-share-link-button": {
+        "types": "./dist/shared/components/projects/public-share-link-button.d.ts",
+        "import": "./dist/shared/components/projects/public-share-link-button.js"
+      },
+      "./shared/components/projects/public-share-link-confirm": {
+        "types": "./dist/shared/components/projects/public-share-link-confirm.d.ts",
+        "import": "./dist/shared/components/projects/public-share-link-confirm.js"
       },
       "./shared/components/projects/session-label": {
         "types": "./dist/shared/components/projects/session-label.d.ts",
         "import": "./dist/shared/components/projects/session-label.js"
       },
+      "./shared/components/projects/session-shares-modal": {
+        "types": "./dist/shared/components/projects/session-shares-modal.d.ts",
+        "import": "./dist/shared/components/projects/session-shares-modal.js"
+      },
+      "./shared/components/setup-links/api-base": {
+        "types": "./dist/shared/components/setup-links/api-base.d.ts",
+        "import": "./dist/shared/components/setup-links/api-base.js"
+      },
+      "./shared/components/setup-links/connector-handshake": {
+        "types": "./dist/shared/components/setup-links/connector-handshake.d.ts",
+        "import": "./dist/shared/components/setup-links/connector-handshake.js"
+      },
+      "./shared/components/setup-links/connector-link-info": {
+        "types": "./dist/shared/components/setup-links/connector-link-info.d.ts",
+        "import": "./dist/shared/components/setup-links/connector-link-info.js"
+      },
+      "./shared/components/setup-links/secret-intake-form": {
+        "types": "./dist/shared/components/setup-links/secret-intake-form.d.ts",
+        "import": "./dist/shared/components/setup-links/secret-intake-form.js"
+      },
+      "./shared/components/setup-links/setup-link-button": {
+        "types": "./dist/shared/components/setup-links/setup-link-button.d.ts",
+        "import": "./dist/shared/components/setup-links/setup-link-button.js"
+      },
+      "./shared/components/setup-links/setup-link-close-finalize": {
+        "types": "./dist/shared/components/setup-links/setup-link-close-finalize.d.ts",
+        "import": "./dist/shared/components/setup-links/setup-link-close-finalize.js"
+      },
       "./shared/components/setup-links/util": {
         "types": "./dist/shared/components/setup-links/util.d.ts",
         "import": "./dist/shared/components/setup-links/util.js"
+      },
+      "./shared/features/accounts/hub/account-hub-entry": {
+        "types": "./dist/shared/features/accounts/hub/account-hub-entry.d.ts",
+        "import": "./dist/shared/features/accounts/hub/account-hub-entry.js"
+      },
+      "./shared/features/accounts/hub/account-hub-location": {
+        "types": "./dist/shared/features/accounts/hub/account-hub-location.d.ts",
+        "import": "./dist/shared/features/accounts/hub/account-hub-location.js"
+      },
+      "./shared/features/apps/app-in-browser": {
+        "types": "./dist/shared/features/apps/app-in-browser.d.ts",
+        "import": "./dist/shared/features/apps/app-in-browser.js"
+      },
+      "./shared/features/apps/app-preview": {
+        "types": "./dist/shared/features/apps/app-preview.d.ts",
+        "import": "./dist/shared/features/apps/app-preview.js"
+      },
+      "./shared/features/apps/app-preview-pool": {
+        "types": "./dist/shared/features/apps/app-preview-pool.d.ts",
+        "import": "./dist/shared/features/apps/app-preview-pool.js"
+      },
+      "./shared/features/apps/app-shared": {
+        "types": "./dist/shared/features/apps/app-shared.d.ts",
+        "import": "./dist/shared/features/apps/app-shared.js"
       },
       "./shared/features/changes/change-list": {
         "types": "./dist/shared/features/changes/change-list.d.ts",
@@ -2106,6 +3245,18 @@
         "types": "./dist/shared/features/drives/session-drive-files.d.ts",
         "import": "./dist/shared/features/drives/session-drive-files.js"
       },
+      "./shared/features/drives/session-drives-chip": {
+        "types": "./dist/shared/features/drives/session-drives-chip.d.ts",
+        "import": "./dist/shared/features/drives/session-drives-chip.js"
+      },
+      "./shared/features/file-browser/components/file-tree-item": {
+        "types": "./dist/shared/features/file-browser/components/file-tree-item.d.ts",
+        "import": "./dist/shared/features/file-browser/components/file-tree-item.js"
+      },
+      "./shared/features/file-browser/hooks/use-file-events": {
+        "types": "./dist/shared/features/file-browser/hooks/use-file-events.d.ts",
+        "import": "./dist/shared/features/file-browser/hooks/use-file-events.js"
+      },
       "./shared/features/file-browser/store/files-store": {
         "types": "./dist/shared/features/file-browser/store/files-store.d.ts",
         "import": "./dist/shared/features/file-browser/store/files-store.js"
@@ -2114,9 +3265,201 @@
         "types": "./dist/shared/features/file-browser/types.d.ts",
         "import": "./dist/shared/features/file-browser/types.js"
       },
+      "./shared/features/file-renderers/csv/csv-copy": {
+        "types": "./dist/shared/features/file-renderers/csv/csv-copy.d.ts",
+        "import": "./dist/shared/features/file-renderers/csv/csv-copy.js"
+      },
+      "./shared/features/file-renderers/csv/csv-renderer": {
+        "types": "./dist/shared/features/file-renderers/csv/csv-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/csv/csv-renderer.js"
+      },
+      "./shared/features/file-renderers/csv/csv-viewer": {
+        "types": "./dist/shared/features/file-renderers/csv/csv-viewer.d.ts",
+        "import": "./dist/shared/features/file-renderers/csv/csv-viewer.js"
+      },
+      "./shared/features/file-renderers/docx/docx-annotation-card": {
+        "types": "./dist/shared/features/file-renderers/docx/docx-annotation-card.d.ts",
+        "import": "./dist/shared/features/file-renderers/docx/docx-annotation-card.js"
+      },
+      "./shared/features/file-renderers/docx/docx-renderer": {
+        "types": "./dist/shared/features/file-renderers/docx/docx-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/docx/docx-renderer.js"
+      },
+      "./shared/features/file-renderers/docx/docx-viewer": {
+        "types": "./dist/shared/features/file-renderers/docx/docx-viewer.d.ts",
+        "import": "./dist/shared/features/file-renderers/docx/docx-viewer.js"
+      },
+      "./shared/features/file-renderers/image-renderer": {
+        "types": "./dist/shared/features/file-renderers/image-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/image-renderer.js"
+      },
+      "./shared/features/file-renderers/mermaid/mermaid-diagram": {
+        "types": "./dist/shared/features/file-renderers/mermaid/mermaid-diagram.d.ts",
+        "import": "./dist/shared/features/file-renderers/mermaid/mermaid-diagram.js"
+      },
+      "./shared/features/file-renderers/mermaid/mermaid-utils": {
+        "types": "./dist/shared/features/file-renderers/mermaid/mermaid-utils.d.ts",
+        "import": "./dist/shared/features/file-renderers/mermaid/mermaid-utils.js"
+      },
+      "./shared/features/file-renderers/pdf/pdf-renderer": {
+        "types": "./dist/shared/features/file-renderers/pdf/pdf-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/pdf/pdf-renderer.js"
+      },
+      "./shared/features/file-renderers/pdf/pdf-thumbnail-utils": {
+        "types": "./dist/shared/features/file-renderers/pdf/pdf-thumbnail-utils.d.ts",
+        "import": "./dist/shared/features/file-renderers/pdf/pdf-thumbnail-utils.js"
+      },
+      "./shared/features/file-renderers/pdf/pdf-viewer": {
+        "types": "./dist/shared/features/file-renderers/pdf/pdf-viewer.d.ts",
+        "import": "./dist/shared/features/file-renderers/pdf/pdf-viewer.js"
+      },
+      "./shared/features/file-renderers/pptx-i18n": {
+        "types": "./dist/shared/features/file-renderers/pptx-i18n.d.ts",
+        "import": "./dist/shared/features/file-renderers/pptx-i18n.js"
+      },
+      "./shared/features/file-renderers/pptx-renderer": {
+        "types": "./dist/shared/features/file-renderers/pptx-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/pptx-renderer.js"
+      },
+      "./shared/features/file-renderers/presentation/FullScreenPresentationViewer": {
+        "types": "./dist/shared/features/file-renderers/presentation/FullScreenPresentationViewer.d.ts",
+        "import": "./dist/shared/features/file-renderers/presentation/FullScreenPresentationViewer.js"
+      },
+      "./shared/features/file-renderers/presentation/presentation-utils": {
+        "types": "./dist/shared/features/file-renderers/presentation/presentation-utils.d.ts",
+        "import": "./dist/shared/features/file-renderers/presentation/presentation-utils.js"
+      },
+      "./shared/features/file-renderers/shared/document-viewer-sidebar": {
+        "types": "./dist/shared/features/file-renderers/shared/document-viewer-sidebar.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/document-viewer-sidebar.js"
+      },
+      "./shared/features/file-renderers/shared/file-thumbnail": {
+        "types": "./dist/shared/features/file-renderers/shared/file-thumbnail.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/file-thumbnail.js"
+      },
+      "./shared/features/file-renderers/shared/scroll-area-compat": {
+        "types": "./dist/shared/features/file-renderers/shared/scroll-area-compat.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/scroll-area-compat.js"
+      },
+      "./shared/features/file-renderers/shared/select-compat": {
+        "types": "./dist/shared/features/file-renderers/shared/select-compat.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/select-compat.js"
+      },
+      "./shared/features/file-renderers/shared/spinner": {
+        "types": "./dist/shared/features/file-renderers/shared/spinner.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/spinner.js"
+      },
+      "./shared/features/file-renderers/shared/use-viewer-search": {
+        "types": "./dist/shared/features/file-renderers/shared/use-viewer-search.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/use-viewer-search.js"
+      },
+      "./shared/features/file-renderers/shared/viewer-copy-menu": {
+        "types": "./dist/shared/features/file-renderers/shared/viewer-copy-menu.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/viewer-copy-menu.js"
+      },
       "./shared/features/file-renderers/shared/viewer-download-button": {
         "types": "./dist/shared/features/file-renderers/shared/viewer-download-button.d.ts",
         "import": "./dist/shared/features/file-renderers/shared/viewer-download-button.js"
+      },
+      "./shared/features/file-renderers/shared/viewer-file-name": {
+        "types": "./dist/shared/features/file-renderers/shared/viewer-file-name.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/viewer-file-name.js"
+      },
+      "./shared/features/file-renderers/shared/viewer-frame": {
+        "types": "./dist/shared/features/file-renderers/shared/viewer-frame.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/viewer-frame.js"
+      },
+      "./shared/features/file-renderers/show-content-renderer": {
+        "types": "./dist/shared/features/file-renderers/show-content-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/show-content-renderer.js"
+      },
+      "./shared/features/file-renderers/show-type-utils": {
+        "types": "./dist/shared/features/file-renderers/show-type-utils.d.ts",
+        "import": "./dist/shared/features/file-renderers/show-type-utils.js"
+      },
+      "./shared/features/file-renderers/sqlite-renderer": {
+        "types": "./dist/shared/features/file-renderers/sqlite-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/sqlite-renderer.js"
+      },
+      "./shared/features/file-renderers/video-renderer": {
+        "types": "./dist/shared/features/file-renderers/video-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/video-renderer.js"
+      },
+      "./shared/features/file-renderers/xlsx/xlsx-renderer": {
+        "types": "./dist/shared/features/file-renderers/xlsx/xlsx-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/xlsx/xlsx-renderer.js"
+      },
+      "./shared/features/file-renderers/xlsx/xlsx-viewer": {
+        "types": "./dist/shared/features/file-renderers/xlsx/xlsx-viewer.d.ts",
+        "import": "./dist/shared/features/file-renderers/xlsx/xlsx-viewer.js"
+      },
+      "./shared/features/file-renderers/zip/zip-entries": {
+        "types": "./dist/shared/features/file-renderers/zip/zip-entries.d.ts",
+        "import": "./dist/shared/features/file-renderers/zip/zip-entries.js"
+      },
+      "./shared/features/file-renderers/zip/zip-renderer": {
+        "types": "./dist/shared/features/file-renderers/zip/zip-renderer.d.ts",
+        "import": "./dist/shared/features/file-renderers/zip/zip-renderer.js"
+      },
+      "./shared/features/file-viewer/file-content-renderer": {
+        "types": "./dist/shared/features/file-viewer/file-content-renderer.d.ts",
+        "import": "./dist/shared/features/file-viewer/file-content-renderer.js"
+      },
+      "./shared/features/file-viewer/file-header": {
+        "types": "./dist/shared/features/file-viewer/file-header.d.ts",
+        "import": "./dist/shared/features/file-viewer/file-header.js"
+      },
+      "./shared/features/file-viewer/file-preview-modal": {
+        "types": "./dist/shared/features/file-viewer/file-preview-modal.d.ts",
+        "import": "./dist/shared/features/file-viewer/file-preview-modal.js"
+      },
+      "./shared/features/file-viewer/file-source": {
+        "types": "./dist/shared/features/file-viewer/file-source.d.ts",
+        "import": "./dist/shared/features/file-viewer/file-source.js"
+      },
+      "./shared/features/file-viewer/html-preview": {
+        "types": "./dist/shared/features/file-viewer/html-preview.d.ts",
+        "import": "./dist/shared/features/file-viewer/html-preview.js"
+      },
+      "./shared/features/file-viewer/index": {
+        "types": "./dist/shared/features/file-viewer/index.d.ts",
+        "import": "./dist/shared/features/file-viewer/index.js"
+      },
+      "./shared/features/file-viewer/json-tree-view": {
+        "types": "./dist/shared/features/file-viewer/json-tree-view.d.ts",
+        "import": "./dist/shared/features/file-viewer/json-tree-view.js"
+      },
+      "./shared/features/file-viewer/markdown-pdf": {
+        "types": "./dist/shared/features/file-viewer/markdown-pdf.d.ts",
+        "import": "./dist/shared/features/file-viewer/markdown-pdf.js"
+      },
+      "./shared/features/file-viewer/preview-fit": {
+        "types": "./dist/shared/features/file-viewer/preview-fit.d.ts",
+        "import": "./dist/shared/features/file-viewer/preview-fit.js"
+      },
+      "./shared/features/file-viewer/preview-policy": {
+        "types": "./dist/shared/features/file-viewer/preview-policy.d.ts",
+        "import": "./dist/shared/features/file-viewer/preview-policy.js"
+      },
+      "./shared/features/file-viewer/print-document": {
+        "types": "./dist/shared/features/file-viewer/print-document.d.ts",
+        "import": "./dist/shared/features/file-viewer/print-document.js"
+      },
+      "./shared/features/file-viewer/save-as-pdf-button": {
+        "types": "./dist/shared/features/file-viewer/save-as-pdf-button.d.ts",
+        "import": "./dist/shared/features/file-viewer/save-as-pdf-button.js"
+      },
+      "./shared/features/file-viewer/use-content-revision": {
+        "types": "./dist/shared/features/file-viewer/use-content-revision.d.ts",
+        "import": "./dist/shared/features/file-viewer/use-content-revision.js"
+      },
+      "./shared/features/file-viewer/use-file-content-state": {
+        "types": "./dist/shared/features/file-viewer/use-file-content-state.d.ts",
+        "import": "./dist/shared/features/file-viewer/use-file-content-state.js"
+      },
+      "./shared/features/files/api/git-history": {
+        "types": "./dist/shared/features/files/api/git-history.d.ts",
+        "import": "./dist/shared/features/files/api/git-history.js"
       },
       "./shared/features/files/api/runtime-file-read": {
         "types": "./dist/shared/features/files/api/runtime-file-read.d.ts",
@@ -2126,9 +3469,25 @@
         "types": "./dist/shared/features/files/api/runtime-files.d.ts",
         "import": "./dist/shared/features/files/api/runtime-files.js"
       },
+      "./shared/features/files/components/file-content-renderer": {
+        "types": "./dist/shared/features/files/components/file-content-renderer.d.ts",
+        "import": "./dist/shared/features/files/components/file-content-renderer.js"
+      },
+      "./shared/features/files/file-source": {
+        "types": "./dist/shared/features/files/file-source.d.ts",
+        "import": "./dist/shared/features/files/file-source.js"
+      },
+      "./shared/features/files/hooks/blob-identity": {
+        "types": "./dist/shared/features/files/hooks/blob-identity.d.ts",
+        "import": "./dist/shared/features/files/hooks/blob-identity.js"
+      },
       "./shared/features/files/hooks/file-read-retry": {
         "types": "./dist/shared/features/files/hooks/file-read-retry.d.ts",
         "import": "./dist/shared/features/files/hooks/file-read-retry.js"
+      },
+      "./shared/features/files/hooks/index": {
+        "types": "./dist/shared/features/files/hooks/index.d.ts",
+        "import": "./dist/shared/features/files/hooks/index.js"
       },
       "./shared/features/files/hooks/server-health-state": {
         "types": "./dist/shared/features/files/hooks/server-health-state.d.ts",
@@ -2138,9 +3497,37 @@
         "types": "./dist/shared/features/files/hooks/system-dir.d.ts",
         "import": "./dist/shared/features/files/hooks/system-dir.js"
       },
+      "./shared/features/files/hooks/use-binary-blob": {
+        "types": "./dist/shared/features/files/hooks/use-binary-blob.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-binary-blob.js"
+      },
+      "./shared/features/files/hooks/use-directory-download": {
+        "types": "./dist/shared/features/files/hooks/use-directory-download.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-directory-download.js"
+      },
       "./shared/features/files/hooks/use-file-content": {
         "types": "./dist/shared/features/files/hooks/use-file-content.d.ts",
         "import": "./dist/shared/features/files/hooks/use-file-content.js"
+      },
+      "./shared/features/files/hooks/use-file-history": {
+        "types": "./dist/shared/features/files/hooks/use-file-history.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-history.js"
+      },
+      "./shared/features/files/hooks/use-file-list": {
+        "types": "./dist/shared/features/files/hooks/use-file-list.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-list.js"
+      },
+      "./shared/features/files/hooks/use-file-mutations": {
+        "types": "./dist/shared/features/files/hooks/use-file-mutations.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-mutations.js"
+      },
+      "./shared/features/files/hooks/use-file-refresh": {
+        "types": "./dist/shared/features/files/hooks/use-file-refresh.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-refresh.js"
+      },
+      "./shared/features/files/hooks/use-file-search": {
+        "types": "./dist/shared/features/files/hooks/use-file-search.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-search.js"
       },
       "./shared/features/files/hooks/use-git-status": {
         "types": "./dist/shared/features/files/hooks/use-git-status.d.ts",
@@ -2150,9 +3537,89 @@
         "types": "./dist/shared/features/files/hooks/use-server-health.d.ts",
         "import": "./dist/shared/features/files/hooks/use-server-health.js"
       },
+      "./shared/features/files/hooks/use-workspace-search": {
+        "types": "./dist/shared/features/files/hooks/use-workspace-search.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-workspace-search.js"
+      },
+      "./shared/features/files/index": {
+        "types": "./dist/shared/features/files/index.d.ts",
+        "import": "./dist/shared/features/files/index.js"
+      },
+      "./shared/features/files/path-utils": {
+        "types": "./dist/shared/features/files/path-utils.d.ts",
+        "import": "./dist/shared/features/files/path-utils.js"
+      },
+      "./shared/features/files/sandbox-explorer-source": {
+        "types": "./dist/shared/features/files/sandbox-explorer-source.d.ts",
+        "import": "./dist/shared/features/files/sandbox-explorer-source.js"
+      },
+      "./shared/features/files/sandbox-file-explorer": {
+        "types": "./dist/shared/features/files/sandbox-file-explorer.d.ts",
+        "import": "./dist/shared/features/files/sandbox-file-explorer.js"
+      },
+      "./shared/features/files/search/workspace-search-service": {
+        "types": "./dist/shared/features/files/search/workspace-search-service.d.ts",
+        "import": "./dist/shared/features/files/search/workspace-search-service.js"
+      },
+      "./shared/features/genui/block-telemetry": {
+        "types": "./dist/shared/features/genui/block-telemetry.d.ts",
+        "import": "./dist/shared/features/genui/block-telemetry.js"
+      },
+      "./shared/features/genui/components/charts": {
+        "types": "./dist/shared/features/genui/components/charts.d.ts",
+        "import": "./dist/shared/features/genui/components/charts.js"
+      },
+      "./shared/features/genui/components/data": {
+        "types": "./dist/shared/features/genui/components/data.d.ts",
+        "import": "./dist/shared/features/genui/components/data.js"
+      },
+      "./shared/features/genui/components/index": {
+        "types": "./dist/shared/features/genui/components/index.d.ts",
+        "import": "./dist/shared/features/genui/components/index.js"
+      },
+      "./shared/features/genui/components/inline": {
+        "types": "./dist/shared/features/genui/components/inline.d.ts",
+        "import": "./dist/shared/features/genui/components/inline.js"
+      },
+      "./shared/features/genui/components/layout": {
+        "types": "./dist/shared/features/genui/components/layout.d.ts",
+        "import": "./dist/shared/features/genui/components/layout.js"
+      },
+      "./shared/features/genui/components/map": {
+        "types": "./dist/shared/features/genui/components/map.d.ts",
+        "import": "./dist/shared/features/genui/components/map.js"
+      },
+      "./shared/features/genui/components/map-canvas": {
+        "types": "./dist/shared/features/genui/components/map-canvas.d.ts",
+        "import": "./dist/shared/features/genui/components/map-canvas.js"
+      },
+      "./shared/features/genui/components/map-geo": {
+        "types": "./dist/shared/features/genui/components/map-geo.d.ts",
+        "import": "./dist/shared/features/genui/components/map-geo.js"
+      },
+      "./shared/features/genui/components/pending": {
+        "types": "./dist/shared/features/genui/components/pending.d.ts",
+        "import": "./dist/shared/features/genui/components/pending.js"
+      },
+      "./shared/features/genui/genui-message-block": {
+        "types": "./dist/shared/features/genui/genui-message-block.d.ts",
+        "import": "./dist/shared/features/genui/genui-message-block.js"
+      },
+      "./shared/features/genui/sdk": {
+        "types": "./dist/shared/features/genui/sdk.d.ts",
+        "import": "./dist/shared/features/genui/sdk.js"
+      },
       "./shared/features/genui/to-markdown": {
         "types": "./dist/shared/features/genui/to-markdown.d.ts",
         "import": "./dist/shared/features/genui/to-markdown.js"
+      },
+      "./shared/features/genui/use-genui-enabled": {
+        "types": "./dist/shared/features/genui/use-genui-enabled.d.ts",
+        "import": "./dist/shared/features/genui/use-genui-enabled.js"
+      },
+      "./shared/features/icon/icons/customize": {
+        "types": "./dist/shared/features/icon/icons/customize.d.ts",
+        "import": "./dist/shared/features/icon/icons/customize.js"
       },
       "./shared/features/icon/icons/download": {
         "types": "./dist/shared/features/icon/icons/download.d.ts",
@@ -2182,6 +3649,10 @@
         "types": "./dist/shared/features/layout/section/error-state.d.ts",
         "import": "./dist/shared/features/layout/section/error-state.js"
       },
+      "./shared/features/notifications/use-notification-center": {
+        "types": "./dist/shared/features/notifications/use-notification-center.d.ts",
+        "import": "./dist/shared/features/notifications/use-notification-center.js"
+      },
       "./shared/features/project-files/api/branches": {
         "types": "./dist/shared/features/project-files/api/branches.d.ts",
         "import": "./dist/shared/features/project-files/api/branches.js"
@@ -2194,17 +3665,161 @@
         "types": "./dist/shared/features/project-files/api/commits.d.ts",
         "import": "./dist/shared/features/project-files/api/commits.js"
       },
+      "./shared/features/project-files/api/git-history": {
+        "types": "./dist/shared/features/project-files/api/git-history.d.ts",
+        "import": "./dist/shared/features/project-files/api/git-history.js"
+      },
+      "./shared/features/project-files/api/runtime-files": {
+        "types": "./dist/shared/features/project-files/api/runtime-files.d.ts",
+        "import": "./dist/shared/features/project-files/api/runtime-files.js"
+      },
+      "./shared/features/project-files/change-request-recovery": {
+        "types": "./dist/shared/features/project-files/change-request-recovery.d.ts",
+        "import": "./dist/shared/features/project-files/change-request-recovery.js"
+      },
+      "./shared/features/project-files/components/change-request-detail-dialog": {
+        "types": "./dist/shared/features/project-files/components/change-request-detail-dialog.d.ts",
+        "import": "./dist/shared/features/project-files/components/change-request-detail-dialog.js"
+      },
+      "./shared/features/project-files/components/change-requests-panel": {
+        "types": "./dist/shared/features/project-files/components/change-requests-panel.d.ts",
+        "import": "./dist/shared/features/project-files/components/change-requests-panel.js"
+      },
+      "./shared/features/project-files/components/checkpoint-detail-dialog": {
+        "types": "./dist/shared/features/project-files/components/checkpoint-detail-dialog.d.ts",
+        "import": "./dist/shared/features/project-files/components/checkpoint-detail-dialog.js"
+      },
+      "./shared/features/project-files/components/checkpoints-panel": {
+        "types": "./dist/shared/features/project-files/components/checkpoints-panel.d.ts",
+        "import": "./dist/shared/features/project-files/components/checkpoints-panel.js"
+      },
+      "./shared/features/project-files/components/diff-preview-banner": {
+        "types": "./dist/shared/features/project-files/components/diff-preview-banner.d.ts",
+        "import": "./dist/shared/features/project-files/components/diff-preview-banner.js"
+      },
+      "./shared/features/project-files/components/diff-renderer": {
+        "types": "./dist/shared/features/project-files/components/diff-renderer.d.ts",
+        "import": "./dist/shared/features/project-files/components/diff-renderer.js"
+      },
+      "./shared/features/project-files/components/drive-explorer": {
+        "types": "./dist/shared/features/project-files/components/drive-explorer.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-explorer.js"
+      },
+      "./shared/features/project-files/components/drive-folder-thumbnail": {
+        "types": "./dist/shared/features/project-files/components/drive-folder-thumbnail.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-folder-thumbnail.js"
+      },
+      "./shared/features/project-files/components/drive-grid-view": {
+        "types": "./dist/shared/features/project-files/components/drive-grid-view.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-grid-view.js"
+      },
+      "./shared/features/project-files/components/drive-header": {
+        "types": "./dist/shared/features/project-files/components/drive-header.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-header.js"
+      },
+      "./shared/features/project-files/components/drive-list-view": {
+        "types": "./dist/shared/features/project-files/components/drive-list-view.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-list-view.js"
+      },
+      "./shared/features/project-files/components/drive-toolbar": {
+        "types": "./dist/shared/features/project-files/components/drive-toolbar.d.ts",
+        "import": "./dist/shared/features/project-files/components/drive-toolbar.js"
+      },
+      "./shared/features/project-files/components/file-breadcrumbs": {
+        "types": "./dist/shared/features/project-files/components/file-breadcrumbs.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-breadcrumbs.js"
+      },
+      "./shared/features/project-files/components/file-content-renderer": {
+        "types": "./dist/shared/features/project-files/components/file-content-renderer.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-content-renderer.js"
+      },
+      "./shared/features/project-files/components/file-explorer-page": {
+        "types": "./dist/shared/features/project-files/components/file-explorer-page.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-explorer-page.js"
+      },
+      "./shared/features/project-files/components/file-history-popover": {
+        "types": "./dist/shared/features/project-files/components/file-history-popover.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-history-popover.js"
+      },
       "./shared/features/project-files/components/file-icon": {
         "types": "./dist/shared/features/project-files/components/file-icon.d.ts",
         "import": "./dist/shared/features/project-files/components/file-icon.js"
+      },
+      "./shared/features/project-files/components/file-preview-modal": {
+        "types": "./dist/shared/features/project-files/components/file-preview-modal.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-preview-modal.js"
+      },
+      "./shared/features/project-files/components/file-route-state": {
+        "types": "./dist/shared/features/project-files/components/file-route-state.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-route-state.js"
+      },
+      "./shared/features/project-files/components/file-search": {
+        "types": "./dist/shared/features/project-files/components/file-search.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-search.js"
+      },
+      "./shared/features/project-files/components/file-thumbnail": {
+        "types": "./dist/shared/features/project-files/components/file-thumbnail.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-thumbnail.js"
+      },
+      "./shared/features/project-files/components/index": {
+        "types": "./dist/shared/features/project-files/components/index.d.ts",
+        "import": "./dist/shared/features/project-files/components/index.js"
+      },
+      "./shared/features/project-files/components/load-more-row": {
+        "types": "./dist/shared/features/project-files/components/load-more-row.d.ts",
+        "import": "./dist/shared/features/project-files/components/load-more-row.js"
+      },
+      "./shared/features/project-files/components/open-change-request-dialog": {
+        "types": "./dist/shared/features/project-files/components/open-change-request-dialog.d.ts",
+        "import": "./dist/shared/features/project-files/components/open-change-request-dialog.js"
+      },
+      "./shared/features/project-files/components/own-clicks": {
+        "types": "./dist/shared/features/project-files/components/own-clicks.d.ts",
+        "import": "./dist/shared/features/project-files/components/own-clicks.js"
+      },
+      "./shared/features/project-files/components/review-panel": {
+        "types": "./dist/shared/features/project-files/components/review-panel.d.ts",
+        "import": "./dist/shared/features/project-files/components/review-panel.js"
+      },
+      "./shared/features/project-files/components/use-drive-row-interactions": {
+        "types": "./dist/shared/features/project-files/components/use-drive-row-interactions.d.ts",
+        "import": "./dist/shared/features/project-files/components/use-drive-row-interactions.js"
+      },
+      "./shared/features/project-files/components/version-selector": {
+        "types": "./dist/shared/features/project-files/components/version-selector.d.ts",
+        "import": "./dist/shared/features/project-files/components/version-selector.js"
       },
       "./shared/features/project-files/context": {
         "types": "./dist/shared/features/project-files/context.d.ts",
         "import": "./dist/shared/features/project-files/context.js"
       },
+      "./shared/features/project-files/explorer-source": {
+        "types": "./dist/shared/features/project-files/explorer-source.d.ts",
+        "import": "./dist/shared/features/project-files/explorer-source.js"
+      },
+      "./shared/features/project-files/file-source": {
+        "types": "./dist/shared/features/project-files/file-source.d.ts",
+        "import": "./dist/shared/features/project-files/file-source.js"
+      },
+      "./shared/features/project-files/git-ref-explorer-source": {
+        "types": "./dist/shared/features/project-files/git-ref-explorer-source.d.ts",
+        "import": "./dist/shared/features/project-files/git-ref-explorer-source.js"
+      },
+      "./shared/features/project-files/hooks/index": {
+        "types": "./dist/shared/features/project-files/hooks/index.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/index.js"
+      },
+      "./shared/features/project-files/hooks/use-binary-blob": {
+        "types": "./dist/shared/features/project-files/hooks/use-binary-blob.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-binary-blob.js"
+      },
       "./shared/features/project-files/hooks/use-branches": {
         "types": "./dist/shared/features/project-files/hooks/use-branches.d.ts",
         "import": "./dist/shared/features/project-files/hooks/use-branches.js"
+      },
+      "./shared/features/project-files/hooks/use-change-request-recovery": {
+        "types": "./dist/shared/features/project-files/hooks/use-change-request-recovery.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-change-request-recovery.js"
       },
       "./shared/features/project-files/hooks/use-change-requests": {
         "types": "./dist/shared/features/project-files/hooks/use-change-requests.d.ts",
@@ -2214,33 +3829,201 @@
         "types": "./dist/shared/features/project-files/hooks/use-commits.d.ts",
         "import": "./dist/shared/features/project-files/hooks/use-commits.js"
       },
+      "./shared/features/project-files/hooks/use-directory-download": {
+        "types": "./dist/shared/features/project-files/hooks/use-directory-download.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-directory-download.js"
+      },
+      "./shared/features/project-files/hooks/use-file-content": {
+        "types": "./dist/shared/features/project-files/hooks/use-file-content.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-file-content.js"
+      },
+      "./shared/features/project-files/hooks/use-file-history": {
+        "types": "./dist/shared/features/project-files/hooks/use-file-history.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-file-history.js"
+      },
+      "./shared/features/project-files/hooks/use-file-list": {
+        "types": "./dist/shared/features/project-files/hooks/use-file-list.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-file-list.js"
+      },
+      "./shared/features/project-files/hooks/use-file-mutations": {
+        "types": "./dist/shared/features/project-files/hooks/use-file-mutations.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-file-mutations.js"
+      },
+      "./shared/features/project-files/hooks/use-file-search": {
+        "types": "./dist/shared/features/project-files/hooks/use-file-search.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-file-search.js"
+      },
+      "./shared/features/project-files/hooks/use-git-status": {
+        "types": "./dist/shared/features/project-files/hooks/use-git-status.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-git-status.js"
+      },
+      "./shared/features/project-files/hooks/use-server-health": {
+        "types": "./dist/shared/features/project-files/hooks/use-server-health.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-server-health.js"
+      },
+      "./shared/features/project-files/index": {
+        "types": "./dist/shared/features/project-files/index.d.ts",
+        "import": "./dist/shared/features/project-files/index.js"
+      },
+      "./shared/features/project-files/search/workspace-search-service": {
+        "types": "./dist/shared/features/project-files/search/workspace-search-service.d.ts",
+        "import": "./dist/shared/features/project-files/search/workspace-search-service.js"
+      },
+      "./shared/features/project-files/store/version-store": {
+        "types": "./dist/shared/features/project-files/store/version-store.d.ts",
+        "import": "./dist/shared/features/project-files/store/version-store.js"
+      },
+      "./shared/features/project-files/upload-batch": {
+        "types": "./dist/shared/features/project-files/upload-batch.d.ts",
+        "import": "./dist/shared/features/project-files/upload-batch.js"
+      },
+      "./shared/features/providers/provider-branding": {
+        "types": "./dist/shared/features/providers/provider-branding.d.ts",
+        "import": "./dist/shared/features/providers/provider-branding.js"
+      },
+      "./shared/features/review-center/hooks/use-review-session-summary": {
+        "types": "./dist/shared/features/review-center/hooks/use-review-session-summary.d.ts",
+        "import": "./dist/shared/features/review-center/hooks/use-review-session-summary.js"
+      },
+      "./shared/features/workspace/capabilities/shared/capability-tab-routes": {
+        "types": "./dist/shared/features/workspace/capabilities/shared/capability-tab-routes.d.ts",
+        "import": "./dist/shared/features/workspace/capabilities/shared/capability-tab-routes.js"
+      },
+      "./shared/features/workspace/customize/migrate-to-v2/manifest-version": {
+        "types": "./dist/shared/features/workspace/customize/migrate-to-v2/manifest-version.d.ts",
+        "import": "./dist/shared/features/workspace/customize/migrate-to-v2/manifest-version.js"
+      },
+      "./shared/features/workspace/customize/sections/view/account-secret-access": {
+        "types": "./dist/shared/features/workspace/customize/sections/view/account-secret-access.d.ts",
+        "import": "./dist/shared/features/workspace/customize/sections/view/account-secret-access.js"
+      },
+      "./shared/features/workspace/project-layout/home/home-greeting": {
+        "types": "./dist/shared/features/workspace/project-layout/home/home-greeting.d.ts",
+        "import": "./dist/shared/features/workspace/project-layout/home/home-greeting.js"
+      },
+      "./shared/features/workspace/project-layout/home/welcome-body": {
+        "types": "./dist/shared/features/workspace/project-layout/home/welcome-body.d.ts",
+        "import": "./dist/shared/features/workspace/project-layout/home/welcome-body.js"
+      },
+      "./shared/features/workspace/project-layout/project-page-header": {
+        "types": "./dist/shared/features/workspace/project-layout/project-page-header.d.ts",
+        "import": "./dist/shared/features/workspace/project-layout/project-page-header.js"
+      },
+      "./shared/features/workspace/project-layout/sidebar-opener": {
+        "types": "./dist/shared/features/workspace/project-layout/sidebar-opener.d.ts",
+        "import": "./dist/shared/features/workspace/project-layout/sidebar-opener.js"
+      },
+      "./shared/features/workspace/project-layout/sidebar-toggle": {
+        "types": "./dist/shared/features/workspace/project-layout/sidebar-toggle.d.ts",
+        "import": "./dist/shared/features/workspace/project-layout/sidebar-toggle.js"
+      },
+      "./shared/features/workspace/project-reminders/reminder-format": {
+        "types": "./dist/shared/features/workspace/project-reminders/reminder-format.d.ts",
+        "import": "./dist/shared/features/workspace/project-reminders/reminder-format.js"
+      },
+      "./shared/features/workspace/project-reminders/use-refetch-after-fire": {
+        "types": "./dist/shared/features/workspace/project-reminders/use-refetch-after-fire.d.ts",
+        "import": "./dist/shared/features/workspace/project-reminders/use-refetch-after-fire.js"
+      },
+      "./shared/features/workspace/project-sidebar/footer/files-nav-label": {
+        "types": "./dist/shared/features/workspace/project-sidebar/footer/files-nav-label.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/footer/files-nav-label.js"
+      },
       "./shared/features/workspace/project-sidebar/modal/rename-session-cache": {
         "types": "./dist/shared/features/workspace/project-sidebar/modal/rename-session-cache.d.ts",
         "import": "./dist/shared/features/workspace/project-sidebar/modal/rename-session-cache.js"
+      },
+      "./shared/features/workspace/project-sidebar/modal/session-delete-modal": {
+        "types": "./dist/shared/features/workspace/project-sidebar/modal/session-delete-modal.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/modal/session-delete-modal.js"
       },
       "./shared/features/workspace/project-sidebar/modal/use-rename-session": {
         "types": "./dist/shared/features/workspace/project-sidebar/modal/use-rename-session.d.ts",
         "import": "./dist/shared/features/workspace/project-sidebar/modal/use-rename-session.js"
       },
+      "./shared/features/workspace/project-sidebar/project-nav-row": {
+        "types": "./dist/shared/features/workspace/project-sidebar/project-nav-row.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/project-nav-row.js"
+      },
       "./shared/features/workspace/project-sidebar/project-session-list-helpers": {
         "types": "./dist/shared/features/workspace/project-sidebar/project-session-list-helpers.d.ts",
         "import": "./dist/shared/features/workspace/project-sidebar/project-session-list-helpers.js"
+      },
+      "./shared/features/workspace/project-sidebar/project-settings-nav": {
+        "types": "./dist/shared/features/workspace/project-sidebar/project-settings-nav.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/project-settings-nav.js"
+      },
+      "./shared/features/workspace/project-sidebar/use-session-list-actions": {
+        "types": "./dist/shared/features/workspace/project-sidebar/use-session-list-actions.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/use-session-list-actions.js"
+      },
+      "./shared/hooks/billing/account-state-gating": {
+        "types": "./dist/shared/hooks/billing/account-state-gating.d.ts",
+        "import": "./dist/shared/hooks/billing/account-state-gating.js"
+      },
+      "./shared/hooks/billing/index": {
+        "types": "./dist/shared/hooks/billing/index.d.ts",
+        "import": "./dist/shared/hooks/billing/index.js"
+      },
+      "./shared/hooks/billing/use-account-state": {
+        "types": "./dist/shared/hooks/billing/use-account-state.d.ts",
+        "import": "./dist/shared/hooks/billing/use-account-state.js"
+      },
+      "./shared/hooks/billing/use-cost-explorer": {
+        "types": "./dist/shared/hooks/billing/use-cost-explorer.d.ts",
+        "import": "./dist/shared/hooks/billing/use-cost-explorer.js"
+      },
+      "./shared/hooks/billing/use-download-restriction": {
+        "types": "./dist/shared/hooks/billing/use-download-restriction.d.ts",
+        "import": "./dist/shared/hooks/billing/use-download-restriction.js"
+      },
+      "./shared/hooks/billing/use-session-costs": {
+        "types": "./dist/shared/hooks/billing/use-session-costs.d.ts",
+        "import": "./dist/shared/hooks/billing/use-session-costs.js"
+      },
+      "./shared/hooks/billing/use-transactions": {
+        "types": "./dist/shared/hooks/billing/use-transactions.d.ts",
+        "import": "./dist/shared/hooks/billing/use-transactions.js"
       },
       "./shared/hooks/channels/use-channel-bindings": {
         "types": "./dist/shared/hooks/channels/use-channel-bindings.d.ts",
         "import": "./dist/shared/hooks/channels/use-channel-bindings.js"
       },
+      "./shared/hooks/drives/use-drives": {
+        "types": "./dist/shared/hooks/drives/use-drives.d.ts",
+        "import": "./dist/shared/hooks/drives/use-drives.js"
+      },
       "./shared/hooks/projects/session-reload-progress": {
         "types": "./dist/shared/hooks/projects/session-reload-progress.d.ts",
         "import": "./dist/shared/hooks/projects/session-reload-progress.js"
+      },
+      "./shared/hooks/projects/use-agent-config": {
+        "types": "./dist/shared/hooks/projects/use-agent-config.d.ts",
+        "import": "./dist/shared/hooks/projects/use-agent-config.js"
       },
       "./shared/hooks/projects/use-restart-project-session": {
         "types": "./dist/shared/hooks/projects/use-restart-project-session.d.ts",
         "import": "./dist/shared/hooks/projects/use-restart-project-session.js"
       },
+      "./shared/hooks/projects/use-session-config-freshness": {
+        "types": "./dist/shared/hooks/projects/use-session-config-freshness.d.ts",
+        "import": "./dist/shared/hooks/projects/use-session-config-freshness.js"
+      },
+      "./shared/hooks/use-auto-scroll": {
+        "types": "./dist/shared/hooks/use-auto-scroll.d.ts",
+        "import": "./dist/shared/hooks/use-auto-scroll.js"
+      },
+      "./shared/hooks/use-auto-scroll-physics": {
+        "types": "./dist/shared/hooks/use-auto-scroll-physics.d.ts",
+        "import": "./dist/shared/hooks/use-auto-scroll-physics.js"
+      },
       "./shared/hooks/use-copy": {
         "types": "./dist/shared/hooks/use-copy.d.ts",
         "import": "./dist/shared/hooks/use-copy.js"
+      },
+      "./shared/hooks/use-heic-url": {
+        "types": "./dist/shared/hooks/use-heic-url.d.ts",
+        "import": "./dist/shared/hooks/use-heic-url.js"
       },
       "./shared/hooks/use-public-share-link": {
         "types": "./dist/shared/hooks/use-public-share-link.d.ts",
@@ -2254,6 +4037,10 @@
         "types": "./dist/shared/hooks/use-session-public-shares.d.ts",
         "import": "./dist/shared/hooks/use-session-public-shares.js"
       },
+      "./shared/hooks/use-stable-callback": {
+        "types": "./dist/shared/hooks/use-stable-callback.d.ts",
+        "import": "./dist/shared/hooks/use-stable-callback.js"
+      },
       "./shared/hooks/utils/index": {
         "types": "./dist/shared/hooks/utils/index.d.ts",
         "import": "./dist/shared/hooks/utils/index.js"
@@ -2266,13 +4053,97 @@
         "types": "./dist/shared/hooks/utils/use-media-query.d.ts",
         "import": "./dist/shared/hooks/utils/use-media-query.js"
       },
+      "./shared/hooks/utils/use-opened-once": {
+        "types": "./dist/shared/hooks/utils/use-opened-once.d.ts",
+        "import": "./dist/shared/hooks/utils/use-opened-once.js"
+      },
       "./shared/hooks/utils/use-slash-focus": {
         "types": "./dist/shared/hooks/utils/use-slash-focus.d.ts",
         "import": "./dist/shared/hooks/utils/use-slash-focus.js"
       },
+      "./shared/lib/browser-error-noise": {
+        "types": "./dist/shared/lib/browser-error-noise.d.ts",
+        "import": "./dist/shared/lib/browser-error-noise.js"
+      },
+      "./shared/lib/browser-noise/evidence": {
+        "types": "./dist/shared/lib/browser-noise/evidence.d.ts",
+        "import": "./dist/shared/lib/browser-noise/evidence.js"
+      },
+      "./shared/lib/browser-noise/rules/chunk-load": {
+        "types": "./dist/shared/lib/browser-noise/rules/chunk-load.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/chunk-load.js"
+      },
+      "./shared/lib/browser-noise/rules/expected-states": {
+        "types": "./dist/shared/lib/browser-noise/rules/expected-states.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/expected-states.js"
+      },
+      "./shared/lib/browser-noise/rules/extensions": {
+        "types": "./dist/shared/lib/browser-noise/rules/extensions.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/extensions.js"
+      },
+      "./shared/lib/browser-noise/rules/graphics": {
+        "types": "./dist/shared/lib/browser-noise/rules/graphics.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/graphics.js"
+      },
+      "./shared/lib/browser-noise/rules/injected-scripts": {
+        "types": "./dist/shared/lib/browser-noise/rules/injected-scripts.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/injected-scripts.js"
+      },
+      "./shared/lib/browser-noise/rules/messages": {
+        "types": "./dist/shared/lib/browser-noise/rules/messages.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/messages.js"
+      },
+      "./shared/lib/browser-noise/rules/network": {
+        "types": "./dist/shared/lib/browser-noise/rules/network.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/network.js"
+      },
+      "./shared/lib/browser-noise/rules/old-browsers": {
+        "types": "./dist/shared/lib/browser-noise/rules/old-browsers.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/old-browsers.js"
+      },
+      "./shared/lib/browser-noise/rules/pdf": {
+        "types": "./dist/shared/lib/browser-noise/rules/pdf.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/pdf.js"
+      },
+      "./shared/lib/browser-noise/rules/react": {
+        "types": "./dist/shared/lib/browser-noise/rules/react.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/react.js"
+      },
+      "./shared/lib/browser-noise/rules/rejections": {
+        "types": "./dist/shared/lib/browser-noise/rules/rejections.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/rejections.js"
+      },
+      "./shared/lib/browser-noise/rules/storage": {
+        "types": "./dist/shared/lib/browser-noise/rules/storage.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/storage.js"
+      },
+      "./shared/lib/browser-noise/rules/webview": {
+        "types": "./dist/shared/lib/browser-noise/rules/webview.d.ts",
+        "import": "./dist/shared/lib/browser-noise/rules/webview.js"
+      },
+      "./shared/lib/chunk-reload": {
+        "types": "./dist/shared/lib/chunk-reload.d.ts",
+        "import": "./dist/shared/lib/chunk-reload.js"
+      },
       "./shared/lib/code-theme": {
         "types": "./dist/shared/lib/code-theme.d.ts",
         "import": "./dist/shared/lib/code-theme.js"
+      },
+      "./shared/lib/codemirror-pierre-theme": {
+        "types": "./dist/shared/lib/codemirror-pierre-theme.d.ts",
+        "import": "./dist/shared/lib/codemirror-pierre-theme.js"
+      },
+      "./shared/lib/delivered-but-disconnected": {
+        "types": "./dist/shared/lib/delivered-but-disconnected.d.ts",
+        "import": "./dist/shared/lib/delivered-but-disconnected.js"
+      },
+      "./shared/lib/desktop-detect": {
+        "types": "./dist/shared/lib/desktop-detect.d.ts",
+        "import": "./dist/shared/lib/desktop-detect.js"
+      },
+      "./shared/lib/error-handler": {
+        "types": "./dist/shared/lib/error-handler.d.ts",
+        "import": "./dist/shared/lib/error-handler.js"
       },
       "./shared/lib/interface-theme-defaults": {
         "types": "./dist/shared/lib/interface-theme-defaults.d.ts",
@@ -2281,6 +4152,18 @@
       "./shared/lib/kortix-cli": {
         "types": "./dist/shared/lib/kortix-cli.d.ts",
         "import": "./dist/shared/lib/kortix-cli.js"
+      },
+      "./shared/lib/llm-gateway": {
+        "types": "./dist/shared/lib/llm-gateway.d.ts",
+        "import": "./dist/shared/lib/llm-gateway.js"
+      },
+      "./shared/lib/llm-providers": {
+        "types": "./dist/shared/lib/llm-providers.d.ts",
+        "import": "./dist/shared/lib/llm-providers.js"
+      },
+      "./shared/lib/mermaid-utils": {
+        "types": "./dist/shared/lib/mermaid-utils.d.ts",
+        "import": "./dist/shared/lib/mermaid-utils.js"
       },
       "./shared/lib/model-pricing": {
         "types": "./dist/shared/lib/model-pricing.d.ts",
@@ -2294,17 +4177,57 @@
         "types": "./dist/shared/lib/object-url-cache.d.ts",
         "import": "./dist/shared/lib/object-url-cache.js"
       },
+      "./shared/lib/project-actions": {
+        "types": "./dist/shared/lib/project-actions.d.ts",
+        "import": "./dist/shared/lib/project-actions.js"
+      },
+      "./shared/lib/project-preamble": {
+        "types": "./dist/shared/lib/project-preamble.d.ts",
+        "import": "./dist/shared/lib/project-preamble.js"
+      },
+      "./shared/lib/safe-url": {
+        "types": "./dist/shared/lib/safe-url.d.ts",
+        "import": "./dist/shared/lib/safe-url.js"
+      },
+      "./shared/lib/security/iframe-sandbox": {
+        "types": "./dist/shared/lib/security/iframe-sandbox.d.ts",
+        "import": "./dist/shared/lib/security/iframe-sandbox.js"
+      },
+      "./shared/lib/security/privileged-frame-origins": {
+        "types": "./dist/shared/lib/security/privileged-frame-origins.d.ts",
+        "import": "./dist/shared/lib/security/privileged-frame-origins.js"
+      },
+      "./shared/lib/settings-tab-id": {
+        "types": "./dist/shared/lib/settings-tab-id.d.ts",
+        "import": "./dist/shared/lib/settings-tab-id.js"
+      },
       "./shared/lib/site-metadata": {
         "types": "./dist/shared/lib/site-metadata.d.ts",
         "import": "./dist/shared/lib/site-metadata.js"
+      },
+      "./shared/lib/sounds": {
+        "types": "./dist/shared/lib/sounds.d.ts",
+        "import": "./dist/shared/lib/sounds.js"
       },
       "./shared/lib/storage/managed-storage": {
         "types": "./dist/shared/lib/storage/managed-storage.d.ts",
         "import": "./dist/shared/lib/storage/managed-storage.js"
       },
+      "./shared/lib/timeout-toast-policy": {
+        "types": "./dist/shared/lib/timeout-toast-policy.d.ts",
+        "import": "./dist/shared/lib/timeout-toast-policy.js"
+      },
       "./shared/lib/use-deployment-cli-install-command": {
         "types": "./dist/shared/lib/use-deployment-cli-install-command.d.ts",
         "import": "./dist/shared/lib/use-deployment-cli-install-command.js"
+      },
+      "./shared/lib/use-permission": {
+        "types": "./dist/shared/lib/use-permission.d.ts",
+        "import": "./dist/shared/lib/use-permission.js"
+      },
+      "./shared/lib/use-project-can": {
+        "types": "./dist/shared/lib/use-project-can.d.ts",
+        "import": "./dist/shared/lib/use-project-can.js"
       },
       "./shared/lib/utils": {
         "types": "./dist/shared/lib/utils.d.ts",
@@ -2318,21 +4241,49 @@
         "types": "./dist/shared/lib/utils/clipboard.d.ts",
         "import": "./dist/shared/lib/utils/clipboard.js"
       },
+      "./shared/lib/utils/download": {
+        "types": "./dist/shared/lib/utils/download.d.ts",
+        "import": "./dist/shared/lib/utils/download.js"
+      },
       "./shared/lib/utils/file-utils": {
         "types": "./dist/shared/lib/utils/file-utils.d.ts",
         "import": "./dist/shared/lib/utils/file-utils.js"
+      },
+      "./shared/lib/utils/focus-without-scroll": {
+        "types": "./dist/shared/lib/utils/focus-without-scroll.d.ts",
+        "import": "./dist/shared/lib/utils/focus-without-scroll.js"
+      },
+      "./shared/lib/utils/heic-convert": {
+        "types": "./dist/shared/lib/utils/heic-convert.d.ts",
+        "import": "./dist/shared/lib/utils/heic-convert.js"
       },
       "./shared/lib/utils/kortix-system-tags": {
         "types": "./dist/shared/lib/utils/kortix-system-tags.d.ts",
         "import": "./dist/shared/lib/utils/kortix-system-tags.js"
       },
+      "./shared/lib/utils/kortix-tool-output": {
+        "types": "./dist/shared/lib/utils/kortix-tool-output.d.ts",
+        "import": "./dist/shared/lib/utils/kortix-tool-output.js"
+      },
       "./shared/lib/utils/path-detection": {
         "types": "./dist/shared/lib/utils/path-detection.d.ts",
         "import": "./dist/shared/lib/utils/path-detection.js"
       },
+      "./shared/lib/utils/random-uuid": {
+        "types": "./dist/shared/lib/utils/random-uuid.d.ts",
+        "import": "./dist/shared/lib/utils/random-uuid.js"
+      },
+      "./shared/lib/utils/safe-scroll-to": {
+        "types": "./dist/shared/lib/utils/safe-scroll-to.d.ts",
+        "import": "./dist/shared/lib/utils/safe-scroll-to.js"
+      },
       "./shared/lib/utils/sandbox-proxy": {
         "types": "./dist/shared/lib/utils/sandbox-proxy.d.ts",
         "import": "./dist/shared/lib/utils/sandbox-proxy.js"
+      },
+      "./shared/lib/utils/session-context": {
+        "types": "./dist/shared/lib/utils/session-context.d.ts",
+        "import": "./dist/shared/lib/utils/session-context.js"
       },
       "./shared/lib/utils/strip-html-tags": {
         "types": "./dist/shared/lib/utils/strip-html-tags.d.ts",
@@ -2346,6 +4297,18 @@
         "types": "./dist/shared/lib/wallpapers.d.ts",
         "import": "./dist/shared/lib/wallpapers.js"
       },
+      "./shared/stores/account-panel-store": {
+        "types": "./dist/shared/stores/account-panel-store.d.ts",
+        "import": "./dist/shared/stores/account-panel-store.js"
+      },
+      "./shared/stores/account-settings-modal-store": {
+        "types": "./dist/shared/stores/account-settings-modal-store.d.ts",
+        "import": "./dist/shared/stores/account-settings-modal-store.js"
+      },
+      "./shared/stores/billing-account-context": {
+        "types": "./dist/shared/stores/billing-account-context.d.ts",
+        "import": "./dist/shared/stores/billing-account-context.js"
+      },
       "./shared/stores/browser-recents-store": {
         "types": "./dist/shared/stores/browser-recents-store.d.ts",
         "import": "./dist/shared/stores/browser-recents-store.js"
@@ -2353,6 +4316,14 @@
       "./shared/stores/chat-send-store": {
         "types": "./dist/shared/stores/chat-send-store.d.ts",
         "import": "./dist/shared/stores/chat-send-store.js"
+      },
+      "./shared/stores/current-account-store": {
+        "types": "./dist/shared/stores/current-account-store.d.ts",
+        "import": "./dist/shared/stores/current-account-store.js"
+      },
+      "./shared/stores/diagnostics-store": {
+        "types": "./dist/shared/stores/diagnostics-store.d.ts",
+        "import": "./dist/shared/stores/diagnostics-store.js"
       },
       "./shared/stores/file-preview-store": {
         "types": "./dist/shared/stores/file-preview-store.d.ts",
@@ -2362,21 +4333,65 @@
         "types": "./dist/shared/stores/kortix-computer-store.d.ts",
         "import": "./dist/shared/stores/kortix-computer-store.js"
       },
+      "./shared/stores/message-jump-store": {
+        "types": "./dist/shared/stores/message-jump-store.d.ts",
+        "import": "./dist/shared/stores/message-jump-store.js"
+      },
+      "./shared/stores/onboarding-mode-store": {
+        "types": "./dist/shared/stores/onboarding-mode-store.d.ts",
+        "import": "./dist/shared/stores/onboarding-mode-store.js"
+      },
       "./shared/stores/persisted-store-registry": {
         "types": "./dist/shared/stores/persisted-store-registry.d.ts",
         "import": "./dist/shared/stores/persisted-store-registry.js"
+      },
+      "./shared/stores/presentation-viewer-store": {
+        "types": "./dist/shared/stores/presentation-viewer-store.d.ts",
+        "import": "./dist/shared/stores/presentation-viewer-store.js"
+      },
+      "./shared/stores/provider-modal-store": {
+        "types": "./dist/shared/stores/provider-modal-store.d.ts",
+        "import": "./dist/shared/stores/provider-modal-store.js"
+      },
+      "./shared/stores/queued-draft-store": {
+        "types": "./dist/shared/stores/queued-draft-store.d.ts",
+        "import": "./dist/shared/stores/queued-draft-store.js"
       },
       "./shared/stores/session-browser-store": {
         "types": "./dist/shared/stores/session-browser-store.d.ts",
         "import": "./dist/shared/stores/session-browser-store.js"
       },
+      "./shared/stores/session-composer-handoff-store": {
+        "types": "./dist/shared/stores/session-composer-handoff-store.d.ts",
+        "import": "./dist/shared/stores/session-composer-handoff-store.js"
+      },
+      "./shared/stores/session-composer-prefill-store": {
+        "types": "./dist/shared/stores/session-composer-prefill-store.d.ts",
+        "import": "./dist/shared/stores/session-composer-prefill-store.js"
+      },
+      "./shared/stores/session-history-view-store": {
+        "types": "./dist/shared/stores/session-history-view-store.d.ts",
+        "import": "./dist/shared/stores/session-history-view-store.js"
+      },
       "./shared/stores/session-panel-memory-store": {
         "types": "./dist/shared/stores/session-panel-memory-store.d.ts",
         "import": "./dist/shared/stores/session-panel-memory-store.js"
       },
+      "./shared/stores/sound-store": {
+        "types": "./dist/shared/stores/sound-store.d.ts",
+        "import": "./dist/shared/stores/sound-store.js"
+      },
+      "./shared/stores/subscription-store": {
+        "types": "./dist/shared/stores/subscription-store.d.ts",
+        "import": "./dist/shared/stores/subscription-store.js"
+      },
       "./shared/stores/tab-store": {
         "types": "./dist/shared/stores/tab-store.d.ts",
         "import": "./dist/shared/stores/tab-store.js"
+      },
+      "./shared/stores/upgrade-dialog-store": {
+        "types": "./dist/shared/stores/upgrade-dialog-store.d.ts",
+        "import": "./dist/shared/stores/upgrade-dialog-store.js"
       },
       "./shared/stores/user-preferences-store": {
         "types": "./dist/shared/stores/user-preferences-store.d.ts",
@@ -2536,7 +4551,29 @@
     "smoke:install": "node scripts/smoke-install.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.0",
+    "@embedpdf/core": "^2.14.4",
+    "@embedpdf/engines": "^2.14.4",
+    "@embedpdf/models": "^2.14.4",
+    "@embedpdf/plugin-document-manager": "^2.14.4",
+    "@embedpdf/plugin-interaction-manager": "^2.14.4",
+    "@embedpdf/plugin-render": "^2.14.4",
+    "@embedpdf/plugin-rotate": "^2.14.4",
+    "@embedpdf/plugin-scroll": "^2.14.4",
+    "@embedpdf/plugin-search": "^2.14.4",
+    "@embedpdf/plugin-selection": "^2.14.4",
+    "@embedpdf/plugin-thumbnail": "^2.14.4",
+    "@embedpdf/plugin-tiling": "^2.14.4",
+    "@embedpdf/plugin-viewport": "^2.14.4",
+    "@embedpdf/plugin-zoom": "^2.14.4",
+    "@extend-ai/react-docx": "^0.7.5",
+    "@extend-ai/react-xlsx": "0.13.4",
+    "@glideapps/glide-data-grid": "6.0.4-alpha24",
     "@kortix/llm-catalog": "workspace:*",
+    "@lezer/highlight": "1.2.3",
     "@phosphor-icons/react": "2.1.10",
     "@pierre/diffs": "1.1.22",
     "@radix-ui/react-accordion": "^1.2.11",
@@ -2561,6 +4598,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.4",
     "@tanstack/react-query": "^5.75.2",
+    "@tanstack/react-virtual": "^3.13.12",
     "@tiptap/core": "3.30.5",
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
@@ -2569,7 +4607,11 @@
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
+    "@tiptap/react": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
+    "@uiw/codemirror-extensions-langs": "^4.23.10",
+    "@uiw/codemirror-themes": "4.23.10",
+    "@uiw/react-codemirror": "^4.23.10",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
@@ -2582,22 +4624,31 @@
     "date-fns": "^3.6.0",
     "diff": "^8.0.3",
     "frimousse": "^0.3.0",
+    "heic2any": "0.0.4",
+    "i18next": "^26.3.6",
     "jszip": "^3.10.1",
     "katex": "^0.16.22",
     "maplibre-gl": "6.12.0",
     "mermaid": "^11.12.0",
     "motion": "^12.40.0",
+    "papaparse": "^5.5.2",
+    "pdf-lib": "^1.17.1",
+    "pptx-react-viewer": "^1.15.0",
     "radix-ui": "^1.6.0",
     "react-day-picker": "^8.10.1",
+    "react-i18next": "^17.0.9",
     "react-markdown": "^10.1.0",
     "react-phone-number-input": "^3.4.12",
     "react-resizable-panels": "^3.0.6",
     "recharts": "^3.2.1",
     "rehype-sanitize": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "shiki": "^3.12.0",
     "sonner": "^2.0.3",
+    "sql.js": "^1.14.1",
     "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
     "unified": "^11.0.5",
@@ -2636,6 +4687,7 @@
     "@kortix/shared": "workspace:*",
     "@tailwindcss/cli": "4.3.3",
     "@types/bun": "^1.3.12",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-test-renderer": "^19.3.0",

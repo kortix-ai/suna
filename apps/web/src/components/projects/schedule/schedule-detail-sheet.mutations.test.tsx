@@ -97,13 +97,13 @@ mock.module('@/components/scheduled-tasks/schedule-builder', () => ({
     return createElement('div', { 'data-testid': 'schedule-builder-stub' });
   },
 }));
-mock.module('@/features/session/model-selector', () => ({
+mock.module('@kortix/ui/session/model-selector', () => ({
   ModelSelector: (props: ComponentPropsLike) => {
     selectors.modelSelectors.push(props);
     return createElement('div', { 'data-testid': 'model-selector-stub' });
   },
 }));
-mock.module('@/features/session/session-chat-input', () => ({
+mock.module('@kortix/ui/session/session-chat-input', () => ({
   AgentSelector: (props: ComponentPropsLike) => {
     selectors.agentSelectors.push(props);
     return createElement('div', { 'data-testid': 'agent-selector-stub' });

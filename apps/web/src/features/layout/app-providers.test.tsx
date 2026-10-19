@@ -32,10 +32,10 @@ stub('@/lib/storage/managed-storage', { pruneAllRegisteredCaches: () => {} });
 stub('@/lib/device-caches', { sweepRetiredDeviceCaches: () => {} });
 stub('@/components/ui/sidebar-width', { SIDEBAR_MAX_WIDTH_PX: 416 });
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => false }));
-mock.module('@/stores/onboarding-mode-store', () => ({
+mock.module('@kortix/ui/shared/stores/onboarding-mode-store', () => ({
   useOnboardingModeStore: () => ({ active: false, morphing: false }),
 }));
-mock.module('@/stores/subscription-store', () => ({
+mock.module('@kortix/ui/shared/stores/subscription-store', () => ({
   SubscriptionStoreSync: ({ children }: { children?: ReactNode }) => (
     <div data-stub="SubscriptionStoreSync">{children}</div>
   ),

@@ -1,0 +1,128 @@
+'use client';
+
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
+import { readFileAsBlob } from '../api/runtime-files';
+import { keepBlobIfUnchanged } from './blob-identity';
+import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { useServerHealth } from './use-server-health';
+
+// ── Query keys ─────────────────────────────────────────────────────────────
+
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
+export { binaryBlobKeys };
+
+// ── Hook ───────────────────────────────────────────────────────────────────
+
+/**
+ * Load a file from the sandbox as a binary Blob via React Query.
+ *
+ * Returns both a blob URL (for <video>, <audio>, PdfRenderer, etc.)
+ * and the raw Blob (for DocxRenderer, PptxRenderer).
+ *
+ * Pass `null` for filePath to disable loading.
+ *
+ * IMPORTANT — Blob URL lifecycle:
+ *   React Query caches only the raw Blob (stable, never revoked).
+ *   The blob URL is derived per-mount via URL.createObjectURL and
+ *   revoked on unmount or when the underlying Blob changes.
+ *   This prevents the stale-blob-URL bug where navigating away and
+ *   back would serve a revoked URL from the query cache.
+ *
+ * A `kortix-attachment://` reference is read from the PLATFORM instead of the
+ * sandbox. Saved session history records one for every file an agent showed
+ * (the server copies it while the box is up), so a card from a stopped session
+ * renders its bytes instead of waiting on a box that is not coming. A stored
+ * copy is immutable, so it is never refetched and never polled.
+ */
+export function useBinaryBlob(filePath: string | null): {
+  blobUrl: string | null;
+  blob: Blob | null;
+  isLoading: boolean;
+  error: string | null;
+} {
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // Asleep, not booting — the re-read below takes the slow lane.
+  const { parked } = useServerHealth();
+  const stored = isSessionAttachmentRef(filePath);
+  const queryClient = useQueryClient();
+
+  // ── Fetch the raw Blob — this is what React Query caches ────────────
+  const query = useQuery<Blob>({
+    queryKey: !filePath
+      ? ['runtime-files', 'binary-blob', '__disabled__']
+      : stored
+        ? // Globally unique on its own: no server URL, because no server.
+          // Outside `binaryBlobKeys.all` on purpose: a stored attachment never
+          // changes, so the turn-end invalidation must not re-download it.
+          ['session-attachment', 'blob', filePath]
+        : binaryBlobKeys.file(serverUrl, filePath),
+    queryFn: async ({ signal, queryKey }) => {
+      if (stored) return fetchSessionAttachment(filePath!, signal);
+      const blob = await readRuntimeFileWithRetry(
+        filePath!,
+        async () => {
+          const blob = await readFileAsBlob(filePath!);
+          if (blob.size === 0) {
+            throw new Error(
+              'File is empty (0 bytes). It may still be generating — try again in a moment.',
+            );
+          }
+          return blob;
+        },
+        undefined,
+        signal,
+      );
+      // The turn end refetches every open file; same bytes keep the same Blob,
+      // so the viewer does not reload a file the agent never touched.
+      return keepBlobIfUnchanged(queryClient.getQueryData<Blob>(queryKey), blob);
+    },
+    enabled: !!filePath,
+    staleTime: stored ? Number.POSITIVE_INFINITY : 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    // A readiness 503 is a pending state, not a failure. A booting box earns the
+    // fast cadence; a parked one is watched slowly. See the helper. A stored
+    // copy has no box to wait for.
+    refetchInterval: (query) =>
+      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked),
+  });
+
+  const cachedBlob = query.data ?? null;
+
+  // ── Blob URL — derived per-mount, revoked on unmount/change ─────────
+  // Each component mount creates its own blob URL from the cached Blob.
+  // When the component unmounts the URL is revoked, but the raw Blob
+  // stays safe in React Query's cache for the next mount.
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!cachedBlob) {
+      setBlobUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(cachedBlob);
+    setBlobUrl(url);
+
+    // Revoke when the Blob changes or on unmount
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [cachedBlob]);
+
+  // ── Stable return value ──────────────────────────────────────────────
+  return useMemo(
+    () => ({
+      blobUrl,
+      blob: cachedBlob,
+      isLoading: query.isLoading,
+      error: query.error?.message ?? null,
+    }),
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
+  );
+}

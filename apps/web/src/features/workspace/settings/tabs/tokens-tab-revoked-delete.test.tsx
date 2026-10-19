@@ -58,7 +58,7 @@ mock.module('@/lib/iam-client', () => ({
   getPatPolicy: async () => null,
 }));
 
-mock.module('@/lib/use-permission', () => ({
+mock.module('@kortix/ui/shared/lib/use-permission', () => ({
   usePermission: () => ({ allowed: true, isLoading: false }),
 }));
 
@@ -110,7 +110,7 @@ mock.module('@/features/workspace/shared/access', () => ({ CopyRow: Pass }));
 
 mock.module('./connected-apps', () => ({ ConnectedApps: () => null }));
 mock.module('../settings-tab-header', () => ({ SettingsTabHeader: () => null }));
-mock.module('@/features/accounts/hub/account-hub-location', () => ({
+mock.module('@kortix/ui/shared/features/accounts/hub/account-hub-location', () => ({
   HubLink: ({ children }: { children?: ReactNode }) => createElement(Fragment, null, children),
 }));
 

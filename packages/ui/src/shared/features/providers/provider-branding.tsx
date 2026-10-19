@@ -1,0 +1,230 @@
+'use client';
+
+import { cn } from '../../../lib/utils';
+import {
+  CATALOG_PROVIDER_ENV,
+  MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
+  PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
+} from '@kortix/llm-catalog';
+import { useUiImage } from '../../../providers/ui-provider';
+import { useState } from 'react';
+
+export const POPULAR_PROVIDER_IDS = [
+  'anthropic',
+  'openai',
+  'github-copilot',
+  'google',
+  'openrouter',
+  'vercel',
+];
+
+export const MODEL_SELECTOR_PROVIDER_IDS: readonly string[] = SHARED_MODEL_SELECTOR_PROVIDER_IDS;
+export const PROVIDER_LABELS: Record<string, string> = SHARED_PROVIDER_LABELS;
+
+export const PROVIDER_HINTS: Record<string, string> = {
+  anthropic: 'Pro/Max or API key',
+  openai: 'Pro/Plus or API key',
+  'github-copilot': 'Use existing subscription',
+};
+
+export const PROVIDER_NOTES: Record<string, string> = {
+  opencode: 'One key for many hosted models',
+  anthropic: 'Claude Pro/Max subscription or your own API key',
+  openai: 'ChatGPT Pro/Plus subscription or your own API key',
+  'github-copilot': 'Reuse your existing Copilot plan',
+  google: 'Gemini models from Google AI Studio',
+  openrouter: 'Route across many providers',
+  vercel: 'Use Vercel AI Gateway credentials',
+};
+
+const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
+  anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
+  openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
+  codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
+  opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
+  'opencode-go': { src: '/provider-icons/opencode.svg', fallback: 'OC' },
+  kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
+  'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
+  google: { src: '/provider-icons/google.svg', fallback: 'GO' },
+  openrouter: { src: '/provider-icons/openrouter.svg', fallback: 'OR' },
+  vercel: { src: '/provider-icons/vercel.svg', fallback: 'VE' },
+  groq: { src: '/provider-icons/groq.svg', fallback: 'GQ' },
+  xai: { src: '/provider-icons/xai.svg', fallback: 'XA' },
+  // Bedrock: models.dev's canonical id is `amazon-bedrock`; keep the short
+  // `bedrock` alias for any legacy call site that still passes it.
+  'amazon-bedrock': { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
+  bedrock: { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
+  // Moonshot ships as three distinct providers on models.dev — Moonshot AI,
+  // Moonshot AI (China), and the Kimi For Coding plan. They share the one
+  // Moonshot mark (no separate -cn / kimi asset exists), but their VERBATIM
+  // names keep them readable apart in the list.
+  moonshotai: { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
+  'moonshotai-cn': { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
+  'kimi-for-coding': { src: '/provider-icons/moonshotai.svg', fallback: 'KI' },
+  deepseek: { src: '/provider-icons/deepseek.svg', fallback: 'DS' },
+  mistral: { src: '/provider-icons/mistral.svg', fallback: 'MI' },
+  cohere: { src: '/provider-icons/cohere.svg', fallback: 'CO' },
+  'cohere-platform': { src: '/provider-icons/cohere.svg', fallback: 'CO' },
+  llama: { src: '/provider-icons/llama.svg', fallback: 'LL' },
+  huggingface: { src: '/provider-icons/huggingface.svg', fallback: 'HF' },
+  cerebras: { src: '/provider-icons/cerebras.svg', fallback: 'CE' },
+  togetherai: { src: '/provider-icons/togetherai.svg', fallback: 'TA' },
+  // Fireworks: `fireworks-ai` is the models.dev id; `firepass` is its
+  // pass-through variant; keep `fireworks` as a legacy alias.
+  'fireworks-ai': { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
+  firepass: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
+  fireworks: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
+  deepinfra: { src: '/provider-icons/deepinfra.svg', fallback: 'DI' },
+  nvidia: { src: '/provider-icons/nvidia.svg', fallback: 'NV' },
+  // Google Vertex reuses the Google mark; the Anthropic-on-Vertex variant
+  // reuses the Anthropic mark so it reads as what it actually serves.
+  'google-vertex': { src: '/provider-icons/google.svg', fallback: 'GV' },
+  'google-vertex-anthropic': { src: '/provider-icons/anthropic.svg', fallback: 'GV' },
+  cloudflare: { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
+  'cloudflare-workers-ai': { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
+  azure: { src: '/provider-icons/azure.svg', fallback: 'AZ' },
+  ollama: { src: '/provider-icons/ollama-cloud.svg', fallback: 'OL' },
+  perplexity: { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
+  'perplexity-agent': { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
+  lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
+  v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
+  wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
+  baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
+  // Everything else falls back to monochrome initials.
+};
+
+const CATALOG_PROVIDER_IDS = new Set(CATALOG_PROVIDER_ENV.map((provider) => provider.id));
+
+/**
+ * Resolve a provider id to its logo, or `undefined` when there is none (the
+ * caller falls back to monochrome initials). Keyed on the VERBATIM models.dev
+ * provider ids so live-catalog entries resolve — see the icon-map notes above
+ * for the Moonshot trio / Bedrock / Vertex cases. A catalog provider without a
+ * bundled asset uses its models.dev logo; models.dev answers any id with a
+ * generic mark, so an id outside the catalog (a custom provider) keeps initials.
+ */
+export function providerIconSrc(providerID: string): string | undefined {
+  const bundled = PROVIDER_ICON_MAP[providerID]?.src;
+  if (bundled) return bundled;
+  if (CATALOG_PROVIDER_IDS.has(providerID)) return `https://models.dev/logos/${providerID}.svg`;
+  return undefined;
+}
+
+function initialsFor(providerID: string, name?: string) {
+  const label = PROVIDER_LABELS[providerID];
+  if (label) {
+    const words = label.split(/\s+/);
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return label.slice(0, 2).toUpperCase();
+  }
+  const source = (name || providerID).replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  return (
+    parts
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('') || providerID.slice(0, 2)
+  ).toUpperCase();
+}
+
+/** A third-party logo on a white tile with a hairline: black marks stay
+ *  legible in both themes, so the tile never follows the theme. */
+const LOGO_TILE_LIGHT = 'border-border rounded-md border bg-white';
+const LOGO_TILE_LIGHT_TEXT = 'text-black';
+
+/** The Kortix mark has no built-in padding, so it gets its own size per tile
+ *  to match the other logos' optical size (roughly half the tile). */
+const KORTIX_MARK_SIZE = {
+  xs: 'size-3.5',
+  small: 'size-3',
+  medium: 'size-4',
+  default: 'size-4',
+  large: 'size-5',
+} as const;
+
+export function ProviderLogo({
+  providerID,
+  name,
+  className,
+  size = 'default',
+  tone = 'theme',
+}: {
+  providerID: string;
+  name?: string;
+  className?: string;
+  size?: 'xs' | 'small' | 'medium' | 'default' | 'large';
+  /** `light`: a white tile with a hairline and the black mark in BOTH
+   *  themes. `theme` follows the theme. */
+  tone?: 'theme' | 'light';
+}) {
+  const Image = useUiImage();
+  const light = tone === 'light';
+  // An unreachable models.dev logo (offline self-host) falls back to initials.
+  const [failedSrc, setFailedSrc] = useState<string>();
+  const iconSrc = providerIconSrc(providerID);
+  const src = iconSrc === failedSrc ? undefined : iconSrc;
+
+  const sizeClasses = {
+    xs: 'size-4',
+    small: 'size-8',
+    medium: 'size-9',
+    default: 'size-9',
+    large: 'size-11',
+  };
+
+  const iconSizes = {
+    xs: 16,
+    small: 20,
+    medium: 24,
+    default: 22,
+    large: 24,
+  };
+
+  return (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center',
+        // `xs` is the INLINE size — a bare mark sitting on a line of text (a
+        // command-palette group heading), not a chip. The tile is what makes
+        // the other sizes read as an avatar, and at 16px a tile around a 12px
+        // mark is all frame and no logo. The initials fallback keeps its tile
+        // at every size: two bare letters at 9px read as debris, not a logo.
+        src && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
+        sizeClasses[size],
+        className,
+      )}
+      aria-hidden="true"
+    >
+      {src ? (
+        <Image
+          src={src}
+          alt=""
+          width={iconSizes[size]}
+          height={iconSizes[size]}
+          unoptimized={src.startsWith('https:')}
+          onError={() => setFailedSrc(src)}
+          className={cn(
+            'object-contain',
+            !light && 'dark:invert',
+            // The Kortix mark is drawn edge-to-edge with no built-in padding,
+            // so inside a tile it needs its own inset to match the other
+            // logos' optical size. At `xs` there is no tile to inset from.
+            src === '/kortix-symbol.svg' && KORTIX_MARK_SIZE[size],
+          )}
+        />
+      ) : (
+        <span
+          className={cn(
+            'font-semibold tracking-wide uppercase',
+            light ? LOGO_TILE_LIGHT_TEXT : 'text-zinc-600 dark:text-zinc-300',
+            size === 'xs' ? 'text-[9px]' : 'text-xs',
+          )}
+        >
+          {initialsFor(providerID, name)}
+        </span>
+      )}
+    </span>
+  );
+}

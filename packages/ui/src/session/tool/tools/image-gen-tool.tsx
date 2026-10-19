@@ -1,0 +1,110 @@
+'use client';
+import { TextShimmer } from '../../../components/ui/text-shimmer';
+import { useFileContent } from '../../../shared/features/files/hooks/use-file-content';
+import { parseImageOutput } from '../../image-output-path';
+import {
+  BasicTool,
+  isLocalSandboxFilePath,
+  partInput,
+  partOutput,
+  ToolOutputFallback,
+} from '../shared/infrastructure';
+import { ToolRegistry } from '../shared/registry';
+import { ToolResultCard } from '../shared/result-card';
+import type { ToolProps } from '../shared/types';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import { ImageIcon } from '@phosphor-icons/react';
+import { useTranslations } from '../../../i18n';
+import { useEffect, useMemo, useState } from 'react';
+
+const TITLE_BY_ACTION: Record<string, string> = {
+  generate: 'Generate Image',
+  edit: 'Edit Image',
+  upscale: 'Upscale Image',
+  remove_bg: 'Remove Background',
+};
+
+export function ImageGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const input = partInput(call);
+  const output = partOutput(call);
+  const prompt = input.prompt as string | undefined;
+  const action = input.action as string | undefined;
+
+  const { imagePath, directUrl } = useMemo(() => parseImageOutput(output), [output]);
+
+  const isLocalPath = imagePath ? isLocalSandboxFilePath(imagePath) : false;
+  const fileContentPath = useMemo(() => {
+    if (!isLocalPath || !imagePath || directUrl) return null;
+    return imagePath.replace(/^\/workspace\//, '');
+  }, [isLocalPath, imagePath, directUrl]);
+  const {
+    data: fileContentData,
+    isLoading: isQueryLoading,
+    error: fileContentError,
+  } = useFileContent(fileContentPath, {
+    enabled: !!fileContentPath,
+  });
+  // A readiness 503 (parked/booting sandbox) counts as loading: useFileContent
+  // keeps polling while it lasts, so the image resolves once the box is up.
+  const isImageLoading = isQueryLoading || isSandboxNotReadyError(fileContentError);
+
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!(fileContentData?.encoding === 'base64' && fileContentData?.content)) {
+      setImageUrl(null);
+      return;
+    }
+    const binary = atob(fileContentData.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {
+      type: fileContentData.mimeType || 'image/webp',
+    });
+    const url = URL.createObjectURL(blob);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [fileContentData]);
+
+  const displayImageSrc = directUrl || imageUrl || '';
+
+  return (
+    <BasicTool
+      icon={<ImageIcon className="size-3.5 shrink-0" />}
+      trigger={{
+        title: TITLE_BY_ACTION[action ?? ''] || tHardcodedUi.raw('i18nComplete.text0753bd774f1b'),
+        subtitle: prompt?.slice(0, 60),
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {imagePath || directUrl ? (
+        <ToolResultCard bodyClassName="p-1">
+          {displayImageSrc ? (
+            <img
+              src={displayImageSrc}
+              alt={String(prompt || tHardcodedUi.raw('i18nComplete.textdf37e04fda71'))}
+              className="max-h-64 rounded-sm object-contain"
+            />
+          ) : isImageLoading ? (
+            <div className="px-2 py-1.5 text-xs">
+              <TextShimmer duration={1} spread={2} className="text-xs">
+                {tHardcodedUi.raw(
+                  'componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview',
+                )}
+              </TextShimmer>
+            </div>
+          ) : (
+            <div className="text-muted-foreground px-2 py-1.5 font-mono text-xs break-all">
+              {imagePath}
+            </div>
+          )}
+        </ToolResultCard>
+      ) : output ? (
+        <ToolOutputFallback output={output} toolName="image_gen" />
+      ) : null}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('image-gen', ImageGenTool);

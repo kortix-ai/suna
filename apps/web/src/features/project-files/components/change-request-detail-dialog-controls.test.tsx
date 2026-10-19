@@ -82,17 +82,17 @@ mock.module('@kortix/ui/shared/features/project-files/hooks/use-change-requests'
   useCloseChangeRequest: () => idleMutation,
   useReopenChangeRequest: () => idleMutation,
 }));
-mock.module('../hooks/use-change-request-recovery', () => ({
+mock.module('@kortix/ui/shared/features/project-files/hooks/use-change-request-recovery', () => ({
   useChangeRequestRecovery: () => ({ startRecovery() {}, startingCrId: null }),
 }));
 const manifestVersion =
   await import('@/features/workspace/customize/migrate-to-v2/manifest-version');
-mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
+mock.module('@kortix/ui/shared/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
   ...manifestVersion,
   useProjectManifestVersion: () => ({ version: 2 }),
 }));
 const projectCan = await import('@/lib/use-project-can');
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   ...projectCan,
   useProjectCans: (_projectId: string, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, leaves[action] ?? { allowed: false }])),

@@ -54,7 +54,7 @@ mock.module('@/hooks/projects/use-new-project-session', () => ({
 mock.module('@/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,
 }));
-mock.module('@/stores/billing-account-context', () => ({
+mock.module('@kortix/ui/shared/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
 }));
 mock.module('@/features/notifications/notification-bell', () => ({

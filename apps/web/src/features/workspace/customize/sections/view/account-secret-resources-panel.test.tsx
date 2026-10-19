@@ -86,7 +86,7 @@ mock.module('@kortix/sdk/react', () => ({
 }));
 mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: ME } }) }));
 const projectCan = await import('@/lib/use-project-can');
-mock.module('@/lib/use-project-can', () => ({ ...projectCan, useProjectCan: () => ({ allowed: true }) }));
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({ ...projectCan, useProjectCan: () => ({ allowed: true }) }));
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { NextIntlClientProvider } = await import('@/i18n/use-translations');

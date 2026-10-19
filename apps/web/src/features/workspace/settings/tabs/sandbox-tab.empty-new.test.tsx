@@ -44,7 +44,7 @@ globals.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
 globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 
 /** Both capabilities the tab gates on, granted — the actions must render. */
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: true }),
   useProjectCans: (projectId: string | undefined, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, { allowed: true }])),
@@ -52,7 +52,7 @@ mock.module('@/lib/use-project-can', () => ({
   projectPermissionProbes: () => [],
 }));
 
-mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
+mock.module('@kortix/ui/shared/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
   // The mock replaces the whole module, and the tab also statically imports
   // `manifestFilename` — a missing binding fails the module link, so mirror
   // the real pair (a v2 read renders the kortix.yaml label).

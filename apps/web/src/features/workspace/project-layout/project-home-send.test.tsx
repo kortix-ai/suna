@@ -25,7 +25,7 @@ mock.module('next/navigation', () => ({
   ...realNavigation,
   useSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
 }));
-mock.module('@/features/session/composer-chat-input', () => ({
+mock.module('@kortix/ui/session/composer-chat-input', () => ({
   ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
@@ -49,11 +49,11 @@ mock.module('@tanstack/react-query', () => ({
   ...realQuery,
   useQuery: () => ({ data: undefined }),
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   ...realProjectCan,
   useProjectCan: () => ({ allowed: false }),
 }));
-mock.module('@/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
+mock.module('@kortix/ui/shared/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
   ...realSdk,
   getProjectDetail: mock(),
@@ -73,7 +73,7 @@ mock.module('@kortix/sdk/react', () => ({
     },
   },
 }));
-mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({
+mock.module('@kortix/ui/shared/features/workspace/project-layout/sidebar-toggle', () => ({
   SidebarToggle: () => null,
 }));
 mock.module('./home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
@@ -84,7 +84,7 @@ mock.module('./home/first-chat', () => ({
     return props.composer;
   },
 }));
-mock.module('./home/welcome-body', () => ({
+mock.module('@kortix/ui/shared/features/workspace/project-layout/home/welcome-body', () => ({
   ProjectHomeWallpaper: () => null,
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
 }));

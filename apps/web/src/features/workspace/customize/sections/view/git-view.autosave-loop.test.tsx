@@ -66,7 +66,7 @@ mock.module('@kortix/ui/hint', uiHintMock);
 mock.module('@kortix/ui/shared/lib/use-deployment-cli-install-command', () => ({
   useDeploymentCliInstallCommand: () => 'install kortix',
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   useProjectCans: () => ({
     [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: true },
     [PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE]: { allowed: true },

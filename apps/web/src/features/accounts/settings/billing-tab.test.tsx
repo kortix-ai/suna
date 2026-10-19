@@ -20,7 +20,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
   useQueryClient: () => ({}),
 }));
-mock.module('@/hooks/billing', () => ({
+mock.module('@kortix/ui/shared/hooks/billing/index', () => ({
   ...billingHooks,
   accountStateKeys: { state: () => ['billing'] },
   accountStateSelectors: { totalCredits: () => total },
@@ -37,7 +37,7 @@ mock.module('@/features/billing/use-enterprise-sales', () => ({
   useTalkToSales: () => ({ talk: () => {}, isPending: false }),
   useEnterpriseDemo: () => ({ set: () => {}, isPending: false }),
 }));
-mock.module('@/stores/billing-account-context', () => ({
+mock.module('@kortix/ui/shared/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
   useBillingAccountResolved: () => true,
 }));

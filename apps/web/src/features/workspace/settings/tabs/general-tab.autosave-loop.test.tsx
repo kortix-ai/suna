@@ -68,7 +68,7 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/shared/lib/use-project-can', () => ({
   useProjectCans: () => ({
     [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: true },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },

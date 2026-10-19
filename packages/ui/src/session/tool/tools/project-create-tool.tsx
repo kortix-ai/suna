@@ -1,0 +1,67 @@
+'use client';
+
+import {
+  BasicTool,
+  isErrorOutput,
+  partInput,
+  partOutput,
+  ToolOutputFallback,
+  useToolNavigation,
+} from '../shared/infrastructure';
+import { ToolRegistry } from '../shared/registry';
+import type { ToolProps } from '../shared/types';
+import { PlusIcon as Plus } from '@phosphor-icons/react';
+import { useTranslations } from '../../../i18n';
+import { useCallback, useMemo } from 'react';
+
+import { parseProjectCreateOutput } from '../../../shared/lib/utils/kortix-tool-output';
+
+export function ProjectCreateTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const input = partInput(call);
+  const output = partOutput(call);
+  const { enabled: navigationEnabled, openTab } = useToolNavigation();
+  const name = (input.name as string) || '';
+  const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
+  const displayName = data?.name || name;
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it; it ran
+  // on every render of a row whose output stopped changing when the call ended.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
+
+  const handleOpenWorkspace = useCallback(() => {
+    openTab({
+      id: 'page:/workspace',
+      title: displayName,
+      type: 'page' as any,
+      href: '/workspace',
+    });
+  }, [openTab, displayName]);
+
+  if (errored) {
+    return (
+      <BasicTool
+        icon={<Plus />}
+        trigger={{
+          title: tI18nComplete.raw('text87bb59ba2f92'),
+          subtitle: displayName || 'failed',
+        }}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+      >
+        <ToolOutputFallback output={output} toolName="project_create" />
+      </BasicTool>
+    );
+  }
+
+  return (
+    <BasicTool
+      icon={<Plus />}
+      trigger={{
+        title: tI18nComplete.raw('text87bb59ba2f92'),
+        subtitle: displayName,
+      }}
+      onClick={navigationEnabled ? handleOpenWorkspace : undefined}
+    />
+  );
+}
+ToolRegistry.register('project-create', ProjectCreateTool);

@@ -152,7 +152,7 @@ describe('account creation handoff', () => {
         WorkspaceMenuSection: () => null,
       }));
       mock.module('./hub/account-pane', () => ({ AccountPane: children }));
-      mock.module('./hub/account-hub-location', () => ({ HubLink: children }));
+      mock.module('@kortix/ui/shared/features/accounts/hub/account-hub-location', () => ({ HubLink: children }));
       // The child is an external creation boundary. Execute the real host's callback.
       function CreationBoundary(_props: { onCreated: (value: KortixAccount) => void }) {
         return null;
