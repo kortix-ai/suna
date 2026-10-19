@@ -17,6 +17,18 @@ import { ConnectorNoticeRow } from './connector-notice-view';
 export const connectorMovesQueryKey = (projectId: string) =>
   ['connector-moves', projectId] as const;
 
+/** The move of a Pipedream connector in a `connectors_v2` project, or undefined. */
+export function useConnectorMove(projectId: string, connector: AdminConnector) {
+  const enabled =
+    useFeatureFlag(projectId, 'connectors_v2').enabled && connector.provider === 'pipedream';
+  const moves = useQuery({
+    queryKey: connectorMovesQueryKey(projectId),
+    queryFn: () => listConnectorMoves(projectId),
+    enabled,
+  });
+  return enabled ? moves.data?.find((candidate) => candidate.slug === connector.slug) : undefined;
+}
+
 /**
  * A Pipedream connector in a `connectors_v2` project: Kortix retires Pipedream.
  * With a Kortix app for it, the row moves the connector there: the person signs
@@ -37,14 +49,7 @@ export function ConnectorMoveRow({
   onMoved: () => void;
 }) {
   const t = useTranslations('connectorPages');
-  const enabled =
-    useFeatureFlag(projectId, 'connectors_v2').enabled && connector.provider === 'pipedream';
-  const moves = useQuery({
-    queryKey: connectorMovesQueryKey(projectId),
-    queryFn: () => listConnectorMoves(projectId),
-    enabled,
-  });
-  const move = moves.data?.find((candidate) => candidate.slug === connector.slug);
+  const move = useConnectorMove(projectId, connector);
   const [confirming, setConfirming] = useState(false);
   const run = useMutation({
     mutationFn: async () => {
@@ -66,7 +71,7 @@ export function ConnectorMoveRow({
     },
     onError: (error: Error) => errorToast(error.message),
   });
-  if (!enabled || !move) return null;
+  if (!move) return null;
 
   // The other accounts hold Pipedream logins that no Kortix app accepts.
   const others = Math.max(0, move.accounts - 1);
