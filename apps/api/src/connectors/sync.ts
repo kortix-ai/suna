@@ -77,6 +77,7 @@ import {
 import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
+import { mcpAppForUrl } from './mcp-apps';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
@@ -332,6 +333,11 @@ export async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
+  // A catalogue app Kortix signs in to with its own OAuth client takes a
+  // bearer token, even when its server lists tools without one (Google's do).
+  if (provider === 'mcp' && mcpAppForUrl(endpoint)?.auth.kind === 'kortix_client') {
+    return discoverHttpAuthChallenge('Bearer', 'mcp endpoint');
+  }
   assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
@@ -1083,9 +1089,31 @@ async function upsertConnector(
   // `ensureDefaultConnection` writes through its own connection. A computer
   // account is always one paired machine, so a computer connector never gets
   // a machine-less project default.
-  if (connectorId && spec.authorizationStrategy === 'project' && spec.provider !== 'computer') {
+  if (
+    connectorId &&
+    spec.authorizationStrategy === 'project' &&
+    spec.provider !== 'computer' &&
+    !(await skipsEmptyProjectAccount(projectId, spec))
+  ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
+}
+
+/**
+ * connectors_v2: an account is personal unless someone shares it, so sync seeds
+ * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
+ * project account, because it is not empty: a channel connector (the install
+ * token is the project's own identity) and a server with no auth (a public
+ * MCP server such as DeepWiki: the account is the whole connection).
+ */
+export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
+  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
 }
 
 /**

@@ -81,7 +81,7 @@ Subcommands:
      [--search <q>]                 (STARTED BY). --mine = you started it,
      [--children <session-id>]      --shared = another member did,
      [--label <label>]...           --automated = a trigger, channel or API
-     [--pinned|--archived]          key did; each lists top-level sessions
+     [--pinned|--archived|--deleted] key did; each lists top-level sessions
                                     with their child count. --search <q>
                                     matches every session you can see.
                                     --children <id> lists one session's
@@ -90,6 +90,9 @@ Subcommands:
                                     label. The list leaves out the sessions
                                     you archived: --archived lists only
                                     them, --pinned only your pinned ones.
+                                    --deleted lists the deleted sessions
+                                    you can still restore, with their full
+                                    id and the date they stay restorable.
                                     A pinned row shows (pinned). --json
                                     rows also carry model, the session's
                                     resolved model id (null when the row
@@ -560,6 +563,8 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
     return 0;
   }
 
+  if (flags.view === 'deleted') return printDeletedSessions(sessions);
+
   if (sessions.length === 0) {
     const filtered = flags.startedBy || flags.search || flags.children || flags.labels?.length || flags.view;
     process.stdout.write(
@@ -591,6 +596,32 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
   process.stdout.write(
     `\n  ${C.dim}${sessions.length} session${sessions.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+/**
+ * `ls --deleted` (Recently deleted): the full id, because `sessions restore`
+ * needs it (a deleted session is not in the list a short id expands against),
+ * and the last day each one can be restored.
+ */
+function printDeletedSessions(sessions: ProjectSession[]): number {
+  if (sessions.length === 0) {
+    process.stdout.write(`  ${C.dim}No deleted sessions you can restore.${C.reset}\n`);
+    return 0;
+  }
+  const label = (s: ProjectSession) => s.name ?? shortId(s.session_id);
+  const labelW = Math.min(Math.max(...sessions.map((s) => label(s).length), 6), 40);
+  process.stdout.write('\n');
+  process.stdout.write(`  ${C.dim}${pad('NAME', labelW)}   ${pad('DELETED', 12)}  RESTORABLE UNTIL  SESSION ID${C.reset}\n`);
+  for (const s of sessions) {
+    const until = s.restore_until ? s.restore_until.slice(0, 10) : '-';
+    process.stdout.write(
+      `  ${pad(trimMid(label(s), labelW), labelW)}   ${C.faded}${pad(s.deleted_at ? formatRelative(s.deleted_at) : '-', 12)}${C.reset}  ${pad(until, 16)}  ${s.session_id}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${sessions.length} deleted session${sessions.length === 1 ? '' : 's'}. Restore one: kortix sessions restore <session-id>${C.reset}\n\n`,
   );
   return 0;
 }

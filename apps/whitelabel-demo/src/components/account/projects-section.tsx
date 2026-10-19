@@ -1,12 +1,12 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@kortix/ui/card';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { FolderGit2 } from 'lucide-react';
 import Link from 'next/link';
+import { FolderIcon } from '@phosphor-icons/react';
 
 /**
  * Projects in the selected account — `projects.listForAccount(accountId)`. Each
@@ -47,7 +47,7 @@ export function ProjectsSection({ accountId }: { accountId: string }) {
             className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
           >
             <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
-              <FolderGit2 className="size-4 text-muted-foreground" />
+              <FolderIcon className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{p.name ?? p.project_id}</div>

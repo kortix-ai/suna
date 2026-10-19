@@ -35,14 +35,14 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       const limit = Number(c.req.query('limit'));
       try {
         return c.json(
           await deps.listDiscoverConnectors({
+            catalogue,
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
             category: c.req.query('category') || undefined,
@@ -82,15 +82,15 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverSections) return c.json({ error: 'catalogue unavailable' }, 502);
       const perCategory = Number(c.req.query('perCategory'));
       const maxCategories = Number(c.req.query('maxCategories'));
       try {
         return c.json(
           await deps.listDiscoverSections({
+            catalogue,
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
             ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
           }),
@@ -124,18 +124,30 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
-        return c.json(await deps.getDiscoverConnector(c.req.query('id')));
+        return c.json(await deps.getDiscoverConnector(c.req.query('id'), catalogue));
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
       }
     },
   );
+}
+
+/**
+ * Which catalogue Discover serves: Kortix's own MCP apps for a `connectors_v2`
+ * project (`connectors/mcp-apps.ts`), integrations.sh behind
+ * `connectors_api_discover`, else none.
+ */
+async function discoverCatalogue(
+  deps: ConnectorRouterDeps,
+  projectId: string,
+): Promise<'kortix' | 'integrations' | null> {
+  if (await deps.featureFlagEnabled(projectId, 'connectors_v2')) return 'kortix';
+  return (await deps.featureFlagEnabled(projectId, 'connectors_api_discover')) ? 'integrations' : null;
 }
 
 /**

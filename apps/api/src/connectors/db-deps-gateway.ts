@@ -13,6 +13,7 @@ import {
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsTenantForProject,
+  loadTelegramBotToken,
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
@@ -182,6 +183,7 @@ async function channelToken(
   }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
 
@@ -410,7 +412,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
-        actorUserId: principal.userId,
+        actorUserId: principal.secretsAsProject ? null : principal.userId,
         name: connector.authSecret,
         consumer: 'connector',
         throwWhenUndecryptable: true,

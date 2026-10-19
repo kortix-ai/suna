@@ -322,6 +322,14 @@
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
                 },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -751,11 +759,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },
@@ -2637,6 +2646,14 @@
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
                 },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -3066,11 +3083,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },
@@ -4483,6 +4501,14 @@
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
                 },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -4912,11 +4938,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },

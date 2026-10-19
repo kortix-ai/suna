@@ -3,6 +3,8 @@ import { configureKortix } from '../../http/config';
 import {
   activateConnection,
   checkMcpServerSignIn,
+  listConnectorMoves,
+  moveConnector,
   addComputerToProject,
   createConnector,
   deleteConnector,
@@ -255,6 +257,29 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   expect(last()).toMatchObject({ method: 'POST', body: registration });
   expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/register');
   expect(registered.application.client_id).toBe('issued-client');
+});
+
+test('a catalogue app on a Kortix OAuth client: discovery says kortix_client, registration sends no endpoint', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      discovery: {
+        resource_url: 'https://gmailmcp.googleapis.com/mcp/v1',
+        requires_authorization: true,
+        authorization_server: 'https://accounts.google.com',
+        kortix_client: true,
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+        warnings: [],
+      },
+    },
+  };
+  const { discovery } = await discoverConnectionOAuth2Resource('P1', 'connection-2');
+  expect(discovery.kortix_client).toBe(true);
+
+  nextResponse = { status: 200, body: { application: { client_id: 'kortix-google', token_endpoint_auth_method: 'client_secret_post', has_client_secret: true, has_private_key: false } } };
+  const registration = { issuer: 'https://accounts.google.com', token_url: 'https://oauth2.googleapis.com/token' };
+  await registerConnectionOAuth2Client('P1', 'connection-2', registration);
+  expect(last().body).toEqual(registration);
 });
 
 test('connection methods use the canonical connection route contract', async () => {
@@ -1561,4 +1586,41 @@ test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is o
     method: 'POST',
     body: { url: 'https://mcp.example.test/mcp' },
   });
+});
+
+test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each moves to', async () => {
+  const move = {
+    slug: 'gmail',
+    name: 'Gmail',
+    provider: 'composio' as const,
+    app: 'gmail',
+    to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
+    connection_id: null,
+    signed_in: false,
+    accounts: 1,
+  };
+  nextResponse = { status: 200, body: { moves: [move] } };
+  const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
+  expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
+  expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
+});
+
+test('moveConnector POSTs the account to sign in on and returns the next step', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'sign_in', connection_id: 'c1', to: { slug: 'gmail', name: 'Gmail', url: 'https://gmailmcp.googleapis.com/mcp/v1' } },
+  };
+  const result: import('./connectors').ConnectorMoveResult = await moveConnector('p1', 'gmail work', { connectionId: 'c1' });
+  expect(result.status).toBe('sign_in');
+  expect(result.connection_id).toBe('c1');
+  expect(last()).toEqual({
+    url: 'http://test.local/projects/p1/connectors/gmail%20work/move',
+    method: 'POST',
+    body: { connection_id: 'c1' },
+  });
+  nextResponse = { status: 200, body: { status: 'moved' } };
+  await moveConnector('p1', 'gmail');
+  expect(last().body).toEqual({});
 });

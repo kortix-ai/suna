@@ -472,7 +472,7 @@ these as standing rules whenever you touch the data/runtime layer:
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
 Do not claim you "can't verify from here" or hand back unverified work — you
 have everything needed to run the app, hit the real API, provision real
-Daytona sandboxes, drive the real UI in a browser, and assert behavior. Use it.
+Platinum sandboxes, drive the real UI in a browser, and assert behavior. Use it.
 
 ### Required verification standard — real inputs, real outputs
 
@@ -513,8 +513,10 @@ mocked internals when a real surface exists.
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
-- **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
-  Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
+- **Sandboxes** — REAL cloud sandboxes on Platinum, the reference provider
+  (`PLATINUM_API_KEY` in `apps/api/.env` / `.env.local`). Daytona is a legacy
+  fallback with removal scheduled and no support guarantee; E2B support is
+  discontinued. Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
   The session runtime answers on the same proxy, under `/kortix/runtime/*`,
@@ -754,7 +756,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `apps/web/src/components/ui/`, the live `/design-system` route |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/components/ui/` (`@kortix/ui`; `apps/web/src/components/ui/<name>.tsx` is a one-line re-export shim, never edit it), the live `/design-system` route |
+| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `chat/`, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 

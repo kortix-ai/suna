@@ -3010,6 +3010,38 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_engine_matches_apps_by_the_shared_vectors() {
+        let Ok(mut engine) = Engine::new() else {
+            eprintln!("skipped: no capture engine in this build");
+            return;
+        };
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/capture-format-v2/apps.json"
+        );
+        let v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for c in v["matches"].as_array().unwrap() {
+            let res = engine
+                .request(
+                    json!({"cmd": "_app_match", "entry": c["entry"], "bundle_id": c["app"]["bundle_id"], "aliases": c["app"]["aliases"]}),
+                    Duration::from_secs(5),
+                )
+                .unwrap();
+            assert_eq!(res["match"], c["match"], "{c}");
+        }
+        for k in v["keys"].as_array().unwrap() {
+            let res = engine
+                .request(
+                    json!({"cmd": "_app_match", "entry": k["input"], "bundle_id": ""}),
+                    Duration::from_secs(5),
+                )
+                .unwrap();
+            assert_eq!(res["key"], k["key"], "{k}");
+        }
+    }
+
     /// The macOS engine's display plan: which windows it hides from every display,
     /// which display a hidden window fully covers, and each display's top window.
     #[cfg(target_os = "macos")]
@@ -3124,6 +3156,37 @@ mod tests {
         };
         assert_eq!(d(1)["covered"], true, "no included window: no frame");
         assert_eq!(d(2)["covered"], false);
+    }
+
+    /// The macOS engine masks and includes a window by any of its app's identifiers.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_engine_plans_windows_by_every_app_identifier() {
+        let Ok(mut engine) = Engine::new() else {
+            eprintln!("skipped: no capture engine in this build");
+            return;
+        };
+        let w = |id: i64, bundle: &str, aliases: &[&str], x: i64| {
+            json!({"window_id": id, "bundle_id": bundle, "aliases": aliases, "app_name": bundle, "title": "t",
+                   "x": x, "y": 0, "w": 800, "h": 1000, "layer": 0})
+        };
+        let windows = [
+            w(1, "com.autodesk.AutoCAD2025", &["AutoCAD 2025", "AutoCAD"], 0),
+            w(2, "com.apple.Safari", &["Safari"], 800),
+        ];
+        let mut plan = |extra: Value| {
+            let mut req = json!({"cmd": "_plan_displays", "exclude_private": true,
+                "displays": [{"id": 1, "x": 0, "y": 0, "w": 1600, "h": 1000}], "windows": windows});
+            req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let res = engine.request(req, Duration::from_secs(5)).unwrap();
+            let mut hidden: Vec<i64> = res["hidden"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+            hidden.sort();
+            hidden
+        };
+        assert_eq!(plan(json!({"only_included": true, "include_bundle_ids": ["AutoCAD 2025.app"]})), [2]);
+        assert_eq!(plan(json!({"only_included": true, "include_bundle_ids": ["com.autodesk.autocad*"]})), [2]);
+        assert_eq!(plan(json!({"exclude_bundle_ids": ["AutoCAD"]})), [1]);
+        assert!(plan(json!({"exclude_bundle_ids": ["com.autodesk"]})).is_empty());
     }
 
     #[test]

@@ -26,6 +26,8 @@ const fallbackPoliciesSchema = z.array(fallbackPolicySchema).superRefine((polici
 });
 
 export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = JSON.stringify([
+  // The two managed models back each other up. Each already tries three
+  // upstreams (Morph direct, Zen, OpenRouter) before its fallback model.
   {
     id: 'platform-default-resilience',
     models: ['deepseek-v4.1-flash'],
@@ -33,9 +35,15 @@ export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = JSON.stringify([
     fallbackOn: 'transient',
   },
   {
+    id: 'platform-glm-resilience',
+    models: ['glm-5.3-flash'],
+    fallbackModels: ['deepseek-v4.1-flash'],
+    fallbackOn: 'transient',
+  },
+  {
     id: 'platform-default-degrade',
     models: ['codex/gpt-5.6-sol'],
-    fallbackModels: ['deepseek-v4.1-flash'],
+    fallbackModels: ['deepseek-v4.1-flash', 'glm-5.3-flash'],
     fallbackOn: 'any-error',
   },
 ]);

@@ -1,5 +1,6 @@
 'use client';
 
+import { DriveUploadTray } from '@/features/project-files/components/drive-upload-tray';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
@@ -274,6 +275,11 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <SettingsPanel projectId={projectId} />
+
+        {/* Drive uploads report here, on every page of the project, so a batch
+            started in one folder still shows its progress after the user moves
+            on. Empty, it renders nothing. */}
+        <DriveUploadTray />
 
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}

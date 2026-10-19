@@ -25,6 +25,7 @@ mock.module('../channels/install-store', () => ({
   loadSlackInstall: async () => null,
   loadTeamsInstall: async () => (hasTeamsInstall ? { tenantId: 'tenant-1' } : null),
   listAgentMailInstalls: async () => [],
+  loadTelegramInstall: async () => null,
 }));
 
 const { synthesizeChannelConnectors } = await import('../connectors/channel-materialize');

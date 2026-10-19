@@ -73,6 +73,7 @@ import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
   accountToWrite,
   appConnectors,
+  eventAppTarget,
   indexEventApps,
   parseConfigErrors,
   schemaFields,
@@ -80,6 +81,7 @@ import {
 import { describeLastRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
+import { EventCheckTimes } from './event-check-times';
 import { TriggerCallouts } from './trigger-callouts';
 import {
   type ComposerBlock,
@@ -467,7 +469,8 @@ function SheetPanel({
             />
           )}
         </TabsContent>
-        <TabsContent value="runs" className="pb-8">
+        <TabsContent value="runs" className="space-y-3 pb-8">
+          <EventCheckTimes trigger={trigger} />
           <TriggerRunsPanel
             projectId={projectId}
             trigger={trigger}
@@ -562,7 +565,7 @@ function SheetForm({
   const needsConnector =
     draft.kind === 'event' &&
     app !== null &&
-    draft.appSlug !== base.appSlug &&
+    (draft.appSlug !== base.appSlug || draft.appSource !== base.appSource) &&
     appConnectors(app).length === 0;
   const dirty = JSON.stringify(draft) !== JSON.stringify(base) || needsConnector;
 
@@ -589,12 +592,7 @@ function SheetForm({
     mutationFn: async () => {
       const body = { ...changes };
       if (needsConnector && app) {
-        body.connector = await add({
-          app: app.app,
-          name: app.name,
-          connector: null,
-          newConnectorSlug: app.new_connector_slug,
-        });
+        body.connector = await add(eventAppTarget(app));
       }
       return updateProjectTrigger(projectId, trigger.slug, body);
     },
@@ -652,6 +650,7 @@ function SheetForm({
         apps={appIndex}
         onEditEvent={editEvent}
       />
+      <EventCheckTimes trigger={trigger} />
 
       {canWrite ? (
         <>

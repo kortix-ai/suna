@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyRound, ServerCog } from 'lucide-react';
+import { HardDrivesIcon, KeyIcon } from '@phosphor-icons/react';
 
 /**
  * Which of the two connector access modes this instance is running.
@@ -29,9 +29,9 @@ export function ModeBadge({ wrapperMode }: { wrapperMode: boolean }) {
       data-mode={wrapperMode ? 'backend' : 'direct'}
     >
       {wrapperMode ? (
-        <ServerCog className="size-3.5 shrink-0" />
+        <HardDrivesIcon className="size-3.5 shrink-0" />
       ) : (
-        <KeyRound className="size-3.5 shrink-0" />
+        <KeyIcon className="size-3.5 shrink-0" />
       )}
       {label}
     </span>

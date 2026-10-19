@@ -44,9 +44,54 @@ function isInstaller(name: string, os: DesktopOs): boolean {
  * whichever .dmg happens to sort first — that was the old Intel-download bug.
  */
 export function pickDesktopAsset(assets: ReleaseAsset[], os: DesktopOs): ReleaseAsset | undefined {
-  const matches = assets.filter((a) => isInstaller(a.name, os));
-  if (os !== 'macos' || matches.length <= 1) return matches[0];
-  return matches.find((a) => a.name.toLowerCase().includes('universal')) ?? matches[0];
+  let matches = assets.filter((a) => isInstaller(a.name, os));
+  const universal = matches.filter((a) => a.name.toLowerCase().includes('universal'));
+  if (os === 'macos' && universal.length) matches = universal;
+  // A channel prerelease (desktop-dev-latest) keeps every build it ever published, from
+  // Kortix-0.9.83 on: the newest version is the current build, never the first listed.
+  return matches.sort((a, b) => compareVersions(versionOf(b.name), versionOf(a.name)))[0];
+}
+
+function versionOf(name: string): number[] {
+  return (name.match(/(\d+)\.(\d+)\.(\d+)/) ?? []).slice(1).map(Number);
+}
+
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0);
+  return 0;
+}
+
+export type DesktopChannel = 'dev' | 'staging' | 'stable';
+
+/**
+ * The desktop build this deployment hands out, keyed on its backend: dev.kortix.com
+ * (dev-api) serves `desktop-dev-latest`, staging.kortix.com (staging-api) serves
+ * `desktop-staging-latest`. Production, local and every self-hosted instance serve the
+ * newest vX.Y.Z. Each channel build opens its own deployment (desktop.yml).
+ */
+export function deploymentChannel(backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL): DesktopChannel {
+  try {
+    const host = new URL(backendUrl ?? '').hostname;
+    if (host === 'dev-api.kortix.com') return 'dev';
+    if (host === 'staging-api.kortix.com') return 'staging';
+  } catch {
+    // A relative or unset backend URL is a local or self-hosted build.
+  }
+  return 'stable';
+}
+
+/** The installers of `channel`. Null on any failure, like getLatestRelease. */
+export function getDesktopRelease(channel: DesktopChannel = deploymentChannel()): Promise<Release | null> {
+  return channel === 'stable' ? getLatestRelease() : getTaggedRelease(`desktop-${channel}-latest`);
+}
+
+/**
+ * Where a desktop download falls back to. A dev or staging deployment never falls back
+ * to the production installer: that build opens kortix.com, not the deployment it was
+ * downloaded from.
+ */
+export function desktopReleasesPage(channel: DesktopChannel = deploymentChannel()): string {
+  return channel === 'stable' ? RELEASES_PAGE : `https://github.com/${REPO}/releases/tag/desktop-${channel}-latest`;
 }
 
 /**
@@ -110,16 +155,19 @@ export async function getLatestRelease(): Promise<Release | null> {
 }
 
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
-const CAPTURE_DEV_API = `https://api.github.com/repos/${REPO}/releases/tags/capture-dev-latest`;
-
 /**
  * The dev channel's Kortix Capture build (the `capture-dev-latest` prerelease that
  * capture.yml publishes from dev): what dev.kortix.com serves, since its installers sync to
  * dev-api. Null on any failure, like getLatestCaptureRelease.
  */
-export async function getCaptureDevRelease(): Promise<Release | null> {
+export function getCaptureDevRelease(): Promise<Release | null> {
+  return getTaggedRelease('capture-dev-latest');
+}
+
+/** A release by its tag, such as a mutable channel prerelease. Null on any failure. */
+async function getTaggedRelease(tag: string): Promise<Release | null> {
   try {
-    const res = await fetch(CAPTURE_DEV_API, {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
       next: { revalidate: 600 },
       signal: AbortSignal.timeout(3_000),
@@ -131,7 +179,7 @@ export async function getCaptureDevRelease(): Promise<Release | null> {
         Boolean(a.name && a.browser_download_url),
       )
       .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
-    return assets.length ? { version: data.name ?? data.tag_name ?? 'dev', assets } : null;
+    return assets.length ? { version: data.name ?? data.tag_name ?? tag, assets } : null;
   } catch {
     return null;
   }

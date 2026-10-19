@@ -104,6 +104,8 @@ async function grant(sessionId: string, principalType: 'member' | 'group', princ
   await db.insert(projectSessionGrants).values({ sessionId: sid(sessionId), principalType, principalId });
 }
 
+const daysAgoIso = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+
 const page = (input: {
   project: string;
   viewer: string;
@@ -206,14 +208,21 @@ beforeAll(async () => {
     { id: 'warm-private-a', createdBy: MEMBER_A, visibility: 'private', metadata: { warm: true } },
     { id: 'warm-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { warm: true } },
     { id: 'warm-false', createdBy: MEMBER_A, visibility: 'project', metadata: { warm: false } },
-    { id: 'deleted-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: '2026-10-01T00:00:00.000Z' } },
+    { id: 'deleted-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(18) } },
     {
       id: 'deleted-warm-project-a',
       createdBy: MEMBER_A,
       visibility: 'project',
-      metadata: { deletedAt: '2026-10-01T00:00:00.000Z', warm: true },
+      metadata: { deletedAt: daysAgoIso(18), warm: true },
     },
-    { id: 'deleted-private-b', createdBy: MEMBER_B, visibility: 'private', metadata: { deletedAt: '2026-10-01T00:00:00.000Z' } },
+    { id: 'deleted-private-b', createdBy: MEMBER_B, visibility: 'private', metadata: { deletedAt: daysAgoIso(18) } },
+    // Recently deleted (KRTX-2853): restorable ones by owner and visibility,
+    // one past its restore window, and a deleted warm draft.
+    { id: 'recent-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(2) } },
+    { id: 'recent-project-b', createdBy: MEMBER_B, visibility: 'project', metadata: { deletedAt: daysAgoIso(3) } },
+    { id: 'recent-private-b', createdBy: MEMBER_B, visibility: 'private', metadata: { deletedAt: daysAgoIso(4) } },
+    { id: 'expired-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(31) } },
+    { id: 'recent-warm-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(1), warm: true } },
     { id: 'backend-project', createdBy: MEMBER_A, visibility: 'project', origin: 'backend' },
     { id: 'backend-own', createdBy: MEMBER_A, visibility: 'private', origin: 'backend' },
     { id: 'spawned-by-backend-own', createdBy: MEMBER_A, visibility: 'private', metadata: { spawned_by_session: sid('backend-own') } },
@@ -360,7 +369,8 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
               // The loader refuses the manager scope without standing before any read.
               if (scope === 'project' && !canManageProject) continue;
               for (const accountSessionOversight of [false, true]) {
-                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight };
+               for (const deleted of [false, true]) {
+                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight, deleted };
                 const fromSql = await db
                   .select({ sessionId: projectSessions.sessionId })
                   .from(projectSessions)
@@ -376,6 +386,7 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
                   runtimeStatusBySession: new Map(),
                   accountSessionOversight,
                   agentPrincipal,
+                  deleted,
                 });
                 const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
                 expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
@@ -383,13 +394,28 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
                   ids: fromJs.items.map((item) => short(item.row.sessionId)).sort(),
                 });
                 compared += 1;
+               }
               }
             }
           }
         }
       }
     }
-    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2);
+    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2);
+  });
+
+  test('Recently deleted lists what each viewer may restore: their own, or every one they can open as a manager, inside the window', async () => {
+    const deleted = async (viewer: string, manager: boolean) =>
+      (await walk({ project: PROJECT_RULES, viewer, manager, limit: 200, filter: { deleted: true } })).ids.sort();
+    // Member A started recent-project-a; expired-project-a is past its window, and a deleted warm draft holds nothing.
+    expect(await deleted(MEMBER_A, false)).toEqual(['deleted-project-a', 'recent-project-a'].sort());
+    // Member B started three, including a private one.
+    expect(await deleted(MEMBER_B, false)).toEqual(['deleted-private-b', 'recent-private-b', 'recent-project-b'].sort());
+    // A manager restores what anyone deleted, but only among sessions they can open: never B's private ones.
+    expect(await deleted(MANAGER, true)).toEqual(['deleted-project-a', 'recent-project-a', 'recent-project-b'].sort());
+    // The default list still omits every deleted row.
+    const live = (await walk({ project: PROJECT_RULES, viewer: MEMBER_A, limit: 200 })).ids;
+    expect(live.some((id) => id.startsWith('recent-') || id.startsWith('expired-') || id.startsWith('deleted-'))).toBe(false);
   });
 
   test('the fixture reaches every rule: member B sees grants and project rows, never another private row', async () => {

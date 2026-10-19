@@ -13,7 +13,7 @@ describe('chooseReleaseProvider', () => {
   });
 
   test('a named provider wins; mounts on it still need platinum', () => {
-    expect(chooseReleaseProvider({ ...base, hasMounts: false, requested: 'e2b' })).toEqual({ ok: true, provider: 'e2b' });
+    expect(chooseReleaseProvider({ ...base, hasMounts: false, requested: 'daytona' })).toEqual({ ok: true, provider: 'daytona' });
     expect(chooseReleaseProvider({ ...base, hasMounts: true, requested: 'daytona' })).toEqual({ ok: false, provider: 'daytona' });
   });
 
@@ -28,7 +28,7 @@ describe('chooseReleaseProvider', () => {
 
   test('platinum not configured: an existing App keeps its provider, a new App gets the platform default (null)', () => {
     const off = { ...base, platinumEnabled: false, hasMounts: false };
-    expect(chooseReleaseProvider({ ...off, previous: 'e2b' })).toEqual({ ok: true, provider: 'e2b' });
+    expect(chooseReleaseProvider({ ...off, previous: 'daytona' })).toEqual({ ok: true, provider: 'daytona' });
     expect(chooseReleaseProvider(off)).toEqual({ ok: true, provider: null });
   });
 });

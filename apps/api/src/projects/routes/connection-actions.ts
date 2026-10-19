@@ -14,7 +14,7 @@ import {
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
-import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { oauth2ConnectionStatus, revokeConnectionOAuth2, startConnectionSignIn } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
@@ -34,6 +34,7 @@ import {
   finalizeComposioConnect,
   startPipedreamConnect,
   finalizePipedreamConnect,
+  parseRedirects,
 } from '../lib/connection-hosted-connect';
 
 const ShareConnectionInput = z
@@ -512,6 +513,20 @@ export function registerConnectionActionsRoutes(): void {
             { error: 'Use the shared connector connect endpoint for the default connection' },
             409,
           );
+        }
+        // An MCP server signs in through Kortix's own OAuth flow, with no hosted
+        // provider: the link is the provider's consent page.
+        if (connection.providerType === 'mcp') {
+          if (operation === 'connect') {
+            const connectUrl = await startConnectionSignIn({
+              identity: { accountId: loaded.row.accountId, projectId, connectorId: connection.connectorId, connectionId },
+              initiatedBy: loaded.userId,
+              redirects: parseRedirects(await readJsonObject(c)),
+            });
+            if (!connectUrl) return c.json({ error: 'This MCP server has no one-click sign-in' }, 409);
+            return c.json({ app: connection.connectorAlias, connectUrl });
+          }
+          return c.json({ connected: (await oauth2ConnectionStatus(connectionId)).status === 'active' });
         }
         // Provider-neutral, like the connector-scoped route and the connect-link
         // intake. This was Pipedream-only, so a Composio connector's labelled

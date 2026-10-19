@@ -15,7 +15,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *  - "3,000+ apps" is the only sanctioned number. No benchmarks, no latency,
  *    no uptime, no customer names.
  *  - NEVER claim blanket "microVM isolation". Platinum is a Cloud Hypervisor
- *    microVM; Daytona, the default provider, is not. Write "its own isolated
+ *    microVM; Daytona, the legacy fallback provider, is not. Write "its own isolated
  *    machine" and name the provider where the distinction matters — the same
  *    rule `features/marketing/security-page/content.ts` follows.
  *  - NEVER write that a secret is "never shown to the model". A granted runtime
@@ -213,7 +213,7 @@ export const isolation = {
     {
       id: 'machine',
       k: 'One machine per session',
-      v: 'Sessions never share a filesystem, a process table, or a network namespace. On Kortix’s own Platinum compute the boundary is a Cloud Hypervisor microVM; Daytona and E2B are also supported, and we will tell you which one you are on.',
+      v: 'Sessions never share a filesystem, a process table, or a network namespace. On Platinum, Kortix’s own compute and the reference provider, the boundary is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and we will tell you which one you are on.',
     },
     {
       id: 'secrets',

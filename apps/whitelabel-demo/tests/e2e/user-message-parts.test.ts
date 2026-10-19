@@ -1,6 +1,6 @@
 import type { ClassifiedPart } from '@kortix/sdk';
 import { expect, test } from 'bun:test';
-import { userMessageParts } from '../../src/components/chat/user-message-parts';
+import { userMessageParts } from '@kortix/ui/chat';
 
 const file: ClassifiedPart = {
   kind: 'file', id: 'attachment', filename: 'notes.txt', mime: 'text/plain',

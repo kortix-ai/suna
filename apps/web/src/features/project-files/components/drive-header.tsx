@@ -8,7 +8,7 @@ import { ProjectPageHeader } from '@/features/workspace/project-layout/project-p
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
+import { filesNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
 import {
@@ -162,7 +162,7 @@ export function DriveHeader({
     // With Volumes on, the git repository is "Repo" and "Files" is the shared
     // folders; off, the repository keeps the title it had before volumes.
     const title =
-      repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
+      filesNavLabel(volumes.enabled) === 'drive' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
         <ProjectPageHeader title={title}>

@@ -37,9 +37,13 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/trayTemplate@2x.png");
 #[cfg(target_os = "macos")]
 const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/trayIdleTemplate@2x.png");
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/windows/tray.png");
+#[cfg(windows)]
+const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/windows/trayIdle.png");
+#[cfg(all(unix, not(target_os = "macos")))]
 const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/tray.png");
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/trayIdle.png");
 /// macOS draws a template image in the menu bar's own color.
 const TEMPLATE: bool = cfg!(target_os = "macos");

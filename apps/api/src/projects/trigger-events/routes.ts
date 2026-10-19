@@ -5,6 +5,7 @@ import { errors, json } from '../../openapi';
 import { projectWebhooksApp } from '../lib/app';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { applyNotices, deliverEvents } from './deliver';
+import { MCP_SOURCE_ID } from './mcp-source';
 import { eventSourceFor } from './registry';
 import { EventSignatureError } from './types';
 
@@ -38,7 +39,8 @@ export function registerEventIngressRoutes(): void {
     },
   }), async (c) => {
     const provider = eventSourceFor(c.req.param('provider'));
-    if (!provider) return c.json({ error: 'Unknown event provider' }, 404);
+    // Kortix checks `mcp` apps itself: nothing is ever pushed to it, so it is no ingress at all.
+    if (!provider || provider.id === MCP_SOURCE_ID) return c.json({ error: 'Unknown event provider' }, 404);
     if (!provider.ingressConfigured()) return c.json({ error: 'event_ingress_not_configured' }, 503);
 
     let received;

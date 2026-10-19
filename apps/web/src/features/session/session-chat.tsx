@@ -97,6 +97,7 @@ import {
   COMPOSER_SHELL_CLASS,
   Composer as SessionChatInput,
 } from '@/features/session/composer/composer';
+import { ComposerDropZone } from '@/features/session/composer/composer-drop-zone';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -4080,7 +4081,9 @@ export function SessionChat({
     <ProjectFilesProvider
       value={{ projectId: projectId ?? '', ref: outcomesBaseRef, defaultBranch: outcomesBaseRef }}
     >
-      <div
+      {/* A file dropped anywhere on the session's column attaches to its
+          composer, not only on the composer card. */}
+      <ComposerDropZone
         className={cn(
           'relative flex h-full flex-col',
           // Transparent in the welcome state so the root-level full-bleed wallpaper
@@ -4775,7 +4778,7 @@ export function SessionChat({
             </>
           )}
         </SessionBodyRow>
-      </div>
+      </ComposerDropZone>
     </ProjectFilesProvider>
   );
 }

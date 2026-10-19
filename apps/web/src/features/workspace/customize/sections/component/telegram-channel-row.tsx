@@ -1,0 +1,230 @@
+'use client';
+
+/**
+ * Telegram as a channel row (the `connectors_v2` feature flag): connect a bot
+ * by its BotFather token, pick who may talk to it, disconnect. The token goes
+ * to the API once and never comes back to the browser.
+ */
+import { Button } from '@/components/ui/button';
+import { Field, FieldDescription, FieldGroup, FieldTitle } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
+import { errorToast, successToast } from '@/components/ui/toast';
+import {
+  ChannelDisconnectButton,
+  ChannelRow,
+} from '@/features/workspace/customize/sections/component/channel-row';
+import {
+  useConnectTelegram,
+  useDisconnectTelegram,
+  useSetTelegramAllowedUsers,
+  useTelegramInstall,
+} from '@/hooks/channels/use-channels-installations';
+import { useTranslations } from '@/i18n/use-translations';
+import { TelegramLogoIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
+
+/** "1, 2 3" → ["1","2","3"]; null when any entry is not a number. */
+export function parseTelegramUserIds(raw: string): string[] | null {
+  const ids = raw.split(/[\s,]+/).filter(Boolean);
+  return ids.every((id) => /^\d{1,20}$/.test(id)) ? ids : null;
+}
+
+export function TelegramChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const { data: install } = useTelegramInstall(projectId);
+  const disconnect = useDisconnectTelegram();
+  const [dialog, setDialog] = useState<'connect' | 'users' | null>(null);
+
+  return (
+    <>
+      <ChannelRow
+        icon={<TelegramLogoIcon className="text-muted-foreground size-5 shrink-0" />}
+        name="Telegram"
+        connected={Boolean(install)}
+        detail={install?.username ? `@${install.username}` : null}
+        pitch={t.raw('text51e6bc656528')}
+        actions={
+          !canWrite ? null : install ? (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setDialog('users')}>
+                {t.raw('text2c3059c25723')}
+              </Button>
+              <ChannelDisconnectButton
+                pending={disconnect.isPending}
+                onConfirm={(done) =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => {
+                      done();
+                      successToast(t.raw('textdfea5351a743'));
+                    },
+                    onError: (error) => errorToast(error.message),
+                  })
+                }
+              />
+            </>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setDialog('connect')}>
+              {t.raw('text1a2303ede074')}
+            </Button>
+          )
+        }
+      />
+      <Modal open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
+        <ModalContent>
+          {dialog === 'connect' ? (
+            <TelegramConnectForm projectId={projectId} onDone={() => setDialog(null)} />
+          ) : dialog === 'users' ? (
+            <TelegramUsersForm
+              projectId={projectId}
+              initial={install?.allowed_user_ids ?? []}
+              onDone={() => setDialog(null)}
+            />
+          ) : null}
+        </ModalContent>
+      </Modal>
+    </>
+  );
+}
+
+function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const connect = useConnectTelegram();
+  const [token, setToken] = useState('');
+  const [users, setUsers] = useState('');
+  const ids = parseTelegramUserIds(users);
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ids) return;
+        connect.mutate(
+          { projectId, bot_token: token.trim(), allowed_user_ids: ids },
+          {
+            onSuccess: () => {
+              successToast(t.raw('text815464994ec4'));
+              onDone();
+            },
+            onError: (error) => errorToast(error.message),
+          },
+        );
+      }}
+    >
+      <ModalHeader>
+        <ModalTitle>{t.raw('text00c7991f0490')}</ModalTitle>
+        <ModalDescription>{t.raw('texta832efd235a7')}</ModalDescription>
+      </ModalHeader>
+      <ModalBody>
+        <FieldGroup>
+          <Field>
+            <FieldTitle>{t.raw('text5bb9aecca021')}</FieldTitle>
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="123456789:AA…"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+          </Field>
+          <TelegramUsersField value={users} onChange={setUsers} invalid={!ids} />
+        </FieldGroup>
+      </ModalBody>
+      <ModalFooter>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          {t.raw('text19766ed6ccb2')}
+        </Button>
+        <Button type="submit" disabled={!token.trim() || !ids || connect.isPending}>
+          {connect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+          {t.raw('text1a2303ede074')}
+        </Button>
+      </ModalFooter>
+    </form>
+  );
+}
+
+function TelegramUsersForm({
+  projectId,
+  initial,
+  onDone,
+}: {
+  projectId: string;
+  initial: string[];
+  onDone: () => void;
+}) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const save = useSetTelegramAllowedUsers();
+  const [users, setUsers] = useState(initial.join(', '));
+  const ids = parseTelegramUserIds(users);
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ids) return;
+        save.mutate(
+          { projectId, userIds: ids },
+          {
+            onSuccess: () => {
+              successToast(t.raw('text2f95b1c9ee2b'));
+              onDone();
+            },
+            onError: (error) => errorToast(error.message),
+          },
+        );
+      }}
+    >
+      <ModalHeader>
+        <ModalTitle>{t.raw('text2c3059c25723')}</ModalTitle>
+      </ModalHeader>
+      <ModalBody>
+        <TelegramUsersField value={users} onChange={setUsers} invalid={!ids} />
+      </ModalBody>
+      <ModalFooter>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          {t.raw('text19766ed6ccb2')}
+        </Button>
+        <Button type="submit" disabled={!ids || save.isPending}>
+          {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+          {t.raw('text1509f561f241')}
+        </Button>
+      </ModalFooter>
+    </form>
+  );
+}
+
+function TelegramUsersField({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  invalid: boolean;
+}) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <Field>
+      <FieldTitle>{t.raw('text71552d197b53')}</FieldTitle>
+      <Input
+        inputMode="numeric"
+        placeholder="123456789, 987654321"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-invalid={invalid}
+      />
+      <FieldDescription>{invalid ? t.raw('text50fcd9c3c020') : t.raw('text1f7a451d4722')}</FieldDescription>
+    </Field>
+  );
+}

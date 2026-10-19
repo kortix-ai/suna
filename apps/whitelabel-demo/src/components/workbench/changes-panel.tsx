@@ -11,10 +11,10 @@
  * `CommitsView` and `ChangeRequestsView` (under `./changes/`).
  */
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GitCommitHorizontal, GitPullRequest } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { ChangeRequestsView } from './changes/change-requests-view';
 import { CommitsView } from './changes/commits-view';
+import { GitCommitIcon, GitPullRequestIcon } from '@phosphor-icons/react';
 
 export function ChangesPanel({
   projectId,
@@ -28,11 +28,11 @@ export function ChangesPanel({
       <Tabs defaultValue="commits" className="flex h-full min-h-0 flex-col">
         <TabsList className="mx-3 mt-3 shrink-0 self-start">
           <TabsTrigger value="commits">
-            <GitCommitHorizontal className="size-3.5" />
+            <GitCommitIcon className="size-3.5" />
             Commits
           </TabsTrigger>
           <TabsTrigger value="change-requests">
-            <GitPullRequest className="size-3.5" />
+            <GitPullRequestIcon className="size-3.5" />
             Change requests
           </TabsTrigger>
         </TabsList>

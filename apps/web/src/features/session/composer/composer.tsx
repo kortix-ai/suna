@@ -45,6 +45,7 @@ import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-ga
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import { useComposerDropZone } from './composer-drop-zone';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
 import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
@@ -922,6 +923,17 @@ function ComposerImpl(props: SessionChatInputProps) {
     },
     [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
   );
+
+  // On the session page a file dropped anywhere in the column lands here
+  // (`ComposerDropZone`), and the editor takes focus for the message.
+  const acceptZoneDrop = useCallback(
+    (files: File[]) => {
+      appendAttachedFiles(files);
+      editorRef.current?.focus();
+    },
+    [appendAttachedFiles],
+  );
+  const inDropZone = useComposerDropZone(disabled || lockForQuestion ? null : acceptZoneDrop);
 
   const removeAttachedFile = useCallback(
     (index: number) => {
@@ -1954,10 +1966,11 @@ function ComposerImpl(props: SessionChatInputProps) {
   const cardProps: ComposerCardDerived = {
     tHardcodedUi,
     isDragOver,
-    handleDragEnter,
-    handleDragOver,
-    handleDragLeave,
-    handleDropFiles,
+    // Inside a `ComposerDropZone` the zone owns every file drag.
+    handleDragEnter: inDropZone ? undefined : handleDragEnter,
+    handleDragOver: inDropZone ? undefined : handleDragOver,
+    handleDragLeave: inDropZone ? undefined : handleDragLeave,
+    handleDropFiles: inDropZone ? undefined : handleDropFiles,
     attachedFiles,
     promptAttachmentItems,
     removeAttachedFile,

@@ -17,6 +17,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { sessionInitiatorLabel } from './session-initiator';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -182,7 +183,8 @@ export function serializeSession(
     project_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
-    sandbox_provider: row.sandboxProvider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     runtime_session_id: row.runtimeSessionId,
@@ -255,6 +257,7 @@ export function serializeSession(
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
     deleted_by: ctx?.deletedBy ?? null,
+    restore_until: ctx?.deletedAt ? (sessionRestoreUntil(ctx.deletedAt)?.toISOString() ?? null) : null,
     ...(ctx?.userState
       ? {
           pinned_at: ctx.userState.pinnedAt?.toISOString() ?? null,

@@ -6,22 +6,15 @@
  * "start a new session" action. The chip itself never mutates anything.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { ChevronDown, Plus } from 'lucide-react';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import type { ReactNode } from 'react';
 import { START_NEW_SESSION_ACTION } from '../scope-bar-model';
+import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 
 /** One compact chip. Opens a popover; the chip itself never mutates anything. */
 export function ScopeChip({
@@ -60,15 +53,13 @@ export function ScopeChip({
         side="top"
         className="w-80 max-h-[60dvh] overflow-y-auto scrollbar-thin"
       >
-        <PopoverHeader>
+        <div className="flex flex-col gap-1 text-sm">
           <div className="flex items-center gap-2">
-            <PopoverTitle>{title}</PopoverTitle>
-            <Badge variant="secondary" className="text-[11px]">
-              {badge}
-            </Badge>
+            <h2 className="font-medium">{title}</h2>
+            <Badge variant="secondary">{badge}</Badge>
           </div>
-          <PopoverDescription className="text-xs leading-relaxed">{note}</PopoverDescription>
-        </PopoverHeader>
+          <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>
+        </div>
         {children}
       </PopoverContent>
     </Popover>
@@ -94,7 +85,7 @@ export function ScopeEditor({
           className="h-7 w-full justify-between px-1 text-xs font-normal text-muted-foreground"
         >
           {label}
-          <ChevronDown className="size-3.5" />
+          <CaretDownIcon className="size-3.5" />
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-2 space-y-2.5">{children}</CollapsibleContent>
@@ -158,7 +149,7 @@ export function StartWithScope({
         disabled={pending || issues.length > 0}
         onClick={onStart}
       >
-        {pending ? <Loading className="size-3.5" /> : <Plus className="size-3.5" />}
+        {pending ? <Loading className="size-3.5" /> : <PlusIcon className="size-3.5" />}
         {START_NEW_SESSION_ACTION}
       </Button>
     </div>

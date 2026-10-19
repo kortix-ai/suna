@@ -12,13 +12,12 @@ import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
@@ -135,6 +134,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
+/** Tabs that need a project flag: left out of the bar until access settles. */
+const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
+
 function GroupSeam() {
   return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
 }
@@ -148,16 +150,12 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Files is the one flag-gated tab: the project's shared folders exist only
-  // once the project turns `drives` on. Loading counts as off.
-  const drivesGate = useFeatureFlag(projectId, 'drives');
-  const drive = useProjectDrive(projectId, drivesGate.enabled);
-  const conflicts = drive.data?.openConflicts ?? 0;
-  const tDrives = useTranslations('drives');
+  // Repo (key `files`) and Reminders are the flag-gated tabs: each exists only
+  // once the project turns its flag on. `capabilityAccess()` applies the flags
+  // and the leaves; before it settles the bar is invisible and both are left out.
   const access = useCapabilityAccess(projectId);
-  // `capabilityAccess()` already drops Files while `drives` is off.
   const tabs = allTabs.filter((tab) =>
-    access.settled ? access.tabs.includes(tab.key) : drivesGate.enabled || tab.key !== 'files',
+    access.settled ? access.tabs.includes(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
   );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
@@ -168,14 +166,6 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
       <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
         {tab.label}
-        {tab.key === 'files' && conflicts > 0 ? (
-          <span
-            className="text-kortix-orange ml-1 text-xs font-medium tabular-nums"
-            aria-label={tDrives('conflictCount', { count: conflicts })}
-          >
-            {conflicts}
-          </span>
-        ) : null}
       </Link>
     </TabsTrigger>
   );

@@ -1,6 +1,6 @@
 ---
 name: kortix-design-system
-description: "Use when building or editing any visual surface in apps/web — a page, screen, list, card, badge, avatar, modal, form, empty state, toast, tooltip, table, or panel — and you need to know WHICH component to compose and which primitives are banned. Load kortix-brand first for the values (color, spacing, type, radius, motion budget); this file assumes those and covers components, layout shells, and reference implementations. Source of truth: src/components/ui, the live /design-system page, and the reference implementations listed inside."
+description: "Use when building or editing any visual surface in apps/web — a page, screen, list, card, badge, avatar, modal, form, empty state, toast, tooltip, table, or panel — and you need to know WHICH component to compose and which primitives are banned. Load kortix-brand first for the values (color, spacing, type, radius, motion budget); this file assumes those and covers components, layout shells, and reference implementations. Source of truth: packages/ui/src/components/ui, the live /design-system page, and the reference implementations listed inside."
 ---
 
 # Kortix Design System
@@ -30,11 +30,38 @@ is the ceiling all three operate under. Corrections to earlier versions of this
 file (the shadow ladder that never existed, the press value) are recorded in
 [`decisions.md`](../kortix-brand/references/decisions.md), entries E1 and E2.
 
+## Where components live: `@kortix/ui`
+
+- **One component source.** Every primitive is in `packages/ui` (`@kortix/ui`):
+  `packages/ui/src/components/ui/<name>.tsx`, helpers in `packages/ui/src/lib/`,
+  hooks in `packages/ui/src/hooks/`, the session chat in `packages/ui/src/chat/`
+  (`@kortix/ui/chat`). `apps/web`, Kortix Apps, the white-label demo and SDK hosts
+  render the same files (decision K9 in [`decisions.md`](../kortix-brand/references/decisions.md)).
+- **The shim rule.** `apps/web/src/components/ui/<name>.tsx` is a one-line shim:
+  `export * from '@kortix/ui/<name>'`, plus `'use client'` and
+  `export { default } from '@kortix/ui/<name>'` when the component has them. Feature
+  code keeps importing `@/components/ui/<name>`. Edit the component in
+  `packages/ui`, never the shim. Never add logic, a prop or a class to a shim.
+- **Mock the package path in tests.** bun mocks by resolved file, and components
+  inside `packages/ui` import each other relatively, so `mock.module('@/components/ui/<name>')`
+  misses them. Mock `'@kortix/ui/<name>'`; keep a twin `@/components/ui/<name>` mock
+  only when the code under test imports the shim path.
+- **A new primitive** goes in `packages/ui/src/components/ui/` with relative imports
+  only (never `@/`, never `next/*`, never an app store), then
+  `pnpm --filter @kortix/ui gen-exports`, then a shim in `apps/web` when web code
+  imports it. Copy for the user goes through `useUiStrings()`; a link goes through
+  `useUiLink()`. `npx shadcn add <x>` in `apps/web` still writes into the shim
+  folder (`apps/web/components.json`): move the file to `packages/ui`, rewrite its
+  imports to relative paths, and leave a shim behind.
+- **Outside `apps/web`** (a Kortix App, an SDK host): follow the package skill,
+  [`packages/ui/skills/kortix-ui/SKILL.md`](../../../packages/ui/skills/kortix-ui/SKILL.md).
+  `kit.css` (`k-*` classes) is only for plain HTML without React.
+
 ## Philosophy
 
 - **Simplicity is the brand.** Black & white + one accent. Calm, spacious, legible. No decoration that doesn't carry information. Show only important data.
 - **Reuse > Compose > Create.** In that order. Never hand-roll something the system already provides.
-- **Tokens are law.** `apps/web/src/app/globals.css` is the implementation source of truth for every visual property. If a value conflicts with anything else, `globals.css` wins.
+- **Tokens are law.** `apps/web/src/app/globals.css` (the `:root` / `.dark` tokens) and `packages/ui/src/styles/theme.css` (the `@theme inline` keys, `@utility` definitions, keyframes and spinner classes that `@kortix/ui` components use) are the implementation source of truth for every visual property. If a value conflicts with anything else, these two files win.
 - **Fast, or none.** Kortix is a speed product. Motion exists to make the UI feel *faster* and to say where a thing came from — never to be admired. The more you animate, the less each animation is worth. The default answer to "should this animate?" is **no**.
 - **AI-native & self-documenting.** The living styleguide at `/design-system` renders every component. When you add a component, add it there too.
 
@@ -44,14 +71,14 @@ file (the shadow ladder that never existed, the press value) are recorded in
 
 | Banned | Use instead |
 | --- | --- |
-| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Card` (`card.tsx`), `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `project-settings-page.tsx` |
-| **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `access-row.tsx`, `review-detail.tsx` |
-| **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `apps/web/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
-| **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
-| **`@/lib/toast`** (deleted; never recreate it), raw `sonner`, `toast.success/error/info/warning()`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx`. An action button is the `button` option (a `Button`), not sonner's `action`. `tests/unit/toast-single-source.test.ts` fails on any other `sonner` import |
-| Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
-| A count beside a label (row, tab, menu item, button) as muted text or a `Badge` | **`CountBadge`** from `apps/web/src/components/ui/count-badge.tsx`: the sidebar Review-count recipe (tabular pill, row text colour, 15% tint, `99+`). Tone by meaning: `waiting`, `reminder`, `conflict`, `neutral`. Mobile: `CountBadge` in `apps/mobile/components/kortix/count-badge.tsx` |
-| **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `apps/web/src/components/ui/loading.tsx` — the spinner. The one other busy mark is `SessionDotMatrix`, for session-scoped work only (D4f in `decisions.md`) |
+| **`SectionCard`** (`packages/ui/src/components/ui/section-card.tsx`) | `Card` (`card.tsx`), `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `project-settings-page.tsx` |
+| **`List` / `ListRow`** (`packages/ui/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `access-row.tsx`, `review-detail.tsx` |
+| **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `packages/ui/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
+| **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `packages/ui/src/components/ui/hint.tsx` |
+| **`@/lib/toast`** (deleted; never recreate it), raw `sonner`, `toast.success/error/info/warning()`, `toast.custom()` | Named helpers from `packages/ui/src/components/ui/toast.tsx`. An action button is the `button` option (a `Button`), not sonner's `action`. `tests/unit/toast-single-source.test.ts` fails on any other `sonner` import |
+| Hand-rolled badge `<span>` chips | **`Badge`** from `packages/ui/src/components/ui/badge.tsx` |
+| A count beside a label (row, tab, menu item, button) as muted text or a `Badge` | **`CountBadge`** from `packages/ui/src/components/ui/count-badge.tsx`: the sidebar Review-count recipe (tabular pill, row text colour, 15% tint, `99+`). Tone by meaning: `waiting`, `reminder`, `conflict`, `neutral`. Mobile: `CountBadge` in `apps/mobile/components/kortix/count-badge.tsx` |
+| **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `packages/ui/src/components/ui/loading.tsx` — the spinner. The one other busy mark is `SessionDotMatrix`, for session-scoped work only (D4f in `decisions.md`) |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
 When editing a file that already uses banned primitives, migrate to the reference pattern — do not add more usage.
@@ -62,17 +89,17 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 
 | Job | Import from | Notes |
 | --- | --- | --- |
-| Tooltips on icon buttons | `apps/web/src/components/ui/hint.tsx` | `<Hint label="…">…</Hint>` — wraps trigger, never Tooltip in features |
-| Dialogs / sheets | `apps/web/src/components/ui/modal.tsx` | `Modal`, `ModalContent`, `ModalHeader`, `ModalTitle`, `ModalDescription`, `ModalBody`, `ModalFooter` |
-| Toasts | `apps/web/src/components/ui/toast.tsx` | The only toast surface. `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, `loadingToast`, `dismissToast` |
-| Status chips | `apps/web/src/components/ui/badge.tsx` | `size="sm"` or `size="xs"`; variants `outline`, `kortix`, `success`, `destructive`, `beta`, etc. |
-| Expand/collapse panels | `apps/web/src/components/ui/disclosure.tsx` | `Disclosure`, `DisclosureTrigger`, `DisclosureContent` — config lists, settings groups |
-| Inline alerts | `apps/web/src/components/ui/info-banner.tsx` | `tone` + optional `icon` + `title` |
-| Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput`. Every input is the one field surface: `bg-popover`, border, `rounded-md`. `variant="popover"` is deprecated and ignored (D4j) |
-| Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
+| Tooltips on icon buttons | `packages/ui/src/components/ui/hint.tsx` | `<Hint label="…">…</Hint>` — wraps trigger, never Tooltip in features |
+| Dialogs / sheets | `packages/ui/src/components/ui/modal.tsx` | `Modal`, `ModalContent`, `ModalHeader`, `ModalTitle`, `ModalDescription`, `ModalBody`, `ModalFooter` |
+| Toasts | `packages/ui/src/components/ui/toast.tsx` | The only toast surface. `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, `loadingToast`, `dismissToast` |
+| Status chips | `packages/ui/src/components/ui/badge.tsx` | `size="sm"` or `size="xs"`; variants `outline`, `kortix`, `success`, `destructive`, `beta`, etc. |
+| Expand/collapse panels | `packages/ui/src/components/ui/disclosure.tsx` | `Disclosure`, `DisclosureTrigger`, `DisclosureContent` — config lists, settings groups |
+| Inline alerts | `packages/ui/src/components/ui/info-banner.tsx` | `tone` + optional `icon` + `title` |
+| Search fields | `packages/ui/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput`. Every input is the one field surface: `bg-popover`, border, `rounded-md`. `variant="popover"` is deprecated and ignored (D4j) |
+| Forms in panels | `packages/ui/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
 | Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections. An empty state is one muted line and an optional hint, with no icon tile and no card (D4g) |
-| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `sections/view/gateway/gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
-| Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
+| Confirm destructive | `packages/ui/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `sections/view/gateway/gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
+| Loading / pending spinners | `packages/ui/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
 
@@ -86,10 +113,10 @@ Paths are relative to `apps/web/src/`. The values and the copy are in `kortix-br
 | A list loads inside a mounted shell and the row shape is known | `Skeleton` rows | A spinner for a list |
 | A page or list failed to load | `ErrorState size="sm"` (`features/layout/section/error-state.tsx`) inside the host panel, with a "Try again" action | `InfoBanner` for a load failure, or a wrapper box around it |
 | An inline alert in a view that did load (a connection, a warning) | `InfoBanner` with a `tone` | A hand-colored banner |
-| A list has no items | `EmptyState size="sm"` unmodified: one muted line and an optional hint. A first-run list adds `PixelKortixMark` (`components/ui/pixel-kortix-mark.tsx`) as a sibling above it | An icon tile, a card, a `className` override of its slots, a new prop |
+| A list has no items | `EmptyState size="sm"` unmodified: one muted line and an optional hint. A first-run list adds `PixelKortixMark` (`packages/ui/src/components/ui/pixel-kortix-mark.tsx`) as a sibling above it | An icon tile, a card, a `className` override of its slots, a new prop |
 | People and agents with a role | `AccessRow` (`features/workspace/shared/access/access-row.tsx`), grouped "People" then "Agents" under a `Label` | A hand-built `li`, a kind badge, a `[&>div]:` selector |
-| Any form field, in a panel or in a `Modal` | `Field`, `FieldLabel`, `FieldGroup` (`components/ui/field.tsx`) | A raw `<label>` beside an `Input` |
-| A mutation finished | `successToast` or `errorToast` from `components/ui/toast.tsx` | An inline "Saved" line |
+| Any form field, in a panel or in a `Modal` | `Field`, `FieldLabel`, `FieldGroup` (`packages/ui/src/components/ui/field.tsx`) | A raw `<label>` beside an `Input` |
+| A mutation finished | `successToast` or `errorToast` from `packages/ui/src/components/ui/toast.tsx` | An inline "Saved" line |
 | A new capability page | `CapabilityPageShell` | `CustomizeSectionWrapper` (legacy, `customize/sections/view/` only) |
 
 ## Reference implementations — customize section views
@@ -110,11 +137,11 @@ relative to `apps/web/src/features/workspace/` unless given in full.
 | **`customize/sections/view/channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
 | **`apps/web/src/features/tunnel/computer-connect.tsx`** | Split art modal (beams art beside the content), pinned `lg` actions, one copy button that swaps to a check in place (#8491) |
 | **`apps/web/src/components/setup-links/connector-handshake.tsx`** | Handshake tile: a catalogue logo fills its tile, a drawn mark takes one hairline (one boundary per tile, #8421) |
-| **`apps/web/src/components/ui/tabs.tsx`** | Segmented `TabsList` (the default): recessed track, raised chip, concentric radii, `p-[2px]` pixel snap (D4b, D4c) |
-| **`apps/web/src/components/ui/menu-recipe.ts`** | Menu row grid; `MENU_PANEL_STATIC` and `FLOATING_PANEL_SURFACE` are instant, `MENU_PANEL` and `FLOATING_PANEL` are for the hover card (D4a) |
+| **`packages/ui/src/components/ui/tabs.tsx`** | Segmented `TabsList` (the default): recessed track, raised chip, concentric radii, `p-[2px]` pixel snap (D4b, D4c) |
+| **`packages/ui/src/components/ui/menu-recipe.ts`** | Menu row grid; `MENU_PANEL_STATIC` and `FLOATING_PANEL_SURFACE` are instant, `MENU_PANEL` and `FLOATING_PANEL` are for the hover card (D4a) |
 | **`apps/web/src/components/projects/project-pending-screen.tsx`** | The page-level loading mark (D4h) |
-| **`apps/web/src/components/ui/dot-matrix/session-dot-matrix.tsx`** | The session busy mark (D4f) |
-| **`apps/web/src/components/ui/pixel-kortix-mark.tsx`** | First-run empty state art (D4g) |
+| **`packages/ui/src/components/ui/dot-matrix/session-dot-matrix.tsx`** | The session busy mark (D4f) |
+| **`packages/ui/src/components/ui/pixel-kortix-mark.tsx`** | First-run empty state art (D4g) |
 | **`apps/web/src/features/workspace/command-palette.tsx`** | Instant palette, `PaletteEmpty` one-line empty state |
 
 **Shells:** `capabilities/shared/capability-page-shell.tsx` (`CapabilityPageShell`)
@@ -164,7 +191,7 @@ Rules:
 
 A panel inside another panel, a form panel in a settings section and a floating panel are `bg-popover rounded-md border` surfaces. A bordered list that sits directly on a page is `bg-background` plus `border-border`: the color rule wins over this recipe ([`color.md`](../kortix-brand/references/visual/color.md), in-flow section, Q11). Two sanctioned ways to build a panel — never `SectionCard`:
 
-- **`Card`** (`apps/web/src/components/ui/card.tsx`) — the codified panel. Use it when the surface has a title/description/action header, distinct content, or a footer. Slots carry the spacing (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5` rhythm); the bordered element itself has **no padding**, so flush children (tables, lists, images) sit edge-to-edge.
+- **`Card`** (`packages/ui/src/components/ui/card.tsx`) — the codified panel. Use it when the surface has a title/description/action header, distinct content, or a footer. Slots carry the spacing (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5` rhythm); the bordered element itself has **no padding**, so flush children (tables, lists, images) sit edge-to-edge.
 - **Hand-composed `div`** — for a one-off padded block inside a section, the one-div shorthand `bg-popover rounded-md border px-4 py-5` is fine (the `project-settings-page.tsx` pattern). The moment the panel needs a flush child or an internal seam, move the padding onto inner sections.
 
 Panels are **flat**: border, no shadow — elevation is for overlays (see *Elevation* under Tokens).
@@ -341,7 +368,7 @@ Reference implementations:
   It excludes `:disabled`, `aria-disabled`, and `data-disabled`.
 - A utility class beats `@layer base`, so a stray `cursor-default` silently
   removes the pointer. `tests/unit/cursor-affordance.test.ts` fails on a
-  `cursor-default` in `src/components/ui` without an inline reason.
+  `cursor-default` in `packages/ui/src/components/ui` without an inline reason.
 
 ## Icons — Phosphor, plus the house glyph set
 
@@ -353,7 +380,8 @@ removed and blocked by ESLint (`no-restricted-imports`).
 - Always import the `*Icon`-suffixed exports: `PlusIcon`, `MagnifyingGlassIcon`,
   `CaretRightIcon` — never the deprecated bare names (`Plus`).
 - **Never pass a `weight` prop.** One constant governs the whole app:
-  `DEFAULT_ICON_WEIGHT` in `src/lib/icons/icon-config.ts` (currently `bold`).
+  `DEFAULT_ICON_WEIGHT` in `packages/ui/src/lib/icon-config.ts` (currently `bold`;
+  `apps/web/src/lib/icons/icon-config.ts` is a re-export shim, never edit it).
   Change it, save, and every icon flips; commit it and production renders the
   same. There is no runtime toggle and **no dev/prod branching** — the constant
   is the single source of truth in every environment. Compare all six weights
@@ -370,7 +398,7 @@ removed and blocked by ESLint (`no-restricted-imports`).
 - **Exception — solid intent:** status tiles, success checks, destructive
   trash, and logo glyphs pass an explicit `weight="fill"` so they stay solid
   regardless of the global weight. This is the only weight prop in the codebase.
-- Semantic layer: `src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
+- Semantic layer: `packages/ui/src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
   …) re-exports Phosphor icons; prefer it where already adopted. It re-exports
   the client entry, so it is client-graph only.
 - Sizing stays Tailwind-first (`size-4`, `size-3.5 shrink-0` in dense buttons);
@@ -639,7 +667,7 @@ Standard content block (`agents-page.tsx` pattern):
 
 1. **Load [`kortix-brand`](../kortix-brand/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
-3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
+3. Skim `/design-system` and `packages/ui/src/components/ui/` for anything not covered by the reference.
 4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. Buttons in a row → `ButtonGroup`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
 6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.

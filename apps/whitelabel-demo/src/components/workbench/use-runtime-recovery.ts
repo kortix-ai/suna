@@ -15,7 +15,7 @@ import { qk } from '@/lib/query-keys';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
 
 export function useRuntimeRecovery(session: UseSessionResult) {
   const qc = useQueryClient();
@@ -25,9 +25,9 @@ export function useRuntimeRecovery(session: UseSessionResult) {
       qc.invalidateQueries({
         queryKey: qk.sessionStart(session.projectId, session.sessionId),
       });
-      toast.success('Reconnecting the runtime…');
+      successToast('Reconnecting the runtime…');
     },
-    onError: () => toast.error('Could not reconnect the runtime'),
+    onError: () => errorToast('Could not reconnect the runtime'),
   });
 
   const runtimeReady = session.runtimePhase === 'ready';

@@ -96,7 +96,8 @@ Subcommands:
     --build-command <command>       Bundle build command.
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
-    --provider <name>               daytona, platinum, or e2b. Default: platinum when the server has it.
+    --provider <name>               platinum (default when the server has it), or daytona
+                                    (legacy fallback, removal scheduled).
     --access <mode>                 private (default), project, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.

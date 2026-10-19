@@ -201,14 +201,14 @@ test('getProviders returns the live unified provider lineup', async () => {
     if (method === 'GET' && /\/setup\/sandbox-providers$/.test(url)) {
       return {
         status: 200,
-        body: { providers: ['daytona', 'platinum', 'e2b'], default: 'e2b' },
+        body: { providers: ['platinum', 'daytona'], default: 'platinum' },
       };
     }
     throw new Error(`unmocked ${method} ${url}`);
   };
 
   const result = await getProviders();
-  expect(result).toEqual({ providers: ['daytona', 'platinum', 'e2b'], default: 'e2b' });
+  expect(result).toEqual({ providers: ['platinum', 'daytona'], default: 'platinum' });
   expect(callsMatching(/\/setup\/sandbox-providers$/)).toHaveLength(1);
 });
 
@@ -239,16 +239,32 @@ test('ensureSandbox creates + starts a session when a project exists but has no 
   expect(callsMatching(/\/projects\/proj-1\/sessions\/sess-2\/start/).length).toBe(1);
 });
 
-test('ensureSandbox sends an explicit E2B selection in the provider field', async () => {
+test('ensureSandbox sends an explicit Platinum selection in the provider field', async () => {
   wireCreateFlow();
 
-  await ensureSandbox({ provider: 'e2b' });
+  await ensureSandbox({ provider: 'platinum' });
 
   const create = callsMatching(/\/projects\/proj-1\/sessions$/).find(
     (call) => call.method === 'POST',
   );
-  expect(create?.body).toMatchObject({ provider: 'e2b' });
+  expect(create?.body).toMatchObject({ provider: 'platinum' });
   expect(create?.body).not.toHaveProperty('agent_name');
+});
+
+test('a session with no recorded provider reports the reference provider, platinum', async () => {
+  handler = (url, method) => {
+    const byId = notASessionId(url, method);
+    if (byId) return byId;
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) {
+      return { status: 200, body: [{ ...existingSession, sandbox_provider: null }] };
+    }
+    throw new Error(`unmocked ${method} ${url}`);
+  };
+
+  const result = await ensureSandbox();
+
+  expect(result.sandbox.provider).toBe('platinum');
 });
 
 test('ensureSandbox throws when there are no projects at all', async () => {

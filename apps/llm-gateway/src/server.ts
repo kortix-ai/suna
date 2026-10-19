@@ -114,6 +114,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       '[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)',
     );
 
+  const { recordOutcome, recordUpstream, trafficSnapshot, upstreamIncidents } = createTraffic();
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
@@ -128,6 +129,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       recordUsage: api.recordUsage,
       listModels: api.listModels,
       recordTrace: async (trace) => {
+        recordUpstream(trace);
         const sinks: Promise<unknown>[] = [api.recordTrace(trace)];
         if (traces) sinks.push(traces.record(trace));
         await Promise.allSettled(sinks);
@@ -136,9 +138,8 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     { logger, imageWindow: config.imageWindow },
   );
   const app = new Hono();
-  const { recordOutcome, trafficSnapshot } = createTraffic();
   const inflightRequests = trackInflight(app);
-  registerHealth(app, api, inflight, traces, trafficSnapshot);
+  registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamIncidents);
   registerRoutes(app, gateway, inflight, recordOutcome);
   return { app, traces, inflightRequests };
 }

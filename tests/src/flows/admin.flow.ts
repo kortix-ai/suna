@@ -300,13 +300,13 @@ flow(
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/admin/api/sandboxes/:sessionId/migrate", { targetProvider: "daytona" }, { params: { sessionId: NOPE } });
+        .post("/v1/admin/api/sandboxes/:sessionId/migrate", { targetProvider: "platinum" }, { params: { sessionId: NOPE } });
       r.status(401);
     });
     await ctx.step("non-admin OWNER → 403", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/admin/api/sandboxes/:sessionId/migrate", { targetProvider: "daytona" }, { params: { sessionId: NOPE } });
+        .post("/v1/admin/api/sandboxes/:sessionId/migrate", { targetProvider: "platinum" }, { params: { sessionId: NOPE } });
       r.status(403);
     });
     if (ctx.env.capabilities.admin) {
@@ -319,10 +319,18 @@ flow(
         );
         r.status(400);
       });
+      await ctx.step("admin: the discontinued e2b targetProvider → 400, like any unknown provider", async () => {
+        const r = await admin.post(
+          "/v1/admin/api/sandboxes/:sessionId/migrate",
+          { targetProvider: "e2b" },
+          { params: { sessionId: NOPE } },
+        );
+        r.status(400);
+      });
       await ctx.step("admin: unknown session id with a valid provider → 404, no real sandbox ever touched", async () => {
         const dist = await admin.get("/v1/admin/api/provider-distribution");
         dist.status(200);
-        const allowed: string[] = dist.json().allowed ?? ["daytona"];
+        const allowed: string[] = dist.json().allowed ?? ["platinum"];
         const r = await admin.post(
           "/v1/admin/api/sandboxes/:sessionId/migrate",
           { targetProvider: allowed[0] },

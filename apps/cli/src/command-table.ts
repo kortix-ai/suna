@@ -186,7 +186,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Composio/MCP/HTTP)',
           },
           {
             name: 'secrets',

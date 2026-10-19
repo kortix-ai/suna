@@ -103,10 +103,12 @@ mock.module('next/link', () => ({
 }));
 
 const toasts: string[] = [];
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: (message: string) => toasts.push(`success:${message}`),
   errorToast: (message: string) => toasts.push(`error:${message}`),
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Dialog reaches through Radix portals and the z-stack; these tests
 // assert the gate's decisions, not the overlay. A conditional render keeps the
@@ -115,28 +117,40 @@ const host = (tag: string) =>
   function Host({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) {
     return createElement(tag, props, children);
   };
-mock.module('@/components/ui/dialog', () => ({
+const uiDialogMock = () => ({
   Dialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
     open ? createElement('div', { 'data-dialog': 'open' }, children) : null,
   DialogContent: host('section'),
   DialogDescription: host('p'),
   DialogTitle: host('h2'),
-}));
-mock.module('@/components/ui/button', () => ({
+});
+mock.module('@/components/ui/dialog', uiDialogMock);
+mock.module('@kortix/ui/dialog', uiDialogMock);
+const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
-}));
-mock.module('@/components/ui/dot-matrix/session-dot-matrix', () => ({
+});
+mock.module('@/components/ui/button', uiButtonMock);
+mock.module('@kortix/ui/button', uiButtonMock);
+const uiDotMatrixSessionDotMatrixMock = () => ({
   SessionDotMatrix: () => createElement('span', null, 'matrix'),
-}));
-mock.module('@/components/ui/kortix-logo', () => ({ KortixLogo: host('svg') }));
-mock.module('@/components/ui/loading', () => ({
+});
+mock.module('@/components/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
+mock.module('@kortix/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
+const uiKortixLogoMock = () => ({ KortixLogo: host('svg') });
+mock.module('@/components/ui/kortix-logo', uiKortixLogoMock);
+mock.module('@kortix/ui/kortix-logo', uiKortixLogoMock);
+const uiLoadingMock = () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
-}));
-mock.module('@/components/ui/info-banner', () => ({
+});
+mock.module('@/components/ui/loading', uiLoadingMock);
+mock.module('@kortix/ui/loading', uiLoadingMock);
+const uiInfoBannerMock = () => ({
   InfoBanner: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) =>
     createElement('aside', null, title, children),
-}));
+});
+mock.module('@/components/ui/info-banner', uiInfoBannerMock);
+mock.module('@kortix/ui/info-banner', uiInfoBannerMock);
 mock.module('@phosphor-icons/react', () => ({
   ShieldCheckIcon: host('svg'),
   ShieldWarningIcon: host('svg'),

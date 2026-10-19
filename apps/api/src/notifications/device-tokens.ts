@@ -30,7 +30,7 @@ export interface UpsertDeviceTokenInput {
   provider: 'expo';
   /** Keys that are absent keep their stored value (or the column default on insert). */
   preferences?: Partial<PushPreferences>;
-  /** The caller's sign-in (`auth.sessions.id`); absent for a personal token. */
+  /** The caller's sign-in (`auth.sessions.id`). A row without one gets no push. */
   authSessionId?: string | null;
 }
 
@@ -42,8 +42,8 @@ export interface PushDeviceTokenStore {
   /**
    * The tokens of `userId` whose registering sign-in still exists. A device
    * signed out (Settings > Security, GoTrue's sign-out of other devices, an
-   * expired session) gets no push. A token with no recorded sign-in counts as
-   * live; the app re-registers on every signed-in launch.
+   * expired session) gets no push. A token with no recorded sign-in gets no
+   * push either; a signed-in app re-registers on launch, which binds it.
    */
   listByUser(userId: string): Promise<PushDeviceTokenRow[]>;
   /** Delete the given tokens regardless of owner. Returns the deleted count. */
@@ -101,9 +101,9 @@ export function createPushDeviceTokenStore(database: Database = defaultDb): Push
         .where(
           and(
             eq(pushDeviceTokens.userId, userId),
-            sql`(${signIn} IS NULL OR EXISTS (
+            sql`${signIn} IS NOT NULL AND EXISTS (
               SELECT 1 FROM auth.sessions s
-              WHERE s.id = ${signIn} AND (s.not_after IS NULL OR s.not_after > now())))`,
+              WHERE s.id = ${signIn} AND (s.not_after IS NULL OR s.not_after > now()))`,
           ),
         );
     },

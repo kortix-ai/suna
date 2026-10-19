@@ -155,5 +155,5 @@ registry drift in both directions; `pnpm worktree stop --all` clears the lot.
   `start` and isolated DB work require Docker running.
 - `create` is idempotent and resumable: a crash leaves the registry at the last
   good step, and re-running continues from there. `doctor` reports drift.
-- `start` opens a cloudflared quick tunnel by default for cloud Daytona sandbox
-  callbacks. Pass `--no-tunnel` for offline/local-only work.
+- `start` opens a cloudflared quick tunnel by default for cloud sandbox
+  (Platinum) callbacks. Pass `--no-tunnel` for offline/local-only work.

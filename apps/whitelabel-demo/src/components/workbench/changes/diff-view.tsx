@@ -6,7 +6,7 @@
  * summary chips (`DiffStat`).
  */
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui/lib/utils';
 
 /** Render a unified-diff patch as a colored monospace block. */
 export function DiffView({ patch }: { patch?: string | null }) {
@@ -35,7 +35,7 @@ export function DiffView({ patch }: { patch?: string | null }) {
               'px-1',
               isHunk && 'text-muted-foreground',
               isMeta && 'text-muted-foreground',
-              isAdd && 'bg-emerald-500/10 text-emerald-500',
+              isAdd && 'bg-kortix-green/15 text-kortix-green',
               isRemove && 'bg-destructive/10 text-destructive',
               !isHunk && !isMeta && !isAdd && !isRemove && 'text-foreground/80',
             )}
@@ -52,7 +52,7 @@ export function DiffView({ patch }: { patch?: string | null }) {
 export function DiffStat({ additions, deletions }: { additions?: number; deletions?: number }) {
   return (
     <span className="flex items-center gap-1.5 font-mono text-[0.7rem]">
-      <span className="text-emerald-500">+{additions ?? 0}</span>
+      <span className="text-kortix-green">+{additions ?? 0}</span>
       <span className="text-destructive">-{deletions ?? 0}</span>
     </span>
   );

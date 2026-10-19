@@ -1,5 +1,4 @@
 export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
-  'DAYTONA_API_KEY',
   'KE2E_STRIPE_SECRET_KEY',
   'KE2E_STRIPE_WEBHOOK_SECRET',
   'KORTIX_GITHUB_APP_ID',
@@ -30,7 +29,7 @@ export interface PreviewStackInput {
   apiImage: string;
   gatewayImage: string;
   frontendImage: string;
-  /** Platinum API base URL, offered as a second session provider when PLATINUM_API_KEY is present. */
+  /** Platinum API base URL. Platinum is the only preview session provider. */
   platinumApiUrl?: string;
   /**
    * The name of the host sandbox this stack runs in (`kortix-preview-pr-<n>` or
@@ -386,10 +385,8 @@ function buildPreviewRuntimeEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    // Preview sessions run on Platinum only, never on Daytona. Daytona used to
-    // be first (the default for an unpinned session) from 2026-08-10. On
-    // 2026-09-21 the shared Daytona org hit its snapshot quota and every
-    // preview session failed with "Snapshot quota exceeded".
+    // Preview sessions run on Platinum, the reference provider. Daytona is a
+    // legacy fallback and never runs in a preview.
     ALLOWED_SANDBOX_PROVIDERS: 'platinum',
     PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
     PLATINUM_API_KEY: platinumApiKey,
@@ -446,7 +443,7 @@ function buildPreviewTestEnvironment(
     KE2E_STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     KE2E_STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
     E2E_AGENTMAIL_API_KEY: '',
-    KE2E_CAP_DAYTONA: rawSecrets.DAYTONA_API_KEY ? '1' : '0',
+    KE2E_CAP_SANDBOX: rawSecrets.PLATINUM_API_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',
     // A preview publishes no project snapshots (no KORTIX_PROJECT_SNAPSHOT_S3_BUCKET).

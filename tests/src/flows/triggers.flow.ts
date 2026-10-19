@@ -2518,3 +2518,301 @@ flow(
     }
   },
 );
+
+// TRG-34 — Kortix's own app-event source `mcp` (connectors_v2): the catalog apps
+// list as event apps with their MCP server, a project MCP server is an event app
+// of its own, an event the connector does not offer is refused, and a project
+// without connectors_v2 sees no `mcp` source at all.
+flow(
+  'TRG-34',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/projects/:projectId/triggers/event-apps',
+      'GET /v1/projects/:projectId/triggers/event-types',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/triggers',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true, connectors_v2: true } } });
+    const off = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true } } });
+    type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
+    const apps = async (projectId: string) =>
+      (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
+
+    await ctx.step('connectors_v2 on: catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
+      const list = await apps(on.id);
+      const linear = list.find((a) => a.app === 'linear');
+      if (!linear || linear.source !== 'mcp' || linear.mcp_url !== 'https://mcp.linear.app/mcp' || linear.connector !== null || linear.connected) {
+        throw new Error(`linear entry is wrong: ${JSON.stringify(linear)}`);
+      }
+      if (list.some((a) => a.app === 'deepwiki')) throw new Error('a server with no sign-in has no account to watch, so it is not an event app');
+    });
+
+    await ctx.step('an uninstalled catalog app answers 200 with no events yet; an unknown app → 404', async () => {
+      const params = { projectId: on.id };
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'linear', source: 'mcp' } });
+      r.status(200).body().has('$.source', 'mcp');
+      if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
+      (await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'no-such-app', source: 'mcp' } })).status(404);
+    });
+
+    await ctx.step('a project MCP server is an event app of its own; with no list tool read yet it offers no event', async () => {
+      const params = { projectId: on.id };
+      // auth set explicitly: the create route then skips its live discovery probe of this unreachable url.
+      (await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: 'inbox', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } }, { params }))
+        .status(200);
+      const inbox = (await apps(on.id)).find((a) => a.app === 'inbox');
+      if (!inbox || inbox.source !== 'mcp' || inbox.connector !== 'inbox' || inbox.mcp_url !== null || inbox.event_count !== 0) {
+        throw new Error(`inbox entry is wrong: ${JSON.stringify(inbox)}`);
+      }
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } });
+      r.status(200).body().has('$.source', 'mcp').has('$.app', 'inbox');
+      if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
+    });
+
+    await ctx.step('an event the connector does not offer → 400 that names the command to list its events', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'New inbox item', type: 'event', connector: 'inbox', event: 'new_item.list_items', event_config: { interval: 5 }, prompt_template: 'x' },
+        { params: { projectId: on.id } },
+      );
+      r.status(400);
+      if (!r.text().includes('Unknown event new_item.list_items for inbox. Run kortix triggers events --connector inbox.')) {
+        throw new Error(`unexpected refusal: ${r.text()}`);
+      }
+    });
+
+    await ctx.step('connectors_v2 off: no mcp source in the listing, and source=mcp → 400 that lists the sources', async () => {
+      if ((await apps(off.id)).some((a) => a.source === 'mcp')) throw new Error('mcp apps listed without connectors_v2');
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: off.id }, query: { app: 'linear', source: 'mcp' } });
+      r.status(400).body().has('$.error', 'Unknown event source "mcp". Sources: composio.');
+    });
+  },
+);
+
+/**
+ * TRG-35 — run limits (KRTX-1721). A trigger starts at most
+ * `max_runs_per_hour` runs in any 60 minutes (60 when unset) and at most
+ * `max_runs_per_day` in a UTC day. A fire past a limit starts nothing: a
+ * webhook answers `200 skipped` with a `throttled:` reason and the run history
+ * keeps a skipped run. A person's manual fire is never held. Local only: the
+ * started run inside the window is seeded in the database.
+ */
+flow(
+  'TRG-35',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const secret = `ke2e-capped-${crypto.randomUUID()}`;
+    type Listed = { slug: string; max_runs_per_hour?: number | null; max_runs_per_day?: number | null };
+    const limits = async (slug: string) => {
+      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ triggers: Listed[] }>().triggers.find((row) => row.slug === slug);
+      if (!t) throw new Error(`trigger ${slug} is not listed`);
+      return [t.max_runs_per_hour ?? null, t.max_runs_per_day ?? null];
+    };
+    const expectLimits = async (slug: string, expected: Array<number | null>) => {
+      const got = await limits(slug);
+      if (JSON.stringify(got) !== JSON.stringify(expected)) throw new Error(`${slug} limits: ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`);
+    };
+    const throttled = 'throttled: 1 runs in the last hour (max_runs_per_hour 1)';
+
+    await ctx.step('a run limit that is not a whole number of at least 1 → 400 naming the field', async () => {
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_hour: 0 }, { params }))
+        .status(400).body().has('$.error', 'max_runs_per_hour must be a whole number of at least 1');
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_day: 1.5 }, { params }))
+        .status(400).body().has('$.error', 'max_runs_per_day must be a whole number of at least 1');
+    });
+
+    await ctx.step('a webhook trigger with max_runs_per_hour 1 → 201 and reads 1 / null; a trigger without limits reads null / null', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'capped', slug: 'capped', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Plain', slug: 'plain', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      await expectLimits('capped', [1, null]);
+      await expectLimits('plain', [null, null]);
+    });
+
+    await ctx.step('a PATCH of another field keeps the limits; max_runs_per_day 5 sets it, null removes it', async () => {
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'Changed {{ body.action }}' }, { params: { ...params, slug: 'capped' } })).status(200);
+      await expectLimits('capped', [1, null]);
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { max_runs_per_day: 5 }, { params: { ...params, slug: 'capped' } })).status(200);
+      await expectLimits('capped', [1, 5]);
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { max_runs_per_day: null }, { params: { ...params, slug: 'capped' } })).status(200);
+      await expectLimits('capped', [1, null]);
+    });
+
+    await ctx.step('with one run started in the last hour, a signed delivery → 200 skipped "throttled: …", a skipped run, and no session', async () => {
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.project_trigger_executions (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, created_at)
+           VALUES ($1, 'capped', 'webhook:' || gen_random_uuid(), now(), 'succeeded', '{}'::jsonb, '{"body":{}}'::jsonb, 'webhook', now() - interval '5 minutes')`,
+          [p.id],
+        ),
+      );
+      const rawBody = JSON.stringify({ action: 'opened' });
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { ...params, slug: 'capped' },
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+      r.status(200).body().has('$.status', 'skipped').has('$.reason', throttled);
+      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'capped' } })).status(200).json<RunList>().runs;
+      const skipped = runs.find((run) => run.status === 'skipped');
+      if (!skipped || skipped.error !== throttled || skipped.source !== 'webhook' || skipped.session_id !== null) {
+        throw new Error(`throttled run is wrong: ${JSON.stringify(runs)}`);
+      }
+      const sessions = await withDb(ctx, async (db) =>
+        Number((await db.query(`SELECT count(*) AS n FROM kortix.project_sessions WHERE project_id = $1 AND metadata->>'trigger_slug' = 'capped'`, [p.id])).rows[0]?.n ?? 0),
+      );
+      if (sessions !== 0) throw new Error(`a throttled delivery created ${sessions} session(s)`);
+    });
+
+    await ctx.step('a manual fire past the limit is not held: it reaches the fire path (402, no usable model locally), not skipped', async () => {
+      const r = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'capped' } });
+      r.status(402);
+    });
+
+    await ctx.step('CLI: `kortix triggers set capped --max-runs-per-day 3` sets it, `none` removes it, `--max-runs-per-hour 0` exits 2 naming the flag', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg35') });
+      const sb = new CliSandbox('trg35');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const set = await sb.run(['triggers', 'set', 'capped', '--max-runs-per-day', '3', '--project', p.id]);
+        throwIfCliInfraFailure(set, 'triggers set');
+        if (set.exitCode !== 0) throw new Error(`set --max-runs-per-day 3: exit ${set.exitCode}: ${set.all}`);
+        await expectLimits('capped', [1, 3]);
+        const info = await sb.run(['triggers', 'info', 'capped', '--project', p.id]);
+        if (info.exitCode !== 0 || !/max_runs_per_hour\s+1\b/.test(info.stdout) || !/max_runs_per_day\s+3\b/.test(info.stdout)) {
+          throw new Error(`info does not show the limits: exit ${info.exitCode}: ${info.all}`);
+        }
+        const clear = await sb.run(['triggers', 'set', 'capped', '--max-runs-per-day', 'none', '--project', p.id]);
+        if (clear.exitCode !== 0) throw new Error(`set --max-runs-per-day none: exit ${clear.exitCode}: ${clear.all}`);
+        await expectLimits('capped', [1, null]);
+        const bad = await sb.run(['triggers', 'set', 'capped', '--max-runs-per-hour', '0', '--project', p.id]);
+        // A bad flag value is a usage error: exit 2, like every other `triggers` flag check.
+        if (bad.exitCode !== 2 || !bad.stderr.includes('--max-runs-per-hour must be a whole number of at least 1')) {
+          throw new Error(`set --max-runs-per-hour 0: exit ${bad.exitCode}: ${bad.all}`);
+        }
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);
+
+/**
+ * TRG-36 — Pause all automations (KRTX-1721). One account switch stops every
+ * automatic fire in every project of the account; a manual fire still runs.
+ * On its own team account: the switch would otherwise pause every concurrent
+ * flow on the shared one. Local only: a fire that runs answers 402 (no usable
+ * model) here, which tells it apart from `200 skipped`.
+ */
+flow(
+  'TRG-36',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/accounts/:accountId/automations',
+      'PATCH /v1/accounts/:accountId/automations',
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const member = await team.addMember('member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const memberClient = ctx.client.as(member);
+    const params = { projectId: p.id };
+    const account = { accountId: team.id };
+    const secret = `ke2e-pause-${crypto.randomUUID()}`;
+    type Status = { paused: boolean; paused_at: string | null; paused_by: string | null; can_change: boolean };
+    const deliver = async () => {
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { ...params, slug: 'hook' },
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+    const listingPaused = async () =>
+      (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ account_automations_paused?: boolean }>().account_automations_paused;
+
+    await ctx.step('setup: a webhook trigger on the team project', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+    });
+
+    await ctx.step('GET automations: running; the owner may change it, a member may read it but not change it, an outsider → 403', async () => {
+      (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', true);
+      (await memberClient.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', false);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/automations', { params: account })).status(403);
+    });
+
+    await ctx.step('a member cannot pause → 403; the owner pauses → 200 with paused_at and paused_by; the listing says so', async () => {
+      (await memberClient.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(403);
+      const s = (await owner.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(200).json<Status>();
+      if (!s.paused || !s.paused_at || s.paused_by !== ctx.P.OWNER.userId) throw new Error(`pause status is wrong: ${JSON.stringify(s)}`);
+      if ((await listingPaused()) !== true) throw new Error('the trigger listing does not say the account is paused');
+    });
+
+    await ctx.step('while paused, a signed delivery → 200 skipped "account automations are paused"; a manual fire still runs (402)', async () => {
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'account automations are paused');
+      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'hook' } })).status(402);
+    });
+
+    await ctx.step('resumed: the switch reads running and a delivery reaches the fire path again (402, not skipped)', async () => {
+      (await owner.patch('/v1/accounts/:accountId/automations', { paused: false }, { params: account })).status(200).body().has('$.paused', false).has('$.paused_by', null);
+      if ((await listingPaused()) !== false) throw new Error('the trigger listing still says the account is paused');
+      (await deliver()).status(402);
+    });
+
+    await ctx.step('CLI: `kortix triggers pause --account-wide` pauses the account, `resume --account-wide` resumes it', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg36') });
+      const sb = new CliSandbox('trg36');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: team.id });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const pause = await sb.run(['triggers', 'pause', '--account-wide']);
+        throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
+        if (pause.exitCode !== 0 || !pause.stdout.includes('All automations PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
+        const resume = await sb.run(['triggers', 'resume', '--account-wide']);
+        if (resume.exitCode !== 0 || !resume.stdout.includes('All automations RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);

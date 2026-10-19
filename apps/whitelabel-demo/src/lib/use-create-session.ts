@@ -18,7 +18,7 @@ import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { type SessionOverrides, buildSessionCreateInput } from '@/lib/session-overrides';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { errorToast } from '@kortix/ui/toast';
 
 /** The create this hook sends: overrides plus the optional body extras. */
 interface CreateSessionCall {
@@ -57,7 +57,7 @@ export function useCreateSession<TVars>(
     },
     onError: (err) => {
       const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
+      errorToast(failure.title, { description: failure.detail });
     },
   });
 }

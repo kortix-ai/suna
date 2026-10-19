@@ -2,7 +2,6 @@
 
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectRemindersNavItem } from '@/features/workspace/project-sidebar/footer/project-reminders-nav';
 import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
 import {
   DropdownMenu,
@@ -165,8 +164,6 @@ function NavItem({ entry }: { entry: SidebarNavEntry }) {
       return <ProjectCustomizeNavItem />;
     case 'apps':
       return <ProjectAppsNavItem />;
-    case 'reminders':
-      return <ProjectRemindersNavItem visibility={entry.visibility} />;
     case 'files':
       return <ProjectFilesNavItem />;
   }
