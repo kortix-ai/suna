@@ -183,7 +183,7 @@ describe('nav contract — every URL written to history is a real route', () => 
   test('no live code writes a /sessions/<id> or /terminal/<id> tab href', async () => {
     // grep exits 1 on no match; `run` does not throw on that.
     const hits = (
-      await run(['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'])
+      await run(['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '../../packages/ui/src', '--include=*.ts', '--include=*.tsx'])
     ).stdout
       .split('\n')
       .map((l) => l.trim())
@@ -195,7 +195,11 @@ describe('nav contract — every URL written to history is a real route', () => 
   });
 
   test('the canonical builder exists and is project-scoped', () => {
-    const source = readFileSync(resolve(WEB_ROOT, 'src/lib/navigation/session-href.ts'), 'utf8');
+    // The source moved to @kortix/ui; the web path is a re-export.
+    const source = readFileSync(
+      resolve(WEB_ROOT, '../../packages/ui/src/shared/lib/navigation/session-href.ts'),
+      'utf8',
+    );
     expect(source).toContain('export function projectSessionHref');
     expect(source).toContain('`/projects/${projectId}/sessions/${sessionId}`');
   });

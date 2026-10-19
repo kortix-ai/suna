@@ -15,6 +15,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WEB_SRC = join(import.meta.dir, '..', '..');
+// The session UI moved to @kortix/ui. The same rules hold there; its files
+// report as `@kortix/ui/<path>`, so no web exemption below matches them.
+const UI_SRC = join(WEB_SRC, '..', '..', '..', 'packages', 'ui', 'src');
 
 /** The module that is ALLOWED to make these decisions, plus its own tests. */
 const DECISION_LAYER = [
@@ -84,11 +87,10 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const FILES = walk(WEB_SRC).map((path) => ({
-  path,
-  rel: path.slice(WEB_SRC.length + 1),
-  source: executableSource(readFileSync(path, 'utf8')),
-}));
+const FILES = [
+  ...walk(WEB_SRC).map((path) => ({ path, rel: path.slice(WEB_SRC.length + 1) })),
+  ...walk(UI_SRC).map((path) => ({ path, rel: `@kortix/ui/${path.slice(UI_SRC.length + 1)}` })),
+].map((file) => ({ ...file, source: executableSource(readFileSync(file.path, 'utf8')) }));
 
 function candidates(exempt: string[]) {
   return FILES.filter(
