@@ -72,10 +72,11 @@ account, else the API answers `400` `capture_enrollment_invalid`.
 
 On one computer, open **Command Prompt as administrator** and paste the line
 from **Capture → Devices → Install on company computers**. It downloads the
-installer, installs it silently, waits, and prints whether it worked:
+installer, installs it silently, waits, checks that the Kortix Capture service
+exists, and prints whether it worked:
 
 ```bat
-curl.exe -fsSL -o "%TEMP%\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi && start /wait msiexec /i "%TEMP%\KortixCapture-x64.msi" /qn /l*v "%TEMP%\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_... && echo Kortix Capture installed. || echo Install failed. Log: "%TEMP%\KortixCapture-install.log"
+curl.exe -fsSL -o "%TEMP%\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi && start /wait msiexec /i "%TEMP%\KortixCapture-x64.msi" /qn /l*v "%TEMP%\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_... && sc query KortixCapture >nul 2>&1 && echo Kortix Capture installed. It records from the next Windows sign-in. || echo Install failed. Log: "%TEMP%\KortixCapture-install.log"
 ```
 
 `msiexec` on its own returns at once and installs in the background, and with
@@ -102,6 +103,12 @@ without properties and write the two registry values yourself:
 
 An upgrade (`msiexec /i` with a newer MSI) keeps the registry values when you
 pass no properties.
+
+The installer never rolls back because the service did not start: it starts the
+service when it can, and Windows starts it about a minute after every boot. The
+MSI installs the Microsoft Edge WebView2 Runtime when a Windows 10 computer does
+not have it; the Kortix Capture window needs it. A person who double-clicks the
+MSI without properties gets the app opened at the end and signs in from it.
 
 ## 3. Check the rollout
 
@@ -135,7 +142,7 @@ signed-in session.
 |---|---|
 | Stop new computers from enrolling | Revoke the token in **Company install**. Enrolled computers keep recording. |
 | Stop one computer | Revoke the device in **Devices**, or deny it in **Waiting for approval**. Its device token stops working at once. The computer does not enroll again until an admin approves it. |
-| Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn`. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
+| Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn` (the same MSI), or **Settings → Apps → Kortix Capture → Uninstall**. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
 
 ## What the enrollment token can and cannot do
 
