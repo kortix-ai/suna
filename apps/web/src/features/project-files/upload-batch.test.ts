@@ -1,52 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  beginUploadBatch,
-  describeUploadSuccess,
-  IDLE_UPLOAD_PROGRESS,
+  forEachLimit,
   MAX_UPLOAD_BYTES,
   partitionUploadBatch,
   resolveUploadTarget,
   rowDragIntent,
-  settleUploadUnit,
-  uploadProgressLabel,
-  uploadProgressPercent,
   uploadRejectionReason,
 } from './upload-batch';
 
 const MIME = 'application/x-kortix-file-path';
 
 const candidate = (name: string, size: number) => ({ name, size });
-
-describe('describeUploadSuccess — names what actually uploaded', () => {
-  test('a partial batch names the file that succeeded, not files[0]', () => {
-    // The bug: dropping a.png, b.png, c.png with only c.png succeeding
-    // reported "Uploaded a.png", because the toast read `files[0].name`.
-    expect(describeUploadSuccess(['c.png'])).toBe('Uploaded c.png');
-    expect(describeUploadSuccess(['c.png'])).not.toContain('a.png');
-  });
-
-  test('two successes are both named', () => {
-    expect(describeUploadSuccess(['a.png', 'c.png'])).toBe('Uploaded a.png and c.png');
-  });
-
-  test('three or more collapse to a count of the SUCCEEDED files', () => {
-    expect(describeUploadSuccess(['a.png', 'b.png', 'c.png'])).toBe('Uploaded 3 files');
-  });
-
-  test('no successes produce no toast at all', () => {
-    expect(describeUploadSuccess([])).toBeNull();
-  });
-
-  test('the count form is never singular — the old `s` branch was dead code', () => {
-    // `successCount > 1 ? 's' : ''` could only ever run with count >= 2.
-    for (let n = 2; n <= 5; n++) {
-      const names = Array.from({ length: n }, (_, i) => `f${i}.txt`);
-      expect(describeUploadSuccess(names)).not.toContain('1 file ');
-      if (n > 2) expect(describeUploadSuccess(names)).toBe(`Uploaded ${n} files`);
-    }
-  });
-});
 
 describe('size guard — refuses before any bytes move', () => {
   test('the limit is the shared UPLOAD_LIMITS constant, not a local number', () => {
@@ -86,41 +51,26 @@ describe('size guard — refuses before any bytes move', () => {
   });
 });
 
-describe('upload progress — determinate and safe across overlapping batches', () => {
-  test('a batch reports real progress, not an indeterminate pulse', () => {
-    let p = beginUploadBatch(IDLE_UPLOAD_PROGRESS, 12);
-    expect(uploadProgressLabel(p)).toBe('1 of 12');
-    expect(uploadProgressPercent(p)).toBe(0);
-
-    p = settleUploadUnit(settleUploadUnit(p));
-    expect(uploadProgressLabel(p)).toBe('3 of 12');
-    expect(uploadProgressPercent(p)).toBe(17);
+describe('forEachLimit — parallel uploads, bounded', () => {
+  test('never runs more than the limit at once, and runs every item once', async () => {
+    let running = 0;
+    let peak = 0;
+    const seen: number[] = [];
+    await forEachLimit([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      running++;
+      peak = Math.max(peak, running);
+      await Promise.resolve();
+      seen.push(n);
+      running--;
+    });
+    expect(peak).toBe(3);
+    expect(seen.sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  test('batch B finishing does NOT blank the indicator while batch A runs', () => {
-    // The race: `setUploadingCount(files.length)` then `setUploadingCount(0)`
-    // after each loop, so the shorter batch zeroed the longer one's bar.
-    let p = beginUploadBatch(IDLE_UPLOAD_PROGRESS, 3); // batch A: 3 files
-    p = beginUploadBatch(p, 2); // batch B starts: 2 more
-    expect(p).toEqual({ done: 0, total: 5 });
-
-    p = settleUploadUnit(settleUploadUnit(p)); // both of B's files finish
-    expect(p).toEqual({ done: 2, total: 5 });
-    expect(uploadProgressLabel(p)).toBe('3 of 5');
-  });
-
-  test('the indicator clears only when nothing is outstanding', () => {
-    let p = beginUploadBatch(IDLE_UPLOAD_PROGRESS, 2);
-    p = settleUploadUnit(p);
-    expect(p.total).toBe(2);
-    p = settleUploadUnit(p);
-    expect(p).toEqual(IDLE_UPLOAD_PROGRESS);
-    expect(uploadProgressPercent(p)).toBe(0);
-    expect(uploadProgressLabel(p)).toBe('');
-  });
-
-  test('an empty batch never opens the indicator', () => {
-    expect(beginUploadBatch(IDLE_UPLOAD_PROGRESS, 0)).toEqual(IDLE_UPLOAD_PROGRESS);
+  test('an empty batch resolves without calling fn', async () => {
+    let calls = 0;
+    await forEachLimit([], 4, async () => void calls++);
+    expect(calls).toBe(0);
   });
 });
 

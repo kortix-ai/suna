@@ -1,6 +1,6 @@
 ---
 name: kortix-drives
-description: "The project's Files under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions, or when you see a file named `... (conflict <date> <time>)...`."
+description: "The project's Files under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
 ---
 
 <skill name="kortix-drives">
@@ -21,14 +21,15 @@ rewrites it whenever access changes. Read it first; never edit it.
 | Path | What it is | Access |
 | --- | --- | --- |
 | `/drives/me` (and `~/Desktop`) | the user's own folder, `Users/<name>` in Files | read-write |
-| `/drives/me/Memory` | what you keep about this user across sessions | read-write |
+| `/drives/me/Memory` | what you keep about this user across sessions (the `kortix-user-memory` skill) | read-write |
 | `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know | as shared |
 | `/drives/<name>` | any other folder shared with you, this agent or this user | as shared |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
 - Save files you make for the user in `/drives/me`.
-- Keep what you learn about the user in `/drives/me/Memory`; keep what the
-  whole team should know in `Company/Memory` when it is mounted.
+- Keep what you learn about the user in `/drives/me/Memory`: load the
+  `kortix-user-memory` skill for the protocol. Keep what the whole team
+  should know in `Company/Memory` when it is mounted.
 - You see only folders someone shared. If you need another folder, ask the
   user to share it with you in Files.
 - Access can change while you run. Re-read `/drives/README.md` when a path you

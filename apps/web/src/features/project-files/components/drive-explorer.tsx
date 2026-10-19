@@ -13,7 +13,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Loading from '@/components/ui/loading';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
@@ -24,7 +23,6 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import {
   ClipboardIcon as Clipboard,
-  FilePlusIcon as FilePlus,
   FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
   MoonIcon,
@@ -43,17 +41,15 @@ import {
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
 import {
-  beginUploadBatch,
-  describeUploadSuccess,
-  IDLE_UPLOAD_PROGRESS,
+  forEachLimit,
   partitionUploadBatch,
   resolveUploadTarget,
-  settleUploadUnit,
-  uploadProgressLabel,
-  uploadProgressPercent,
+  UPLOAD_CONCURRENCY,
 } from '../upload-batch';
+import { DriveCreateDialog, type DriveCreateKind } from './drive-create-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
+import { type DriveUpload, DriveUploadTray } from './drive-upload-tray';
 import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
@@ -156,8 +152,30 @@ export function DriveExplorer({
 
   source.useFileEventInvalidation();
 
+  /**
+   * Rows shown before the server confirms them: a folder just created, a file
+   * still uploading. Each is keyed to the folder it was made in and drops out
+   * once the server confirmed it and a newer listing arrived (or the write
+   * failed). `seen` is the listing in hand when the server confirmed it.
+   */
+  const [pending, setPending] = useState<{ dir: string; node: FileNode; seen?: unknown }[]>([]);
+
   const listing = source.useFileList(currentPath);
-  const { data: files, isLoading, isFetching, error, refetch: refetchFiles } = listing;
+  const { data: listed, isLoading, isFetching, error, refetch: refetchFiles } = listing;
+  const files = useMemo(() => {
+    if (!listed) return listed;
+    const names = new Set(listed.map((f) => f.name.toLowerCase()));
+    const extra = pending
+      .filter((p) => p.dir === currentPath && !names.has(p.node.name.toLowerCase()))
+      // A listing fetched after the server confirmed the row is the truth.
+      .filter((p) => !('seen' in p) || p.seen === listed)
+      .map((p) => p.node);
+    return extra.length ? [...listed, ...extra] : listed;
+  }, [listed, pending, currentPath]);
+  const listedRef = useRef(listed);
+  useEffect(() => {
+    listedRef.current = listed;
+  }, [listed]);
   const partial = isPartialListing(listing);
 
   // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
@@ -185,15 +203,10 @@ export function DriveExplorer({
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isDragOverPage, setIsDragOverPage] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(IDLE_UPLOAD_PROGRESS);
+  const [uploads, setUploads] = useState<DriveUpload[]>([]);
   const dragPageCounter = useRef(0);
 
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [isCreatingFile, setIsCreatingFile] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const fileCreateInputRef = useRef<HTMLInputElement>(null);
+  const [createKind, setCreateKind] = useState<DriveCreateKind | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
 
@@ -212,37 +225,6 @@ export function DriveExplorer({
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';
   const normalizedCurrentPath = isRootPath ? '' : currentPath.replace(/\/$/, '');
   const filesAllowedHere = capabilities.filesAllowedAt?.(currentPath) ?? true;
-
-  // Auto-focus folder input
-  useEffect(() => {
-    if (isCreatingFolder) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = folderInputRef.current;
-          if (el) {
-            el.focus();
-            el.setSelectionRange(0, el.value.length);
-          }
-        });
-      });
-    }
-  }, [isCreatingFolder]);
-
-  // Auto-focus file input
-  useEffect(() => {
-    if (isCreatingFile) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = fileCreateInputRef.current;
-          if (el) {
-            el.focus();
-            const dotIdx = el.value.lastIndexOf('.');
-            el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
-          }
-        });
-      });
-    }
-  }, [isCreatingFile]);
 
   // Cmd+P search, Escape close (search-capable sources only)
   const searchEnabled = capabilities.search;
@@ -451,15 +433,57 @@ export function DriveExplorer({
     fileInputRef.current?.click();
   }, []);
 
+  /** A listing row for `name` in the folder in view, before the server has it. */
+  const pendingNode = useCallback(
+    (name: string, type: FileNode['type']): FileNode => {
+      const path = normalizedCurrentPath ? `${normalizedCurrentPath}/${name}` : name;
+      return { name, path, absolute: path, type, ignored: false };
+    },
+    [normalizedCurrentPath],
+  );
+  /** `ok`: the server has it, keep the row until the next listing. Else remove it. */
+  const settlePending = useCallback((dir: string, name: string, ok: boolean) => {
+    const seen = listedRef.current;
+    const match = (p: { dir: string; node: FileNode }) => p.dir === dir && p.node.name === name;
+    setPending((prev) =>
+      prev
+        // Rows already handed over to a newer listing are dead weight.
+        .filter((p) => !('seen' in p) || p.seen === seen)
+        .flatMap((p) => (match(p) ? (ok ? [{ ...p, seen }] : []) : [p])),
+    );
+  }, []);
+
   /**
-   * Upload a batch of files, one at a time, with per-file toasts.
+   * Send one file and track it in the tray. The mutation settles after its
+   * listing refetch, so the pending row hands over to the real one in place.
+   */
+  const uploadAsync = uploadMutation.mutateAsync;
+  const runUpload = useCallback(
+    async (upload: DriveUpload, shownIn: string | null) => {
+      const patch = (next: Partial<DriveUpload>) =>
+        setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, ...next } : u)));
+      patch({ status: 'uploading', error: undefined });
+      let ok = false;
+      try {
+        await uploadAsync({ file: upload.file, targetPath: upload.targetPath });
+        ok = true;
+        patch({ status: 'done' });
+      } catch (err) {
+        patch({ status: 'error', error: err instanceof Error ? err.message : undefined });
+      } finally {
+        if (shownIn !== null) settlePending(shownIn, upload.file.name, ok);
+      }
+    },
+    [uploadAsync, settlePending],
+  );
+
+  /**
+   * Upload a batch: `UPLOAD_CONCURRENCY` files at a time, each listed in the
+   * folder at once and tracked in the tray. `targetDirPath` is the folder the
+   * files were dropped ONTO; without it the batch lands in the folder in view.
    *
-   * `targetDirPath` is the folder the files were dropped ONTO; without it the
-   * batch lands in the directory being viewed.
-   *
-   * Oversized files are refused before any bytes move — see
-   * `upload-batch.ts`. The loop is sequential and never aborts on a failure,
-   * so one bad file cannot strand the rest of the batch.
+   * Oversized files are refused before any bytes move — see `upload-batch.ts`.
+   * One failed file never stops the rest; its tray row offers Retry.
    */
   const handleUploadFiles = useCallback(
     async (fileList: FileList | File[], targetDirPath?: string) => {
@@ -473,34 +497,42 @@ export function DriveExplorer({
         isRootPath,
         dropTargetDir: targetDirPath,
       });
+      // Only files landing in the folder in view get a row here.
+      const shownIn = targetDirPath ? null : currentPath;
 
-      setUploadProgress((prev) => beginUploadBatch(prev, accepted.length));
-      const uploaded: string[] = [];
-
-      for (const file of accepted) {
-        try {
-          await uploadMutation.mutateAsync({ file, targetPath });
-          uploaded.push(file.name);
-        } catch (err) {
-          errorToast(
-            tHardcodedUi('i18nComplete.text427754ced1a7', {
-              value0: file.name,
-              value1:
-                err instanceof Error
-                  ? err.message
-                  : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
-            }),
-          );
-        } finally {
-          setUploadProgress(settleUploadUnit);
-        }
+      const batch: DriveUpload[] = accepted.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        targetPath,
+        status: 'queued',
+      }));
+      // A finished earlier batch makes way; one still running keeps its rows.
+      setUploads((prev) => (prev.every((u) => u.status === 'done') ? batch : [...prev, ...batch]));
+      if (shownIn !== null) {
+        setPending((prev) => [
+          ...prev,
+          ...accepted.map((file) => ({ dir: shownIn, node: pendingNode(file.name, 'file') })),
+        ]);
       }
-
-      const summary = describeUploadSuccess(uploaded);
-      if (summary) successToast(summary);
+      await forEachLimit(batch, UPLOAD_CONCURRENCY, (u) => runUpload(u, shownIn));
     },
-    [currentPath, isRootPath, uploadMutation, tHardcodedUi],
+    [currentPath, isRootPath, pendingNode, runUpload],
   );
+
+  const handleRetryUpload = useCallback(
+    (id: string) => {
+      const upload = uploads.find((u) => u.id === id);
+      if (upload) void runUpload(upload, null);
+    },
+    [uploads, runUpload],
+  );
+
+  // A clean run leaves the tray for 4 s; one with a failure stays until closed.
+  useEffect(() => {
+    if (uploads.length === 0 || uploads.some((u) => u.status !== 'done')) return;
+    const timer = window.setTimeout(() => setUploads([]), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [uploads]);
 
   /**
    * External files dropped onto a folder row upload INTO that folder.
@@ -526,18 +558,6 @@ export function DriveExplorer({
     [handleUploadFiles],
   );
 
-  // Create folder / file. Enter submits, and so does the blur when the input
-  // then goes away — with the same name, so a second create answered "already
-  // exists" for a folder that had just been made. One submit per edit: the
-  // ref is set on the first, the input closes at once, and opening the input
-  // again re-arms it.
-  const createSubmittedRef = useRef(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isCreatingFolder || isCreatingFile) createSubmittedRef.current = false;
-  }, [isCreatingFolder, isCreatingFile]);
-
   const nameTaken = useCallback(
     (name: string) => {
       const lower = name.toLowerCase();
@@ -546,69 +566,40 @@ export function DriveExplorer({
     [files],
   );
 
-  const submitCreate = useCallback(
-    async (kind: 'folder' | 'file') => {
-      if (createSubmittedRef.current) return;
-      const name = (kind === 'folder' ? newFolderName : newFileName).trim();
-      const close = () => {
-        setCreateError(null);
-        if (kind === 'folder') {
-          setIsCreatingFolder(false);
-          setNewFolderName('');
-        } else {
-          setIsCreatingFile(false);
-          setNewFileName('');
-        }
-      };
-      if (!name) {
-        close();
-        return;
-      }
-      // A name already in this folder stays in the input with the reason,
-      // instead of a request that can only fail.
-      if (nameTaken(name)) {
-        setCreateError(tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: name }));
-        return;
-      }
-      createSubmittedRef.current = true;
-      close();
-      const target = normalizedCurrentPath ? `${normalizedCurrentPath}/${name}` : name;
+  /**
+   * Create from the modal. The row shows at once; the request runs behind it.
+   * A failure removes the row and says why.
+   */
+  const handleCreate = useCallback(
+    async (kind: DriveCreateKind, name: string) => {
+      const dir = currentPath;
+      const node = pendingNode(name, kind === 'folder' ? 'directory' : 'file');
+      setPending((prev) => [...prev, { dir, node }]);
+      let ok = false;
       try {
-        if (kind === 'folder') {
-          await mkdirMutation.mutateAsync({ dirPath: target });
-          successToast(tHardcodedUi('i18nComplete.text0597374d9d22', { value0: name }));
-        } else {
-          await createMutation.mutateAsync({ filePath: target });
-          successToast(tHardcodedUi('i18nComplete.textf8a7fef9482a', { value0: name }));
-        }
+        if (kind === 'folder') await mkdirMutation.mutateAsync({ dirPath: node.path });
+        else await createMutation.mutateAsync({ filePath: node.path });
+        ok = true;
       } catch (err) {
-        if ((err as { status?: number } | null)?.status === 409) {
-          // Someone else made it meanwhile: reopen the input with the reason.
-          if (kind === 'folder') {
-            setNewFolderName(name);
-            setIsCreatingFolder(true);
-          } else {
-            setNewFileName(name);
-            setIsCreatingFile(true);
-          }
-          setCreateError(tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: name }));
-        } else {
-          errorToast(
-            tHardcodedUi(kind === 'folder' ? 'i18nComplete.text5334297c9387' : 'i18nComplete.text6658eaceba2a', {
-              value0:
-                err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
-            }),
-          );
-        }
+        errorToast(
+          (err as { status?: number } | null)?.status === 409
+            ? tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: name })
+            : tHardcodedUi(
+                kind === 'folder' ? 'i18nComplete.text5334297c9387' : 'i18nComplete.text6658eaceba2a',
+                {
+                  value0:
+                    err instanceof Error
+                      ? err.message
+                      : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+                },
+              ),
+        );
       } finally {
-        createSubmittedRef.current = false;
+        settlePending(dir, name, ok);
       }
     },
-    [newFolderName, newFileName, nameTaken, normalizedCurrentPath, mkdirMutation, createMutation, tHardcodedUi],
+    [currentPath, pendingNode, settlePending, mkdirMutation, createMutation, tHardcodedUi],
   );
-
-  const handleCreateFolder = useCallback(() => void submitCreate('folder'), [submitCreate]);
-  const handleCreateFile = useCallback(() => void submitCreate('file'), [submitCreate]);
 
   // Paste
   const handlePaste = useCallback(async () => {
@@ -784,9 +775,9 @@ export function DriveExplorer({
               compact={embedded}
               onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
               onNewFile={
-                canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setIsCreatingFile(true) : undefined
+                canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setCreateKind('file') : undefined
               }
-              onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
+              onNewFolder={canWrite ? () => setCreateKind('folder') : undefined}
             />
           );
           const viewMenu = (
@@ -836,96 +827,10 @@ export function DriveExplorer({
         multiple
       />
 
-      {/* Upload progress — determinate, and additive across overlapping batches */}
-      {uploadProgress.total > 0 && (
-        <div className="border-border/40 bg-background flex shrink-0 items-center gap-3 border-b px-4 py-2">
-          <Loading className="size-3.5 shrink-0" />
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {tHardcodedUi.raw('i18nComplete.text8b898ca34ce7')}{' '}
-            {uploadProgressLabel(uploadProgress)}
-          </span>
-          <Progress
-            value={uploadProgressPercent(uploadProgress)}
-            className="bg-primary/15 h-1 min-w-0 flex-1"
-          />
-        </div>
-      )}
-
-      {/* Inline create inputs (shown at top of file area) */}
-      {canWrite && (isCreatingFolder || isCreatingFile) && (
-        <div className="border-border/30 bg-muted/10 border-b px-4 py-2">
-          {isCreatingFolder && (
-            <div className="flex max-w-md items-center gap-2">
-              <FolderPlus className="text-muted-foreground h-4 w-4 shrink-0" />
-              <input
-                type="text"
-                ref={folderInputRef}
-                value={newFolderName}
-                onChange={(e) => {
-                  setNewFolderName(e.target.value);
-                  setCreateError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === 'Enter') handleCreateFolder();
-                  if (e.key === 'Escape') {
-                    // A cancel: the blur that follows must not create it.
-                    createSubmittedRef.current = true;
-                    setCreateError(null);
-                    setIsCreatingFolder(false);
-                    setNewFolderName('');
-                  }
-                }}
-                onBlur={handleCreateFolder}
-                className="border-border focus:ring-primary flex-1 rounded-2xl border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1"
-                placeholder={tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileExplorerPage.line594JsxAttrPlaceholderFolderName',
-                )}
-              />
-            </div>
-          )}
-          {isCreatingFile && (
-            <div className="flex max-w-md items-center gap-2">
-              <FilePlus className="text-muted-foreground h-4 w-4 shrink-0" />
-              <input
-                type="text"
-                ref={fileCreateInputRef}
-                value={newFileName}
-                onChange={(e) => {
-                  setNewFileName(e.target.value);
-                  setCreateError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === 'Enter') handleCreateFile();
-                  if (e.key === 'Escape') {
-                    // A cancel: the blur that follows must not create it.
-                    createSubmittedRef.current = true;
-                    setCreateError(null);
-                    setIsCreatingFile(false);
-                    setNewFileName('');
-                  }
-                }}
-                onBlur={handleCreateFile}
-                className="border-border focus:ring-primary flex-1 rounded-2xl border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1"
-                placeholder={tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileExplorerPage.line612JsxAttrPlaceholderFileName',
-                )}
-              />
-            </div>
-          )}
-          {createError && (
-            <p role="alert" className="text-destructive mt-1.5 max-w-md pl-6 text-xs">
-              {createError}
-            </p>
-          )}
-        </div>
-      )}
-
       <ListingRegion className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto">
           {isLoading && showSkeleton && (
-            <div className="animate-in fade-in-0 p-4 duration-200">
+            <div className="animate-in fade-in-0 p-4 duration-(--duration-moderate) motion-reduce:animate-none">
               {viewMode === 'grid' ? (
                 <div className="space-y-6">
                   <div>
@@ -958,7 +863,7 @@ export function DriveExplorer({
               ) : (
                 <div className="space-y-1">
                   {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full rounded" />
+                    <Skeleton key={i} className="h-10 w-full rounded-sm" />
                   ))}
                 </div>
               )}
@@ -969,11 +874,11 @@ export function DriveExplorer({
             !isLoading &&
             (sandboxWaking ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <Loading className="text-muted-foreground/40 h-4 w-4" />
+                <Loading className="text-muted-foreground size-4" />
                 <p className="text-muted-foreground text-sm font-medium">
                   {tHardcodedUi.raw('i18nComplete.text5e3de76869f3')}
                 </p>
-                <p className="text-muted-foreground/40 max-w-xs text-xs">
+                <p className="text-muted-foreground max-w-xs text-xs">
                   {tHardcodedUi.raw('i18nComplete.textc1b1dc22e207')}
                 </p>
               </div>
@@ -1032,7 +937,7 @@ export function DriveExplorer({
                     variant="ghost"
                     size="sm"
                     className="gap-1.5"
-                    onClick={() => setIsCreatingFolder(true)}
+                    onClick={() => setCreateKind('folder')}
                   >
                     <FolderPlus className="size-3.5 shrink-0" />
                     {tHardcodedUi.raw('i18nComplete.textcf28f49ec597')}
@@ -1102,9 +1007,9 @@ export function DriveExplorer({
 
       {/* Drag & drop overlay */}
       {canWrite && filesAllowedHere && isDragOverPage && (
-        <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed backdrop-blur-sm">
+        <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-2xl">
+            <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-md">
               <Upload className="text-primary h-8 w-8" />
             </div>
             <div>
@@ -1153,12 +1058,30 @@ export function DriveExplorer({
         </div>
       )}
 
+      {canWrite ? (
+        <DriveUploadTray
+          uploads={uploads}
+          onRetry={handleRetryUpload}
+          onDismiss={() => setUploads([])}
+        />
+      ) : null}
+
+      <DriveCreateDialog
+        kind={canWrite ? createKind : null}
+        folderLabel={
+          normalizedCurrentPath.split('/').filter(Boolean).pop() ?? rootLabel ?? '/'
+        }
+        isTaken={nameTaken}
+        onCreate={(kind, name) => void handleCreate(kind, name)}
+        onClose={() => setCreateKind(null)}
+      />
+
       {/* File preview modal */}
       <FilePreviewModal embedded={embedded} shareContext={shareContext} />
 
       {/* History popover */}
       {historyPopoverPath && (
-        <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-2xl border shadow-2xl duration-200">
+        <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-md border shadow-xl duration-(--duration-moderate) motion-reduce:animate-none">
           <FileHistoryPopoverContent
             filePath={historyPopoverPath}
             onClose={() => setHistoryPopoverPath(null)}
@@ -1209,7 +1132,7 @@ export function DriveExplorer({
                 confirmDelete();
               }}
               disabled={deleteMutation.isPending}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>

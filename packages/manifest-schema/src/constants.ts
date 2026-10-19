@@ -469,6 +469,7 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-system',
   'kortix-teams',
   'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 /** The prefix only Kortix skills use. */
 export const KORTIX_SKILL_PREFIX = 'kortix-';
