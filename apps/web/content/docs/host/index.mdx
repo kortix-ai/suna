@@ -235,7 +235,9 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | Variables | Effect |
 |---|---|
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
-| `COMPOSIO_WEBHOOK_SECRET` | App-event [triggers](/docs/connect/triggers). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
+| `COMPOSIO_WEBHOOK_SECRET` | Composio app-event [triggers](/docs/connect/triggers). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
+| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the app events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
@@ -243,6 +245,21 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
+
+### Kortix OAuth clients
+
+Some MCP servers in the catalog do not let Kortix register itself. Kortix signs in to them with an OAuth client that you create at the vendor once per instance.
+
+1. At the vendor, create an OAuth app with the redirect URI `<KORTIX_URL>/v1/connectors/oauth2/callback`.
+   - Google: a **Web application** client. Select **Use this client for an AI-powered agent**, enable the Gmail, Calendar, Drive, Docs and Sheets APIs and their MCP services, and add the scopes from Google's [MCP server guide](https://developers.google.com/workspace/guides/configure-mcp-servers). The Workspace MCP servers are a Google developer preview.
+   - GitHub: an OAuth app (not a GitHub App).
+2. Store the clients as one JSON value:
+
+   ```sh
+   kortix self-host env set KORTIX_OAUTH_CLIENTS='{"google":{"client_id":"<id>","client_secret":"<secret>"},"github":{"client_id":"<id>","client_secret":"<secret>"}}'
+   ```
+
+3. Restart the API. The apps of each configured vendor appear in the catalog.
 
 ### Receive Composio app events
 

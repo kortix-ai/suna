@@ -146,6 +146,7 @@ describe('every Linux job defaults to a free runner behind the runner switch', (
   const githubHostedRunnerJobs = new Set([
     'deploy-prod.yml:publish-llm-catalog',
     'deploy-prod.yml:publish-sdk',
+    'deploy-prod.yml:publish-ui',
     'deploy-prod.yml:publish-agent-tunnel',
   ]);
   // Jobs that need a real VM (systemd, a login session). Every sandbox runner

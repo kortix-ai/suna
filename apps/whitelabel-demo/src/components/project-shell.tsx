@@ -7,23 +7,24 @@
  */
 
 import { NewSessionDialog } from '@/components/new-session-dialog';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { cn, relativeTime } from '@/lib/utils';
+import { relativeTime } from '@/lib/utils';
 import { ApiError } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, FolderX, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { cn } from '@kortix/ui/lib/utils';
+import { ArrowLeftIcon, FolderDashedIcon, GearIcon, PlusIcon } from '@phosphor-icons/react';
 
 const STATUS_DOT: Record<string, string> = {
-  running: 'bg-emerald-500',
-  provisioning: 'bg-amber-500 animate-pulse',
-  branching: 'bg-amber-500 animate-pulse',
-  queued: 'bg-amber-500 animate-pulse',
+  running: 'bg-kortix-green',
+  provisioning: 'bg-kortix-orange animate-pulse',
+  branching: 'bg-kortix-orange animate-pulse',
+  queued: 'bg-kortix-orange animate-pulse',
   completed: 'bg-muted-foreground/50',
   stopped: 'bg-muted-foreground/40',
   failed: 'bg-destructive',
@@ -60,13 +61,14 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh bg-background">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+      {/* Below md the sidebar collapses into the top bar in <main>. */}
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
         <div className="flex items-center gap-2 px-3 py-3">
-          <Link href="/">
-            <Button variant="ghost" size="icon" className="size-8" aria-label="All projects">
-              <ArrowLeft className="size-4" />
-            </Button>
-          </Link>
+          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="All projects">
+            <Link href="/">
+              <ArrowLeftIcon className="size-4" />
+            </Link>
+          </Button>
           <div className="min-w-0 flex-1">
             {project.isLoading ? (
               <Skeleton className="h-4 w-28" />
@@ -74,11 +76,11 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               <div className="truncate text-sm font-medium">{project.data?.name ?? 'Project'}</div>
             )}
           </div>
-          <Link href={`/projects/${projectId}/settings`}>
-            <Button variant="ghost" size="icon" className="size-8" aria-label="Project settings">
-              <Settings className="size-4" />
-            </Button>
-          </Link>
+          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Project settings">
+            <Link href={`/projects/${projectId}/settings`}>
+              <GearIcon className="size-4" />
+            </Link>
+          </Button>
         </div>
 
         <div className="px-3 pb-2">
@@ -89,7 +91,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             projectId={projectId}
             trigger={
               <Button className="w-full justify-start gap-2" variant="secondary">
-                <Plus className="size-4" /> New session
+                <PlusIcon className="size-4" /> New session
               </Button>
             }
           />
@@ -139,7 +141,24 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         </ScrollArea>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="All projects">
+            <Link href="/">
+              <ArrowLeftIcon className="size-4" />
+            </Link>
+          </Button>
+          <Link href={`/projects/${projectId}`} className="min-w-0 flex-1 truncate text-sm font-medium">
+            {project.data?.name ?? 'Project'}
+          </Link>
+          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Project settings">
+            <Link href={`/projects/${projectId}/settings`}>
+              <GearIcon className="size-4" />
+            </Link>
+          </Button>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
@@ -151,7 +170,7 @@ function AccessDenied() {
     <div className="grid h-dvh place-items-center bg-background px-6">
       <div className="flex max-w-sm flex-col items-center text-center">
         <div className="grid size-12 place-items-center rounded-full border border-border bg-card">
-          <FolderX className="size-5 text-muted-foreground" />
+          <FolderDashedIcon className="size-5 text-muted-foreground" />
         </div>
         <h1 className="mt-4 text-lg font-medium">Project not available</h1>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
@@ -160,7 +179,7 @@ function AccessDenied() {
         </p>
         <Button asChild className="mt-5 gap-2">
           <Link href="/">
-            <ArrowLeft className="size-4" /> All projects
+            <ArrowLeftIcon className="size-4" /> All projects
           </Link>
         </Button>
       </div>

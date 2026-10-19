@@ -22,13 +22,15 @@ mock.module('react', () => ({
   default: realReact.default,
   useCallback: (fn: unknown) => fn,
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   errorToast: (message: string, options: { description?: string; position?: string }) => {
     calls.push(`toast:${message}`);
     calls.push(`toast-desc:${options.description}`);
     calls.push(`toast-pos:${options.position}`);
   },
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => billingEnabled }));
 mock.module('@/stores/subscription-store', () => ({
   useSubscriptionStore: (selector: (state: { accountState: unknown }) => unknown) =>

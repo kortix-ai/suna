@@ -213,6 +213,15 @@ describe('trigger composer: the app and its connector', () => {
     expect(findDraftApp(apps, draftOf())).toBeNull();
   });
 
+  test('one app slug under two sources: the draft keeps the source it was picked with', () => {
+    const mcpGmail = { ...gmailApp, source: 'mcp', provider: 'mcp', connector: null, mcp_url: 'https://gmailmcp.example.test/mcp' };
+    const both = [{ ...gmailApp, source: 'composio', provider: 'composio' }, mcpGmail];
+    const picked = withAppPicked(draftOf({ kind: 'event' }), 'gmail', 'mcp');
+    expect(picked.appSource).toBe('mcp');
+    expect(findDraftApp(both, picked)).toBe(mcpGmail);
+    expect(findDraftApp(both, draftOf({ appSlug: 'gmail' }))?.source).toBe('composio');
+  });
+
   test('an app the project has runs on its first connector; one it lacks has none', () => {
     expect(resolveProfile(githubApp, draftOf())).toBe('github');
     expect(resolveProfile(gmailApp, draftOf())).toBeNull();
@@ -266,7 +275,7 @@ describe('trigger composer: Create writes in order', () => {
 
   test('browsing sends nothing: the composer adds a connector in one place, inside Create', () => {
     expect(composer.match(/\badd\(/g)?.length).toBe(1);
-    expect(composer.indexOf('add({')).toBeGreaterThan(composer.indexOf('runCreate({'));
+    expect(composer.search(/\badd\(/)).toBeGreaterThan(composer.indexOf('runCreate({'));
   });
 });
 

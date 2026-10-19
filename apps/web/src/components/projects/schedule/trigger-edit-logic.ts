@@ -47,6 +47,7 @@ export function draftFromTrigger(
     runAt: trigger.run_at,
     timezone: trigger.timezone,
     appSlug: event?.app ?? null,
+    appSource: event?.source ?? event?.provider ?? null,
     profile: event?.connector ?? null,
     account: event?.account ?? null,
     eventType,

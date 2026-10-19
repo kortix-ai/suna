@@ -1,10 +1,11 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
-
-import { Toaster } from '@/components/ui/sonner';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { UiProvider } from '@kortix/ui';
+import { IconProvider } from '@kortix/ui/icon-provider';
+import Loading from '@kortix/ui/loading';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import NextLink from 'next/link';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 // Importing the client configures the SDK platform seam once (createKortix),
@@ -12,6 +13,10 @@ import { createContext, useContext, useEffect, useState } from 'react';
 // wrapper mode is confirmed.
 import { configureWrapperMode } from '@/lib/kortix';
 import { fetchWrapperMode } from '@/lib/mode';
+// The toast host. @kortix/ui/toast draws every toast (successToast,
+// errorToast, …) into the <Toaster /> it exports, so the host needs no sonner
+// dependency of its own.
+import { Toaster } from '@kortix/ui/toast';
 
 const WrapperModeContext = createContext(false);
 
@@ -72,8 +77,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WrapperModeContext.Provider value={wrapperMode}>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-        <Toaster position="bottom-right" />
+        {/* @kortix/ui's host adapters: links navigate with next/link; copy keeps
+            the English defaults. IconProvider gives every Phosphor icon the house
+            weight. Mounted once. */}
+        <UiProvider link={NextLink}>
+          <IconProvider>
+            <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+            <Toaster />
+          </IconProvider>
+        </UiProvider>
       </QueryClientProvider>
     </WrapperModeContext.Provider>
   );

@@ -13,6 +13,7 @@
  * credentials; it interprets metadata only.
  */
 import type { OAuth2ApplicationInput } from '@kortix/api-contract';
+import { kortixClientApplication } from './mcp-apps';
 import {
   type AuthorizationServerMetadata,
   type OAuth2LifecycleRuntime,
@@ -39,6 +40,9 @@ export interface ProtectedResourceOAuth2Discovery {
   metadata?: Partial<OAuth2ApplicationInput>;
   /** RFC 7591 endpoint when the server supports dynamic client registration. */
   registration_endpoint?: string;
+  /** Kortix signs in with its own OAuth client (a catalogue app with no
+   *  dynamic registration); register without `registration_endpoint`. */
+  kortix_client?: boolean;
   token_endpoint_auth_methods_supported?: string[];
   code_challenge_methods_supported?: string[];
   /** Scopes to request: `WWW-Authenticate scope`, else PRM, else AS-wide. */
@@ -192,6 +196,8 @@ export async function discoverProtectedResourceOAuth2(
   input: { resourceUrl: string; provider: ProtectedResourceProvider },
   runtime: OAuth2LifecycleRuntime = {},
 ): Promise<ProtectedResourceOAuth2Discovery> {
+  const kortix = kortixClientApplication(input.resourceUrl);
+  if (kortix) return kortixClientDiscovery(input.resourceUrl, kortix);
   const resourceUrl = new URL(input.resourceUrl);
   const warnings: string[] = [];
   const response = await probe(input.resourceUrl, input.provider, runtime);
@@ -304,6 +310,33 @@ export async function discoverProtectedResourceOAuth2(
 }
 
 /**
+ * A catalogue app Kortix signs in to with its own OAuth client
+ * (`connectors/mcp-apps.ts`): the endpoints and scopes come from the
+ * catalogue, never from the server, and the client stays on the server. Not
+ * probed: Google's servers answer an unauthenticated probe with 200.
+ */
+function kortixClientDiscovery(
+  resourceUrl: string,
+  application: OAuth2ApplicationInput,
+): ProtectedResourceOAuth2Discovery {
+  return {
+    resource_url: resourceUrl,
+    requires_authorization: true,
+    resource: resourceUrl,
+    ...(application.issuer ? { authorization_server: application.issuer } : {}),
+    metadata: {
+      ...(application.issuer ? { issuer: application.issuer } : {}),
+      ...(application.authorization_url ? { authorization_url: application.authorization_url } : {}),
+      ...(application.token_url ? { token_url: application.token_url } : {}),
+      ...(application.revocation_url ? { revocation_url: application.revocation_url } : {}),
+    },
+    kortix_client: true,
+    scopes: application.scopes ?? [],
+    warnings: [],
+  };
+}
+
+/**
  * Whether Kortix can sign in to a server with nothing but the user's consent:
  * it publishes OAuth endpoints and lets Kortix register itself (RFC 7591).
  * The same test as the web's `autoConnectPlan` 'register' plan.
@@ -315,6 +348,9 @@ export function mcpSignInCheck(discovery: ProtectedResourceOAuth2Discovery): {
   const endpoints = !!(discovery.metadata?.authorization_url || discovery.metadata?.token_url);
   return {
     requires_sign_in: discovery.requires_authorization,
-    one_click: discovery.requires_authorization && endpoints && !!discovery.registration_endpoint,
+    one_click:
+      discovery.requires_authorization &&
+      endpoints &&
+      (!!discovery.registration_endpoint || discovery.kortix_client === true),
   };
 }

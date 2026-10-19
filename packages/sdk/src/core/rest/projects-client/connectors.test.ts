@@ -257,6 +257,29 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   expect(registered.application.client_id).toBe('issued-client');
 });
 
+test('a catalogue app on a Kortix OAuth client: discovery says kortix_client, registration sends no endpoint', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      discovery: {
+        resource_url: 'https://gmailmcp.googleapis.com/mcp/v1',
+        requires_authorization: true,
+        authorization_server: 'https://accounts.google.com',
+        kortix_client: true,
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+        warnings: [],
+      },
+    },
+  };
+  const { discovery } = await discoverConnectionOAuth2Resource('P1', 'connection-2');
+  expect(discovery.kortix_client).toBe(true);
+
+  nextResponse = { status: 200, body: { application: { client_id: 'kortix-google', token_endpoint_auth_method: 'client_secret_post', has_client_secret: true, has_private_key: false } } };
+  const registration = { issuer: 'https://accounts.google.com', token_url: 'https://oauth2.googleapis.com/token' };
+  await registerConnectionOAuth2Client('P1', 'connection-2', registration);
+  expect(last().body).toEqual(registration);
+});
+
 test('connection methods use the canonical connection route contract', async () => {
   nextResponse = { status: 200, body: { connections: [] } };
   await listConnections('P1');

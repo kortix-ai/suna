@@ -213,6 +213,10 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. */
+  next_check_at?: string | null;
 }
 
 /** One event type from `GET /projects/:id/triggers/event-types`. */
@@ -269,6 +273,8 @@ export interface TriggerEventApp {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors?: TriggerEventConnector[];
+  /** Source `mcp`: the catalogue MCP server URL a new connector is added with. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface TriggerEventAppsResponse {

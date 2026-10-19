@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
+        },
+        "connectors_v2": {
+          "name": "Connecteurs v2",
+          "description": "Le catalogue d'apps MCP dans Personnaliser → Connecteurs, avec une connexion gérée par Kortix. Avec « Déclencheurs d'événements d'app » activé, Kortix vérifie ces apps à la recherche de nouveaux e-mails, fichiers et éléments et lance un agent. Ajoute aussi Telegram comme canal. Les nouveaux comptes de connecteurs ne sont plus partagés avec tout le projet par défaut."
         }
       }
     },
@@ -20189,6 +20193,16 @@
       "agentsListSubagentsHint": "D'autres agents les appellent pendant une session. Personne ne démarre de chat avec eux.",
       "agentsListAlsoSubagent": "Aussi sous-agent",
       "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}.",
+      "text51e6bc656528": "Discutez avec votre agent depuis un bot Telegram.",
+      "text00c7991f0490": "Connecter Telegram",
+      "texta832efd235a7": "Créez un bot avec @BotFather dans Telegram, puis collez son jeton ici. Kortix enregistre le webhook et garde le jeton sur le serveur.",
+      "text2c3059c25723": "Utilisateurs autorisés",
+      "text71552d197b53": "Identifiants Telegram autorisés",
+      "text1f7a451d4722": "Identifiants numériques séparés par des virgules. Seules ces personnes peuvent parler au bot ; les autres reçoivent une réponse qui indique leur identifiant.",
+      "text50fcd9c3c020": "Les identifiants doivent être des nombres séparés par des virgules.",
+      "text815464994ec4": "Telegram connecté",
+      "textdfea5351a743": "Telegram déconnecté",
+      "text2f95b1c9ee2b": "Utilisateurs autorisés enregistrés",
       "textc711077aba84": "Marque blanche",
       "textd8e2b67ec496": "Construisez votre propre produit d’IA sur Kortix.",
       "text03d3a96b6cf0": "Forkez Kortix, apposez-y votre marque et vendez-le comme le vôtre : un produit d’IA vertical, un wrapper ou une activité cloud complète. La licence est gratuite. La seule condition : votre calcul tourne sur Platinum.dev.",
@@ -20552,7 +20566,14 @@
   "triggerComposer": {
     "every": "Toutes les",
     "dayOfMonth": "Jour du mois",
-    "details": "Détails"
+    "details": "Détails",
+    "mcpEventsAfterConnect": "Les événements s'affichent ici une fois {name} connecté : un par outil qui liste ou recherche.",
+    "mcpConnectAsk": "Toute personne qui gère ce projet peut connecter {name}.",
+    "mcpSignInUnavailable": "Impossible de lancer la connexion à {name}. Ajoutez son identifiant sur la page du connecteur.",
+    "mcpEventsOnConnect": "Événements après la connexion",
+    "mcpCheckedAt": "Vérifié {when}",
+    "mcpNextCheck": "Prochaine vérification {when}",
+    "mcpNotChecked": "Pas encore vérifié"
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",
@@ -21365,7 +21386,12 @@
     "resultSpecific": "{count, plural, one {Seuls les administrateurs du projet et celui que vous avez choisi peuvent ouvrir ce dossier.} other {Seuls les administrateurs du projet et les # que vous avez choisis peuvent ouvrir ce dossier.}}",
     "you": "Vous",
     "manageFolderAccess": "Gérer l’accès",
-    "viewFolderAccess": "Voir l’accès"
+    "viewFolderAccess": "Voir l’accès",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Afficher les données",

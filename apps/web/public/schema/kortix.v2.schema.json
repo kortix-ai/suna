@@ -1584,11 +1584,12 @@
                 "enum": [
                   "slack",
                   "teams",
-                  "email"
+                  "email",
+                  "telegram"
                 ]
               },
               {
-                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
               }
             ]
           },

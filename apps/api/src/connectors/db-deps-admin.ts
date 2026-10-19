@@ -233,7 +233,9 @@ export async function getConnectorConfig(
     spec: cfg.spec ?? null,
     auth: {
       type: auth.type,
-      in: auth.in,
+      // `path` exists only on platform-owned channel connectors (Telegram), which
+      // nobody edits; the manifest editor's contract knows header/query/cookie.
+      in: auth.in === 'path' ? 'header' : auth.in,
       name: auth.name,
       prefix: auth.prefix,
     },

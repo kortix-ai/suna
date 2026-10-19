@@ -1079,6 +1079,10 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "connectors_v2": {
+          "name": "Connectors v2",
+          "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With App event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
         }
       }
     },
@@ -20200,6 +20204,16 @@
       "agentsListSubagentsHint": "Other agents call these during a session. Nobody starts a chat with them.",
       "agentsListAlsoSubagent": "Also a subagent",
       "servedModelTurnRow": "{requested} failed ({reason}) — switched to {served}.",
+      "text51e6bc656528": "Chat with your agent from a Telegram bot.",
+      "text00c7991f0490": "Connect Telegram",
+      "texta832efd235a7": "Create a bot with @BotFather in Telegram, then paste its token here. Kortix registers the webhook and keeps the token on the server.",
+      "text2c3059c25723": "Allowed users",
+      "text71552d197b53": "Allowed Telegram user ids",
+      "text1f7a451d4722": "Numeric ids, separated by commas. Only these people can talk to the bot; anyone else gets a reply that shows their id.",
+      "text50fcd9c3c020": "User ids must be numbers, separated by commas.",
+      "text815464994ec4": "Telegram connected",
+      "textdfea5351a743": "Telegram disconnected",
+      "text2f95b1c9ee2b": "Allowed users saved",
       "textc711077aba84": "White-label",
       "textd8e2b67ec496": "Build your own AI product on Kortix.",
       "text03d3a96b6cf0": "Fork Kortix, put your brand on it, and sell it as your own: a vertical AI product, a wrapper, or a whole cloud business. The license is free. The one requirement is that your compute runs on Platinum.dev.",
@@ -20563,7 +20577,14 @@
   "triggerComposer": {
     "every": "Every",
     "dayOfMonth": "Day of month",
-    "details": "Details"
+    "details": "Details",
+    "mcpEventsAfterConnect": "Events show up here after {name} is connected: one for each tool that lists or searches.",
+    "mcpConnectAsk": "Anyone who manages this project can connect {name}.",
+    "mcpSignInUnavailable": "Could not start the {name} sign-in. Add its credential on the connector page.",
+    "mcpEventsOnConnect": "Events after you connect it",
+    "mcpCheckedAt": "Checked {when}",
+    "mcpNextCheck": "Next check {when}",
+    "mcpNotChecked": "Not checked yet"
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",
@@ -21365,7 +21386,12 @@
     "resultSpecific": "{count, plural, one {Only project admins and the one you picked can open this folder.} other {Only project admins and the # you picked can open this folder.}}",
     "you": "You",
     "manageFolderAccess": "Manage access",
-    "viewFolderAccess": "See access"
+    "viewFolderAccess": "See access",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Show data",

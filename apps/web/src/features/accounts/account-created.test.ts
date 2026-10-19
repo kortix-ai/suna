@@ -110,7 +110,7 @@ describe('account creation handoff', () => {
       }));
       const children = ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children);
-      mock.module('@/components/ui/dropdown-menu', () =>
+      const uiDropdownMenuMock = () =>
         Object.fromEntries(
           [
             'DropdownMenu',
@@ -125,15 +125,18 @@ describe('account creation handoff', () => {
             'DropdownMenuSubTrigger',
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
-        ),
-      );
+        );
+      mock.module('@/components/ui/dropdown-menu', uiDropdownMenuMock);
+      mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
-      mock.module('@/components/ui/sidebar', () => ({
+      const uiSidebarMock = () => ({
         SidebarContext: createContext(null),
         SidebarMenu: children,
         SidebarMenuButton: children,
         SidebarMenuItem: children,
-      }));
+      });
+      mock.module('@/components/ui/sidebar', uiSidebarMock);
+      mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@/features/layout/user-menu-shared', () => ({
         HelpSubmenu: () => null,
         ThemeSubmenu: () => null,

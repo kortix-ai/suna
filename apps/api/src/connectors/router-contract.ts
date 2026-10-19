@@ -48,6 +48,12 @@ export interface ConnectorPrincipal {
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
   agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
+  /**
+   * Resolve a connector's secret as no person: only values shared with the
+   * whole project. For unattended reads whose results reach sessions other
+   * people open (an app-event check), never a value narrowed to `userId`.
+   */
+  secretsAsProject?: boolean;
 }
 
 interface CatalogAction {
@@ -130,6 +136,9 @@ export type CrudOutcome =
 
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
+
+/** Which catalogue Discover reads (`routes/catalogues.ts`). */
+export type DiscoverCatalogue = 'kortix' | 'integrations';
 
 export interface ProjectPolicyView {
   match: string;
@@ -465,8 +474,10 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     categories: Array<{ key: string; label: string; count: number }>;
     indexReady: boolean;
   }>;
-  /** Browse the direct integrations.sh catalogue. */
+  /** Browse the Discover catalogue: integrations.sh, or Kortix's own MCP apps
+   *  (`connectors_v2`). */
   listDiscoverConnectors?(input: {
+    catalogue?: DiscoverCatalogue;
     q?: string;
     cursor?: string;
     /** A browse-section key from `listDiscoverSections`. */
@@ -475,9 +486,13 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
-  listDiscoverSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
+  listDiscoverSections?(input: {
+    catalogue?: DiscoverCatalogue;
+    perCategory?: number;
+    maxCategories?: number;
+  }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
-  getDiscoverConnector?(id: string): Promise<unknown>;
+  getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */

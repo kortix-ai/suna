@@ -36,6 +36,7 @@ import {
 } from './oauth2-lifecycle';
 import { validateAuthorizationIssuer } from './oauth2-issuer';
 import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
+import { kortixClientApplication } from './mcp-apps';
 import { registerOAuth2Client } from './oauth2-registration';
 import {
   type ProtectedResourceProvider,
@@ -268,6 +269,18 @@ export async function discoverConnectionOAuth2Resource(
   );
 }
 
+async function kortixClientApplicationForConnector(
+  connectorId: string,
+): Promise<OAuth2ApplicationInput | null> {
+  const [row] = await db
+    .select({ providerType: connectors.providerType, config: connectors.config })
+    .from(connectors)
+    .where(eq(connectors.connectorId, connectorId))
+    .limit(1);
+  const url = (row?.config as { url?: unknown } | null)?.url;
+  return row?.providerType === 'mcp' && typeof url === 'string' ? kortixClientApplication(url) : null;
+}
+
 /**
  * Register Kortix as an OAuth2 client (RFC 7591) at the discovered
  * registration endpoint and save the issued client as the connection's
@@ -283,6 +296,18 @@ export async function registerConnectionOAuth2Client(
   runtime: OAuth2LifecycleRuntime = {},
 ): Promise<OAuth2ApplicationInput> {
   const { registration } = input;
+  if (!registration.registration_endpoint) {
+    // No dynamic registration: only a catalogue app signs in, with Kortix's own
+    // client and the catalogue's endpoints. Nothing from the request is used.
+    const application = await kortixClientApplicationForConnector(input.identity.connectorId);
+    if (!application) {
+      throw new Error(
+        'This authorization server does not support dynamic client registration (RFC 7591), and Kortix has no OAuth client for this server',
+      );
+    }
+    await saveOAuth2Application(input.identity, application, input.createdBy);
+    return application;
+  }
   const issued = await registerOAuth2Client(
     {
       registrationEndpoint: registration.registration_endpoint,

@@ -703,6 +703,11 @@ async function triggersInfo(
     ]);
     if (e?.error) rows.push(['event_error', e.error]);
     rows.push(['last_event', e?.last_event_at ?? 'never']);
+    // Kortix checks these apps itself: when it last did, and when it does next.
+    if ((e?.source ?? e?.provider) === 'mcp') {
+      rows.push(['checked', e?.checked_at ?? 'not yet']);
+      rows.push(['next_check', e?.next_check_at ?? '—']);
+    }
   } else {
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);

@@ -64,6 +64,7 @@ import {
   connectorCatalogDirectMcpUrls,
   listConnectorCatalog,
 } from './connector-catalog';
+import { kortixMcpCatalog } from './mcp-apps';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
   createComputerConnector,
@@ -675,11 +676,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
-  listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  listDiscoverConnectors: ({ catalogue, ...input }) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.list(input) : listConnectorCatalog(input),
   catalogDirectIds: () => connectorCatalogDirectIds(),
   catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
-  listDiscoverSections: (input) => connectorCatalogSections(input),
-  getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
+  listDiscoverSections: ({ catalogue, ...input }) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.sections(input) : connectorCatalogSections(input),
+  getDiscoverConnector: (id, catalogue) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.detail(id) : getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

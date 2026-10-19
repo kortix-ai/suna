@@ -7,6 +7,9 @@ import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
 import { connectionIdentity } from '../trigger-events/subscriptions';
+import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
+import { streamSchedules } from '../trigger-events/poll-store';
+import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
@@ -64,12 +67,18 @@ export async function loadTriggersForResponse(
           .select()
           .from(projectTriggerRuntime)
           .where(eq(projectTriggerRuntime.projectId, projectId));
-  const eventConnectors = await loadEventConnectorInfo(projectId, specs);
+  const eventConnectors = await loadEventConnectorInfo(projectId, specs, project.metadata);
   const subscriptionBySlug = new Map(
     specs.some((spec) => spec.event) ? (await store.listByProject(projectId)).map((r) => [r.slug, r]) : [],
   );
   const eventsOff = eventTriggersOffForProject(project.metadata);
   const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
+  // Kortix-polled triggers (source `mcp`) say when their app was checked and is checked next.
+  // The poller skips every stream of a paused project, or one without either flag: no next check then.
+  const checksRun = !eventsOff && !triggersPausedForProject(project.metadata) && eventSourceAvailable(MCP_SOURCE_ID, project.metadata);
+  const schedules = await streamSchedules(
+    [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
+  );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
@@ -104,6 +113,7 @@ export async function loadTriggersForResponse(
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
             ...eventStatusFor(subscriptionBySlug.get(spec.slug), eventsOff),
+            ...checkTimesFor(subscriptionBySlug.get(spec.slug), schedules, checksRun),
           }
         : null,
       prompt_template: spec.promptTemplate,
@@ -144,6 +154,7 @@ async function loadConnectedAs(subs: store.EventSubscriptionRow[]): Promise<Map<
 async function loadEventConnectorInfo(
   projectId: string,
   specs: GitTriggerSpec[],
+  projectMetadata: unknown,
 ): Promise<Map<string, { provider: string; app: string | null }>> {
   const slugs = [...new Set(specs.flatMap((spec) => (spec.event ? [spec.event.connector] : [])))];
   if (slugs.length === 0) return new Map();
@@ -151,12 +162,28 @@ async function loadEventConnectorInfo(
     .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), inArray(connectors.slug, slugs)));
-  return new Map(
-    rows.map((row) => {
-      const app = (row.config as Record<string, unknown> | null)?.app;
-      return [row.slug, { provider: row.provider, app: typeof app === 'string' ? app : null }];
-    }),
-  );
+  const mcpAvailable = eventSourceAvailable(MCP_SOURCE_ID, projectMetadata);
+  return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row, mcpAvailable) }]));
+}
+
+/**
+ * When a Kortix-polled trigger's app was last checked, and is checked next.
+ * The next check is null whenever the poller skips the stream (paused, a flag
+ * off) or the trigger is not subscribed.
+ */
+function checkTimesFor(
+  row: store.EventSubscriptionRow | undefined,
+  schedules: Map<string, { checkedAt: Date | null; nextCheckAt: Date | null; lastError: string | null }>,
+  checksRun: boolean,
+): { checked_at: string | null; next_check_at: string | null } {
+  const schedule = row?.externalId ? schedules.get(row.externalId) : undefined;
+  // The rows a check serves (mcp-poll.ts load): active ones, and ones showing the stream's own error.
+  const served = row?.status === 'active' || (row?.status !== undefined && row.lastError !== null && row.lastError === schedule?.lastError);
+  const live = checksRun && served;
+  return {
+    checked_at: schedule?.checkedAt?.toISOString() ?? null,
+    next_check_at: live ? (schedule?.nextCheckAt?.toISOString() ?? null) : null,
+  };
 }
 
 /** Subscription state of one event trigger for the list response; `pending` = no subscription row yet. */

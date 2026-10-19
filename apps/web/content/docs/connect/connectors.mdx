@@ -76,6 +76,28 @@ A connector page has up to four tabs:
 - A server that asks for a credential but has no one-click OAuth opens credential entry on the connector page.
 - A sign-in that cannot start shows the server's reason. The connector and the account stay; select **Sign in** on the connector page to try again.
 
+### The MCP app catalog (experimental)
+
+With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists the Kortix MCP app catalog instead of the managed apps. Every app in it is a remote MCP server that its vendor runs, and Kortix connects to it directly. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
+
+1. Find the app and select **Install**.
+2. **Connect** *app* opens. Choose **Who can use it** and select **Connect**.
+3. You sign in to the app and return to the connector's page with its tools loaded.
+
+Apps sign in one of three ways:
+
+| Sign-in | Apps | Setup |
+| --- | --- | --- |
+| The vendor registers Kortix on the fly | Linear, Notion, Atlassian, Figma, Stripe, Sentry, Airtable, Dropbox, Canva, Miro, monday.com, ClickUp, Intercom, PostHog, Supabase, Vercel, Cloudflare and more | None |
+| Kortix's own OAuth client | Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana, Box | The operator configures the client (`KORTIX_OAUTH_CLIENTS`, see [Self-host](/docs/host#integrations)). Until then the app is not listed. |
+| None | DeepWiki, Context7 | None. The app is ready when it is installed. |
+
+- Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
+- Connectors you added from the managed catalog keep working with the flag on.
+- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
+
+Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+
 ### From the CLI
 
 ```bash

@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
+        },
+        "connectors_v2": {
+          "name": "Conectores v2",
+          "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
         }
       }
     },
@@ -20189,6 +20193,16 @@
       "agentsListSubagentsHint": "Otros agentes los llaman durante una sesión. Nadie inicia un chat con ellos.",
       "agentsListAlsoSubagent": "También subagente",
       "servedModelTurnRow": "{requested} falló ({reason}) — se cambió a {served}.",
+      "text51e6bc656528": "Chatea con tu agente desde un bot de Telegram.",
+      "text00c7991f0490": "Conectar Telegram",
+      "texta832efd235a7": "Crea un bot con @BotFather en Telegram y pega aquí su token. Kortix registra el webhook y guarda el token en el servidor.",
+      "text2c3059c25723": "Usuarios permitidos",
+      "text71552d197b53": "IDs de usuario de Telegram permitidos",
+      "text1f7a451d4722": "IDs numéricos separados por comas. Solo estas personas pueden hablar con el bot; cualquier otra recibe una respuesta con su ID.",
+      "text50fcd9c3c020": "Los IDs de usuario deben ser números separados por comas.",
+      "text815464994ec4": "Telegram conectado",
+      "textdfea5351a743": "Telegram desconectado",
+      "text2f95b1c9ee2b": "Usuarios permitidos guardados",
       "textc711077aba84": "Marca blanca",
       "textd8e2b67ec496": "Construye tu propio producto de IA sobre Kortix.",
       "text03d3a96b6cf0": "Haz un fork de Kortix, ponle tu marca y véndelo como propio: un producto de IA vertical, un wrapper o un negocio cloud completo. La licencia es gratuita. El único requisito es que tu cómputo se ejecute en Platinum.dev.",
@@ -20552,7 +20566,14 @@
   "triggerComposer": {
     "every": "Cada",
     "dayOfMonth": "Día del mes",
-    "details": "Detalles"
+    "details": "Detalles",
+    "mcpEventsAfterConnect": "Los eventos aparecen aquí cuando {name} esté conectado: uno por cada herramienta que lista o busca.",
+    "mcpConnectAsk": "Cualquier persona que gestione este proyecto puede conectar {name}.",
+    "mcpSignInUnavailable": "No se pudo iniciar el inicio de sesión en {name}. Añade su credencial en la página del conector.",
+    "mcpEventsOnConnect": "Eventos después de conectarla",
+    "mcpCheckedAt": "Comprobado {when}",
+    "mcpNextCheck": "Próxima comprobación {when}",
+    "mcpNotChecked": "Aún sin comprobar"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",
@@ -21365,7 +21386,12 @@
     "resultSpecific": "{count, plural, one {Solo los administradores del proyecto y el que elegiste pueden abrir esta carpeta.} other {Solo los administradores del proyecto y los # que elegiste pueden abrir esta carpeta.}}",
     "you": "Tú",
     "manageFolderAccess": "Gestionar acceso",
-    "viewFolderAccess": "Ver acceso"
+    "viewFolderAccess": "Ver acceso",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Mostrar datos",

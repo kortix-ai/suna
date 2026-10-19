@@ -69,6 +69,7 @@ export const FeatureFlagMapSchema = z.object({
   drives: z.boolean(),
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
+  connectors_v2: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -801,6 +802,9 @@ export const OAuth2ResourceDiscoverySchema = z
       .omit({ has_client_secret: true, has_private_key: true })
       .optional(),
     registration_endpoint: z.string().optional(),
+    /** Kortix signs in with its own OAuth client: a catalogue app whose server
+     *  has no dynamic registration. Register without `registration_endpoint`. */
+    kortix_client: z.boolean().optional(),
     token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
     code_challenge_methods_supported: z.array(z.string()).optional(),
     scopes: z.array(z.string()),
@@ -810,10 +814,12 @@ export const OAuth2ResourceDiscoverySchema = z
 export type OAuth2ResourceDiscovery = z.infer<typeof OAuth2ResourceDiscoverySchema>;
 
 /** Register Kortix as a client (RFC 7591) and save the issued client as the
- * connection's OAuth2 application. Endpoint fields come from discovery. */
+ * connection's OAuth2 application. Endpoint fields come from discovery.
+ * Without `registration_endpoint` the server uses Kortix's own OAuth client,
+ * which only a catalogue app with `kortix_client` discovery has. */
 export const OAuth2ClientRegistrationInputSchema = z
   .object({
-    registration_endpoint: OAuth2HttpsUrlSchema,
+    registration_endpoint: OAuth2HttpsUrlSchema.optional(),
     /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
     issuer: OAuth2HttpsUrlSchema.optional(),
     client_name: z.string().trim().min(1).max(128).optional(),
@@ -1488,6 +1494,10 @@ export const TriggerSchema = z.object({
       status: z.enum(['active', 'needs_connection', 'error', 'pending']),
       error: z.string().nullable(),
       last_event_at: z.string().nullable(),
+      /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+      checked_at: z.string().nullable().optional(),
+      /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+      next_check_at: z.string().nullable().optional(),
     })
     .nullable(),
   prompt_template: z.string(),

@@ -2518,3 +2518,77 @@ flow(
     }
   },
 );
+
+// TRG-34 — Kortix's own app-event source `mcp` (connectors_v2): the catalog apps
+// list as event apps with their MCP server, a project MCP server is an event app
+// of its own, an event the connector does not offer is refused, and a project
+// without connectors_v2 sees no `mcp` source at all.
+flow(
+  'TRG-34',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/projects/:projectId/triggers/event-apps',
+      'GET /v1/projects/:projectId/triggers/event-types',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/triggers',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true, connectors_v2: true } } });
+    const off = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true } } });
+    type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
+    const apps = async (projectId: string) =>
+      (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
+
+    await ctx.step('connectors_v2 on: catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
+      const list = await apps(on.id);
+      const linear = list.find((a) => a.app === 'linear');
+      if (!linear || linear.source !== 'mcp' || linear.mcp_url !== 'https://mcp.linear.app/mcp' || linear.connector !== null || linear.connected) {
+        throw new Error(`linear entry is wrong: ${JSON.stringify(linear)}`);
+      }
+      if (list.some((a) => a.app === 'deepwiki')) throw new Error('a server with no sign-in has no account to watch, so it is not an event app');
+    });
+
+    await ctx.step('an uninstalled catalog app answers 200 with no events yet; an unknown app → 404', async () => {
+      const params = { projectId: on.id };
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'linear', source: 'mcp' } });
+      r.status(200).body().has('$.source', 'mcp');
+      if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
+      (await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'no-such-app', source: 'mcp' } })).status(404);
+    });
+
+    await ctx.step('a project MCP server is an event app of its own; with no list tool read yet it offers no event', async () => {
+      const params = { projectId: on.id };
+      // auth set explicitly: the create route then skips its live discovery probe of this unreachable url.
+      (await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: 'inbox', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } }, { params }))
+        .status(200);
+      const inbox = (await apps(on.id)).find((a) => a.app === 'inbox');
+      if (!inbox || inbox.source !== 'mcp' || inbox.connector !== 'inbox' || inbox.mcp_url !== null || inbox.event_count !== 0) {
+        throw new Error(`inbox entry is wrong: ${JSON.stringify(inbox)}`);
+      }
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } });
+      r.status(200).body().has('$.source', 'mcp').has('$.app', 'inbox');
+      if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
+    });
+
+    await ctx.step('an event the connector does not offer → 400 that names the command to list its events', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'New inbox item', type: 'event', connector: 'inbox', event: 'new_item.list_items', event_config: { interval: 5 }, prompt_template: 'x' },
+        { params: { projectId: on.id } },
+      );
+      r.status(400);
+      if (!r.text().includes('Unknown event new_item.list_items for inbox. Run kortix triggers events --connector inbox.')) {
+        throw new Error(`unexpected refusal: ${r.text()}`);
+      }
+    });
+
+    await ctx.step('connectors_v2 off: no mcp source in the listing, and source=mcp → 400 that lists the sources', async () => {
+      if ((await apps(off.id)).some((a) => a.source === 'mcp')) throw new Error('mcp apps listed without connectors_v2');
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: off.id }, query: { app: 'linear', source: 'mcp' } });
+      r.status(400).body().has('$.error', 'Unknown event source "mcp". Sources: composio.');
+    });
+  },
+);

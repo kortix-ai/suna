@@ -32,7 +32,9 @@ import {
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
 
-const source = read('./emoji-picker.tsx');
+// The picker lives in @kortix/ui; the copy script, package.json and
+// next.config.ts that serve its data stay in apps/web.
+const source = read('../../../../../packages/ui/src/components/ui/emoji-picker.tsx');
 
 /** Source with comments stripped, so prose describing a prop can never stand in
  *  for the prop. Same convention as emoji-picker.test.tsx. */
@@ -74,7 +76,10 @@ function openingTag(src: string, name: string): string {
 }
 
 const ROOT_TAG = openingTag(code, 'Frimousse.Root');
-const emojibaseUrl = ROOT_TAG.match(/\bemojibaseUrl="([^"]*)"/)?.[1];
+// The default of the `emojibaseUrl` prop, which ROOT_TAG passes through.
+const emojibaseUrl = ROOT_TAG.includes('emojibaseUrl={emojibaseUrl}')
+  ? code.match(/\bemojibaseUrl = '([^']*)'/)?.[1]
+  : undefined;
 const locale = ROOT_TAG.match(/\blocale="([^"]*)"/)?.[1];
 
 const packageJson = JSON.parse(read('../../../package.json')) as {

@@ -1257,6 +1257,10 @@
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
+        },
+        "connectors_v2": {
+          "name": "コネクター v2",
+          "description": "カスタマイズ → コネクターの MCP アプリカタログ（サインインは Kortix が管理）。「アプリイベントのトリガー」をオンにすると、Kortix がこれらのアプリで新しいメール、ファイル、アイテムを確認してエージェントを起動します。Telegram もチャネルとして追加されます。新しいコネクターのアカウントはデフォルトでプロジェクト全体に共有されなくなります。"
         }
       }
     },
@@ -20189,6 +20193,16 @@
       "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
       "agentsListAlsoSubagent": "サブエージェントとしても使用",
       "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。",
+      "text51e6bc656528": "Telegram ボットからエージェントとチャットできます。",
+      "text00c7991f0490": "Telegram を接続",
+      "texta832efd235a7": "Telegram の @BotFather でボットを作成し、そのトークンをここに貼り付けてください。Kortix が Webhook を登録し、トークンはサーバーに保管されます。",
+      "text2c3059c25723": "許可されたユーザー",
+      "text71552d197b53": "許可する Telegram ユーザー ID",
+      "text1f7a451d4722": "数値 ID をカンマ区切りで入力します。ボットと話せるのはこの人たちだけです。それ以外の人には、その人の ID を示す返信が届きます。",
+      "text50fcd9c3c020": "ユーザー ID はカンマ区切りの数値で入力してください。",
+      "text815464994ec4": "Telegram を接続しました",
+      "textdfea5351a743": "Telegram の接続を解除しました",
+      "text2f95b1c9ee2b": "許可されたユーザーを保存しました",
       "textc711077aba84": "ホワイトラベル",
       "textd8e2b67ec496": "Kortix の上に、自社の AI プロダクトを構築する。",
       "text03d3a96b6cf0": "Kortix をフォークし、自社ブランドを載せ、自社製品として販売できます。業界特化の AI プロダクト、ラッパー、あるいはクラウド事業そのもの。ライセンスは無料です。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
@@ -20552,7 +20566,14 @@
   "triggerComposer": {
     "every": "間隔",
     "dayOfMonth": "日付",
-    "details": "詳細"
+    "details": "詳細",
+    "mcpEventsAfterConnect": "{name} を接続すると、ここにイベントが表示されます。一覧表示または検索を行うツールごとに 1 つです。",
+    "mcpConnectAsk": "このプロジェクトを管理するメンバーは誰でも {name} を接続できます。",
+    "mcpSignInUnavailable": "{name} のサインインを開始できませんでした。コネクターのページで認証情報を追加してください。",
+    "mcpEventsOnConnect": "接続後にイベントを表示",
+    "mcpCheckedAt": "{when}に確認",
+    "mcpNextCheck": "次回の確認: {when}",
+    "mcpNotChecked": "まだ確認していません"
   },
   "gatewayAccess": {
     "heroTitle": "このプロジェクトのモデルをどこでも使う",
@@ -21365,7 +21386,12 @@
     "resultSpecific": "{count, plural, other {このフォルダーを開けるのは、プロジェクト管理者と選択した # 件の対象のみです。}}",
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
-    "viewFolderAccess": "アクセスを表示"
+    "viewFolderAccess": "アクセスを表示",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "データを表示",

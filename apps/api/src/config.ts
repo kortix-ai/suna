@@ -462,6 +462,15 @@ const envSchema = z.object({
   AGENTMAIL_API_KEY: optStr,
   AGENTMAIL_WEBHOOK_SECRET: optStr,
 
+  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
+
+  // ── MCP apps (connectors_v2) — Kortix-owned OAuth clients ───────────────
+  // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
+  // client per vendor whose MCP server has no dynamic client registration
+  // (connectors/mcp-apps.ts). An app whose client is absent is not listed.
+  KORTIX_OAUTH_CLIENTS: optStr,
+
   // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
   // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
   // serve every tenant; the per-conversation tenant id arrives on each inbound
@@ -850,6 +859,9 @@ const envSchema = z.object({
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
+  // Kill switch of Kortix-polled app events (source `mcp`). Off: no check runs; streams and
+  // triggers stay, and checks resume when it is on again.
+  KORTIX_EVENT_POLLS_ENABLED: optBoolTrue,
 
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version
@@ -1376,6 +1388,8 @@ export const config = {
   AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
   AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+  TELEGRAM_API_URL: env.TELEGRAM_API_URL,
+  KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,
 
   // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
   MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
@@ -1573,6 +1587,7 @@ export const config = {
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
+  KORTIX_EVENT_POLLS_ENABLED: env.KORTIX_EVENT_POLLS_ENABLED,
 
   // ─── Version / GitHub ──────────────────────────────────────────────────────
   /** Dev override: force a specific sandbox version via env var. */

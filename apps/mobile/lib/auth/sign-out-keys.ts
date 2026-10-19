@@ -7,6 +7,7 @@ const PRESERVED_KEYS: ReadonlySet<string> = new Set([
   '@theme_preference', // stores/theme-store.ts
   '@kortix_language', // lib/utils/i18n.ts
   '@push_registration', // stores/push-store.ts: device push token, prompt shown
+  '@notification_preferences', // stores/notification-store.ts: this phone's push switches
   'kortix-genui', // stores/genui-store.ts: Rich answers on/off
 ]);
 
