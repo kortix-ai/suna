@@ -1624,8 +1624,10 @@ export function SessionChat({
         // On the session log a transcript shorter than its viewport cannot be scrolled: a 40-message
         // first page often folds to a few rows (a turn is one row), and the reader has no other way
         // to reach older history. Pull until it fills the viewport, within the auto-load page budget.
+        // The auto-scroll spacer pads the content to the viewport: measure without it.
         const root = scrollRef.current;
-        const cannotScroll = transcriptOnLog && !!root && root.scrollHeight <= root.clientHeight;
+        const cannotScroll =
+          transcriptOnLog && !!root && root.scrollHeight - (spacerElRef.current?.offsetHeight ?? 0) <= root.clientHeight;
         const didPull = shouldLoadOlderHistory({
           isIntersecting,
           hasOlder,
