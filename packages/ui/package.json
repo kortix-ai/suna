@@ -150,6 +150,7 @@
     "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/icon-context": "./src/lib/icon-context.tsx",
     "./lib/lazy-client": "./src/lib/lazy-client.tsx",
+    "./lib/portal-container": "./src/lib/portal-container.tsx",
     "./lib/portal-root": "./src/lib/portal-root.ts",
     "./lib/settle": "./src/lib/settle.ts",
     "./lib/springs": "./src/lib/springs.ts",
@@ -209,6 +210,7 @@
     "./tailwind.css": "./src/styles/tailwind.css",
     "./text-shimmer": "./src/components/ui/text-shimmer.tsx",
     "./textarea": "./src/components/ui/textarea.tsx",
+    "./theme": "./src/theme/index.ts",
     "./theme.css": "./src/styles/theme.css",
     "./toast": "./src/components/ui/toast.tsx",
     "./toggle": "./src/components/ui/toggle.tsx",
@@ -732,6 +734,10 @@
         "types": "./dist/lib/lazy-client.d.ts",
         "import": "./dist/lib/lazy-client.js"
       },
+      "./lib/portal-container": {
+        "types": "./dist/lib/portal-container.d.ts",
+        "import": "./dist/lib/portal-container.js"
+      },
       "./lib/portal-root": {
         "types": "./dist/lib/portal-root.d.ts",
         "import": "./dist/lib/portal-root.js"
@@ -958,6 +964,10 @@
       "./textarea": {
         "types": "./dist/components/ui/textarea.d.ts",
         "import": "./dist/components/ui/textarea.js"
+      },
+      "./theme": {
+        "types": "./dist/theme/index.d.ts",
+        "import": "./dist/theme/index.js"
       },
       "./theme.css": "./dist/styles/theme.css",
       "./toast": {

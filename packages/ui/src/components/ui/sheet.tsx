@@ -5,6 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
 import { Close } from '../../icons/close';
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { useUiStrings } from '../../providers/ui-provider';
 import {
@@ -49,7 +50,7 @@ const SheetTrigger = ({
 
 const SheetClose = SheetPrimitive.Close;
 
-const SheetPortal = SheetPrimitive.Portal;
+const SheetPortal = withPortalContainer(SheetPrimitive.Portal);
 
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,

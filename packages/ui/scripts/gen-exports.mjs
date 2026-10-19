@@ -9,6 +9,7 @@
 //   src/components/ui/<path>.tsx     → "./<path>"         (subfolders kept: "./dot-matrix/dotm-square-1")
 //   src/{lib,hooks,icons,providers}/<name>.ts(x) → "./<dir>/<name>"
 //   src/chat/index.ts(x)             → "./chat"
+//   src/theme/index.ts               → "./theme"
 //   src/i18n/index.ts                → "./i18n"
 //   src/styles/<name>.css            → "./<name>.css"
 //   dist/styles.css                  → "./styles.css"     (built by scripts/build-styles.mjs)
@@ -34,6 +35,9 @@ export const INTERNAL = new Set([
   'components/ui/glyph-paths.generated.ts',
   'components/ui/typed-title-logic.ts',
   'components/ui/sidebar-peek.ts',
+  // Reached through the './theme' barrel only.
+  'theme/theme.ts',
+  'theme/theme-scope.tsx',
 ]);
 
 function walk(dir) {
@@ -53,7 +57,7 @@ const modules = (dir) =>
 export function buildExports() {
   const out = {};
   for (const f of ['index.ts', 'index.tsx']) if (existsSync(join(SRC, f))) out['.'] = rel(join(SRC, f));
-  for (const dir of ['chat', 'i18n'])
+  for (const dir of ['chat', 'i18n', 'theme'])
     for (const f of ['index.ts', 'index.tsx'])
       if (existsSync(join(SRC, dir, f))) out[`./${dir}`] = rel(join(SRC, dir, f));
   for (const file of modules(join(SRC, 'components', 'ui'))) {

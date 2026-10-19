@@ -88,11 +88,10 @@ same meanings: `success`, `warning`, `destructive`, `info`, `muted`. Brand hues 
 
 ## 6. White-label
 
-Override the CSS variables of `tokens.css` in your own `:root` and `.dark`. `--kortix-blue` is the accent
-(checked `Switch` / `Checkbox` / `RadioGroup`, `brand` `Button`, info `Badge` / `InfoBanner`); `--ring` the
-focus ring (`--sidebar-ring` and the `--sidebar-primary` selection follow it); `--foreground` / `--background` the page and the default `Button`; `--primary` (ink, not the
-accent) `Progress`, `Slider`, menu tint; plus `--radius`, `--font-sans-system`. Pass the organization's marks to `UiProvider useBrand`, so
-`KortixLogo` renders them. Never fork a component, never load `fonts.css`, never edit a generated file.
+Theme with `@kortix/ui/theme`, never by forking a component: `themeToCss(theme)` in a server `<style>` for the app, `<ThemeScope theme>` for one subtree (its overlays portal into it). `KortixTheme` is typed, every field optional:
+`light` / `dark` colors (`blue` the accent: checked controls, `brand` `Button`, info tone; `ring` focus, sidebar ring follows; `foreground` / `background` page and default `Button`; `primary` ink for `Progress`, `Slider`, menu tint; `border`; any `--custom`),
+`radius` (every `rounded-*` derives from it), `fonts.sans` / `fonts.mono`, `spacing` (density), `text`, `shadows` (`0 0 #0000` flattens), `durations`, `easing`, `vars`. Plain CSS also works: the same variables in `:root` / `.dark`.
+Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (Roobert is Kortix-only), never edit a generated file.
 
 ## 7. Components
 
@@ -105,6 +104,7 @@ accent) `Progress`, `Slider`, menu tint; plus `--radius`, `--font-sans-system`. 
 | `@kortix/ui` (primitives, not for feature code: section 3) | `Dialog`, `DialogClose`, `DialogContent`, `DialogDescription`, `DialogFooter`, `DialogHeader`, `DialogOverlay`, `DialogPortal`, `DialogTitle`, `DialogTrigger`, `Tooltip`, `TooltipContent`, `TooltipProvider`, `TooltipTrigger` |
 | `@kortix/ui` (navigation) | `FilterBar`, `FilterBarItem`, `Tabs`, `TabsContent`, `TabsList`, `TabsListCompact`, `TabsTrigger`, `TabsTriggerCompact`, `tabsTriggerHeightVariants`, `tabsTriggerPaddingVariants`, `tabsTriggerTextVariants`, `TabsListType`, `TabsSize`, `TabsTriggerSize`, `TabsTriggerVariant`, `TabsUnderlineSize` |
 | `@kortix/ui` (conversation) | `Bubble`, `BubbleContent`, `BubbleGroup`, `BubbleReactions`, `bubbleVariants`, `Message`, `MessageAvatar`, `MessageContent`, `MessageFooter`, `MessageGroup`, `MessageHeader`, `Marker`, `MarkerContent`, `MarkerIcon`, `markerVariants` |
+| `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing` |
 | `@kortix/ui/chat` (whole thread) | `SessionThread`, `SessionThreadProps`, `SessionPickers`, `MessageList`, `DefaultEmptyState` |
 | `@kortix/ui/chat` (one message) | `MessageView`, `MessageRenderers`, `RenderTool`, `ToolCall`, `Markdown`, `userMessageParts` |
 | `@kortix/ui/chat` (input) | `Composer`, `ComposerCommand`, `parseCommand`, `slashQuery`, `ModelPicker`, `filterModels`, `AgentPicker` |

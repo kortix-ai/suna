@@ -5,6 +5,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import * as React from 'react';
 
 import { Close } from '../../icons/close';
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { Button } from './button';
 
@@ -12,7 +13,7 @@ const PreviewImage = DialogPrimitive.Root;
 
 const PreviewImageTrigger = DialogPrimitive.Trigger;
 
-const PreviewImagePortal = DialogPrimitive.Portal;
+const PreviewImagePortal = withPortalContainer(DialogPrimitive.Portal);
 
 const PreviewImageClose = DialogPrimitive.Close;
 

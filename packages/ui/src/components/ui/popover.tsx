@@ -3,6 +3,7 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import * as React from 'react';
 
+import { usePortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { floatingZ, useDialogDepth } from '../../lib/z-stack';
 import { FLOATING_PANEL_SURFACE } from './menu-recipe';
@@ -57,8 +58,9 @@ function PopoverContent({
   container?: HTMLElement;
 }) {
   const depth = useDialogDepth();
+  const scoped = usePortalContainer();
   return (
-    <PopoverPrimitive.Portal container={container}>
+    <PopoverPrimitive.Portal container={container ?? scoped}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

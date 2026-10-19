@@ -4,6 +4,7 @@ import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-ic
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu';
 import * as React from 'react';
 
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { floatingZ, useDialogDepth } from '../../lib/z-stack';
 import {
@@ -57,7 +58,7 @@ const ContextMenu = ContextMenuPrimitive.Root;
 
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 
-const ContextMenuPortal = ContextMenuPrimitive.Portal;
+const ContextMenuPortal = withPortalContainer(ContextMenuPrimitive.Portal);
 
 const ContextMenuSub = ContextMenuPrimitive.Sub;
 
@@ -123,7 +124,7 @@ const ContextMenuContent = React.forwardRef<
   const depth = useDialogDepth();
 
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPortal>
       <ContextMenuPrimitive.Content
         ref={ref}
         data-slot="context-menu-content"
@@ -135,7 +136,7 @@ const ContextMenuContent = React.forwardRef<
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
-    </ContextMenuPrimitive.Portal>
+    </ContextMenuPortal>
   );
 });
 ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName;

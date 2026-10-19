@@ -3,8 +3,11 @@
 import { HoverCard as HoverCardPrimitive } from 'radix-ui';
 import * as React from 'react';
 
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { FLOATING_PANEL, FLOATING_PANEL_SURFACE } from './menu-recipe';
+
+const HoverCardPortal = withPortalContainer(HoverCardPrimitive.Portal);
 
 function HoverCard({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
   return <HoverCardPrimitive.Root data-slot="hover-card" {...props} />;
@@ -42,7 +45,7 @@ function HoverCardContent({
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content> & { animated?: boolean }) {
   return (
-    <HoverCardPrimitive.Portal data-slot="hover-card-portal">
+    <HoverCardPortal data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"
         align={align}
@@ -54,7 +57,7 @@ function HoverCardContent({
         )}
         {...props}
       />
-    </HoverCardPrimitive.Portal>
+    </HoverCardPortal>
   );
 }
 

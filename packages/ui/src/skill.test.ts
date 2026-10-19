@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 // The kortix-ui skill ships with the package and is the first file an agent
-// reads. Its Components table must name every export of the two barrels, and
+// reads. Its Components table must name every export of the three barrels, and
 // the copy Kortix sessions load must be the same file.
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -33,7 +33,7 @@ function componentsSection(skill: string): string {
 describe('kortix-ui skill', () => {
   const listed = new Set([...componentsSection(SKILL).matchAll(/`([\w$]+)`/g)].map((m) => m[1]));
 
-  for (const barrel of ['./index.ts', './chat/index.ts']) {
+  for (const barrel of ['./index.ts', './chat/index.ts', './theme/index.ts']) {
     test(`Components table names every export of src/${barrel.slice(2)}`, () => {
       const source = read(barrel);
       expect(source).not.toMatch(/^export\s+\*/m); // a star export hides its names from this check

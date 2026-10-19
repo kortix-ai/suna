@@ -46,6 +46,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
 import { Close } from '../../icons/close';
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import {
   DialogDepthProvider,
@@ -88,7 +89,7 @@ const ModalTrigger = ({
 
 const ModalClose = DialogPrimitive.Close;
 
-const ModalPortal = DialogPrimitive.Portal;
+const ModalPortal = withPortalContainer(DialogPrimitive.Portal);
 
 const overlayAnimationClasses = {
   default:

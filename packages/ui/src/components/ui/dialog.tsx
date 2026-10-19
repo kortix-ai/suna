@@ -2,6 +2,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as React from 'react';
 
 import { Close } from '../../icons/close';
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { useUiStrings } from '../../providers/ui-provider';
 import {
@@ -41,7 +42,7 @@ const DialogTrigger = ({
   />
 );
 
-const DialogPortal = DialogPrimitive.Portal;
+const DialogPortal = withPortalContainer(DialogPrimitive.Portal);
 
 const DialogClose = DialogPrimitive.Close;
 

@@ -3,7 +3,7 @@ title: Kortix UI
 description: "@kortix/ui: the Kortix React components and the session chat, themed by CSS variables, for your own app."
 ---
 
-`@kortix/ui` is the React component library that the Kortix web app renders. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a modal or a chat thread looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them by overriding the variables, never by copying a component.
+`@kortix/ui` is the React component library that the Kortix web app renders. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a modal or a chat thread looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with a typed theme (`@kortix/ui/theme`) or by overriding the variables, never by copying a component.
 
 <Callout type="warning">
 `@kortix/ui` is not on npm yet. Today it is a workspace package of the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository: inside that repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies. This page describes the package as it ships there.
@@ -16,6 +16,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
 | `@kortix/ui/chat` | The session chat: `SessionThread` and its parts. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
 | `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
@@ -108,43 +109,109 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 | Provider | What it does | Without it |
 | --- | --- | --- |
-| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for every string of `@kortix/ui/chat` (`defaultChatStrings` lists the keys and their English values). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. | English copy, a plain `<a>` and the Kortix logo. |
+| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for every string of `@kortix/ui/chat` (`defaultChatStrings` lists the keys and their English values). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks). `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in user's id. `config`: host flags (`billingEnabled`). | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off. |
+| `SessionIdsProvider` | `projectId` and `sessionId` of the session view it wraps. The session UI reads them with `useSessionIds`, never from your route. | Both ids are `undefined`: components that need them render nothing. |
+| `setUiTelemetry` from `@kortix/ui/lib/telemetry` | Not a provider: call it once at module load with `track`, `captureException`, `captureMessage`, `addBreadcrumb`. Declare `UiTelemetryRegister { event: YourEvents }` to make `tsc` check event names. | `track` does nothing; `captureException` logs to the console. |
 | `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
 | `<Toaster />` from `@kortix/ui/toast` | Renders the toasts that `successToast`, `errorToast` and the other helpers in `@kortix/ui/toast` raise. | No toast appears. |
 
-## Theme it for your brand
+## Theming
 
-Every color, radius and font is a CSS variable from `tokens.css`. To white-label, override the variables after the import, in your own `:root` for light and `.dark` for dark. These variables carry the brand:
+Every visual value a component reads is a CSS variable: colors in light and dark, the radius scale, fonts, the type scale, spacing density, shadows and motion. `@kortix/ui/theme` turns a typed theme object into those variables. Every field is optional. An unset field keeps the Kortix default, and a `dark` color falls back to the Kortix dark default, never to your `light` value.
 
-| Variable | Default | What follows it |
-| --- | --- | --- |
-| `--kortix-blue` | Kortix blue | The accent: a checked `Switch`, `Checkbox` and `RadioGroup`, the `brand` and `blue` `Button` variants, the info `Badge`, `InfoBanner`, `Alert` and status tone. |
-| `--ring` | Kortix blue | Focus rings and the focused composer border. `--kortix-base`, the sidebar focus ring (`--sidebar-ring`) and the sidebar selection (`--sidebar-primary`) follow it. |
-| `--foreground`, `--background` | Ink on white | Text, the page, and the default `Button` (`bg-foreground text-background`). |
-| `--primary`, `--primary-foreground` | Ink | `Progress`, `Slider`, the `Calendar` selection, the menu row highlight tint and the default text selection. |
-| `--kortix-green`, `--kortix-orange`, `--destructive` | Green, orange, red | The success, warning and error tones. Keep their meaning. |
-| `--radius`, `--font-sans-system` | | Corner radius and the font stack. |
+### Bring your company brand in 10 lines
 
-```css title="brand.css"
-:root {
-  --kortix-blue: oklch(0.585 0.22 277);
-  --ring: oklch(0.585 0.22 277);
-  --radius: 0.5rem;
-  --font-sans-system: 'Inter', ui-sans-serif, sans-serif;
-}
-.dark {
-  --kortix-blue: oklch(0.62 0.2 277);
-  --ring: oklch(0.62 0.2 277);
-}
+```tsx title="app/layout.tsx"
+import { themeToCss, type KortixTheme } from '@kortix/ui/theme';
+
+const brand: KortixTheme = {
+  light: { blue: '#4f46e5', ring: '#4f46e5', border: '#e0e7ff' },
+  dark: { blue: '#818cf8', ring: '#818cf8', border: '#312e81' },
+  radius: '0.25rem',
+  fonts: { sans: 'Inter, system-ui, sans-serif' },
+};
+
+// <html><head><style>{themeToCss(brand)}</style></head>…
 ```
 
-After this override, a checked `Switch` and the `brand` `Button` render indigo, and focus rings follow. The default `Button` stays ink until you change `--foreground` and `--background`. The white-label demo (`apps/whitelabel-demo/src/app/globals.css`) is the reference.
+`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/whitelabel-demo/src/config/theme.ts` is its whole re-skin (indigo accent, indigo hairlines, a 4px radius, its own sans and mono stacks).
 
-A host without Tailwind can also skip `tokens.css` and set every variable itself. The rules:
+### The API
 
-- Override variables. Never fork or restyle a component: a forked copy stops receiving fixes.
+| Export | Signature | Use |
+| --- | --- | --- |
+| `KortixTheme` | `{ light?, dark?, radius?, spacing?, fonts?, text?, lineHeights?, shadows?, durations?, easing?, vars? }` | The theme. `light` and `dark` take the color keys below plus any `--custom` variable. `vars` sets any other variable in both modes. Unknown keys are type errors. |
+| `themeToCss` | `(theme: KortixTheme, selector = ':root') => string` | A stylesheet: light outside `.dark`, dark on or inside `.dark`. Pass a selector to theme one element. |
+| `themeToCssVars` | `(theme: KortixTheme) => { light: Record<string, string>; dark: Record<string, string> }` | The same variables as data, for a host that writes its own CSS or sets them from JavaScript. Mode-independent values appear in both. |
+| `ThemeScope` | `<ThemeScope theme={…} className? {...divProps}>` | Themes one subtree: an embedded widget, a customer preview, a settings pane. Dialogs, popovers, menus, tooltips, selects, sheets and drawers opened inside it portal into the scope, so they wear its theme too. |
+
+```tsx title="A themed subtree"
+import { ThemeScope } from '@kortix/ui/theme';
+
+<ThemeScope theme={{ light: { primary: '#0f766e' }, radius: '1rem' }} className="bg-background">
+  <SessionThread … />
+</ThemeScope>
+```
+
+`ThemeScope` sets `font-family` and `color` on its element, because both inherit as computed values and would otherwise ignore the override. It paints no background; add `bg-background` when it should. Put `className="dark"` on it to force dark for the subtree. A scope with `position` and `z-index` of its own creates a stacking context: its overlays then stack inside it.
+
+### Tokens
+
+Colors take any CSS color. Defaults are the Kortix values (light / dark).
+
+| Key | Variable | Controls | Default light / dark |
+| --- | --- | --- | --- |
+| `background` | `--background` | The page | `#ffffff` / `#0b0b0b` |
+| `pane`, `surface` | `--pane`, `--surface` | Base and raised panes | `#ffffff` / `#0c0c0c`, `#fcfcfc` / `#141414` |
+| `foreground` | `--foreground` | Text, the default `Button` fill | `#1f1f1f` / `#ffffff` |
+| `foregroundStrong`, `foregroundWeak` | `--foreground-strong`, `--foreground-weak` | Emphasised and quiet text | follow `foreground` / `mutedForeground` |
+| `card`, `cardForeground` | `--card`, `--card-foreground` | `Card`, chat tool cards and questions | `#f4f4f4` / `#141414`, ink |
+| `popover`, `popoverForeground` | `--popover`, `--popover-foreground` | Menus, popovers, dialogs, inputs | `#ffffff` / `#141414`, ink |
+| `primary`, `primaryForeground` | `--primary`, `--primary-foreground` | `Progress`, `Slider`, `Calendar` selection, menu highlight, default selection | `#1f1f1f` / `#ffffff`, inverse |
+| `secondary`, `secondaryForeground` | `--secondary`, `--secondary-foreground` | Secondary buttons, liquid glass | `#ededed` / `#1c1c1c`, ink |
+| `muted`, `mutedForeground` | `--muted`, `--muted-foreground` | Quiet fills, the chat user bubble, code blocks, captions | `#ededed` / `#1c1c1c`, `#666666` / `#999999` |
+| `accent`, `accentForeground` | `--accent`, `--accent-foreground` | Hovered rows | `#f4f4f4` / `#141414`, ink |
+| `destructive`, `destructiveForeground` | `--destructive`, `--destructive-foreground` | Errors, destructive buttons | `#e7000b` / `#ff6467`, `#fafafa` |
+| `border` | `--border` | Every hairline and default border color | `#e2e2e2` / `#262626` |
+| `input` | `--input` | Input fills | `#ededed` / `#1c1c1c` |
+| `ring` | `--ring` | Focus rings, the focused composer | `#0099ff` |
+| `focusRing` | `--focus-ring` | Card focus ring | follows `ring` |
+| `hover`, `active` | `--hover`, `--active` | Translucent hover and pressed tints | ink 4.5% / 7.5%, white 6% / 10% |
+| `selection`, `selectionForeground` | `--selection`, `--selection-foreground` | Text selection | `primary` at 72%, `primaryForeground` |
+| `sidebar…` (`sidebar`, `sidebarForeground`, `sidebarPrimary`, `sidebarPrimaryForeground`, `sidebarAccent`, `sidebarAccentForeground`, `sidebarRow`, `sidebarRowControl`, `sidebarBorder`, `sidebarRing`) | `--sidebar-*` | The sidebar | surface-1, ink, `ring` |
+| `blue` | `--kortix-blue` | The accent: a checked `Switch` / `Checkbox` / `RadioGroup`, `brand` and `blue` `Button` variants, info `Badge`, `InfoBanner`, info status | `#2b91f7` |
+| `green`, `orange`, `yellow`, `red`, `purple` | `--kortix-*` | Status tones. Keep their meaning. | `#199338`, `#d18b19`, `#cca300`, `#f14b4c`, `#ab80d6` |
+| `brand` | `--kortix-base` | Kortix base accent | follows `ring` |
+| `chart1` … `chart5` | `--chart-1` … `--chart-5` | Chart series | amber ramp |
+| `terminalSurface`, `terminalForeground`, `terminalBorder` | `--terminal-*` | The terminal pane (always dark) | `#0f0f0f`, `#e5e5e5`, white 10% |
+
+Shared values apply in both modes:
+
+| Key | Variable | Controls | Default |
+| --- | --- | --- | --- |
+| `radius` | `--radius` | Every corner. `rounded` = −6px, `-sm` −4px, `-md` −2px, `-lg` =, `-xl` +4px, `-2xl` +6px | `0.625rem` (10px) |
+| `spacing` | `--spacing` | Density: every `p-*`, `m-*`, `gap-*`, `size-*` is a multiple | `0.23rem` |
+| `fonts.sans` | `--font-family-sans` | Body text, headings, every `font-sans` (there is no separate heading face) | system stack (Roobert on Kortix surfaces) |
+| `fonts.mono` | `--font-family-mono` | Code, ids, `Badge` | system mono stack |
+| `text.xs` … `text['8xl']` | `--text-<step>` | Font size of each `text-*` step | `0.8125rem`, `0.875rem`, `0.9rem`, `1rem`, `1.125rem` … `6rem` |
+| `lineHeights.<step>` | `--text-<step>--line-height` | Line height of each `text-*` step | the Kortix ratio per step |
+| `shadows['2xs']` … `shadows['2xl']` | `--shadow-<step>` | Elevation of each `shadow-*` step. `0 0 #0000` flattens one; `none` would also drop a `ring-*` on that element | Tailwind's shadow ramp |
+| `durations.fast` … `durations.slower` | `--duration-<step>` | `duration-fast` … `duration-slower` | `100ms`, `150ms`, `200ms`, `300ms`, `500ms` |
+| `easing.default`, `in`, `out`, `inOut` | `--ease-*` | `ease-*` curves | the Kortix curves |
+| `vars` | any `--name` | Anything else, for example `--liquid-glass-blur` | — |
+
+### Limits
+
+- Border width is not a token. `border` is 1px, as in Tailwind.
+- Chat surfaces read the semantic tokens above: `muted` for the user bubble and code blocks, `card` and `border` for tool cards and questions, `mutedForeground` for captions. They have no tokens of their own.
+- A few decorative values stay fixed: the dialog scrims (black at 20–85%), the `inverse` `Button` variant, the `Tag` status palette, the loader and dot-matrix gradients, and chart legend swatches.
+
+### Rules
+
+- Theme through tokens. Never fork or restyle a component: a forked copy stops receiving fixes.
 - Pass your logo through `UiProvider useBrand`, so `KortixLogo` renders your marks.
-- Do not load `fonts.css`. Set your font in `--font-sans-system`.
+- Do not load `fonts.css`: Roobert is for Kortix surfaces. Set `fonts.sans`.
+- Plain CSS works too: override the variables above in your own `:root` and `.dark` after the `@kortix/ui` import.
 
 ## Components
 

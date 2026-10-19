@@ -1,5 +1,6 @@
 'use client';
 
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { floatingZ, useDialogDepth } from '../../lib/z-stack';
 import {
@@ -25,6 +26,8 @@ import {
   triggerVariants,
   type TriggerVariantProps,
 } from './trigger-variants';
+
+const SelectPortal = withPortalContainer(SelectPrimitive.Portal);
 
 /**
  * A select is a menu: the same floating surface holding the same rows, and it
@@ -114,7 +117,7 @@ const SelectContent = React.forwardRef<
   const depth = useDialogDepth();
 
   return (
-    <SelectPrimitive.Portal>
+    <SelectPortal>
       <SelectPrimitive.Content
         ref={ref}
         className={cn(
@@ -138,7 +141,7 @@ const SelectContent = React.forwardRef<
         </SelectPrimitive.Viewport>
         <SelectScrollDownButton />
       </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
+    </SelectPortal>
   );
 });
 SelectContent.displayName = SelectPrimitive.Content.displayName;

@@ -230,8 +230,8 @@ function webTheme(): string {
   const L: string[] = [];
   L.push('/* Type scale. Roles and surfaces are in references/visual/typography.md. */');
   for (const [k, v] of Object.entries<any>(vs.typography.scale)) {
-    L.push(`--text-${k}: ${v.size};`);
-    L.push(`--text-${k}--line-height: ${v.line_height};`);
+    L.push(`--text-${k}: var(--text-${k}, ${v.size});`);
+    L.push(`--text-${k}--line-height: var(--text-${k}--line-height, ${v.line_height});`);
   }
   L.push(`/* ${vs.color.emoji.rule} */`);
   const pair = (name: string, p: [string, string]) => `--color-${name}: light-dark(${p[0]}, ${p[1]});`;
@@ -241,9 +241,10 @@ function webTheme(): string {
   for (const fam of ['fill', 'ring'])
     for (const [k, v] of Object.entries<any>(vs.color.glyph[fam])) L.push(pair(`glyph-${fam}-${k}`, v));
   L.push('/* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */');
-  for (const [k, v] of Object.entries<any>(vs.motion.duration)) L.push(`--transition-duration-${k}: ${v.ms}ms;`);
+  for (const [k, v] of Object.entries<any>(vs.motion.duration))
+    L.push(`--transition-duration-${k}: var(--duration-${k}, ${v.ms}ms);`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
-    L.push(`--ease-${k}: cubic-bezier(${v.bezier.join(', ')});`);
+    L.push(`--ease-${k}: var(--ease-${k}, cubic-bezier(${v.bezier.join(', ')}));`);
   return L.join('\n');
 }
 

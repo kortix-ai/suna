@@ -1,5 +1,6 @@
 'use client';
 
+import { withPortalContainer } from '../../lib/portal-container';
 import { cn } from '../../lib/utils';
 import { floatingZ, useDialogDepth } from '../../lib/z-stack';
 import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
@@ -70,7 +71,7 @@ const DropdownMenuGroup = React.forwardRef<
 ));
 DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName;
 
-const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
+const DropdownMenuPortal = withPortalContainer(DropdownMenuPrimitive.Portal);
 
 const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
@@ -135,7 +136,7 @@ const DropdownMenuContent = React.forwardRef<
   const depth = useDialogDepth();
 
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPortal>
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
@@ -143,7 +144,7 @@ const DropdownMenuContent = React.forwardRef<
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
-    </DropdownMenuPrimitive.Portal>
+    </DropdownMenuPortal>
   );
 });
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;

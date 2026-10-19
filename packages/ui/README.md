@@ -104,24 +104,54 @@ import { SessionThread } from '@kortix/ui/chat';
 the prompts, the pickers) for a host that composes its own layout. A fully
 custom transcript uses `renderParts` from `@kortix/sdk/react`.
 
-## White-label
+## Theming
 
-Override the CSS variables from `tokens.css` in your own `:root` / `.dark`.
-Never fork a component. Roobert (`--font-roobert`) is Kortix-owned surfaces
-only; every other host renders the system stack (`--font-sans-system`).
+`@kortix/ui/theme` is the typed theme API. Every field is optional; an unset
+field keeps the Kortix default, and a `dark` color falls back to the Kortix dark
+default, never to the `light` value.
 
-| Variable | What follows it |
-| --- | --- |
-| `--kortix-blue` | The accent: checked `Switch` / `Checkbox` / `RadioGroup`, `brand` and `blue` `Button` variants, info `Badge`, `InfoBanner`, `Alert`, status, toast |
-| `--ring` | Focus rings; `--kortix-base`, `--sidebar-ring` and `--sidebar-primary` (sidebar selection) follow it |
-| `--sidebar-primary-foreground` | Text on the sidebar selection |
-| `--foreground`, `--background` | Text, the page, the default `Button` (`bg-foreground text-background`) |
-| `--primary`, `--primary-foreground` | `Progress`, `Slider`, `Calendar` selection, menu row tint, default selection |
-| `--kortix-green`, `--kortix-orange`, `--destructive` | Success, warning, error tones |
-| `--radius`, `--font-sans-system` | Radius, font stack |
+```tsx
+import { themeToCss, ThemeScope, type KortixTheme } from '@kortix/ui/theme';
 
-`apps/whitelabel-demo/src/app/globals.css` is the reference: it sets
-`--kortix-blue` and `--ring` to its brand.
+const brand: KortixTheme = {
+  light: { blue: '#4f46e5', ring: '#4f46e5', border: '#e0e7ff' },
+  dark: { blue: '#818cf8', ring: '#818cf8', border: '#312e81' },
+  radius: '0.25rem',
+  fonts: { sans: 'Inter, system-ui, sans-serif' },
+};
+
+<style>{themeToCss(brand)}</style>            // the whole app (server-safe)
+<ThemeScope theme={brand}>…</ThemeScope>     // one subtree; its overlays portal into it
+```
+
+| Field | Variables | Controls |
+| --- | --- | --- |
+| `light`, `dark` | `--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive` (+ `*-foreground`), `--border`, `--input`, `--ring`, `--focus-ring`, `--hover`, `--active`, `--selection`, `--sidebar-*`, `--kortix-*`, `--chart-*`, `--terminal-*`, any `--custom` | Colors per mode. `blue` (`--kortix-blue`) is the accent; `ring` is focus; `primary` is ink |
+| `radius` | `--radius` | Every `rounded-*` derives from it (`rounded` −6px … `2xl` +6px) |
+| `spacing` | `--spacing` | Density of every `p-*`, `m-*`, `gap-*`, `size-*` |
+| `fonts.sans`, `fonts.mono` | `--font-family-sans`, `--font-family-mono` | Body and headings; code and ids |
+| `text`, `lineHeights` | `--text-<step>`, `--text-<step>--line-height` | The type scale |
+| `shadows` | `--shadow-<step>` | Elevation; `0 0 #0000` flattens a step |
+| `durations`, `easing` | `--duration-*`, `--ease-*` | Motion |
+| `vars` | any `--name` | Anything else, both modes |
+
+`THEME_COLOR_VARS` maps each color key to its variable. Plain CSS works too:
+set the same variables in your own `:root` / `.dark` after the import. Never
+fork a component. Roobert (`--font-roobert`) is for Kortix-owned surfaces only.
+`apps/whitelabel-demo/src/config/theme.ts` is the reference.
+
+How it stays themable:
+
+- `theme.css` maps every Tailwind key to a variable. Steps that share a name
+  with their variable (`--text-sm`, `--shadow-md`, `--ease-default`, bare
+  `rounded`) live in `@theme inline reference`, so Tailwind never emits the
+  `--x: var(--x)` cycle into `:root`.
+- Every Radix portal goes through `withPortalContainer`
+  (`src/lib/portal-container.tsx`). Without a `ThemeScope` it portals to
+  `document.body`, as before.
+- A new component reads tokens only: no hex, no palette class, no fixed
+  radius. `apps/web` must look identical: every new variable defaults to the
+  value it replaces.
 
 ## Known issues
 
