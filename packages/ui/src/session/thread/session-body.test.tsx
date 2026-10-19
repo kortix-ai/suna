@@ -27,7 +27,7 @@ const read = (rel: string) => {
 };
 
 const chatSource = read('session-chat.tsx');
-const shellSource = read('instant-session-shell.tsx');
+const shellSource = read('../../workspace/instant-session-shell.tsx');
 
 describe('SessionBodyRow', () => {
   test('the chat column can shrink and the row clips, so a docked composer stays in view', () => {
@@ -46,8 +46,8 @@ describe('SessionBodyRow', () => {
     // `toggleRight()` twice in one tick and the key reads as dead.
     const source = read('session-body.tsx');
     expect(source).toContain('hotkey={!transient}');
-    expect(read('instant-session-shell.tsx')).toContain('transient');
-    expect(read('session-action-panel-column.tsx')).toContain(
+    expect(shellSource).toContain('transient');
+    expect(read('../panel/session-action-panel-column.tsx')).toContain(
       'const shouldHandleHotkey = hotkey &&',
     );
   });

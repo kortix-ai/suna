@@ -24,7 +24,10 @@ import { isAppOwnedStorageKey, isKeptStorageKey } from '@/lib/utils/clear-local-
 
 const STORES_DIR = resolve(import.meta.dir);
 // Stores that moved to @kortix/ui. Their web files are one-line re-exports.
-const UI_STORES_DIR = resolve(import.meta.dir, '../../../../packages/ui/src/shared/stores');
+const UI_SRC = resolve(import.meta.dir, '../../../../packages/ui/src');
+const UI_STORES_DIRS = ['internal/stores', 'session/composer/stores', 'files/renderers/presentation'].map((dir) =>
+  resolve(UI_SRC, dir),
+);
 
 /**
  * Every name a call matching `pattern` resolves to in `source`. `pattern`
@@ -109,7 +112,7 @@ function extractExportedHookName(source: string): string | null {
 
 /** Absolute paths of every store source in both roots. */
 function storeSourceFiles(): string[] {
-  return [STORES_DIR, UI_STORES_DIR].flatMap((dir) =>
+  return [STORES_DIR, ...UI_STORES_DIRS].flatMap((dir) =>
     readdirSync(dir, { withFileTypes: true })
       .filter(
         (entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name),

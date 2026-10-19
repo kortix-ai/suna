@@ -115,14 +115,16 @@ mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({
 }));
 
 const translate = (key: string) => key.split('.').pop() || key;
-mock.module('@/i18n/use-translations', () => ({
+const translationsMock = () => ({
   useLocale: () => 'en',
   useTranslations: () =>
     Object.assign((key: string) => translate(key), {
       raw: translate,
       rich: (key: string) => translate(key),
     }),
-}));
+});
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 
 const { TokensTab } = await import('./tokens-tab');
 

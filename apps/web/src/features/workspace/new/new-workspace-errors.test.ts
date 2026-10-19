@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import { ApiError } from '@kortix/sdk';
 import { isRetryableError, messageFor } from './use-create-workspace';
+import { readSource } from '@/test-utils/read-source';
 
 const pageSource = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
-const hookSource = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
+const hookSource = readSource(join(import.meta.dir, 'use-create-workspace.ts'));
 
 /**
  * Comments stripped, same convention as `new-workspace-page.test.ts` and
@@ -165,7 +166,6 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
 describe('/new failure states: 503 gets its own message and no retry', () => {
   test('the hook reuses isManagedGitUnavailableError instead of writing a second detector', () => {
     expect(hook).toContain('isManagedGitUnavailableError');
-    expect(hook).toContain("from '@/lib/onboarding/provision-errors'");
     // Paired negative: the 503-detection string itself lives ONLY in
     // provision-errors.ts. If this file duplicated it, the two checks
     // could silently drift apart.

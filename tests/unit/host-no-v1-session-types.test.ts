@@ -20,7 +20,7 @@ const WEB_SRC = 'apps/web/src';
 const MOBILE = 'apps/mobile';
 const UI_SRC = 'packages/ui/src';
 /** The SDK surface shims: `@/ui` in apps/web and its copy in @kortix/ui. */
-const SDK_SHIM_DIRS = [`${WEB_SRC}/ui/`, `${UI_SRC}/shared/ui/`];
+const SDK_SHIM_DIRS = [`${WEB_SRC}/ui/`, `${UI_SRC}/internal/session-types/`];
 const inShimDir = (file: string) => SDK_SHIM_DIRS.some((dir) => file.startsWith(dir));
 /** The host a repo file belongs to: the root `@/` resolves to. */
 const hostRoot = (file: string) =>
@@ -53,7 +53,7 @@ const ALLOWED: Record<string, string> = {
 };
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;
-const UI_SDK_SHIM = /^@kortix\/ui\/shared\/ui(?:\/|$)/;
+const UI_SDK_SHIM = /^@kortix\/ui\/internal\/session-types(?:\/|$)/;
 const NAMED = /\b(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
 const NAMESPACE = /\bimport\s+(?:type\s+)?\*\s+as\s+\w+\s+from\s*['"]([^'"]+)['"]/g;
 const STAR_EXPORT = /\bexport\s+(?:type\s+)?\*\s+(?:as\s+\w+\s+)?from\s*['"]([^'"]+)['"]/g;
@@ -181,7 +181,7 @@ describe('host files import no v1 part or turn type', () => {
     const surfaces = [
       'packages/sdk/src/public-surface.snapshot.json',
       'packages/sdk/src/public-type-surface.snapshot.json',
-      `${UI_SRC}/shared/ui/types.ts`,
+      `${UI_SRC}/internal/session-types/types.ts`,
     ].map((file) => readFileSync(join(REPO_ROOT, file), 'utf8'));
     const missing = [...V1_NAMES].filter((name) => !surfaces.some((s) => new RegExp(`\\b${name}\\b`).test(s)));
     expect(missing).toEqual([]);

@@ -90,7 +90,7 @@ const projectCan = await import('../../../internal/lib/use-project-can');
 mock.module('../../../internal/lib/use-project-can', () => ({ ...projectCan, useProjectCan: () => ({ allowed: true }) }));
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { NextIntlClientProvider } = await import('../../../i18n');
+const { IntlTestProvider: NextIntlClientProvider } = await import('../../../test-utils/intl');
 const messages = (await import('../../../../../../apps/web/translations/en.json')).default;
 const { AccountSecretResourcesPanel } = await import('./account-secret-resources-panel');
 

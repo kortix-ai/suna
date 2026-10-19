@@ -48,7 +48,7 @@ describe('SessionsEmptyState', () => {
 
 describe('both empty session lists use it', () => {
   const sidebar = readFileSync(
-    join(import.meta.dir, '..', 'project-sidebar', 'project-session-list.tsx'),
+    join(import.meta.dir, '..', 'sidebar', 'project-session-list.tsx'),
     'utf8',
   );
   const page = readFileSync(join(import.meta.dir, 'project-sessions-view.tsx'), 'utf8');

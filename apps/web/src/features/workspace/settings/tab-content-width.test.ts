@@ -64,6 +64,7 @@ import { join } from 'node:path';
 
 import { railItemForTab } from './rail';
 import type { SettingsTab } from './settings-tabs';
+import { readSource } from '@/test-utils/read-source';
 
 const TABS_DIR = join(import.meta.dir, 'tabs');
 const SRC_DIR = join(import.meta.dir, '..', '..', '..');
@@ -155,11 +156,11 @@ const TAB_SUBTREE: Record<string, string[]> = {
 const CHILD_SUBTREE: Record<string, string[]> = {};
 
 function tabSource(file: string): string {
-  return readFileSync(join(TABS_DIR, file), 'utf8');
+  return readSource(join(TABS_DIR, file));
 }
 
 function srcFile(relative: string): string {
-  return readFileSync(join(SRC_DIR, relative), 'utf8');
+  return readSource(join(SRC_DIR, relative));
 }
 
 /** True when the mapped child renders a table itself OR through its own slot child. */

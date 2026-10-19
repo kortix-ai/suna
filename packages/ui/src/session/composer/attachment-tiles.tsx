@@ -2,7 +2,7 @@
 
 /**
  * The composer's attachment preview — the SAME `AttachmentTile` the sent
- * message uses (`../attachment-tile`), plus what a not-yet-sent file needs
+ * message uses (`./attachment-tile`), plus what a not-yet-sent file needs
  * that a sent one never does: a corner remove button and its upload state.
  *
  * Upload state stays inside the tile box: a progress ring in the corner, or a

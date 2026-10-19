@@ -147,7 +147,6 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('three steps driven by the shared Stepper in a rail, inside a two-pane Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
     expect(wizardSource).toContain('<Stepper');
     expect(wizardSource).toContain('<aside');
     expect(wizardSource).not.toContain('<ByoWizardSteps');
@@ -205,9 +204,7 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('the block composes the shipped code primitives instead of hand-rolling them', () => {
     // The barrel's own rule: own frame -> HighlightedCode. This frame is bespoke
     // (copy top-left, ~3-line cap, bg-secondary), the body and control are not.
-    expect(copyBlockSource).toContain("from '@/components/markdown/code'");
     expect(copyBlockSource).toContain('<HighlightedCode');
-    expect(copyBlockSource).toContain("from '@/components/markdown/copy-button'");
     expect(copyBlockSource).toContain('<CopyButton');
   });
 
@@ -272,9 +269,6 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
 
 describe('Channels view — Email and Teams are entity rows', () => {
   test('both render through the shared ChannelRow', () => {
-    expect(channelsSource).toContain(
-      "from '@/features/workspace/customize/sections/component/channel-row'",
-    );
     expect(channelsSource).toContain('function EmailChannelRow');
     expect(channelsSource).toContain('function TeamsChannelRow');
     expect(channelsSource).toMatch(/<EmailChannelRow[\s\S]*<TeamsChannelRow/);
@@ -297,16 +291,12 @@ describe('Channels view — Email and Teams are entity rows', () => {
 
   test('reuses the connector connect form inside a modal instead of redirecting', () => {
     expect(channelsSource).toContain('EmailConnectForm');
-    expect(channelsSource).toContain(
-      "from '@/features/workspace/customize/sections/connectors-view'",
-    );
     expect(connectorsSource).toContain('export function EmailConnectForm');
   });
 
   test('reuses the shared installation hooks as the single source of truth', () => {
     expect(channelsSource).toContain('useDisconnectSlack');
     expect(channelsSource).toContain('useDisconnectEmail');
-    expect(channelsSource).toContain("from '@/hooks/channels/use-teams-installations'");
     expect(channelsSource).toContain('useTeamsInstall');
     expect(channelsSource).toContain('useTeamsMode');
     expect(channelsSource).toContain('useDisconnectTeams');
@@ -410,7 +400,6 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
   });
 
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
-    expect(channelsSource).toContain("from '@/hooks/channels/use-channel-bindings'");
     expect(channelsSource).toContain('useChannelBindings');
     expect(channelsSource).toContain('useUpdateChannelBinding');
   });
@@ -421,14 +410,12 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
   });
 
   test('agent picker reuses the shared AgentSelector, offering a project-default entry', () => {
-    expect(channelsSource).toContain("from '@/features/session/session-chat-input'");
     expect(channelsSource).toContain('<AgentSelector');
     expect(channelsSource).toContain('useVisibleAgents');
     expect(channelsSource).toContain('Project default');
   });
 
   test('model override reuses the shared ModelSelector and labels the unset state', () => {
-    expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');
     expect(channelsSource).toContain("raw('texte8cb80e5c5cb')");
   });

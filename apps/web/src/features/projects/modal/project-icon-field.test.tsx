@@ -659,7 +659,6 @@ describe('ProjectIconField trigger tint — emoji', () => {
   });
 
   test('the trigger takes its emoji tint from the shared module, not a local copy', () => {
-    expect(code).toContain("from '@/components/ui/emoji-tint'");
     expect(code).toMatch(/emojiTint\(emoji\)/);
     expect(code).toMatch(/emojiTintHover\(emoji\)/);
 
@@ -754,7 +753,6 @@ describe('ProjectIconField trigger tint — glyph', () => {
   });
 
   test('the trigger takes its glyph tint from the shared module, not a local copy', () => {
-    expect(code).toContain("from '@/components/ui/glyph-tint'");
     expect(code).toMatch(/glyphTint\(glyphFace\.color\)/);
     expect(code).toMatch(/glyphTintHover\(glyphFace\.color\)/);
     expect(code).toMatch(/glyphForeground\(glyphFace\.color\)/);

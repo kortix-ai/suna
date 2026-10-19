@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createTranslator } from 'next-intl';
+import { createTranslator } from '../../i18n';
 
 import type { ProjectSession } from '@kortix/sdk';
 

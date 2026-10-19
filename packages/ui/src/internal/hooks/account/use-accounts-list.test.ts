@@ -175,11 +175,12 @@ function tsFilesUnder(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("the bare ['accounts'] query key is gone from apps/web", () => {
-  const SRC = join(import.meta.dir, '..', '..');
+describe("the bare ['accounts'] query key is gone from apps/web and @kortix/ui", () => {
+  const UI_SRC = join(import.meta.dir, '..', '..', '..');
+  const WEB_SRC = join(UI_SRC, '..', '..', '..', 'apps', 'web', 'src');
 
   test('no file constructs a query key from the bare accounts literal', () => {
-    const files = tsFilesUnder(SRC);
+    const files = [...tsFilesUnder(WEB_SRC), ...tsFilesUnder(UI_SRC)];
     // A floor on the walk itself, same shape as
     // `persisted-store-coverage.test.ts:148` — an empty or broken walk
     // (a renamed directory, a changed exclude list) would otherwise let this

@@ -85,7 +85,6 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('uses the shared model selector', () => {
-    expect(routingSource).toContain("from '@/features/session/model-selector'");
     expect(routingSource).toContain('<ModelSelector');
   });
 

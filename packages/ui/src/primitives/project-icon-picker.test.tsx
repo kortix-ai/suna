@@ -44,7 +44,7 @@ describe('ProjectIconPicker loading', () => {
 
   test('the icon field trigger draws its glyph without the registry', () => {
     const source = readFileSync(
-      join(import.meta.dir, '..', '..', 'features', 'projects', 'modal', 'project-icon-field.tsx'),
+      join(import.meta.dir, '..', 'workspace', 'projects', 'modal', 'project-icon-field.tsx'),
       'utf8',
     );
     expect(source).not.toContain('glyph-registry');

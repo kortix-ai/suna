@@ -9,7 +9,7 @@ import { useTranslations } from '../../../i18n';
  * tab strip, so before this there was no way to reach it at all: the one output
  * the user actually wanted was the one they couldn't get to.
  *
- * `BrowserPanel`'s chrome lives in `../shared/sandbox-browser-chrome` — this
+ * `BrowserPanel`'s chrome lives in `../../../browser/sandbox-browser-chrome` — this
  * surface keeps a tab-store-free history (mounting `BrowserPanel` here would
  * spawn a tab in the app's tab bar as a side effect of opening an output) and
  * hands the shared chrome its model, plus the "port may not be running yet"

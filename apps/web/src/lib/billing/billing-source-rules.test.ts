@@ -24,6 +24,11 @@ const DECISION_LAYER = [
   join('lib', 'billing', 'billing-gate-state.ts'),
   join('lib', 'billing', 'billing-gate-state.test.ts'),
   join('lib', 'billing', 'billing-source-rules.test.ts'),
+  // The decision layer moved to @kortix/ui; apps/web keeps a one-line shim.
+  join('@kortix/ui', 'internal', 'lib', 'billing', 'billing-gate-state.ts'),
+  join('@kortix/ui', 'internal', 'lib', 'billing', 'billing-gate-state.test.ts'),
+  // The bundled English catalog (generated from apps/web/translations/en.json) holds the owned copy.
+  join('@kortix/ui', 'i18n', 'en.ts'),
 ];
 
 /**
@@ -56,7 +61,7 @@ const DISPLAY_ONLY = [
  * They are consumers of the wire format, not billing surfaces.
  */
 const ERROR_NOISE_FILTERS = [
-  join('@kortix/ui', 'shared', 'lib', 'browser-noise', 'rules', 'expected-states.ts'),
+  join('@kortix/ui', 'internal', 'lib', 'browser-noise', 'rules', 'expected-states.ts'),
   join('app', 'sentry-ignore-errors.test.ts'),
   'sentry.client.config.ts',
 ];

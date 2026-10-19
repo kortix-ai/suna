@@ -601,7 +601,7 @@ const isImageAttachment = (file: NormalizedAttachment) =>
   isPreviewableImage(file.filename, file.mime) && Boolean(file.src || file.id);
 
 // `AttachmentTile` (name top-left, extension badge bottom-left, or the picture
-// itself) lives in `../attachment-tile` — shared with the composer's preview so
+// itself) lives in `../composer/attachment-tile` — shared with the composer's preview so
 // the two can never drift apart. See that module for why.
 
 /**

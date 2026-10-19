@@ -220,7 +220,7 @@ describe('WorkspaceHandoff: the streamed provisioning steps', () => {
   test('every step label exists in all nine catalogs', () => {
     for (const locale of ['de', 'en', 'es', 'fr', 'it', 'ja', 'pt', 'sr', 'zh'] as const) {
       const catalog = JSON.parse(
-        readFileSync(join(import.meta.dir, `../../../../translations/${locale}.json`), 'utf8'),
+        readFileSync(join(import.meta.dir, `../../../../../apps/web/translations/${locale}.json`), 'utf8'),
       ) as { newWorkspace?: { handoff?: Record<string, string> } };
       const handoff = catalog.newWorkspace?.handoff;
       if (!handoff) throw new Error(`${locale}: missing newWorkspace.handoff`);

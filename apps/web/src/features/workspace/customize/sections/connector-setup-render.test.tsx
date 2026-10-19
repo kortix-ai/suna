@@ -2,9 +2,11 @@ import { expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-mock.module('@/i18n/use-translations', () => ({
+const translationsMock = () => ({
   useTranslations: () => ({ raw: (key: string) => key }),
-}));
+});
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 mock.module('@kortix/ui/i18n/ui-catalog/use-localized-ui-catalog', () => ({
   useLocalizedUiCatalog: (value: unknown) => value,
 }));
@@ -43,10 +45,14 @@ mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () 
   useConnectSlack: () => mutation,
   useSlackManifest: () => ({ data: '{}' }),
 }));
-mock.module('@/hooks/channels/use-teams-installations', () => ({
+// The Teams wizard (moved to @kortix/ui) reads these hooks from @kortix/sdk/react directly.
+const realSdkReact = await import('@kortix/sdk/react');
+const teamsHooks = () => ({
   useConnectTeams: () => mutation,
   useTeamsManifest: () => ({ data: '{}' }),
-}));
+});
+mock.module('@/hooks/channels/use-teams-installations', teamsHooks);
+mock.module('@kortix/sdk/react', () => ({ ...realSdkReact, ...teamsHooks() }));
 const uiSelectMock = () =>
   Object.fromEntries(
     ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'].map((name) => [

@@ -132,6 +132,6 @@ describe("the shared 'open' change-request entry", () => {
       );
       for (const _ of hits ?? []) owners.push(file);
     }
-    expect(owners).toEqual(['features/project-files/hooks/use-change-requests.ts']);
+    expect(owners).toEqual(['files/project/hooks/use-change-requests.ts']);
   });
 });

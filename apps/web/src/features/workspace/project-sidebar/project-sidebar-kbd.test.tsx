@@ -47,7 +47,9 @@ for (const key of Object.getOwnPropertyNames(win)) {
 }
 
 const translate = Object.assign((key: string) => key, { raw: (key: string) => key });
-mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate }));
+const translationsMock = () => ({ useTranslations: () => translate });
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 mock.module('@kortix/ui/internal/hooks/projects/use-new-project-session', () => ({
   useNewProjectSession: () => () => undefined,
 }));

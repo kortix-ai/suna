@@ -493,7 +493,7 @@ describe('trigger composer: connector first, then its account', () => {
 describe('composer layout: three groups, one summary', () => {
   const composer = read('trigger-composer.tsx');
   const builder = readFileSync(
-    join(import.meta.dir, '..', '..', 'scheduled-tasks', 'schedule-builder.tsx'),
+    join(import.meta.dir, 'schedule-builder.tsx'),
     'utf8',
   );
 

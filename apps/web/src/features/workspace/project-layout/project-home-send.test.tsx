@@ -32,13 +32,15 @@ mock.module('@kortix/ui/session/composer/composer-chat-input', () => ({
     return null;
   },
 }));
-mock.module('@/i18n/use-translations', () => ({
+const translationsMock = () => ({
   ...realTranslations,
   // Callable for the first chat's keys (`firstChat.placeholder`), `.raw` for
   // the home placeholder. Both return something a test can tell apart.
   useTranslations: (namespace: string) =>
     Object.assign((key: string) => `${namespace}.${key}`, { raw: () => 'Message' }),
-}));
+});
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 // Zustand hooks read the store's initial state under `renderToStaticMarkup`, so
 // the pending flag is set here rather than through the store.
 mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({

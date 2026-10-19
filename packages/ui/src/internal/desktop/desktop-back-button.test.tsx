@@ -213,11 +213,11 @@ describe('hasBackDestination', () => {
 
 describe('every screen has Back by default', () => {
   const layout = codeOnly(readFileSync(join(webSrc, 'app/[locale]/layout.tsx'), 'utf8'));
-  const shell = codeOnly(readFileSync(join(webSrc, 'features/auth/auth-card-shell.tsx'), 'utf8'));
+  const shell = codeOnly(readFileSync(join(import.meta.dir, '../auth/auth-card-shell.tsx'), 'utf8'));
   const back = codeOnly(readFileSync(join(import.meta.dir, 'desktop-back-button.tsx'), 'utf8'));
   const css = codeOnly(readFileSync(join(webSrc, 'app/globals.css'), 'utf8'));
   const primitives = codeOnly(
-    readFileSync(join(webSrc, 'features/auth/auth-primitives.tsx'), 'utf8'),
+    readFileSync(join(import.meta.dir, '../auth/auth-primitives.tsx'), 'utf8'),
   );
 
   test('the root layout mounts the one Back, beside the desktop chrome', () => {

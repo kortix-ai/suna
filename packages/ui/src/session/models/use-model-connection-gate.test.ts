@@ -12,7 +12,7 @@ const selectorSource = readFileSync(join(import.meta.dir, 'model-selector.tsx'),
 // that keeps reading the barrel does not fail loudly on that move by itself;
 // it just stops being able to find what it is looking for, which is exactly
 // what happened here.
-const chatInputSource = readFileSync(join(import.meta.dir, 'composer', 'composer.tsx'), 'utf8');
+const chatInputSource = readFileSync(join(import.meta.dir, '..', 'composer', 'composer.tsx'), 'utf8');
 const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate.tsx'), 'utf8');
 
 describe('model management entry-point routing', () => {

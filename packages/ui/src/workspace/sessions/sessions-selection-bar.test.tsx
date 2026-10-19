@@ -6,7 +6,7 @@
  * a catalog hit: both read the same.
  */
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider as NextIntlClientProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import deMessages from '../../../../../apps/web/translations/de.json';

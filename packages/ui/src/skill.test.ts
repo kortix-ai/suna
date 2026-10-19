@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 
+// @ts-expect-error -- plain .mjs script, no declaration file
+import { ENTRIES } from '../scripts/gen-exports.mjs';
+
 // The kortix-ui skill ships with the package and is the first file an agent
-// reads. Its Components table must name every export of the three barrels, and
+// reads. Its Components table must name every export of the root and theme barrels,
+// references/modules.md every export of each module entry, and
 // the copy Kortix sessions load must be the same file.
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -33,13 +37,33 @@ function componentsSection(skill: string): string {
 describe('kortix-ui skill', () => {
   const listed = new Set([...componentsSection(SKILL).matchAll(/`([\w$]+)`/g)].map((m) => m[1]));
 
-  for (const barrel of ['./index.ts', './chat/index.ts', './session/index.ts', './theme/index.ts']) {
+  for (const barrel of ['./index.ts', './theme/index.ts']) {
     test(`Components table names every export of src/${barrel.slice(2)}`, () => {
       const source = read(barrel);
       expect(source).not.toMatch(/^export\s+\*/m); // a star export hides its names from this check
       const names = exportedNames(source);
       expect(names.length).toBeGreaterThan(0);
       expect(names.filter((name) => !listed.has(name))).toEqual([]);
+    });
+  }
+
+  // Every module entry (gen-exports ENTRIES) has a section in references/modules.md that names
+  // each export, and SKILL.md names the entry.
+  const MODULES = read('../skills/kortix-ui/references/modules.md');
+  for (const [key, file] of Object.entries(ENTRIES as Record<string, string>)) {
+    const spec = `@kortix/ui${key.slice(1)}`;
+    test(`references/modules.md names every export of ${spec}`, () => {
+      const source = read(`./${file}`);
+      expect(source).not.toMatch(/^export\s+\*/m);
+      const section = MODULES.split(/^## /m).find((part) => part.startsWith(`\`${spec}\``));
+      expect(section).toBeDefined();
+      const documented = new Set([...(section ?? '').matchAll(/`([\w$]+)`/g)].map((m) => m[1]));
+      const names = exportedNames(source);
+      expect(names.length).toBeGreaterThan(0);
+      expect(names.filter((name) => !documented.has(name))).toEqual([]);
+    });
+    test(`SKILL.md names ${spec}`, () => {
+      expect(SKILL).toContain(`\`${spec}\``);
     });
   }
 

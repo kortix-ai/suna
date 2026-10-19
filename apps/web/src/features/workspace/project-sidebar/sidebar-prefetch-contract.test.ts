@@ -73,7 +73,7 @@ describe('sidebar prefetch contract', () => {
     const code = strip(
       // The source moved to @kortix/ui; the web path is a re-export.
       readFileSync(
-        join(uiSrc, 'shared/components/common/hover-prefetch-link.tsx'),
+        join(uiSrc, 'internal/components/hover-prefetch-link.tsx'),
         'utf8',
       ),
     );

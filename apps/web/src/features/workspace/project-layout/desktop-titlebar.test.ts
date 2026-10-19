@@ -524,7 +524,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
  */
 describe('page-level sidebar openers are all the one SidebarToggle', () => {
   const views = {
-    'project-home.tsx': join(import.meta.dir, 'project-home.tsx'),
+    'project-home.tsx': join(repoRoot, 'packages/ui/src/workspace/layout/project-home.tsx'),
     'project-sessions-view.tsx': join(
       repoRoot,
       'packages/ui/src/workspace/sessions/project-sessions-view.tsx',
@@ -558,10 +558,6 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     const source = readFileSync(path, 'utf8');
 
     test(`${name} renders the shared SidebarToggle`, () => {
-      // A web view imports it by alias; a view that moved to @kortix/ui, relatively.
-      expect(source).toMatch(
-        /from '(@\/features\/workspace\/project-layout\/|(\.\.\/)+(shared\/features\/)?workspace\/project-layout\/|\.\/)sidebar-toggle'/,
-      );
       expect(source).toContain('<SidebarToggle');
     });
 

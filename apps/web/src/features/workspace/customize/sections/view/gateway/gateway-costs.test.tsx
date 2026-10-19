@@ -8,6 +8,7 @@ import type { GatewayModelStat, GatewaySeriesPoint } from '@/lib/projects-gatewa
 import { CostSection, MetricTab, ShareBar, fmtCredits, fmtMs, weightedP50 } from './_metrics';
 import { MemberRow } from './gateway-budgets';
 import { mostSpend } from './gateway-overview';
+import { readSource } from '@/test-utils/read-source';
 
 function point(day: string, requests: number, p50: number): GatewaySeriesPoint {
   return {
@@ -173,8 +174,8 @@ describe('Costs — member caps', () => {
 });
 
 describe('Costs — segmented controls come from the design system', () => {
-  const budgets = readFileSync(join(import.meta.dir, 'gateway-budgets.tsx'), 'utf8');
-  const metrics = readFileSync(join(import.meta.dir, '_metrics.tsx'), 'utf8');
+  const budgets = readSource(join(import.meta.dir, 'gateway-budgets.tsx'));
+  const metrics = readSource(join(import.meta.dir, '_metrics.tsx'));
 
   test('the budget dialog’s Period and At limit use Tabs, named by their labels', () => {
     expect(budgets).not.toContain('FilterBar');

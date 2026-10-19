@@ -1,4 +1,4 @@
-// apps/web/src/features/workspace/new/workspace-name.test.ts
+// packages/ui/src/workspace/new/workspace-name.test.ts
 import { describe, expect, test } from 'bun:test';
 
 import {

@@ -2,7 +2,7 @@ import type { ProjectSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { createTranslator } from 'next-intl';
+import { createTranslator } from '../../i18n';
 
 import deMessages from '../../../../../apps/web/translations/de.json';
 import { testUiTranslator } from '../../test-utils/intl';

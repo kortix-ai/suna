@@ -15,20 +15,20 @@ const host = (name: string) =>
     return React.createElement(name, props, children);
   };
 for (const [path, names] of Object.entries({
-  '../../../../components/ui/button': ['Button'],
-  '../../../../components/ui/input': ['Input'],
-  '../../../../components/ui/popover': ['Popover', 'PopoverContent', 'PopoverTrigger'],
-  '../../../../components/ui/tooltip': ['Tooltip', 'TooltipContent', 'TooltipTrigger', 'TooltipProvider'],
-  '../../../../components/ui/select': [
+  '../../../primitives/button': ['Button'],
+  '../../../primitives/input': ['Input'],
+  '../../../primitives/popover': ['Popover', 'PopoverContent', 'PopoverTrigger'],
+  '../../../primitives/tooltip': ['Tooltip', 'TooltipContent', 'TooltipTrigger', 'TooltipProvider'],
+  '../../../primitives/select': [
     'Select',
     'SelectContent',
     'SelectItem',
     'SelectTrigger',
     'SelectValue',
   ],
-  '../../../../components/ui/separator': ['Separator'],
-  '../../../../components/ui/tabs': ['Tabs', 'TabsList', 'TabsTrigger'],
-  '../../../../components/ui/dropdown-menu': [
+  '../../../primitives/separator': ['Separator'],
+  '../../../primitives/tabs': ['Tabs', 'TabsList', 'TabsTrigger'],
+  '../../../primitives/dropdown-menu': [
     'DropdownMenu',
     'DropdownMenuContent',
     'DropdownMenuItem',

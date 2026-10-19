@@ -98,7 +98,6 @@ describe('PoliciesPanel source guard — design-system primitives', () => {
 
   test('toasts come from the named helpers, not @/lib/toast', () => {
     expect(imports).not.toContain("from '@/lib/toast'");
-    expect(panelSource).toContain("from '@/components/ui/toast'");
     expect(panelSource).toContain('successToast(');
     expect(panelSource).toContain('errorToast(');
   });

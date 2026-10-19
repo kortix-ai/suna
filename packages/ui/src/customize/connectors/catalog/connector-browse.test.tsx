@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider as NextIntlClientProvider } from '../../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import en from '../../../../../../apps/web/translations/en.json';
 import type { CatalogState } from './use-catalog';

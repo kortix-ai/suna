@@ -1,7 +1,7 @@
 import type { FireProjectTriggerResponse, ProjectTrigger } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider as NextIntlClientProvider } from '../../../test-utils/intl';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 

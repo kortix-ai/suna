@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { FILES_HEADER_DESKTOP_CLASS, driveHeaderClass } from './drive-header';
 
-const repoRoot = join(import.meta.dir, '..', '..', '..', '..', '..', '..', '..');
+const repoRoot = join(import.meta.dir, '..', '..', '..', '..', '..', '..');
 const globalsCss = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
 /**

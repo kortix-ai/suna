@@ -24,11 +24,14 @@ describe('readCloneParam', () => {
 });
 
 describe('readCloneParam integration — form state seeding', () => {
-  const source = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
+  const source = readFileSync(
+    join(import.meta.dir, '../../../../../apps/web/src/features/workspace/new/new-workspace-page.tsx'),
+    'utf8',
+  );
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
   test('the page imports readCloneParam', () => {
-    expect(code).toContain("from './clone-param'");
+    expect(code).toContain("from '@/features/workspace/new/clone-param'");
     expect(code).toContain('readCloneParam');
   });
 

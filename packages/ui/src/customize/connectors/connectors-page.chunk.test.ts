@@ -29,14 +29,19 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../../../apps/web/src');
+const UI_SRC = resolve(here, '../..');
+const UI_EXPORTS: Record<string, unknown> = JSON.parse(readFileSync(resolve(UI_SRC, '../package.json'), 'utf8')).exports;
 const ROUTE_ENTRY = resolve(SRC, 'app/[locale]/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
 
-/** Modules that must not be parsed before the connectors grid paints. */
+/** Modules that must not be parsed before the connectors grid paints (paths under packages/ui/src). */
 const FORBIDDEN = [
-  'features/workspace/customize/sections/connectors-view',
-  'features/workspace/customize/sections/discover-catalogue',
-  'components/markdown/code',
+  'customize/sections/connectors-view',
+  'customize/sections/discover-catalogue',
+  'markdown/code',
 ];
+
+/** A module's path under packages/ui/src, or under apps/web/src. */
+const moduleId = (file: string) => relative(file.startsWith(UI_SRC) ? UI_SRC : SRC, file);
 
 /** Bare specifiers that must not be reachable either. */
 const FORBIDDEN_PACKAGES = ['@pipedream/sdk'];
@@ -44,6 +49,10 @@ const FORBIDDEN_PACKAGES = ['@pipedream/sdk'];
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
 function resolveModule(specifier: string, fromFile: string): string | null {
+  if (specifier === '@kortix/ui' || specifier.startsWith('@kortix/ui/')) {
+    const target = UI_EXPORTS[`.${specifier.slice('@kortix/ui'.length)}`];
+    return typeof target === 'string' && /\.tsx?$/.test(target) ? resolve(UI_SRC, '..', target) : null;
+  }
   const base = specifier.startsWith('@/')
     ? resolve(SRC, specifier.slice(2))
     : specifier.startsWith('.')
@@ -118,7 +127,7 @@ function chain(parentOf: Map<string, string | null>, file: string): string[] {
   const path: string[] = [];
   let cursor: string | undefined | null = file;
   while (cursor) {
-    path.unshift(relative(SRC, cursor));
+    path.unshift(moduleId(cursor));
     cursor = parentOf.get(cursor);
   }
   return path;
@@ -132,20 +141,20 @@ describe('connectors route initial chunk', () => {
     // If resolution broke, every assertion below would pass vacuously.
     expect(reached.length).toBeGreaterThan(30);
     expect(
-      reached.some((file) => file.endsWith('capabilities/connectors/connectors-page.tsx')),
+      reached.some((file) => file.endsWith('customize/connectors/connectors-page.tsx')),
     ).toBe(true);
     // A control: something the page genuinely does import statically.
-    expect(reached.some((file) => file.endsWith('shared/catalog/catalog-grid.tsx'))).toBe(true);
+    expect(reached.some((file) => file.endsWith('customize/shared/catalog/catalog-grid.tsx'))).toBe(true);
   });
 
   // A plain loop, not `test.each`: `@types/bun` does not declare `.each`, and
   // the three files that use it are the whole of this app's `tsc` error
   // baseline (see CLAUDE.md). Not worth becoming the fourth.
-  for (const moduleId of FORBIDDEN) {
-    test(`${moduleId} is not in the initial chunk`, () => {
-      const hit = reached.find((file) => relative(SRC, file).startsWith(moduleId));
+  for (const forbidden of FORBIDDEN) {
+    test(`${forbidden} is not in the initial chunk`, () => {
+      const hit = reached.find((file) => file.startsWith(UI_SRC) && moduleId(file).startsWith(forbidden));
       const how = hit ? `\n  reached by: ${chain(parentOf, hit).join('\n           -> ')}` : '';
-      expect(`${moduleId}${how}`).toBe(moduleId);
+      expect(`${forbidden}${how}`).toBe(forbidden);
     });
   }
 

@@ -24,8 +24,9 @@ import { resolve } from 'node:path';
 
 import { SESSION_SOURCE_FILTERS } from '@/components/projects/session-label';
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
+import { readSource } from '@/test-utils/read-source';
 
-const menuSource = readFileSync(resolve(import.meta.dir, 'session-filter-menu.tsx'), 'utf8');
+const menuSource = readSource(resolve(import.meta.dir, 'session-filter-menu.tsx'));
 
 /** The keys of the object literal assigned to `name`, by brace matching so the
  *  scan stops at THIS literal's close and not a later one. */
