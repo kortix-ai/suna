@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
 import { GatewayResolutionError, UpstreamHttpError } from '../errors';
 import { rawProviderError } from './dispatch';
+import { createRouteMemory, routeMemoryKey } from './route-memory';
 import { handleChatCompletions } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -1919,6 +1920,58 @@ describe('one-call admission (hooks.admit)', () => {
     const unpaid = await run({ admission: { ok: true, principal }, route, upstream: [primary], billing: refused });
     expect(unpaid.status).toBe(402);
     expect((await unpaid.json()).code).toBe('insufficient_credits');
+  });
+
+  // The API takes the admission hold inside /admit for the routed primary. A
+  // per-session route hold can then send the request to a fallback, so the
+  // hold must be reconciled whatever the fallback's payee is.
+  const heldRun = async (fallbackModel: UpstreamDescriptor) => {
+    const usage: UsageEvent[] = [];
+    const billingCalls: string[] = [];
+    const routeMemory = createRouteMemory();
+    routeMemory.hold(routeMemoryKey(principal, 'primary-model'), {
+      fallbackModel: 'fallback-model',
+      failure: { attempt: 1, provider: 'provider-a', routeModel: 'primary-model', resolvedModel: 'primary-model', stage: 'dispatch', status: 503, code: 'upstream_error', message: 'down' },
+      byok: false,
+    }, 60);
+    const dispatched: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: async (_p, model) => (model === 'fallback-model' ? [fallbackModel] : [primary]),
+        assertBillingActive: async () => { billingCalls.push('billing'); return { holdUsd: 0.01 }; },
+        admit: async () => ({
+          admission: { ok: true, principal },
+          route: { policyId: 'project:route', primaryModel: 'primary-model', fallbackModels: ['fallback-model'], fallbackOn: 'transient' },
+          upstream: [primary],
+          billing: { holdUsd: 0.01 },
+        }),
+      },
+      routeMemory,
+      logger,
+      fetchImpl: async (url) => { dispatched.push(String(url)); return ok(); },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [] }) });
+    await Bun.sleep(0);
+    return { response, usage, billingCalls, dispatched };
+  };
+
+  test('a held route that serves an own-key fallback returns the hold the admit call took', async () => {
+    const own: UpstreamDescriptor = { ...primary, provider: 'own', baseUrl: 'https://own.example/v1', billingMode: 'none', markup: 0 };
+    const { response, usage, billingCalls, dispatched } = await heldRun(own);
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://own.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    expect(usage.filter((event) => event.billingHoldUsd === 0.01)).toHaveLength(1);
+  });
+
+  test('a held route that serves a Kortix-billed fallback reuses the admit hold once', async () => {
+    const { response, usage, billingCalls, dispatched } = await heldRun({ ...fallback, baseUrl: 'https://provider-b.example/v1' });
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://provider-b.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    expect(usage.filter((event) => event.billingHoldUsd === 0.01)).toHaveLength(1);
   });
 
   test('invalid JSON from an unauthenticated caller still answers 401 first', async () => {

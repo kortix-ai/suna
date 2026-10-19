@@ -8,10 +8,10 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { z } from '@hono/zod-openapi';
 import { logger } from '../lib/logger';
+import { admitGatewayRequest, billingVerdict, resolutionErrorBody } from './admit';
 import { checkBudget } from './budgets';
 import {
   authenticatePrincipal,
-  assertLlmBillingActive,
   authorizeRequest,
   persistGatewayTrace,
   recordGatewayUsage,
@@ -32,30 +32,6 @@ import { resolveGatewayRoute } from './routing';
 // call) differs.
 /** Sent by the gateway (KORTIX_INTERNAL_EDGE_KEY) through the api-router Worker. */
 const INTERNAL_EDGE_HEADER = 'x-kortix-internal-edge-key';
-
-function resolutionErrorBody(err: GatewayResolutionError) {
-  return { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds };
-}
-
-/**
- * The wallet admission for a Kortix-billed request the gateway already
- * resolved (`simple-handler.ts` gates admitCharge on billingMode), so the
- * wallet floor applies to every account here.
- */
-async function billingVerdict(accountId: string) {
-  try {
-    const result = await assertLlmBillingActive(accountId, { creditsRequest: true });
-    return { active: true as const, holdUsd: result?.holdUsd };
-  } catch (err) {
-    return {
-      active: false as const,
-      reason: typeof (err as { reason?: unknown })?.reason === 'string'
-        ? (err as { reason: string }).reason
-        : 'subscription_required',
-      message: err instanceof Error ? err.message : 'subscription required',
-    };
-  }
-}
 
 export function createInternalGatewayRoutes() {
   const app = new Hono();
@@ -176,41 +152,11 @@ export function createInternalGatewayRoutes() {
     return c.json({ descriptor: { apiKey, headers: { ...headers, ...codexConversationHeaders({ ...principal, sessionId: principal.sessionId ?? undefined }) } } });
   });
 
-  // /authorize + /resolve-route + /resolve-upstream for the routed model +
-  // /billing when that model is Kortix-billed, in one round trip. Each answer
-  // has the shape of its own route. A step that fails unexpectedly is left
-  // out, and the gateway calls its own route for it, so error handling stays
-  // the same. The separate routes stay for older gateways and fallbacks.
+  // One round trip for /authorize, /resolve-route, /resolve-upstream and
+  // /billing. The separate routes stay for older gateways and fallbacks.
   app.post('/admit', async (c) => {
     const { token, input } = await c.req.json();
-    if (typeof token !== 'string' || !token) {
-      return c.json({ admission: { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' } });
-    }
-    const admission = await authorizeRequest(token, { deferBilling: true });
-    if (!admission.ok) return c.json({ admission });
-    const { principal } = admission;
-    const routeInput = input as ModelRouteInput;
-    let route;
-    try {
-      route = await resolveGatewayRoute(principal, routeInput);
-    } catch (err) {
-      logger.warn('[gateway-internal] admit: route left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-      return c.json({ admission });
-    }
-    const model = route?.primaryModel || routeInput?.requestedModel || '';
-    try {
-      const candidates = await resolveCandidates(principal, model);
-      const billing = candidates[0] && candidates[0].billingMode !== 'none'
-        ? await billingVerdict(principal.accountId)
-        : undefined;
-      return c.json({ admission, route, candidates, ...(billing ? { billing } : {}) });
-    } catch (err) {
-      if (err instanceof GatewayResolutionError) {
-        return c.json({ admission, route, candidates: [], resolutionError: resolutionErrorBody(err) });
-      }
-      logger.warn('[gateway-internal] admit: resolution left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-      return c.json({ admission, route });
-    }
+    return c.json(await admitGatewayRequest(token, input));
   });
 
   app.post('/resolve-route', async (c) => {

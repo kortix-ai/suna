@@ -362,6 +362,11 @@ export async function handleChatCompletions(
     });
   }
   let principal = admission.principal;
+  // The admit call already debited this hold in the API. Put it on the
+  // principal now, so every exit settles or refunds it, including a held
+  // route that serves an own-key fallback and never reaches admitCharge.
+  const prefetchedHold = prefetched?.billing instanceof Error ? undefined : prefetched?.billing?.holdUsd;
+  if (prefetchedHold) principal = { ...principal, billingHold: { amountUsd: prefetchedHold } };
   emit.mark('admitted');
 
   // One wallet admission per request: before dispatch when the routed model is

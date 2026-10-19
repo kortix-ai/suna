@@ -123,7 +123,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
   const post = async <T>(
     path: string,
     payload: unknown,
-    { retryOnTimeout = false }: { retryOnTimeout?: boolean } = {},
+    { retryOnTimeout = false, retryNotFound = true }: { retryOnTimeout?: boolean; retryNotFound?: boolean } = {},
   ): Promise<T> => {
     return withRetry(
       async (signal) => {
@@ -170,10 +170,8 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         //
         // Worst case stays bounded by `maxAttempts`: 3 x 5 s plus ~0.3 s of
         // backoff before the caller is told the API is unreachable.
-        // A 404 is a route this API does not serve (or a refused edge key):
-        // repeating it answers the same.
         isRetryable: (err) =>
-          (err instanceof ApiUnavailableError && err.status !== 404) ||
+          (err instanceof ApiUnavailableError && (retryNotFound || err.status !== 404)) ||
           (retryOnTimeout && err instanceof TimeoutError),
       },
     );
@@ -205,9 +203,14 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         resolutionError?: ResolutionErrorBody;
         billing?: BillingBody;
       };
+      // No retry on a timeout: /admit debits the admission hold as its last
+      // step, so a repeat after a silent attempt would debit again and only
+      // the last hold would reach the gateway. The separate calls take over.
+      // No retry on a 404 either: an API without /admit answers the same.
       try {
-        wire = await post('/internal/gateway/admit', { token, input }, RETRY_SLOW);
+        wire = await post('/internal/gateway/admit', { token, input }, { retryNotFound: false });
       } catch (error) {
+        if (error instanceof TimeoutError) return null;
         if (error instanceof ApiUnavailableError && error.status === 404) {
           admitMissingUntil = Date.now() + ADMIT_MISSING_MS;
           return null;

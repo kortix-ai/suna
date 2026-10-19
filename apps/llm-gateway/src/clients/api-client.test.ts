@@ -327,4 +327,30 @@ describe('ApiClient.admit', () => {
     expect(await api.admit('tok', input)).toBeNull();
     expect(calls).toBe(1);
   });
+
+  // /admit can debit the admission hold as its last step. A repeat after a
+  // silent attempt would debit again, and only the last hold reaches the
+  // gateway. A timeout therefore answers null once, and the handler uses the
+  // separate calls.
+  test('a timed-out /admit is not repeated and answers null', async () => {
+    let calls = 0;
+    const api = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      timeoutMs: 20,
+      fetchImpl: async () => { calls += 1; return new Promise<Response>(() => {}); },
+    });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  test('a 404 on any other internal call is still retried', async () => {
+    let calls = 0;
+    const api = client(async () => {
+      calls += 1;
+      return calls === 1 ? jsonResponse({ error: 'not found' }, 404) : jsonResponse({ ok: true, principal });
+    });
+    expect(await api.authorize('tok')).toEqual({ ok: true, principal });
+    expect(calls).toBe(2);
+  });
 });
