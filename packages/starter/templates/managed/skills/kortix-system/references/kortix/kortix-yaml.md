@@ -112,7 +112,7 @@ harnesses:
 apps:
   backend:
     type: oci_image
-    image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
+    image: ghcr.io/convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
     labels: [backend]          # tags only; no behavior depends on them
     display: { preview: none } # an icon card; listed | preview (live | none) | parent
