@@ -23,7 +23,7 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Secrets / Settings). Gated, because those pages can 403.
+ * Reminders / Secrets / Settings). Gated, because those pages can 403.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -100,6 +100,17 @@ export const TAB_PREFERENCE: readonly {
       PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
     ],
   },
+  // A reminder is a trigger scoped to one session: the Triggers rule. A plain
+  // member still sees and manages their own reminders from the session header.
+  {
+    key: 'reminders',
+    action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    manage: [
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    ],
+  },
   // The Models tab is model routing.
   {
     key: 'models',
@@ -150,21 +161,29 @@ export interface CapabilityAccess {
  *
  * A failed probe counts as settled and denied: the bar fails closed.
  *
- * `drives` is the project's `drives` flag, `undefined` while it loads. Repo
- * exists only with it on, so the rule (not each surface) drops the tab.
+ * `flags` are the project's `drives` and `reminders` flags, `undefined` while
+ * they load. Repo exists only with `drives` on and Reminders only with
+ * `reminders` on, so the rule (not each surface) drops the tab.
  */
+export interface CapabilityFlags {
+  drives: boolean | undefined;
+  reminders: boolean | undefined;
+}
+
 export function capabilityAccess(
   caps: Record<string, CanResult>,
-  drives: boolean | undefined,
+  flags: CapabilityFlags,
 ): CapabilityAccess {
   const settled =
-    drives !== undefined &&
+    flags.drives !== undefined &&
+    flags.reminders !== undefined &&
     CAPABILITY_TAB_ACTIONS.every((action) => caps[action] && !caps[action].isLoading);
   if (!settled) return { settled, tabs: [] };
   const allowed = (action: string) => caps[action]?.allowed === true;
   const tabs = TAB_PREFERENCE.filter(
     (tab) =>
-      (drives || tab.key !== 'files') &&
+      (flags.drives || tab.key !== 'files') &&
+      (flags.reminders || tab.key !== 'reminders') &&
       allowed(tab.action) &&
       (!tab.manage || tab.manage.some(allowed)),
   ).map((tab) => tab.key);
@@ -174,7 +193,11 @@ export function capabilityAccess(
 export function useCapabilityAccess(projectId: string | undefined): CapabilityAccess {
   const caps = useProjectPageCans(projectId);
   const drives = useFeatureFlag(projectId, 'drives');
-  return capabilityAccess(caps, drives.isLoading ? undefined : drives.enabled);
+  const reminders = useFeatureFlag(projectId, 'reminders');
+  return capabilityAccess(caps, {
+    drives: drives.isLoading ? undefined : drives.enabled,
+    reminders: reminders.isLoading ? undefined : reminders.enabled,
+  });
 }
 
 /**

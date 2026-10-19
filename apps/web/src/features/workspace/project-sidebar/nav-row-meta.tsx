@@ -9,13 +9,7 @@ import {
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SidebarNavItemId } from '@/stores/sidebar-nav-store';
-import { useFeatureFlag } from '@kortix/sdk/react';
-import {
-  AlarmIcon,
-  AppWindowIcon,
-  FoldersIcon,
-  HardDrivesIcon,
-} from '@phosphor-icons/react';
+import { AppWindowIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -35,7 +29,6 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
-  const reminders = useFeatureFlag(projectId, 'reminders');
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
@@ -62,9 +55,6 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(reminders.enabled
-        ? { reminders: { label: t('reminders'), icon: <AlarmIcon />, href: `${base}/reminders` } }
-        : {}),
       ...(files
         ? {
             files: {
@@ -75,13 +65,5 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
           }
         : {}),
     };
-  }, [
-    t,
-    tI18nComplete,
-    projectId,
-    customizeTab,
-    appsVisible,
-    reminders.enabled,
-    filesTarget,
-  ]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, filesTarget]);
 }
