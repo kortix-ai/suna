@@ -269,6 +269,8 @@ export interface TriggerEventApp {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors?: TriggerEventConnector[];
+  /** Source `mcp`: the catalogue MCP server URL a new connector is added with. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface TriggerEventAppsResponse {

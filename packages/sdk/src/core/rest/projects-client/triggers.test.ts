@@ -4,6 +4,7 @@ import type {
   CreateProjectTriggerInput,
   ProjectMonitorMode,
   ProjectTrigger,
+  ProjectTriggerEventApp,
   ProjectTriggerType,
   UpdateProjectTriggerInput,
 } from './triggers';
@@ -391,6 +392,25 @@ test('listProjectTriggerEventTypes and EventApps expose source next to the depre
   expect(catalog.source).toBe('composio');
   nextResponse = { status: 200, body: { apps: [{ source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 1, connector: null, connected: false }] } };
   expect((await listProjectTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
+});
+
+test('listProjectTriggerEventApps reads mcp_url: the catalogue server for source mcp, null otherwise, absent from an older API', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        { source: 'mcp', provider: 'mcp', app: 'linear', name: 'Linear', logo: 'l.png', event_count: 0, connector: null, connected: false, mcp_url: 'https://mcp.linear.app/mcp' },
+        { source: 'mcp', provider: 'mcp', app: 'tickets', name: 'Tickets', logo: null, event_count: 2, connector: 'tickets', connected: true, mcp_url: null },
+        { source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github', connected: true, mcp_url: null },
+        { source: 'composio', provider: 'composio', app: 'slack', name: 'Slack', logo: null, event_count: 3, connector: 'slack', connected: true },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  const urls: ProjectTriggerEventApp['mcp_url'][] = apps.map((a) => a.mcp_url);
+  expect(urls).toEqual(['https://mcp.linear.app/mcp', null, null, undefined]);
 });
 
 test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {

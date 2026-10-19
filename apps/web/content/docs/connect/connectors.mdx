@@ -96,6 +96,8 @@ Apps sign in one of three ways:
 - Connectors you added from the managed catalog keep working with the flag on.
 - Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
 
+Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+
 ### From the CLI
 
 ```bash

@@ -529,7 +529,7 @@ export interface ProjectTriggerEventType {
 }
 
 export interface ProjectTriggerEventTypes {
-  /** Event source adapter id, such as `composio`. */
+  /** Event source adapter id: `composio` or `mcp`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -541,7 +541,8 @@ export interface ProjectTriggerEventTypes {
  * The app events a connector, or an app with no connector, can trigger on.
  * Throws 404 for an unknown connector (`app_not_found` for an app with no
  * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
- * when no event source serves it.
+ * when no event source serves it. With source `mcp`, a catalogue app or a
+ * project MCP server that has no events yet returns an empty `event_types`.
  */
 export async function listProjectTriggerEventTypes(
   projectId: string,
@@ -577,7 +578,7 @@ export interface ProjectTriggerEventConnector {
 
 /** An app that can trigger events, with the project's state for it. */
 export interface ProjectTriggerEventApp {
-  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  /** Event source adapter id: `composio` or `mcp`. The trigger's `event_source`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -594,6 +595,8 @@ export interface ProjectTriggerEventApp {
   connectors?: ProjectTriggerEventConnector[];
   /** Slug to give a new connector for this app (never a reserved or taken one). */
   new_connector_slug?: string;
+  /** Source mcp: the catalogue MCP server to install for this app. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface ProjectTriggerEventApps {
