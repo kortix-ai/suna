@@ -65,11 +65,11 @@ Mount: Inside `FileSourceProvider` (where the bytes come from).
 
 ## `@kortix/ui/terminal`
 
-Source: `src/terminal/index.ts`. The session terminal (one ambient shell per session) and a raw PTY view.
+Source: `src/terminal/index.ts`. The session terminal (one ambient shell per session).
 
 Mount: Inside a mounted `useSession` (the PTY client comes from `@kortix/sdk/react`).
 
-`PtyTerminal`, `SessionTerminal`, `shouldPaintFatalCard`, `shouldPaintTerminalCard`
+`SessionTerminal`, `shouldPaintFatalCard`, `shouldPaintTerminalCard`
 
 ## `@kortix/ui/browser`
 
