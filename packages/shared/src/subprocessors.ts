@@ -33,7 +33,7 @@ export const SUBPROCESSOR_NOTICE_DAYS = 30;
 /** The time a merged row has to reach prod before its notice gives fewer than 30 days. */
 export const SUBPROCESSOR_RELEASE_DAYS = 7;
 
-export const SUBPROCESSORS_UPDATED = "2026-10-18";
+export const SUBPROCESSORS_UPDATED = "2026-10-19";
 
 /** The first day `row` may process customer personal data (`YYYY-MM-DD`), or null for an established row. */
 export function subprocessorEffectiveDate(row: Subprocessor): string | null {
@@ -188,6 +188,86 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
     addedOn: "2026-10-18",
 
     inferenceHosts: ["cerebras"],
+  },
+  {
+    name: "Cloudflare, Inc. (Workers AI)",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["cloudflare"],
+  },
+  {
+    name: "Inference.net",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["inference-net"],
+  },
+  {
+    name: "Wafer",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["wafer"],
+  },
+  {
+    name: "Crusoe Energy Systems LLC",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["crusoe"],
+  },
+  {
+    name: "Open Inference",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["open-inference"],
+  },
+  {
+    name: "Venice.ai",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "United States",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["venice"],
+  },
+  {
+    name: "SiliconFlow",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "Singapore (headquarters); United States (datacenters)",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["siliconflow"],
+  },
+  {
+    name: "Makora",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "Not disclosed",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["makora"],
+  },
+  {
+    name: "NEAR AI",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "Not disclosed",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["near-ai"],
+  },
+  {
+    name: "Prime Intellect",
+    purpose:
+      "Inference for Kortix-managed AI models, reached through OpenRouter",
+    location: "Not disclosed",
+    addedOn: "2026-10-19",
+    inferenceHosts: ["primeintellect"],
   },
   {
     name: "GitHub, Inc.",

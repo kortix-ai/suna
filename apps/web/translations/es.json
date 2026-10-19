@@ -2477,7 +2477,7 @@
           "name": "Free",
           "note": "Empieza con créditos reales de sandbox.",
           "f1": "500 créditos / mes, sin tarjeta",
-          "f2": "Modelos gestionados: Kimi, DeepSeek, GLM. Retención de datos cero, inferencia en EE. UU.",
+          "f2": "Modelos gestionados: DeepSeek, GLM. Retención de datos cero",
           "f3": "1 proyecto",
           "f4": "Usa tu propia clave de API para cualquier modelo premium",
           "f5": "Conecta tu suscripción de ChatGPT"
