@@ -1,138 +1,83 @@
 /**
- * The wrapper-mode BFF proxy: `${origin}/api/kortix/*` → `${KORTIX_UPSTREAM}/*`.
+ * The same-origin proxy: `${origin}/api/kortix/*` → `${KORTIX_UPSTREAM}/*`.
  *
- * The SDK owns the upstream HTTP transport. This route owns wrapper
- * authentication, authorization policy, and ownership bookkeeping.
+ * 1. `resolveMember` turns the Better Auth cookie + `Bearer ws.<workspaceId>`
+ *    into the member's project-scoped Kortix token (Convex checks membership).
+ * 2. The path must be literal segments (`buildUpstreamPath`).
+ * 3. Writes a Lumen member must not make are refused (`blockedReason`).
+ * 4. `forwardKortixRequest` forwards with the member token and streams the
+ *    response (REST, SSE, runtime routes alike).
+ * 5. A new session gets Lumen's tags and becomes a Lumen thread
+ *    (`createSession`), whichever screen created it.
  *
- * Order of operations, each one able to short-circuit with an error response:
- *   1. `KORTIX_API_KEY` must be configured (wrapper mode must actually be on).
- *   2. The caller must carry a valid Lumen app session (bearer or cookie).
- *   3. Per-user rate limit.
- *   4. `evaluatePolicy` — the explicit allow/deny table in `server/policy.ts`.
- *   5. Forward to upstream with the Kortix API key substituted in for
- *      Authorization — the end user's own session token NEVER reaches Kortix.
- *
- * Streaming: the response body passes straight through
- * (`new Response(upstreamRes.body, …)`) for everything except the two routes
- * that need a tiny JSON rewrite (`filterProjectsList`, `recordProvisionOwner`)
- * — those bodies are small one-shot JSON responses. Buffering them is safe.
- * Nothing else is buffered. Long-lived session streams remain active.
+ * Kortix enforces the tenant boundary: the member token is rejected on every
+ * other project, on `GET /projects` and on account routes. The deny list
+ * exists because a project-scoped token carries its minter's role on that
+ * project (owner), which is more than a Lumen member gets.
  */
 
-import { type SessionPayload, getRequestSession } from '@/server/auth';
-import { evaluatePolicy } from '@/server/policy';
-import { consumeRateLimit } from '@/server/rate-limit';
-import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
+import { fetchAuthMutation } from '@/server/auth-server';
+import { type Member, resolveMember } from '@/server/member';
+import { SESSION_CREATE, blockedReason } from '@/server/proxy-policy';
 import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
-import { addOwnedProject, isOwner, listOwnedProjects } from '@/server/users';
+import { api } from '@convex/_generated/api';
+import type { Id } from '@convex/_generated/dataModel';
+import { lumenSessionTags } from '@convex/tags';
 import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function jsonError(status: number, error: string, extraHeaders?: HeadersInit) {
-  return Response.json({ error }, { status, headers: extraHeaders });
-}
-
 async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
-  const apiKey = process.env.KORTIX_API_KEY;
-  if (!apiKey) {
-    return jsonError(500, 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).');
-  }
-
-  const session = getRequestSession(req);
-  if (!session) return jsonError(401, 'Not authenticated');
-
-  const limited = consumeRateLimit(session.userId);
-  if (!limited.ok) {
-    return jsonError(429, 'Rate limit exceeded', {
-      'Retry-After': String(Math.ceil((limited.retryAfterMs ?? 1000) / 1000)),
-    });
-  }
+  const resolved = await resolveMember(req);
+  if ('error' in resolved) return resolved.error;
 
   const { path = [] } = await ctx.params;
-  // Next hands back DECODED segments, so `%2F..%2F` arrives as a real `..` and a
-  // naive join lets the POLICY and the UPSTREAM disagree about which project is
-  // being addressed. Refuse before anything reads the path.
   const built = buildUpstreamPath(path);
-  if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
-  const upstreamPath = built.path;
+  if (!built.ok) return Response.json({ error: `Invalid request path: ${built.reason}` }, { status: 400 });
 
-  const policy = evaluatePolicy(
-    req.method,
-    upstreamPath,
-    (projectId) => isOwner(session.userId, projectId),
-    resolveRuntimeProject,
-  );
-  if (!policy.allow) return jsonError(policy.status, policy.reason);
+  const blocked = blockedReason(req.method, built.path);
+  if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
-  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${new URL(req.url).search}`;
-
-  const upstreamRes = await forwardKortixRequest({
-    request: req,
-    upstreamUrl,
-    token: apiKey,
-  });
-
-  if (policy.filterProjectsList || policy.recordProvisionOwner || policy.recordRuntimeProjectId) {
-    return await rewriteOwnedResponse(upstreamRes, policy, session);
+  const upstreamUrl = `${upstreamBase()}/${built.path}${new URL(req.url).search}`;
+  if (req.method === 'POST' && SESSION_CREATE.test(built.path)) {
+    return createSession(req, upstreamUrl, resolved.member);
   }
-
-  // The SDK returns a sanitized, streaming response.
-  return upstreamRes;
+  return forwardKortixRequest({ request: req, upstreamUrl, token: resolved.member.token });
 }
 
-/**
- * Buffer only responses that update or filter wrapper ownership state, apply
- * the record/filter side effects, and re-serialize. Everything else streams
- * through untouched.
- */
-async function rewriteOwnedResponse(
-  upstreamRes: Response,
-  policy: ReturnType<typeof evaluatePolicy>,
-  session: SessionPayload,
-) {
-  // Buffer only responses that update or filter wrapper ownership state.
-  if (policy.filterProjectsList || policy.recordProvisionOwner || policy.recordRuntimeProjectId) {
-    const text = await upstreamRes.text();
-    let body: unknown;
-    let isJson = true;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      isJson = false;
-    }
-
-    if (!isJson) {
-      // Upstream didn't return JSON (e.g. an error page) — pass the raw text
-      // through unchanged rather than risk mangling it.
-      return new Response(text, {
-        status: upstreamRes.status,
-        headers: {
-          'content-type': upstreamRes.headers.get('content-type') ?? 'text/plain',
-        },
-      });
-    }
-
-    if (policy.recordProvisionOwner && upstreamRes.ok) {
-      const projectId = (body as { project_id?: string } | null)?.project_id;
-      if (projectId) addOwnedProject(session.userId, projectId);
-    }
-
-    if (policy.recordRuntimeProjectId && upstreamRes.ok) {
-      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)?.sandbox
-        ?.external_id;
-      if (runtimeId) recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
-    }
-
-    if (policy.filterProjectsList && Array.isArray(body)) {
-      const owned = new Set(listOwnedProjects(session.userId));
-      body = body.filter((item) => owned.has((item as { project_id?: string })?.project_id ?? ''));
-    }
-
-    return Response.json(body, { status: upstreamRes.status });
+async function createSession(req: NextRequest, upstreamUrl: string, member: Member) {
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: 'Invalid request body' }, { status: 400 });
   }
+  const tags = lumenSessionTags(member, member.workspaceId);
+  const labels = Array.isArray(body.labels) ? body.labels.filter((l) => typeof l === 'string') : [];
+  const tagged = {
+    ...body,
+    labels: [...new Set([...labels, ...tags.labels])].slice(0, 20),
+    metadata: { ...(body.metadata as Record<string, unknown> | undefined), ...tags.metadata },
+  };
+  const res = await forwardKortixRequest({
+    request: new Request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(tagged) }),
+    upstreamUrl,
+    token: member.token,
+  });
+  if (!res.ok) return res;
+  const text = await res.text();
+  const session = JSON.parse(text) as { session_id?: string; name?: string | null };
+  if (session.session_id) {
+    await fetchAuthMutation(api.threads.recordFromProxy, {
+      workspaceId: member.workspaceId as Id<'workspaces'>,
+      kortixSessionId: session.session_id,
+      title: session.name ?? (typeof body.name === 'string' ? body.name : ''),
+      proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
+    });
+  }
+  return new Response(text, { status: res.status, headers: res.headers });
 }
 
 export { handle as DELETE, handle as GET, handle as PATCH, handle as POST, handle as PUT };

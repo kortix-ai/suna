@@ -58,23 +58,13 @@ describe('call snippets never render credentials', () => {
     });
     expect(text).not.toContain(fromSecretsApi.value);
     expect(text).not.toContain(fromSecretsApi.mine.value);
-    // The addressable parts are exactly what SHOULD show up.
-    expect(text).toContain('STRIPE_KEY');
-    expect(text).toContain('STRIPE_SECRET_KEY');
   });
 
-  test('a secret value is always the placeholder', () => {
-    const snippet = callSnippet('secret.upsert', {
-      secret: fromSecretsApi as SnippetContext['secret'],
-    });
-    expect(snippet.sdk).toContain(SECRET_VALUE_PLACEHOLDER);
-    expect(renderHttp(snippet.http)).toContain(SECRET_VALUE_PLACEHOLDER);
-  });
 
   test('the bearer is only ever the placeholder', () => {
     const text = renderedAll({ projectId: PROJECT_ID });
     // Any `Bearer` that is not the placeholder is a real token in a snippet.
-    expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
+    expect(text.match(/Bearer (?!\$KORTIX_MEMBER_TOKEN)\S+/)).toBeNull();
   });
 
   test('every HTTP request carries the placeholder authorization line', () => {
@@ -160,11 +150,6 @@ describe('the other calls', () => {
     expect(rendered('session.model').toLowerCase()).not.toContain('opencode');
   });
 
-  test('session costs are read for the current project', () => {
-    expect(renderHttp(callSnippet('session.costs', { projectId: PROJECT_ID }).http)).toContain(
-      `GET /v1/usage/session-costs?project_id=${PROJECT_ID}`,
-    );
-  });
 
   test('an approval resolves by execution id, and carries no widening scope', () => {
     const snippet = callSnippet('approval.resolve', {
@@ -179,14 +164,6 @@ describe('the other calls', () => {
     expect(rendered).not.toContain('scope');
   });
 
-  test('a secret is addressed by identifier', () => {
-    const snippet = callSnippet('secret.upsert', {
-      projectId: PROJECT_ID,
-      secret: { identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' },
-    });
-    expect(snippet.sdk).toContain('"identifier": "GMAPS-backup"');
-    expect(snippet.sdk).toContain('"name": "GOOGLE_MAPS_API_KEY"');
-  });
 });
 
 describe('every snippet is complete', () => {

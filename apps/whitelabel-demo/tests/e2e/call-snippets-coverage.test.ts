@@ -42,7 +42,7 @@ import {
   callSnippets,
   renderHttp,
 } from '../../src/lib/call-snippets';
-import { APP_ROOT } from './harness';
+const APP_ROOT = join(import.meta.dir, '..', '..');
 
 const SRC_ROOT = join(APP_ROOT, 'src');
 const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
@@ -192,10 +192,10 @@ function scanApp(): Map<string, string[]> {
  * call, it needs a snippet.
  */
 const REASONS = {
-  'account-admin':
-    'Account administration. `src/server/policy.ts` denies every `/accounts*` route but `accounts/me` in wrapper mode, so this is direct-mode UI a wrapper end user cannot reach at all.',
+  'server-route':
+    'Runs in a Lumen server route with the member token (`/api/connections`). The browser calls that route, not Kortix, and the route answers in provider-neutral terms.',
   'dashboard-parity':
-    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). Ownership-gated like everything under `projects/{id}`, but the proxy neither narrows the request nor stamps a field on it, so a wrapper author writes the same call an operator does.',
+    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). The member token limits it to the workspace’s project, and the proxy forwards it unchanged, so a wrapper author writes the same call an operator does.',
   'sdk-handle':
     'Builds an SDK handle or resolves the session runtime rather than issuing a REST request a wrapper author writes themselves — `session.prompt` is where that transport is explained.',
 } as const;
@@ -218,47 +218,18 @@ function snippetIds(verdict: CallSnippetId | CallSnippetId[] | Reason): CallSnip
  */
 const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Shown, with the control that performs it ───────────────────────────────
-  'kortix.projects.provision()': 'project.provision',
-  'kortix.projects.list()': 'project.provision',
-  'kortix.project().connectors.connections.list()': 'connections.list',
+  'kortix.project().connectors.connections.list()': 'server-route',
   'kortix.project().sessions.create()': 'session.create',
   'kortix.session().changeModel()': 'session.model',
   'kortix.session().scope()': 'session.rescope',
   'kortix.session().rescope()': 'session.rescope',
-  'kortix.project().sessions.list()': 'sessions.list',
   'kortix.session().restart()': 'session.delete',
   'kortix.session().delete()': 'session.delete',
-  'kortix.billing.sessionCosts.list()': 'session.costs',
   'kortix.project().approvals.resolve()': 'approval.resolve',
-  'kortix.project().secrets.upsert()': 'secret.upsert',
-  'kortix.project().secrets.remove()': 'secret.delete',
 
   // ── Account administration ────────────────────────────────────────────────
-  'kortix.accounts.create()': 'account-admin',
-  'kortix.accounts.get()': 'account-admin',
-  'kortix.accounts.invite()': 'account-admin',
-  'kortix.accounts.invites()': 'account-admin',
-  'kortix.accounts.leave()': 'account-admin',
-  'kortix.accounts.list()': 'account-admin',
-  'kortix.accounts.members()': 'account-admin',
-  'kortix.accounts.removeMember()': 'account-admin',
-  'kortix.accounts.updateMemberRole()': 'account-admin',
-  'kortix.accounts.updateName()': 'account-admin',
-  'kortix.projects.listForAccount()': 'account-admin',
 
   // ── Project administration + workspace (dashboard parity) ─────────────────
-  'kortix.project().access.approveRequest()': 'dashboard-parity',
-  'kortix.project().access.groupGrants()': 'dashboard-parity',
-  'kortix.project().access.invite()': 'dashboard-parity',
-  'kortix.project().access.list()': 'dashboard-parity',
-  'kortix.project().access.pendingInvites()': 'dashboard-parity',
-  'kortix.project().access.rejectRequest()': 'dashboard-parity',
-  'kortix.project().access.requests()': 'dashboard-parity',
-  'kortix.project().access.resendInvite()': 'dashboard-parity',
-  'kortix.project().access.revoke()': 'dashboard-parity',
-  'kortix.project().access.revokeInvite()': 'dashboard-parity',
-  'kortix.project().access.update()': 'dashboard-parity',
-  'kortix.project().archive()': 'dashboard-parity',
   'kortix.project().changeRequests.close()': 'dashboard-parity',
   'kortix.project().changeRequests.diff()': 'dashboard-parity',
   'kortix.project().changeRequests.get()': 'dashboard-parity',
@@ -267,42 +238,17 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().changeRequests.mergePreview()': 'dashboard-parity',
   'kortix.project().changeRequests.open()': 'dashboard-parity',
   'kortix.project().changeRequests.reopen()': 'dashboard-parity',
-  'kortix.project().connectors.config()': 'dashboard-parity',
-  'kortix.project().connectors.create()': 'dashboard-parity',
-  'kortix.project().connectors.list()': 'dashboard-parity',
-  'kortix.project().connectors.remove()': 'dashboard-parity',
-  'kortix.project().connectors.sync()': 'dashboard-parity',
-  'kortix.project().detail()': 'dashboard-parity',
   'kortix.project().files.archive()': 'dashboard-parity',
   'kortix.project().files.history()': 'dashboard-parity',
   'kortix.project().files.list()': 'dashboard-parity',
   'kortix.project().files.read()': 'dashboard-parity',
   'kortix.project().files.search()': 'dashboard-parity',
-  'kortix.project().get()': 'dashboard-parity',
   'kortix.project().git.branches()': 'dashboard-parity',
   'kortix.project().git.commit()': 'dashboard-parity',
   'kortix.project().git.commitDiff()': 'dashboard-parity',
   'kortix.project().git.commits()': 'dashboard-parity',
   'kortix.project().git.versionDiff()': 'dashboard-parity',
-  'kortix.project().llmCatalog()': 'dashboard-parity',
-  'kortix.project().onboardingComplete()': 'dashboard-parity',
-  'kortix.project().policies.list()': 'dashboard-parity',
-  'kortix.project().policies.set()': 'dashboard-parity',
-  'kortix.project().sandboxHealth()': 'dashboard-parity',
   'kortix.project().secrets.list()': 'dashboard-parity',
-  'kortix.project().secrets.removePersonal()': 'dashboard-parity',
-  'kortix.project().secrets.setGitCredential()': 'dashboard-parity',
-  'kortix.project().secrets.setPersonal()': 'dashboard-parity',
-  'kortix.project().tokens.create()': 'dashboard-parity',
-  'kortix.project().triggers.create()': 'dashboard-parity',
-  'kortix.project().triggers.fire()': 'dashboard-parity',
-  'kortix.project().triggers.list()': 'dashboard-parity',
-  'kortix.project().triggers.remove()': 'dashboard-parity',
-  'kortix.project().triggers.setActivation()': 'dashboard-parity',
-  'kortix.project().triggers.update()': 'dashboard-parity',
-  'kortix.project().update()': 'dashboard-parity',
-  'kortix.project().updateExperimentalFeature()': 'dashboard-parity',
-  'kortix.projects.sandboxTemplates()': 'dashboard-parity',
   'kortix.session().audit()': 'dashboard-parity',
   'kortix.session().commit()': 'dashboard-parity',
   'kortix.session().get()': 'dashboard-parity',
@@ -316,9 +262,6 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
 
   // ── Handles and runtime resolution ────────────────────────────────────────
   'kortix.session()': 'sdk-handle',
-  'kortix.session().ensureReady()': 'sdk-handle',
-  'kortix.session().previewUrl()': 'sdk-handle',
-  'kortix.session().proxyUrl()': 'sdk-handle',
 };
 
 /**
@@ -449,7 +392,7 @@ describe('the new coverage does not weaken the two rules', () => {
     })
       .map((s) => `${s.sdk}\n${renderHttp(s.http)}\n${s.notes.join('\n')}`)
       .join('\n');
-    expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
+    expect(text.match(/Bearer (?!\$KORTIX_MEMBER_TOKEN)\S+/)).toBeNull();
   });
 
   test('no snippet renders upstream customer attribution fields', () => {

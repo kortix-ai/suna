@@ -5,21 +5,12 @@
  * The client receives one final URL. It does not receive a standalone token,
  * an upstream base URL, or runtime coordinates.
  *
- * Wrapper mode authenticates the Lumen session and checks project ownership.
- * Direct mode forwards the caller's Kortix token through the server SDK.
+ * The member token resolves the URL. The URL carries a separate 15-minute
+ * preview token minted by Convex, because the URL reaches the browser.
  */
 
-import { bearerFromHeader, getRequestSession } from '@/server/auth';
-import { consumeRateLimit } from '@/server/rate-limit';
-import { upstreamBase } from '@/server/upstream-path';
-import { isOwner, isValidProjectId, isValidSessionId } from '@/server/users';
-import {
-  ApiError,
-  type CreatedProjectCliToken,
-  appendPreviewToken,
-  isProxiableLocalhostUrl,
-} from '@kortix/sdk';
-import { createScopedKortix } from '@kortix/sdk/server';
+import { isValidSessionId, memberKortix, previewToken, resolveMemberFor } from '@/server/member';
+import { ApiError, appendPreviewToken, isProxiableLocalhostUrl } from '@kortix/sdk';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -50,7 +41,7 @@ function parseRequest(body: PreviewRequest): {
 } | null {
   const projectId = typeof body.projectId === 'string' ? body.projectId : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  if (!isValidProjectId(projectId) || !isValidSessionId(sessionId)) return null;
+  if (!projectId || !isValidSessionId(sessionId)) return null;
 
   if (typeof body.targetUrl === 'string') {
     const url = body.targetUrl.trim();
@@ -78,13 +69,6 @@ function parseRequest(body: PreviewRequest): {
 }
 
 export async function POST(req: NextRequest) {
-  const wrapperKey = process.env.KORTIX_API_KEY?.trim() || null;
-  const appSession = wrapperKey ? getRequestSession(req) : null;
-  const directToken = wrapperKey ? null : bearerFromHeader(req);
-
-  if (wrapperKey && !appSession) return errorResponse(401, 'Not authenticated');
-  if (!wrapperKey && !directToken) return errorResponse(401, 'Not authenticated');
-
   let body: PreviewRequest;
   try {
     body = (await req.json()) as PreviewRequest;
@@ -95,48 +79,21 @@ export async function POST(req: NextRequest) {
   const input = parseRequest(body);
   if (!input) return errorResponse(400, 'Invalid preview request');
 
-  if (appSession) {
-    const limited = consumeRateLimit(appSession.userId);
-    if (!limited.ok) return errorResponse(429, 'Rate limit exceeded');
-    if (!isOwner(appSession.userId, input.projectId)) {
-      return errorResponse(403, "You don't have access to this project.");
-    }
-  }
+  const resolved = await resolveMemberFor(req, input.projectId);
+  if ('error' in resolved) return resolved.error;
+  const session = memberKortix(resolved.member).session(input.projectId, input.sessionId);
 
-  const token = wrapperKey ?? directToken;
-  if (!token) return errorResponse(401, 'Not authenticated');
-
-  const kortix = createScopedKortix({
-    backendUrl: upstreamBase(),
-    getToken: async () => token,
-  });
-  const session = kortix.session(input.projectId, input.sessionId);
-
-  let previewUrl: string | undefined;
-  let created: CreatedProjectCliToken;
   try {
     await session.ensureReady();
-    previewUrl =
+    const previewUrl =
       input.target.kind === 'localhost'
         ? session.proxyUrl(input.target.url)
         : session.previewUrl(input.target.port, input.target.path);
     if (!previewUrl) return errorResponse(400, 'Could not resolve preview URL');
-
-    created = await kortix
-      .project(input.projectId)
-      .tokens.create({ name: `lumen-preview-${Date.now()}` });
+    return Response.json({ url: appendPreviewToken(previewUrl, await previewToken(resolved.member)) });
   } catch (error) {
     const status = error instanceof ApiError && error.status ? error.status : 502;
     const message = error instanceof Error ? error.message : 'Could not resolve preview URL';
     return errorResponse(status, message);
   }
-
-  if (!created?.secret_key) {
-    return errorResponse(502, 'Could not mint a preview token');
-  }
-
-  return Response.json({
-    url: appendPreviewToken(previewUrl, created.secret_key),
-    tokenId: created.token_id,
-  });
 }

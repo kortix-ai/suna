@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import {
   isLocalUiFile,
   listWhiteLabelTestFiles,
+  scanConvexBoundary,
+  scanConvexSource,
   scanSource,
   scanTestSource,
   scanWhiteLabelBoundary,
@@ -82,13 +84,22 @@ describe('white-label SDK boundary', () => {
 
   test('permits the documented same-origin BFF routes', () => {
     const fixture = `
-      fetch('/api/auth/login');
-      fetch('/api/mode');
+      fetch('/api/auth/sign-in/email');
       fetch('/api/preview-url');
-      fetch('/api/session-costs');
+      fetch('/api/session-model?projectId=p');
     `;
 
     expect(scanSource(fixture)).toEqual([]);
+    expect(scanSource(`fetch('/api/mode');`).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+  });
+
+  test('Convex imports the SDK only in "use node" files and never fetches Kortix itself', () => {
+    const node = `"use node";\nimport { createScopedKortix } from '@kortix/sdk/server';`;
+    const plain = `import { createScopedKortix } from '@kortix/sdk/server';\nfetch('https://api.kortix.com/v1/projects');`;
+
+    expect(scanConvexSource(node)).toEqual([]);
+    expect(scanConvexSource(plain).map((v) => v.rule)).toEqual(['convex-sdk-outside-node', 'raw-kortix-fetch']);
+    expect(scanConvexBoundary()).toEqual([]);
   });
 
   test('detects provider names embedded inside legacy identifiers', () => {
@@ -147,16 +158,6 @@ describe('white-label SDK boundary', () => {
     // reset (2026-10-16); a new white-label or sdk-only spec joins by name.
     const files = listWhiteLabelTestFiles();
 
-    expect(files.some((path) => path.endsWith('/tests/e2e/proxy.test.ts'))).toBe(true);
-  });
-
-  test('project settings render the server-provided experimental catalog', () => {
-    const source = readFileSync(
-      resolve(import.meta.dir, '../../src/app/projects/[id]/settings/page.tsx'),
-      'utf8',
-    );
-
-    expect(source).toContain('experimental_features');
-    expect(source).toContain('.updateExperimentalFeature(');
+    expect(files.some((path) => path.endsWith('/tests/e2e/proxy-policy.test.ts'))).toBe(true);
   });
 });

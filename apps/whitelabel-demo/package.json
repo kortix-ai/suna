@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Golden white-label reference — a complete Kortix client built on ONLY @kortix/sdk and @kortix/ui. Reskin the brand config and the CSS tokens, point at any Kortix deployment.",
+  "description": "Lumen: a customer-facing product built on Kortix. Its own stack (Next.js, Convex, Better Auth) owns users, organizations and data; Kortix runs the agents, sandboxes and sessions behind it.",
   "scripts": {
     "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
     "build": "pnpm lint:sdk-boundary && next build",
@@ -11,13 +11,17 @@
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
     "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/e2e\"",
     "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
-    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo"
+    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p convex",
+    "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev --local-cloud-port ${CONVEX_PORT:-3030} --local-site-port ${CONVEX_SITE_PORT:-3031}"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "0.12.5",
     "@kortix/sdk": "workspace:*",
     "@kortix/ui": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-query": "^5.75.2",
+    "better-auth": "1.6.33",
+    "convex": "1.46.0",
     "next": "16.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

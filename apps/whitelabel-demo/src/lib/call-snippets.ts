@@ -12,7 +12,7 @@
  * Two rules this module exists to keep:
  *
  * 1. NOTHING SECRET IS EVER RENDERED. No secret value, no API key, no bearer
- *    token — the authorization header is always the `$KORTIX_API_KEY`
+ *    token — the authorization header is always the `$KORTIX_MEMBER_TOKEN`
  *    placeholder and a secret's value is always `SECRET_VALUE_PLACEHOLDER`.
  *    That is why `SnippetContext` accepts a secret's IDENTIFIER and env KEY and
  *    has nowhere to put a value: a demo that teaches people to paste their key
@@ -29,8 +29,11 @@ import { NO_OVERRIDES, type SessionOverrides, buildSessionCreateInput } from './
 /** Rendered wherever a real secret value would otherwise go. */
 export const SECRET_VALUE_PLACEHOLDER = '$SECRET_VALUE';
 
-/** The wrapper's bearer, as a placeholder — never the real key. */
-export const AUTHORIZATION_HEADER = 'Authorization: Bearer $KORTIX_API_KEY';
+/**
+ * The upstream bearer, as a placeholder: the member's project-scoped token
+ * that the proxy swaps in. Never a real key.
+ */
+export const AUTHORIZATION_HEADER = 'Authorization: Bearer $KORTIX_MEMBER_TOKEN';
 
 /** Stand-ins for ids a screen may not have yet (the create dialog runs before
  *  any session exists). */
@@ -54,18 +57,12 @@ const PLACEHOLDER = {
  * to make that a test failure rather than an omission nobody notices.
  */
 export const CALL_SNIPPET_IDS = [
-  'project.provision',
-  'connections.list',
   'session.create',
   'session.prompt',
   'session.model',
   'session.rescope',
-  'sessions.list',
   'session.delete',
-  'session.costs',
   'approval.resolve',
-  'secret.upsert',
-  'secret.delete',
 ] as const;
 
 export type CallSnippetId = (typeof CALL_SNIPPET_IDS)[number];
@@ -130,7 +127,7 @@ function json(value: unknown): string {
  *
  * The authorization line is part of the block on purpose: the single most
  * common wrapper mistake is forwarding the end user's own token upstream, and
- * seeing `$KORTIX_API_KEY` on every call is the correction.
+ * seeing `$KORTIX_MEMBER_TOKEN` on every call is the correction.
  */
 export function renderHttp(form: HttpForm): string {
   if (form.kind === 'runtime') return form.summary;
@@ -146,57 +143,6 @@ export function isCopyableHttp(form: HttpForm): boolean {
 }
 
 // ── The calls ────────────────────────────────────────────────────────────────
-
-function projectProvision(ctx: SnippetContext): CallSnippet {
-  const name = ctx.projectName?.trim() || PLACEHOLDER.projectName;
-  const body = { name, seed_starter: true };
-
-  return {
-    id: 'project.provision',
-    title: 'Provision a project',
-    summary: 'The create path that lets the wrapper record local project ownership.',
-    sdk: [
-      `await kortix.projects.provision(${json(body)});`,
-      '',
-      '// The other half of the same rule: the list comes back filtered to the',
-      '// projects THIS end user provisioned, so the two calls are one feature.',
-      'await kortix.projects.list();',
-    ].join('\n'),
-    http: {
-      kind: 'rest',
-      method: 'POST',
-      path: '/v1/projects/provision',
-      body,
-    },
-    serverInjected: [],
-    notes: [
-      'Plain `POST /v1/projects` is refused 403 in wrapper mode (`src/server/policy.ts`). Provision is the path the proxy can hang ownership off: it records the returned project id against the signed-in end user, and every later `projects/{id}/…` call is checked against that record.',
-      "`GET /v1/projects` is filtered on the way back to the projects that end user provisioned. The wrapper's key can see the whole account, so without that filter one signed-in user would read every other one's projects.",
-      '`seed_starter: true` seeds a managed git repo server-side, so the project boots with no GitHub account and no repo name to choose. It provisions real infrastructure and can take a while — the SDK allows it 120s.',
-    ],
-  };
-}
-
-function connectionsList(ctx: SnippetContext): CallSnippet {
-  return {
-    id: 'connections.list',
-    title: 'List the connections a session may bind',
-    summary: 'What the picker is made of — and why some connectors have nothing to pick.',
-    sdk: 'await kortix.project(projectId).connectors.connections.list();',
-    http: {
-      kind: 'rest',
-      method: 'GET',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connections`,
-    },
-    serverInjected: [],
-    notes: [
-      'Runs SERVER-side (`src/app/api/connections/route.ts`), and the browser never gets the raw reply: `selectBindableConnections` narrows it first, so the picker cannot offer an option that would fail at create.',
-      'Only project connections (`owner_type: "project"`, `status: "active"`) survive that filter. A wrapper acts under one credential for many end users and has no personal upstream identity, so a connection a member authorized for themselves is not its to spend — and a revoked one binds fine and then fails at the first tool call.',
-      'An alias with nothing bindable is still returned, carrying its reason, so the picker can say "a teammate has to share this one" instead of pretending the connector does not exist. There is deliberately no "connect it yourself" button: a wrapper credential has no personal upstream identity, so it can never complete an interactive connect flow for a member-owned account.',
-      'The chosen `connection_id` is sent in `connector_bindings`. The scope endpoint can replace it later.',
-    ],
-  };
-}
 
 function sessionCreate(ctx: SnippetContext): CallSnippet {
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
@@ -227,6 +173,7 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
     },
     serverInjected: [],
     notes: [
+      "Lumen makes this call from its backend (convex/kortix.ts `createThread`) with the operator credential, and adds `labels` and `metadata` that carry its own org, workspace and user ids. Sessions created from the session UI pass through the proxy, which adds the same tags.",
       '`agent_name` and runtime context are create options. The scope endpoint reads and replaces `secrets` and `connector_bindings` later.',
       '`secrets` lists secret IDENTIFIERS, not env KEYs. Two identifiers may share one KEY, and naming both in one create is refused 409 SECRET_IDENTIFIER_KEY_COLLISION.',
       '`inherit_unbound: true` accompanies any binding so the aliases nobody chose keep their project default instead of being switched off.',
@@ -335,25 +282,6 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
   };
 }
 
-function sessionsList(ctx: SnippetContext): CallSnippet {
-  return {
-    id: 'sessions.list',
-    title: "List a project's sessions",
-    summary: 'The project-scoped session read used by the wrapper.',
-    sdk: 'await kortix.project(projectId).sessions.list();',
-    http: {
-      kind: 'rest',
-      method: 'GET',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/sessions`,
-    },
-    serverInjected: [],
-    notes: [
-      'The proxy checks local project ownership before it forwards this request.',
-      'The request has no customer identity filter. Every session in the owned project is eligible for the response.',
-    ],
-  };
-}
-
 function sessionDelete(ctx: SnippetContext): CallSnippet {
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
@@ -378,33 +306,11 @@ function sessionDelete(ctx: SnippetContext): CallSnippet {
     notes: [
       `Restart is a separate call — \`POST /v1/projects/${projectId}/sessions/${sessionId}/restart\`. It keeps the sandbox, so a session that came up wrong recovers without losing its transcript, but it still ends whatever turn was in flight.`,
       "Both calls clear the SDK's cached runtime for these ids first (`forgetReady()`), so no later handle can resolve a sandbox that has been replaced or destroyed.",
-      "Ownership is the only thing standing between one end user and another's session here: the upstream key could delete any session in the account, and the proxy is what checks this caller provisioned this project (`src/server/policy.ts`).",
+      "The member token reaches only this workspace's project: Kortix refuses it on every other project, so one organization cannot end another's session.",
       'Deleting is not a refund. The session cost record remains available after the runtime is destroyed.',
     ],
   };
 }
-function sessionCosts(ctx: SnippetContext): CallSnippet {
-  return {
-    id: 'session.costs',
-    title: "Read a project's session costs",
-    summary: 'Finalized LLM and compute cost, grouped by session.',
-    sdk: 'await kortix.billing.sessionCosts.list({ projectId });',
-    http: {
-      kind: 'rest',
-      method: 'GET',
-      path: `/v1/usage/session-costs?project_id=${encodeURIComponent(
-        ctx.projectId ?? PLACEHOLDER.projectId,
-      )}`,
-    },
-    serverInjected: [],
-    notes: [
-      'This runs server-side in `/api/session-costs`. The route selects project IDs from the wrapper’s local ownership store before each SDK call.',
-      'The response groups finalized LLM and compute cost by session. It contains no wrapper customer identity field.',
-      'The app multiplies each session total by `COST_MARKUP` before it reaches the browser.',
-    ],
-  };
-}
-
 function approvalResolve(ctx: SnippetContext): CallSnippet {
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const executionId = ctx.executionId ?? PLACEHOLDER.executionId;
@@ -422,60 +328,8 @@ function approvalResolve(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'A decision covers exactly the call that asked for it. The `session` / `session_all` scopes were removed: a grant keyed on (session, connector, action) ignores the ARGUMENTS, so approving a send to one recipient silently pre-authorised a send to any other. To run a tool unattended, author an `always_run` policy rule instead.',
-      'The pending set is read from the per-SESSION audit, not the project-wide approval inbox: in wrapper mode one operator credential makes every call, so the inbox would hand this browser other end-users’ execution ids — and an execution id is all this route needs.',
+      'The pending set is read from the per-SESSION audit, not the project-wide approval inbox: every member of the workspace shares one project, so the inbox would hand this browser execution ids from other members’ threads, and an execution id is all this route needs.',
       'Some refusals cannot be retried with the same credential at all; they need a decision from a signed-in person. A wrapper has no personal upstream identity, which is also why a connector call denied `connector_not_connected` for a member-owned account can never be resolved by this credential — only a teammate connecting their own account, or the project sharing one, fixes it.',
-    ],
-  };
-}
-
-function secretUpsert(ctx: SnippetContext): CallSnippet {
-  const identifier = ctx.secret?.identifier ?? PLACEHOLDER.identifier;
-  const name = ctx.secret?.name ?? PLACEHOLDER.envKey;
-  const body = { identifier, name, value: SECRET_VALUE_PLACEHOLDER };
-
-  return {
-    id: 'secret.upsert',
-    title: 'Create or rotate a secret',
-    summary: 'One call does both — the identifier is what decides which.',
-    sdk: `await kortix.project(projectId).secrets.upsert(${json(body)});`,
-    http: {
-      kind: 'rest',
-      method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/secrets`,
-      body,
-    },
-    serverInjected: [],
-    notes: [
-      `The value is never rendered here: \`${SECRET_VALUE_PLACEHOLDER}\` is a placeholder, and this builder has nowhere to put a real one. Read it from your own environment at the call site.`,
-      'A new `identifier` creates; an existing one rotates in place, keeping its env KEY so every agent grant and session allowlist that names it keeps working.',
-      'Pointing an existing identifier at a DIFFERENT env KEY is refused — the identifier is a stable handle, and re-aiming it would silently re-aim every grant that names it.',
-      'Rotation reaches running sessions late: their agent already started with the old environment, and a live process cannot have its environment rewritten.',
-    ],
-  };
-}
-
-function secretDelete(ctx: SnippetContext): CallSnippet {
-  const identifier = ctx.secret?.identifier ?? PLACEHOLDER.identifier;
-  const name = ctx.secret?.name ?? PLACEHOLDER.envKey;
-
-  return {
-    id: 'secret.delete',
-    title: 'Delete a secret',
-    summary: 'Removes the identifier, not the grants that name it.',
-    sdk: `await kortix.project(projectId).secrets.remove('${identifier}');`,
-    http: {
-      kind: 'rest',
-      method: 'DELETE',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/secrets/${encodeURIComponent(
-        identifier,
-      )}`,
-    },
-    serverInjected: [],
-    notes: [
-      `Addressed by IDENTIFIER — url-encoded, since an identifier is free text — not by the env KEY. Several identifiers may store the same KEY (\`${name}\` here), so deleting by KEY would be ambiguous about which row to remove.`,
-      'The value is gone and cannot be recovered. Nothing in this call renders it: the delete path needs the handle only, which is why deleting is the one secret operation with no value anywhere near it.',
-      'Nothing that NAMES this identifier is rewritten by the delete. A later session create whose `secrets` allowlist still names it is refused 404 SECRET_IDENTIFIER_NOT_FOUND, so the identifier has to come out of the lists that name it too.',
-      'Sessions already running keep what they booted with: their agent was started with the old environment and a live process cannot have its environment rewritten — the same reason a rotation reaches them late.',
     ],
   };
 }
@@ -488,18 +342,12 @@ function secretDelete(ctx: SnippetContext): CallSnippet {
 // denial, surfaced by the transcript's `SetupLinkButton` — not a snippet here.
 
 const BUILDERS: Record<CallSnippetId, (ctx: SnippetContext) => CallSnippet> = {
-  'project.provision': projectProvision,
-  'connections.list': connectionsList,
   'session.create': sessionCreate,
   'session.prompt': sessionPrompt,
   'session.model': sessionModel,
   'session.rescope': sessionRescope,
-  'sessions.list': sessionsList,
   'session.delete': sessionDelete,
-  'session.costs': sessionCosts,
   'approval.resolve': approvalResolve,
-  'secret.upsert': secretUpsert,
-  'secret.delete': secretDelete,
 };
 
 /** One action's snippet, filled in with whatever the screen actually knows. */

@@ -11,41 +11,20 @@
  *        or whether it applies at next start. Those are different outcomes and
  *        the client must be able to say which.
  */
-import { getRequestSession } from '@/server/auth';
-import { consumeRateLimit } from '@/server/rate-limit';
-import { upstreamBase } from '@/server/upstream-path';
-import { isOwner, isValidProjectId, isValidSessionId } from '@/server/users';
+import { isValidSessionId, memberKortix, resolveMemberFor } from '@/server/member';
 import { sessionModelPin } from '@kortix/sdk';
-import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
 async function scoped(req: NextRequest) {
-  const apiKey = process.env.KORTIX_API_KEY;
-  if (!apiKey) return { error: Response.json({ error: 'Wrapper mode is off' }, { status: 500 }) };
-
-  const session = getRequestSession(req);
-  if (!session) return { error: Response.json({ error: 'Not authenticated' }, { status: 401 }) };
-
-  const limited = consumeRateLimit(session.userId);
-  if (!limited.ok) return { error: Response.json({ error: 'Rate limited' }, { status: 429 }) };
-
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') ?? '';
   const sessionId = url.searchParams.get('sessionId') ?? '';
-  // Validate before interpolating into an upstream path, and check ownership
-  // before touching anything — both are house rules for this boundary.
-  if (!isValidProjectId(projectId) || !isValidSessionId(sessionId)) {
+  if (!isValidSessionId(sessionId)) {
     return { error: Response.json({ error: 'Invalid identifiers' }, { status: 400 }) };
   }
-  if (!isOwner(session.userId, projectId)) {
-    return { error: Response.json({ error: 'Not found' }, { status: 404 }) };
-  }
-
-  return {
-    kortix: createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => apiKey }),
-    projectId,
-    sessionId,
-  };
+  const resolved = await resolveMemberFor(req, projectId);
+  if ('error' in resolved) return resolved;
+  return { kortix: memberKortix(resolved.member), projectId, sessionId };
 }
 
 export async function GET(req: NextRequest) {

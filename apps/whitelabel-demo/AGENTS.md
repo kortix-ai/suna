@@ -1,8 +1,10 @@
-# AGENTS.md — Lumen white-label reference
+# AGENTS.md — Lumen, the customer-facing reference
 
-Lumen is the reference implementation for `@kortix/sdk` and `@kortix/ui`.
-Every white-label host copies this shape: the SDK is the data layer, `@kortix/ui`
-is the UI, and the brand is a set of CSS variable overrides.
+Lumen is the reference for a product that wraps Kortix for its own customers.
+Lumen owns identity, organizations and data (Convex + Better Auth, `convex/`).
+Kortix owns agents, sandboxes and sessions. The SDK is the only way to Kortix,
+`@kortix/ui` is the UI, and the brand is a set of token overrides. README.md
+has the authority split, the id mapping and the credential flow.
 
 ## Required architecture
 
@@ -30,7 +32,7 @@ Do not add:
 rules. Update its tests when a new same-origin application route is intentional.
 
 Application tests use `createTestKortix()` for Kortix product flows. Raw HTTP
-is limited to application-owned routes such as auth, mode, preview, and usage.
+is limited to application-owned routes such as auth, preview, and session model.
 
 ## Project experiments
 
@@ -49,8 +51,26 @@ Do not hard-code project experiment keys in client code.
 
 - Use `createScopedKortix()` for request-scoped server SDK calls.
 - Authenticate before parsing or forwarding privileged requests.
-- Check project ownership before wrapper-mode project actions.
-- Keep `KORTIX_API_KEY` outside all response bodies.
+- Get the Kortix credential from `resolveMember` / `resolveMemberFor`
+  (`src/server/member.ts`). Never take a project id from the client as the
+  key to a credential.
+- The operator credential lives only in Convex env (`KORTIX_OPERATOR_TOKEN`).
+  Next.js never reads it. Member tokens never reach a response body.
+- A new proxy write route is an explicit entry in `src/server/proxy-policy.ts`
+  with a test in `tests/e2e/proxy-policy.test.ts`.
+
+## Convex boundary
+
+- Every Kortix call with the operator credential is a `"use node"` action in
+  `convex/kortix.ts`. Other Convex files never import `@kortix/sdk`.
+- Public queries return null or `[]` for a non-member; mutations and actions
+  throw `"403: …"`. The status prefix is what the proxy maps to HTTP.
+- Store each Kortix id next to the Lumen id that owns it. Tag sessions with
+  `lumenSessionTags` (`convex/tags.ts`); never add a Lumen concept to a Kortix
+  API.
+- `convex/_generated/` and `convex/betterAuth/generatedSchema.ts` are
+  generated. Regenerate with `npx convex dev` and the Better Auth CLI command
+  in that file's header.
 - Return provider-neutral response fields.
 - Validate identifiers before interpolating them into SDK calls.
 
@@ -110,7 +130,8 @@ feature-level spinners.
 - `src/components/workbench/`: Session workbench.
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
-- `src/server/**`: Wrapper authentication, authorization, policy, and limits.
+- `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.
+- `convex/**`: Lumen's backend (schema, auth, workspaces, threads, Kortix actions).
 - `tests/e2e/**`: Production-server black-box tests.
 
 ## Required checks

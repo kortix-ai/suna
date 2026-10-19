@@ -1,6 +1,5 @@
-import { getRequestSession } from '@/server/auth';
 /**
- * Connections this wrapper may bind to a new session, grouped by connector
+ * Connections a Lumen member may bind to a new session, grouped by connector
  * alias.
  *
  * Provider-neutral and pre-filtered: a wrapper can only bind project connections
@@ -15,36 +14,16 @@ import { getRequestSession } from '@/server/auth';
  * asks for all of them.
  */
 import { selectConnectorBindingChoices } from '@/server/bindable-connections';
-import { consumeRateLimit } from '@/server/rate-limit';
-import { upstreamBase } from '@/server/upstream-path';
-import { isOwner, isValidProjectId } from '@/server/users';
-import { createScopedKortix } from '@kortix/sdk/server';
+import { memberKortix, resolveMemberFor } from '@/server/member';
 import type { NextRequest } from 'next/server';
 
 export async function GET(req: NextRequest) {
-  const apiKey = process.env.KORTIX_API_KEY;
-  if (!apiKey) return Response.json({ connectors: [] });
-
-  const session = getRequestSession(req);
-  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 });
-
-  const limited = consumeRateLimit(session.userId);
-  if (!limited.ok) return Response.json({ error: 'Rate limited' }, { status: 429 });
-
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') ?? '';
   const connector = url.searchParams.get('connector') ?? '';
-  if (!isValidProjectId(projectId)) {
-    return Response.json({ error: 'Invalid identifiers' }, { status: 400 });
-  }
-  if (!isOwner(session.userId, projectId)) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  const kortix = createScopedKortix({
-    backendUrl: upstreamBase(),
-    getToken: async () => apiKey,
-  });
+  const resolved = await resolveMemberFor(req, projectId);
+  if ('error' in resolved) return resolved.error;
+  const kortix = memberKortix(resolved.member);
 
   try {
     const result = await kortix.project(projectId).connectors.connections.list();

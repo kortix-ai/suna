@@ -882,9 +882,10 @@ app.use(async (req, res, next) => {
 ```
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
-full production-shaped reference (per-user project isolation, route policy,
-rate limiting, cost markup for re-billing) is `apps/whitelabel-demo` in wrapper
-mode — see its README.
+full production-shaped reference is `apps/whitelabel-demo` (Lumen): its own
+users and orgs (Convex + Better Auth), one Kortix project per workspace,
+short-lived project-scoped member tokens minted server-side, and a same-origin
+proxy built on `forwardKortixRequest` — see its README.
 
 ## Rendering chat (the headless chat kit)
 

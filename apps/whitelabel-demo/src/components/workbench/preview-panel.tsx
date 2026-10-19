@@ -11,7 +11,6 @@ import Loading from '@kortix/ui/loading';
  * `session-sharing.tsx`.
  */
 
-import { useWrapperMode } from '@/app/providers';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { Card } from '@kortix/ui/card';
@@ -26,7 +25,7 @@ import {
 import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { PublicSharesList, SessionSharing } from '@/components/workbench/session-sharing';
-import { getApiKey, kortix } from '@/lib/kortix';
+import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { authHeaders, getSessionToken } from '@/lib/session';
 import type { SessionPreviewCandidate } from '@kortix/sdk';
@@ -43,28 +42,24 @@ function statusVariant(status?: string) {
 
 interface PreviewUrlResponse {
   url: string;
-  tokenId: string;
 }
 
 async function resolvePreviewUrl({
-  wrapperMode,
   projectId,
   sessionId,
   preview,
   targetUrl,
 }: {
-  wrapperMode: boolean;
   projectId: string;
   sessionId: string;
   preview?: { port: number; path: string };
   targetUrl?: string;
 }): Promise<PreviewUrlResponse> {
-  const token = wrapperMode ? getSessionToken() : getApiKey();
   const response = await fetch('/api/preview-url', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...authHeaders(token),
+      ...authHeaders(getSessionToken()),
     },
     body: JSON.stringify({
       projectId,
@@ -75,13 +70,12 @@ async function resolvePreviewUrl({
   });
   const body = (await response.json().catch(() => ({}))) as {
     url?: string;
-    tokenId?: string;
     error?: string;
   };
-  if (!response.ok || !body.url || !body.tokenId) {
+  if (!response.ok || !body.url) {
     throw new Error(body.error || 'Could not resolve preview URL');
   }
-  return { url: body.url, tokenId: body.tokenId };
+  return { url: body.url };
 }
 
 export function PreviewPanel({
@@ -91,7 +85,6 @@ export function PreviewPanel({
   projectId: string;
   sessionId: string;
 }) {
-  const wrapperMode = useWrapperMode();
   const session = useMemo(() => kortix.session(projectId, sessionId), [projectId, sessionId]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -132,7 +125,6 @@ export function PreviewPanel({
     queryFn: () => {
       if (!selected) throw new Error('No preview selected');
       return resolvePreviewUrl({
-        wrapperMode,
         projectId,
         sessionId,
         preview: { port: selected.port, path: selected.path || '/' },
@@ -148,7 +140,6 @@ export function PreviewPanel({
   const openLocalhostMut = useMutation({
     mutationFn: async ({ targetUrl, popup }: { targetUrl: string; popup: Window }) => {
       const resolved = await resolvePreviewUrl({
-        wrapperMode,
         projectId,
         sessionId,
         targetUrl,

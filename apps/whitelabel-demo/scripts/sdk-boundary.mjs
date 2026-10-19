@@ -10,6 +10,9 @@ import {
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = join(APP_ROOT, '..', '..');
 const CLIENT_ROOT = join(APP_ROOT, 'src');
+// Lumen's own backend. Server-side: it holds the operator credential and calls
+// Kortix only through @kortix/sdk/server inside "use node" actions.
+const CONVEX_ROOT = join(APP_ROOT, 'convex');
 const TEST_ROOT = join(APP_ROOT, 'tests');
 const REPOSITORY_TEST_ROOT = join(REPO_ROOT, 'tests', 'e2e', 'specs');
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
@@ -19,21 +22,14 @@ const LOCAL_UI_ROOT = join(CLIENT_ROOT, 'components', 'ui');
 const API_ROOT = join(CLIENT_ROOT, 'app', 'api');
 const SERVER_ROOT = join(CLIENT_ROOT, 'server');
 const ALLOWED_CLIENT_BFF_ROUTES = [
+  // Better Auth (sign-in, organizations), proxied to Convex.
   '/api/auth',
-  // Connections this wrapper may bind — pre-filtered server-side to team-owned
-  // ones, so the client never sees an unbindable option.
+  // Connections a member may bind, pre-filtered server-side.
   '/api/connections',
-  '/api/mode',
   '/api/preview-url',
   // Provider-neutral session model control: the upstream field is named after
   // the runtime, so the translation stays server-side and the client says `model`.
   '/api/session-model',
-  '/api/session-costs',
-  // Lists the ACCOUNT's projects so an operator can adopt one into this demo
-  // user. Gated on LUMEN_ALLOW_PROJECT_IMPORT and off by default — it is the one
-  // place the wrapper's per-end-user project filter is deliberately bypassed, so
-  // it is registered here rather than reached through the generic proxy.
-  '/api/projects/import',
 ];
 
 const RULES = [
@@ -178,6 +174,38 @@ export function isLocalUiFile(path) {
   return path === LOCAL_UI_ROOT || path.startsWith(`${LOCAL_UI_ROOT}/`);
 }
 
+/**
+ * Convex functions: no raw fetch (Kortix goes through @kortix/sdk/server), and
+ * the SDK only in "use node" files, the one runtime where it runs.
+ */
+export function scanConvexSource(source) {
+  const violations = rawFetchViolations(source, false);
+  if (!/^\s*["']use node["'];/.test(source)) {
+    for (const match of source.matchAll(/from\s+['"]@kortix\/sdk(?:\/[^'"]*)?['"]/g)) {
+      violations.push({
+        rule: 'convex-sdk-outside-node',
+        index: match.index,
+        match: match[0],
+        message: 'Convex code imports @kortix/sdk only in a "use node" action file.',
+      });
+    }
+  }
+  return violations.sort((left, right) => left.index - right.index);
+}
+
+export function scanConvexBoundary() {
+  return sourceFiles(CONVEX_ROOT, { extensions: SOURCE_EXTENSIONS })
+    .filter((path) => !path.includes('/_generated/'))
+    .flatMap((path) => {
+      const source = readFileSync(path, 'utf8');
+      return scanConvexSource(source).map((violation) => ({
+        ...violation,
+        file: relative(APP_ROOT, path),
+        line: lineNumber(source, violation.index),
+      }));
+    });
+}
+
 export function scanWhiteLabelBoundary() {
   return sourceFiles(CLIENT_ROOT, { extensions: SOURCE_EXTENSIONS }).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
@@ -247,7 +275,11 @@ export function listWhiteLabelTestFiles() {
 }
 
 function run() {
-  const violations = [...scanWhiteLabelBoundary(), ...scanWhiteLabelTestBoundary()];
+  const violations = [
+    ...scanWhiteLabelBoundary(),
+    ...scanConvexBoundary(),
+    ...scanWhiteLabelTestBoundary(),
+  ];
   if (violations.length === 0) {
     console.log('White-label SDK boundary: 0 violations.');
     return;

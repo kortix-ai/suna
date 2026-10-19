@@ -1,265 +1,190 @@
-# Lumen white-label reference
+# Lumen: a customer-facing product built on Kortix
 
-Lumen is the complete reference app for `@kortix/sdk` and `@kortix/ui`: the
-data layer is the SDK, every UI primitive and the whole chat come from the
-Kortix component library, and the brand is a set of CSS variables.
+Lumen is the reference for an **outward-facing app**: a product with its own
+users, its own organizations and its own database, that uses Kortix as the
+backend for off-the-shelf agents. Lumen sells three specialists (Finance
+analyst, Legal reviewer, Research). Its customers never see Kortix, never get a
+Kortix account and never hold a Kortix credential.
 
-The app has five architecture rules:
+- Stack: Next.js 16, Convex (database + server functions), Better Auth on
+  Convex (email + password, organizations).
+- UI: `@kortix/ui`, re-themed by tokens. The session page is the same
+  `useSession` + `@kortix/ui/session` workbench every Kortix host renders.
+- Kortix access: `@kortix/sdk` only. Server-side calls use
+  `@kortix/sdk/server`; the browser uses the one `createKortix` client.
 
-1. The browser creates one Kortix client in `src/lib/kortix.ts`.
-2. One `useSession(projectId, sessionId)` hook owns each session workbench.
-3. The client does not select or implement a runtime transport.
-4. Server routes own privileged credentials and preview URL resolution.
-5. Only the SDK transport layer sends Kortix backend HTTP requests.
+## When to pick this example
 
-The client renders the server-provided `experimental_features` catalog. It
-does not hard-code feature keys.
+| You are building | Pick |
+|---|---|
+| An internal tool for people who already have Kortix accounts (your team, your company). Kortix is the identity and the data. | The internal example, `apps/internal-app-demo` (a static Kortix App; sign-in is Kortix's). |
+| A product for your own customers, under your brand, with your own sign-up, orgs, billing and data. Kortix runs the agents behind it. | **This app.** |
 
-## Client boundary
+## Who owns what
 
-Client code imports only:
+| Concern | Owner | Where |
+|---|---|---|
+| Users, passwords, sessions | Lumen | Better Auth tables in the Convex component `convex/betterAuth/` |
+| Organizations, members, invitations | Lumen | Better Auth `organization` plugin |
+| Workspaces, threads, templates, audit log | Lumen | `convex/schema.ts` |
+| Agents, sandboxes, sessions, transcripts, files | Kortix | One Kortix project per workspace |
+| The Kortix credential | Lumen's operator | `KORTIX_OPERATOR_TOKEN`, Convex env only |
 
-- `@kortix/sdk`
-- `@kortix/sdk/react`
-- `@kortix/ui/<name>` (primitives), `@kortix/ui/session` (the chat) and
-  `@kortix/ui/toast` (toasts)
-- `@phosphor-icons/react` (the icon set @kortix/ui renders)
-- Local application modules
+Kortix sees one account: Lumen's operator account. It knows nothing about
+Lumen's users or organizations except the generic labels and metadata Lumen
+writes on each session (below). No Kortix API has a Lumen concept in it.
 
-Client code does not:
+## Id mapping
 
-- Import a provider SDK.
-- Construct runtime or preview proxy paths.
-- Call provider REST endpoints.
-- Use a legacy runtime store.
-- Call `session.previewUrl()` or `session.proxyUrl()`.
-- Select a runtime transport.
-- Send raw requests to the Kortix backend.
+Lumen stores every Kortix id next to its own id. The browser never chooses
+which Kortix project a credential reaches: the server resolves it from Lumen's
+ids.
 
-`scripts/sdk-boundary.mjs` enforces these rules across client source, server
-source, and application tests. The `build`, `test`, `test:e2e`, and `typecheck`
-scripts run this check first.
+| Lumen | Kortix | Stored in | Written by |
+|---|---|---|---|
+| organization (`organization.id`) | none | Better Auth | Better Auth |
+| workspace (`workspaces._id`) | project (`project_id`) | `workspaces.kortixProjectId` | `kortix.provisionWorkspace`, idempotency key = workspace id |
+| agent template (`agentTemplates.slug`) | agent (`agents/<slug>.md`, project default agent) | `workspaces.templateSlug` | `kortix.provisionWorkspace` (`updateAgentConfig`, `updateProjectDefaultAgent`) |
+| thread (`threads._id`) | session (`session_id`) | `threads.kortixSessionId` | `kortix.createThread`, or the proxy for a session the session UI creates |
+| member (`user._id`) | project-scoped token (`token_id`) | `memberTokens` (server-only) | `kortix.memberToken` |
 
-## One SDK client
+Each Kortix session carries Lumen's ids as generic data, so the operator can
+trace a session back from the Kortix side:
 
-`src/lib/kortix.ts` creates the client once:
+- `labels`: `lumen-user:<userId>`, `lumen-workspace:<workspaceId>`
+- `metadata`: `lumen_org_id`, `lumen_workspace_id`, `lumen_user_id`
 
-```ts
-import { createKortix } from '@kortix/sdk';
+## Credential flow
 
-export const kortix = createKortix({
-  backendUrl: BRAND.apiUrl,
-  getToken: async () => getApiKey(),
-});
+```
+browser ── Bearer ws.<workspaceId> + Better Auth cookie ──▶ Next.js /api/kortix/*
+Next.js ── user JWT + LUMEN_PROXY_SECRET ──▶ Convex kortix.memberToken
+Convex  ── membership check (Better Auth member table)
+        ── reuse the stored token, or mint one with KORTIX_OPERATOR_TOKEN:
+           POST /v1/accounts/tokens { project_id, expires_at: now + 1 h }
+Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session runtime
 ```
 
-Wrapper mode reconfigures this same client. It does not create a second client.
+1. The operator credential exists only in Convex env. Next.js and the browser
+   never see it.
+2. The browser bearer is `ws.<workspaceId>`. It is not a secret. Identity is
+   the Better Auth cookie, which the SDK sends because `backendUrl` is the
+   same-origin path `/api/kortix`.
+3. Convex checks org membership on every token request. The Next.js proxy
+   re-checks each (user, workspace) pair at least once a minute.
+4. The member token is project-scoped. Kortix refuses it on every other
+   project (`403 Project-scoped token cannot access a different project`), on
+   `GET /projects` and on account routes. Tenant isolation is Kortix's, not a
+   filter in Lumen.
+5. A project-scoped token carries its minter's role on that project (owner).
+   `src/server/proxy-policy.ts` narrows it: reads are open except the routes
+   that issue credentials; writes are allowed only on the session surface
+   (sessions, attachments, approvals, the runtime). Agent config, secrets,
+   members, triggers, connectors, tokens and project deletion return `403`.
+6. Every token Lumen mints is revoked at its expiry by a scheduled Convex
+   action (`kortix.revokeToken`). A preview iframe gets its own 15-minute
+   token, because that URL reaches the browser.
 
-## One session hook
+## Setup
 
-The session route calls one hook:
-
-```tsx
-const session = useSession(projectId, sessionId);
-
-return session.phase !== 'ready' ? (
-  <BootScreen
-    stage={session.stage}
-    reason={session.reason}
-    onRetry={session.retry}
-  />
-) : (
-  <WorkbenchTabs
-    session={session}
-    projectId={projectId}
-    sessionId={sessionId}
-  />
-);
-```
-
-The hook exposes the complete workbench contract:
-
-- Lifecycle phase and retry state
-- Transcript messages and incremental updates
-- Send, cancel, and command actions
-- Model and agent selections
-- Questions and permission requests
-- Session status, diffs, and todos
-
-The host does not mount a second event provider. The host does not resolve a
-provider session identifier.
-
-## Project experiment
-
-The project settings page reads `project.experimental_features`.
-
-It renders each available feature by its server-provided label and description.
-It updates a feature through:
-
-```ts
-kortix.project(projectId).updateExperimentalFeature(feature.key, enabled);
-```
-
-The host does not contain hard-coded experiment keys.
-
-## Server-first preview
-
-The preview panel reads preview candidates through the session SDK handle.
-
-It sends the selected port or localhost URL to `POST /api/preview-url`. The
-server route:
-
-1. Authenticates the caller.
-2. Checks project ownership in wrapper mode.
-3. Creates a request-scoped server SDK client.
-4. Calls `session.ensureReady()`.
-5. Resolves the preview URL through the SDK.
-6. Mints a project-scoped preview token.
-7. Returns one final authenticated URL.
-
-The response does not expose a standalone token, upstream base URL, or runtime
-coordinates.
-
-## Deployment modes
-
-Lumen supports two deployment modes. `GET /api/mode` selects the mode at
-process startup.
-
-### Direct mode
-
-Direct mode is the default.
-
-- The user pastes a Kortix API key.
-- The browser stores it in `localStorage`.
-- The shared SDK client targets `NEXT_PUBLIC_KORTIX_API_URL`.
-- `/api/preview-url` uses the caller token for server-side preview resolution.
-
-### Wrapper mode
-
-Set `KORTIX_API_KEY` to enable wrapper mode.
-
-- Users authenticate through `/api/auth/*`.
-- The browser receives a Lumen session token.
-- The shared SDK client targets `/api/kortix`.
-- The BFF delegates forwarding to `@kortix/sdk/server`.
-- The SDK substitutes `KORTIX_API_KEY` on upstream requests.
-- `src/server/users.ts` enforces per-user project ownership.
-- `src/server/policy.ts` applies a deny-by-default route policy.
-- `src/server/rate-limit.ts` applies per-user limits.
-- `/api/session-costs` applies the configured `COST_MARKUP` to session costs.
-
-The Kortix API key remains server-side.
-
-## Product surfaces
-
-| Route                                 | SDK-backed surface                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `/`                                   | Project list and provisioning                                                                    |
-| `/account`                            | Accounts, members, roles, invites, and account projects                                          |
-| `/projects/[id]`                      | Session creation, agent selection, model selection, and templates                                |
-| `/projects/[id]/sessions/[sessionId]` | Chat, files, changes, previews, shares, and session actions                                      |
-| `/projects/[id]/settings`             | General settings, experiments, capabilities, secrets, access, connectors, triggers, and policies |
-| `/session-costs`                      | Wrapper session cost and markup report                                                           |
-
-The app uses the following public SDK groups:
-
-- `kortix.accounts`
-- `kortix.projects`
-- `kortix.project(projectId)`
-- `kortix.session(projectId, sessionId)`
-- `useSession(projectId, sessionId)`
-- Project model, agent, and configuration hooks
-- Headless turn classification and part rendering
-
-## Auth
-
-The SDK has one auth seam: `getToken`.
-
-Direct mode returns the pasted Kortix API key. Wrapper mode returns the Lumen
-session token. The BFF exchanges the Lumen session for the server-held Kortix
-credential.
-
-## Run
-
-Install dependencies:
+Prerequisites: a Kortix API URL and an operator token for the Kortix account
+that will own Lumen's projects (an account-level PAT or a service-account
+key; use an account named after your product, because its email appears as
+the prompt author in session transcripts).
 
 ```bash
 pnpm install
+
+# 1. Convex, local, no Convex account needed. Keeps running; state is in .convex/.
+pnpm --filter @kortix/whitelabel-demo dev:convex     # writes .env.local
+
+# 2. Convex env (second terminal, in apps/whitelabel-demo).
+npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+npx convex env set SITE_URL http://localhost:3020          # the browser origin
+npx convex env set KORTIX_UPSTREAM https://api.kortix.com/v1
+npx convex env set KORTIX_OPERATOR_TOKEN <operator token>
+npx convex env set LUMEN_PROXY_SECRET "$(openssl rand -hex 24)"
+npx convex run templates:seed                              # the three agent templates
+
+# 3. Next.js env: append to .env.local (see .env.example).
+#    KORTIX_UPSTREAM=<same as Convex>  LUMEN_PROXY_SECRET=<same as Convex>
+
+# 4. Next.js.
+WHITELABEL_PORT=3020 pnpm --filter @kortix/whitelabel-demo dev
 ```
 
-Run direct mode:
+A developer with a Convex login can run `npx convex dev` instead of
+`dev:convex`; no code changes. For production, deploy Convex
+(`npx convex deploy`), set the same env there, and set `SITE_URL` to the
+public origin.
 
-```bash
-NEXT_PUBLIC_KORTIX_API_URL=https://api.kortix.com/v1 \
-  WHITELABEL_PORT=3010 \
-  pnpm --filter @kortix/whitelabel-demo dev
-```
+`SITE_URL` must equal the origin the browser uses. Better Auth refuses a
+request from any other origin.
 
-Run against a local worktree stack (`pnpm worktree start <slug>`):
-`WHITELABEL_PORT=3010 NEXT_PUBLIC_KORTIX_API_URL=http://localhost:<worktree api port>/v1 pnpm --filter @kortix/whitelabel-demo dev`.
-Port `3010` is the port the local API allows through CORS. Start the stack
-with its tunnel (no `--no-tunnel`): a cloud sandbox calls back to the local API
-through it, and without it no session starts.
+Against a local Kortix worktree stack, `KORTIX_UPSTREAM` is
+`http://localhost:<worktree api port>/v1`. The Kortix API's CORS allowlist does
+not matter here: the browser only calls Lumen's own origin.
 
-Run wrapper mode with the variables in `.env.example`:
+## Screens
 
-```bash
-KORTIX_API_KEY=kortix_pat_example \
-KORTIX_UPSTREAM=https://api.kortix.com/v1 \
-SESSION_SECRET=replace-with-a-long-random-value \
-WHITELABEL_PORT=3010 \
-pnpm --filter @kortix/whitelabel-demo dev
-```
+| Route | Screen |
+|---|---|
+| `/` | Sign in / sign up; then the active organization's workspaces, "New workspace" (template cards) |
+| header | Organization switcher, "New organization", Members (list + invite link), sign out |
+| `/invite/<id>` | Accept an invitation (sign in with the invited email) |
+| `/w/<workspaceId>` | Workspace: setup status, ask the agent (starts a thread), thread list |
+| `/projects/<projectId>/sessions/<sessionId>` | The thread: the shared session workbench. `src/app/projects/[id]/layout.tsx` maps the project to its workspace and checks membership first |
+
+There is no email provider in this example. An invitation is a link the
+inviter copies from the Members dialog. Production adds email verification and
+`organization({ sendInvitationEmail })` in `convex/auth.ts`.
+
+## Code map
+
+| Path | What |
+|---|---|
+| `convex/schema.ts` | `agentTemplates`, `workspaces`, `threads`, `memberTokens`, `auditEvents` |
+| `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, with the organization plugin |
+| `convex/kortix.ts` | Every operator call to Kortix (`"use node"` actions): provision, create thread, member and preview tokens, revoke |
+| `convex/workspaces.ts`, `convex/threads.ts`, `convex/templates.ts` | Queries and mutations; reads return null or empty for a non-member |
+| `src/server/member.ts` | Bearer + cookie → member token (Convex), cached per minute |
+| `src/server/proxy-policy.ts` | What a member token may do through the proxy |
+| `src/app/api/kortix/[...path]/route.ts` | The same-origin proxy; tags and records sessions created from the session UI |
+| `src/app/api/preview-url`, `session-model`, `connections` | Server routes on the member token |
+| `src/lib/kortix.ts` | The one browser SDK client (`backendUrl: '/api/kortix'`) |
+| `src/lib/session.ts` | The active workspace bearer |
+
+## Client boundary
+
+Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`,
+`@kortix/ui/<entry>` and `@phosphor-icons/react`. It never sends raw requests
+to the Kortix backend; its own `fetch` calls go to `/api/auth`,
+`/api/connections`, `/api/preview-url` and `/api/session-model` only. Convex
+files import `@kortix/sdk` only in `"use node"` files and never call `fetch`.
+`scripts/sdk-boundary.mjs` enforces all of this and runs before `build`,
+`test` and `typecheck`.
 
 ## Verify
 
-Run all reference-app checks:
-
 ```bash
-pnpm --filter @kortix/whitelabel-demo typecheck
+pnpm --filter @kortix/whitelabel-demo typecheck   # boundary + tsgo (app) + tsgo -p convex
 pnpm --filter @kortix/whitelabel-demo build
-pnpm --filter @kortix/whitelabel-demo test
+cd apps/whitelabel-demo && bun test tests/e2e/proxy-policy.test.ts   # one file; the full app suite takes ~1 s
 ```
 
-The test suite boots the production Next.js server. Product flows create a
-request-scoped SDK client. Tests do not construct Kortix backend requests. The
-suite verifies auth, mode selection, ownership, route policy, proxy behavior,
-preview resolution, rate limits, session cost markup, and the SDK boundary.
+The unit tests cover the proxy policy, upstream path validation, the SDK
+boundary and the session UI helpers. The end-to-end flow (sign up, org,
+workspace, thread, cross-org denial, invitation) needs Convex and a Kortix
+stack; run it by hand with the steps in Setup.
 
-## UI: @kortix/ui
+## UI and rebrand
 
-The app has no UI kit of its own. It composes `@kortix/ui`:
-
-- `src/app/globals.css` imports `tailwindcss` and `@kortix/ui/tailwind.css`
-  (tokens, component layer, animation and scrollbar plugins), then overrides
-  token variables for the brand.
-- `src/app/providers.tsx` mounts `<UiProvider link={NextLink}>` once, with
-  `<IconProvider>` from `@kortix/ui/icon-provider` inside it and the
-  `<Toaster />` from `@kortix/ui/toast`; toasts are `successToast` /
-  `errorToast` from the same module.
-- Dialogs are `Modal` from `@kortix/ui/modal`. A destructive action confirms
-  through `ConfirmDialog` from `@kortix/ui/confirm-dialog`.
-- The session chat is `<SessionThread session={useSession(…)} hideHeader />`
-  from `@kortix/ui/session`, the same thread apps/web renders, with Lumen's
-  scope bar under it (`src/components/workbench/workbench-tabs.tsx`).
-- `next.config.ts` lists `@kortix/ui` in `transpilePackages`.
-
-`scripts/sdk-boundary.mjs` rejects a file under `src/components/ui`, an
-import of a local UI primitive, a second UI kit (`lucide-react`, `radix-ui`,
-`class-variance-authority`, `next-themes`, `react-markdown`), a direct
-sonner `toast` call and an import of the `@kortix/ui/dialog` primitive.
-
-## Rebrand
-
-- Product name, tagline, and API URL: `src/config/brand.ts`
-- Colors: override `@kortix/ui` token variables in `src/app/globals.css`
-  (`:root` light, `.dark` dark). Lumen sets `--brand` and points `--ring`,
-  `--sidebar-primary` and `--sidebar-ring` at it. Never fork a component.
-- Fonts: the system stack from `tokens.css`. A white-label never loads
-  `@kortix/ui/fonts.css` (Roobert is for Kortix-owned surfaces).
-- Direct-mode credential input: `src/components/api-key-gate.tsx`
-- Wrapper authentication: `src/server/auth.ts`
-- Wrapper authorization: `src/server/users.ts` and `src/server/policy.ts`
-
-Keep `src/lib/kortix.ts` as the single client seam. Add missing backend behavior
-to `@kortix/sdk` before using it in this app.
+- Name and tagline: `src/config/brand.ts`. Colors, radius, fonts:
+  `src/config/theme.ts` and the token overrides in `src/app/globals.css`.
+  Never fork a `@kortix/ui` component.
+- Agent templates: `convex/templates.ts` (`SEED`), then
+  `npx convex run templates:seed`. A template is a slug, a name, a tagline and
+  an agent prompt; provisioning installs it as the workspace project's default
+  agent.
+- A missing primitive or chat slot is added to `packages/ui`, not to this app.
+- Missing backend behavior is added to `@kortix/sdk` before this app uses it.

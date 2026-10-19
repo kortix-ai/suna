@@ -1,255 +1,207 @@
 'use client';
 
-import Loading from '@kortix/ui/loading';
-
-import { ApiKeyGate } from '@/components/api-key-gate';
-import { ImportProjectsDialog } from '@/components/import-projects-dialog';
-import { ModeBadge } from '@/components/mode-badge';
-import { BrandMark } from '@/components/brand-mark';
-import { CallSnippet } from '@/components/dev/call-snippet';
-import { LoginGate } from '@/components/login-gate';
+import { AppHeader, CreateOrgDialog } from '@/components/app-header';
+import { AuthScreen } from '@/components/auth-screen';
+import { templateIcon } from '@/components/template-icon';
+import { authClient } from '@/lib/auth-client';
+import { api } from '@convex/_generated/api';
+import type { Doc } from '@convex/_generated/dataModel';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { Card } from '@kortix/ui/card';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-  ModalTrigger,
-} from '@kortix/ui/modal';
 import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle, ModalTrigger } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { clearApiKey, getApiKey, kortix } from '@/lib/kortix';
-import { qk } from '@/lib/query-keys';
-import { clearSessionToken, getSessionToken } from '@/lib/session';
-import { relativeTime } from '@/lib/utils';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import { errorToast } from '@kortix/ui/toast';
+import { cn } from '@kortix/ui/lib/utils';
+import { BuildingsIcon, PlusIcon } from '@phosphor-icons/react';
+import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { useWrapperMode } from './providers';
-import { errorToast, successToast } from '@kortix/ui/toast';
-import { FolderIcon, PlusIcon, ReceiptIcon, SignOutIcon, UsersIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
 
 export default function Home() {
-  const wrapperMode = useWrapperMode();
-  const [ready, setReady] = useState<boolean | null>(null);
-  useEffect(() => {
-    setReady(wrapperMode ? !!getSessionToken() : !!getApiKey());
-  }, [wrapperMode]);
-
-  if (ready === null) {
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  if (isLoading) {
     return (
       <div className="grid min-h-dvh place-items-center bg-background">
         <Loading className="size-5 text-muted-foreground" />
       </div>
     );
   }
-  if (!ready) {
-    return wrapperMode ? (
-      <LoginGate onReady={() => setReady(true)} />
-    ) : (
-      <ApiKeyGate onReady={() => setReady(true)} />
-    );
-  }
-  return (
-    <Dashboard
-      wrapperMode={wrapperMode}
-      onDisconnect={() => {
-        if (wrapperMode) {
-          clearSessionToken();
-          fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-        } else {
-          clearApiKey();
-        }
-        setReady(false);
-      }}
-    />
-  );
+  return isAuthenticated ? <Dashboard /> : <AuthScreen />;
 }
 
-function Dashboard({
-  wrapperMode,
-  onDisconnect,
-}: {
-  wrapperMode: boolean;
-  onDisconnect: () => void;
-}) {
-  const projects = useQuery({
-    queryKey: qk.projects,
-    queryFn: () => kortix.projects.list(),
-  });
-  const items = projects.data ?? [];
+function Dashboard() {
+  const [createOrg, setCreateOrg] = useState(false);
+  const orgs = authClient.useListOrganizations();
+  const active = authClient.useActiveOrganization();
+  const noOrg = !orgs.isPending && (orgs.data?.length ?? 0) === 0;
 
   return (
     <div className="min-h-dvh bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-2">
-            <BrandMark />
-            {/* The two connector access modes behave differently and the difference
-                is otherwise invisible — which makes every other observation on
-                this page ambiguous. */}
-            <ModeBadge wrapperMode={wrapperMode} />
-          </div>
-          <div className="flex items-center gap-1">
-            {wrapperMode ? (
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/session-costs">
-                  <ReceiptIcon className="size-4" /> Session costs
-                </Link>
-              </Button>
-            ) : (
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/account">
-                  <UsersIcon className="size-4" /> Account
-                </Link>
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={onDisconnect}>
-              <SignOutIcon className="size-4" /> Disconnect
-            </Button>
-          </div>
-        </div>
-      </header>
-
+      <AppHeader onCreateOrg={() => setCreateOrg(true)} />
+      <CreateOrgDialog open={createOrg} onOpenChange={setCreateOrg} />
       <div className="mx-auto max-w-4xl px-5 py-8">
-        <div className="flex items-end justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Each project is a git repo. Open one to run an agent against it.
+        {noOrg ? (
+          <Card className="items-center gap-3 p-10 text-center">
+            <BuildingsIcon className="size-6 text-muted-foreground" />
+            <h1 className="text-lg font-semibold tracking-tight">Create your organization</h1>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Workspaces, threads and members belong to an organization. Got an invitation? Open its link.
             </p>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Gated + hidden by default — see server/project-adoption.ts. */}
-            <ImportProjectsDialog />
-            <CreateProjectDialog />
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {projects.isLoading &&
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[72px] rounded-xl" />
-            ))}
-          {projects.isError && (
-            <Card className="col-span-full p-4 text-sm text-destructive">
-              {/* One <p>: Card is a flex column, so bare text and the button would stack. */}
-              <p>
-                Couldn&apos;t load projects —{' '}
-                {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="inline h-auto p-0 align-baseline text-destructive"
-                  onClick={onDisconnect}
-                >
-                  {wrapperMode ? 'Sign out' : 'Reconnect'}
-                </Button>
-              </p>
-            </Card>
-          )}
-          {projects.isSuccess && items.length === 0 && (
-            <Card className="col-span-full p-8 text-center text-sm text-muted-foreground">
-              No projects yet. Create your first one to get started.
-            </Card>
-          )}
-          {items.map((p) => (
-            // Card's `href` renders a stretched link through UiProvider's link (next/link).
-            <Card
-              key={p.project_id}
-              href={`/projects/${p.project_id}`}
-              label={p.name}
-              className="flex-row items-center gap-3 border border-border/60 p-4"
-            >
-              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
-                <FolderIcon className="size-4 text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{p.name}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {p.updated_at
-                    ? `Updated ${relativeTime(p.updated_at)}`
-                    : p.project_id}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+            <Button onClick={() => setCreateOrg(true)}>
+              <PlusIcon className="size-4" /> New organization
+            </Button>
+          </Card>
+        ) : active.data ? (
+          <Workspaces orgId={active.data.id} orgName={active.data.name} />
+        ) : orgs.data?.length ? (
+          <PickOrg orgs={orgs.data} />
+        ) : (
+          <Skeleton className="h-40 rounded-xl" />
+        )}
       </div>
     </div>
   );
 }
 
-function CreateProjectDialog() {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const qc = useQueryClient();
-  const router = useRouter();
+/** Signed in with organizations but none active (a fresh session): pick one. */
+function PickOrg({ orgs }: { orgs: { id: string; name: string }[] }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {orgs.map((o) => (
+        <Card key={o.id} className="flex-row items-center justify-between gap-3 p-4">
+          <span className="truncate text-sm font-medium">{o.name}</span>
+          <Button size="sm" variant="secondary" onClick={() => authClient.organization.setActive({ organizationId: o.id })}>
+            Open
+          </Button>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
-  const create = useMutation({
-    mutationFn: () =>
-      kortix.projects.provision({ name: name.trim(), seed_starter: true }),
-    onSuccess: (project) => {
-      qc.invalidateQueries({ queryKey: qk.projects });
+function Workspaces({ orgId, orgName }: { orgId: string; orgName: string }) {
+  const workspaces = useQuery(api.workspaces.list, { orgId });
+  return (
+    <>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Workspaces</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Each workspace runs one specialist agent for {orgName}.
+          </p>
+        </div>
+        <NewWorkspaceDialog orgId={orgId} />
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {workspaces === undefined &&
+          Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-[72px] rounded-xl" />)}
+        {workspaces?.length === 0 && (
+          <Card className="col-span-full p-8 text-center text-sm text-muted-foreground">
+            No workspaces yet. Create one from a template.
+          </Card>
+        )}
+        {workspaces?.map((w) => <WorkspaceCard key={w._id} workspace={w} />)}
+      </div>
+    </>
+  );
+}
+
+function WorkspaceCard({ workspace: w }: { workspace: Doc<'workspaces'> }) {
+  const Icon = templateIcon(w.templateSlug);
+  return (
+    <Card href={`/w/${w._id}`} label={w.name} className="flex-row items-center gap-3 border border-border/60 p-4">
+      <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
+        <Icon className="size-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{w.name}</div>
+        <div className="truncate text-xs text-muted-foreground">{w.templateSlug}</div>
+      </div>
+      {w.status !== 'ready' && (
+        <Badge variant={w.status === 'failed' ? 'destructive' : 'secondary'}>{w.status}</Badge>
+      )}
+    </Card>
+  );
+}
+
+function NewWorkspaceDialog({ orgId }: { orgId: string }) {
+  const router = useRouter();
+  const templates = useQuery(api.templates.list);
+  const create = useMutation(api.workspaces.create);
+  const [open, setOpen] = useState(false);
+  const [slug, setSlug] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [pending, setPending] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!slug) return;
+    setPending(true);
+    try {
+      const id = await create({ orgId, name: name.trim(), templateSlug: slug });
       setOpen(false);
-      setName('');
-      successToast('Project created');
-      router.push(`/projects/${project.project_id}`);
-    },
-    onError: () => errorToast('Could not create the project'),
-  });
+      router.push(`/w/${id}`);
+    } catch (err) {
+      errorToast('Could not create the workspace', { description: (err as Error).message });
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <Modal open={open} onOpenChange={setOpen}>
       <ModalTrigger asChild>
         <Button>
-          <PlusIcon className="size-4" /> New project
+          <PlusIcon className="size-4" /> New workspace
         </Button>
       </ModalTrigger>
-      <ModalContent>
+      <ModalContent className="sm:max-w-2xl">
         <ModalHeader>
-          <ModalTitle>New project</ModalTitle>
-          <ModalDescription>
-            We&apos;ll provision a managed git repo seeded with a starter so the
-            agent can boot immediately.
-          </ModalDescription>
+          <ModalTitle>New workspace</ModalTitle>
+          <ModalDescription>Pick the specialist. Lumen sets up its agent and sandbox for you.</ModalDescription>
         </ModalHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) create.mutate();
-          }}
-        >
-          <ModalBody className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="project-name">Project name</Label>
-              <Input
-                id="project-name"
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My website"
-              />
+        <form onSubmit={submit}>
+          <ModalBody className="space-y-4">
+            <div role="radiogroup" aria-label="Template" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {templates === undefined && <Skeleton className="h-28 rounded-lg sm:col-span-3" />}
+              {templates?.map((t) => {
+                const Icon = templateIcon(t.slug);
+                const selected = slug === t.slug;
+                return (
+                  <Button
+                    key={t.slug}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    variant="outline"
+                    onClick={() => {
+                      setSlug(t.slug);
+                      if (!name.trim()) setName(t.name);
+                    }}
+                    className={cn(
+                      'h-auto flex-col items-start gap-1.5 whitespace-normal p-3 text-left',
+                      selected && 'border-brand bg-brand/5',
+                    )}
+                  >
+                    <Icon className="size-5 text-brand" />
+                    <span className="text-sm font-medium">{t.name}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{t.tagline}</span>
+                  </Button>
+                );
+              })}
             </div>
-            {/* The first call a wrapper ever makes, and the only project-create
-                path it may use — so it belongs on the button that makes it. */}
-            <CallSnippet
-              id="project.provision"
-              context={{ projectName: name }}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button type="submit" disabled={!name.trim() || create.isPending}>
-              {create.isPending && <Loading className="size-4" />}
-              Create project
+            <div className="space-y-1.5">
+              <Label htmlFor="workspace-name">Workspace name</Label>
+              <Input id="workspace-name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Q3 board pack" />
+            </div>
+            <Button type="submit" className="w-full" disabled={pending || !slug || !name.trim()}>
+              {pending && <Loading className="size-4" />} Create workspace
             </Button>
-          </ModalFooter>
+          </ModalBody>
         </form>
       </ModalContent>
     </Modal>

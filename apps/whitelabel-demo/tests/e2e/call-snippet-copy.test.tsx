@@ -32,7 +32,7 @@ async function mount() {
   const host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root?.render(<CallSnippet id="project.provision" defaultOpen />));
+  await act(async () => root?.render(<CallSnippet id="session.prompt" defaultOpen />));
   const button = host.querySelector<HTMLButtonElement>('[aria-label="Copy the SDK call"]');
   if (!button) throw new Error('SDK copy button missing');
   return button;
