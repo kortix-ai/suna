@@ -6,10 +6,13 @@ import type {
   ProjectTrigger,
   ProjectTriggerEventApp,
   ProjectTriggerType,
+  TriggerFilterValue,
   UpdateProjectTriggerInput,
 } from './triggers';
 import {
   createProjectTrigger,
+  getAccountAutomations,
+  setAccountAutomationsPaused,
   fireProjectTrigger,
   listProjectTriggerRuns,
   listTriggerRuns,
@@ -270,6 +273,27 @@ test('the public trigger access type rejects unknown modes', () => {
   };
 
   expect([access, badAccess]).toHaveLength(2);
+});
+
+test('createProjectTrigger and updateProjectTrigger send filter operators unchanged (KRTX-1721)', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
+  const filter: Record<string, TriggerFilterValue> = {
+    'body.type': 'push',
+    'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    'body.sender.login': { not: ['kortix-bot'] },
+    'body.action': { in: ['opened', 'reopened'] },
+    'body.pull_request': { exists: true },
+  };
+
+  await createProjectTrigger('P1', { name: 'On push', slug: 'on-push', type: 'webhook', prompt_template: 'Lint {{ body.ref }}', filter });
+  expect(last().body).toMatchObject({ filter });
+  await updateProjectTrigger('P1', 'on-push', { filter: { 'body.base': { prefix: ['release/'] } } });
+  expect(last().body).toEqual({ filter: { 'body.base': { prefix: ['release/'] } } });
+
+  const read: ProjectTrigger['filter'] = filter;
+  // @ts-expect-error an operator takes a list of strings, not a bare object
+  const badOperand: TriggerFilterValue = { not: { login: 'kortix-bot' } };
+  expect([read, badOperand]).toHaveLength(2);
 });
 
 test('listProjectTriggerEventTypes GETs event-types with the connector query and returns the typed catalog', async () => {
@@ -605,4 +629,19 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
   expect(last().body).toEqual({ max_runs_per_day: null });
   const caps: Array<number | null | undefined> = [listing.triggers[0]!.max_runs_per_hour, listing.triggers[0]!.max_runs_per_day];
   expect(caps).toEqual([5, null]);
+});
+
+// KRTX-1721: the account's Pause all automations.
+test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
+  nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
+  const status = await getAccountAutomations('A1');
+  expect(last().url).toContain('/accounts/A1/automations');
+  expect(last().method ?? 'GET').toBe('GET');
+  expect(status.paused).toBe(false);
+
+  nextResponse = { status: 200, body: { paused: true, paused_at: '2026-10-19T10:00:00.000Z', paused_by: 'U1', can_change: true } };
+  const after = await setAccountAutomationsPaused('A1', true);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ paused: true });
+  expect([after.paused, after.paused_by]).toEqual([true, 'U1']);
 });

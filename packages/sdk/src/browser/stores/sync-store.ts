@@ -290,8 +290,8 @@ interface SyncState {
 	 * session) calls `applySessionLogEvent`.
 	 */
 	applyEvent: (event: RuntimeEvent) => void;
-	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. */
-	applySessionLogPage: (sessionId: string, page: SessionLogPage) => void;
+	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. `beforeSeq`: the page's `before_seq` (an older page). */
+	applySessionLogPage: (sessionId: string, page: SessionLogPage, beforeSeq?: number) => void;
 	/** Apply one `log.*` frame to session `sessionId`'s log, creating it when absent. */
 	applySessionLogEvent: (sessionId: string, event: SessionLogEventInput) => void;
 	/** Forget session `sessionId`'s log: its v1 hooks read the v1 store again. */
@@ -2449,11 +2449,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
-	applySessionLogPage: (sessionId, page) =>
+	applySessionLogPage: (sessionId, page, beforeSeq) =>
 		set((s) => {
 			const current = s.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
 			// A page's session record is a patch; the id it was read for is its `session_id`.
-			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } });
+			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } }, beforeSeq);
 			return next === current ? s : { sessionLogs: { ...s.sessionLogs, [sessionId]: next } };
 		}),
 

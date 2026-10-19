@@ -11,7 +11,7 @@ import { parse } from 'yaml';
 // entrypoint so they catch wiring mistakes a unit test on an unexported
 // function would miss.
 //
-// None of these tests configure DAYTONA_API_KEY (the sandbox key `init` asks
+// None of these tests configure PLATINUM_API_KEY (the sandbox key `init` asks
 // about — managed git and the LLM key are configured in the dashboard after
 // `start`, not by this CLI). `init`/`start` never hard-fail on a missing
 // secret — they warn and proceed; see secrets.test.ts for coverage of that
@@ -142,8 +142,10 @@ esac
     expect(env.SUPABASE_ANON_KEY).toBeTruthy();
     expect(env.SUPABASE_PUBLIC_URL).toBeTruthy();
     expect((readCompose().services['kortix-api'] as { env_file: string[] }).env_file).toContain('.env');
-    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
-    expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
+    // Platinum is the reference provider; E2B support is discontinued.
+    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('platinum');
+    expect(env).not.toHaveProperty('E2B_API_KEY');
+    expect(env).not.toHaveProperty('E2B_DOMAIN');
 
     // Default channel is "stable" — a plain moving Docker tag, no signing/TUF.
     expect(env.KORTIX_CHANNEL).toBe('stable');

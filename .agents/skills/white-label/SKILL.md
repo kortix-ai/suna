@@ -80,8 +80,8 @@ The `--brand` color is in `apps/whitelabel-demo/src/app/globals.css`.
 
 ## 4. Stay compliant
 
-- Never configure Daytona, E2B, or any other sandbox provider for a white-label
-  instance.
+- Never configure Daytona (the legacy fallback) or any other sandbox provider
+  for a white-label instance. Platinum is the only one.
 - When Kortix gives notice of a new Platinum service that the instance uses, move
   that work to Platinum within 90 days.
 - Keep every copyright and license notice in the source code. The UI does not

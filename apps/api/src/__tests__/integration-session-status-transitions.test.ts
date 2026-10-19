@@ -747,10 +747,10 @@ describe('first provisioning (session-sandbox writers)', () => {
     // The final failure record lands on the row the last attempt marked.
     expect(await transitionSandbox('failProvisioning', f.sandboxId)).not.toBeNull();
     const failedOver = await transitionSandbox('reprovision', f.sandboxId, {
-      columns: { provider: 'e2b' },
+      columns: { provider: 'platinum' },
     });
     expect(failedOver?.status).toBe('provisioning');
-    expect(failedOver?.provider).toBe('e2b');
+    expect(failedOver?.provider).toBe('platinum');
   });
 
   test('`provisioned` flips only a session still being provisioned, and sets its URL', async () => {

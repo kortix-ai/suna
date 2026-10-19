@@ -191,7 +191,7 @@ async function publishWake(app: App, loaded: LoadedApp, leased: Runtime, owner: 
   if (!running) throw new Error('App wake lease was lost after provider start');
   await startComputeSession({
     sandboxId: running.runtimeId, accountId: running.accountId, provider,
-    spec: { ...hosting.effectiveMachine(provider, instanceMachine(running, app)), gpuCount: 0 },
+    spec: { ...instanceMachine(running, app), gpuCount: 0 },
     workloadType: 'app', appRuntimeId: running.runtimeId,
     metadata: { appId: app.appId, deploymentId: loaded.deployment.deploymentId },
   });

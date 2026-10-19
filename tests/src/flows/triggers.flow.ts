@@ -2720,3 +2720,209 @@ flow(
     });
   },
 );
+
+/**
+ * TRG-36 — Pause all automations (KRTX-1721). One account switch stops every
+ * automatic fire in every project of the account; a manual fire still runs.
+ * On its own team account: the switch would otherwise pause every concurrent
+ * flow on the shared one. Local only: a fire that runs answers 402 (no usable
+ * model) here, which tells it apart from `200 skipped`.
+ */
+flow(
+  'TRG-36',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/accounts/:accountId/automations',
+      'PATCH /v1/accounts/:accountId/automations',
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const member = await team.addMember('member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const memberClient = ctx.client.as(member);
+    const params = { projectId: p.id };
+    const account = { accountId: team.id };
+    const secret = `ke2e-pause-${crypto.randomUUID()}`;
+    type Status = { paused: boolean; paused_at: string | null; paused_by: string | null; can_change: boolean };
+    const deliver = async () => {
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { ...params, slug: 'hook' },
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+    const listingPaused = async () =>
+      (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ account_automations_paused?: boolean }>().account_automations_paused;
+
+    await ctx.step('setup: a webhook trigger on the team project', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+    });
+
+    await ctx.step('GET automations: running; the owner may change it, a member may read it but not change it, an outsider → 403', async () => {
+      (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', true);
+      (await memberClient.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', false);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/automations', { params: account })).status(403);
+    });
+
+    await ctx.step('a member cannot pause → 403; the owner pauses → 200 with paused_at and paused_by; the listing says so', async () => {
+      (await memberClient.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(403);
+      const s = (await owner.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(200).json<Status>();
+      if (!s.paused || !s.paused_at || s.paused_by !== ctx.P.OWNER.userId) throw new Error(`pause status is wrong: ${JSON.stringify(s)}`);
+      if ((await listingPaused()) !== true) throw new Error('the trigger listing does not say the account is paused');
+    });
+
+    await ctx.step('while paused, a signed delivery → 200 skipped "account automations are paused"; a manual fire still runs (402)', async () => {
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'account automations are paused');
+      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'hook' } })).status(402);
+    });
+
+    await ctx.step('resumed: the switch reads running and a delivery reaches the fire path again (402, not skipped)', async () => {
+      (await owner.patch('/v1/accounts/:accountId/automations', { paused: false }, { params: account })).status(200).body().has('$.paused', false).has('$.paused_by', null);
+      if ((await listingPaused()) !== false) throw new Error('the trigger listing still says the account is paused');
+      (await deliver()).status(402);
+    });
+
+    await ctx.step('CLI: `kortix triggers pause --account-wide` pauses the account, `resume --account-wide` resumes it', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg36') });
+      const sb = new CliSandbox('trg36');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: team.id });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const pause = await sb.run(['triggers', 'pause', '--account-wide']);
+        throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
+        if (pause.exitCode !== 0 || !pause.stdout.includes('All automations PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
+        const resume = await sb.run(['triggers', 'resume', '--account-wide']);
+        if (resume.exitCode !== 0 || !resume.stdout.includes('All automations RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);
+
+/**
+ * TRG-37 — filter operators (KRTX-1721). A filter path takes a value (equals)
+ * or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. The
+ * loop-breaking case: a push webhook whose agent pushes on `kortix/*` branches
+ * skips the agent's own pushes and still fires for a person. Local only.
+ */
+flow(
+  'TRG-37',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const slugParams = { ...params, slug: 'loop-safe' };
+    const secret = `ke2e-loop-safe-${crypto.randomUUID()}`;
+    const listedFilter = async () => {
+      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+        .json<{ triggers: Array<{ slug: string; filter: unknown }> }>().triggers.find((row) => row.slug === 'loop-safe');
+      if (!t) throw new Error('loop-safe is not listed');
+      return t.filter;
+    };
+    const deliver = async (body: Record<string, unknown>) => {
+      const rawBody = JSON.stringify(body);
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: slugParams,
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+    const push = (ref: string, login: string) => ({ ref, sender: { login } });
+    const unmatched = 'delivery did not match the trigger filter';
+
+    await ctx.step('an unknown operator, two operators on one path, and an empty list → 400 naming the path', async () => {
+      const create = (filter: unknown) =>
+        owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', filter }, { params });
+      (await create({ 'body.ref': { nott: 'x' } })).status(400)
+        .body().has('$.error', 'filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix');
+      (await create({ 'body.ref': { in: ['a'], not: 'b' } })).status(400).body().has('$.error', 'filter.body.ref takes one operator, got 2: in, not');
+      (await create({ 'body.action': { in: [] } })).status(400).body().has('$.error', 'filter.body.action.in must list at least one value');
+    });
+
+    await ctx.step('a webhook trigger with not_prefix and not → 201; the listing stores each operator as a list', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', {
+        name: 'loop-safe', slug: 'loop-safe', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Lint {{ body.ref }}',
+        filter: { 'body.ref': { not_prefix: 'refs/heads/kortix/' }, 'body.sender.login': { not: ['kortix-bot'] } },
+      }, { params })).status(201);
+      const filter = await listedFilter();
+      const expected = { 'body.ref': { not_prefix: ['refs/heads/kortix/'] }, 'body.sender.login': { not: ['kortix-bot'] } };
+      if (JSON.stringify(filter) !== JSON.stringify(expected)) throw new Error(`listed filter ${JSON.stringify(filter)}, expected ${JSON.stringify(expected)}`);
+    });
+
+    await ctx.step("the agent's own branch and the agent's own sender → 200 skipped, two skipped runs, no session", async () => {
+      (await deliver(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
+      (await deliver(push('refs/heads/main', 'kortix-bot'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
+      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
+      const skipped = runs.filter((run) => run.status === 'skipped' && run.error === unmatched && run.session_id === null);
+      if (skipped.length !== 2) throw new Error(`expected 2 skipped runs: ${JSON.stringify(runs)}`);
+      const sessions = await withDb(ctx, async (db) =>
+        Number((await db.query(`SELECT count(*) AS n FROM kortix.project_sessions WHERE project_id = $1 AND metadata->>'trigger_slug' = 'loop-safe'`, [p.id])).rows[0]?.n ?? 0),
+      );
+      if (sessions !== 0) throw new Error(`a filtered delivery created ${sessions} session(s)`);
+    });
+
+    await ctx.step("a dry run reports a person's push on main as a match and the agent's branch as no match", async () => {
+      const dry = async (payload: Record<string, unknown>) =>
+        owner.post('/v1/projects/:projectId/triggers/:slug/fire', { dry_run: true, payload: { body: payload } }, { params: slugParams });
+      (await dry(push('refs/heads/main', 'a-person'))).status(200).body().has('$.filter_matches', true);
+      (await dry(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.filter_matches', false);
+    });
+
+    await ctx.step('CLI: `--filter path:op=value` replaces the filter with in and exists; `exists=maybe` exits 2 before any request', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg37') });
+      const sb = new CliSandbox('trg37');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const set = await sb.run(['triggers', 'set', 'loop-safe', '--filter', 'body.action:in=opened,reopened', '--filter', 'body.pull_request:exists=true', '--project', p.id]);
+        throwIfCliInfraFailure(set, 'triggers set');
+        if (set.exitCode !== 0) throw new Error(`set --filter: exit ${set.exitCode}: ${set.all}`);
+        const filter = await listedFilter();
+        const expected = { 'body.action': { in: ['opened', 'reopened'] }, 'body.pull_request': { exists: true } };
+        if (JSON.stringify(filter) !== JSON.stringify(expected)) throw new Error(`listed filter ${JSON.stringify(filter)}, expected ${JSON.stringify(expected)}`);
+        const bad = await sb.run(['triggers', 'set', 'loop-safe', '--filter', 'body.pull_request:exists=maybe', '--project', p.id]);
+        if (bad.exitCode !== 2 || !bad.stderr.includes('--filter body.pull_request:exists takes true or false (got "maybe")')) {
+          throw new Error(`set --filter exists=maybe: exit ${bad.exitCode}: ${bad.all}`);
+        }
+        if (JSON.stringify(await listedFilter()) !== JSON.stringify(expected)) throw new Error('a rejected --filter changed the stored filter');
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);

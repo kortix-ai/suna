@@ -496,3 +496,43 @@ test('a runtime read that lacks the saved cursor (the box lost its state) keeps 
   });
   expect(hook.value().hasOlder).toBe(true);
 });
+
+test('a session the session log owns (v2) reads no saved copy: no transcript request, no device v1 copy, no refresh after a turn', async () => {
+  const store = await seeded('ses_log_owned', 2);
+  const { storage } = store;
+  const read = storage.getItem;
+  let reads = 0;
+  storage.getItem = (key) => {
+    reads += 1;
+    return read(key);
+  };
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json(envelope('ses_log_owned', 3));
+  }) as unknown as typeof fetch;
+  touched.push('ses_log_owned');
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  let working = true;
+  let value!: ReturnType<typeof useSessionSync>;
+  function Probe() {
+    value = useSessionSync('ses_log_owned', { ...offline, sessionLog: true, working });
+    return null;
+  }
+  await act(async () => {
+    root = create(React.createElement(Probe));
+  });
+  await settle();
+  working = false;
+  await act(async () => {
+    root?.update(React.createElement(Probe));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, SAVED_COPY_REFRESH_DELAY_MS + 50));
+  });
+
+  expect(requests).toEqual([]);
+  expect(reads).toBe(0);
+  expect(value.messages).toHaveLength(0);
+  expect(value.hasOlder).toBe(false);
+});

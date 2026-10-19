@@ -47,7 +47,7 @@ const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
@@ -406,7 +406,7 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,

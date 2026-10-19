@@ -1170,6 +1170,13 @@
       "when": 1792378345572,
       "tag": "20261019025225_trigger_event_polls",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1792436141586,
+      "tag": "20261019185541_account_automations_paused",
+      "breakpoints": true
     }
   ]
 }

@@ -222,7 +222,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
-    // ≥1 min and E2B caps runtime at 1 h — so the surface stays dark unless
+    // ≥1 min — so the surface stays dark unless
     // Platinum credentials are configured.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.
@@ -432,8 +432,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
       '(transcript shape=sync and the compact fallback, the open bundle, the ' +
       'public share, MCP read_session) from the session log, and the open ' +
-      'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
-      'when health lists `session.log.v2` and the flag is on) will read it too.',
+      'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
+      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy.',
   },
   {
     key: 'session_log_restore',

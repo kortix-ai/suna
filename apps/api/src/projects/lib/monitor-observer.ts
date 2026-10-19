@@ -28,7 +28,7 @@ import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from
 import { takeThrottledRunSlot } from './trigger-run-caps';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
-import { triggersPausedForProject } from './trigger-scheduler-state';
+import { automaticFirePauseReason } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */
@@ -126,8 +126,10 @@ export async function processMonitorEvent(
   }
   // A monitor fire is project automation, so the project-wide pause switch
   // stops it exactly like it stops a cron fire.
-  if (triggersPausedForProject(project.metadata)) {
-    return skip('project triggers are paused');
+  // The project's pause, or the account's Pause all automations (KRTX-1721).
+  const pausedReason = await automaticFirePauseReason(project);
+  if (pausedReason) {
+    return skip(pausedReason);
   }
   // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
   // stops firing even if the ingest route were somehow bypassed.

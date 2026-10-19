@@ -400,9 +400,8 @@ export function buildWorkerScript(input: {
   sha: string;
   testArgs: string[];
   skipSdkPackageTests?: boolean;
-  provider?: 'platinum' | 'daytona';
 }): string {
-  const provider = input.provider ?? 'platinum';
+  const provider = 'platinum';
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
   const prestartSupabase = input.testArgs.includes('--browser-only')
@@ -410,9 +409,7 @@ export function buildWorkerScript(input: {
 echo "[${provider}-ci] supabase_prestarted=1"`
     : '';
   const providerLogs =
-    provider === 'daytona'
-      ? '/workspace/daytona-bootstrap.log /workspace/daytona-warm.log /workspace/daytona-dockerd.log'
-      : '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
+    '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
   return `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -470,7 +467,6 @@ done
 echo "[${provider}-ci] container_modules_checked=1"
 
 if ! docker info >/dev/null 2>&1; then
-  ${provider === 'daytona' ? 'rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes' : ''}
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
   for _ in $(seq 1 180); do
     docker info >/dev/null 2>&1 && break

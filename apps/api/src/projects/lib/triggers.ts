@@ -4,7 +4,7 @@ export {
   triggerFireTimeoutMs, connectorProjectConcurrency, connectorProjectTimeoutMs,
   manifestDiscoveryBatchSize, manifestCatalogBatchSize, withTimeout, mapWithConcurrency,
   isSweepStale, schedulerSweepIsStale, connectorSweepIntervalMs, triggerSchedulerIntervalMs,
-  triggerScheduleClaimLimit, triggerExecutionConcurrency, triggersPausedForProject,
+  triggerScheduleClaimLimit, triggerExecutionConcurrency, triggersPausedForProject, automaticFirePauseReason,
 } from './trigger-scheduler-state';
 export type { TriggerSchedulerHealth, TriggerSchedulerTimer } from './trigger-scheduler-state';
 export * from './trigger-connector-sweep';

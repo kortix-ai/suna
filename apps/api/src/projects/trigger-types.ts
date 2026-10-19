@@ -1,4 +1,4 @@
-import type { ManifestFormat, ResolvedManifest } from '@kortix/manifest-schema';
+import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
 export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
 
@@ -138,8 +138,10 @@ export interface GitTriggerSpec {
    * directions of a conversation would otherwise re-trigger the agent with the
    * agent's own reply. `{ "body.data.direction": "inbound" }` ends that without
    * having to narrow the subscription and lose every other event type.
+   * A path maps to a value (equals) or one operator: `not`, `in`, `exists`,
+   * `prefix`, `not_prefix` (`@kortix/manifest-schema` `trigger-filter.ts`).
    */
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /**
    * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
    * row that re-prompts `pinnedSessionId`. The manifest never declares one, so

@@ -472,7 +472,7 @@ these as standing rules whenever you touch the data/runtime layer:
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
 Do not claim you "can't verify from here" or hand back unverified work — you
 have everything needed to run the app, hit the real API, provision real
-Daytona sandboxes, drive the real UI in a browser, and assert behavior. Use it.
+Platinum sandboxes, drive the real UI in a browser, and assert behavior. Use it.
 
 ### Required verification standard — real inputs, real outputs
 
@@ -513,8 +513,10 @@ mocked internals when a real surface exists.
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
-- **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
-  Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
+- **Sandboxes** — REAL cloud sandboxes on Platinum, the reference provider
+  (`PLATINUM_API_KEY` in `apps/api/.env` / `.env.local`). Daytona is a legacy
+  fallback with removal scheduled and no support guarantee; E2B support is
+  discontinued. Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
   The session runtime answers on the same proxy, under `/kortix/runtime/*`,

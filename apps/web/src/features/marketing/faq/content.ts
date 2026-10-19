@@ -74,7 +74,7 @@
  *    `apps/api/src/types.ts:129-135`). That distinction is the honest answer and
  *    must survive editing.
  *  - ISOLATION. "Its own isolated machine" only. NEVER a blanket "microVM" —
- *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
+ *    true for the Platinum provider (Cloud Hypervisor), not for legacy Daytona.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
  *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness

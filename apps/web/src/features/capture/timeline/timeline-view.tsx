@@ -321,7 +321,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   );
   const items = useLatest<CaptureTimelineItems>(itemsQuery.data);
   const allFrames = useMemo(
-    () => (items?.frames ?? []).filter((f) => !f.inactive && f.device_id === deviceId),
+    () => (items?.frames ?? []).filter((f) => f.device_id === deviceId),
     [items, deviceId],
   );
   const framesOf = useCallback(

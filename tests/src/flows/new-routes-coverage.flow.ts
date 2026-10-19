@@ -209,7 +209,7 @@ flow(
   'SESS-20',
   {
     domain: 'sessions',
-    requires: ['daytona'],
+    requires: ['sandbox'],
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
@@ -541,7 +541,7 @@ flow(
     routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {
-    await ctx.step('sandbox provider webhooks reject unsigned Daytona payload', async () => {
+    await ctx.step('the legacy Daytona sandbox webhook rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/daytona', {});
       r.status([400, 401, 403, 503]);
     });
