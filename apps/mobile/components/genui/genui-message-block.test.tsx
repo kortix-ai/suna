@@ -280,16 +280,34 @@ b = RankedItem("Option B", "Quietest")`);
     expect(opened).toEqual(['https://example.com/a']);
   });
 
-  test('a ranked list shows just the data, no rank numbers; #1 leads with the larger title', () => {
+  test('a ranked list shows each rank as a mono number in a fixed right-aligned lane; #1 leads with the larger title and ink', () => {
     const ids = Array.from({ length: 10 }, (_, i) => `r${i + 1}`);
     const root = render(
       [`root = Stack([list])`, `list = RankedList([${ids.join(', ')}])`, ...ids.map((id, i) => `${id} = RankedItem("Option ${i + 1}", "Reason")`)].join('\n'),
     );
-    expect(all(root, 'text').filter((n) => /^\d+$/.test(texts(n).join('')))).toHaveLength(0);
+    const ranks = all(root, 'text').filter((n) => /^\d+$/.test(texts(n).join('')));
+    expect(ranks.map((n) => texts(n).join(''))).toEqual(ids.map((_, i) => String(i + 1)));
+    // A fixed lane, so "10" lines up with "9"; its line box matches the title's, so it sits on the title's baseline.
+    for (const rank of ranks) expect(className(rank)).toEqual(expect.stringContaining('w-5 shrink-0 text-right font-mono text-xs tabular-nums'));
+    expect(className(ranks[0]!)).toContain('text-foreground font-medium leading-6');
+    expect(className(ranks[1]!)).toContain('text-muted-foreground leading-5');
     const titles = all(root, 'text').filter((n) => texts(n).join('').startsWith('Option '));
     expect(titles).toHaveLength(10);
     expect(className(titles[0]!)).toContain('text-lg');
     expect(className(titles[1]!)).not.toContain('text-lg');
+  });
+
+  test('a ranked item photo fills its 40pt box, with no outline, in compact mode', () => {
+    const root = render(`root = Stack([list])
+list = RankedList([a, b])
+a = RankedItem("Option A", "Closest", null, "https://example.com/a.jpg")
+b = RankedItem("Option B", "Quietest")`);
+    const images = all(root, 'markdown-image');
+    expect(images).toHaveLength(1);
+    expect(images[0]!.props).toMatchObject({ src: 'https://example.com/a.jpg', alt: '', fixedHeight: 40, look: { bare: true, resizeMode: 'cover', compact: true } });
+    // The rank lane comes first, then the photo.
+    const row = all(root, 'view').find((n) => className(n).includes('flex-row') && all(n, 'markdown-image').length === 1 && texts(n).includes('Option A'))!;
+    expect(texts(row)[0]).toBe('1');
   });
 
   test('links and linked cards open through the markdown link opener', () => {
@@ -360,6 +378,14 @@ t = Table(["Region"], [["EU"]], "Seats by region")`);
     const title = all(root, 'text').find((n) => texts(n).join('') === 'Seats by region')!;
     expect(className(title)).toContain('font-medium');
     expect(flatten(title.props.style)).toMatchObject({ fontSize: 14, lineHeight: 20 });
+    // As web's aria-label: the caption names the table for a screen reader.
+    expect(all(root, 'view').filter((n) => n.props.accessibilityLabel === 'Seats by region')).toHaveLength(1);
+  });
+
+  test('a table with no caption has no accessibility label', () => {
+    const root = render(`root = Stack([t])
+t = Table(["Region"], [["EU"]])`);
+    expect(all(root, 'view').some((n) => n.props.accessibilityLabel !== undefined)).toBe(false);
   });
 
   test('an image sits in the dark letterbox well with its caption chip and an open button', () => {
@@ -438,8 +464,13 @@ g = Badge("Best for a first project", "good")`);
     expect(thumbs).toHaveLength(1);
     const image = () => all(thumbs[0]!, 'markdown-image')[0]!;
     // Before it loads, the thumbnail is a photo: it fills the square, cropped.
-    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare]).toEqual([96, 'cover', true]);
+    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare, image().props.look.compact]).toEqual([96, 'cover', true, true]);
     expect(className(thumbs[0]!)).not.toContain('p-1.5');
+    // The subtitle is web's list subtitle: text-xs, muted.
+    const subtitle = all(root, 'text').find((n) => texts(n).join('') === 'Language')!;
+    expect(className(subtitle)).toEqual(expect.stringContaining('text-xs'));
+    expect(className(subtitle)).toContain('text-muted-foreground');
+    expect(subtitle.props.variant).toBeUndefined();
     // A narrow logo (under 240 px) sits whole inside a 6pt inset.
     act(() => (image().props.look.onSize as (w: number, h: number) => void)(200, 200));
     expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([84, 'contain']);
@@ -639,7 +670,7 @@ s3 = Step("Airport One", "Check in and board.")`);
     // The row without a photo fills the same 96pt tile with its number, so every row has the same thumbnail.
     expect(tiles).toHaveLength(3);
     expect(texts(tiles[2]!)).toEqual(['3']);
-    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 96, look: { bare: true, resizeMode: 'cover' } });
+    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 96, look: { bare: true, resizeMode: 'cover', compact: true } });
     // The row without a photo shows its number on the same 96pt rail.
     const rails = all(root, 'view').filter((n) => className(n) === 'items-center');
     expect(rails.map((n) => n.props.style.width)).toEqual([96, 96, 96]);

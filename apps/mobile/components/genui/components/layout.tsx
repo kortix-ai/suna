@@ -114,7 +114,8 @@ function CardText({ props }: { props: GenuiNode['props'] }) {
         ) : null}
       </View>
       <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
-      {props.subtitle ? <Text variant="muted">{String(props.subtitle)}</Text> : null}
+      {/* Web's list subtitle: text-xs, muted. */}
+      {props.subtitle ? <Text className="text-xs leading-4 text-muted-foreground">{String(props.subtitle)}</Text> : null}
       {props.body ? <Text variant="small" className="leading-5">{String(props.body)}</Text> : null}
     </View>
   );
@@ -165,7 +166,7 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
                       src={image}
                       alt=""
                       fixedHeight={shape.inset ? THUMB - 12 : THUMB}
-                      look={look(id, { resizeMode: shape.inset ? 'contain' : 'cover', onError: () => setFailed((known) => new Set(known).add(image)) })}
+                      look={look(id, { resizeMode: shape.inset ? 'contain' : 'cover', compact: true, onError: () => setFailed((known) => new Set(known).add(image)) })}
                     />
                   </View>
                 ) : null}
