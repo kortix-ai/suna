@@ -5,12 +5,13 @@
  *   1. manifest reconcile never prunes a reminder row (it lives only in the DB);
  *   2. the schedule claim fires a reminder on time and re-arms it one period later;
  *   3. a fire into a deleted session queues nothing and pauses the reminder;
- *   4. a fire into a failed session hands the reminder to a successor session.
+ *   4. a fire into a failed session hands the reminder and its chat threads to a successor session.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   accounts,
+  chatThreads,
   projectSessions,
   projectTriggerExecutions,
   projectTriggerRuntime,
@@ -231,6 +232,8 @@ describe('session reminders on the trigger tables', () => {
     const failed = await seedSession();
     await db.update(projectSessions).set({ status: 'failed' }).where(eq(projectSessions.sessionId, failed));
     const { spec } = await seedReminder(failed, { prompt: 'Advance the goal', every: '1d' }, now);
+    const thread = { platform: 'slack', workspaceId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
+    await db.insert(chatThreads).values({ projectId: PROJECT, sessionId: failed, ...thread });
 
     const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
 
@@ -238,7 +241,10 @@ describe('session reminders on the trigger tables', () => {
     const [create] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.commandId, result.commandId!));
     const payload = create?.payload as { body: Record<string, unknown>; postCreate: unknown[] };
     expect(String(payload.body.initial_prompt)).toContain(`belonged to session ${failed}, which failed`);
-    expect(payload.postCreate).toEqual([{ type: 'repin_reminder', reminderId: spec.slug }]);
+    expect(payload.postCreate).toEqual([
+      { type: 'repin_reminder', reminderId: spec.slug },
+      { type: 'adopt_chat_threads', fromSessionId: failed },
+    ]);
     // Paused while queued: a fire in between would start a second successor.
     expect((await getSessionReminder(PROJECT, failed, spec.slug))?.enabled).toBe(false);
 
@@ -250,6 +256,9 @@ describe('session reminders on the trigger tables', () => {
     expect(moved?.nextFireAt?.getTime()).toBeGreaterThan(now.getTime());
     expect((moved?.scheduleSpec as Record<string, unknown>).pinnedSessionId).toBe(successor);
     expect(await getSessionReminder(PROJECT, failed, spec.slug)).toBeNull();
+    // A reply in the failed session's Slack thread now reaches the successor.
+    const [bound] = await db.select().from(chatThreads).where(eq(chatThreads.threadId, thread.threadId));
+    expect(bound?.sessionId).toBe(successor);
   });
 
   test('pause clears the schedule; resume re-arms from now; a fired one-shot stays done', async () => {

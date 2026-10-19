@@ -52,6 +52,11 @@ export type SessionLifecyclePostCreateAction =
       /** Move a session reminder to the new session (its session failed). */
       type: 'repin_reminder';
       reminderId: string;
+    }
+  | {
+      /** Take over the chat threads bound to a failed predecessor session. */
+      type: 'adopt_chat_threads';
+      fromSessionId: string;
     };
 
 export type SessionLifecycleStatus =

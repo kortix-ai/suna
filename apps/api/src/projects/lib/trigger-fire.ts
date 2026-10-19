@@ -421,7 +421,8 @@ async function fireSessionReminder(
 
 /**
  * The reminder's session failed: start a successor that inherits its sharing
- * (as its child), hand it the reminder text, and pin the reminder to it.
+ * (as its child), hand it the reminder text, pin the reminder to it, and move
+ * the failed session's chat threads to it so replies there reach it.
  */
 async function fireReminderSuccessor(
   input: Parameters<typeof fireGitTrigger>[0],
@@ -447,7 +448,7 @@ async function fireReminderSuccessor(
       metadata: { reminder_successor_of: failedSessionId },
     },
     metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
-    postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }],
+    postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
   });
   const successorId = result.sessionId ?? result.row?.sessionId;
   if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {

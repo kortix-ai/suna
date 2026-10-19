@@ -61,6 +61,7 @@ means Files is off for the project: tell the user that a goal needs it.
   "sessions": [{ "id": "<session_id>", "role": "coordinator", "since": "2026-10-19T19:00:00Z" }],
   "reminder_id": "reminder.3f9a1c2e7b04",
   "verified_by": null,
+  "threads": [{ "person": "user", "channel": "D0123456789", "thread": "1700000000.000100" }],
   "next_wake_at": "2026-10-20T09:00:00Z",
   "updated_at": "2026-10-19T19:30:00Z"
 }
@@ -148,6 +149,13 @@ turn. The answer arrives as a new message and wakes you.
 - Use the channels this project has. `kortix connectors ls` lists them
   (email, Slack, and others). Use the one the person answered on before, else
   the one they use most. Never invent a channel.
+- **One thread per person per goal.** Replies reach you only in a thread bound
+  to this session. On Slack, the first `slack send --channel <DM or channel>`
+  binds its thread (read `thread_binding` in the output; the `kortix-slack`
+  skill). Store it in `goal.json` `threads` (`{"person", "channel", "thread"}`)
+  and post every later message for that person with `--thread`. Tell them
+  once: "reply in this thread". A successor session that replaces a failed
+  coordinator takes these threads over on its own.
 - Raise the pressure with each nag (`nags`): first a reminder, then the
   consequence of the delay ("the EIC cut-off is 2026-11-04; without the
   financials I cannot submit"), then a short daily ping. Stay professional.
