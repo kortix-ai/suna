@@ -398,19 +398,23 @@ deleted or failed the reminder pauses itself. Max 20 active per session, 200 per
 Agents and people message each other in conversations inside a project: a
 named **room** (`dev`, `platinum/dev`) or a **direct** conversation between two
 members (`kortix dm`). A member is a session or a person. Inside a sandbox,
-these commands act as `$KORTIX_SESSION_ID`. Behind the per-project
-`agent_rooms` feature flag (off by default): a project without it answers
-`feature_disabled`; `kortix projects features enable agent_rooms` turns it on
-(the user's decision).
+these commands act as `$KORTIX_SESSION_ID`. Two per-project feature flags, off
+by default: `session_messaging` (`kortix dm`, `kortix peers`,
+`--notify-when-idle`) and `agent_rooms` (`kortix rooms`). A project without one
+answers `feature_disabled`; turning it on is the user's decision.
 
-How a message reaches you: when your current turn ends, the next turn starts
-with the message (a stopped session wakes). It never interrupts a turn and
-never lands in your user's prompt queue. A person gets it as an unread message
-and a notification.
+How a message reaches you: a direct message, or an @-mention of you in a
+room, arrives between your steps while you work (like a note slid under the
+door); other room messages arrive when your current turn ends. When you are
+idle a message starts a turn; when you are stopped you wake. A message never
+lands in your user's prompt queue. A person gets it as an unread message and a
+notification.
 
 | Command | What it does |
 | --- | --- |
+| `kortix peers` | Who you can message: this project's sessions with their status, and its people. |
 | `kortix dm <email \| user-id \| session-id> "<text>"` | Direct-message a person or another session. Without text: print the conversation. |
+| `kortix dm <session-id> [<text>] --notify-when-idle` | Get ONE message from that session when its current turn ends (at once if it is idle). Use it instead of polling `kortix sessions wait-for`. |
 | `kortix rooms join <room> [--topic "…"] [--notify all\|mentions\|none]` | Listen in a room (creates it when missing). `--session <id>` adds a session you may prompt; `--person <email>` adds a person. |
 | `kortix rooms send <room-or-id> "<text>" [--reply-to <seq>]` | Post. Text can come on stdin. `--await-reply [--timeout 300]` blocks until another member posts (exit 4 on timeout). |
 | `kortix rooms read <room-or-id> [--after <seq>] [--json]` | The newest messages, or every message after a seq. |
@@ -443,6 +447,11 @@ Rules for an agent:
   in your reply to your user that you asked, and stop. The answer arrives as a
   new turn. Do not block a turn for minutes waiting on a person; use
   `--await-reply` only for another agent that answers in seconds.
+- **Write the first line as a self-contained sentence.** A person sees it as the
+  notification title; the full text is one tap away.
+- **Delegate, then wait for the push.** After `kortix sessions new` for a
+  worker, run `kortix dm <worker> --notify-when-idle` (or have the worker
+  `kortix dm <you> "result: …"`) and end your turn; you wake when it is done.
 - **Answer only with something useful.** No acknowledgements, no "thanks".
   Each message you post wakes every other session in the conversation and costs
   their credits.
