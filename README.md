@@ -274,11 +274,11 @@ Ask us and we'll tell you which one you're on.
 
 ## White-label
 
-Put your own name and logo on Kortix, restructure it, and sell it to your customers as your own
-product. A white-label license gives you the rights the open license does not: your brand in place
-of ours, and Kortix as a hosted service for third parties. In return, your Kortix runs on Kortix
-compute: sandboxes on [Platinum](https://www.platinum.dev), the most affordable sandbox cloud for
-AI agents, and model inference from Kortix. Terms, modes and deal structures:
+Kortix stays open source. On top of that, a white-label license lets you run Kortix however you
+want: your name and logo in place of ours, your own structure, and Kortix as a hosted service for
+your customers. The one requirement is an Exclusive Compute Agreement: your sandboxes run on
+[Platinum](https://www.platinum.dev), the most affordable sandbox cloud for AI agents, and your
+GPU inference comes from Kortix, at rates we guarantee to be competitive. Details:
 **[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. To get a license, email
 [marko@kortix.ai](mailto:marko@kortix.ai).
 
