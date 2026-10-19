@@ -15,10 +15,10 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | --- | --- |
 | `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
-| `@kortix/ui/session` | The session thread: `SessionThread` and its building blocks. It needs `@kortix/sdk` and its React peers. |
-| `@kortix/ui/session` | The same `SessionThread`, plus `ModelPicker` and `AgentPicker` for a form outside a session. |
+| `@kortix/ui/session` | The session thread: `SessionThread`, its building blocks, `ModelPicker` and `AgentPicker`. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/<module>` | One curated entry per module: `composer`, `session-panel`, `workspace`, `files`, `file-viewer`, `markdown`, `genui`, `diff`, `changes`, `terminal`, `browser`, `apps`, `access`, `customize`, `icons`, `i18n`. See [Modules](#modules). |
 | `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
-| `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
+| `@kortix/ui/lib/<name>`, `/hooks/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
 `react` and `react-dom` 18 or later are peer dependencies. Install the rest by what you use:
@@ -26,7 +26,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | You use | Also install |
 | --- | --- |
 | `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
-| `@kortix/ui/session` or `@kortix/ui/session`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| `@kortix/ui/session`, or any module entry that renders project or session data | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
 | The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
 After the first npm release:
@@ -240,6 +240,26 @@ Each component is one subpath, `@kortix/ui/<file>`. The live catalog at [kortix.
 
 Compose before you create. Use `Modal` for a dialog, `Hint` for a tooltip, `Loading` for a spinner, `Badge` for a chip and `ConfirmDialog` before a destructive action. Never call `sonner`'s `toast()` directly, and never use an icon with `animate-spin` as a spinner. Icons come from `@phosphor-icons/react`.
 
+## Modules
+
+Every part of a Kortix session is a module with one entry. Each entry is a curated list of names: that list is the public API. Every piece needs `UiProvider` and a `QueryClientProvider` at the root.
+
+| Entry | Holds | Mount |
+| --- | --- | --- |
+| `@kortix/ui/session` | The conversation: `SessionThread`, `SessionChat`, turns, tool rows and `ToolRegistry`, prompts, status surfaces, pickers, session rename and delete | the `useSession(projectId, sessionId)` result |
+| `@kortix/ui/composer` | The message composer: `ComposerChatInput`, `SessionChatInput`, its chrome, the tiptap editor parts and the send pipeline | a mounted session; `ComposerChatInput` also before one exists |
+| `@kortix/ui/session-panel` | The session side panel: `SessionPanelProvider`, `ActionPanel`, `SessionFiles`, `SessionChanges`, `SessionAudit` | `SessionPanelProvider` (`sessionId`, `projectId`, `projectSessionId`) |
+| `@kortix/ui/workspace` | Composed screens: `SessionWorkspace` (thread plus resizable side panel), `ProjectSidebar`, `ProjectSessionList`, `ProjectSessionsView`, `ProjectHome`, permission and route helpers | `projectId` |
+| `@kortix/ui/files` | Project files (the git-backed repo: `ProjectFilesProvider`, `DriveExplorer`, `FileExplorerPage`) and sandbox files (a live session's workspace: `SandboxFileExplorer`), drive and change-request hooks | `ProjectFilesProvider`, or a mounted `useSession` |
+| `@kortix/ui/file-viewer` | `FileContentRenderer` for any file kind (pdf, docx, xlsx, csv, pptx, zip, images, code), `FilePreviewModal` | `FileSourceProvider` |
+| `@kortix/ui/markdown`, `@kortix/ui/genui` | `UnifiedMarkdown`, `MarkdownWithFrontmatter`, `HighlightedCode`; typed UI blocks in assistant text | none |
+| `@kortix/ui/diff`, `@kortix/ui/changes` | `DiffView`; `ChangeList` with its vocabulary | none |
+| `@kortix/ui/terminal`, `@kortix/ui/browser` | `SessionTerminal`, `PtyTerminal`; `SessionBrowser` | a mounted `useSession` |
+| `@kortix/ui/apps` | `AppPreview`, the frame pool, the App view model | none |
+| `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles (`AccessDialog`, `RoleSelect`, `PrincipalPicker`); the project configuration pages (`ConnectorsPage`, `AgentsPage`, `TriggersPage`, `SecretsPage`, `ModelsPage`, `SkillsPage`, `ProjectSettingsPage`) | `projectId` |
+
+The full name list of every entry is in the package skill, `skills/kortix-ui/references/modules.md`. A deep path such as `@kortix/ui/session/thread/session-chat` resolves, but it has no semver: the Kortix web app reads deep paths while it moves to the entries. Import the entry.
+
 ## Add a chat
 
 `SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result. It is the thread the Kortix web app renders: the transcript, the streaming turn, tool rows, permission and question prompts, the send error, and the composer with attachments, slash commands, the model and agent pickers and Stop.
@@ -267,7 +287,7 @@ The parent sets the height, and the thread fills it. Everything reads off `sessi
 | `readOnly` | Hides the composer: a transcript to read. |
 | `className` | Classes on the thread's root. |
 
-`@kortix/ui/session` exports the same `SessionThread`, plus `ModelPicker` and `AgentPicker`: controlled pickers over a plain list, for a form outside a session such as a new-session form. `providerLabel` on `ModelPicker` relabels a provider (a white-label returns its own name for `model.providerID === 'kortix'`).
+`@kortix/ui/session` also exports `ModelPicker` and `AgentPicker`: controlled pickers over a plain list, for a form outside a session such as a new-session form. `providerLabel` on `ModelPicker` relabels a provider (a white-label returns its own name for `model.providerID === 'kortix'`).
 
 ### Replace one tool row
 
@@ -285,7 +305,7 @@ ToolRegistry.register('lookup', LookupRow);
 
 ### Compose your own layout
 
-The building blocks of the thread come from `@kortix/ui/session` and read the same providers: `UserMessage`, `ThrottledMarkdown` (streaming markdown that holds back half-written code fences and tables), `UnifiedMarkdown`, `ToolPartRenderer`, `SessionChatInput` (the composer), `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`, `SessionBusyIndicator` and `SessionStartingLoader`.
+The building blocks of the thread come from `@kortix/ui/session` and read the same providers: `UserMessage`, `ThrottledMarkdown` (streaming markdown that holds back half-written code fences and tables), `UnifiedMarkdown`, `ToolPartRenderer`, `SessionChatInput` (the composer), `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`, `SessionBusyIndicator` and `SessionStartingLoader`. The composer parts are in `@kortix/ui/composer`, the side panel (files, changes, audit) in `@kortix/ui/session-panel`, and the composed screens (thread plus side panel, project sidebar, sessions list) in `@kortix/ui/workspace`. See [Modules](#modules).
 
 ### Render the transcript yourself
 

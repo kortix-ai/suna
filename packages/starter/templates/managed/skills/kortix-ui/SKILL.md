@@ -104,14 +104,15 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 | `@kortix/ui` (primitives, not for feature code: section 3) | `Dialog`, `DialogClose`, `DialogContent`, `DialogDescription`, `DialogFooter`, `DialogHeader`, `DialogOverlay`, `DialogPortal`, `DialogTitle`, `DialogTrigger`, `Tooltip`, `TooltipContent`, `TooltipProvider`, `TooltipTrigger` |
 | `@kortix/ui` (navigation) | `FilterBar`, `FilterBarItem`, `Tabs`, `TabsContent`, `TabsList`, `TabsListCompact`, `TabsTrigger`, `TabsTriggerCompact`, `tabsTriggerHeightVariants`, `tabsTriggerPaddingVariants`, `tabsTriggerTextVariants`, `TabsListType`, `TabsSize`, `TabsTriggerSize`, `TabsTriggerVariant`, `TabsUnderlineSize` |
 | `@kortix/ui` (conversation) | `Bubble`, `BubbleContent`, `BubbleGroup`, `BubbleReactions`, `bubbleVariants`, `Message`, `MessageAvatar`, `MessageContent`, `MessageFooter`, `MessageGroup`, `MessageHeader`, `Marker`, `MarkerContent`, `MarkerIcon`, `markerVariants` |
-| `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing` |
+| `@kortix/ui` (hooks, helpers) | `UiLink`, `UiImage`, `useUiViewer`, `UiViewer`, `UiHostComponents`, `useDebounce`, `useIsMobile`, `useMediaQuery`, `useSlashFocus`, `lazyClient`, `spring`, `floatingZ`, `dialogContentZ`, `dialogOverlayZ`, `useDialogDepth`, `hasOpenFloatingLayer`, `hasOpenNestedDialog`, `DEFAULT_ICON_WEIGHT`, `ICON_WEIGHTS`, `SHIPPED_ICON_WEIGHTS`, `faviconUrlForHostname`, `setUiTelemetry`, `setUiHostEnv` |
+| `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing`, `WALLPAPERS`, `DEFAULT_WALLPAPER_ID`, `getWallpaperById`, `Wallpaper` |
 | `@kortix/ui/session` (whole thread) | `SessionThread`, `SessionThreadProps` |
 | `@kortix/ui/session` (blocks) | `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `ToolPartRenderer`, `SessionChatInput`, `SessionChatInputProps`, `AgentSelector`, `ModelSelector`, `ModelSelectorProps`, `SessionPermissionPrompt`, `QuestionPrompt`, `QuestionPromptHandle`, `TurnErrorDisplay`, `SessionBusyIndicator`, `SessionStartingLoader` |
-| `@kortix/ui/session` (tool rows) | `ToolRegistry`, `ToolProps`, `ToolComponent`, `BasicTool`, `BasicToolProps`, `GenericTool` |
-| `@kortix/ui/session` | `SessionThread` (the same one), `SessionThreadProps`; pickers for a form outside a session: `ModelPicker`, `filterModels`, `AgentPicker` |
+| `@kortix/ui/session` (tool rows, pickers) | `ToolRegistry`, `ToolProps`, `ToolComponent`, `BasicTool`, `BasicToolProps`, `GenericTool`; for a form outside a session: `ModelPicker`, `filterModels`, `AgentPicker` |
 
-Every other component is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>`
-for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` and `@kortix/ui/icons/<name>`. Host-free helpers: `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures; `UiTranslator`, `UiI18nHost`, `UiMessages`, `UiUseTranslations`, `defaultUiMessages`: the bundled English catalog; `createTranslator`), `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event` so tsc checks event names), `lib/lazy-client` (`lazyClient(load, { fallback })`: `next/dynamic` `ssr: false` without Next), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`; reports to `captureException`).
+Every other primitive is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>` for the dot matrices).
+Each module has one entry; `references/modules.md` lists every export and what to mount it in: `@kortix/ui/session`, `@kortix/ui/composer`, `@kortix/ui/session-panel`, `@kortix/ui/workspace`, `@kortix/ui/files`, `@kortix/ui/file-viewer`, `@kortix/ui/markdown`, `@kortix/ui/genui`, `@kortix/ui/diff`, `@kortix/ui/changes`, `@kortix/ui/terminal`, `@kortix/ui/browser`, `@kortix/ui/apps`, `@kortix/ui/access`, `@kortix/ui/customize`, `@kortix/ui/icons`, `@kortix/ui/theme`, `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures over `UiProvider i18n` or the bundled English catalog).
+A deep path (`@kortix/ui/<module>/<path>`) has no semver: apps/web reads them through its shims; a host imports the entry. Also: `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event`), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`).
 
 ## 8. Chat recipe
 
@@ -127,7 +128,7 @@ export function Chat({ projectId, sessionId }: { projectId: string; sessionId: s
 - It is the thread apps/web renders. Host needs: `QueryClientProvider`, `UiProvider`, `<Toaster />`. The parent sets the height.
   Install `@tanstack/react-query`, `@openuidev/lang-core@0.3.1` and `zod` with it: optional `@kortix/sdk` peers the thread needs.
 - A custom tool row: `ToolRegistry.register('<tool name>', Row)`; `Row` gets `ToolProps`, draws `BasicTool`.
-- A layout of your own composes the blocks above from the same `useSession` result. Never a raw `fetch`.
+- A layout of your own composes the blocks above (`@kortix/ui/session-panel`, `@kortix/ui/workspace`) from the same `useSession` result. Never a raw `fetch`.
 - A whole dashboard or App (install, client, providers, theme, project and session lists, embedded thread, custom tool row, App sign-in): `references/custom-dashboard.md`. Every sample in it compiles.
 
 ## 9. Verify

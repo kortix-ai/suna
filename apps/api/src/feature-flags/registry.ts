@@ -29,7 +29,7 @@
  *   4. Another hand-written copy in that package's projects.test.ts
  *   5. An entry below, DECLARING its enforcement mode
  *   6. One `useFeatureFlag` call + one map entry in
- *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
+ *      packages/ui/src/internal/lib/use-project-feature-flags.ts (and move the trailing
  *      `isLoading:` to the newly-last hook)
  *
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or

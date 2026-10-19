@@ -2,9 +2,9 @@
 
 The shared React component library for `apps/web`, Kortix Apps, the
 white-label demo and SDK hosts. Components are Tailwind v4 class strings themed
-by CSS variables. Every `apps/web/src/components/ui/<name>` file lives here as
-`src/components/ui/<name>.tsx`; `apps/web` keeps a one-line re-export shim at
-each old path.
+by CSS variables. The whole session UI lives here, one module per
+responsibility (layout below); `apps/web` keeps a one-line re-export shim at
+each old path of a file that moved here.
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
@@ -15,7 +15,8 @@ After the first npm release: `npm i @kortix/ui`.
   from `packages/starter/templates/managed/skills/kortix-ui/SKILL.md`
   (`kortix-ui` is in `KORTIX_MANAGED_SKILL_NAMES`, so the sandbox bake ships it).
   `src/skill.test.ts` fails when the copies (SKILL.md and `references/`) differ,
-  or when the skill's Components table misses an export of a barrel.
+  or when the skill's Components table (root, theme) or `references/modules.md`
+  (every module entry) misses an export.
 - Live catalog: the `/design-system` route of `apps/web`.
 
 ## Use it
@@ -182,8 +183,8 @@ import { SessionThread } from '@kortix/ui/session';
 `SessionThread` is the thread apps/web renders: transcript, tool rows,
 permission and question prompts, the composer with its model and agent
 pickers. `hideHeader` hides its title row; `readOnly` hides the composer. The
-parent sets the height. `@kortix/ui/session` exports the same `SessionThread`,
-plus `ModelPicker` and `AgentPicker` for a form outside a session.
+parent sets the height. `@kortix/ui/session` also exports `ModelPicker` and
+`AgentPicker` for a form outside a session.
 
 `src/session/index.ts` lists the building blocks for a host that composes its
 own layout: `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`,
@@ -208,6 +209,28 @@ A whole dashboard or App (client, providers, theme, project and session lists,
 the embedded thread, a custom tool row, an App's viewer sign-in):
 `skills/kortix-ui/references/custom-dashboard.md`. Its samples are copies of a
 Vite + React 19 app that type-checks, builds and runs against a live API.
+
+## Layout
+
+`src/<module>/` holds one responsibility each. A file imports its own module or
+a lower layer; `internal` has no public entry and no semver.
+
+| Layer | Module | Entry |
+| --- | --- | --- |
+| 0 | `lib`, `hooks`, `icons`, `providers`, `i18n`, `theme`, `styles`, `types` | `.`, `./icons`, `./i18n`, `./theme` |
+| 1 | `primitives`: the design-system components | `./<name>` per file |
+| 2 | `internal`: stores, hooks, helpers, the sandbox file data layer, share and layout bits | none |
+| 3 | `markdown` (with `genui`, `setup-links`), `diff` | `./markdown`, `./genui`, `./diff` |
+| 4 | `changes`, `files` (`tree`, `runtime`, `project`, `viewer`, `renderers`, `editor`, `drives`), `terminal`, `apps`, `browser`, `access` | `./changes`, `./files`, `./file-viewer`, `./terminal`, `./apps`, `./browser`, `./access` |
+| 5 | `session` (`thread`, `turn`, `composer`, `tool`, `prompts`, `status`, `models`, `header`, `actions`, `scope`, `overrides`, `print`, `media`, `outcomes`, `pickers`, `panel`) | `./session`, `./composer`, `./session-panel` |
+| 6 | `customize`: project configuration pages | `./customize` |
+| 7 | `workspace`: composed screens | `./workspace` |
+
+"Sandbox files" are a live session's workspace (`files/runtime`); "project
+files" are the git-backed repo (`files/project`). Each entry is an explicit
+barrel (no `export *`), listed in `scripts/gen-exports.mjs` `ENTRIES`. Every
+other module file also gets a deep key (`./<module>/<path>`) for apps/web's
+shims; deep keys carry no semver.
 
 ## Theming
 
@@ -272,6 +295,8 @@ How it stays themable:
   The generator is `.agents/skills/kortix-brand/scripts/generate-tokens.ts`.
 - Components: the `kortix-design-system` skill.
 - Imports inside the package are relative. Never import `apps/web` code.
+- `@kortix/shared` and `@kortix/manifest-schema` are private: they are
+  devDependencies, and `scripts/build.mjs` inlines what dist imports from them.
 - Edit a component here, never its `apps/web` shim. A shim is only
   `export * from '@kortix/ui/<name>'` (plus `'use client'` and the default
   re-export when the component has them).
