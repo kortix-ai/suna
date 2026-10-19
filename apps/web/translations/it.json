@@ -22034,6 +22034,8 @@
     "peopleLoadError": "Impossibile caricare le persone. Riprova.",
     "openFailed": "Impossibile aprire la conversazione",
     "cardRoom": "Stanza {name}",
+    "digestCount": "{count, plural, one {# nuovo messaggio} other {# nuovi messaggi}}",
+    "digestMore": "… e altri {count}",
     "cardFrom": "Da",
     "cardMessage": "Messaggio",
     "cardReplyTo": "Risposta a"

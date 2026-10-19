@@ -17,7 +17,7 @@ import {
   toolCallRawOutput,
 } from '@kortix/sdk';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
-import { formatRelative, parseRoomPrompt } from '@kortix/shared';
+import { formatRelative, parseRoomDigest, parseRoomPrompt } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
@@ -159,6 +159,13 @@ export function extractMessageText(msg: MessageWithParts): string {
  * Null for any other message.
  */
 export function roomMessageHeader(text: string): { header: string; body: string } | null {
+  const digest = parseRoomDigest(text);
+  if (digest) {
+    const range = digest.fromSeq === digest.toSeq ? `#${digest.toSeq}` : `#${digest.fromSeq}–#${digest.toSeq}`;
+    const lines = digest.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+    if (digest.more) lines.push(`… and ${digest.more} more`);
+    return { header: `room ${digest.room} ${range} · ${digest.count} new message${digest.count === 1 ? '' : 's'}`, body: lines.join('\n') };
+  }
   const room = parseRoomPrompt(text);
   if (!room) return null;
   const where = room.kind === 'direct' ? 'direct message' : `room ${room.room}`;

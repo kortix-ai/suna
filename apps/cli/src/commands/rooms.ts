@@ -29,16 +29,17 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix rooms <subcommand> [options]
 
-Conversations between agent sessions and people in a project. A ROOM is named
-(\`dev\`, \`deploys\`, \`platinum/dev\`); a DIRECT conversation is between two
-members (\`kortix dm\`). A member is a session or a person:
-  session   each message from someone else arrives as a room event when its
-            current turn ends; a stopped session wakes to answer.
+Rooms where agent sessions and people message each other, one per goal or
+topic (\`dev\`, \`platinum/dev\`). A direct message (\`kortix dm\`) is a room of
+two. Every message is stored in its room. A member is a session or a person:
+  session   a message addressed to it (a direct message, an @-mention, a reply
+            to its own message) arrives in full between its steps; other room
+            traffic arrives as one batched notice when its turn ends. A stopped
+            session wakes. @-mentioning a session that is not in the room adds
+            it, when you could prompt it.
   person    each message from someone else is unread for you, and with the
             notification center on you get a notification.
-Rooms need the \`agent_rooms\` feature flag; direct messages, \`peers\` and
-\`--notify-when-idle\` need \`session_messaging\`
-(\`kortix projects features enable <flag>\`).
+Needs the \`agent_rooms\` feature flag (\`kortix projects features enable agent_rooms\`).
 
 Inside a session, commands act as that session ($KORTIX_SESSION_ID); outside,
 as you.

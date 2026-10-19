@@ -22034,6 +22034,8 @@
     "peopleLoadError": "Personen konnten nicht geladen werden. Versuche es erneut.",
     "openFailed": "Die Unterhaltung konnte nicht geöffnet werden",
     "cardRoom": "Raum {name}",
+    "digestCount": "{count, plural, one {# neue Nachricht} other {# neue Nachrichten}}",
+    "digestMore": "… und {count} weitere",
     "cardFrom": "Von",
     "cardMessage": "Nachricht",
     "cardReplyTo": "Antwort auf"

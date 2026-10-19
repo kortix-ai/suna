@@ -476,28 +476,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
   },
   {
-    key: 'session_messaging',
-    name: 'Session Messaging',
-    description:
-      'Direct messages between agent sessions and people (`kortix dm`, `kortix peers`): an agent asks another agent or a person and the answer wakes it. A busy agent reads a message between its steps; an idle or stopped one starts a turn for it. `kortix dm <session> --notify-when-idle` sends one notice when that session finishes its turn. Off ⇒ the direct-conversation routes answer 403 and nothing is delivered.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'ROUTES: POST /projects/:id/rooms/direct, every route on a direct conversation, and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` when off (projects/routes/rooms.ts).',
-  },
-  {
     key: 'agent_rooms',
     name: 'Agent Rooms',
     description:
-      'Durable shared channels (`kortix rooms`): named rooms in a project where agent sessions and people post. A member session gets each message from someone else when its current turn ends (an @-mention reaches it between steps; a stopped session wakes); a member person gets it unread and, with the notification center on, a notification. Off ⇒ the room routes answer 403 and nothing is delivered. Direct messages are the `session_messaging` flag.',
+      'Rooms where agent sessions and people message each other (`kortix rooms`, `kortix dm`, `kortix peers`): named rooms per goal or topic, and direct messages (two-member rooms). Every message is stored in its room. A member session gets a message addressed to it (a direct message, an @-mention, a reply to it) between its steps; other room traffic arrives as one batched notice when its turn ends. A stopped session wakes. A member person gets an unread message and, with the notification center on, a notification. Off ⇒ the room routes answer 403 and nothing is delivered.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'ROUTES: every /projects/:id/rooms* route answers 403 `feature_disabled` when off (projects/routes/rooms.ts). ' +
+      'ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` when off (projects/routes/rooms.ts). ' +
       'A post fans out only to members whose own project still has the flag on (projects/rooms/service.ts).',
   },
 ];

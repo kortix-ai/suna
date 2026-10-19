@@ -35,9 +35,9 @@ import { sessionHoldsLiveTurn } from '../session-lifecycle/inbox-admission';
 import { mintWireMessageId } from '../wire-message-id';
 import { promptModelOverride } from '../lib/prompt-model';
 import { AGENT_CHAIN_LIMIT, agentChainReached, mentionTokens, mentionsMember, roomMessagePrompt } from './envelope';
+import { ROOM_DIGEST_MAX_LINES, digestLineText, roomDigestText, type RoomDigestLine } from '@kortix/shared';
 
 export const AGENT_ROOMS_FLAG = 'agent_rooms' as const;
-export const SESSION_MESSAGING_FLAG = 'session_messaging' as const;
 /** How long `--notify-when-idle` waits for the session's turn to end. */
 export const IDLE_WATCH_TTL_MS = 24 * 60 * 60_000;
 export const ROOM_NAME = /^[a-z0-9][a-z0-9._/-]{0,63}$/;
@@ -47,6 +47,8 @@ export const ROOM_TOPIC_MAX_CHARS = 500;
 export const SENDER_MESSAGES_PER_MINUTE = 30;
 /** A sender's message identical to their previous one within this window is refused: a loop, not news. */
 export const DUPLICATE_WINDOW_MS = 60_000;
+/** A room digest waits this long for more messages before it is delivered. */
+export const DIGEST_HOLD_MS = 15_000;
 
 export type RoomNotify = 'all' | 'mentions' | 'none';
 export type RoomRow = typeof rooms.$inferSelect;
@@ -65,7 +67,14 @@ export type RoomDelivery = {
   member: string;
   session_id: string | null;
   user_id: string | null;
-  state: 'queued' | 'notified' | 'unread' | 'skipped';
+  /**
+   * `queued`: addressed to the session, delivered in full between its steps.
+   * `batched`: room traffic, part of one digest notice at its turn end.
+   * `unread` / `notified`: a person. `skipped`: see `reason`.
+   */
+  state: 'queued' | 'batched' | 'notified' | 'unread' | 'skipped';
+  /** True when the @-mention just added this session to the room. */
+  added?: boolean;
   /** Why a member got nothing: `sender`, `notify_none`, `not_mentioned`, `session_deleted`, `flag_off`, `agent_chain`, `no_access`, `sender_cannot_prompt`. */
   reason?: string;
 };
@@ -367,17 +376,21 @@ export async function postRoomMessage(input: {
 }): Promise<{ message: RoomMessageRow; deliveries: RoomDelivery[]; paused: boolean }> {
   const { room, sender } = input;
   const self = memberKey(senderRef(sender));
+  const tokens = mentionTokens(input.text);
   const senderFilter = sender.kind === 'session'
     ? eq(roomMessages.senderSessionId, sender.sessionId)
     : and(eq(roomMessages.senderKind, 'member'), eq(roomMessages.senderUserId, sender.userId));
-  const [[previous], recent, [rate], members] = await Promise.all([
+  const [[previous], recent, [rate], [repliedTo]] = await Promise.all([
     db.select({ text: roomMessages.text, createdAt: roomMessages.createdAt }).from(roomMessages)
       .where(and(eq(roomMessages.roomId, room.roomId), senderFilter)).orderBy(desc(roomMessages.seq)).limit(1),
     db.select({ kind: roomMessages.senderKind }).from(roomMessages)
       .where(eq(roomMessages.roomId, room.roomId)).orderBy(desc(roomMessages.seq)).limit(AGENT_CHAIN_LIMIT),
     db.select({ count: sql<number>`count(*)::int` }).from(roomMessages)
       .where(and(eq(roomMessages.roomId, room.roomId), senderFilter, gte(roomMessages.createdAt, new Date(Date.now() - 60_000)))),
-    listRoomMembers(room.roomId),
+    input.replyToSeq === null
+      ? Promise.resolve([] as { senderSessionId: string | null }[])
+      : db.select({ senderSessionId: roomMessages.senderSessionId }).from(roomMessages)
+        .where(and(eq(roomMessages.roomId, room.roomId), eq(roomMessages.seq, input.replyToSeq))).limit(1),
   ]);
   if ((rate?.count ?? 0) >= SENDER_MESSAGES_PER_MINUTE) {
     throw new RoomError(429, `At most ${SENDER_MESSAGES_PER_MINUTE} messages per minute per sender in one conversation`, 'room_rate_limited');
@@ -388,25 +401,29 @@ export async function postRoomMessage(input: {
   if (input.replyToSeq !== null && input.replyToSeq > room.lastSeq) {
     throw new RoomError(400, `reply_to #${input.replyToSeq} does not exist in this conversation`, 'reply_to_unknown');
   }
-  // A session's message on top of AGENT_CHAIN_LIMIT session messages reaches
-  // no other SESSION: two agents answering each other must not run for ever
-  // on someone's credits. People still get it. Any person posting resets it.
-  const paused = sender.kind === 'session' && agentChainReached(recent.map((row) => row.kind), AGENT_CHAIN_LIMIT);
-  const flagOff = await projectsWithFlagOff(room.projectId, members.flatMap((m) => (m.memberKind === 'session' ? [m.projectId] : [])));
-  const tokens = mentionTokens(input.text);
-  const direct = room.kind === 'direct';
-  const peopleAllowed = new Set(await filterRoomRecipients(
-    room.accountId,
-    room.projectId,
-    members.flatMap((m) => (m.memberKind === 'person' && memberKey(refOfRow(m)) !== self ? [m.userId!] : [])),
-  ));
-
+  let members = await listRoomMembers(room.roomId);
   // No laundering: a message reaches a session only when the person vouching
   // for the sender could prompt that session themselves — the person who
   // posted, or the person who put the sending session in this conversation.
   const voucher = sender.kind === 'member'
     ? sender.userId
     : members.find((m) => m.sessionId === sender.sessionId)?.addedByUserId ?? sender.userId;
+  // An @-mention of a session that is not in the room yet adds it, when the
+  // voucher could prompt it; in a goal room nobody has to add an agent first.
+  const added = room.kind === 'room' ? await addMentionedSessions(room, members, tokens, voucher) : new Set<string>();
+  if (added.size > 0) members = await listRoomMembers(room.roomId);
+
+  // A session's message on top of AGENT_CHAIN_LIMIT session messages reaches
+  // no other SESSION: two agents answering each other must not run for ever
+  // on someone's credits. People still get it. Any person posting resets it.
+  const paused = sender.kind === 'session' && agentChainReached(recent.map((row) => row.kind), AGENT_CHAIN_LIMIT);
+  const flagOff = await projectsWithFlagOff(room.projectId, members.flatMap((m) => (m.memberKind === 'session' ? [m.projectId] : [])));
+  const direct = room.kind === 'direct';
+  const peopleAllowed = new Set(await filterRoomRecipients(
+    room.accountId,
+    room.projectId,
+    members.flatMap((m) => (m.memberKind === 'person' && memberKey(refOfRow(m)) !== self ? [m.userId!] : [])),
+  ));
   const promptable = await mayPromptSessions(
     voucher,
     room.accountId,
@@ -414,21 +431,32 @@ export async function postRoomMessage(input: {
   );
 
   const deliveries: RoomDelivery[] = [];
-  const sessionTargets: Array<(typeof members)[number] & { steer: boolean }> = [];
+  const addressedTargets: typeof members = [];
+  const digestTargets: typeof members = [];
   const personTargets: string[] = [];
   for (const member of members) {
     const ref = refOfRow(member);
     const verdict = (state: RoomDelivery['state'], reason?: string) =>
-      deliveries.push({ member: memberKey(ref), session_id: member.sessionId, user_id: member.userId, state, ...(reason ? { reason } : {}) });
+      deliveries.push({
+        member: memberKey(ref),
+        session_id: member.sessionId,
+        user_id: member.userId,
+        state,
+        ...(reason ? { reason } : {}),
+        ...(member.sessionId && added.has(member.sessionId) ? { added: true } : {}),
+      });
     const name = member.memberKind === 'session' ? sessionDisplayName(member.metadata) : null;
-    // A direct message is addressed to its peer: `mentions` does not filter it.
-    const mentioned = direct || mentionsMember(tokens, {
-      ids: [member.sessionId ?? member.userId ?? ''],
-      names: [member.agentName, name].filter((v): v is string => !!v && v !== 'default'),
-    });
+    // Addressed to this member: a direct message, an @-mention, or a reply to
+    // a message it sent. `mentions` never filters an addressed message.
+    const addressed = direct
+      || mentionsMember(tokens, {
+        ids: [member.sessionId ?? member.userId ?? ''],
+        names: [member.agentName, name].filter((v): v is string => !!v && v !== 'default'),
+      })
+      || (!!member.sessionId && repliedTo?.senderSessionId === member.sessionId);
     if (memberKey(ref) === self) verdict('skipped', 'sender');
     else if (member.notify === 'none') verdict('skipped', 'notify_none');
-    else if (member.notify === 'mentions' && !mentioned) verdict('skipped', 'not_mentioned');
+    else if (member.notify === 'mentions' && !addressed) verdict('skipped', 'not_mentioned');
     else if (member.memberKind === 'person') {
       if (!peopleAllowed.has(member.userId!)) verdict('skipped', 'no_access');
       else {
@@ -439,9 +467,12 @@ export async function postRoomMessage(input: {
     else if (flagOff.has(member.projectId)) verdict('skipped', 'flag_off');
     else if (!promptable.has(member.sessionId!)) verdict('skipped', 'sender_cannot_prompt');
     else if (paused) verdict('skipped', 'agent_chain');
-    else {
-      sessionTargets.push({ ...member, steer: mentioned });
+    else if (addressed) {
+      addressedTargets.push(member);
       verdict('queued');
+    } else {
+      digestTargets.push(member);
+      verdict('batched');
     }
   }
 
@@ -467,8 +498,8 @@ export async function postRoomMessage(input: {
       await tx.update(roomMembers).set({ lastReadSeq: bumped.lastSeq })
         .where(and(eq(roomMembers.roomId, room.roomId), eq(roomMembers.userId, sender.userId)));
     }
-    if (sessionTargets.length > 0) {
-      const values = sessionTargets.map((member) => {
+    if (addressedTargets.length > 0) {
+      const values = addressedTargets.map((member) => {
         const idempotencyKey = `room:${row!.messageId}:${member.sessionId}`;
         keys.push(idempotencyKey);
         return buildContinueSessionCommandValues({
@@ -488,22 +519,20 @@ export async function postRoomMessage(input: {
           }),
           idempotencyKey,
           // An automation row, like a reminder: no clientMessageId, so it is
-          // not a person's queued prompt. Addressed to this session, it
-          // steers a running turn (falls back to the turn boundary when the
-          // turn's prompter is someone else); otherwise it waits.
-          ...(member.steer
-            ? { delivery: 'steer' as const, wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id, remintOnDelivery: true }
-            : {}),
-          overrides: {
-            agent: null,
-            model: promptModelOverride(null, member.metadata as Record<string, unknown> | null),
-            variant: null,
-            directory: null,
-          },
+          // not a person's queued prompt. Addressed to this session, it steers
+          // a running turn (falls back to the turn boundary when the turn's
+          // prompter is someone else).
+          delivery: 'steer',
+          wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
+          remintOnDelivery: true,
+          overrides: promptOverrides(member.metadata),
         });
       });
       await tx.insert(sessionLifecycleCommands).values(values)
         .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    }
+    for (const member of digestTargets) {
+      keys.push(await appendToDigest(tx, room, row!, member));
     }
     return row!;
   });
@@ -512,6 +541,113 @@ export async function postRoomMessage(input: {
   }
   if (personTargets.length > 0) await notifyPeople(room, message, sender, personTargets, deliveries);
   return { message, deliveries, paused };
+}
+
+function promptOverrides(metadata: unknown) {
+  return {
+    agent: null,
+    model: promptModelOverride(null, metadata as Record<string, unknown> | null),
+    variant: null,
+    directory: null,
+  };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DigestState = { roomId: string; fromSeq: number; toSeq: number; lines: RoomDigestLine[]; more: number };
+
+/**
+ * Add `message` to the session's pending digest for this room, or start one.
+ * A digest waits DIGEST_HOLD_MS so a burst becomes one notice, and a busy
+ * session gets it when its turn ends. Returns the row's idempotency key.
+ */
+async function appendToDigest(
+  tx: Tx,
+  room: RoomRow,
+  message: RoomMessageRow,
+  member: Awaited<ReturnType<typeof listRoomMembers>>[number],
+): Promise<string> {
+  const line: RoomDigestLine = {
+    seq: message.seq,
+    sender: message.senderKind === 'session' ? `agent session ${message.senderLabel}` : message.senderLabel,
+    text: digestLineText(message.text),
+  };
+  const roomProjectId = member.projectId === room.projectId ? null : room.projectId;
+  // FOR UPDATE: the drain claims a row with UPDATE … SKIP LOCKED, so a row we
+  // hold cannot be claimed half-written, and a row already claimed is not
+  // `queued` any more and starts a new digest.
+  const [pending] = await tx.select({
+    commandId: sessionLifecycleCommands.commandId,
+    idempotencyKey: sessionLifecycleCommands.idempotencyKey,
+    payload: sessionLifecycleCommands.payload,
+  })
+    .from(sessionLifecycleCommands)
+    .where(and(
+      eq(sessionLifecycleCommands.sessionId, member.sessionId!),
+      eq(sessionLifecycleCommands.status, 'queued'),
+      sql`${sessionLifecycleCommands.payload}->'roomDigest'->>'roomId' = ${room.roomId}`,
+    ))
+    .limit(1)
+    .for('update');
+  if (pending) {
+    const state = (pending.payload as { roomDigest: DigestState }).roomDigest;
+    const next: DigestState = state.lines.length < ROOM_DIGEST_MAX_LINES
+      ? { ...state, toSeq: message.seq, lines: [...state.lines, line] }
+      : { ...state, toSeq: message.seq, more: state.more + 1 };
+    const text = roomDigestText({ room: room.name ?? room.roomId, ...next, roomProjectId });
+    await tx.update(sessionLifecycleCommands)
+      .set({
+        payload: sql`jsonb_set(jsonb_set(${sessionLifecycleCommands.payload}, '{text}', to_jsonb(${text}::text)), '{roomDigest}', ${JSON.stringify(next)}::jsonb)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionLifecycleCommands.commandId, pending.commandId));
+    return pending.idempotencyKey!;
+  }
+  const state: DigestState = { roomId: room.roomId, fromSeq: message.seq, toSeq: message.seq, lines: [line], more: 0 };
+  const idempotencyKey = `room-digest:${room.roomId}:${member.sessionId}:${message.messageId}`;
+  const values = buildContinueSessionCommandValues({
+    source: 'system:room-message',
+    projectId: member.projectId,
+    accountId: room.accountId,
+    sessionId: member.sessionId!,
+    actorUserId: member.addedByUserId,
+    text: roomDigestText({ room: room.name ?? room.roomId, ...state, roomProjectId }),
+    idempotencyKey,
+    availableAt: new Date(Date.now() + DIGEST_HOLD_MS),
+    overrides: promptOverrides(member.metadata),
+  });
+  await tx.insert(sessionLifecycleCommands)
+    .values({ ...values, payload: { ...values.payload, roomDigest: state } })
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+  return idempotencyKey;
+}
+
+/**
+ * The sessions an @-mention names by 8+ characters of their id that are not in
+ * the room yet: each is added (notify `all`, vouched by `voucher`) when it is
+ * the only match in the room's project and the voucher could prompt it.
+ */
+async function addMentionedSessions(
+  room: RoomRow,
+  members: Awaited<ReturnType<typeof listRoomMembers>>,
+  tokens: Set<string>,
+  voucher: string,
+): Promise<Set<string>> {
+  const added = new Set<string>();
+  const known = members.flatMap((m) => (m.sessionId ? [m.sessionId] : []));
+  const prefixes = [...tokens].filter((t) => /^[0-9a-f-]{8,}$/.test(t) && !known.some((id) => id.startsWith(t)));
+  if (prefixes.length === 0) return added;
+  for (const prefix of prefixes.slice(0, 5)) {
+    const matches = await db.select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.projectId, room.projectId), sql`${projectSessions.sessionId} like ${`${prefix}%`}`))
+      .limit(2);
+    if (matches.length !== 1) continue;
+    const sessionId = matches[0]!.sessionId;
+    if (!(await mayPromptSessions(voucher, room.accountId, [sessionId])).has(sessionId)) continue;
+    await addMember(room.roomId, { ref: { kind: 'session', sessionId }, projectId: room.projectId, addedByUserId: voucher }, room.lastSeq);
+    added.add(sessionId);
+  }
+  return added;
 }
 
 /** The `message` notification for each person, when the project's notification center is on. */

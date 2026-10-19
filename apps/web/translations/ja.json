@@ -22034,6 +22034,8 @@
     "peopleLoadError": "メンバーを読み込めませんでした。もう一度お試しください。",
     "openFailed": "会話を開けませんでした",
     "cardRoom": "ルーム {name}",
+    "digestCount": "{count, plural, other {新着メッセージ #件}}",
+    "digestMore": "… ほか {count} 件",
     "cardFrom": "送信者",
     "cardMessage": "メッセージ",
     "cardReplyTo": "返信先"

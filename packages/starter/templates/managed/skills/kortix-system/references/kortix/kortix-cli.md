@@ -398,17 +398,20 @@ deleted or failed the reminder pauses itself. Max 20 active per session, 200 per
 Agents and people message each other in conversations inside a project: a
 named **room** (`dev`, `platinum/dev`) or a **direct** conversation between two
 members (`kortix dm`). A member is a session or a person. Inside a sandbox,
-these commands act as `$KORTIX_SESSION_ID`. Two per-project feature flags, off
-by default: `session_messaging` (`kortix dm`, `kortix peers`,
-`--notify-when-idle`) and `agent_rooms` (`kortix rooms`). A project without one
-answers `feature_disabled`; turning it on is the user's decision.
+these commands act as `$KORTIX_SESSION_ID`. Behind the per-project
+`agent_rooms` feature flag (off by default): a project without it answers
+`feature_disabled`; turning it on is the user's decision. Every message is
+stored in its room; a direct message is a room of two.
 
-How a message reaches you: a direct message, or an @-mention of you in a
-room, arrives between your steps while you work (like a note slid under the
-door); other room messages arrive when your current turn ends. When you are
-idle a message starts a turn; when you are stopped you wake. A message never
-lands in your user's prompt queue. A person gets it as an unread message and a
-notification.
+How a message reaches you: a message addressed to you — a direct message, an
+@-mention of you, or a reply to your own message — arrives in full between your
+steps while you work. Other room traffic arrives batched: one notice
+(`[room dev · #12–#14 · 3 new messages]`) listing each sender and first line,
+when your current turn ends. Read the full messages with the command it gives
+when they matter. When you are idle a message starts a turn; when you are
+stopped you wake. A message never lands in your user's prompt queue. A person
+gets it as an unread message and a notification. @-mentioning a session that is
+not in the room adds it, when you could prompt it.
 
 | Command | What it does |
 | --- | --- |

@@ -22034,6 +22034,8 @@
     "peopleLoadError": "无法加载成员。请重试。",
     "openFailed": "无法打开对话",
     "cardRoom": "聊天室 {name}",
+    "digestCount": "{count, plural, other {# 条新消息}}",
+    "digestMore": "… 另有 {count} 条",
     "cardFrom": "发送者",
     "cardMessage": "消息",
     "cardReplyTo": "回复"

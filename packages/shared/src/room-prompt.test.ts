@@ -32,3 +32,30 @@ describe('room prompt', () => {
     expect(parseRoomPrompt(undefined)).toBeUndefined();
   });
 });
+
+describe('room digest', () => {
+  test('many messages become one notice that round-trips, with the read command', async () => {
+    const { roomDigestText, parseRoomDigest, parseRoomPrompt } = await import('./room-prompt');
+    const text = roomDigestText({
+      room: 'dev', fromSeq: 12, toSeq: 14, more: 0,
+      lines: [{ seq: 12, sender: 'Ada', text: 'deploy at 5' }, { seq: 14, sender: 'agent session 3f2a1b9c (builder)', text: 'holding' }],
+    });
+    expect(text.split('\n')[0]).toBe('[room dev · #12–#14 · 2 new messages]');
+    expect(text).toContain('kortix rooms read dev --after 11');
+    expect(parseRoomDigest(text)).toEqual({
+      room: 'dev', fromSeq: 12, toSeq: 14, count: 2, more: 0,
+      lines: [{ seq: 12, sender: 'Ada', text: 'deploy at 5' }, { seq: 14, sender: 'agent session 3f2a1b9c (builder)', text: 'holding' }],
+    });
+    // A digest is not a single message, and a single message is not a digest.
+    expect(parseRoomPrompt(text)).toBeUndefined();
+    expect(parseRoomDigest('[room dev · #1 · from Ada]\n\nhi')).toBeUndefined();
+  });
+
+  test('one message reads singular; overflow reads "and N more"', async () => {
+    const { roomDigestText, parseRoomDigest } = await import('./room-prompt');
+    const one = roomDigestText({ room: 'dev', fromSeq: 3, toSeq: 3, more: 0, lines: [{ seq: 3, sender: 'Ada', text: 'x' }] });
+    expect(one.split('\n')[0]).toBe('[room dev · #3 · 1 new message]');
+    const many = roomDigestText({ room: 'dev', fromSeq: 1, toSeq: 25, more: 5, lines: [{ seq: 1, sender: 'Ada', text: 'x' }] });
+    expect(parseRoomDigest(many)).toMatchObject({ count: 6, more: 5, toSeq: 25 });
+  });
+});

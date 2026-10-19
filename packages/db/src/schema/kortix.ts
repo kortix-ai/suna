@@ -8067,7 +8067,7 @@ export const roomMembers = kortixSchema.table('room_members', {
 ]);
 
 /**
- * A one-shot "tell me when this session goes idle" (flag `session_messaging`).
+ * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
  * When the target session's turn ends, the watcher gets one direct message
  * from the target with the outcome, and the row is deleted. A row past
  * `expires_at` is dropped unanswered.

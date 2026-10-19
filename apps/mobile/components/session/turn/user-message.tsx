@@ -41,7 +41,7 @@ import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
 import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
-import { parseReminderPrompt, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -350,6 +350,8 @@ export function UserMessage({
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
   // A message from a room or a direct conversation: `[room dev · #2 · from …]` + the text.
   const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
+  // Room traffic batched into one turn: `[room dev · #a–#b · N new messages]`.
+  const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -369,7 +371,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo && !roomInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo && !roomInfo && !roomDigestInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -468,6 +470,27 @@ export function UserMessage({
       />,
       roomInfo.text ? <Text style={BUBBLE_TEXT_STYLE}>{roomInfo.text}</Text> : null,
       roomInfo.text,
+    );
+  }
+
+  if (roomDigestInfo) {
+    const range = roomDigestInfo.fromSeq === roomDigestInfo.toSeq ? `#${roomDigestInfo.toSeq}` : `#${roomDigestInfo.fromSeq}–#${roomDigestInfo.toSeq}`;
+    const count = `${roomDigestInfo.count} new message${roomDigestInfo.count === 1 ? '' : 's'}`;
+    const lines = roomDigestInfo.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+    if (roomDigestInfo.more) lines.push(`… and ${roomDigestInfo.more} more`);
+    const body = lines.join('\n');
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
+        source={roomDigestInfo.room}
+        sender={count}
+        title={roomDigestInfo.room}
+        subtitle={count}
+        rows={[{ label: 'Messages', value: range }]}
+      />,
+      <Text style={BUBBLE_TEXT_STYLE}>{body}</Text>,
+      body,
     );
   }
 

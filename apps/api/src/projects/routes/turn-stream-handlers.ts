@@ -540,7 +540,7 @@ export async function settleTurnEnd(
       }),
     );
   }
-  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag session_messaging).
+  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
   // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
   if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
     void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);

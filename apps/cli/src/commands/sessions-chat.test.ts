@@ -317,3 +317,12 @@ describe('roomMessageHeader', () => {
     expect(roomMessageHeader('hello')).toBeNull();
   });
 });
+
+describe('roomMessageHeader digest', () => {
+  test('a batched digest prints the room, the range and one line per message', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomDigestText } = await import('@kortix/shared');
+    const text = roomDigestText({ room: 'dev', fromSeq: 4, toSeq: 5, more: 0, lines: [{ seq: 4, sender: 'Ada', text: 'deploy at 5' }, { seq: 5, sender: 'Bob', text: 'ok' }] });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4–#5 · 2 new messages', body: '#4 Ada: deploy at 5\n#5 Bob: ok' });
+  });
+});

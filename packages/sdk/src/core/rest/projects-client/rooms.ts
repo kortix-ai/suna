@@ -88,9 +88,15 @@ export interface RoomDelivery {
   member: string;
   session_id: string | null;
   user_id: string | null;
-  /** `queued`: a room event owed to a session. `unread`/`notified`: a person. */
-  state: 'queued' | 'notified' | 'unread' | 'skipped';
+  /**
+   * `queued`: addressed to a session (a direct message, an @-mention, a reply
+   * to it), delivered in full between its steps. `batched`: room traffic, part
+   * of one digest notice when its turn ends. `unread` / `notified`: a person.
+   */
+  state: 'queued' | 'batched' | 'notified' | 'unread' | 'skipped';
   reason?: string;
+  /** True when this @-mention added the session to the room. */
+  added?: boolean;
 }
 
 export interface PostRoomMessageResult {

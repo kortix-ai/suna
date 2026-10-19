@@ -35,7 +35,6 @@ import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-sco
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { accountMemberUserIds } from '../../iam/membership-read';
 import { requireFeatureFlag } from '../../feature-flags/gate';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { filterRoomRecipients } from '../../notifications/access';
@@ -45,7 +44,6 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import {
   AGENT_ROOMS_FLAG,
-  SESSION_MESSAGING_FLAG,
   ROOM_MESSAGE_MAX_CHARS,
   ROOM_NAME,
   ROOM_TOPIC_MAX_CHARS,
@@ -148,7 +146,8 @@ const DeliverySchema = z.object({
   member: z.string(),
   session_id: z.string().nullable(),
   user_id: z.string().nullable(),
-  state: z.enum(['queued', 'notified', 'unread', 'skipped']),
+  state: z.enum(['queued', 'batched', 'notified', 'unread', 'skipped']),
+  added: z.boolean().optional(),
   reason: z.string().optional(),
 });
 
@@ -242,24 +241,14 @@ async function senderOf(c: Context, userId: string): Promise<RoomSender> {
   return { kind: 'member', userId, label: (await personLabels([userId])).get(userId) ?? 'a project member' };
 }
 
-type ConversationFlag = typeof AGENT_ROOMS_FLAG | typeof SESSION_MESSAGING_FLAG;
-const BOTH_FLAGS: ConversationFlag[] = [AGENT_ROOMS_FLAG, SESSION_MESSAGING_FLAG];
-/** Named rooms are `agent_rooms`; direct conversations are `session_messaging`. */
-const flagOf = (kind: string): ConversationFlag => (kind === 'direct' ? SESSION_MESSAGING_FLAG : AGENT_ROOMS_FLAG);
-const flagsOn = (metadata: unknown) => new Set(BOTH_FLAGS.filter((flag) => resolveFeatureFlag(metadata, flag)));
-
-/**
- * Load the project, require one of `flags`, and assert the read or write
- * leaf. The room leaves cover both kinds of conversation.
- */
-async function authorizeRooms(c: Context, projectId: string, mode: 'read' | 'write', flags: ConversationFlag[] = [AGENT_ROOMS_FLAG]) {
+/** Load the project, require the `agent_rooms` flag, and assert the read or write leaf. */
+async function authorizeRooms(c: Context, projectId: string, mode: 'read' | 'write') {
   // Loaded for read: the room leaves below are the gate. 'session' would also
   // assert project.session.start, which an agent granted only rooms lacks.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
-  if (!flags.some((flag) => resolveFeatureFlag(loaded.row.metadata, flag))) {
-    return { ok: false as const, response: requireFeatureFlag(c, loaded.row.metadata, flags[0]!)! };
-  }
+  const disabled = requireFeatureFlag(c, loaded.row.metadata, AGENT_ROOMS_FLAG);
+  if (disabled) return { ok: false as const, response: disabled };
   const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ROOM_READ : PROJECT_ACTIONS.PROJECT_ROOM_WRITE;
   assertAgentScope(c, action);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
@@ -268,12 +257,10 @@ async function authorizeRooms(c: Context, projectId: string, mode: 'read' | 'wri
 
 /** The conversation, when the caller may see it: a named room, or a direct one the caller is in. */
 async function loadRoom(c: Context, projectId: string, roomId: string, mode: 'read' | 'write') {
-  const access = await authorizeRooms(c, projectId, mode, BOTH_FLAGS);
+  const access = await authorizeRooms(c, projectId, mode);
   if (!access.ok) return access;
   const room = await getRoom(projectId, roomId);
   if (!room) return { ok: false as const, response: c.json({ error: 'Conversation not found' }, 404) };
-  const disabled = requireFeatureFlag(c, access.loaded.row.metadata, flagOf(room.kind));
-  if (disabled) return { ok: false as const, response: disabled };
   const me = callerRef(c, access.loaded.userId);
   if (room.kind === 'direct' && !(await memberOf(roomId, me))) {
     return { ok: false as const, response: c.json({ error: 'Conversation not found' }, 404) };
@@ -389,7 +376,7 @@ async function loadParticipant(c: Context, projectId: string, sessionId: string,
   if (!(isProjectSessionPrincipal(c) && callerKortixSessionId(c) === sessionId)) {
     return { ok: false as const, response: c.json({ error: "Only the session's own credential speaks for it here; people use /projects/{projectId}/rooms" }, 403) };
   }
-  const access = await authorizeRooms(c, projectId, mode, BOTH_FLAGS);
+  const access = await authorizeRooms(c, projectId, mode);
   if (!access.ok) return access;
   const room = await participantRoom(roomId, sessionId);
   if (!room) return { ok: false as const, response: c.json({ error: 'Conversation not found' }, 404) };
@@ -399,7 +386,7 @@ async function loadParticipant(c: Context, projectId: string, sessionId: string,
 /** Whether the caller passes the read authorization for `projectId`'s rooms. */
 async function mayReadRooms(c: Context, projectId: string): Promise<boolean> {
   try {
-    return (await authorizeRooms(c, projectId, 'read', BOTH_FLAGS)).ok;
+    return (await authorizeRooms(c, projectId, 'read')).ok;
   } catch (err) {
     if (err instanceof HTTPException) return false;
     throw err;
@@ -431,12 +418,10 @@ export function registerRoomsRoutes(): void {
   }), async (c) => {
     const { projectId } = c.req.valid('param');
     const { name, archived, mine } = c.req.valid('query');
-    const access = await authorizeRooms(c, projectId, 'read', mine === 'true' ? BOTH_FLAGS : [AGENT_ROOMS_FLAG]);
+    const access = await authorizeRooms(c, projectId, 'read');
     if (!access.ok) return access.response;
     if (mine === 'true') {
-      const on = flagsOn(access.loaded.row.metadata);
-      const rows = await serializeConversations(callerRef(c, access.loaded.userId), projectId);
-      return c.json({ rooms: rows.filter((row) => on.has(flagOf(row.kind))) }, 200);
+      return c.json({ rooms: await serializeConversations(callerRef(c, access.loaded.userId), projectId) }, 200);
     }
     const rows = await listRooms(projectId, { name, includeArchived: archived === 'true' });
     return c.json({ rooms: rows.map(({ row, memberCount }) => serializeRoom(row, memberCount)) }, 200);
@@ -494,7 +479,7 @@ export function registerRoomsRoutes(): void {
     if ([body.session_id, body.user_id, body.email].filter(Boolean).length !== 1) {
       return c.json({ error: 'Pass exactly one of session_id, user_id, email' }, 400);
     }
-    const access = await authorizeRooms(c, projectId, 'write', [SESSION_MESSAGING_FLAG]);
+    const access = await authorizeRooms(c, projectId, 'write');
     if (!access.ok) return access.response;
     const { loaded } = access;
     const me = callerRef(c, loaded.userId);
@@ -541,7 +526,7 @@ export function registerRoomsRoutes(): void {
   }), async (c) => {
     const { projectId } = c.req.valid('param');
     const { q } = c.req.valid('query');
-    const access = await authorizeRooms(c, projectId, 'read', BOTH_FLAGS);
+    const access = await authorizeRooms(c, projectId, 'read');
     if (!access.ok) return access.response;
     const { loaded } = access;
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
@@ -745,7 +730,7 @@ export function registerRoomsRoutes(): void {
     responses: { 200: json(z.object({ rooms: z.array(ConversationSchema) }), 'The conversations'), ...errors(400, 403, 404) },
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
-    const access = await authorizeRooms(c, projectId, 'read', BOTH_FLAGS);
+    const access = await authorizeRooms(c, projectId, 'read');
     if (!access.ok) return access.response;
     const callerSessionId = callerKortixSessionId(c);
     const visible = await loadVisibleSession(access.loaded, sessionId, callerSessionId, callerSessionId);
@@ -815,7 +800,7 @@ export function registerRoomsRoutes(): void {
     summary: 'Get one message when a session goes idle',
     description:
       'When the session\'s current turn ends, the caller (a session or a person) gets one direct message from it with the outcome. ' +
-      'Fires at once when the session holds no live turn. Expires after 24 hours. Needs what sending the session a prompt needs. Flag `session_messaging`.',
+      'Fires at once when the session holds no live turn. Expires after 24 hours. Needs what sending the session a prompt needs.',
     ...auth,
     request: { params: SessionParams },
     responses: {
@@ -824,7 +809,7 @@ export function registerRoomsRoutes(): void {
     },
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
-    const access = await authorizeRooms(c, projectId, 'write', [SESSION_MESSAGING_FLAG]);
+    const access = await authorizeRooms(c, projectId, 'write');
     if (!access.ok) return access.response;
     const { loaded } = access;
     const me = callerRef(c, loaded.userId);

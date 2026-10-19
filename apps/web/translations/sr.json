@@ -22034,6 +22034,8 @@
     "peopleLoadError": "Nije moguće učitati ljude. Pokušaj ponovo.",
     "openFailed": "Nije moguće otvoriti razgovor",
     "cardRoom": "Soba {name}",
+    "digestCount": "{count, plural, one {# nova poruka} few {# nove poruke} other {# novih poruka}}",
+    "digestMore": "… i još {count}",
     "cardFrom": "Od",
     "cardMessage": "Poruka",
     "cardReplyTo": "Odgovor na"

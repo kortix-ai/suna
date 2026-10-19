@@ -1,4 +1,4 @@
--- Migration: session_idle_watches — one-shot "notify me when this session goes idle" (flag session_messaging). One new table.
+-- Migration: session_idle_watches — one-shot "notify me when this session goes idle" (flag agent_rooms). One new table.
 --
 -- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
 -- Tune these down further for large/hot tables; raise statement_timeout only

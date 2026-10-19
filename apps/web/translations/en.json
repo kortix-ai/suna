@@ -22034,6 +22034,8 @@
     "peopleLoadError": "Could not load people. Try again.",
     "openFailed": "Could not open the conversation",
     "cardRoom": "Room {name}",
+    "digestCount": "{count, plural, one {# new message} other {# new messages}}",
+    "digestMore": "… and {count} more",
     "cardFrom": "From",
     "cardMessage": "Message",
     "cardReplyTo": "Reply to"

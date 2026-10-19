@@ -22034,6 +22034,8 @@
     "peopleLoadError": "Impossible de charger les personnes. Réessayez.",
     "openFailed": "Impossible d'ouvrir la conversation",
     "cardRoom": "Salon {name}",
+    "digestCount": "{count, plural, one {# nouveau message} other {# nouveaux messages}}",
+    "digestMore": "… et {count} de plus",
     "cardFrom": "De",
     "cardMessage": "Message",
     "cardReplyTo": "Réponse à"

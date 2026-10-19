@@ -22034,6 +22034,8 @@
     "peopleLoadError": "No se pudieron cargar las personas. Inténtalo de nuevo.",
     "openFailed": "No se pudo abrir la conversación",
     "cardRoom": "Sala {name}",
+    "digestCount": "{count, plural, one {# mensaje nuevo} other {# mensajes nuevos}}",
+    "digestMore": "… y {count} más",
     "cardFrom": "De",
     "cardMessage": "Mensaje",
     "cardReplyTo": "Respuesta a"
