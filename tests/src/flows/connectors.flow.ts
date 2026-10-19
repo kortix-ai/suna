@@ -1047,8 +1047,11 @@ flow(
     });
 
     await ctx.step(
-      'connection OAuth routes reject a non-Pipedream connector → 404/501',
+      'MCP connection sign-in on an unreachable server → 400 naming the server; finalize → not connected',
       async () => {
+        // #10266 gave MCP connections a sign-in on this route. The server URL
+        // does not resolve, so discovery fails: a 400 about the configured
+        // server, never a 500.
         const connect = await ctx.client
           .as(ctx.P.OWNER)
           .post(
@@ -1056,7 +1059,10 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        connect.status([404, 501]);
+        connect
+          .status(400)
+          .body()
+          .matches('$.error', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
 
         const finalize = await ctx.client
           .as(ctx.P.OWNER)
@@ -1065,7 +1071,7 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        finalize.status([404, 501]);
+        finalize.status(200).body().has('$.connected', false);
       },
     );
 

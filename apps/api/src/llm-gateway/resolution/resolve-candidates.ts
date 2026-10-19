@@ -140,6 +140,7 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId ?? null, userId: principal.userId,
         secretId: secret.secretId, value: secret.value, updatedAt: secret.updatedAt,
+        probe: context.options?.probe,
       });
       if (!credential) { failed.push(secret.label); continue; }
       // `poolSecretId`: a 429 on one account records its cooldown and moves
@@ -241,6 +242,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           projectId: principal.projectId, accountId: principal.accountId,
           sessionId: principal.sessionId ?? null, userId: principal.userId,
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
+          probe: context.options?.probe,
         });
         if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
       } catch (err) {
