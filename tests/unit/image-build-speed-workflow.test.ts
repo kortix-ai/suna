@@ -148,6 +148,9 @@ describe('every Linux job defaults to a free runner behind the runner switch', (
     'deploy-prod.yml:publish-sdk',
     'deploy-prod.yml:publish-agent-tunnel',
   ]);
+  // Jobs that need a real VM (systemd, a login session). Every sandbox runner
+  // behind a CI_RUNNER_* switch lacks one, so these pin a free GitHub-hosted label.
+  const realVmJobs = new Map([['capture-build.yml:linux-deb', 'ubuntu-22.04']]);
 
   it.each(workflows)('%s', (name) => {
     const source = read(name);
@@ -164,6 +167,10 @@ describe('every Linux job defaults to a free runner behind the runner switch', (
       if (githubHostedRunnerJobs.has(key)) {
         expect(value, `runs-on in ${key}`).toBe('ubuntu-latest');
         seenGithubHostedRunnerJobs.add(key);
+        continue;
+      }
+      if (realVmJobs.has(key)) {
+        expect(value, `runs-on in ${key}`).toBe(realVmJobs.get(key));
         continue;
       }
       expect(value, `runs-on in ${name}`).toMatch(tiered);

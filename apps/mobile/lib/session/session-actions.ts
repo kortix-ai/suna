@@ -2,9 +2,9 @@
  * The session actions sheet's rules (COR-148) — pure, so every rule has a test.
  *
  * `SessionActionsSheet` puts four rows above Rename · Share · …:
- *   1. Open change request — `OpenCRSheet` prefilled with the session's
- *      branch (`branch_name` → `base_ref`). A project API call, so it works
- *      for any session that carries its own branch.
+ *   1. Open change request — `OpenCRSheet` on the session's change request
+ *      (its diff base falls back to the project's default branch). A project
+ *      API call, so it works for any session that carries its own branch.
  *   2. View changes — the session's diff, read from the runtime's
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live

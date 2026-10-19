@@ -231,40 +231,18 @@ export function cleanErrorMessage(raw: string): string {
  * that returns the literal `null` is not the failure contract.
  */
 export function formatJsonFailureOutput(output: string): string | null {
-  const trimmed = output.trim();
-  if (!trimmed) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-
-  if (!isJsonObject(parsed)) return null;
-
-  const success = parsed.success;
-  const error = parsed.error;
-  const hint = parsed.hint;
-
-  if (success !== false || typeof error !== 'string') return null;
+  const parsed = parseJsonFailure(output);
+  if (!parsed) return null;
 
   const lines: string[] = [];
-  lines.push(error.trim());
+  lines.push(parsed.errorSummary);
 
-  const nestedJson = jsonTail(error);
-  if (nestedJson !== null) {
-    try {
-      const nested = JSON.parse(nestedJson) as Record<string, unknown>;
-      const nestedMessage = nested.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        lines.push(`Details: ${nestedMessage.trim()}`);
-      }
-    } catch {}
+  if (parsed.nestedMessage !== undefined) {
+    lines.push(`Details: ${parsed.nestedMessage}`);
   }
 
-  if (typeof hint === 'string' && hint.trim()) {
-    lines.push(`Hint: ${hint.trim()}`);
+  if (parsed.hint) {
+    lines.push(`Hint: ${parsed.hint}`);
   }
 
   return lines.join('\n\n');

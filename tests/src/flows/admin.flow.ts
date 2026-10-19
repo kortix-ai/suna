@@ -16,6 +16,7 @@
 import { flow } from "../core/flow";
 import type { Principal } from "../core/types";
 import { withDb } from "../fixtures/chat";
+import { createDatabaseSession } from "../fixtures/database-project";
 import { adminDeleteUser, ssoFixtureToken } from "../fixtures/supabase";
 
 // A syntactically-valid but non-existent account id for boundary probes (auth
@@ -1398,6 +1399,96 @@ flow(
         .status(403)
         .body()
         .has("$.error", "The instance git backend is only browsable by a self-host operator");
+    });
+  },
+);
+
+// IMP-2 — "Open as admin" on a project's access screen. The operator knows only
+// the project id: the grant resolves the project's account, and every read the
+// project page makes then passes, a member's private session included.
+flow(
+  "IMP-2",
+  {
+    domain: "admin",
+    requires: ["database"],
+    routes: [
+      "POST /v1/admin/api/impersonate",
+      "DELETE /v1/admin/api/impersonate/:grantId",
+      "GET /v1/projects/:projectId",
+      "GET /v1/projects/:projectId/sessions",
+      "GET /v1/projects/:projectId/sessions/:sessionId",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/accounts/:accountId",
+    ],
+  },
+  async (ctx) => {
+    if (!ctx.env.capabilities.admin) return;
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    const victim = await ctx.fixtures.team({ name: ctx.fixtures.name("imp2-victim") });
+    const project = await victim.project();
+    const projectId = project.id;
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId,
+      accountId: victim.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: "private",
+    });
+    let grantId = "";
+
+    await ctx.step("without a grant the admin cannot read the project → 403", async () => {
+      const r = await admin.get("/v1/projects/:projectId", { params: { projectId } });
+      r.status(403);
+    });
+    await ctx.step("the retired x-kortix-admin-bypass header opens nothing → 403", async () => {
+      const r = await admin.get("/v1/projects/:projectId", {
+        params: { projectId },
+        headers: { "x-kortix-admin-bypass": "1" },
+      });
+      r.status(403);
+    });
+    await ctx.step("a malformed project id → 400, an unknown one → 404", async () => {
+      (await admin.post("/v1/admin/api/impersonate", { project_id: "not-a-uuid" })).status(400);
+      (await admin.post("/v1/admin/api/impersonate", { project_id: crypto.randomUUID() })).status(404);
+    });
+    await ctx.step("the admin mints a grant by project id → 200 on the project's account", async () => {
+      const r = await admin.post("/v1/admin/api/impersonate", { project_id: projectId, reason: "ke2e IMP-2" });
+      r.status(200).body().has("$.account_id", victim.id).exists("$.grant_id");
+      grantId = r.json<{ grant_id: string }>().grant_id;
+    });
+
+    const asActing = () => ({ headers: { "x-kortix-impersonate": grantId } });
+
+    await ctx.step("acting-as, the project, its apps and its account read → 200", async () => {
+      (await admin.get("/v1/projects/:projectId", { params: { projectId }, ...asActing() })).status(200);
+      (await admin.get("/v1/projects/:projectId/apps", { params: { projectId }, ...asActing() })).status(200);
+      (await admin.get("/v1/accounts/:accountId", { params: { accountId: victim.id }, ...asActing() })).status(200);
+    });
+    // `scope=project` is the manager inventory the Sessions page reads; an
+    // owner with session oversight sees members' private sessions there too.
+    await ctx.step("acting-as, the project session inventory includes the owner's PRIVATE session", async () => {
+      const r = await admin.get("/v1/projects/:projectId/sessions", {
+        params: { projectId },
+        query: { scope: "project" },
+        ...asActing(),
+      });
+      r.status(200);
+      const ids = r.json<Array<{ session_id: string }>>().map((s) => s.session_id);
+      if (!ids.includes(sessionId)) throw new Error(`private session ${sessionId} missing from ${JSON.stringify(ids)}`);
+    });
+    await ctx.step("acting-as, the private session opens by id → 200", async () => {
+      const r = await admin.get("/v1/projects/:projectId/sessions/:sessionId", {
+        params: { projectId, sessionId },
+        ...asActing(),
+      });
+      r.status(200).body().has("$.session_id", sessionId);
+    });
+    await ctx.step("without the header, the same admin still sees nothing → 403", async () => {
+      (await admin.get("/v1/projects/:projectId/sessions", { params: { projectId } })).status(403);
+    });
+    await ctx.step("revoked, the grant opens nothing on the next request → 403", async () => {
+      (await admin.del("/v1/admin/api/impersonate/:grantId", { params: { grantId } })).status(200);
+      const r = await admin.get("/v1/projects/:projectId", { params: { projectId }, ...asActing() });
+      r.status(403).body().has("$.code", "impersonation_invalid");
     });
   },
 );

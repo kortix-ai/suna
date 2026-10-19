@@ -22,7 +22,7 @@ import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icon
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
-import { Sheet, type SheetRef } from '@/components/kortix/sheet';
+import { Sheet, useCloseThen, type SheetRef } from '@/components/kortix/sheet';
 import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -49,8 +49,8 @@ export function ProjectActions({
   const toast = useToast();
   const archive = useArchiveProject();
 
-  // Set before closing the sheet; read when the close animation ends.
-  const archiveAfterClose = React.useRef(false);
+  // Set before closing the sheet; taken once when the close animation ends.
+  const { deferAfterClose, takeAfterClose } = useCloseThen<boolean>();
   const [confirmProject, setConfirmProject] = React.useState<KortixProject | null>(null);
   const [archiveFailed, setArchiveFailed] = React.useState(false);
 
@@ -60,8 +60,7 @@ export function ProjectActions({
 
   const handleSheetDismiss = React.useCallback(() => {
     const current = project;
-    const archiveNext = archiveAfterClose.current;
-    archiveAfterClose.current = false;
+    const archiveNext = takeAfterClose();
     onClose();
     if (current && archiveNext) {
       setArchiveFailed(false);
@@ -79,7 +78,7 @@ export function ProjectActions({
 
   const handleArchive = React.useCallback(() => {
     haptics.warning();
-    archiveAfterClose.current = true;
+    deferAfterClose(true);
     sheetRef.current?.close();
   }, []);
 

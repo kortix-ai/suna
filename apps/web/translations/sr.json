@@ -333,7 +333,6 @@
     },
     "rail": {
       "settings": "Подешавања",
-      "projectTitle": "Подешавања — {projectName}",
       "backToApp": "Назад у апликацију",
       "close": "Затвори",
       "docs": "Документација",
@@ -20772,6 +20771,7 @@
     "notFoundDescription": "Уклоњен је или је линк погрешан.",
     "backToConnectors": "Назад на конекторе",
     "installed": "{name} је инсталиран",
+    "yourConnectors": "Ваши конектори",
     "installedSyncFailed": "{name} је инсталиран. Kortix није могао да учита алате: {error}",
     "newSession": "Нова сесија",
     "sections": "Одељци за {name}",

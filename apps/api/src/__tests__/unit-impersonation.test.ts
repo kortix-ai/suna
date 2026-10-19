@@ -331,6 +331,9 @@ describe('decideImpersonation', () => {
       ['/v1/projects/p1', 'POST'],
       ['/v1/projects/p1/apps/a1/access-session', 'POST'],
       ['/v1/projects/p1/change-requests/cr1/close', 'POST'],
+      // The web app's permission probe: a read sent as POST. Refusing it 403s
+      // every page the operator opens and toasts "Impersonation grant is not valid".
+      ['/v1/accounts/a1/iam/members/u1/effective:batch', 'POST'],
     ] as const) {
       expect(isImpersonationForbiddenPath(path, method), `${method} ${path}`).toBe(false);
     }

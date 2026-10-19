@@ -52,6 +52,7 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getImpersonationContext } from '../../shared/impersonation';
 import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
@@ -397,7 +398,8 @@ export function registerProjectSessionsRoutes(): void {
       c.get('iamTokenId'),
       c.get('authType'),
       callerKortixSessionId(c),
-      c.req.header('x-kortix-admin-bypass') === '1' ? 'bypass' : '',
+      // Act-as widens what the same user sees (every session, via oversight).
+      getImpersonationContext()?.grantId ?? '',
       projectId,
       c.req.url.split('?')[1] ?? '',
     ].join('|');

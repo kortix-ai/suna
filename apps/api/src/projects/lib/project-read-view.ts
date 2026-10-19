@@ -45,10 +45,9 @@ export interface ProjectReadView {
 
 /**
  * Manager standing for project-wide reads. A session-bound credential never
- * carries it (`viewerManagerStanding`), and the platform-admin bypass does.
+ * carries it (`viewerManagerStanding`).
  */
 export async function callerManagesProject(c: Context, loaded: LoadedProject): Promise<boolean> {
-  if (loaded.adminBypass) return true;
   return viewerManagerStanding(callerKortixSessionId(c), () =>
     projectCapabilityAllowed(
       c,

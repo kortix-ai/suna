@@ -333,7 +333,6 @@
     },
     "rail": {
       "settings": "Settings",
-      "projectTitle": "Settings — {projectName}",
       "backToApp": "Back to app",
       "close": "Close",
       "docs": "Docs",
@@ -20772,6 +20771,7 @@
     "notFoundDescription": "It was removed, or the link is wrong.",
     "backToConnectors": "Back to connectors",
     "installed": "{name} is installed",
+    "yourConnectors": "Your connectors",
     "installedSyncFailed": "{name} is installed. Kortix could not load its tools: {error}",
     "newSession": "New session",
     "sections": "{name} sections",

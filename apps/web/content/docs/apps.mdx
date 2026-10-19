@@ -376,11 +376,12 @@ A self-hosted instance without billing has none of these limits.
 
 ## Volumes and snapshots
 
-Volumes need the Platinum sandbox provider. A release with `mounts` that names
-no provider deploys on Platinum when the instance has it configured, even when
-Platinum is not the default provider. An App keeps the provider of its latest
-release. A `kortix.yaml` block has no provider key. A release with `mounts` and
-an explicit other provider answers `400 app_volumes_unsupported`.
+Volumes need the Platinum sandbox provider. A release that names no provider
+deploys on Platinum when the instance has it configured, even when Platinum is
+not the default provider, with or without `mounts`. Only an instance without
+Platinum keeps the provider of the App's latest release. A `kortix.yaml` block
+has no provider key. A release with `mounts` and an explicit other provider
+answers `400 app_volumes_unsupported`.
 
 ```yaml
 mounts:
@@ -766,8 +767,8 @@ kortix apps launch --template convex   # --provider platinum, --no-deploy
 
 Run it in the directory that holds your `kortix.yaml`. A slug that is already in
 the file is refused: pick another `--name`. The backend mounts a volume, so it
-needs Platinum: the server deploys it there when Platinum is configured, even
-when it is not the default provider. `--no-deploy` writes `kortix.yaml` only.
+needs Platinum: the server deploys it there when Platinum is configured, like
+every App release that names no provider. `--no-deploy` writes `kortix.yaml` only.
 
 `launch` writes two blocks into `kortix.yaml` and the dashboard's two files,
 `apps/backend/dashboard/Dockerfile` and `apps/backend/dashboard/start.js` (a file that

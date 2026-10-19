@@ -54,18 +54,16 @@ export interface SendOptions {
 
 // ── Header policy ───────────────────────────────────────────────────────────
 
-// Platform-admin read-only bypass toggle (web only). In-memory, per-tab, never
-// persisted, so it resets on reload and cannot linger. While on, every request
-// carries `x-kortix-admin-bypass: 1`; the API honors it only for a platform
-// admin on a `read` action (apps/api/src/projects/lib/access.ts).
-let adminBypassEnabled = false;
+/**
+ * @deprecated A no-op. The read-only admin bypass header is retired: a platform
+ * admin opens a project by acting as its account (`useAdminImpersonate` with
+ * `{ projectId }`). Removed in the next major.
+ */
+export function setAdminBypass(_enabled: boolean): void {}
 
-export function setAdminBypass(enabled: boolean): void {
-  adminBypassEnabled = enabled;
-}
-
+/** @deprecated Always `false`. See {@link setAdminBypass}. */
 export function isAdminBypassEnabled(): boolean {
-  return adminBypassEnabled;
+  return false;
 }
 
 // The headers of one request, as a plain record: the wire shape a URL request
@@ -111,7 +109,6 @@ function withPlatformHeaders(url: string, base: Record<string, string>, token: s
   if (clientVersion && !hasHeader(headers, 'x-kortix-client-version')) {
     setHeader(headers, 'X-Kortix-Client-Version', clientVersion);
   }
-  if (adminBypassEnabled) setHeader(headers, 'x-kortix-admin-bypass', '1');
   for (const [name, value] of Object.entries(impersonationHeaders(url))) setHeader(headers, name, value);
   const credentialHeader = platformConfig().credentialHeader?.trim();
   if (credentialHeader) {

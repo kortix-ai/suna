@@ -53,6 +53,22 @@ export interface CreatedSession {
   projectId: string;
 }
 
+/**
+ * The options every fixture project creation accepts — one type for
+ * TeamFixture.project, Fixtures.project and the world's createProject impl
+ * (which is the only one with `accountId`; the team always owns its own).
+ */
+export interface ProjectFixtureOptions {
+  name?: string;
+  accountId?: string;
+  seed?: boolean;
+  managedGit?: boolean;
+  allowAllSecrets?: boolean;
+  /** Seeded manifest grants the default agent every connector. */
+  allowAllConnectors?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 /** A team account with member/role provisioning, for IAM + access flows. */
 export interface TeamFixture {
   /** The team account id (OWNER is its owner). */
@@ -62,15 +78,7 @@ export interface TeamFixture {
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
-  project(opts?: {
-    name?: string;
-    seed?: boolean;
-    managedGit?: boolean;
-    allowAllSecrets?: boolean;
-    /** Seeded manifest grants the default agent every connector. */
-    allowAllConnectors?: boolean;
-    metadata?: Record<string, unknown>;
-  }): Promise<CreatedProject>;
+  project(opts?: Omit<ProjectFixtureOptions, 'accountId'>): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
@@ -82,16 +90,7 @@ export interface Fixtures {
    * `seed: true` implies managed Git and seeds the starter so a sandbox can
    * materialize the repository.
    */
-  project(opts?: {
-    name?: string;
-    accountId?: string;
-    seed?: boolean;
-    managedGit?: boolean;
-    allowAllSecrets?: boolean;
-    /** Seeded manifest grants the default agent every connector. */
-    allowAllConnectors?: boolean;
-    metadata?: Record<string, unknown>;
-  }): Promise<CreatedProject>;
+  project(opts?: ProjectFixtureOptions): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
    * this in flows that only READ a project (never mutate its manifest/name/state),

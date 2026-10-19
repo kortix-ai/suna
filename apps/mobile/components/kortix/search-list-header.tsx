@@ -10,6 +10,7 @@ import { PlusIcon as Plus } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchPill } from '@/components/kortix/search-pill';
+import { GUTTER_CLASS, type Gutter } from '@/lib/ui/gutter';
 
 interface SearchListHeaderProps {
   value: string;
@@ -22,7 +23,7 @@ interface SearchListHeaderProps {
   /** Optional text-input props (returnKeyType, autoFocus, etc.). */
   inputProps?: Omit<TextInputProps, 'value' | 'onChangeText' | 'placeholder' | 'placeholderTextColor' | 'style'>;
   /** Side padding: `project` 16pt (`px-4`, default — list pages live in a project), `page` 20pt (`px-5`). */
-  gutter?: 'page' | 'project';
+  gutter?: Gutter;
 }
 
 export function SearchListHeader({
@@ -37,7 +38,7 @@ export function SearchListHeader({
   // No top padding on the row below — PageHeader (12) + PageContent (4)
   // already provide the uniform 16pt gap below the title row.
   return (
-    <View className={`flex-row items-center gap-2.5 pb-2 ${gutter === 'page' ? 'px-5' : 'px-4'}`}>
+    <View className={`flex-row items-center gap-2.5 pb-2 ${GUTTER_CLASS[gutter]}`}>
       <SearchPill value={value} onChangeText={onChangeText} placeholder={placeholder} inputProps={inputProps} />
       {rightAction ?? (onAdd && (
         <Button

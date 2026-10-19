@@ -480,7 +480,6 @@
     },
     "rail": {
       "settings": "設定",
-      "projectTitle": "設定 — {projectName}",
       "backToApp": "アプリに戻る",
       "close": "閉じる",
       "docs": "ドキュメント",
@@ -20772,6 +20771,7 @@
     "notFoundDescription": "削除されたか、リンクが正しくありません。",
     "backToConnectors": "コネクターに戻る",
     "installed": "{name} をインストールしました",
+    "yourConnectors": "あなたのコネクター",
     "installedSyncFailed": "{name} をインストールしました。Kortix はツールを読み込めませんでした: {error}",
     "newSession": "新しいセッション",
     "sections": "{name} のセクション",

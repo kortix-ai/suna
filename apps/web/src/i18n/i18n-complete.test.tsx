@@ -30,8 +30,16 @@ const srTranslator = createTranslator({
 
 const localeCatalogs = { en, de, it, zh, ja, pt, fr, es, sr } as const;
 
+// An ICU branch body such as `other {failed}` is copy, not an argument: skip a
+// brace that follows a plural/select selector.
 function placeholders(value: string): string[] {
-  return [...value.matchAll(/\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g)].map((match) => match[1]).sort();
+  return [
+    ...value.matchAll(
+      /(?<!(?:\b(?:zero|one|two|few|many|other)|=\d+)\s*)\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g,
+    ),
+  ]
+    .map((match) => match[1])
+    .sort();
 }
 
 describe('complete UI localization', () => {

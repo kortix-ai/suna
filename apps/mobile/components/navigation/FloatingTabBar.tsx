@@ -37,9 +37,9 @@ const SLIDE = { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 const PRESS_IN = { duration: 90, easing: Easing.out(Easing.quad) };
 const PRESS_OUT = { duration: 140, easing: Easing.out(Easing.quad) };
 
-/** Soft lift for the light capsule, from the foreground token. */
-/** Soft shadow for a light floating surface. The composer does not use it (design.md §5). */
-export const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
+/** Soft shadow for a light floating surface, from the foreground token. The
+ * composer does not use it (design.md §5). */
+const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
 
 function TabItem({
   label,
