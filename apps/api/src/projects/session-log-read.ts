@@ -43,6 +43,7 @@
 import {
   toV1,
   type SessionLog,
+  type SessionLogBlock,
   type SessionLogMessage,
   type SessionLogPage,
   type V1Row,
@@ -122,6 +123,7 @@ export async function readSessionLogPage(input: {
         .limit(1);
       threadId = first?.threadId ?? null;
     }
+    const threadRecord = threads.find((t) => t.threadId === threadId)?.record;
     const rows =
       threadId === null
         ? []
@@ -143,10 +145,52 @@ export async function readSessionLogPage(input: {
       generation: log.generation,
       threads: threads.map((t) => t.record as SessionLogPage['threads'][number]),
       thread_id: threadId,
-      messages: rows.slice(0, input.limit).reverse().map((r) => r.record as SessionLogMessage),
+      messages: rows
+        .slice(0, input.limit)
+        .reverse()
+        .map((r) => withKeptToolInputs(log.record as J, threadRecord, r.record as SessionLogMessage)),
       has_more: rows.length > input.limit,
     };
   }, READ_ONLY);
+}
+
+type ToolCall = Extract<SessionLogBlock, { type: 'tool_call' }>;
+const stripped = (b: SessionLogBlock): b is ToolCall =>
+  b.type === 'tool_call' && (b.input === null || b.input === undefined) && (b.status === 'complete' || b.status === 'error');
+
+/**
+ * A tool call the old v1 mirror stripped (no input, no output: a row saved before 2026-09-28 and
+ * backfilled into the log) is served with what it kept, as the v1 window serves it
+ * (`restoreStrippedToolParts`). The block gets the proven input, and a command its output. Its v1
+ * residual becomes the restored part, so `toV1` of the page (the SDK's v1 view) gives the row the
+ * v1 window gives. Storage is unchanged. A message of a thread without the v1 ext passes as is.
+ */
+export function withKeptToolInputs(session: J, thread: J | undefined, message: SessionLogMessage): SessionLogMessage {
+  if (!thread || !v1Ext(thread) || !message.blocks?.some(stripped)) return message;
+  const parts = new Map(
+    toV1({ ...session, threads: [{ ...thread, messages: [message] }] } as unknown as SessionLog)
+      .rows.flatMap((row) => row.parts as unknown as J[])
+      .map((part) => [part.id, part]),
+  );
+  return {
+    ...message,
+    blocks: message.blocks.map((b) => {
+      const part = stripped(b) ? parts.get(b.id) : undefined;
+      if (!part) return b;
+      const [restored] = restoreStrippedToolParts([part]);
+      if (restored === part) return b;
+      const state = restored!.state as J;
+      const call = b as ToolCall;
+      const output = typeof state.output === 'string' && call.result && !call.result.content.some((c) => c.type === 'text') ? state.output : null;
+      const key = Object.keys(call.ext ?? {}).find((k) => call.ext![k]!.version === KORTIX_TRANSCRIPT_SCHEMA);
+      return {
+        ...call,
+        input: state.input,
+        ...(output !== null && { result: { ...call.result!, content: [{ type: 'text' as const, text: output }, ...call.result!.content] } }),
+        ...(key && { ext: { ...call.ext, [key]: { ...call.ext![key]!, data: { set: restored } } } }),
+      };
+    }),
+  };
 }
 
 // ─── v1 reads ────────────────────────────────────────────────────────────────
