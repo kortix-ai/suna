@@ -1499,8 +1499,12 @@ adminApp.openapi(
       body: {
         content: {
           'application/json': {
+            // `project_id` instead of `account_id` acts as the project's
+            // account: the "Open as admin" button on a project's access screen
+            // knows only the project.
             schema: z.object({
-              account_id: z.string(),
+              account_id: z.string().optional(),
+              project_id: z.string().optional(),
               reason: z.string().max(500).optional(),
             }),
           },
@@ -1517,7 +1521,7 @@ adminApp.openapi(
         'Impersonation grant',
       ),
       400: json(z.record(z.string(), z.any()), 'Bad request'),
-      404: json(z.record(z.string(), z.any()), 'Account not found'),
+      404: json(z.record(z.string(), z.any()), 'Account or project not found'),
       500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
@@ -1526,9 +1530,16 @@ adminApp.openapi(
     try {
       const adminUserId = c.get('userId') as string;
       const body = await c.req.json().catch(() => null);
-      const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
+      const projectId = typeof body?.project_id === 'string' ? body.project_id.trim() : '';
+      let accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
       const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
       const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
+      if (projectId && !accountId) {
+        if (!isUuid(projectId)) return c.json({ error: 'project_id must be a uuid' }, 400);
+        const project = await findProject(projectId);
+        if (!project) return c.json({ error: 'project not found' }, 404);
+        accountId = project.accountId;
+      }
       if (!isUuid(accountId)) {
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
@@ -1563,6 +1574,7 @@ adminApp.openapi(
           grant_id: grant.id,
           impersonator_user_id: adminUserId,
           target_account_id: accountId,
+          project_id: projectId || null,
           reason,
           expires_at: expiresAt.toISOString(),
         },

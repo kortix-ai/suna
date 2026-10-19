@@ -404,6 +404,10 @@ export async function listProjectSessionsPage(
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
     `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    // A background read (shell prefetch, 5s sidebar poll): its query state
+    // reports a failure. The host toast would announce a 403 over the access
+    // gate that already explains it.
+    { showErrors: false },
   );
   const items = unwrap(response);
   return {
