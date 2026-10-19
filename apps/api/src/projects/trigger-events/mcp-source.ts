@@ -21,7 +21,16 @@ import {
   type EventDefinition,
   type ToolAction,
 } from './mcp-events';
-import { MAX_STREAMS_PER_PROJECT, countStreams, deleteStream, getStream, isParked, streamIdFor, upsertStream } from './poll-store';
+import {
+  FAILURES_BEFORE_ROW_ERROR,
+  MAX_STREAMS_PER_PROJECT,
+  countStreams,
+  deleteStream,
+  getStream,
+  isParked,
+  streamIdFor,
+  upsertStream,
+} from './poll-store';
 import { EventConnectionNotReadyError, EventSignatureError, type EventSourceProvider, type EventTypeInfo } from './types';
 
 export const MCP_SOURCE_ID = 'mcp';
@@ -63,6 +72,23 @@ async function connectorTools(connectorId: string): Promise<ToolAction[]> {
     ...r,
     bindingKind: typeof (r.binding as Record<string, unknown>)?.kind === 'string' ? String((r.binding as Record<string, unknown>).kind) : null,
   }));
+}
+
+/**
+ * When the account last changed (epoch ms): the connection row (a reconnect,
+ * a status change) or a credential it signs in with (a re-entered key, a new
+ * OAuth token). A parked stream older than this is re-armed.
+ */
+async function accountChangedAt(connectionId: string, connectorId: string, connectionUpdatedAt: Date): Promise<number> {
+  const [row] = await db
+    .select({ at: sql<Date | null>`max(${connectionCredentials.updatedAt})` })
+    .from(connectionCredentials)
+    .where(and(
+      eq(connectionCredentials.connectorId, connectorId),
+      or(eq(connectionCredentials.connectionId, connectionId), isNull(connectionCredentials.connectionId)),
+    ));
+  const credentialAt = row?.at ? new Date(row.at).getTime() : 0;
+  return Math.max(connectionUpdatedAt.getTime(), credentialAt);
 }
 
 /** The generic `new_item.<tool>` types of one connector: one per synced list or search tool. */
@@ -128,7 +154,8 @@ export const mcpEventSource: EventSourceProvider = {
       .limit(1);
     if (!row) return false;
     const auth = (row.config as { auth?: { type?: string } } | null)?.auth;
-    if (auth?.type === 'none' || row.authSecret) return true;
+    // The gateway signs only the default account in with the connector's project secret.
+    if (auth?.type === 'none' || (row.authSecret && row.isDefault)) return true;
     const [credential] = await db
       .select({ n: sql<number>`1` })
       .from(connectionCredentials)
@@ -183,7 +210,7 @@ export const mcpEventSource: EventSourceProvider = {
     // A parked stream waits for a person: re-armed when its account changed since it parked
     // (a reconnect), else it keeps its hourly retry and its triggers keep its error.
     const parked = existing !== null && isParked(existing);
-    const rearm = parked && row.connectionUpdatedAt.getTime() > existing.updatedAt.getTime();
+    const rearm = parked && (await accountChangedAt(connection.connectionId, row.connectorId, row.connectionUpdatedAt)) > existing.updatedAt.getTime();
     await upsertStream({
       externalId,
       projectId: row.projectId,
@@ -194,8 +221,11 @@ export const mcpEventSource: EventSourceProvider = {
       config: settings,
       intervalSeconds: intervalSeconds(config),
     }, rearm);
-    if (parked && !rearm && existing.lastError) {
-      return { externalId, status: { kind: existing.lastErrorKind === 'needs_connection' ? 'needs_connection' : 'error', message: existing.lastError } };
+    // The triggers keep showing the stream's error until a check succeeds: a parked stream, or one
+    // past the failure threshold. Otherwise every sweep would set them `active` between failures.
+    const showsError = existing !== null && existing.lastError !== null && (parked || existing.failures >= FAILURES_BEFORE_ROW_ERROR);
+    if (showsError && !rearm) {
+      return { externalId, status: { kind: existing.lastErrorKind === 'needs_connection' ? 'needs_connection' : 'error', message: existing.lastError! } };
     }
     return { externalId };
   },

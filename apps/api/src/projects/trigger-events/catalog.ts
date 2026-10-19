@@ -239,8 +239,6 @@ export async function listEventApps(projectId: string, accountId: string): Promi
         : item.eventCount;
       const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }, metadata) : null;
       const connected = resolved?.kind === 'ok';
-      // A connected MCP app whose tools include no list or search tool offers no event: not an event app.
-      if (provider.id === MCP_SOURCE_ID && connected && eventCount === 0) continue;
       out.push({
         provider: provider.id,
         ...item,

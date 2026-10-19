@@ -189,6 +189,8 @@ describe('the generic new_item event', () => {
     expect(def.items([{ type: 'text', text: '[{"id":7}]' }])).toEqual([expect.objectContaining({ key: '7' })]);
     expect(def.items({})).toEqual([]);
     expect(def.items({ total: 3 })).toBeNull();
+    // Any number of items: only the first 1,000 are looked at.
+    expect(def.items({ items: Array.from({ length: 1_500 }, (_, n) => ({ id: n })) })).toHaveLength(1_000);
   });
 });
 
@@ -212,6 +214,9 @@ describe('bounds', () => {
     expect((boundData({ s: 'x'.repeat(5_000) }, 'k').s as string).length).toBe(2_001);
     const huge = boundData({ id: 'big', parts: Array.from({ length: 40 }, () => 'y'.repeat(1_900)) }, 'k');
     expect(huge).toMatchObject({ id: 'big', truncated: true });
+    // An id that is itself huge falls back to the bounded item key.
+    const hugeId = boundData({ uuid: 'a1', id: Object.fromEntries(Array.from({ length: 50 }, (_, n) => [`k${n}`, 'z'.repeat(1_900)])) }, 'a1');
+    expect(hugeId).toMatchObject({ id: 'a1', truncated: true });
   });
 });
 

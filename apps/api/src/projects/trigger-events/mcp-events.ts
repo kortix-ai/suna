@@ -126,7 +126,9 @@ export function boundData(data: Json, key: string): Json {
   const bounded = bound(data, 0) as Json;
   const text = JSON.stringify(bounded);
   if (text.length <= MAX_DATA_BYTES) return bounded;
-  return { id: bounded.id ?? key, truncated: true, preview: text.slice(0, 4_096) };
+  // The item's own id when it is a short scalar; else the (bounded) item key.
+  const id = (typeof bounded.id === 'string' && bounded.id.length <= 200) || typeof bounded.id === 'number' ? bounded.id : key;
+  return { id, truncated: true, preview: text.slice(0, 4_096) };
 }
 
 /** A key that is safe as an idempotency-key segment; long or unusual keys are hashed. */
@@ -539,7 +541,8 @@ export function genericEventFor(action: ToolAction, app: string): EventDefinitio
     },
     items(output) {
       const list = findList(parseToolOutput(output));
-      return list ? list.map(genericItem) : null;
+      // Bounded before any per-item work: a list tool can answer with any number of items.
+      return list ? list.slice(0, MAX_ITEMS_PER_CHECK).map(genericItem) : null;
     },
   };
 }

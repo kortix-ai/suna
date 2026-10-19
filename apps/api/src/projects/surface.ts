@@ -97,7 +97,8 @@ export const releaseProjectEventSubscriptions: typeof import('./trigger-events/s
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
 // Kortix-polled app events (consumed by workers/trigger-event-poll-worker.ts). Loading the
 // module registers the delivery queue's job handler. Lazy for the same cycle as above.
-export const runDueEventPolls = async (): Promise<number> => (await import('./trigger-events/mcp-poll')).runDueEventPolls();
+export const runDueEventPolls = async (onSlotFree?: () => void): Promise<number> =>
+  (await import('./trigger-events/mcp-poll')).runDueEventPolls(onSlotFree);
 export const loadEventPoller = async (): Promise<void> => {
   await import('./trigger-events/mcp-poll');
 };

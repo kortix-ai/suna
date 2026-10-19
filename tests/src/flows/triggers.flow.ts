@@ -2559,12 +2559,15 @@ flow(
       (await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'no-such-app', source: 'mcp' } })).status(404);
     });
 
-    await ctx.step('a connected project MCP server with no list tool is no event app, and its event types are empty', async () => {
+    await ctx.step('a project MCP server is an event app of its own; with no list tool read yet it offers no event', async () => {
       const params = { projectId: on.id };
       // auth set explicitly: the create route then skips its live discovery probe of this unreachable url.
       (await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: 'inbox', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } }, { params }))
         .status(200);
-      if ((await apps(on.id)).some((a) => a.app === 'inbox')) throw new Error('an MCP server that offers no event is listed as an event app');
+      const inbox = (await apps(on.id)).find((a) => a.app === 'inbox');
+      if (!inbox || inbox.source !== 'mcp' || inbox.connector !== 'inbox' || inbox.mcp_url !== null || inbox.event_count !== 0) {
+        throw new Error(`inbox entry is wrong: ${JSON.stringify(inbox)}`);
+      }
       const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } });
       r.status(200).body().has('$.source', 'mcp').has('$.app', 'inbox');
       if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);

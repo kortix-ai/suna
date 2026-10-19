@@ -74,6 +74,8 @@ export async function loadTriggersForResponse(
   const eventsOff = eventTriggersOffForProject(project.metadata);
   const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
   // Kortix-polled triggers (source `mcp`) say when their app was checked and is checked next.
+  // The poller skips every stream of a paused project, or one without either flag: no next check then.
+  const checksRun = !eventsOff && !triggersPausedForProject(project.metadata) && eventSourceAvailable(MCP_SOURCE_ID, project.metadata);
   const schedules = await streamSchedules(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
@@ -111,7 +113,7 @@ export async function loadTriggersForResponse(
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
             ...eventStatusFor(subscriptionBySlug.get(spec.slug), eventsOff),
-            ...checkTimesFor(subscriptionBySlug.get(spec.slug), schedules, eventsOff),
+            ...checkTimesFor(subscriptionBySlug.get(spec.slug), schedules, checksRun),
           }
         : null,
       prompt_template: spec.promptTemplate,
@@ -164,16 +166,23 @@ async function loadEventConnectorInfo(
   return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row, mcpAvailable) }]));
 }
 
-/** When a Kortix-polled trigger's app was checked and is checked next. Both null unless it is subscribed and live. */
+/**
+ * When a Kortix-polled trigger's app was last checked, and is checked next.
+ * The next check is null whenever the poller skips the stream (paused, a flag
+ * off) or the trigger is not subscribed.
+ */
 function checkTimesFor(
   row: store.EventSubscriptionRow | undefined,
-  schedules: Map<string, { checkedAt: Date | null; nextCheckAt: Date | null }>,
-  flagOff: boolean,
+  schedules: Map<string, { checkedAt: Date | null; nextCheckAt: Date | null; lastError: string | null }>,
+  checksRun: boolean,
 ): { checked_at: string | null; next_check_at: string | null } {
-  const schedule = !flagOff && row?.externalId ? schedules.get(row.externalId) : undefined;
+  const schedule = row?.externalId ? schedules.get(row.externalId) : undefined;
+  // The rows a check serves (mcp-poll.ts load): active ones, and ones showing the stream's own error.
+  const served = row?.status === 'active' || (row?.status !== undefined && row.lastError !== null && row.lastError === schedule?.lastError);
+  const live = checksRun && served;
   return {
     checked_at: schedule?.checkedAt?.toISOString() ?? null,
-    next_check_at: row?.status === 'active' || row?.status === 'error' ? (schedule?.nextCheckAt?.toISOString() ?? null) : null,
+    next_check_at: live ? (schedule?.nextCheckAt?.toISOString() ?? null) : null,
   };
 }
 

@@ -39,7 +39,9 @@ import {
   type PollErrorKind,
   type PollStream,
   type StreamPatch,
+  FAILURES_BEFORE_ROW_ERROR,
   RECORD_FIRST,
+  carryRowsError,
   claimDueStreams,
   delayConnectionStreams,
   deleteStream,
@@ -57,8 +59,6 @@ const LEASE_MS = 3 * 60_000;
 const DEFERRED_RECHECK_MS = 15_000;
 const HOUR_MS = 60 * 60_000;
 const oneLine = (text: string, max = 300): string => text.replace(/\s+/g, ' ').trim().slice(0, max);
-/** Transient failures in a row before the triggers say so. Checks continue. */
-const FAILURES_BEFORE_ROW_ERROR = 3;
 /** A stream no trigger references is deleted only after this: its subscribe may still be writing the trigger row. */
 const ORPHAN_GRACE_MS = 10 * 60_000;
 /** A parked stream (a person must act) retries this often on its own; a reconnect re-arms it at once. */
@@ -85,14 +85,18 @@ async function settleFailure(stream: PollStream, outcome: Exclude<Outcome, { kin
     lastErrorKind: outcome.kind,
     nextPollAt,
     // A parked stream's triggers are not live: the check that un-parks it records first and fires nothing.
-    ...(transient ? {} : { primedAt: null, fireAfter: RECORD_FIRST }),
+    // Its time is when this check started: a reconnect after that re-arms it (mcp-source.ts subscribe).
+    ...(transient ? {} : { primedAt: null, fireAfter: RECORD_FIRST, updatedAt: new Date(now) }),
   });
   if (!settled) return;
   logger.info('[trigger-events/poll] check failed', { externalId: stream.externalId, kind: outcome.kind, failures });
   if (transient && outcome.message.endsWith('limited the request rate.')) {
     await delayConnectionStreams(stream.connectionId, nextPollAt);
   }
-  if (transient && failures < FAILURES_BEFORE_ROW_ERROR) return;
+  if (transient && failures < FAILURES_BEFORE_ROW_ERROR) {
+    if (stream.lastError !== null) await carryRowsError(stream.externalId, stream.lastError, message);
+    return;
+  }
   const changed = await setRowsStatus(stream.externalId, outcome.kind === 'needs_connection' ? 'needs_connection' : 'error', message, stream.lastError);
   for (const row of changed) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: row.slug, source: 'fire', error: message });
@@ -274,7 +278,8 @@ async function check(claimed: PollStream, now: number): Promise<void> {
   const floor = floorFor(stream.fireAfter.getTime(), now);
   let request;
   try {
-    request = def.request(stream.config, { now, floor });
+    // A record-first floor is in 9999: the request still lists recent items, so this check records them.
+    request = def.request(stream.config, { now, floor: Math.min(floor, now) });
   } catch (error) {
     await settleFailure(stream, { kind: 'fatal', message: error instanceof Error ? error.message : String(error) }, label, now);
     return;
@@ -310,10 +315,12 @@ async function check(claimed: PollStream, now: number): Promise<void> {
       await settleFailure(stream, { kind: 'transient', message: `${def.tool} answered without a list of items.` }, label, now);
       return;
     }
-    // Keys go into `seen` and into idempotency keys: bounded and safe.
-    items.push(...pageItems.map((item) => ({ ...item, key: eventIdOf(item.key) })));
+    // Keys go into `seen` and into idempotency keys: bounded and safe. The page is cut to the
+    // check's item budget before any per-item work.
+    const page = pageItems.slice(0, MAX_ITEMS_PER_CHECK - items.length).map((item) => ({ ...item, key: eventIdOf(item.key) }));
+    for (const item of page) items.push(item);
     pageToken = nextPageToken(parseToolOutput(output));
-    reachedKnown = pageItems.some((item) => known.has(eventIdOf(item.key)) || (item.time !== null && item.time < floor));
+    reachedKnown = page.some((item) => known.has(item.key) || (item.time !== null && item.time < floor));
     if (!pageToken || (request.newestFirst && reachedKnown)) break;
   }
   if (pageToken && !reachedKnown) {
@@ -378,9 +385,10 @@ let inFlight = 0;
 
 /**
  * Claim due streams into the free slots and start their checks; does not wait
- * for them. Returns how many started.
+ * for them. Returns how many started. `onSlotFree` runs when a check ends, so
+ * the worker claims again at once instead of after its idle wait.
  */
-export async function runDueEventPolls(): Promise<number> {
+export async function runDueEventPolls(onSlotFree?: () => void): Promise<number> {
   const free = CAPACITY - inFlight;
   if (free <= 0) return 0;
   const streams = await claimDueStreams(Math.min(free, CLAIM_LIMIT), LEASE_MS);
@@ -388,6 +396,7 @@ export async function runDueEventPolls(): Promise<number> {
     inFlight += 1;
     void runPoll(stream).finally(() => {
       inFlight -= 1;
+      onSlotFree?.();
     });
   }
   return streams.length;

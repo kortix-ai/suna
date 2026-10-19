@@ -254,7 +254,11 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     await checkNow();
     await checkNow();
     expect(await row('watch')).toMatchObject({ status: 'error', lastError: expect.stringContaining('The last 3 checks of fake failed') });
-    expect((await stream())?.nextPollAt).not.toBeNull();
+    const backedOff = (await stream())!.nextPollAt!.getTime();
+    // The connector sweep re-subscribes the failing trigger: the backoff and the error stay.
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'error', lastError: expect.stringContaining('The last 3 checks of fake failed') });
+    expect((await stream())!.nextPollAt!.getTime()).toBe(backedOff);
 
     answer = 'ok';
     items = [recent('after-outage'), ...items];
@@ -353,6 +357,49 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     items = [recent('after-reconnect', 0), ...items];
     await checkNow();
     expect((await deliverJobs()).map((j) => j.jobKey.split(':')[1])).toEqual(['after-reconnect']);
+  });
+
+  test('a parked stream whose retry fails differently keeps its triggers matched and keeps retrying', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    answer = '400';
+    await checkNow();
+    expect((await row('watch'))?.status).toBe('error');
+    answer = '503';
+    await checkNow();
+    const after = await stream();
+    expect(after?.lastError).toContain('fake answered 503');
+    expect(await row('watch')).toMatchObject({ status: 'error', lastError: after?.lastError });
+    toolCalls.length = 0;
+    await checkNow();
+    expect(toolCalls).toHaveLength(1);
+  });
+
+  test('a reconnect while a check is running re-arms the stream, and that check cannot park it again', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    answer = '400';
+    await checkNow();
+    await db.update(projectTriggerEventPolls).set({ nextPollAt: sql`now()` }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    const [running] = await claimDueStreams(50, 60_000);
+    await db.update(connectorConnections).set({ updatedAt: sql`now() + interval '1 second'` }).where(eq(connectorConnections.connectionId, CONNECTION_ID));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'active', lastError: null });
+    await runPoll(running!);
+    expect(await stream()).toMatchObject({ lastErrorKind: null, failures: 0 });
+  });
+
+  test('re-entering the credential re-arms a parked stream', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    answer = '400';
+    await checkNow();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect((await row('watch'))?.status).toBe('error');
+    await db.insert(connectionCredentials).values({ connectorId: CONNECTOR_ID, connectionId: CONNECTION_ID, kind: 'secret', valueEnc: 'synthetic-not-a-secret', updatedAt: new Date(Date.now() + 1_000) });
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'active', lastError: null });
+    expect((await stream())!.nextPollAt!.getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
   });
 
   test('a shorter interval pulls the next check in', async () => {

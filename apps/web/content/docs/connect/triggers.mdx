@@ -171,7 +171,7 @@ The source of an `event` trigger is the provider of its connector. The source de
 | `mcp` | Kortix checks the app's MCP server every `interval` minutes. Each new item fires the trigger once. See [How checks work](#how-checks-work). | The project flags `event_triggers` and `connectors_v2`. Nothing on the deployment. |
 | `composio` | Composio sends each event to Kortix. | The project flag `event_triggers`, `COMPOSIO_API_KEY` on the deployment, and a `composio` connector for the app. |
 
-- With `connectors_v2` on, the app list shows each app of the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) that has a sign-in, with source `mcp`. DeepWiki and Context7 have no sign-in, so they have no events. Each connected project MCP server outside the catalog is an app too, under its connector slug, when it has at least one tool that lists items. A connected app with no such tool and no Kortix event is not listed. A Composio app shows only when the project already has a Composio connector for it.
+- With `connectors_v2` on, the app list shows each app of the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) that has a sign-in, with source `mcp`. DeepWiki and Context7 have no sign-in, so they have no events. Each project MCP server outside the catalog is an app too, under its connector slug. A connected app whose tools include none that lists items, and that has no Kortix event, shows 0 events. A Composio app shows only when the project already has a Composio connector for it.
 - Without `connectors_v2`, `composio` is the only source.
 - Turning `connectors_v2` off moves every `mcp` trigger to `error` and stops its checks. Turning it on again resumes them without another save.
 

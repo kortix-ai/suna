@@ -37,6 +37,9 @@ export async function countStreams(projectId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** Transient failures in a row before the triggers show the stream's error. Checks continue. */
+export const FAILURES_BEFORE_ROW_ERROR = 3;
+
 /** A person must act (sign in again, fix a setting): the stream retries on its own only hourly. */
 export const isParked = (stream: Pick<PollStream, 'lastErrorKind'>): boolean =>
   stream.lastErrorKind === 'needs_connection' || stream.lastErrorKind === 'fatal';
@@ -44,11 +47,13 @@ export const isParked = (stream: Pick<PollStream, 'lastErrorKind'>): boolean =>
 /**
  * Create the stream, or update the one that exists. `rearm` (a parked stream
  * whose account changed since it parked) checks at once and records what is
- * there first: its triggers were not live, so that window is not owed. A
- * parked stream that is not re-armed keeps its hourly retry: the connector
- * sweep re-subscribes failing triggers every few minutes, and that must not
- * call the vendor each time. A live stream keeps what it has seen, and a
- * shorter interval pulls its next check in.
+ * there first: its triggers were not live, so that window is not owed. It also
+ * takes the claim, so a check still running cannot park it again. A failing
+ * stream that is not re-armed keeps its schedule (the hourly park retry, or
+ * the backoff and Retry-After): the connector sweep re-subscribes failing
+ * triggers every few minutes, and that must not call the vendor each time. A
+ * healthy stream keeps what it has seen, and a shorter interval pulls its next
+ * check in.
  */
 export async function upsertStream(input: {
   externalId: string;
@@ -60,7 +65,6 @@ export async function upsertStream(input: {
   config: Record<string, unknown>;
   intervalSeconds: number;
 }, rearm = false): Promise<void> {
-  const parked = sql`${polls.lastErrorKind} in ('needs_connection', 'fatal')`;
   const set = rearm
     ? {
         nextPollAt: sql`now()`,
@@ -69,9 +73,11 @@ export async function upsertStream(input: {
         lastErrorKind: null,
         lastError: null,
         failures: 0,
+        claim: sql`${polls.claim} + 1`,
+        lockedUntil: null,
       }
     : {
-        nextPollAt: sql`case when ${parked} then ${polls.nextPollAt}
+        nextPollAt: sql`case when ${polls.failures} > 0 then ${polls.nextPollAt}
           else least(coalesce(${polls.nextPollAt}, now()), now() + make_interval(secs => ${input.intervalSeconds})) end`,
       };
   await db
@@ -86,13 +92,13 @@ export async function upsertStream(input: {
 /** When each stream last checked with success and checks next, by external id. One query. */
 export async function streamSchedules(
   externalIds: readonly string[],
-): Promise<Map<string, { checkedAt: Date | null; nextCheckAt: Date | null }>> {
+): Promise<Map<string, { checkedAt: Date | null; nextCheckAt: Date | null; lastError: string | null }>> {
   if (externalIds.length === 0) return new Map();
   const rows = await db
-    .select({ externalId: polls.externalId, lastSuccessAt: polls.lastSuccessAt, nextPollAt: polls.nextPollAt })
+    .select({ externalId: polls.externalId, lastSuccessAt: polls.lastSuccessAt, nextPollAt: polls.nextPollAt, lastError: polls.lastError })
     .from(polls)
     .where(inArray(polls.externalId, [...externalIds]));
-  return new Map(rows.map((r) => [r.externalId, { checkedAt: r.lastSuccessAt, nextCheckAt: r.nextPollAt }]));
+  return new Map(rows.map((r) => [r.externalId, { checkedAt: r.lastSuccessAt, nextCheckAt: r.nextPollAt, lastError: r.lastError }]));
 }
 
 /** Idempotent. */
@@ -150,6 +156,7 @@ export type StreamPatch = Partial<Pick<
   | 'rateWindowStart'
   | 'rateWindowFires'
   | 'lastSuccessAt'
+  | 'updatedAt'
 >>;
 
 type Executor = Pick<typeof db, 'update'>;
@@ -162,7 +169,7 @@ type Executor = Pick<typeof db, 'update'>;
 export async function settleStream(stream: PollStream, patch: StreamPatch, executor: Executor = db): Promise<boolean> {
   const done = await executor
     .update(polls)
-    .set({ ...patch, lockedUntil: null, updatedAt: sql`now()` })
+    .set({ lockedUntil: null, updatedAt: sql`now()`, ...patch })
     .where(and(
       eq(polls.externalId, stream.externalId),
       eq(polls.claim, stream.claim),
@@ -186,6 +193,18 @@ export async function streamRows(externalId: string) {
     .select()
     .from(subs)
     .where(and(eq(subs.provider, 'mcp'), eq(subs.externalId, externalId)));
+}
+
+/**
+ * A failure below the threshold on a stream whose triggers already show its
+ * error: they show the new one, so they stay matched to the stream (the poll
+ * serves triggers whose error is the stream's own). Status unchanged.
+ */
+export async function carryRowsError(externalId: string, previousError: string, lastError: string): Promise<void> {
+  await db
+    .update(subs)
+    .set({ lastError, updatedAt: new Date() })
+    .where(and(eq(subs.provider, 'mcp'), eq(subs.externalId, externalId), eq(subs.lastError, previousError)));
 }
 
 /**
