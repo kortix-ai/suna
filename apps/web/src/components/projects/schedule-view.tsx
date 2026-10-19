@@ -83,7 +83,7 @@ import {
   MagnifyingGlassIcon as SearchIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
@@ -289,8 +289,8 @@ export function TriggerActivationMenu({
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
-  const router = useRouter();
-  const pathname = usePathname();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
@@ -324,7 +324,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     setCreateOpen(true);
   };
   const configure = useConfigureThread(projectId);
-  const searchParams = useSearchParams();
+  const searchParams = useUiSearchParams();
   // `?id=<trigger id>[&tab=runs]` is the open trigger: a link, Back and Forward all open it.
   const sheet = readTriggerSheet(searchParams);
   // App events are a beta feature behind the project flag `event_triggers`. Fail

@@ -64,6 +64,9 @@ describe('accountsListQueryOptions', () => {
 
 // ── the wired half: what the hook actually hands useQuery ────────────────────
 
+// A copy taken before any mock: the spread keeps every real export.
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+
 describe('useAccountsList — the object handed to useQuery', () => {
   async function callHook(
     user: { id: string } | null,
@@ -73,7 +76,7 @@ describe('useAccountsList — the object handed to useQuery', () => {
     const realSdk = await import('@kortix/sdk');
     let captured: Record<string, unknown> | null = null;
 
-    mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user }) }));
+    mock.module('@kortix/ui/providers/ui-provider', () => ({ ...realUiProvider, useUiViewerId: () => user?.id }));
     mock.module('@tanstack/react-query', () => ({
       ...realQuery,
       useQuery: (opts: Record<string, unknown>) => {
@@ -131,9 +134,7 @@ describe('useAccountsQueryKey', () => {
     const realQuery = await import('@tanstack/react-query');
     let captured: Record<string, unknown> | null = null;
 
-    mock.module('@/features/providers/auth-provider', () => ({
-      useAuth: () => ({ user: { id: 'user_a' } }),
-    }));
+    mock.module('@kortix/ui/providers/ui-provider', () => ({ ...realUiProvider, useUiViewerId: () => 'user_a' }));
     mock.module('@tanstack/react-query', () => ({
       ...realQuery,
       useQuery: (opts: Record<string, unknown>) => {

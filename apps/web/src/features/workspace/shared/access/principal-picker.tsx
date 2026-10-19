@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewer } from '@kortix/ui/providers/ui-provider';
 import { cn } from '@/lib/utils';
 import { listAccountMembers, listGroups, listProjectAccess } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -213,7 +213,7 @@ export function PrincipalPicker({
   // Single mode collapses to a "selected + Change" row once something is
   // chosen; `editing` re-opens the list without clearing the value.
   const [editing, setEditing] = useState(false);
-  const { user: authUser } = useAuth();
+  const authUser = useUiViewer();
 
   const showMembers = kinds.includes('member');
   const showGroups = kinds.includes('group');

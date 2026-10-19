@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { CaretLeftIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type { ReactNode } from 'react';
 
 export interface AccessDetailTab {

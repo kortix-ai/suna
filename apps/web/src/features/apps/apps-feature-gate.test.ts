@@ -35,6 +35,13 @@ mock.module('next/navigation', () => ({
   usePathname: () => `/projects/${projectId}/apps`,
   useSearchParams: () => new URLSearchParams(),
 }));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiParams: () => ({ id: projectId }),
+  useUiPathname: () => `/projects/${projectId}/apps`,
+  useUiSearchParams: () => new URLSearchParams(),
+}));
 mock.module('next/link', () => ({
   default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
     React.createElement('a', { href, ...props }, children),

@@ -1,6 +1,6 @@
 'use client';
 
-import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import type { UiRouter } from '@kortix/ui/providers/ui-provider';
 
 /**
  * A module-level handle on the App Router.
@@ -21,9 +21,9 @@ import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.
  * path — `softNavigate` returns `false` when it had to use it, so callers that
  * care can tell the difference.
  */
-let appRouter: AppRouterInstance | null = null;
+let appRouter: UiRouter | null = null;
 
-export function registerAppRouter(router: AppRouterInstance | null): void {
+export function registerAppRouter(router: UiRouter | null): void {
   appRouter = router;
 }
 

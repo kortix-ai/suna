@@ -1,4 +1,4 @@
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { ADMIN_ROLE_QUERY_KEY, useAdminRole as useSdkAdminRole } from '@kortix/sdk/react';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import type { AdminRole } from '@kortix/sdk';
@@ -8,4 +8,4 @@ import type { AdminRole } from '@kortix/sdk';
 export { ADMIN_ROLE_QUERY_KEY };
 
 export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRole>>) =>
-  useSdkAdminRole(useAuth().user?.id, options);
+  useSdkAdminRole(useUiViewerId(), options);

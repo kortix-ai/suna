@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import type { AgentConfigBlock, AgentGrantSetV2, SandboxTemplate } from '@kortix/sdk';
 import { useKortixRouteProjectId } from '@kortix/sdk/react';
 import { ArrowRightIcon, CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
 import { type GrantOption, GrantSetField, KortixPermissionsField, grantSummary } from './grant-mode-field';

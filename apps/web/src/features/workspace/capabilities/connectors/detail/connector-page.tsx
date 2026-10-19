@@ -13,8 +13,7 @@ import { getProjectDetail, listConnectors, syncConnectors, type AdminConnector }
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { CaretLeftIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -74,7 +73,7 @@ export function ConnectorPage({
 }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const search = useSearchParams();
+  const search = useUiSearchParams();
   const queryClient = useQueryClient();
   const accountId = useProjectAccountId(projectId);
   const canWrite =
@@ -201,9 +200,9 @@ function ConnectorPageBody({
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const search = useUiSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
 
   const {
     displayName,

@@ -133,8 +133,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
@@ -440,7 +439,7 @@ function AgentPageSkeleton() {
  * so the URL always names the topic on screen.
  */
 function useAgentSection(available: readonly AgentConfigSectionKey[]): AgentConfigSectionKey {
-  const searchParams = useSearchParams();
+  const searchParams = useUiSearchParams();
   const fromUrl = searchParams.get('section');
   if (isAgentConfigSectionKey(fromUrl) && available.includes(fromUrl)) return fromUrl;
   return available.find((k) => k === DEFAULT_AGENT_CONFIG_SECTION) ?? available[0];
@@ -490,7 +489,7 @@ function AgentActions({
 
   const makeDefault = useDefaultAgent(projectId);
 
-  const pathname = usePathname();
+  const pathname = useUiPathname();
   return (
     <div className="flex shrink-0 items-center gap-2">
       <AgentShareControl
@@ -686,7 +685,7 @@ function EditableAgentPage({
     label: skill.name,
     description: skill.description ?? undefined,
   }));
-  const pathname = usePathname();
+  const pathname = useUiPathname();
   // Drives exists only with Volumes on (the project's derived `drives` flag).
   const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
   const sections = useMemo(
@@ -997,7 +996,7 @@ function useSaveShortcut(onSave: () => void) {
  * external links pass through — nothing is lost by opening a second tab.
  */
 function useUnsavedChangesGuard(isDirty: boolean, currentPath?: string) {
-  const router = useRouter();
+  const router = useUiRouter();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1070,7 +1069,7 @@ function ReadOnlyAgentPage({
     // Meta's "source" is /workspace/AGENTS.md, not a repo file — reading it 404s.
     enabled: !isPlatform,
   });
-  const pathname = usePathname();
+  const pathname = useUiPathname();
   const section = useAgentSection(isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS);
 
   const source = (

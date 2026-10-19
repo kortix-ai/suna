@@ -15,7 +15,7 @@ import { Slack } from '@/features/icon/icons/slack';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import type { HubTarget } from '@/stores/account-panel-store';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewer } from '@kortix/ui/providers/ui-provider';
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-transcript-class';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -67,8 +67,8 @@ export function FirstChat({
   onUpdateMemory: () => void;
 }) {
   const t = useTranslations('firstChat');
-  const { user } = useAuth();
-  const name = firstNameOf(user?.user_metadata);
+  const user = useUiViewer();
+  const name = firstNameOf(user?.metadata);
   const headingId = useId();
   const questionId = useId();
 

@@ -12,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import { useDesktopBackTarget } from '@/components/desktop/desktop-back-button';
 import { KortixLogo } from '@/components/ui/kortix-logo';

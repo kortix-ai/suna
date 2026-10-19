@@ -17,7 +17,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import type { DriveEntry } from '@kortix/sdk';
 import { HardDriveIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 /**
  * Which shared drives an agent gets, on the agent's page, beside Apps and

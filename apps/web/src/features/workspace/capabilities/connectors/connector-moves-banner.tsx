@@ -3,7 +3,7 @@
 import { listConnectorMoves } from '@kortix/sdk';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { Fragment } from 'react';
 
 import { InfoBanner } from '@/components/ui/info-banner';

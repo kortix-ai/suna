@@ -2,7 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { usePathname, useRouter } from 'next/navigation';
+import { useUiPathname, useUiRouter, type UiRouter } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useRef } from 'react';
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
@@ -31,7 +31,6 @@ import {
   reconcileSessionsAfterCreate,
   seedAdoptedWarmSession,
 } from '@/hooks/projects/warm-session-seed';
-import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
@@ -44,6 +43,7 @@ import {
   type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
+  platformConfig,
 } from '@kortix/sdk';
 import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sdk/react';
 import { randomUUID } from '@/lib/utils/random-uuid';
@@ -113,7 +113,7 @@ export type NewProjectSessionOpts = {
 function makeTakeOrCreateSession(
   projectId: string,
   opts: NewProjectSessionOpts,
-  router: ReturnType<typeof useRouter>,
+  router: UiRouter,
   queryClient: ReturnType<typeof useQueryClient>,
   onAdopt: (session: ProjectSession) => void,
 ) {
@@ -196,8 +196,8 @@ function makeTakeOrCreateSession(
 
 export function useNewProjectSession(projectId: string | undefined) {
   const t = useTranslations('threads');
-  const router = useRouter();
-  const pathname = usePathname();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const queryClient = useQueryClient();
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
   // The live billing answer. `startSession` must not decide from its render
@@ -270,12 +270,12 @@ export function useNewProjectSession(projectId: string | undefined) {
       // was pressed (run 35242868705).
       const { loading: billingLoadingNow, canRun: canRunNow } = billingRef.current;
 
-      if (isBillingEnabled() && billingLoadingNow) {
+      if (platformConfig().billingEnabled && billingLoadingNow) {
         opts?.onError?.();
         return;
       }
 
-      if (isBillingEnabled() && !canRunNow) {
+      if (platformConfig().billingEnabled && !canRunNow) {
         openUpgradeDialog({ reason: 'subscription_required', accountId });
         opts?.onError?.();
         return;

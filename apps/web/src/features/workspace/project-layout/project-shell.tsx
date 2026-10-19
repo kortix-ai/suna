@@ -20,6 +20,7 @@ import { useCustomizePrefetch } from '@/features/workspace/capabilities/shared/u
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
+import { WorkspaceSwitcher } from '@/features/workspace/project-sidebar/workspace-switcher';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import { SessionRouteCache } from '@/features/workspace/project-layout/session-route-cache';
 import {
@@ -263,7 +264,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         showSidebar
         showGlobalUserSettingsModal={false}
         defaultSidebarOpen={resolvedSidebarOpen}
-        sidebarContent={<ProjectSidebar projectId={projectId} />}
+        sidebarContent={
+          <ProjectSidebar projectId={projectId} menu={<WorkspaceSwitcher projectId={projectId} />} />
+        }
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <Suspense fallback={null}>

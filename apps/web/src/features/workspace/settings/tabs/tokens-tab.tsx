@@ -74,7 +74,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
+import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-pending-action';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CopyRow, type KebabItem } from '@/features/workspace/shared/access';

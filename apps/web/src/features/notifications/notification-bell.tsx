@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
@@ -204,16 +204,16 @@ export function NotificationBell({
   onNavigate?: () => void;
 }) {
   const t = useTranslations('notifications');
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const [open, setOpen] = useState(false);
   const notificationCenter = useNotificationCenter(projectId);
-  const inbox = useNotificationInbox({ userId: user?.id, enabled: notificationCenter });
+  const inbox = useNotificationInbox({ userId: viewerId, enabled: notificationCenter });
   const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const promptDismissed = useWebNotificationStore((s) => s.promptDismissed);
   const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
   const dismissPrompt = useWebNotificationStore((s) => s.dismissPrompt);
-  if (!user || !notificationCenter) return null;
+  if (!viewerId || !notificationCenter) return null;
 
   const count = inbox.unreadCount;
   const label = count > 0 ? t('bell.unreadLabel', { count }) : t('bell.label');

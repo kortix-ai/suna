@@ -56,7 +56,7 @@ import {
   MagnifyingGlassIcon as Search,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { getLocalizedMockItems } from './mock-data';
@@ -413,9 +413,9 @@ export function ReviewCenter({
   const [grouped, setGrouped] = useState(false);
   // The open review lives in the URL (`?id=<review item id>`), not in state,
   // so a refresh or a shared link lands on the same page.
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const search = useUiSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const idParam = search?.get('id') ?? null;
   const [focusedIdx, setFocusedIdx] = useState(0);
   // Only show the focused-row highlight while the user is actually navigating by

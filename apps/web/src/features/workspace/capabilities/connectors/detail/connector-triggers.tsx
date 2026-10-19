@@ -3,7 +3,7 @@
 import type { AdminConnector } from '@kortix/sdk';
 import { useProjectTriggerEventApps, useProjectTriggers } from '@kortix/sdk/react';
 import { PlusIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useState } from 'react';
 
 import {

@@ -164,8 +164,7 @@ import {
   MagnifyingGlassIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
@@ -957,9 +956,9 @@ function errorToastFallback(error: unknown, tI18nComplete: UiTranslator) {
  */
 function useTeamsInstallReturnToast() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const searchParams = useUiSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const status = searchParams?.get('teams') ?? null;
 
   useEffect(() => {

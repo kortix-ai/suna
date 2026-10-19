@@ -1,8 +1,8 @@
 'use client';
 
-import { UiProvider, type UiNavigation, type UiStringsInput } from '@kortix/ui';
+import { UiProvider, type UiLinkProps, type UiNavigation, type UiStringsInput } from '@kortix/ui';
 import { lazyClient } from '@kortix/ui/lib/lazy-client';
-import type { UiHostComponents } from '@kortix/ui/providers/ui-provider';
+import type { UiHostComponents, UiHostConfig, UiViewer } from '@kortix/ui/providers/ui-provider';
 import type { UiI18nHost } from '@kortix/ui/i18n';
 import { SessionIdsProvider } from '@kortix/ui/providers/session-ids';
 import { setUiHostEnv } from '@kortix/ui/lib/host-env';
@@ -12,14 +12,16 @@ import * as Sentry from '@sentry/nextjs';
 import NextImage from 'next/image';
 import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, type ReactNode } from 'react';
+import { forwardRef, useMemo, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useBranding } from '@/features/branding/branding-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
-import { isBillingEnabled } from '@/lib/config';
+import { isBillingEnabled, isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
+import { isStaticSitePath } from '@/lib/navigation/static-site-path';
 import { getEnv } from '@/lib/env-config';
 import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
 import { track, type PanelEvent } from '@/lib/track';
@@ -57,9 +59,32 @@ setUiHostEnv(() => {
   };
 });
 
+/**
+ * next/link, except a static, non-App-Router path (`/docs`, `/sitemap.xml`):
+ * that one is a plain <a>, the `SiteLink` rule. Next cannot prefetch or
+ * soft-navigate a static file.
+ */
+const HostLink = forwardRef<HTMLAnchorElement, Omit<UiLinkProps, 'ref'>>(function HostLink(
+  props,
+  ref,
+) {
+  if (isStaticSitePath(props.href)) {
+    const { prefetch: _prefetch, ...anchor } = props;
+    return <a ref={ref} {...anchor} />;
+  }
+  return <NextLink ref={ref} {...props} />;
+});
+
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
+function useViewer(): UiViewer | undefined {
+  const { user } = useAuth();
+  return useMemo(
+    () => (user ? { id: user.id, email: user.email, metadata: user.user_metadata } : undefined),
+    [user],
+  );
+}
 
 // App features the session UI renders whole. Dialogs load lazily, so the
 // root bundle stays small. The wallpaper is static: it paints on first frame.
@@ -118,16 +143,26 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
     [common, palette],
   );
   // Read on first render, not at module load: the browser reads the runtime config script.
-  const config = useMemo(() => ({ billingEnabled: isBillingEnabled() }), []);
+  const config = useMemo<Partial<UiHostConfig>>(
+    () => ({
+      billingEnabled: isBillingEnabled(),
+      connectorsEnabled: isConnectorsEnabled(),
+      managedModelsEnabled: isManagedProviderEnabled(),
+      deploymentVersion: getEnv().VERSION,
+    }),
+    [],
+  );
   return (
     <UiProvider
       strings={strings}
-      link={NextLink}
+      link={HostLink}
       image={NextImage}
       useBrand={useBranding}
       navigation={navigation}
       i18n={i18n}
       useViewerId={useViewerId}
+      useViewer={useViewer}
+      updateViewerMetadata={updateProfileMetadata}
       config={config}
       components={components}
     >

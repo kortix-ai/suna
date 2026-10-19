@@ -101,6 +101,10 @@ export type UiImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'
   height?: number;
   /** Skip the host's image optimizer (`next/image` reads it). The default image ignores it. */
   unoptimized?: boolean;
+  /** Fill the positioned parent, as `next/image` `fill` does. The default image sets the same inline styles. */
+  fill?: boolean;
+  /** Load first, as `next/image` `priority` does. The default image loads eagerly. */
+  priority?: boolean;
 };
 export type UiImageComponent = React.ComponentType<UiImageProps>;
 
@@ -133,14 +137,29 @@ const DefaultLink = React.forwardRef<HTMLAnchorElement, UiLinkProps>(function De
   return <a ref={ref} {...anchor} />;
 });
 
-function DefaultImage({ unoptimized: _unoptimized, alt, ...props }: UiImageProps) {
-  return <img alt={alt} {...props} />;
+const FILL_STYLE: React.CSSProperties = { position: 'absolute', inset: 0, width: '100%', height: '100%' };
+
+function DefaultImage({ unoptimized: _unoptimized, fill, priority, alt, style, ...props }: UiImageProps) {
+  return (
+    <img
+      {...props}
+      alt={alt}
+      loading={priority ? 'eager' : props.loading}
+      style={fill ? { ...FILL_STYLE, ...style } : style}
+    />
+  );
+}
+
+/** Options of one navigation, as `next/navigation`'s router reads them. */
+export interface UiNavigateOptions {
+  /** False: keep the scroll position. Default: scroll to the top. The default router ignores it. */
+  scroll?: boolean;
 }
 
 /** Client-side navigation. `next/navigation`'s `useRouter()` result fits as is. */
 export interface UiRouter {
-  push(href: string): void;
-  replace(href: string): void;
+  push(href: string, options?: UiNavigateOptions): void;
+  replace(href: string, options?: UiNavigateOptions): void;
   prefetch(href: string): void;
   back(): void;
 }
@@ -202,11 +221,55 @@ export const defaultUiNavigation: UiNavigation = {
 export interface UiHostConfig {
   /** Billing is on, so upgrade actions have a target. Default: false. */
   billingEnabled: boolean;
+  /**
+   * The backend serves the hosted app-connector catalog ("Easy connect").
+   * False hides that catalog; custom connectors stay. Default: true.
+   */
+  connectorsEnabled: boolean;
+  /** The deployment serves its own managed model lineup. Default: false. */
+  managedModelsEnabled: boolean;
+  /** The deployment's release version, for version-pinned CLI install commands. Default: none (latest). */
+  deploymentVersion?: string;
 }
 
-export const defaultUiHostConfig: UiHostConfig = { billingEnabled: false };
+export const defaultUiHostConfig: UiHostConfig = {
+  billingEnabled: false,
+  connectorsEnabled: true,
+  managedModelsEnabled: false,
+};
 
 const useNoViewer = (): string | undefined => undefined;
+
+/** The signed-in user, as the host's auth knows them. */
+export interface UiViewer {
+  id: string;
+  email?: string | null;
+  /**
+   * Profile fields of the host's auth user. The UI reads `name`, `full_name`
+   * and `avatar_url` (strings) for greetings, avatars and labels.
+   */
+  metadata?: Readonly<Record<string, unknown>>;
+}
+
+/** A viewer hook built from an id hook: `{ id }`, stable per id. */
+function viewerFromId(useId: () => string | undefined): () => UiViewer | undefined {
+  return function useViewerFromId() {
+    const id = useId();
+    return React.useMemo(() => (id ? { id } : undefined), [id]);
+  };
+}
+
+const useNoViewerProfile = (): UiViewer | undefined => undefined;
+
+/** An id hook built from a viewer hook. */
+function idFromViewer(useViewer: () => UiViewer | undefined): () => string | undefined {
+  return function useIdFromViewer() {
+    return useViewer()?.id;
+  };
+}
+
+/** Merges `patch` into the signed-in user's `metadata` and resolves once it is saved. */
+export type UpdateUiViewerMetadata = (patch: Record<string, unknown>) => Promise<void>;
 
 /**
  * App features the UI renders whole but does not own. Every slot is
@@ -268,6 +331,8 @@ interface UiContextValue {
   navigation: UiNavigation;
   i18n: UiI18nHost | null;
   useViewerId: () => string | undefined;
+  useViewer: () => UiViewer | undefined;
+  updateViewerMetadata: UpdateUiViewerMetadata | undefined;
   config: UiHostConfig;
   components: UiHostComponents;
 }
@@ -280,6 +345,8 @@ const UiContext = React.createContext<UiContextValue>({
   navigation: defaultUiNavigation,
   i18n: null,
   useViewerId: useNoViewer,
+  useViewer: useNoViewerProfile,
+  updateViewerMetadata: undefined,
   config: defaultUiHostConfig,
   components: NO_COMPONENTS,
 });
@@ -292,6 +359,8 @@ export function UiProvider({
   navigation,
   i18n,
   useViewerId,
+  useViewer,
+  updateViewerMetadata,
   config,
   components,
   children,
@@ -306,8 +375,18 @@ export function UiProvider({
   navigation?: UiNavigation;
   /** Default: the bundled English catalog (`@kortix/ui/i18n`). Pass a stable object. */
   i18n?: UiI18nHost;
-  /** A hook that returns the signed-in user's id. Default: no viewer. */
+  /** A hook that returns the signed-in user's id. Default: `useViewer`'s id, else no viewer. */
   useViewerId?: () => string | undefined;
+  /**
+   * A hook that returns the signed-in user, stable while they do not change.
+   * Default: `{ id }` from `useViewerId`, else no viewer.
+   */
+  useViewer?: () => UiViewer | undefined;
+  /**
+   * Saves profile fields on the signed-in user (UI preferences that follow
+   * them across devices). Default: none, so those preferences stay in this browser.
+   */
+  updateViewerMetadata?: UpdateUiViewerMetadata;
   config?: Partial<UiHostConfig>;
   /** Default: no slots. Pass a stable object. */
   components?: UiHostComponents;
@@ -321,11 +400,13 @@ export function UiProvider({
       useBrand: useBrand ?? useNoBrand,
       navigation: navigation ?? defaultUiNavigation,
       i18n: i18n ?? null,
-      useViewerId: useViewerId ?? useNoViewer,
+      useViewerId: useViewerId ?? (useViewer ? idFromViewer(useViewer) : useNoViewer),
+      useViewer: useViewer ?? (useViewerId ? viewerFromId(useViewerId) : useNoViewerProfile),
+      updateViewerMetadata,
       config: { ...defaultUiHostConfig, ...config },
       components: components ?? NO_COMPONENTS,
     }),
-    [strings, link, image, useBrand, navigation, i18n, useViewerId, config, components],
+    [strings, link, image, useBrand, navigation, i18n, useViewerId, useViewer, updateViewerMetadata, config, components],
   );
   return (
     <UiContext.Provider value={value}>
@@ -347,6 +428,25 @@ export function useUiLink(): UiLinkComponent {
 
 export function useUiImage(): UiImageComponent {
   return React.useContext(UiContext).image;
+}
+
+/**
+ * The host link as a component, for modules with many link sites:
+ * `import { UiLink as Link }` reads like `next/link` and renders the
+ * host's link (`next/link` in apps/web, a plain <a> without a host).
+ */
+export const UiLink = React.forwardRef<HTMLAnchorElement, Omit<UiLinkProps, 'ref'>>(function UiLink(
+  props,
+  ref,
+) {
+  const Link = useUiLink();
+  return <Link ref={ref} {...props} />;
+});
+
+/** The host image as a component (`next/image` in apps/web, a plain <img> without a host). */
+export function UiImage(props: UiImageProps) {
+  const Image = useUiImage();
+  return <Image {...props} alt={props.alt} />;
 }
 
 /** The host's organization brand for this subtree, or null for the Kortix marks. */
@@ -374,6 +474,16 @@ export function useUiParams<T extends UiRouteParams = UiRouteParams>(): T {
 /** The signed-in user's id, or undefined. */
 export function useUiViewerId(): string | undefined {
   return React.useContext(UiContext).useViewerId();
+}
+
+/** The signed-in user, or undefined. */
+export function useUiViewer(): UiViewer | undefined {
+  return React.useContext(UiContext).useViewer();
+}
+
+/** The host's profile writer, or undefined: keep the preference local. */
+export function useUiUpdateViewerMetadata(): UpdateUiViewerMetadata | undefined {
+  return React.useContext(UiContext).updateViewerMetadata;
 }
 
 export function useUiHostConfig(): UiHostConfig {

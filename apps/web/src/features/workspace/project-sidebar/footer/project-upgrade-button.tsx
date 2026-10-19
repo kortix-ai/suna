@@ -1,11 +1,10 @@
 'use client';
 
-import { canManageBilling } from '@kortix/sdk';
+import { canManageBilling, platformConfig } from '@kortix/sdk';
 
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
-import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useTranslations } from '@/i18n/use-translations';
@@ -42,7 +41,7 @@ function useSidebarUpgrade(accountId?: string) {
     [openUpgradeDialog, accountId],
   );
 
-  if (!isBillingEnabled() || !accountState) {
+  if (!platformConfig().billingEnabled || !accountState) {
     return { show: false as const, handleClick };
   }
 

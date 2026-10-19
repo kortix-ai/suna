@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,7 @@ function readRemembered(): string | null {
  */
 export function ConnectorsAppReturnBar() {
   const t = useTranslations('connectorsAppReturn');
-  const fromUrl = parseAppReturnUrl(useSearchParams().get('return_to'));
+  const fromUrl = parseAppReturnUrl(useUiSearchParams().get('return_to'));
   // The server snapshot is `null`: storage does not exist there, and the
   // hydrating render must match the server's.
   const remembered = useSyncExternalStore(subscribeToNothing, readRemembered, () => null);

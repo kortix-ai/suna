@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   describeSandboxTemplate,

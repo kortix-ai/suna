@@ -7,7 +7,7 @@ import {
   ChatIcon as MessageSquare,
   MonitorIcon as Monitor,
 } from '@phosphor-icons/react';
-import Image from 'next/image';
+import { UiImage as Image } from '@kortix/ui/providers/ui-provider';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

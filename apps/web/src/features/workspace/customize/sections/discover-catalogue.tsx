@@ -22,7 +22,7 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
-import Image from 'next/image';
+import { UiImage as Image, useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +43,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useDebounce } from '@/hooks/use-debounce';
-import { isConnectorsEnabled } from '@/lib/config';
 
 import {
   connectorSyncErrorForSlug,
@@ -88,7 +87,7 @@ export function DiscoverCatalogue({
   const { debouncedValue: deferredQuery } = useDebounce(q.trim(), 300);
   const [selectedConnector, setSelectedConnector] = useState<DiscoverConnector | null>(null);
   const [connectorTarget, setConnectorTarget] = useState<DiscoverConnectorTarget | null>(null);
-  const connectorsEnabled = isConnectorsEnabled();
+  const { connectorsEnabled } = useUiHostConfig();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
     queryFn: getConnectStatus,

@@ -1,6 +1,6 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import { useState } from 'react';
 
 import type { EmojiSelection } from '@/components/ui/emoji-picker';
@@ -45,13 +45,11 @@ function PanelPlaceholder() {
   return <div aria-busy="true" className="h-[368px] w-full" />;
 }
 
-const EmojiPicker = dynamic(() => loadEmojiPicker().then((m) => m.EmojiPicker), {
-  ssr: false,
-  loading: PanelPlaceholder,
+const EmojiPicker = lazyClient(() => loadEmojiPicker().then((m) => m.EmojiPicker), {
+  fallback: <PanelPlaceholder />,
 });
-const GlyphPicker = dynamic(() => loadGlyphPicker().then((m) => m.GlyphPicker), {
-  ssr: false,
-  loading: PanelPlaceholder,
+const GlyphPicker = lazyClient(() => loadGlyphPicker().then((m) => m.GlyphPicker), {
+  fallback: <PanelPlaceholder />,
 });
 
 /** Start fetching both panels; safe to call repeatedly. */

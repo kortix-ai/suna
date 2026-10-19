@@ -35,7 +35,7 @@ import {
 } from '@kortix/sdk';
 import { clearStartStash, contract, qk, reviewItemsOf } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 import {
   invalidateReviewInbox,
@@ -69,7 +69,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   // for every viewer: an unresolved probe offers no verdict.
   const cans = useProjectCans(projectId, REVIEW_CONTROL_ACTIONS);
   const qc = useQueryClient();
-  const router = useRouter();
+  const router = useUiRouter();
   const closeCustomize = useSettingsPanelStore((s) => s.close);
   // The segment is a server filter: each one is its own paged read (KRTX-2316).
   const [segment, setSegment] = useState<ReviewSegment>('needs_you');
@@ -88,7 +88,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const rows = useMemo(() => reviewItemsOf(data), [data]);
   // A link names one item (`?id=cr:…` from a session's change list). It may be
   // in another segment or past the loaded pages: read it by id.
-  const idParam = useSearchParams()?.get('id') ?? null;
+  const idParam = useUiSearchParams()?.get('id') ?? null;
   const linkedMissing = Boolean(
     idParam && isFetched && !rows.some((row) => row.review_item_id === idParam),
   );

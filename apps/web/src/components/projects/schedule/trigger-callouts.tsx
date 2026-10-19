@@ -14,7 +14,7 @@ import { projectSettingsSectionHref } from '@/features/workspace/capabilities/pr
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { LinkIcon, PencilSimpleIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import { type EventAppIndex, describeEventStatus, eventAppName } from './event-trigger-copy';
 import { useEventAppConnect } from './use-event-app-connect';

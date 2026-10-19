@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -57,7 +57,7 @@ export function AddGitHubAccountDialog({
   onBeforeLeave?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
+  const router = useUiRouter();
 
   function leave() {
     rememberGitHubSetupReturn(returnPath);

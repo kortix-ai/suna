@@ -1,21 +1,17 @@
 'use client';
 
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import { ShaderSafe } from '@/components/ui/shader-safe';
 import { useWallpaperTheme } from '@/components/ui/wallpaper-shaders';
-import dynamic from 'next/dynamic';
 import { memo, type ReactNode } from 'react';
 
-const GrainGradient = dynamic(
-  () => import('@paper-design/shaders-react').then((m) => m.GrainGradient),
-  { ssr: false },
+const GrainGradient = lazyClient(() =>
+  import('@paper-design/shaders-react').then((m) => m.GrainGradient),
 );
-const PaperTexture = dynamic(
-  () => import('@paper-design/shaders-react').then((m) => m.PaperTexture),
-  { ssr: false },
+const PaperTexture = lazyClient(() =>
+  import('@paper-design/shaders-react').then((m) => m.PaperTexture),
 );
-const NeuroNoise = dynamic(() => import('@paper-design/shaders-react').then((m) => m.NeuroNoise), {
-  ssr: false,
-});
+const NeuroNoise = lazyClient(() => import('@paper-design/shaders-react').then((m) => m.NeuroNoise));
 
 // Wallpapers built on Paper Shaders (@paper-design/shaders-react) —
 // single-pass WebGL2 fragments, much lighter than the multi-pass WebGPU

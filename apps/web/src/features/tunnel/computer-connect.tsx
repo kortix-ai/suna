@@ -1,6 +1,6 @@
 'use client';
 
-import { listConnections, type Connection } from '@kortix/sdk';
+import { listConnections, type Connection, platformConfig } from '@kortix/sdk';
 import {
   CursorClickIcon,
   FolderIcon,
@@ -19,7 +19,7 @@ import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Download } from '@/features/icon/icons/download';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { tunnelKeys, useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
@@ -31,7 +31,6 @@ import {
   startDownload,
   type DesktopComputerStatus,
 } from '@/lib/desktop';
-import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
@@ -111,7 +110,7 @@ export function useProjectComputerAccounts(
   projectId: string,
   options?: { refetchInterval?: number },
 ) {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const query = useQuery({
     ...connectionsQueryOptions(projectId),
     refetchInterval: options?.refetchInterval,
@@ -119,7 +118,7 @@ export function useProjectComputerAccounts(
   const connections = query.data?.connections;
   return {
     query,
-    accounts: projectComputerAccounts(connections, user?.id),
+    accounts: projectComputerAccounts(connections, viewerId),
     /** The project's computer connector slug, whatever an older project named it. */
     connectorAlias: connections?.find(isComputerConnection)?.connector_alias ?? 'computer',
     connections,
@@ -170,10 +169,10 @@ export function useOwnsPairedComputer(): {
   /** The machines the caller paired, the live ones first. */
   owned: TunnelConnection[];
 } {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const queryClient = useQueryClient();
   const ownedBy = (machines: readonly TunnelConnection[] | undefined) =>
-    user ? (machines ?? []).filter((machine) => machine.ownerUserId === user.id) : [];
+    viewerId ? (machines ?? []).filter((machine) => machine.ownerUserId === viewerId) : [];
   const known =
     ownedBy(queryClient.getQueryData<TunnelConnection[]>(tunnelKeys.connections())).length > 0;
   const machines = useTunnelConnections({ refetchInterval: known ? false : 60_000 });
@@ -524,7 +523,7 @@ function ComputerConnectOptions({
   const copyCliCommand = () =>
     copy(
       buildTunnelConnectCommand({
-        backendUrl: getEnv().BACKEND_URL || '',
+        backendUrl: platformConfig().backendUrl || '',
         origin: window.location.origin,
         projectId,
       }),

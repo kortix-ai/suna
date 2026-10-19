@@ -33,7 +33,6 @@ import { Github as GithubIcon } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { getEnv } from '@/lib/env-config';
 import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
@@ -51,6 +50,7 @@ import {
   type KortixProject,
   type ProjectDetail,
   type ProjectGitConnection,
+  platformConfig,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -63,7 +63,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from '@/components/site-link';
+import { UiLink as Link, useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -103,7 +103,7 @@ type ProjectWithOrigin = KortixProject & { git_origin_url?: string };
  */
 function gitCloneUrl(project: ProjectWithOrigin): string {
   if (project.git_origin_url) return project.git_origin_url;
-  const configured = getEnv().BACKEND_URL.replace(/\/+$/, '');
+  const configured = platformConfig().backendUrl.replace(/\/+$/, '');
   const base = configured.startsWith('http')
     ? configured
     : `${typeof window === 'undefined' ? '' : window.location.origin}${configured}`;
@@ -690,7 +690,7 @@ function Step({
 function LocalSetup({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tGit = useI18nTranslations('settings.git');
-  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
+  const installCommand = useDeploymentCliInstallCommand(useUiHostConfig().deploymentVersion);
 
   return (
     <section className="space-y-3">

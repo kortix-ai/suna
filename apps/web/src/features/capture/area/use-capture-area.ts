@@ -5,7 +5,7 @@ import { useCaptureWorkspace } from '@kortix/sdk/react';
 import { useCallback, useMemo } from 'react';
 
 import { useAccountMembers } from '@/features/accounts/hub/use-account-members';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewer } from '@kortix/ui/providers/ui-provider';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 
 /**
@@ -86,7 +86,7 @@ export interface CapturePerson {
  * has the emails. A member who may not read that list still knows themselves.
  */
 export function useCaptureDirectory(accountId: string, enabled: boolean) {
-  const { user } = useAuth();
+  const user = useUiViewer();
   const members = useAccountMembers(enabled ? accountId : undefined);
   const byId = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.user_id, member.email])),

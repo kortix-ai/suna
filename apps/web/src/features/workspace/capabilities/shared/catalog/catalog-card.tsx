@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';

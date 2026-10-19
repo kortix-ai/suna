@@ -2,7 +2,7 @@
 
 import { useQueries } from '@tanstack/react-query';
 import { probeEffectivePermission, type KortixAccount } from '@kortix/sdk';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { permissionProbeKey } from '@kortix/sdk/react';
 import { canCreateInAccount, filterCreatableAccounts } from './new-workspace-form';
 
@@ -13,12 +13,12 @@ import { canCreateInAccount, filterCreatableAccounts } from './new-workspace-for
  * fresh owner's first /projects render says "ask an admin").
  */
 export function useCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const verdicts = useQueries({
     queries: accounts.map((account) => ({
-      queryKey: permissionProbeKey(account.account_id, user?.id, 'project.create'),
-      queryFn: () => probeEffectivePermission(account.account_id, user!.id, { action: 'project.create' }),
-      enabled: !!user?.id,
+      queryKey: permissionProbeKey(account.account_id, viewerId, 'project.create'),
+      queryFn: () => probeEffectivePermission(account.account_id, viewerId!, { action: 'project.create' }),
+      enabled: !!viewerId,
       staleTime: 5 * 60_000,
     })),
   });

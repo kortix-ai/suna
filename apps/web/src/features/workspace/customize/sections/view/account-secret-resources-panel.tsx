@@ -21,7 +21,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { DotsThreeIcon } from '@phosphor-icons/react';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewer } from '@kortix/ui/providers/ui-provider';
 import { PrincipalPicker, type PrincipalSelection } from '@/features/workspace/shared/access/principal-picker';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -127,7 +127,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const t = useTranslations('pooledSecrets');
   const tUndecryptable = useTranslations('secrets.undecryptable');
   const common = useTranslations('common');
-  const { user } = useAuth();
+  const user = useUiViewer();
   const queryClient = useQueryClient();
   const queryKey = ['account-secret-resources', accountId, projectId] as const;
   const resources = useAccountSecretResources(accountId, projectId);
@@ -156,7 +156,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     secret.created_by === user?.id || actorRole === 'owner' || actorRole === 'admin';
   const authMessages = { expired: t('oauthExpired'), failed: t('connectFailed') };
   const defaultLabel = () => {
-    const name = labelOwnerName(user);
+    const name = labelOwnerName(user && { email: user.email, user_metadata: user.metadata });
     return oauth && name ? t('defaultAccountLabel', { name }) : '';
   };
   const closeCreate = () => {

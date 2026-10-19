@@ -23,10 +23,9 @@ export {
 /**
  * Base path for desktop downloads. `/download` is the public page; the
  * `/download/<platform>` children 302 to the latest installer for that OS —
- * same pattern as the CLI's `/install`. Override with
- * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
+ * same pattern as the CLI's `/install`.
  */
-export const DESKTOP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
+export const DESKTOP_DOWNLOAD_URL = '/download';
 
 /**
  * Build a per-platform download URL, e.g. desktopDownloadUrl('macos') →

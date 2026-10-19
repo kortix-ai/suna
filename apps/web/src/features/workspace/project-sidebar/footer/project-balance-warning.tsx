@@ -1,6 +1,6 @@
 'use client';
 
-import { canManageBilling } from '@kortix/sdk';
+import { canManageBilling, platformConfig } from '@kortix/sdk';
 
 import {
   SidebarAlertRow,
@@ -14,7 +14,6 @@ import {
   walletAlertCopy,
   walletSeverity,
 } from '@/lib/billing/billing-gate-state';
-import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { WarningIcon as AlertTriangle, CreditCardIcon as CreditCard } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -45,7 +44,7 @@ function useBalanceWarning(accountId: string | undefined, tI18nComplete: UiTrans
     [openUpgradeDialog, accountId, accountState, tI18nComplete],
   );
 
-  if (!isBillingEnabled() || !accountState || !canTopUp) {
+  if (!platformConfig().billingEnabled || !accountState || !canTopUp) {
     return { severity: null as ReturnType<typeof walletSeverity>, handleClick };
   }
 

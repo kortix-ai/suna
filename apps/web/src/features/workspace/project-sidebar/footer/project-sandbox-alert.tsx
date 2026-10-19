@@ -17,7 +17,7 @@ import { useSandboxHealth, useSandboxRecovery } from './sandbox-health';
 
 import { useTranslations } from '@/i18n/use-translations';
 import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import { useState } from 'react';
 

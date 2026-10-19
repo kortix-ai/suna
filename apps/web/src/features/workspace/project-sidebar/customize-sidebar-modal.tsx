@@ -10,12 +10,15 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { useAuth } from '@/features/providers/auth-provider';
+import {
+  useUiUpdateViewerMetadata,
+  useUiViewer,
+  type UpdateUiViewerMetadata,
+} from '@kortix/ui/providers/ui-provider';
 import { useNavRowMeta, type NavRowMeta } from '@/features/workspace/project-sidebar/nav-row-meta';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useTranslations } from '@/i18n/use-translations';
 import { spring } from '@/lib/springs';
-import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { cn } from '@/lib/utils';
 import {
   SIDEBAR_NAV_METADATA_KEY,
@@ -72,8 +75,8 @@ export function CustomizeSidebarModal({ projectId }: { projectId: string }) {
   );
 }
 
-function saveSidebarNav(items: SidebarNavEntry[]) {
-  updateProfileMetadata({ [SIDEBAR_NAV_METADATA_KEY]: items }).catch((error) => {
+function saveSidebarNav(save: UpdateUiViewerMetadata | undefined, items: SidebarNavEntry[]) {
+  save?.({ [SIDEBAR_NAV_METADATA_KEY]: items }).catch((error) => {
     console.warn('[sidebar] Could not save the sidebar layout to the account:', error);
   });
 }
@@ -86,9 +89,10 @@ function saveSidebarNav(items: SidebarNavEntry[]) {
  * store, and a store subscription would save that reset over the layout.
  */
 function useSidebarNavAccountSync(open: boolean, setOpen: (open: boolean) => void) {
-  const { user } = useAuth();
+  const user = useUiViewer();
+  const save = useUiUpdateViewerMetadata();
   const userId = user?.id;
-  const remote: unknown = user?.user_metadata?.[SIDEBAR_NAV_METADATA_KEY];
+  const remote: unknown = user?.metadata?.[SIDEBAR_NAV_METADATA_KEY];
   const remoteKey = JSON.stringify(remote ?? null);
   const openedWith = useRef<string | null>(null);
 
@@ -100,8 +104,8 @@ function useSidebarNavAccountSync(open: boolean, setOpen: (open: boolean) => voi
       useSidebarNavStore.getState().items,
     );
     useSidebarNavStore.getState().setItems(items);
-    if (push) saveSidebarNav(items);
-  }, [userId, remoteKey]);
+    if (push) saveSidebarNav(save, items);
+  }, [userId, remoteKey, save]);
 
   // The modal opens through the store (`openCustomizeSidebar`), so the
   // snapshot follows `open`, not `onOpenChange`.
@@ -113,12 +117,12 @@ function useSidebarNavAccountSync(open: boolean, setOpen: (open: boolean) => voi
     (next: boolean) => {
       const { items } = useSidebarNavStore.getState();
       if (!next && openedWith.current !== null && openedWith.current !== sidebarNavKey(items)) {
-        saveSidebarNav(items);
+        saveSidebarNav(save, items);
       }
       if (!next) openedWith.current = null;
       setOpen(next);
     },
-    [setOpen],
+    [setOpen, save],
   );
 }
 

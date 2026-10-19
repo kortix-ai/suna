@@ -65,7 +65,7 @@ import {
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -266,9 +266,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tDeleted = useTranslations('sidebar.recentlyDeleted');
   const tSessionDelete = useTranslations('sessionDelete');
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
+  const searchParams = useUiSearchParams();
   const [search, setSearch] = useState('');
   // `?view=archived` opens the archive, `?view=deleted` Recently deleted (the
   // sidebar menu's links).

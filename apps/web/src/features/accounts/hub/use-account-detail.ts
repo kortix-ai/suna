@@ -11,14 +11,14 @@
 import { getAccount } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 
 export function useAccountDetail(accountId: string | undefined) {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   return useQuery({
     queryKey: ['account', accountId],
     queryFn: () => getAccount(accountId!),
-    enabled: !!user && !!accountId,
+    enabled: !!viewerId && !!accountId,
     staleTime: 30_000,
   });
 }

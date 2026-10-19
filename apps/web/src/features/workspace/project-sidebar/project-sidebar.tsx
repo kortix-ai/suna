@@ -35,17 +35,27 @@ import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
-import { WorkspaceSwitcher } from './workspace-switcher';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
-export function ProjectSidebar({ projectId }: { projectId: string }) {
+export function ProjectSidebar({
+  projectId,
+  menu,
+}: {
+  projectId: string;
+  /**
+   * The header's first control: who is signed in, the workspace, account
+   * actions (apps/web passes `WorkspaceSwitcher`). Without it, the header
+   * shows only the sidebar's own buttons.
+   */
+  menu?: ReactNode;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
@@ -152,9 +162,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             !peek && 'kx-titlebar-row kx-titlebar-band-height kx-project-sidebar-titlebar',
           )}
         >
-          <div className="min-w-0">
-            <WorkspaceSwitcher projectId={projectId} />
-          </div>
+          {menu ? <div className="min-w-0">{menu}</div> : null}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* The inbox (KRTX-1742), first, while this project has the
                 `notification_center` flag on. The switcher shrinks before any

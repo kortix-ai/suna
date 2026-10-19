@@ -5,8 +5,7 @@ import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { UiLink as Link, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo } from 'react';
 import {
   projectCapabilityNavHref,
@@ -109,8 +108,8 @@ import {
 export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const searchParams = useUiSearchParams();
+  const router = useUiRouter();
 
   const detail = useQuery({
     queryKey: qk.project.detail(projectId),

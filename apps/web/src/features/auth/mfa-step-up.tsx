@@ -44,10 +44,14 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+import {
+  MFA_REQUIRED_EVENT,
+  MFA_VERIFIED_EVENT,
+  armPendingMfaAction,
+  clearPendingMfaAction,
+} from './mfa-pending-action';
 
-export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
-export { MFA_VERIFIED_EVENT };
+export { MFA_REQUIRED_EVENT, MFA_VERIFIED_EVENT };
 
 /**
  * Run `action` now, or — while this session still owes a TOTP challenge — open

@@ -26,7 +26,10 @@ const uiModalMock = () =>
   );
 mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
-mock.module('motion/react', () => ({ m: { div: host('div') } }));
+mock.module('motion/react', () => ({
+  m: { div: host('div') },
+  LazyMotion: ({ children }: { children?: React.ReactNode }) => children,
+}));
 const uiToastMock = () => ({ successToast: () => {} });
 mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);

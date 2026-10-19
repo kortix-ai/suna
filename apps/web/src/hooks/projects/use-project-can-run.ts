@@ -6,8 +6,7 @@ import {
   billingStateAllowsRun,
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
-import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProjectDetail, platformConfig } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -28,7 +27,7 @@ export function useProjectCanRun(projectId: string | undefined) {
     enabled: !!accountId,
   });
 
-  if (!isBillingEnabled()) {
+  if (!platformConfig().billingEnabled) {
     return { canRun: true, isLoading: false, accountId, billingState: null as BillingState | null };
   }
 

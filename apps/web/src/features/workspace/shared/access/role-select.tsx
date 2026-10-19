@@ -24,7 +24,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { menuRow } from '@/components/ui/menu-recipe';
 import { ArrowRightIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useMemo } from 'react';
 
 import {

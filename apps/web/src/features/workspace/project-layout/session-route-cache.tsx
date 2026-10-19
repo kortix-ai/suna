@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { useUiPathname } from '@kortix/ui/providers/ui-provider';
 import { Activity, type ReactNode, useState } from 'react';
 
 const MAX_CACHED_SESSIONS = 3;
@@ -8,7 +8,7 @@ const SESSION_PATH = /\/projects\/[^/]+\/sessions\/([^/?#]+)\/?$/;
 
 /** Keep recently visited session trees alive while the project shell stays mounted. */
 export function SessionRouteCache({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = useUiPathname();
   const sessionId = pathname.match(SESSION_PATH)?.[1];
   const [cached, setCached] = useState<{ id: string; children: ReactNode }[]>([]);
 

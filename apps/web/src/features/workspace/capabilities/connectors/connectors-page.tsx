@@ -10,8 +10,8 @@ import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/s
 import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import dynamic from 'next/dynamic';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
@@ -99,18 +99,17 @@ import { useInstall } from './install/use-install';
  * click, so it need not be parsed before one. `ssr: false` keeps it out of the
  * server bundle too — a closed modal has no markup worth streaming.
  */
-const CustomConnectorForm = dynamic(
+const CustomConnectorForm = lazyClient(
   () =>
     import('@/features/workspace/customize/sections/connectors-view').then(
       (m) => m.CustomConnectorForm,
     ),
-  { ssr: false, loading: () => <ModalFormFallback /> },
+  { fallback: <ModalFormFallback /> },
 );
 
 /** New → MCP server. A closed dialog needs no code before the click either. */
-const AddMcpServerDialog = dynamic(
-  () => import('./add-mcp/add-mcp-server-dialog').then((m) => m.AddMcpServerDialog),
-  { ssr: false },
+const AddMcpServerDialog = lazyClient(() =>
+  import('./add-mcp/add-mcp-server-dialog').then((m) => m.AddMcpServerDialog),
 );
 
 /** Holds the Add modal's height while its form chunk arrives. */
@@ -135,12 +134,12 @@ function ModalFormFallback() {
  * in the common case; a deep link (`?scope=channels`) pays one chunk fetch and
  * gets `ChannelsFallback` while it lands.
  */
-const ChannelsSection = dynamic(
+const ChannelsSection = lazyClient(
   () =>
     import('@/features/workspace/customize/sections/view/channels-view').then(
       (m) => m.ChannelsSection,
     ),
-  { ssr: false, loading: () => <ChannelsFallback /> },
+  { fallback: <ChannelsFallback /> },
 );
 
 /**
@@ -713,9 +712,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 }
 
 function useConnectorNavigation(projectId: string) {
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const search = useUiSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
 
   // `?c=<slug>` named the open connector before connectors had pages, and an
   // OAuth grant started then returns to that URL. Forward it, result intact.

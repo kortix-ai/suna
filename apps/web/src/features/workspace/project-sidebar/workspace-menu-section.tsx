@@ -31,8 +31,7 @@ import {
   PlusIcon,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { UiLink as Link, useUiParams, useUiPathname } from '@kortix/ui/providers/ui-provider';
 import { useState, type MouseEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -67,8 +66,8 @@ import { InvitationsMenuGroup } from './invitations-menu-group';
 export function WorkspaceMenuSection() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
-  const pathname = usePathname();
-  const params = useParams<{ id?: string }>();
+  const pathname = useUiPathname();
+  const params = useUiParams<{ id?: string }>();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);

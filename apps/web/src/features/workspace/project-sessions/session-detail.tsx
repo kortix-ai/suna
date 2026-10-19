@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
 import { ArrowSquareOutIcon, WarningIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import {
   sessionAccessMeta,

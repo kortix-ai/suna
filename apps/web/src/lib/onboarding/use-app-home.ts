@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /**
@@ -12,13 +12,13 @@ import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
  * its owner, and threading that through by hand meant call sites without a
  * convenient `user` passed `null` — technically safe (it degrades to the door)
  * but it made "I could not be bothered" and "there is genuinely no user here"
- * indistinguishable at a glance. Binding the lookup to `useAuth` removes the
+ * indistinguishable at a glance. Binding the lookup to the viewer id removes the
  * choice: every component gets the correct answer with no argument to get
  * wrong.
  *
  * Not for post-account-switch navigation — see `latestProjectPath`.
  */
 export function useAppHome(): string {
-  const { user } = useAuth();
-  return latestProjectPath(user?.id);
+  const viewerId = useUiViewerId();
+  return latestProjectPath(viewerId);
 }

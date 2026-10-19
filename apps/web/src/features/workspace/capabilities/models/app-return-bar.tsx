@@ -1,7 +1,7 @@
 'use client';
 
 import { useProjectModels } from '@kortix/sdk/react';
-import { useSearchParams } from 'next/navigation';
+import { useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ import { usableModelCount } from './app-return';
  */
 export function AppReturnBar({ projectId }: { projectId: string }) {
   const t = useTranslations('modelAccess');
-  const returnUrl = parseAppReturnUrl(useSearchParams().get('return_to'));
+  const returnUrl = parseAppReturnUrl(useUiSearchParams().get('return_to'));
   const models = useProjectModels(returnUrl ? projectId : null);
   const connected = usableModelCount(models) > 0;
   const redirectedRef = useRef(false);

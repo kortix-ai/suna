@@ -22,7 +22,7 @@ import {
   type SidebarNavEntry,
 } from '@/stores/sidebar-nav-store';
 import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
 const subscribeNoop = () => () => {};

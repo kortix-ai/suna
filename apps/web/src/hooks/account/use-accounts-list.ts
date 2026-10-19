@@ -31,7 +31,7 @@
  * `qk.accounts.list(userId)` adds.
  *
  * **2. Eight of the thirteen had no `enabled` gate.** They fired before
- * `useAuth()` had resolved and wrote whatever came back into the shared slot.
+ * the viewer id had resolved and wrote whatever came back into the shared slot.
  * Every reader now fails CLOSED: no user id, no query, no data — never
  * another user's data.
  *
@@ -49,7 +49,7 @@
  * it to the host's own auth context, which the framework-free SDK cannot see.
  */
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
@@ -112,8 +112,8 @@ export function accountsListQueryOptions(
  * `qk.accounts.scope()` instead; see the note on that member.
  */
 export function useAccountsQueryKey(): AccountsListQueryKey {
-  const { user } = useAuth();
-  return qk.accounts.list(user?.id);
+  const viewerId = useUiViewerId();
+  return qk.accounts.list(viewerId);
 }
 
 /**
@@ -123,9 +123,9 @@ export function useAccountsQueryKey(): AccountsListQueryKey {
 export function useAccountsList(
   options: UseAccountsListOptions = {},
 ): UseQueryResult<KortixAccount[]> {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   return useQuery({
-    ...accountsListQueryOptions(user?.id, options.enabled),
+    ...accountsListQueryOptions(viewerId, options.enabled),
     queryFn: listAccounts,
     ...(options.retry === undefined ? {} : { retry: options.retry }),
   });

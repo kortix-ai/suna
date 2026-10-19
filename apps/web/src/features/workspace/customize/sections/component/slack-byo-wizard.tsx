@@ -61,7 +61,7 @@ import { useConnectSlack, useSlackManifest } from '@/hooks/channels/use-channels
 import { cn } from '@/lib/utils';
 import { ArrowSquareOutIcon as ExternalLinkIcon, CheckIcon, LockIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useState } from 'react';
 
 const SLACK_NEW_APP_URL = 'https://api.slack.com/apps?new_app=1';

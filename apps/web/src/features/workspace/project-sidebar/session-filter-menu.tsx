@@ -4,7 +4,7 @@ import { resolveSectionLabels } from './session-section-labels';
 
 import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import {
   matchesSourceFilters,

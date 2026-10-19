@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useUiPathname, useUiRouter } from '@kortix/ui/providers/ui-provider';
 
 import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import type { CanResult } from '@/lib/use-project-can';
@@ -32,8 +32,8 @@ export function CapabilityAccessGate({
   projectId: string;
   children: ReactNode;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathname = useUiPathname();
+  const router = useUiRouter();
   const { settled, tabs } = useCapabilityAccess(projectId);
   const key = activeCapabilityTab(pathname);
   const allowed = !key || tabs.includes(key);

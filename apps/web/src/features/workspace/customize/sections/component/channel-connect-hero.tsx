@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { CaretRightIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type { ReactNode } from 'react';
 
 /**

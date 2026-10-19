@@ -8,17 +8,17 @@
  * user id, no query, never another user's list.
  */
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { listMyAccountInvites, type MyAccountInvite } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 export function useMyInvites(options: { enabled?: boolean } = {}): UseQueryResult<MyAccountInvite[]> {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   return useQuery({
-    queryKey: qk.accounts.myInvites(user?.id),
+    queryKey: qk.accounts.myInvites(viewerId),
     queryFn: listMyAccountInvites,
-    enabled: !!user?.id && (options.enabled ?? true),
+    enabled: !!viewerId && (options.enabled ?? true),
     staleTime: 30_000,
   });
 }

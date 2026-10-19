@@ -39,7 +39,7 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useMemo, useState } from 'react';
 
 import { RunHistogram, type RunTimeRange, fmtRange } from './trigger-runs-histogram';

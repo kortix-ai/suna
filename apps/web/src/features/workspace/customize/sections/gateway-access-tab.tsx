@@ -26,7 +26,7 @@
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import Link from '@/components/site-link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { Button } from '@/components/ui/button';
 import {
   GatewayQuickstartCode,

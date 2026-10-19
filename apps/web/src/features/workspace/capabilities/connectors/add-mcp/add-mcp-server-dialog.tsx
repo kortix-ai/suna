@@ -3,7 +3,7 @@
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -68,7 +68,7 @@ export function AddMcpServerDialog({
   const t = useTranslations('connectorPages');
   const tSharing = useTranslations('accessSharing');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
+  const router = useUiRouter();
   const id = useId();
   const accountId = useProjectAccountId(projectId);
   const canManageConnections =

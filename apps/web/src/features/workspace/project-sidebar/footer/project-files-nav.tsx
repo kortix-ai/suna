@@ -4,7 +4,7 @@ import { ProjectNavRow } from '@/features/workspace/project-sidebar/project-nav-
 
 import { useTranslations } from '@/i18n/use-translations';
 import { useQueryClient } from '@tanstack/react-query';
-import { useParams, usePathname } from 'next/navigation';
+import { useUiParams, useUiPathname } from '@kortix/ui/providers/ui-provider';
 import { useCallback } from 'react';
 
 import { CountBadge } from '@/components/ui/count-badge';
@@ -44,8 +44,8 @@ import { filesRow } from './files-nav-label';
  */
 export function ProjectFilesNavItem() {
   const t = useTranslations('sidebar');
-  const pathname = usePathname();
-  const params = useParams<{ id: string }>();
+  const pathname = useUiPathname();
+  const params = useUiParams<{ id: string }>();
   const projectId = params?.id;
   const target = useProjectNavRows(projectId).files;
   const queryClient = useQueryClient();

@@ -16,7 +16,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { acceptAccountInviteAndLand, type MyAccountInvite } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 
 /**
  * Pending invites at the top of the Switch Project menu. A user who already
@@ -25,7 +25,7 @@ import { useRouter } from 'next/navigation';
  */
 export function InvitationsMenuGroup() {
   const t = useTranslations('projectChooser');
-  const router = useRouter();
+  const router = useUiRouter();
   const queryClient = useQueryClient();
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const invitesQuery = useMyInvites();

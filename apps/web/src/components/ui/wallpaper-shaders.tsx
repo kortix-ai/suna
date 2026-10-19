@@ -1,28 +1,15 @@
 'use client';
 
 import { useReducedMotion } from 'motion/react';
-import { useTheme } from 'next-themes';
-import dynamic from 'next/dynamic';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import { memo, type ReactNode } from 'react';
 
-const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
-  ssr: false,
-});
-const Dither = dynamic(() => import('@/lib/shaders-react').then((m) => m.Dither), {
-  ssr: false,
-});
-const FlowingGradient = dynamic(
-  () => import('@/lib/shaders-react').then((m) => m.FlowingGradient),
-  {
-    ssr: false,
-  },
-);
-const LinearGradient = dynamic(() => import('@/lib/shaders-react').then((m) => m.LinearGradient), {
-  ssr: false,
-});
-const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m.WaveDistortion), {
-  ssr: false,
-});
+const Shader = lazyClient(() => import('@/lib/shaders-react').then((m) => m.Shader));
+const Dither = lazyClient(() => import('@/lib/shaders-react').then((m) => m.Dither));
+const FlowingGradient = lazyClient(() => import('@/lib/shaders-react').then((m) => m.FlowingGradient));
+const LinearGradient = lazyClient(() => import('@/lib/shaders-react').then((m) => m.LinearGradient));
+const WaveDistortion = lazyClient(() => import('@/lib/shaders-react').then((m) => m.WaveDistortion));
 
 // Ambient wallpapers share the Kortix monochrome palette (pure white page
 // in light mode, near-black in dark mode) and stay at one generator plus
@@ -30,8 +17,7 @@ const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m
 // live on the page — the settings picker uses pre-rendered thumbnails —
 // so at most one canvas animates at a time.
 export function useWallpaperTheme() {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === 'dark';
+  const isDark = useIsDark();
   // Reduced motion freezes the composition (speed/twinkle 0) instead of
   // removing it — a still wallpaper is still a wallpaper.
   const reduceMotion = useReducedMotion() ?? false;

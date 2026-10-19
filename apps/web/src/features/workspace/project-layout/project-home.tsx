@@ -15,7 +15,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
-import { useSearchParams } from 'next/navigation';
+import { useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import {
   getProjectDetail,
   listProjectAccessRequests,
@@ -75,7 +75,7 @@ export function ProjectHome({
   // The first chat never ends, but it opens only when asked for
   // (`firstChatHref`: the sidebar row or the onboarding exit). Plain project
   // home, which "New session" opens, stays the normal home.
-  const searchParams = useSearchParams();
+  const searchParams = useUiSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
   const firstChat = firstChatPending && isFirstChatRequested(searchParams);
 

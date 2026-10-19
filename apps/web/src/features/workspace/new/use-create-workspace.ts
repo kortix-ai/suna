@@ -1,10 +1,9 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useState } from 'react';
 
-import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildCreateRepoPayload,
@@ -881,9 +880,9 @@ export function useCreateWorkspace(): {
    */
   phase: ProvisionPhase | null;
 } {
-  const router = useRouter();
+  const router = useUiRouter();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const [status, setStatus] = useState<CreateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   // The raw thrown value, not just its formatted message — `canRetry` below
@@ -909,7 +908,7 @@ export function useCreateWorkspace(): {
       // attempt's last phase, and every source starts on the base screen.
       setPhase(null);
 
-      const result = await runCreate(state, creatableAccounts, user?.id, {
+      const result = await runCreate(state, creatableAccounts, viewerId, {
         attemptKeyFor,
         clearAttemptKey,
         // The phase sink is this hook's own state setter: every streamed
@@ -983,7 +982,7 @@ export function useCreateWorkspace(): {
         setLastError(result.error);
       }
     },
-    [creatableAccounts, queryClient, router, user?.id],
+    [creatableAccounts, queryClient, router, viewerId],
   );
 
   const retry = useCallback(() => {

@@ -6,7 +6,7 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type React from 'react';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 

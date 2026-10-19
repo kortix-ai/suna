@@ -84,7 +84,8 @@ mock.module('@kortix/sdk/react', () => ({
     refetch: async () => ({ data: { secrets: rows.map(resource) } }),
   }),
 }));
-mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: ME } }) }));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({ ...realUiProvider, useUiViewer: () => ({ id: ME }) }));
 const projectCan = await import('@/lib/use-project-can');
 mock.module('@kortix/ui/shared/lib/use-project-can', () => ({ ...projectCan, useProjectCan: () => ({ allowed: true }) }));
 

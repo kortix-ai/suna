@@ -4,8 +4,7 @@ import { hubTarget } from '@/stores/account-panel-store';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { UiLink as Link, useUiPathname } from '@kortix/ui/providers/ui-provider';
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
@@ -142,7 +141,7 @@ function GroupSeam() {
 }
 
 export function CapabilityTabs({ projectId }: { projectId: string }) {
-  const pathname = usePathname();
+  const pathname = useUiPathname();
   const activeKey = activeCapabilityTab(pathname);
   // This bar is the first in-flow child of the capabilities layout, which the
   // layout's own doc confirms adds no vertical offset — so on the desktop

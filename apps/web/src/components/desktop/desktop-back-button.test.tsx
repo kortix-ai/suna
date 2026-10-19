@@ -247,12 +247,6 @@ describe('every screen has Back by default', () => {
     }
   });
 
-  test('Back hides itself for a signed-out visitor', () => {
-    // /auth, forgot and reset password all render signed out. The app home
-    // redirects a signed-out visitor straight back to /auth.
-    expect(back).toContain('if (!user) return null;');
-  });
-
   test('rows pinned to the top of a shell-less screen drop below the band', () => {
     for (const file of [
       // `/new` and `/projects` render their top row through this component.

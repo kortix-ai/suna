@@ -21,7 +21,7 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Image from 'next/image';
+import { UiImage as Image, useUiViewer, useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -73,7 +73,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useAuth } from '@/features/providers/auth-provider';
 import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { mcpServerIdentity } from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
@@ -97,7 +96,6 @@ import {
 import { emptyProjectSlot, useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
-import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
@@ -518,7 +516,7 @@ export function ConnectionsList({
   const isComputer = connector.provider === 'computer';
   const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
   const [computerOpen, setComputerOpen] = useState(false);
-  const { user } = useAuth();
+  const user = useUiViewer();
   const viewerId = user?.id ?? null;
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
@@ -2156,7 +2154,7 @@ export function AddAppPanel({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
   // false) — hide Easy Connect while leaving Discover/direct sources available.
-  const connectorsEnabled = isConnectorsEnabled();
+  const { connectorsEnabled } = useUiHostConfig();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
     queryFn: getConnectStatus,

@@ -12,7 +12,8 @@
  */
 
 import { ArrowUpRightIcon, LinkSimpleIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { platformConfig } from '@kortix/sdk';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type { ComponentType } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,6 @@ import { Cursor } from '@/features/icon/icons/cursor';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
-import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 
 /** The MCP endpoint: `<api origin>/v1/mcp`. */
@@ -88,7 +88,7 @@ export function ConnectMcpModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('connectMcp');
-  const url = mcpUrl(getEnv().BACKEND_URL);
+  const url = mcpUrl(platformConfig().backendUrl);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>

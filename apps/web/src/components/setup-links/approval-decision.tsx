@@ -22,8 +22,7 @@ import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
 import { ArrowUpRightIcon, ShieldWarningIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { UiLink as Link, useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useState } from 'react';
 
 import { ConnectorHandshake } from './connector-handshake';
@@ -78,7 +77,7 @@ const RISK_LABEL_KEY: Record<string, string> = {
 
 export function ApprovalDecision({ token }: { token: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
+  const router = useUiRouter();
   const [details, setDetails] = useState<ApprovalLinkDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyDecision, setBusyDecision] = useState<ApprovalDecisionValue | null>(null);

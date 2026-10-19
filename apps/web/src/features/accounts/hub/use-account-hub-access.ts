@@ -13,7 +13,7 @@
  * `:batch` POST per page load, not two.
  */
 
-import { isBillingEnabled } from '@/lib/config';
+import { platformConfig } from '@kortix/sdk';
 import { usePermissions, type CanResult } from '@/lib/use-permission';
 
 import { useHubSearchParams } from './account-hub-location';
@@ -116,7 +116,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
 
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
   // remain available because they do not require the internal billing engine.
-  const billingActive = isBillingEnabled();
+  const billingActive = !!platformConfig().billingEnabled;
 
   // Which nav items this caller can see. ONE rule, no exceptions: a section
   // is visible when the probe for the leaf its own list route asserts came

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   AsteriskIcon as Asterisk,
@@ -15,7 +15,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from '@/components/site-link';
+import { UiLink as Link, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -83,7 +83,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useAuth } from '@/features/providers/auth-provider';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { AudienceFields } from '@/features/workspace/customize/sections/add-account-fields';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
@@ -271,7 +270,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   // read-only page, and one denied the leaf saw editable controls that 403.
   const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
-  const viewerId = useAuth().user?.id ?? null;
+  const viewerId = useUiViewerId() ?? null;
   const tSharing = useI18nTranslations('accessSharing');
 
   // A legacy/enforced row keeps its "Enforce at the network" badge even with the
@@ -1022,7 +1021,7 @@ function SecretDialog({
   const tPooled = useI18nTranslations('pooledSecrets');
   // Who can use the value. A new secret defaults to everyone, as every secret
   // did before audiences existed; editing opens on the stored audience.
-  const viewerId = useAuth().user?.id ?? null;
+  const viewerId = useUiViewerId() ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
   const tSecrets = useI18nTranslations('secrets');

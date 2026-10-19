@@ -12,17 +12,17 @@ import { listAccountMembers } from '@kortix/sdk';
 import { contract } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 
 export function useAccountMembers(accountId: string | undefined) {
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   // `GET .../members` answers every account member: the whole directory with
   // `member.read`, else only the caller. No probe to
   // wait for.
   return useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId!),
-    enabled: !!user && !!accountId,
+    enabled: !!viewerId && !!accountId,
     ...contract('directory'),
   });
 }

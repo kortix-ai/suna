@@ -20,7 +20,7 @@
  * 2026-09-02, and every id that named one of its sections resolves to an
  * overlay tab now (`resolveOverlayTab`).
  */
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo } from 'react';
 
 import {
@@ -149,7 +149,7 @@ export function useStandaloneCapabilityNav(
   activeTab: string,
   accountId?: string,
 ): SettingsNav {
-  const router = useRouter();
+  const router = useUiRouter();
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
 

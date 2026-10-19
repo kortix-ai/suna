@@ -16,7 +16,6 @@ import {
   ProjectIconField,
   type ProjectIconValue,
 } from '@/features/projects/modal/project-icon-field';
-import { useAuth } from '@/features/providers/auth-provider';
 import {
   renameOnError,
   renameOnMutate,
@@ -38,7 +37,7 @@ import {
 } from '@kortix/sdk';
 import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Asked for in ONE batched probe. `project.delete` and `project.write` are
@@ -419,8 +418,8 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const { user } = useAuth();
+  const router = useUiRouter();
+  const viewerId = useUiViewerId();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
@@ -445,7 +444,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         { archiveProject },
         // The archived project must stop being where `/` and the settings
         // exit land (JAY-729) — otherwise they redirect into a 404 gate.
-        () => forgetLastProjectId(user?.id, projectId),
+        () => forgetLastProjectId(viewerId, projectId),
         // The overlay's open state is global, so close it first or it would
         // reopen over the next project. `replace`: Back must not return to
         // the deleted project.

@@ -6,8 +6,7 @@ import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/features/marketing/download/mo
 import { useTranslations } from '@/i18n/use-translations';
 import { useMobileAppPromoStore } from '@/stores/mobile-app-promo-store';
 import { BellIcon, ChatCircleIcon, MicrophoneIcon, type Icon } from '@phosphor-icons/react';
-import Image from 'next/image';
-import Link from 'next/link';
+import { UiLink as Link, UiImage as Image } from '@kortix/ui/providers/ui-provider';
 import { useSyncExternalStore } from 'react';
 
 const FEATURES: readonly { key: 'sessions' | 'notifications' | 'dictation'; icon: Icon }[] = [

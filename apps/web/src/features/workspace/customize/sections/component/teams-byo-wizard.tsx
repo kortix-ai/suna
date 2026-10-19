@@ -67,7 +67,7 @@ import {
   FileCodeIcon,
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useState, type ReactNode } from 'react';
 
 const AZURE_NEW_BOT_URL = 'https://portal.azure.com/#create/Microsoft.AzureBot';

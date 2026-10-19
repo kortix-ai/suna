@@ -11,9 +11,8 @@ import {
   PlugIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import dynamic from 'next/dynamic';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
+import { UiLink as Link, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -93,18 +92,16 @@ interface ResolvedApp {
  * here, under "Ways to connect".
  */
 
-const AddMcpServerDialog = dynamic(
-  () =>
-    import('@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server-dialog').then(
-      (m) => m.AddMcpServerDialog,
-    ),
-  { ssr: false },
+const AddMcpServerDialog = lazyClient(() =>
+  import('@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server-dialog').then(
+    (m) => m.AddMcpServerDialog,
+  ),
 );
 export function AppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
-  const search = useSearchParams();
+  const search = useUiSearchParams();
   const app = appRefFromLocation(appSegment, search);
 
   const accountId = useProjectAccountId(projectId);

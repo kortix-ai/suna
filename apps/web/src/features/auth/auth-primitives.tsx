@@ -23,7 +23,7 @@ import {
 } from '@/features/auth/code-input-logic';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 export const AUTH_EASE = [0.23, 1, 0.32, 1] as const;
 

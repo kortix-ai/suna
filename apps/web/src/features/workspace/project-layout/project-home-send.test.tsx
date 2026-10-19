@@ -20,10 +20,10 @@ const realAccountPanel = await import('@/stores/account-panel-store');
 const realSdk = await import('@kortix/sdk');
 const realSdkReact = await import('@kortix/sdk/react');
 const realFirstChatStore = await import('@/stores/first-chat-store');
-const realNavigation = await import('next/navigation');
-mock.module('next/navigation', () => ({
-  ...realNavigation,
-  useSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
 }));
 mock.module('@kortix/ui/session/composer-chat-input', () => ({
   ...realComposerInput,

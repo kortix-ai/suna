@@ -11,7 +11,7 @@ import {
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useCallback } from 'react';
 import {
   formatSandboxProviders,
@@ -32,7 +32,7 @@ export function useSandboxHealth(projectId: string) {
 
 export function useSandboxRecovery(projectId: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
+  const router = useUiRouter();
   const queryClient = useQueryClient();
 
   const invalidate = useCallback(() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useEffect } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -14,9 +14,9 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 export function useOauth2Return(invalidate: () => void): void {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const search = useUiSearchParams();
+  const router = useUiRouter();
+  const pathname = useUiPathname();
   const result = search?.get('oauth2');
   const error = search?.get('oauth2_error');
 

@@ -1,12 +1,11 @@
 'use client';
 
 import { ArrowLeftIcon } from '@phosphor-icons/react';
-import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId, useUiPathname, useUiRouter, type UiRouter } from '@kortix/ui/providers/ui-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { cn } from '@/lib/utils';
@@ -38,7 +37,7 @@ export type NavigationWindow = {
 };
 
 /** The two router calls Back makes, and nothing else. */
-type Navigate = Pick<ReturnType<typeof useRouter>, 'back' | 'replace'>;
+type Navigate = Pick<UiRouter, 'back' | 'replace'>;
 
 /**
  * One Back click, in order:
@@ -134,7 +133,7 @@ export function useDesktopBackTarget(href: string | undefined): void {
   }, [href]);
 }
 
-/** Pathname of an app href, for comparing against `usePathname()`. */
+/** Pathname of an app href, for comparing against `useUiPathname()`. */
 function hrefPath(href: string): string {
   return href.split(/[?#]/)[0] || '/';
 }
@@ -166,16 +165,16 @@ export function hasBackDestination(
  * client render, so the gate cannot desync hydration.
  */
 export function DesktopBackButton() {
-  const { user } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname() ?? '/';
+  const viewerId = useUiViewerId();
+  const router = useUiRouter();
+  const pathname = useUiPathname() ?? '/';
   const home = useAppHome();
   const to = useSyncExternalStore(
     subscribeBackTarget,
     () => backTarget,
     () => undefined,
   );
-  if (!user) return null;
+  if (!viewerId) return null;
   const win = window as Window & NavigationWindow;
   if (!hasBackDestination(win, { to, home, pathname })) return null;
   return <DesktopBackControl onBack={() => void goBack(router, win, { to, home })} />;

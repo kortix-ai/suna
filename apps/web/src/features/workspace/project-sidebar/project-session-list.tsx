@@ -30,7 +30,6 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
-import { useAuth } from '@/features/providers/auth-provider';
 import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-review-session-summary';
 import {
   childSessionHref,
@@ -120,7 +119,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { Separator } from '@/components/ui/separator';
@@ -236,9 +235,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const canShowSessionHoverCard = useMediaQuery(
     '(min-width: 768px) and (hover: hover) and (pointer: fine)',
   );
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const pathname = useUiPathname();
+  const router = useUiRouter();
+  const searchParams = useUiSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
   const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
@@ -328,10 +327,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   // The session you are in is never hidden: its parent opens, and so does the
   // section it lives in, once per session you navigate to.
-  const { user } = useAuth();
+  const viewerId = useUiViewerId();
   const { data: activeRow } = useProjectSession(projectId, activeSessionId ?? undefined);
   const activeParentId = activeRow ? sessionParentId(activeRow) : null;
-  const activeSection = activeRow ? starterSectionOf(activeRow, user?.id ?? null) : null;
+  const activeSection = activeRow ? starterSectionOf(activeRow, viewerId ?? null) : null;
   useEffect(() => {
     if (activeParentId) setExpanded(projectId, activeParentId, true);
     if (activeSection) setExpanded(projectId, `section:${activeSection}`, true);

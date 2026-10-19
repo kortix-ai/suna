@@ -54,6 +54,13 @@ mock.module('next/navigation', () => ({
   usePathname: () => '/projects/p/review',
   useRouter: () => ({ push() {}, replace() {}, prefetch() {} }),
 }));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiSearchParams: () => new URLSearchParams(search),
+  useUiPathname: () => '/projects/p/review',
+  useUiRouter: () => ({ push() {}, replace() {}, prefetch() {}, back() {} }),
+}));
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { NextIntlClientProvider } = await import('@/i18n/use-translations');

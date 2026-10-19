@@ -10,7 +10,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { CaretDownIcon, ChatCircleIcon, GearSixIcon, PlusIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type { ComponentType } from 'react';
 
 /**

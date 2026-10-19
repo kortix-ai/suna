@@ -4,7 +4,7 @@ import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { InfoIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';

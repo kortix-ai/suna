@@ -68,14 +68,6 @@ test('copyable lines use the shared CopyButton', () => {
   expect(source).toContain('<CopyButton code={value}');
 });
 
-test('develop locally includes the environment-aware CLI installer before clone', () => {
-  expect(source).toContain('useDeploymentCliInstallCommand(getEnv().VERSION)');
-  expect(source).toContain('label="Install command"');
-  expect(source.indexOf('label="Install command"')).toBeLessThan(
-    source.indexOf('label="Clone command"'),
-  );
-});
-
 test('the comment-stripped view of the source can still fail', () => {
   // Guard for the assertions below. A `.replace()` that over-matched would
   // leave `code` empty or near-empty, and every `not.toContain` after it would

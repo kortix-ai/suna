@@ -29,7 +29,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useProjectAccountId, useProjectName } from '@kortix/sdk/react';
 import { ShareNetworkIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import { useMemo, useState } from 'react';
 
 import { grantsForAgent } from './agent-people-section';

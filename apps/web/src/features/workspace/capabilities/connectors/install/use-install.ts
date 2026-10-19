@@ -8,7 +8,7 @@ import {
   type AdminConnector,
 } from '@kortix/sdk';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useState } from 'react';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -49,7 +49,7 @@ export function useInstall(
   const { onMcpServer } = options;
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
+  const router = useUiRouter();
   const queryClient = useQueryClient();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
 

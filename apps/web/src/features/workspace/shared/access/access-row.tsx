@@ -27,7 +27,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { DotsThreeIcon, ShieldIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { UiLink as Link } from '@kortix/ui/providers/ui-provider';
 import type { ReactNode } from 'react';
 
 /** The entity-row dialect the customize section views established. */

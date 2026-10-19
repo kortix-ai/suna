@@ -1,7 +1,7 @@
 'use client';
 
 import { PlugIcon } from '@phosphor-icons/react';
-import Image from 'next/image';
+import { UiImage as Image } from '@kortix/ui/providers/ui-provider';
 
 import { cn } from '@/lib/utils';
 

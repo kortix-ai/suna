@@ -1,10 +1,10 @@
 'use client';
 
-import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry } from '@/lib/llm-providers';
 import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -57,6 +57,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // backed by project secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
   const runtimeProvidersQuery = useRuntimeProviders();
+  const { managedModelsEnabled } = useUiHostConfig();
   const { data: ocProviders } = runtimeProvidersQuery;
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
@@ -65,7 +66,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     // entry with `models: []` — check the public flag directly so the
     // "Managed · Included with your plan" row simply doesn't render instead of
     // showing a managed provider with zero models.
-    if (!llmGatewayEnabled || !isManagedProviderEnabled()) return null;
+    if (!llmGatewayEnabled || !managedModelsEnabled) return null;
     // The builder also refuses the cloud state the flag cannot see: a plan-gated
     // catalog serving ZERO managed models (free tier with no servable platform
     // default — KRTX-1482) is not a connected managed provider. The model picker
