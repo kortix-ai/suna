@@ -60,7 +60,7 @@ beforeAll(async () => {
     ].join('\n'),
   );
   execFileSync('git', ['add', '-A'], { cwd: work });
-  execFileSync('git', ['commit', '-q', '-m', 'declare connectors + one rule'], { cwd: work });
+  execFileSync('git', ['-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-q', '-m', 'declare connectors + one rule'], { cwd: work });
   execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: work });
 
   await db.insert(projects).values({

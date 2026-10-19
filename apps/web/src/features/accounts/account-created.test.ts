@@ -116,6 +116,7 @@ describe('account creation handoff', () => {
             'DropdownMenu',
             'DropdownMenuContent',
             'DropdownMenuItem',
+            'DropdownMenuLabel',
             'DropdownMenuPortal',
             'DropdownMenuSeparator',
             'DropdownMenuShortcut',
