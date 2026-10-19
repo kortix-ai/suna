@@ -46,7 +46,7 @@ async function spend(usd: number) {
 
 async function check() {
   const principal = { accountId: project.account_id, projectId: project.project_id, userId: MEMBER } as AuthedPrincipal;
-  const { crossings } = await checkBudget(principal);
+  const { crossings } = await checkBudget(principal, 'warn');
   return { crossings, sent: crossings ? await alertBudgetCrossings(project.project_id, crossings) : 0 };
 }
 

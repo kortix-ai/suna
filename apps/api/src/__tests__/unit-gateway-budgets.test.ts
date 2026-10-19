@@ -26,6 +26,7 @@ let spendQueue: number[] = [];
 // that it issued a query. See the total-spend test at the bottom.
 let spendExpressions: string[] = [];
 let budgetRows: Array<{
+  budgetId?: string;
   scope: 'project' | 'member';
   subjectUserId: string | null;
   limitUsd: string;
@@ -149,7 +150,7 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'day', action: 'warn' },
       ];
       spendQueue = [75];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toBeDefined();
       expect(result.warnings).toHaveLength(1);
@@ -161,7 +162,7 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'day', action: 'warn' },
       ];
       spendQueue = [10];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toBeUndefined();
     });
@@ -177,36 +178,50 @@ describe('checkBudget', () => {
         },
       ];
       spendQueue = [9];
-      const mine = await checkBudget(principal({ userId: 'user-1' }));
+      const mine = await checkBudget(principal({ userId: 'user-1' }), 'warn');
       expect(mine.warnings).toHaveLength(1);
 
       spendQueue = [];
-      const someoneElse = await checkBudget(principal({ userId: 'user-2' }));
+      const someoneElse = await checkBudget(principal({ userId: 'user-2' }), 'warn');
       expect(someoneElse.warnings).toBeUndefined();
     });
   });
 
   describe('mixed block + warn budgets on the same project', () => {
-    test('an exceeded warn budget evaluated before an exceeded block budget is carried on the block response', async () => {
+    test('admission evaluates only block budgets: a warn budget costs no spend query', async () => {
       budgetRows = [
         { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
         { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
       ];
-      spendQueue = [15, 25];
-      const result = await checkBudget(principal());
-      expect(result.exceeded).toBe(true);
-      expect(result.warnings).toHaveLength(1);
-    });
-
-    test('a warn budget that is NOT exceeded alongside a block budget that IS exceeded reports only the block', async () => {
-      budgetRows = [
-        { scope: 'project', subjectUserId: null, limitUsd: '100', period: 'day', action: 'warn' },
-        { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
-      ];
-      spendQueue = [5, 25];
+      spendQueue = [25];
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
       expect(result.warnings).toBeUndefined();
+      expect(spendExpressions).toHaveLength(1);
+    });
+
+    test('a warn-only project issues no spend query at admission', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
+      ];
+      spendQueue = [15];
+      expect(await checkBudget(principal())).toEqual({ exceeded: false });
+      expect(spendExpressions).toHaveLength(0);
+    });
+
+    test('settlement evaluates only warn budgets: never blocks, never reserves', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
+        { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
+      ];
+      budgetRows[0]!.budgetId = 'warn-1';
+      budgetRows[1]!.budgetId = 'block-1';
+      spendQueue = [15, 25];
+      const result = await checkBudget(principal(), 'warn');
+      expect(result.exceeded).toBe(false);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.crossings?.map((c) => c.action)).toEqual(['warn']);
+      expect(spendExpressions).toHaveLength(1);
     });
 
     test('two separate warn budgets both exceeded are both reported', async () => {
@@ -215,7 +230,7 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'month', action: 'warn' },
       ];
       spendQueue = [15, 60];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toHaveLength(2);
     });
@@ -299,9 +314,9 @@ describe('checkBudget', () => {
       ];
       spendQueue = [10, 10, 10];
       const results = await Promise.all([
-        checkBudget(principal()),
-        checkBudget(principal()),
-        checkBudget(principal()),
+        checkBudget(principal(), 'warn'),
+        checkBudget(principal(), 'warn'),
+        checkBudget(principal(), 'warn'),
       ]);
       expect(results.every((r) => !r.exceeded)).toBe(true);
       expect(results.every((r) => (r.warnings?.length ?? 0) === 1)).toBe(true);

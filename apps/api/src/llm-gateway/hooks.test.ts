@@ -3,6 +3,7 @@ import { tierGrantsAllModels } from '../billing/services/tiers';
 let accountTier = 'credits';
 let billingCalls = 0;
 let budgetCalls = 0;
+let budgetActions: Array<string | undefined> = [];
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -78,13 +79,21 @@ mock.module('../repositories/account-tokens', () => ({
         : { isValid: false, ...(accountTokenExtra ?? {}) },
 }));
 
+// Settlement stops at the usage write: the warn-budget check runs before it.
+mock.module('../shared/usage-events', () => ({
+  recordUsageEvent: async () => {
+    throw new Error('usage write not under test');
+  },
+}));
+
 mock.module('./resolution/default-model', () => ({
   resolveDefaultModelForPrincipal: async () => undefined,
 }));
 
 mock.module('./budgets', () => ({
-  checkBudget: async () => {
+  checkBudget: async (_principal: unknown, action?: string) => {
     budgetCalls += 1;
+    budgetActions.push(action);
     return { exceeded: false };
   },
   releaseBudgetReservation: () => {},
@@ -111,7 +120,7 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal } = await import('./hooks');
+const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal, recordGatewayUsage } = await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
@@ -317,5 +326,46 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
     await assertLlmBillingActive('acct-1', { creditsRequest: true });
 
     expect(billingCalls).toBe(1);
+  });
+});
+
+describe('warn budgets run at settlement, not at admission', () => {
+  const settled = {
+    accountId: 'acct-1',
+    actorUserId: 'user-1',
+    projectId: 'proj-1',
+    provider: 'kortix',
+    model: 'm',
+    promptTokens: 10,
+    completionTokens: 5,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
+    upstreamCost: 0.01,
+    finalCost: 0.01,
+    billingMode: 'credits' as const,
+    streaming: true,
+    requestId: 'req-1',
+  };
+
+  beforeEach(() => {
+    budgetActions = [];
+    billingThrow = null;
+  });
+
+  test('admission evaluates block budgets only', async () => {
+    expect((await authorizeRequest('good', { deferBilling: true })).ok).toBe(true);
+    expect(budgetActions).toEqual([undefined]);
+  });
+
+  test('a settled request evaluates the warn budgets', async () => {
+    await recordGatewayUsage(settled).catch(() => {});
+    expect(budgetActions).toEqual(['warn']);
+  });
+
+  test('a pure hold refund (no upstream call) evaluates nothing', async () => {
+    await recordGatewayUsage({ ...settled, promptTokens: 0, completionTokens: 0, finalCost: 0, billingHoldUsd: 0.01 }).catch(
+      () => {},
+    );
+    expect(budgetActions).toEqual([]);
   });
 });
