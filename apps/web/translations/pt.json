@@ -21240,7 +21240,6 @@
     "folderFailed": "Não foi possível criar a pasta",
     "newFile": "Novo arquivo",
     "fileNameLabel": "Nome do arquivo",
-    "createIn": "Em {folder}.",
     "nameTaken": "{name} já existe nesta pasta.",
     "untitledFolder": "Pasta sem título",
     "untitledFile": "sem-titulo.md",

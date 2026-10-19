@@ -46,7 +46,7 @@ import {
   resolveUploadTarget,
   UPLOAD_CONCURRENCY,
 } from '../upload-batch';
-import { DriveCreateDialog, type DriveCreateKind } from './drive-create-dialog';
+import { DriveCreateDialog, type DriveCreateKind, type DriveLocation } from './drive-create-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { type DriveUpload, DriveUploadTray } from './drive-upload-tray';
@@ -89,6 +89,7 @@ export function DriveExplorer({
   trailing,
   rootLabel,
   rootIcon,
+  location,
   listingAs,
   panels,
   children,
@@ -109,6 +110,12 @@ export function DriveExplorer({
   rootIcon?: ReactNode;
   /** The first crumb of the path bar (default: the store root's name). */
   rootLabel?: string;
+  /**
+   * Where a new folder or file lands, in the host's own words (Drive names
+   * "My drive", a company drive, a shared folder). Default: the root crumb
+   * and the path below it.
+   */
+  location?: DriveLocation;
   /**
    * Element type for the listing region.
    *
@@ -1068,8 +1075,14 @@ export function DriveExplorer({
 
       <DriveCreateDialog
         kind={canWrite ? createKind : null}
-        folderLabel={
-          normalizedCurrentPath.split('/').filter(Boolean).pop() ?? rootLabel ?? '/'
+        location={
+          location ?? {
+            icon: rootIcon,
+            crumbs: [
+              ...(rootLabel ? [rootLabel] : []),
+              ...normalizedCurrentPath.split('/').filter(Boolean),
+            ],
+          }
         }
         isTaken={nameTaken}
         onCreate={(kind, name) => void handleCreate(kind, name)}

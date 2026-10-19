@@ -21240,7 +21240,6 @@
     "folderFailed": "无法创建文件夹",
     "newFile": "新建文件",
     "fileNameLabel": "文件名",
-    "createIn": "位于 {folder}。",
     "nameTaken": "此文件夹中已有 {name}。",
     "untitledFolder": "未命名文件夹",
     "untitledFile": "untitled.md",

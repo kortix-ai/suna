@@ -21240,7 +21240,6 @@
     "folderFailed": "Прављење фасцикле није успело",
     "newFile": "Нова датотека",
     "fileNameLabel": "Назив датотеке",
-    "createIn": "У {folder}.",
     "nameTaken": "{name} већ постоји у овој фасцикли.",
     "untitledFolder": "Неименована фасцикла",
     "untitledFile": "bez-naziva.md",

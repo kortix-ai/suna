@@ -149,6 +149,10 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
     [canWrite],
   );
   const open = (p: string) => navigateToPath(p.replace(/^\//, '') || '/');
+  const { locate } = useDriveLocation(drive);
+  const here = locate(path);
+  const HereGlyph = here.icon;
+  const location = { icon: <HereGlyph />, crumbs: [here.label, ...here.trail] };
 
   const leading = <DriveSwitcher drive={drive} path={path} onOpen={open} />;
   // Share closes the action group, after New and the view menu.
@@ -187,6 +191,7 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
           trailing={trailing}
           rootLabel={t('driveLabel')}
           rootIcon={<HardDriveIcon className="text-muted-foreground" />}
+          location={location}
         />
         <DriveConflictsBar driveId={drive.driveId} onOpenFolder={open} />
       </div>
@@ -212,6 +217,41 @@ function absolute(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
+type DriveGlyph = ComponentType<{ className?: string }>;
+
+/**
+ * Names a drive path the way the switcher does: which drive it is in (My
+ * drive, a company drive, a folder shared with the caller, or All files) and
+ * the folders below that drive's top. The switcher's trigger and the create
+ * dialog both read it, so "where am I" has one answer.
+ */
+function useDriveLocation(drive: Drive) {
+  const t = useTranslations('drives');
+  const root = useDriveFolder(drive.driveId, '/');
+  const companyDrives = (root.data?.entries ?? [])
+    .filter((e) => e.type === 'dir' && !isUnder(absolute(e.path), PEOPLE_ROOT))
+    .map((e) => ({ name: e.name, path: absolute(e.path) }));
+  const personal = drive.personalFolder;
+  const shared = drive.sharedWithMe ?? [];
+
+  const locate = (path: string): { icon: DriveGlyph; label: string; trail: string[] } => {
+    const below = (base: string) => path.slice(base.length).split('/').filter(Boolean);
+    if (personal && isUnder(path, personal))
+      return { icon: Home, label: t('myDrive'), trail: below(personal) };
+    const company = companyDrives.find((d) => isUnder(path, d.path));
+    if (company) return { icon: HardDriveIcon, label: company.name, trail: below(company.path) };
+    const sharedHere = shared.find((f) => isUnder(path, f.path));
+    if (sharedHere)
+      return {
+        icon: FolderSimpleIcon,
+        label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
+        trail: below(sharedHere.path),
+      };
+    return { icon: SquaresFourIcon, label: t('allFiles'), trail: below('/') };
+  };
+  return { locate, companyDrives, isLoadingDrives: root.isLoading, personal, shared };
+}
+
 /**
  * Where a person goes in Drive, in the order they reach for it: their own
  * drive, what others shared with them, then the company drives. A company
@@ -229,27 +269,9 @@ function DriveSwitcher({
   onOpen: (path: string) => void;
 }) {
   const t = useTranslations('drives');
-  const root = useDriveFolder(drive.driveId, '/');
-  const companyDrives = (root.data?.entries ?? [])
-    .filter((e) => e.type === 'dir' && !isUnder(absolute(e.path), PEOPLE_ROOT))
-    .map((e) => ({ name: e.name, path: absolute(e.path) }));
-  const personal = drive.personalFolder;
-  const shared = drive.sharedWithMe ?? [];
+  const { locate, companyDrives, isLoadingDrives, personal, shared } = useDriveLocation(drive);
   const isAdmin = drive.access === 'manage';
-
-  const sharedHere = shared.find((f) => isUnder(path, f.path));
-  const companyHere = companyDrives.find((d) => isUnder(path, d.path));
-  const current: { icon: ComponentType<{ className?: string }>; label: string } =
-    personal && isUnder(path, personal)
-      ? { icon: Home, label: t('myDrive') }
-      : companyHere
-        ? { icon: HardDriveIcon, label: companyHere.name }
-        : sharedHere
-          ? {
-              icon: FolderSimpleIcon,
-              label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
-            }
-          : { icon: SquaresFourIcon, label: t('allFiles') };
+  const current = locate(path);
   const CurrentGlyph = current.icon;
 
   return (
@@ -299,7 +321,7 @@ function DriveSwitcher({
         <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
           {t('companyDrives')}
         </DropdownMenuLabel>
-        {root.isLoading ? (
+        {isLoadingDrives ? (
           <div className="space-y-1 px-2 py-1">
             <Skeleton className="h-6 w-full rounded-sm" />
             <Skeleton className="h-6 w-3/4 rounded-sm" />

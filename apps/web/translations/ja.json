@@ -21240,7 +21240,6 @@
     "folderFailed": "フォルダを作成できませんでした",
     "newFile": "新しいファイル",
     "fileNameLabel": "ファイル名",
-    "createIn": "{folder} に作成します。",
     "nameTaken": "{name} はこのフォルダにすでにあります。",
     "untitledFolder": "無題のフォルダ",
     "untitledFile": "untitled.md",

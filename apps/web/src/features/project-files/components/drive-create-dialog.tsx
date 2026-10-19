@@ -13,9 +13,22 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { useTranslations } from '@/i18n/use-translations';
-import { useId, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { CaretRightIcon } from '@phosphor-icons/react';
+import { Fragment, type ReactNode, useId, useState } from 'react';
 
 export type DriveCreateKind = 'folder' | 'file';
+
+/** Where the new entry lands: the drive's glyph, then drive › folder › folder. */
+export interface DriveLocation {
+  icon?: ReactNode;
+  crumbs: string[];
+}
+
+/** Long paths keep the drive and the last two folders: `My drive › … › a › b`. */
+function visibleCrumbs(crumbs: string[]): string[] {
+  return crumbs.length > 4 ? [crumbs[0]!, '…', ...crumbs.slice(-2)] : crumbs;
+}
 
 /**
  * "New folder" / "New file" in a modal. The name is checked as it is typed
@@ -25,15 +38,14 @@ export type DriveCreateKind = 'folder' | 'file';
  */
 export function DriveCreateDialog({
   kind,
-  folderLabel,
+  location,
   isTaken,
   onCreate,
   onClose,
 }: {
   /** `null` closes the dialog. */
   kind: DriveCreateKind | null;
-  /** Where the new entry lands, for the description line. */
-  folderLabel: string;
+  location: DriveLocation;
   isTaken: (name: string) => boolean;
   onCreate: (kind: DriveCreateKind, name: string) => void;
   onClose: () => void;
@@ -63,7 +75,22 @@ export function DriveCreateDialog({
       <ModalContent className="lg:max-w-sm">
         <ModalHeader>
           <ModalTitle>{shownKind === 'folder' ? t('newFolder') : t('newFile')}</ModalTitle>
-          <ModalDescription>{t('createIn', { folder: folderLabel })}</ModalDescription>
+          <ModalDescription className="flex min-w-0 items-center gap-1 [&_svg]:size-3.5 [&_svg]:shrink-0">
+            {location.icon}
+            {visibleCrumbs(location.crumbs).map((crumb, i, all) => (
+              <Fragment key={`${i}-${crumb}`}>
+                {i > 0 ? <CaretRightIcon className="text-muted-foreground" /> : null}
+                <span
+                  className={cn(
+                    'truncate',
+                    i === all.length - 1 && 'text-foreground font-medium',
+                  )}
+                >
+                  {crumb}
+                </span>
+              </Fragment>
+            ))}
+          </ModalDescription>
         </ModalHeader>
         <form
           onSubmit={(event) => {
@@ -75,7 +102,8 @@ export function DriveCreateDialog({
         >
           <ModalBody>
             <Field>
-              <FieldLabel htmlFor={`${id}-name`}>
+              {/* The title already says what the field is; the label stays for screen readers. */}
+              <FieldLabel htmlFor={`${id}-name`} className="sr-only">
                 {shownKind === 'folder' ? t('folderNameLabel') : t('fileNameLabel')}
               </FieldLabel>
               <Input

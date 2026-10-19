@@ -21240,7 +21240,6 @@
     "folderFailed": "Impossible de créer le dossier",
     "newFile": "Nouveau fichier",
     "fileNameLabel": "Nom du fichier",
-    "createIn": "Dans {folder}.",
     "nameTaken": "{name} existe déjà dans ce dossier.",
     "untitledFolder": "Dossier sans titre",
     "untitledFile": "sans-titre.md",

@@ -21240,7 +21240,6 @@
     "folderFailed": "Ordner konnte nicht erstellt werden",
     "newFile": "Neue Datei",
     "fileNameLabel": "Dateiname",
-    "createIn": "In {folder}.",
     "nameTaken": "{name} gibt es in diesem Ordner schon.",
     "untitledFolder": "Unbenannter Ordner",
     "untitledFile": "unbenannt.md",

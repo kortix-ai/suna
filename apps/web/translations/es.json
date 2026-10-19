@@ -21240,7 +21240,6 @@
     "folderFailed": "No se pudo crear la carpeta",
     "newFile": "Nuevo archivo",
     "fileNameLabel": "Nombre del archivo",
-    "createIn": "En {folder}.",
     "nameTaken": "{name} ya existe en esta carpeta.",
     "untitledFolder": "Carpeta sin título",
     "untitledFile": "sin-titulo.md",
