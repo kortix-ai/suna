@@ -6,6 +6,12 @@ import { db } from '../../shared/db';
 import { canonicalJson } from './canonical-json';
 
 export type PollStream = typeof polls.$inferSelect;
+
+/**
+ * `fire_after` of a stream that must record before it fires again (a pause, a
+ * park): its next check fires nothing, then `fire_after` becomes that check's time.
+ */
+export const RECORD_FIRST = new Date('9999-12-31T00:00:00Z');
 export type PollErrorKind = 'needs_connection' | 'fatal' | 'transient';
 
 /** At most this many streams per project: each costs one vendor call per interval. */
@@ -32,9 +38,10 @@ export async function countStreams(projectId: string): Promise<number> {
 }
 
 /**
- * Create the stream, or update the one that exists: the saved interval wins,
- * and a parked stream is armed again (a re-subscribe is its retry). What the
- * stream has seen stays, so nothing is fired twice and nothing is lost.
+ * Create the stream, or update the one that exists. A parked stream is armed
+ * again (a re-subscribe is its retry) and records what is there first, like a
+ * resumed pause: its triggers were not live, so that window is not owed. A
+ * live stream keeps what it has seen, so nothing fires twice.
  */
 export async function upsertStream(input: {
   externalId: string;
@@ -55,6 +62,8 @@ export async function upsertStream(input: {
         intervalSeconds: input.intervalSeconds,
         connectorSlug: input.connectorSlug,
         nextPollAt: sql`coalesce(${polls.nextPollAt}, now())`,
+        primedAt: sql`case when ${polls.nextPollAt} is null then null else ${polls.primedAt} end`,
+        fireAfter: sql`case when ${polls.nextPollAt} is null then ${RECORD_FIRST.toISOString()}::timestamptz else ${polls.fireAfter} end`,
         lastErrorKind: sql`case when ${polls.nextPollAt} is null then null else ${polls.lastErrorKind} end`,
         lastError: sql`case when ${polls.nextPollAt} is null then null else ${polls.lastError} end`,
         failures: sql`case when ${polls.nextPollAt} is null then 0 else ${polls.failures} end`,
@@ -95,6 +104,8 @@ export type StreamPatch = Partial<Pick<
   PollStream,
   | 'seen'
   | 'primedAt'
+  | 'fireAfter'
+  | 'intervalSeconds'
   | 'nextPollAt'
   | 'failures'
   | 'lastError'

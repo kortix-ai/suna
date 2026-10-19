@@ -198,7 +198,8 @@ export function registerTriggersRoutes(): void {
       path: '/{projectId}/triggers/event-apps',
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
-      description: 'Apps with at least one event type, with the project connector for each and whether a project-shared account is connected.',
+      description:
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp` (projects with connectors_v2): every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every connected project MCP server with at least one list or search tool.',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
@@ -1017,7 +1018,7 @@ async function authorizeTriggerFire(c: Context<AppEnv>, projectId: string, slug:
 
 /** The synthetic payload of a manual fire. An event trigger fires with an empty event, so the user can test the prompt. */
 async function manualFirePayload({ projectId, loaded, spec }: FireTarget, now: Date) {
-  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
+  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector, loaded.row.metadata) : null;
   const eventRoot = spec.event && eventConnector
     ? eventPayload({
         spec,

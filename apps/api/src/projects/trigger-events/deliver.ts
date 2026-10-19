@@ -18,7 +18,7 @@ import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
 import { eventTriggersEnabled } from './flag';
-import { connectorEventApp } from './mcp-source';
+import { MCP_SOURCE_ID, connectorEventApp } from './mcp-source';
 import { eventSourceAvailable } from './registry';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
@@ -66,10 +66,11 @@ export function eventIdempotencyKey(projectId: string, slug: string, eventId: st
   return `trigger:event:${projectId}:${slug}:${eventId}`;
 }
 
-/** Provider, app slug (`connectorEventApp`) and id of a declared connector. */
+/** Provider, app slug (`connectorEventApp`) and id of a declared connector, for a project with this metadata. */
 export async function connectorInfo(
   projectId: string,
   slug: string,
+  projectMetadata: unknown,
 ): Promise<{ found: boolean; provider: string; app: string | null; connectorId: string | null }> {
   const [connector] = await db
     .select({ connectorId: connectors.connectorId, provider: connectors.providerType, config: connectors.config })
@@ -79,7 +80,7 @@ export async function connectorInfo(
   return {
     found: Boolean(connector),
     provider: connector?.provider ?? 'unknown',
-    app: connector ? connectorEventApp({ ...connector, slug }) : null,
+    app: connector ? connectorEventApp({ ...connector, slug }, eventSourceAvailable(MCP_SOURCE_ID, projectMetadata)) : null,
     connectorId: connector?.connectorId ?? null,
   };
 }
@@ -144,7 +145,7 @@ async function deliverToRow(
   const spec = runtime.scheduleSpec as unknown as GitTriggerSpec;
   if (!spec.event) return 'skipped';
 
-  const { app } = await connectorInfo(row.projectId, spec.event.connector);
+  const { app } = await connectorInfo(row.projectId, spec.event.connector, project.metadata);
   const payload = eventPayload({
     spec,
     provider,

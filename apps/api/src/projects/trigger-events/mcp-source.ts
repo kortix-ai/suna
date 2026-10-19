@@ -31,11 +31,12 @@ type ConnectorRow = { provider: string; config: unknown; slug: string };
 /**
  * The app a connector's events belong to: `config.app` (Composio), else the
  * catalogue app of an MCP server URL, else (a custom MCP server) its own slug.
+ * `mcpAvailable` false (a project without connectors_v2): `config.app` only, as before.
  */
-export function connectorEventApp(row: ConnectorRow): string | null {
+export function connectorEventApp(row: ConnectorRow, mcpAvailable = true): string | null {
   const config = (row.config ?? {}) as Record<string, unknown>;
   if (typeof config.app === 'string' && config.app) return config.app;
-  if (row.provider !== 'mcp' || typeof config.url !== 'string') return null;
+  if (!mcpAvailable || row.provider !== 'mcp' || typeof config.url !== 'string') return null;
   return mcpAppForUrl(config.url)?.slug ?? row.slug;
 }
 
@@ -164,6 +165,10 @@ export const mcpEventSource: EventSourceProvider = {
 
   async unsubscribe(externalId) {
     await deleteStream(externalId);
+  },
+
+  async instanceExists(externalId) {
+    return (await getStream(externalId)) !== null;
   },
 
   async receive() {

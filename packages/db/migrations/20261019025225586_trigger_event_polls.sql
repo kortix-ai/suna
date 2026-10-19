@@ -32,6 +32,7 @@ CREATE TABLE "kortix"."project_trigger_event_polls" (
 	"interval_seconds" integer NOT NULL,
 	"seen" text[] DEFAULT '{}'::text[] NOT NULL,
 	"primed_at" timestamp with time zone,
+	"fire_after" timestamp with time zone DEFAULT now() NOT NULL,
 	"next_poll_at" timestamp with time zone,
 	"locked_until" timestamp with time zone,
 	"claim" integer DEFAULT 0 NOT NULL,

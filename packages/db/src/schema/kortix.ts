@@ -1729,8 +1729,10 @@ export const projectTriggerEventPolls = kortixSchema.table(
     intervalSeconds: integer('interval_seconds').notNull(),
     /** Item keys already handled, newest-visible first; bounded by the poller. */
     seen: text('seen').array().default(sql`'{}'::text[]`).notNull(),
-    /** NULL: the next check records what is there (and fires only items newer than `created_at`). */
+    /** NULL: the next check records what is there (and fires only items newer than `fire_after`). */
     primedAt: timestamp('primed_at', { withTimezone: true }),
+    /** Items older than this never fire. Set at subscribe, and moved on every re-prime (a pause, no live trigger). */
+    fireAfter: timestamp('fire_after', { withTimezone: true }).defaultNow().notNull(),
     nextPollAt: timestamp('next_poll_at', { withTimezone: true }),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
     claim: integer('claim').default(0).notNull(),

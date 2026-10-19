@@ -8,7 +8,7 @@
  * retries without calling the vendor again.
  */
 import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { ExecutionRecord, GatewayDeps } from '../../connectors/gateway';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
@@ -27,6 +27,7 @@ import {
   boundData,
   eventIdOf,
   floorFor,
+  intervalSeconds,
   nextPageToken,
   parseToolOutput,
   planCheck,
@@ -37,6 +38,7 @@ import {
   type PollErrorKind,
   type PollStream,
   type StreamPatch,
+  RECORD_FIRST,
   claimDueStreams,
   delayConnectionStreams,
   deleteStream,
@@ -56,6 +58,8 @@ const HOUR_MS = 60 * 60_000;
 const oneLine = (text: string, max = 300): string => text.replace(/\s+/g, ' ').trim().slice(0, max);
 /** Transient failures in a row before the triggers say so. Checks continue. */
 const FAILURES_BEFORE_ROW_ERROR = 3;
+/** A stream no trigger references is deleted only after this: its subscribe may still be writing the trigger row. */
+const ORPHAN_GRACE_MS = 10 * 60_000;
 
 const jittered = (ms: number): number => Math.round(ms * (1 + Math.random() * 0.1));
 
@@ -67,7 +71,7 @@ async function settleFailure(stream: PollStream, outcome: Exclude<Outcome, { kin
   const intervalMs = stream.intervalSeconds * 1000;
   const transient = outcome.kind === 'transient';
   const message = transient && failures >= FAILURES_BEFORE_ROW_ERROR
-    ? `The last ${failures} checks of ${label} failed: ${outcome.message} Kortix keeps checking every ${Math.round(stream.intervalSeconds / 60)} min.`
+    ? `The last ${failures} checks of ${label} failed: ${outcome.message} Kortix keeps checking, at most 1 hour apart.`
     : outcome.message;
   const nextPollAt = transient ? new Date(now + backoffMs(intervalMs, failures, outcome.retryAfterSeconds)) : null;
   const settled = await settleStream(stream, { failures, lastError: message, lastErrorKind: outcome.kind, nextPollAt });
@@ -90,16 +94,19 @@ async function settleFailure(stream: PollStream, outcome: Exclude<Outcome, { kin
  * off `active` in the same step.
  */
 async function skip(stream: PollStream, now: number, reprime: boolean): Promise<void> {
-  await settleStream(stream, { ...(reprime ? { primedAt: null } : {}), nextPollAt: new Date(now + stream.intervalSeconds * 1000) });
+  await settleStream(stream, {
+    // Nothing from the skipped window fires: the next check records it.
+    ...(reprime ? { primedAt: null, fireAfter: RECORD_FIRST } : {}),
+    nextPollAt: new Date(now + stream.intervalSeconds * 1000),
+  });
 }
 
-async function triggerSpec(projectId: string, slug: string): Promise<GitTriggerSpec | null> {
-  const [row] = await db
+async function triggerSpecs(projectId: string, slugs: string[]): Promise<GitTriggerSpec[]> {
+  const rows = await db
     .select({ spec: projectTriggerRuntime.scheduleSpec })
     .from(projectTriggerRuntime)
-    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)))
-    .limit(1);
-  return (row?.spec as unknown as GitTriggerSpec | undefined) ?? null;
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), inArray(projectTriggerRuntime.slug, slugs)));
+  return rows.flatMap((r) => ((r.spec as unknown as GitTriggerSpec | null)?.event ? [r.spec as unknown as GitTriggerSpec] : []));
 }
 
 interface Loaded {
@@ -107,6 +114,8 @@ interface Loaded {
   label: string;
   owner: string;
   metadata: unknown;
+  /** The shortest interval of the triggers on this stream: a shared check serves the fastest one. */
+  intervalSeconds: number;
 }
 
 /**
@@ -116,7 +125,9 @@ interface Loaded {
 async function load(stream: PollStream, now: number): Promise<Loaded | null> {
   const rows = await streamRows(stream.externalId);
   if (rows.length === 0) {
-    await deleteStream(stream.externalId);
+    // The reconciler deletes a stream it stops referencing; this is the backstop for a leak.
+    if (now - stream.createdAt.getTime() > ORPHAN_GRACE_MS) await deleteStream(stream.externalId);
+    else await skip(stream, now, false);
     return null;
   }
   const [project] = await db
@@ -141,7 +152,8 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
   }
   // The reconciler owns the account check (revoked, narrowed to people, another default):
   // when the account no longer resolves to this stream, it re-decides every trigger on it.
-  const spec = await triggerSpec(stream.projectId, consumers[0]!.slug);
+  const specs = await triggerSpecs(stream.projectId, consumers.map((r) => r.slug));
+  const spec = specs[0];
   const resolved = spec?.event ? await resolveSource(stream.projectId, stream.accountId, spec.event, project.metadata) : null;
   if (!resolved || resolved.kind !== 'ok' || resolved.connection.connectionId !== stream.connectionId) {
     // Same resolveSource as the reconciler: it moves the triggers and drops or replaces this stream.
@@ -179,7 +191,8 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     await settleFailure(stream, { kind: 'fatal', message: `This account has no owner for Kortix to check ${label} as.` }, label, now);
     return null;
   }
-  return { def, label, owner, metadata: project.metadata };
+  const shortest = Math.min(...specs.map((s) => intervalSeconds(s.event!.config ?? {})));
+  return { def, label, owner, metadata: project.metadata, intervalSeconds: Number.isFinite(shortest) ? shortest : stream.intervalSeconds };
 }
 
 /**
@@ -232,18 +245,19 @@ export async function runPoll(stream: PollStream, now = Date.now()): Promise<voi
     if (error instanceof StaleClaimError) return;
     const message = oneLine(error instanceof Error ? error.message : String(error));
     logger.warn('[trigger-events/poll] check threw', { externalId: stream.externalId, error: message });
-    await settleFailure(stream, { kind: 'transient', message: `The check failed: ${message}` }, stream.connectorSlug, now).catch(() => {});
+    await settleFailure(stream, { kind: 'transient', message: `The check failed: ${message}` }, appLabel(stream.connectorSlug), now).catch(() => {});
   }
 }
 
-async function check(stream: PollStream, now: number): Promise<void> {
-  const loaded = await load(stream, now);
+async function check(claimed: PollStream, now: number): Promise<void> {
+  const loaded = await load(claimed, now);
   if (!loaded) return;
   const { def, label, owner } = loaded;
+  const stream: PollStream = { ...claimed, intervalSeconds: loaded.intervalSeconds };
   const okRecords: ExecutionRecord[] = [];
   const { deps, writeAudit } = await checkDeps(stream, owner, okRecords);
   const { handleCall } = await import('../../connectors/gateway');
-  const floor = floorFor(stream.createdAt.getTime(), now);
+  const floor = floorFor(stream.fireAfter.getTime(), now);
   let request;
   try {
     request = def.request(stream.config, { now, floor });
@@ -297,6 +311,8 @@ async function check(stream: PollStream, now: number): Promise<void> {
   const patch: StreamPatch = {
     seen: plan.nextSeen,
     primedAt: stream.primedAt ?? new Date(now),
+    // A record-first check is done: from here on, items newer than now fire.
+    ...(stream.fireAfter.getTime() > now ? { fireAfter: new Date(now) } : {}),
     failures: 0,
     lastError: null,
     lastErrorKind: null,
@@ -304,6 +320,7 @@ async function check(stream: PollStream, now: number): Promise<void> {
     nextPollAt: new Date(now + (plan.deferred > 0 ? DEFERRED_RECHECK_MS : jittered(stream.intervalSeconds * 1000))),
     rateWindowStart: windowOpen ? stream.rateWindowStart : deliveries.length ? new Date(now) : null,
     rateWindowFires: firesThisHour + deliveries.length,
+    intervalSeconds: stream.intervalSeconds,
   };
   // The triggers recover in the same commit as the deliveries: a delivery that ran
   // before an `active` write would find its trigger in `error` and be skipped.

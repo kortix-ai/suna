@@ -54,7 +54,7 @@ export interface EventSourceProvider {
   listEventTypes(app: string): Promise<EventTypeInfo[]>;
   /** Types that depend on the connector, such as one per tool it offers. Omitted: `listEventTypes(app)`. */
   listConnectorEventTypes?(input: { connectorId: string; app: string }): Promise<EventTypeInfo[]>;
-  /** Apps that have at least one event type. */
+  /** Apps the source offers events for. An app may list 0 types until it is connected (source `mcp`). */
   listApps(): Promise<EventApp[]>;
   /** True once the shared connection has the provider-side credential `subscribe` needs. Omitted: any active connection counts. */
   connectionReady?(connection: EventSourceConnection): boolean;
@@ -65,6 +65,11 @@ export interface EventSourceProvider {
   }): Promise<{ externalId: string }>;
   /** Idempotent: a provider 404 is success. */
   unsubscribe(externalId: string): Promise<void>;
+  /**
+   * False when the instance behind an active subscription is gone, so the
+   * reconciler subscribes again instead of trusting the row. Omitted: trusted.
+   */
+  instanceExists?(externalId: string): Promise<boolean>;
   /** Throws `EventSignatureError` on a bad signature. */
   receive(input: {
     headers: Headers;

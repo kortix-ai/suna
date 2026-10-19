@@ -1,5 +1,5 @@
 {
-  "id": "e46773c1-2ced-43a5-b477-cc5ce8028db8",
+  "id": "33d9dc40-2665-4054-ad14-11367a4fb801",
   "prevId": "fd77b8f5-f04d-4166-983b-8780f7abcf90",
   "version": "7",
   "dialect": "postgresql",
@@ -18419,6 +18419,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "fire_after": {
+          "name": "fire_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "next_poll_at": {
           "name": "next_poll_at",

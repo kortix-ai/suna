@@ -213,7 +213,14 @@ async function reconcileOne(
   }
   const { provider, connection } = resolved;
   const hash = desiredHash(provider.id, connection.connectionId, event.type, event.config);
-  if (prev && prev.status === 'active' && prev.desiredHash === hash) return;
+  if (
+    prev &&
+    prev.status === 'active' &&
+    prev.desiredHash === hash &&
+    (!prev.externalId || !provider.instanceExists || (await provider.instanceExists(prev.externalId)))
+  ) {
+    return;
+  }
   try {
     const { externalId } = await provider.subscribe({ connection, type: event.type, config: event.config });
     await store.upsert({

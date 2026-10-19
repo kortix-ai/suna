@@ -76,14 +76,14 @@ export async function listConnectorEventTypes(
   source?: string | null,
   projectMetadata?: unknown,
 ): Promise<EventTypeCatalog> {
-  const connector = await connectorInfo(projectId, connectorSlug);
+  const metadata = projectMetadata !== undefined ? projectMetadata : await projectMetadataOf(projectId);
+  const connector = await connectorInfo(projectId, connectorSlug, metadata);
   if (!connector.found) return { kind: 'connector_not_found' };
   // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
   if (source && source !== connector.provider) return { kind: 'unavailable' };
   if (!connector.app) return { kind: 'unavailable' };
   const provider = eventSourceFor(connector.provider);
   if (provider?.listConnectorEventTypes && connector.connectorId) {
-    const metadata = projectMetadata !== undefined ? projectMetadata : await projectMetadataOf(projectId);
     if (!provider.configured() || !eventSourceAvailable(provider.id, metadata)) return { kind: 'unavailable' };
     try {
       const items = await provider.listConnectorEventTypes({ connectorId: connector.connectorId, app: connector.app });
@@ -233,6 +233,8 @@ export async function listEventApps(projectId: string, accountId: string): Promi
         : item.eventCount;
       const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }, metadata) : null;
       const connected = resolved?.kind === 'ok';
+      // A connected MCP app whose tools include no list or search tool offers no event: not an event app.
+      if (provider.id === MCP_SOURCE_ID && connected && eventCount === 0) continue;
       out.push({
         provider: provider.id,
         ...item,

@@ -15,6 +15,7 @@ import {
   connectors,
   jobQueue,
   projectTriggerEventPolls,
+  projectTriggerEventSubscriptions,
   projectTriggerRuntime,
   projects,
 } from '@kortix/db';
@@ -277,18 +278,51 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     expect((await deliverJobs()).map((j) => j.jobKey.split(':')[1])).toEqual(['race-1']);
   });
 
-  test('paused triggers make no vendor call, and the first check after resume fires nothing old', async () => {
+  test('paused triggers make no vendor call; the first check after resume fires nothing, the next new item fires', async () => {
     await reconcile([spec('watch')]);
     await checkNow();
+    // A stream that has run for a week: the 24 h floor alone would let the pause window fire.
+    await db.update(projectTriggerEventPolls).set({ createdAt: sql`now() - interval '7 days'`, fireAfter: sql`now() - interval '7 days'` }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
     await db.update(projects).set({ metadata: { experimental: FLAGS, triggers_paused: true } }).where(eq(projects.projectId, PROJECT_ID));
-    items = [recent('while-paused', 5 * 60_000), ...items];
     toolCalls.length = 0;
     await checkNow();
     expect(toolCalls).toEqual([]);
     expect((await stream())?.primedAt).toBeNull();
+    items = [recent('while-paused', 1_000), ...items];
     await db.update(projects).set({ metadata: { experimental: FLAGS } }).where(eq(projects.projectId, PROJECT_ID));
     await checkNow();
     expect(await deliverJobs()).toEqual([]);
+    items = [recent('after-resume', 0), ...items];
+    await checkNow();
+    expect((await deliverJobs()).map((j) => j.jobKey.split(':')[1])).toEqual(['after-resume']);
+  });
+
+  test('a shared check runs at the shortest interval of its triggers, whoever subscribed last', async () => {
+    await reconcile([spec('fast', 'new_item.list_items', { interval: 1 })]);
+    await reconcile([spec('fast', 'new_item.list_items', { interval: 1 }), spec('daily', 'new_item.list_items', { interval: 1440 })]);
+    expect((await stream())?.intervalSeconds).toBe(86_400);
+    await checkNow();
+    const after = await stream();
+    expect(after?.intervalSeconds).toBe(60);
+    expect(after!.nextPollAt!.getTime()).toBeLessThan(Date.now() + 70_000);
+  });
+
+  test('an active trigger whose stream is gone gets a new one on the next reconcile', async () => {
+    await reconcile([spec('watch')]);
+    await db.delete(projectTriggerEventPolls).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await stream()).toMatchObject({ externalId: (await row('watch'))?.externalId });
+  });
+
+  test('a stream no trigger references yet is kept for its subscribe to finish, and deleted once it is old', async () => {
+    await reconcile([spec('watch')]);
+    await db.delete(projectTriggerEventSubscriptions).where(eq(projectTriggerEventSubscriptions.projectId, PROJECT_ID));
+    await checkNow();
+    expect(await stream()).toBeDefined();
+    expect(toolCalls).toEqual([]);
+    await db.update(projectTriggerEventPolls).set({ createdAt: sql`now() - interval '11 minutes'` }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    await checkNow();
+    expect(await stream()).toBeUndefined();
   });
 
   test('a failed fire retries from the delivery job, not from the vendor', async () => {
