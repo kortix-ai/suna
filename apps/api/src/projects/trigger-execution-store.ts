@@ -541,7 +541,7 @@ export async function recordTriggerRun(input: {
 
 /** The run row a fire result maps to: a deduped fire ran nothing new. */
 export function triggerRunFromFire(result: {
-  status: 'fired' | 'queued' | 'failed';
+  status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
   error?: string;
@@ -556,6 +556,8 @@ export function triggerRunFromFire(result: {
   if (result.status === 'failed') {
     return { status: 'failed', ...ids, error: result.error ?? result.reason ?? 'trigger fire failed' };
   }
+  // A run cap held it (KRTX-1721): the reason names the cap.
+  if (result.status === 'skipped') return { status: 'skipped', ...ids, error: result.reason ?? 'skipped' };
   if (result.deduped) return { status: 'skipped', ...ids, error: 'deduped' };
   return { status: 'succeeded', ...ids, error: null };
 }

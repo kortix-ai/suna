@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { parseEventFlags, parseMonitorFlags, strayEventFlag } from './triggers-manifest.ts';
+import { parseEventFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -109,9 +109,13 @@ export async function triggersAddLive(
   if ('error' in filter) return fail(filter.error);
   const access = buildSessionAccess(tf.sessionAccess, live);
   if (access && 'error' in access) return fail(access.error);
+  const parsedCaps = parseRunCapFlags(tf, false);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
 
   let event: ReturnType<typeof parseEventFlags> | null = null;
   const body: Record<string, unknown> = {
+    ...caps,
     slug,
     name: tf.name ?? slug,
     type,
@@ -224,6 +228,9 @@ export async function triggersSetLive(
     }
     enabled = tf.enabled === 'true';
   }
+  const parsedCaps = parseRunCapFlags(tf, true);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
 
   const body: Record<string, unknown> = {
     ...(tf.name ? { name: tf.name } : {}),
@@ -240,6 +247,7 @@ export async function triggersSetLive(
     ...(tf.source ? { event_source: tf.source.trim() } : {}),
     ...(tf.event ? { event: tf.event } : {}),
     ...(enabled === undefined ? {} : { enabled }),
+    ...caps,
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),
     ...(live.filters.length > 0 ? { filter } : {}),

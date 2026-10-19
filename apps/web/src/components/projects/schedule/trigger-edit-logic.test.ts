@@ -81,6 +81,19 @@ describe('triggerPatch: only what changed', () => {
     expect(triggerPatch(base, { ...base, nameOverride: '  Renamed ' })).toEqual({ name: 'Renamed' });
   });
 
+  // KRTX-1721: the run limits round-trip as text in the form.
+  test('run limits: the saved caps fill the draft, a change sends the number, an emptied field sends null', () => {
+    const base = saved(trigger({ max_runs_per_hour: 5, max_runs_per_day: null }));
+    expect([base.maxRunsPerHour, base.maxRunsPerDay]).toEqual(['5', '']);
+    expect(triggerPatch(base, { ...base, maxRunsPerDay: '40' })).toEqual({ max_runs_per_day: 40 });
+    expect(triggerPatch(base, { ...base, maxRunsPerHour: '' })).toEqual({ max_runs_per_hour: null });
+    expect(triggerPatch(base, { ...base, maxRunsPerHour: ' 5 ' })).toEqual({});
+    // An older server sends no caps: the fields stay empty and patch nothing.
+    const older = saved(trigger());
+    expect([older.maxRunsPerHour, older.maxRunsPerDay]).toEqual(['', '']);
+    expect(triggerPatch(older, { ...older })).toEqual({});
+  });
+
   test('two changed fields make one payload with both', () => {
     const base = saved(eventTrigger(), eventType());
     expect(

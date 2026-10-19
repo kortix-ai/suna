@@ -175,7 +175,13 @@ async function recordTriggerExecutionResult(
   row: TriggerExecutionRow,
   result: Awaited<ReturnType<typeof fireGitTrigger>>,
   completedAt: Date,
-): Promise<'fired' | 'queued' | 'failed'> {
+): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
+    // A run cap held the slot (KRTX-1721): a skipped run, not a failure. The
+    // trigger keeps its last status; fireGitTrigger already told the watchers.
+    if (result.status === 'skipped') {
+      await markTriggerExecutionSkipped({ row, skippedAt: completedAt, reason: result.reason ?? 'skipped' });
+      return 'skipped';
+    }
     if (result.status === 'fired' || result.status === 'queued') {
       // `queued` means two different things to `fireGitTrigger`. A reuse/keyed/
       // pinned fire that hands the prompt to an EXISTING session (`reason:

@@ -179,6 +179,14 @@ Set options: every live-only option above, plus --name, --prompt, --cron,
 \`--cron\` and \`--run-at\` are exclusive — setting one clears the other. Monitor
 fields (--run/--mode/--interval/--expect-event-within) are add-only.
 
+Run limits (any type; add, add --apply, and set):
+  --max-runs-per-hour <n>  Runs the trigger may start in any 60 minutes
+                           (default 60). A fire past it starts nothing: it
+                           is a skipped run, "throttled: …".
+  --max-runs-per-day <n>   Runs it may start in a UTC day (default: no cap).
+                           On \`set\`, \`none\` removes either cap.
+A manual \`fire\` is never held, but it counts.
+
 Monitor options (--type monitor). A monitor is a repo command the platform
 runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
 runs monitors only where the \`monitors\` feature flag is on.
@@ -232,6 +240,8 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.runAt = takeFlagValue(rest, ['--run-at']);
     tf.model = takeFlagValue(rest, ['--model']);
     tf.sessionMode = takeFlagValue(rest, ['--session-mode']);
+    tf.maxRunsPerHour = takeFlagValue(rest, ['--max-runs-per-hour']);
+    tf.maxRunsPerDay = takeFlagValue(rest, ['--max-runs-per-day']);
     tf.sessionKey = takeFlagValue(rest, ['--session-key']);
     tf.sessionId = takeFlagValue(rest, ['--session-id']);
     tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
@@ -713,6 +723,8 @@ async function triggersInfo(
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
     rows.push(['signature', `${WEBHOOK_SIGNATURE_HEADER}: ${WEBHOOK_SIGNATURE_ALGORITHM}`]);
   }
+  rows.push(['max_runs_per_hour', String(t.max_runs_per_hour ?? '60 (default)')]);
+  if (t.max_runs_per_day) rows.push(['max_runs_per_day', String(t.max_runs_per_day)]);
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
   if (t.last_status)
     rows.push([

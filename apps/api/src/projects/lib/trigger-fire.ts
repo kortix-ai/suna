@@ -15,7 +15,8 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
-import { clearTriggerAlert } from './trigger-alerts';
+import { alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
+import { triggerRunCapReason } from './trigger-run-caps';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -292,8 +293,11 @@ export async function fireGitTrigger(input: {
   source: TriggerFireSource;
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
+  /** A person fired it (manual fire, replay): the run caps do not apply. */
+  deliberate?: boolean;
 }): Promise<{
-  status: 'fired' | 'queued' | 'failed';
+  /** `skipped`: a run cap (KRTX-1721) held it; `reason` names the cap. */
+  status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
   error?: string;
@@ -309,6 +313,16 @@ export async function fireGitTrigger(input: {
   retryable?: boolean;
 }> {
   const { spec, project, payload } = input;
+  // Run caps (KRTX-1721) bound what automation starts, before any session or
+  // prompt work. A person's fire is never held, but it counts toward the cap.
+  if (!input.deliberate) {
+    const now = new Date();
+    const throttled = await triggerRunCapReason({ projectId: project.projectId, slug: spec.slug, caps: spec, now });
+    if (throttled) {
+      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: throttled, now });
+      return { status: 'skipped', reason: throttled };
+    }
+  }
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().

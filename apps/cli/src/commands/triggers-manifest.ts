@@ -143,6 +143,35 @@ interface MonitorFields {
  * would reject — a manifest that only fails server-side is a worse error than
  * no manifest at all.
  */
+/**
+ * `--max-runs-per-hour` / `--max-runs-per-day` (KRTX-1721): a whole number of at
+ * least 1, any trigger type. `allowClear` (\`set\`): `none` sends null, which
+ * removes the cap.
+ */
+export function parseRunCapFlags(
+  tf: Record<string, string | undefined>,
+  allowClear: boolean,
+): { caps: Record<string, number | null> } | { error: string } {
+  const out: Record<string, number | null> = {};
+  for (const [flag, key, field] of [
+    ['--max-runs-per-hour', 'maxRunsPerHour', 'max_runs_per_hour'],
+    ['--max-runs-per-day', 'maxRunsPerDay', 'max_runs_per_day'],
+  ] as const) {
+    const raw = tf[key]?.trim();
+    if (raw === undefined) continue;
+    if (allowClear && raw === 'none') {
+      out[field] = null;
+      continue;
+    }
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
+      return { error: `${flag} must be a whole number of at least 1${allowClear ? ', or none to remove it' : ''} (got "${raw}").` };
+    }
+    out[field] = value;
+  }
+  return { caps: out };
+}
+
 export function parseMonitorFlags(
   tf: Record<string, string | undefined>,
 ): MonitorFields | { error: string } {
@@ -248,6 +277,9 @@ export async function triggersAddLocal(
       return fail(`${stray[0]} is only valid on a monitor trigger (--type monitor).`);
     }
   }
+  const parsedCaps = parseRunCapFlags(tf, false);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
   let monitor: MonitorFields | null = null;
   if (type === 'monitor') {
     const parsed = parseMonitorFlags(tf);
@@ -306,6 +338,7 @@ export async function triggersAddLocal(
     } else if (tf.secretEnv) {
       fields.secret_env = tf.secretEnv;
     }
+    Object.assign(fields, caps);
     fields.prompt = tf.prompt;
     appendArrayBlock('triggers', fields);
     process.stdout.write(

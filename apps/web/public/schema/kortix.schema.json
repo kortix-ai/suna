@@ -322,6 +322,14 @@
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
                 },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -2638,6 +2646,14 @@
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
                 },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -4484,6 +4500,14 @@
                 "max_lateness": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
                 },
                 "secret_env": {
                   "type": "string",

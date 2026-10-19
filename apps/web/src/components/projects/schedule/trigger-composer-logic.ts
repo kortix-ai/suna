@@ -69,6 +69,15 @@ export interface ComposerDraft {
   secretName: string;
   startActive: boolean;
   sessionAccess: SharingSelection;
+  /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
+  maxRunsPerHour: string;
+  maxRunsPerDay: string;
+}
+
+/** A run-limit input as the API wants it: empty → null (unset), else the number. */
+export function runCapFromInput(raw: string): number | null {
+  const value = raw.trim();
+  return value ? Number(value) : null;
 }
 
 export function initialDraft(init: {
@@ -102,6 +111,8 @@ export function initialDraft(init: {
     secretName: '',
     startActive: true,
     sessionAccess: { mode: 'private', memberIds: [], groupIds: [] },
+    maxRunsPerHour: '',
+    maxRunsPerDay: '',
   };
 }
 
