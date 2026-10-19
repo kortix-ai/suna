@@ -50,9 +50,7 @@ setUiTelemetry({
 setUiHostEnv(() => {
   const env = getEnv();
   return {
-    billingEnabled: env.BILLING_ENABLED,
     appUrl: env.APP_URL,
-    backendUrl: env.BACKEND_URL,
     // Build-time values: Next inlines NEXT_PUBLIC_* into the client bundle.
     mapStyleUrl: process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL,
     mapStyleUrlDark: process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL_DARK,
@@ -67,7 +65,8 @@ const useViewerId = () => useAuth().user?.id;
 // root bundle stays small. The wallpaper is static: it paints on first frame.
 const components: UiHostComponents = {
   Wallpaper: WallpaperBackground,
-  ChatGptAccountsDialog: lazyClient(() =>
+  // Only the `codex` pooled provider exists today; the dialog ignores `providerId`.
+  ProviderAccountsModal: lazyClient(() =>
     import('@/features/providers/chatgpt-accounts-dialog').then((m) => m.ChatGptAccountsDialog),
   ),
   ConnectorConnectModal: lazyClient(() =>

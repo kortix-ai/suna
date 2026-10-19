@@ -1,10 +1,9 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
-import { uiHostEnv } from '@kortix/ui/lib/host-env';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { resolvedPlan } from '@kortix/sdk';
+import { platformConfig, resolvedPlan } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback } from 'react';
 
@@ -56,7 +55,7 @@ export function useDownloadRestriction(
     : undefined;
 
   // Downloads are restricted if user is on free tier and billing is enabled
-  const isRestricted = isFreeTier && uiHostEnv().billingEnabled;
+  const isRestricted = isFreeTier && !!platformConfig().billingEnabled;
 
   const showUpgradePrompt = useCallback(() => {
     const featureName = options?.featureName || 'files';

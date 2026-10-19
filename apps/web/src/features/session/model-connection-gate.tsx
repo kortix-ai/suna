@@ -48,7 +48,7 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
   const t = useTranslations('sessionUi.modelGate');
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+  const { canConnectProvider, openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
 
   return (
@@ -69,9 +69,11 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
               {t('upgrade')}
             </Button>
           )}
-          <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
-            {t('connectModel')}
-          </Button>
+          {canConnectProvider && (
+            <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
+              {t('connectModel')}
+            </Button>
+          )}
         </div>
       </ComposerTray>
     </>

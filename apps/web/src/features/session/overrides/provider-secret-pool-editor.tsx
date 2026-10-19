@@ -37,13 +37,13 @@ function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
   const t = useTranslations('pooledSecrets');
   const [open, setOpen] = useState(false);
   const access = useModelAccess(projectId);
-  const { ChatGptAccountsDialog } = useUiComponents();
-  if (!ChatGptAccountsDialog || (access.data?.disabledProviders ?? []).includes('codex')) return null;
+  const { ProviderAccountsModal } = useUiComponents();
+  if (!ProviderAccountsModal || (access.data?.disabledProviders ?? []).includes('codex')) return null;
   return <>
     <Button size="sm" variant={variant} disabled={disabled} onClick={() => setOpen(true)}>
       {t(action === 'connect' ? 'connectChatGpt' : 'manageChatGptAccounts')}
     </Button>
-    <ChatGptAccountsDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+    <ProviderAccountsModal projectId={projectId} providerId="codex" open={open} onOpenChange={setOpen} />
   </>;
 }
 

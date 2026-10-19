@@ -31,7 +31,9 @@ const uiToastMock = () => ({
 });
 mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
-mock.module('@kortix/ui/lib/host-env', () => ({ uiHostEnv: () => ({ billingEnabled }) }));
+// The hook reads the billing flag from the SDK's platform config per call.
+const { configureKortix } = await import('@kortix/sdk');
+configureKortix({ backendUrl: '', getToken: async () => null, get billingEnabled() { return billingEnabled; } });
 mock.module('@/stores/subscription-store', () => ({
   useSubscriptionStore: (selector: (state: { accountState: unknown }) => unknown) =>
     selector({ accountState }),

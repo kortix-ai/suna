@@ -313,9 +313,14 @@ const useNoViewer = (): string | undefined => undefined;
  * optional: without it, the UI hides the control that opens it.
  */
 export interface UiHostComponents {
-  /** Lists, connects and removes the viewer's ChatGPT accounts for a project. */
-  ChatGptAccountsDialog?: React.ComponentType<{
+  /**
+   * Lists, connects and removes the viewer's own accounts for one pooled
+   * provider in a project. Without it, the "connect your account" controls are hidden.
+   */
+  ProviderAccountsModal?: React.ComponentType<{
     projectId: string;
+    /** The pooled provider, for example `'codex'`. */
+    providerId: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
   }>;
@@ -330,8 +335,8 @@ export interface UiHostComponents {
     fallbackName: string;
   }>;
   /**
-   * Connects model providers and picks a project's models. Without it,
-   * "connect a model" opens the global provider modal store instead.
+   * Connects model providers and picks a project's models. Without it, the
+   * "connect a model" controls are hidden.
    */
   ProjectProviderModal?: React.ComponentType<{
     projectId: string;

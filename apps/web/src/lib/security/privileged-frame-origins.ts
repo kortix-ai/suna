@@ -1,3 +1,4 @@
+import { platformConfig } from '@kortix/sdk';
 import { uiHostEnv } from '@kortix/ui/lib/host-env';
 
 /**
@@ -9,11 +10,11 @@ import { uiHostEnv } from '@kortix/ui/lib/host-env';
  * API on the page origin; resolving it against the page covers that case.
  */
 export function privilegedFrameOrigins(): string[] {
-  const env = uiHostEnv();
-  const page = typeof window !== 'undefined' ? window.location.origin : env.appUrl;
-  const origins = [page, env.appUrl];
+  const { appUrl } = uiHostEnv();
+  const page = typeof window !== 'undefined' ? window.location.origin : appUrl;
+  const origins = [page, appUrl];
   try {
-    origins.push(new URL(env.backendUrl, page).origin);
+    origins.push(new URL(platformConfig().backendUrl, page).origin);
   } catch {
     // An unparseable backend URL adds nothing; the page origin still applies.
   }

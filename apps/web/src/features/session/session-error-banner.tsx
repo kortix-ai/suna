@@ -702,10 +702,10 @@ function ChatGptConnectionButton({
   const session = useProjectSession(projectId, sessionId, { enabled });
   const pools = useSessionProviderSecretPools(enabled ? projectId : null, sessionId);
   const [open, setOpen] = useState(false);
-  const { ChatGptAccountsDialog } = useUiComponents();
+  const { ProviderAccountsModal } = useUiComponents();
 
   const applies =
-    !!ChatGptAccountsDialog &&
+    !!ProviderAccountsModal &&
     enabled &&
     !(access.data?.disabledProviders ?? []).includes('codex') &&
     chatGptActionApplies({
@@ -716,14 +716,14 @@ function ChatGptConnectionButton({
         ? pools.data.pools.some((pool) => pool.provider_id === 'codex')
         : undefined,
     });
-  if (!applies || !ChatGptAccountsDialog) return null;
+  if (!applies || !ProviderAccountsModal) return null;
 
   return (
     <div className="mt-2 pl-7">
       <Button size="sm" className="active:scale-[0.96]" onClick={() => setOpen(true)}>
         {t(action === 'reconnect' ? 'reconnectChatGpt' : 'connectChatGpt')}
       </Button>
-      <ChatGptAccountsDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+      <ProviderAccountsModal projectId={projectId} providerId="codex" open={open} onOpenChange={setOpen} />
     </div>
   );
 }

@@ -423,6 +423,7 @@ export function ModelSelector({
   const [search, setSearch] = useState('');
   const [toggledGroups, setToggledGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
   const {
+    canConnectProvider,
     openConnectProvider,
     openUpgrade,
     modal: connectionModal,
@@ -444,9 +445,9 @@ export function ModelSelector({
   // a manager disabled the ChatGPT provider for the project.
   const tPooled = useTranslations('pooledSecrets');
   const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const { ChatGptAccountsDialog } = useUiComponents();
+  const { ProviderAccountsModal } = useUiComponents();
   const chatGptPossible =
-    !!ChatGptAccountsDialog && offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+    !!ProviderAccountsModal && offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
   const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
@@ -619,8 +620,8 @@ export function ModelSelector({
   return (
     <>
       {connectionModal}
-      {projectId && chatGptPossible && ChatGptAccountsDialog && (
-        <ChatGptAccountsDialog projectId={projectId} open={chatGptOpen} onOpenChange={setChatGptOpen} />
+      {projectId && chatGptPossible && ProviderAccountsModal && (
+        <ProviderAccountsModal projectId={projectId} providerId="codex" open={chatGptOpen} onOpenChange={setChatGptOpen} />
       )}
       <CommandPopover
         open={disabled ? false : open}
@@ -659,7 +660,7 @@ export function ModelSelector({
               value={search}
               onValueChange={setSearch}
               rightElement={
-                canManageModels ? (
+                canManageModels && canConnectProvider ? (
                 <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
                   <Hint label={tModel('connectProvider')} side="top" className="z-50">
                     <button
@@ -890,15 +891,17 @@ export function ModelSelector({
                         {tModel('upgrade')}
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant={showUpgradeOption ? 'outline' : 'default'}
-                      onClick={() => handleOpenProviderModal('providers')}
-                    >
-                      <KeyRound className="size-3.5" />
-                      {tModel('connectProvider')}
-                    </Button>
+                    {canConnectProvider && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant={showUpgradeOption ? 'outline' : 'default'}
+                        onClick={() => handleOpenProviderModal('providers')}
+                      >
+                        <KeyRound className="size-3.5" />
+                        {tModel('connectProvider')}
+                      </Button>
+                    )}
                     {chatGptAvailable && (
                       <Button type="button" size="xs" variant="outline" onClick={handleOpenChatGpt}>
                         {tPooled('connectChatGpt')}

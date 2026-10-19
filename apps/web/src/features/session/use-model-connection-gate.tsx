@@ -11,7 +11,6 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
@@ -56,7 +55,8 @@ export function resolveGateProjectId(
 
 /**
  * Shared "connect a model" routing. Project actions open the project-scoped
- * provider modal in place. Non-project actions use the global provider modal.
+ * provider modal in place. Without a project or the host's
+ * `ProjectProviderModal` slot, `canConnectProvider` is false: hide Connect.
  * Extracted from `ModelSelector` so the picker, chat gate, and onboarding use
  * the same surface.
  *
@@ -73,9 +73,8 @@ export function useModelConnectionGate(
   models: FlatModel[] = [],
   options?: { projectId?: string | null },
 ) {
-  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  // The host's project provider modal (Customize → Models). Without it, every
-  // action uses the global provider modal store.
+  // The host's project provider modal (Customize → Models). Without it, or
+  // without a project, `canConnectProvider` is false and callers hide Connect.
   const { ProjectProviderModal } = useUiComponents();
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
@@ -166,16 +165,14 @@ export function useModelConnectionGate(
     accountStateQuery,
   ]);
 
+  const canConnectProvider = !!(projectId && ProjectProviderModal);
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {
-      if (projectId && ProjectProviderModal) {
-        setProjectModalTab(projectProviderModalTab(tab));
-        setProjectModalOpen(true);
-        return;
-      }
-      openProviderModal(tab);
+      if (!canConnectProvider) return;
+      setProjectModalTab(projectProviderModalTab(tab));
+      setProjectModalOpen(true);
     },
-    [projectId, ProjectProviderModal, openProviderModal],
+    [canConnectProvider],
   );
 
   const openUpgrade = useCallback(() => {
@@ -210,6 +207,7 @@ export function useModelConnectionGate(
   const showUpgradeOption = useUiHostConfig().billingEnabled;
 
   return {
+    canConnectProvider,
     openConnectProvider,
     openUpgrade,
     modal,
