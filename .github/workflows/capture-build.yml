@@ -125,6 +125,9 @@ jobs:
   windows-msi:
     name: Windows MSI (build and verify)
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env): the Windows signing keys
     strategy:
       matrix:
         include:
