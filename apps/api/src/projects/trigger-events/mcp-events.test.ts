@@ -75,6 +75,8 @@ describe('planCheck: what one check fires', () => {
     const result = plan([item('visible', NOW - 2 * 60 * 60_000)], { seen: old });
     expect(result.nextSeen[0]).toBe('visible');
     expect(result.nextSeen).toHaveLength(2_000);
+    const many = Array.from({ length: 3_000 }, (_, n) => item(`v${n}`, NOW - 2 * 60 * 60_000));
+    expect(plan(many).nextSeen).toHaveLength(2_000);
   });
 
   test('floorFor: a minute before the subscription, never older than 24 h', () => {
@@ -110,6 +112,7 @@ describe('tool answers', () => {
     expect(items[0]!.data).toMatchObject({ id: 'm1', thread_id: 't1', from: 'a@example.com', subject: 'Hi', message_count: 3 });
     expect(gmail.items({})).toEqual([]);
     expect(gmail.items({ threads: 'nope' })).toBeNull();
+    expect(gmail.request({}, { now: NOW, floor: NOW })).toMatchObject({ maxPages: 4, newestFirst: true });
     expect(gmail.request({ query: 'from:billing@example.com' }, { now: NOW, floor: NOW }).args).toEqual({
       query: '(from:billing@example.com) newer_than:2d',
       pageSize: 50,
@@ -205,7 +208,7 @@ describe('bounds', () => {
   });
 
   test('event data: control and bidi characters are stripped, long strings cut, huge items truncated', () => {
-    expect(boundData({ s: 'a\u0007b‮c' }, 'k')).toEqual({ s: 'abc' });
+    expect(boundData({ s: 'a\u0007b\u202ec', ['k\u202ey']: 1 }, 'k')).toEqual({ s: 'abc', ky: 1 });
     expect((boundData({ s: 'x'.repeat(5_000) }, 'k').s as string).length).toBe(2_001);
     const huge = boundData({ id: 'big', parts: Array.from({ length: 40 }, () => 'y'.repeat(1_900)) }, 'k');
     expect(huge).toMatchObject({ id: 'big', truncated: true });
@@ -217,6 +220,10 @@ describe('classifyCall: what a gateway answer does to the stream', () => {
 
   test('a signed-out account parks for a person; a vendor 401/403 is transient', () => {
     expect(classify({ status: 'denied', reason: 'needs_auth' }).kind).toBe('needs_connection');
+    expect(classify({ status: 'denied', reason: 'credential_not_shared' })).toMatchObject({
+      kind: 'fatal',
+      message: expect.stringContaining('shared with specific people only'),
+    });
     expect(classify({ status: 'error', reason: 'OAuth2 token request failed (400): invalid_grant' }).kind).toBe('needs_connection');
     expect(classify({ status: 'error', reason: 'Unauthorized', upstreamStatus: 401 }).kind).toBe('transient');
     expect(classify({ status: 'error', reason: 'Forbidden', upstreamStatus: 403 }).kind).toBe('transient');

@@ -21,7 +21,7 @@ import {
   type EventDefinition,
   type ToolAction,
 } from './mcp-events';
-import { MAX_STREAMS_PER_PROJECT, countStreams, deleteStream, getStream, streamIdFor, upsertStream } from './poll-store';
+import { MAX_STREAMS_PER_PROJECT, countStreams, deleteStream, getStream, isParked, streamIdFor, upsertStream } from './poll-store';
 import { EventConnectionNotReadyError, EventSignatureError, type EventSourceProvider, type EventTypeInfo } from './types';
 
 export const MCP_SOURCE_ID = 'mcp';
@@ -127,6 +127,7 @@ export const mcpEventSource: EventSourceProvider = {
         projectId: connectorConnections.projectId,
         accountId: connectorConnections.accountId,
         connectorId: connectors.connectorId,
+        connectionUpdatedAt: connectorConnections.updatedAt,
       })
       .from(connectorConnections)
       .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
@@ -147,9 +148,14 @@ export const mcpEventSource: EventSourceProvider = {
       throw new Error(`This account has no owner for Kortix to check ${label} as.`);
     }
     const externalId = streamIdFor(connection.connectionId, type, settings);
-    if (!(await getStream(externalId)) && (await countStreams(row.projectId)) >= MAX_STREAMS_PER_PROJECT) {
+    const existing = await getStream(externalId);
+    if (!existing && (await countStreams(row.projectId)) >= MAX_STREAMS_PER_PROJECT) {
       throw new Error(`This project already runs ${MAX_STREAMS_PER_PROJECT} app-event checks, the most allowed. Remove an event trigger first.`);
     }
+    // A parked stream waits for a person: re-armed when its account changed since it parked
+    // (a reconnect), else it keeps its hourly retry and its triggers keep its error.
+    const parked = existing !== null && isParked(existing);
+    const rearm = parked && row.connectionUpdatedAt.getTime() > existing.updatedAt.getTime();
     await upsertStream({
       externalId,
       projectId: row.projectId,
@@ -159,7 +165,10 @@ export const mcpEventSource: EventSourceProvider = {
       eventType: type,
       config: settings,
       intervalSeconds: intervalSeconds(config),
-    });
+    }, rearm);
+    if (parked && !rearm && existing.lastError) {
+      return { externalId, status: { kind: existing.lastErrorKind === 'needs_connection' ? 'needs_connection' : 'error', message: existing.lastError } };
+    }
     return { externalId };
   },
 

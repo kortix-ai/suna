@@ -222,14 +222,14 @@ async function reconcileOne(
     return;
   }
   try {
-    const { externalId } = await provider.subscribe({ connection, type: event.type, config: event.config });
+    const { externalId, status } = await provider.subscribe({ connection, type: event.type, config: event.config });
     await store.upsert({
       ...base,
       connectionId: connection.connectionId,
       externalId,
       desiredHash: hash,
-      status: 'active',
-      lastError: null,
+      status: status?.kind ?? 'active',
+      lastError: status?.message ?? null,
     });
     if (prev?.externalId && prev.externalId !== externalId) {
       await unsubscribeIfUnreferenced(provider, prev.externalId);

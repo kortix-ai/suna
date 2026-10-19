@@ -45,6 +45,8 @@ export interface PollRequest {
   args: Record<string, unknown>;
   /** Pages one check reads at most, through `nextPageToken`. */
   maxPages: number;
+  /** The tool lists newest first: stop paging at the first page that reaches a known or too-old item. */
+  newestFirst?: boolean;
 }
 
 export interface PollContext {
@@ -105,16 +107,19 @@ const MAX_ARRAY = 50;
 const MAX_DEPTH = 6;
 const MAX_DATA_BYTES = 16 * 1024;
 
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
+const clean = (text: string, max: number): string => {
+  const stripped = text.replace(UNSAFE_CHARS, '');
+  return stripped.length > max ? `${stripped.slice(0, max)}…` : stripped;
+};
+
 function bound(value: unknown, depth: number): unknown {
-  if (typeof value === 'string') {
-    // eslint-disable-next-line no-control-regex
-    const clean = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f​-‏‪-‮⁦-⁩]/g, '');
-    return clean.length > MAX_STRING ? `${clean.slice(0, MAX_STRING)}…` : clean;
-  }
+  if (typeof value === 'string') return clean(value, MAX_STRING);
   if (value === null || typeof value !== 'object') return value;
   if (depth >= MAX_DEPTH) return Array.isArray(value) ? `[${value.length} items]` : '{…}';
   if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((v) => bound(v, depth + 1));
-  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, bound(v, depth + 1)]));
+  return Object.fromEntries(Object.entries(value).slice(0, 200).map(([k, v]) => [clean(k, 200), bound(v, depth + 1)]));
 }
 
 export function boundData(data: Json, key: string): Json {
@@ -215,7 +220,7 @@ const gmailMessageReceived: EventDefinition = {
   request(config) {
     const query = str(config.query)?.trim() ?? 'in:inbox';
     // The 2-day window bounds each check; the floor (24 h) is inside it.
-    return { args: { query: `(${query}) newer_than:2d`, pageSize: 50, view: 'THREAD_VIEW_MINIMAL' }, maxPages: 1 };
+    return { args: { query: `(${query}) newer_than:2d`, pageSize: 50, view: 'THREAD_VIEW_MINIMAL' }, maxPages: 4, newestFirst: true };
   },
   items: gmailItems,
 };
@@ -547,6 +552,8 @@ export const MAX_EVENT_AGE_MS = DAY_MS;
 export const MAX_FUTURE_SKEW_MS = 10 * 60_000;
 export const MAX_FIRES_PER_CHECK = 20;
 export const MAX_FIRES_PER_HOUR = 60;
+/** Items one check considers: a list tool can answer with any number. */
+export const MAX_ITEMS_PER_CHECK = 1_000;
 export const MAX_SEEN = 2_000;
 
 /** Items before this never fire. `subscribedAt` minus a minute absorbs the vendor's clock skew. */
@@ -599,9 +606,6 @@ export function planCheck(input: {
   const deferredKeys = budget > fire.length ? new Set(rest.map((i) => i.key)) : new Set<string>();
   const visibleKeys = visible.map((i) => i.key).filter((k) => !deferredKeys.has(k));
   const visibleSet = new Set(visibleKeys);
-  const nextSeen = [...visibleKeys, ...input.seen.filter((k) => !visibleSet.has(k) && !deferredKeys.has(k))].slice(
-    0,
-    Math.max(MAX_SEEN, visibleKeys.length),
-  );
+  const nextSeen = [...visibleKeys, ...input.seen.filter((k) => !visibleSet.has(k) && !deferredKeys.has(k))].slice(0, MAX_SEEN);
   return { fire, deferred: deferredKeys.size, dropped: rest.length - deferredKeys.size, nextSeen };
 }

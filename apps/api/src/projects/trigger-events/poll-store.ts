@@ -37,11 +37,18 @@ export async function countStreams(projectId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** A person must act (sign in again, fix a setting): the stream retries on its own only hourly. */
+export const isParked = (stream: Pick<PollStream, 'lastErrorKind'>): boolean =>
+  stream.lastErrorKind === 'needs_connection' || stream.lastErrorKind === 'fatal';
+
 /**
- * Create the stream, or update the one that exists. A parked stream is armed
- * again (a re-subscribe is its retry) and records what is there first, like a
- * resumed pause: its triggers were not live, so that window is not owed. A
- * live stream keeps what it has seen, so nothing fires twice.
+ * Create the stream, or update the one that exists. `rearm` (a parked stream
+ * whose account changed since it parked) checks at once and records what is
+ * there first: its triggers were not live, so that window is not owed. A
+ * parked stream that is not re-armed keeps its hourly retry: the connector
+ * sweep re-subscribes failing triggers every few minutes, and that must not
+ * call the vendor each time. A live stream keeps what it has seen, and a
+ * shorter interval pulls its next check in.
  */
 export async function upsertStream(input: {
   externalId: string;
@@ -52,23 +59,27 @@ export async function upsertStream(input: {
   eventType: string;
   config: Record<string, unknown>;
   intervalSeconds: number;
-}): Promise<void> {
+}, rearm = false): Promise<void> {
+  const parked = sql`${polls.lastErrorKind} in ('needs_connection', 'fatal')`;
+  const set = rearm
+    ? {
+        nextPollAt: sql`now()`,
+        primedAt: null,
+        fireAfter: RECORD_FIRST,
+        lastErrorKind: null,
+        lastError: null,
+        failures: 0,
+      }
+    : {
+        nextPollAt: sql`case when ${parked} then ${polls.nextPollAt}
+          else least(coalesce(${polls.nextPollAt}, now()), now() + make_interval(secs => ${input.intervalSeconds})) end`,
+      };
   await db
     .insert(polls)
     .values({ ...input, nextPollAt: sql`now()` })
     .onConflictDoUpdate({
       target: polls.externalId,
-      set: {
-        intervalSeconds: input.intervalSeconds,
-        connectorSlug: input.connectorSlug,
-        nextPollAt: sql`coalesce(${polls.nextPollAt}, now())`,
-        primedAt: sql`case when ${polls.nextPollAt} is null then null else ${polls.primedAt} end`,
-        fireAfter: sql`case when ${polls.nextPollAt} is null then ${RECORD_FIRST.toISOString()}::timestamptz else ${polls.fireAfter} end`,
-        lastErrorKind: sql`case when ${polls.nextPollAt} is null then null else ${polls.lastErrorKind} end`,
-        lastError: sql`case when ${polls.nextPollAt} is null then null else ${polls.lastError} end`,
-        failures: sql`case when ${polls.nextPollAt} is null then 0 else ${polls.failures} end`,
-        updatedAt: sql`now()`,
-      },
+      set: { ...set, intervalSeconds: input.intervalSeconds, connectorSlug: input.connectorSlug, updatedAt: sql`now()` },
     });
 }
 
@@ -82,12 +93,26 @@ export async function deleteStream(externalId: string): Promise<void> {
  * only the holder of the current claim can settle (see `settleStream`).
  */
 export async function claimDueStreams(limit: number, leaseMs: number): Promise<PollStream[]> {
+  // Fair across projects: at most 2 per project per claim, none for a project with 2 checks
+  // running, so one project's slow MCP server cannot hold every slot.
   const due = sql`(
     SELECT external_id FROM kortix.project_trigger_event_polls
-     WHERE next_poll_at <= now()
+     WHERE external_id IN (
+       SELECT external_id FROM (
+         SELECT p.external_id, p.next_poll_at,
+                row_number() OVER (PARTITION BY p.project_id ORDER BY p.next_poll_at) AS rn
+           FROM kortix.project_trigger_event_polls p
+          WHERE p.next_poll_at <= now()
+            AND (p.locked_until IS NULL OR p.locked_until < now())
+            AND (SELECT count(*) FROM kortix.project_trigger_event_polls r
+                  WHERE r.project_id = p.project_id AND r.locked_until > now()) < 2
+       ) d
+        WHERE d.rn <= 2
+        ORDER BY d.next_poll_at
+        LIMIT ${limit})
+       AND next_poll_at <= now()
        AND (locked_until IS NULL OR locked_until < now())
      ORDER BY next_poll_at
-     LIMIT ${limit}
      FOR UPDATE SKIP LOCKED)`;
   return db
     .update(polls)
@@ -117,12 +142,20 @@ export type StreamPatch = Partial<Pick<
 
 type Executor = Pick<typeof db, 'update'>;
 
-/** Write a check's outcome and release the claim. False when another claim replaced this one. */
+/**
+ * Write a check's outcome and release the claim. False when another claim
+ * replaced this one, or the stream was deleted and created again (its
+ * `claim` restarts at 0, so the creation time is part of the fence).
+ */
 export async function settleStream(stream: PollStream, patch: StreamPatch, executor: Executor = db): Promise<boolean> {
   const done = await executor
     .update(polls)
     .set({ ...patch, lockedUntil: null, updatedAt: sql`now()` })
-    .where(and(eq(polls.externalId, stream.externalId), eq(polls.claim, stream.claim)))
+    .where(and(
+      eq(polls.externalId, stream.externalId),
+      eq(polls.claim, stream.claim),
+      sql`date_trunc('milliseconds', ${polls.createdAt}) = ${stream.createdAt.toISOString()}::timestamptz`,
+    ))
     .returning({ externalId: polls.externalId });
   return done.length > 0;
 }

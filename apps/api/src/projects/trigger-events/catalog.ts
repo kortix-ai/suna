@@ -48,17 +48,23 @@ export async function listAppEventTypes(
   if (!provider || !provider.configured() || !app) return { kind: 'unavailable' };
   const metadata = scope ? (scope.metadata !== undefined ? scope.metadata : await projectMetadataOf(scope.projectId)) : undefined;
   if (!eventSourceAvailable(provider.id, metadata)) return { kind: 'unavailable' };
-  const key = `${provider.id}:${app}`;
-  let cached = eventTypeCache.get(key);
-  if (!cached || cached.expires < Date.now()) {
-    try {
-      cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
-    } catch (error) {
-      return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+  let items: EventTypeInfo[];
+  if (provider.id === MCP_SOURCE_ID) {
+    // Kortix's own types are static code: nothing to cache, and no cache entry per probed app name.
+    items = await provider.listEventTypes(app);
+  } else {
+    const key = `${provider.id}:${app}`;
+    let cached = eventTypeCache.get(key);
+    if (!cached || cached.expires < Date.now()) {
+      try {
+        cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
+      } catch (error) {
+        return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+      }
+      eventTypeCache.set(key, cached);
     }
-    eventTypeCache.set(key, cached);
+    items = cached.items;
   }
-  let items = cached.items;
   if (provider.id === MCP_SOURCE_ID && scope) {
     const [first] = await projectConnectorsOfApp(scope.projectId, app);
     if (first && provider.listConnectorEventTypes) items = await provider.listConnectorEventTypes({ connectorId: first.connectorId, app });

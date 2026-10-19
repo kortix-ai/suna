@@ -62,7 +62,11 @@ export interface EventSourceProvider {
     connection: EventSourceConnection;
     type: string;
     config: Record<string, unknown>;
-  }): Promise<{ externalId: string }>;
+  }): Promise<{
+    externalId: string;
+    /** The instance exists but cannot run until a person acts: the trigger reads this instead of `active`. */
+    status?: { kind: 'needs_connection' | 'error'; message: string };
+  }>;
   /** Idempotent: a provider 404 is success. */
   unsubscribe(externalId: string): Promise<void>;
   /**

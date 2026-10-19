@@ -23,6 +23,7 @@ import { eventTriggersEnabled } from './flag';
 import {
   type EventDefinition,
   MAX_FIRES_PER_HOUR,
+  MAX_ITEMS_PER_CHECK,
   type PollItem,
   boundData,
   eventIdOf,
@@ -60,6 +61,10 @@ const oneLine = (text: string, max = 300): string => text.replace(/\s+/g, ' ').t
 const FAILURES_BEFORE_ROW_ERROR = 3;
 /** A stream no trigger references is deleted only after this: its subscribe may still be writing the trigger row. */
 const ORPHAN_GRACE_MS = 10 * 60_000;
+/** A parked stream (a person must act) retries this often on its own; a reconnect re-arms it at once. */
+const PARK_RETRY_MS = HOUR_MS;
+/** Checks one replica runs at once. A slow vendor holds one slot, not the batch. */
+const CAPACITY = 8;
 
 const jittered = (ms: number): number => Math.round(ms * (1 + Math.random() * 0.1));
 
@@ -73,11 +78,18 @@ async function settleFailure(stream: PollStream, outcome: Exclude<Outcome, { kin
   const message = transient && failures >= FAILURES_BEFORE_ROW_ERROR
     ? `The last ${failures} checks of ${label} failed: ${outcome.message} Kortix keeps checking, at most 1 hour apart.`
     : outcome.message;
-  const nextPollAt = transient ? new Date(now + backoffMs(intervalMs, failures, outcome.retryAfterSeconds)) : null;
-  const settled = await settleStream(stream, { failures, lastError: message, lastErrorKind: outcome.kind, nextPollAt });
+  const nextPollAt = new Date(now + (transient ? backoffMs(intervalMs, failures, outcome.retryAfterSeconds) : PARK_RETRY_MS));
+  const settled = await settleStream(stream, {
+    failures,
+    lastError: message,
+    lastErrorKind: outcome.kind,
+    nextPollAt,
+    // A parked stream's triggers are not live: the check that un-parks it records first and fires nothing.
+    ...(transient ? {} : { primedAt: null, fireAfter: RECORD_FIRST }),
+  });
   if (!settled) return;
   logger.info('[trigger-events/poll] check failed', { externalId: stream.externalId, kind: outcome.kind, failures });
-  if (transient && outcome.message.endsWith('limited the request rate.') && nextPollAt) {
+  if (transient && outcome.message.endsWith('limited the request rate.')) {
     await delayConnectionStreams(stream.connectionId, nextPollAt);
   }
   if (transient && failures < FAILURES_BEFORE_ROW_ERROR) return;
@@ -215,6 +227,8 @@ async function checkDeps(
     subject: { userId: owner, groupIds: [] },
     agentGrant: null,
     requestedConnectorAccount: stream.connectionId,
+    // What a check reads reaches every session its triggers open: only what the whole project may use.
+    secretsAsProject: true,
   });
   const origin = { origin: 'event_poll', external_id: stream.externalId };
   const deps: GatewayDeps = {
@@ -267,8 +281,10 @@ async function check(claimed: PollStream, now: number): Promise<void> {
   }
 
   const items: PollItem[] = [];
+  const known = new Set(stream.seen);
   let pageToken: string | null = null;
-  for (let page = 0; page < request.maxPages; page++) {
+  let reachedKnown = false;
+  for (let page = 0; page < request.maxPages && items.length < MAX_ITEMS_PER_CHECK; page++) {
     const result = await handleCall(deps, {
       projectId: stream.projectId,
       accountId: stream.accountId,
@@ -280,6 +296,11 @@ async function check(claimed: PollStream, now: number): Promise<void> {
     });
     const outcome = classifyCall(result, label, stream.connectorSlug, def.tool);
     if (outcome.kind !== 'ok') {
+      // An MCP isError reaches the vendor and answers 2xx: its held ok row is written as the error it is.
+      const held = okRecords.at(-1);
+      if (result.status === 'ok' && held) {
+        await writeAudit({ ...held, status: 'error', resultSummary: { ...(held.resultSummary ?? {}), upstream_error: outcome.message } }).catch(() => null);
+      }
       await settleFailure(stream, outcome, label, now);
       return;
     }
@@ -289,16 +310,24 @@ async function check(claimed: PollStream, now: number): Promise<void> {
       await settleFailure(stream, { kind: 'transient', message: `${def.tool} answered without a list of items.` }, label, now);
       return;
     }
-    items.push(...pageItems);
+    // Keys go into `seen` and into idempotency keys: bounded and safe.
+    items.push(...pageItems.map((item) => ({ ...item, key: eventIdOf(item.key) })));
     pageToken = nextPageToken(parseToolOutput(output));
-    if (!pageToken) break;
+    reachedKnown = pageItems.some((item) => known.has(eventIdOf(item.key)) || (item.time !== null && item.time < floor));
+    if (!pageToken || (request.newestFirst && reachedKnown)) break;
+  }
+  if (pageToken && !reachedKnown) {
+    logger.warn('[trigger-events/poll] more new items than one check reads; the oldest wait or are missed', {
+      externalId: stream.externalId,
+      items: items.length,
+    });
   }
 
   const windowOpen = stream.rateWindowStart !== null && now - stream.rateWindowStart.getTime() < HOUR_MS;
   const firesThisHour = windowOpen ? stream.rateWindowFires : 0;
-  const plan = planCheck({ items, seen: stream.seen, primed: stream.primedAt !== null, floor, now, firesThisHour });
+  const plan = planCheck({ items: items.slice(0, MAX_ITEMS_PER_CHECK), seen: stream.seen, primed: stream.primedAt !== null, floor, now, firesThisHour });
   const deliveries = plan.fire.map((item): { key: string; payload: Record<string, unknown> } => {
-    const eventId = eventIdOf(item.key);
+    const eventId = item.key;
     const delivery: EventDelivery = {
       externalId: stream.externalId,
       eventId,
@@ -345,10 +374,22 @@ async function check(claimed: PollStream, now: number): Promise<void> {
   }
 }
 
-/** Claim and check one batch of due streams. Returns how many ran. */
+let inFlight = 0;
+
+/**
+ * Claim due streams into the free slots and start their checks; does not wait
+ * for them. Returns how many started.
+ */
 export async function runDueEventPolls(): Promise<number> {
-  const streams = await claimDueStreams(CLAIM_LIMIT, LEASE_MS);
-  await Promise.all(streams.map((stream) => runPoll(stream)));
+  const free = CAPACITY - inFlight;
+  if (free <= 0) return 0;
+  const streams = await claimDueStreams(Math.min(free, CLAIM_LIMIT), LEASE_MS);
+  for (const stream of streams) {
+    inFlight += 1;
+    void runPoll(stream).finally(() => {
+      inFlight -= 1;
+    });
+  }
   return streams.length;
 }
 

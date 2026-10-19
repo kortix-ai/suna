@@ -53,7 +53,7 @@ const FLAGS = { event_triggers: true, connectors_v2: true, notification_center: 
 
 // The loopback MCP server: `list_items` answers `items`, newest first.
 let items: Array<Record<string, unknown>> = [];
-let answer: 'ok' | '401' | '503' = 'ok';
+let answer: 'ok' | '400' | '401' | '503' | 'iserror' = 'ok';
 const toolCalls: Array<{ name: string; arguments: unknown }> = [];
 const mcp = Bun.serve({
   port: 0,
@@ -64,6 +64,8 @@ const mcp = Bun.serve({
     toolCalls.push(body.params!);
     if (answer === '401') return new Response('unauthorized', { status: 401 });
     if (answer === '503') return new Response('unavailable', { status: 503 });
+    if (answer === '400') return new Response('bad folder', { status: 400 });
+    if (answer === 'iserror') return Response.json({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: 'quota exceeded' }] } });
     return Response.json({ jsonrpc: '2.0', id: body.id, result: { content: [], structuredContent: { items } } });
   },
 });
@@ -323,6 +325,78 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     await db.update(projectTriggerEventPolls).set({ createdAt: sql`now() - interval '11 minutes'` }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
     await checkNow();
     expect(await stream()).toBeUndefined();
+  });
+
+  test('a parked stream keeps its error through the sweep; a reconnect re-arms it and it records first', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    answer = '400';
+    await checkNow();
+    const parked = await stream();
+    expect(parked).toMatchObject({ lastErrorKind: 'fatal', primedAt: null });
+    expect(parked!.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
+    expect(await row('watch')).toMatchObject({ status: 'error', lastError: expect.stringContaining('fake rejected the check (400)') });
+    // The connector sweep re-subscribes failing triggers: no re-arm, no vendor call, the error stays.
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect((await stream())!.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
+    expect(await row('watch')).toMatchObject({ status: 'error', lastError: parked!.lastError });
+    // A reconnect writes the account: the next re-subscribe re-arms the stream.
+    answer = 'ok';
+    items = [recent('while-parked', 1_000), ...items];
+    await db.update(connectorConnections).set({ updatedAt: sql`now()` }).where(eq(connectorConnections.connectionId, CONNECTION_ID));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'active', lastError: null });
+    expect((await stream())?.lastErrorKind).toBeNull();
+    await checkNow();
+    expect(await deliverJobs()).toEqual([]);
+    items = [recent('after-reconnect', 0), ...items];
+    await checkNow();
+    expect((await deliverJobs()).map((j) => j.jobKey.split(':')[1])).toEqual(['after-reconnect']);
+  });
+
+  test('a shorter interval pulls the next check in', async () => {
+    await reconcile([spec('watch', 'new_item.list_items', { interval: 1440 })]);
+    await checkNow();
+    expect((await stream())!.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
+    await reconcile([spec('watch', 'new_item.list_items', { interval: 1 })]);
+    expect((await stream())!.nextPollAt!.getTime()).toBeLessThanOrEqual(Date.now() + 61_000);
+  });
+
+  test('one project gets at most 2 checks per claim', async () => {
+    await reconcile([spec('a', 'new_item.list_items', { interval: 1, folder: 'a' }), spec('b', 'new_item.list_items', { interval: 1, folder: 'b' }), spec('c', 'new_item.list_items', { interval: 1, folder: 'c' })]);
+    await db.update(projectTriggerEventPolls).set({ nextPollAt: sql`now()`, lockedUntil: null }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    const claimed = (await claimDueStreams(8, 60_000)).filter((s) => s.projectId === PROJECT_ID);
+    expect(claimed).toHaveLength(2);
+    // Two checks of this project are running: nothing more of it is claimed.
+    expect((await claimDueStreams(8, 60_000)).filter((s) => s.projectId === PROJECT_ID)).toHaveLength(0);
+  });
+
+  test('an MCP isError answer writes its error audit row and backs off', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    answer = 'iserror';
+    await checkNow();
+    expect(await stream()).toMatchObject({ failures: 1, lastErrorKind: 'transient', lastError: 'fake reported an error: quota exceeded' });
+    const audits = await db.select().from(connectorCalls).where(eq(connectorCalls.projectId, PROJECT_ID));
+    expect(audits.map((a) => a.status)).toEqual(['error']);
+    expect(audits[0]?.resultSummary).toMatchObject({ origin: 'event_poll', upstream_error: 'fake reported an error: quota exceeded' });
+  });
+
+  test('a check claimed before its stream was deleted and created again commits nothing', async () => {
+    await reconcile([spec('watch')]);
+    await checkNow();
+    await db.update(projectTriggerEventPolls).set({ nextPollAt: sql`now()` }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    const [stale] = await claimDueStreams(50, 60_000);
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, []);
+    await reconcile([spec('watch')]);
+    // The new row's claim counter reaches the stale holder's value: only the creation time tells them apart.
+    await db.update(projectTriggerEventPolls).set({ claim: stale!.claim - 1 }).where(eq(projectTriggerEventPolls.projectId, PROJECT_ID));
+    const [fresh] = await claimDueStreams(50, 60_000);
+    expect(fresh?.claim).toBe(stale?.claim);
+    items = [recent('aba-1', 0), ...items];
+    await runPoll(stale!);
+    expect(await deliverJobs()).toEqual([]);
+    expect((await stream())?.primedAt).toBeNull();
   });
 
   test('a failed fire retries from the delivery job, not from the vendor', async () => {

@@ -48,6 +48,12 @@ export interface ConnectorPrincipal {
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
   agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
+  /**
+   * Resolve a connector's secret as no person: only values shared with the
+   * whole project. For unattended reads whose results reach sessions other
+   * people open (an app-event check), never a value narrowed to `userId`.
+   */
+  secretsAsProject?: boolean;
 }
 
 interface CatalogAction {

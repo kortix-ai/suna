@@ -412,7 +412,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
-        actorUserId: principal.userId,
+        actorUserId: principal.secretsAsProject ? null : principal.userId,
         name: connector.authSecret,
         consumer: 'connector',
         throwWhenUndecryptable: true,

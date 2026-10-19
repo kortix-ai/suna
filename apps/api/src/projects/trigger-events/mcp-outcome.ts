@@ -13,7 +13,6 @@ const NEEDS_CONNECTION = new Set([
   'connector_not_connected',
   'account_required',
   'account_not_found',
-  'credential_not_shared',
   'credential_undecryptable',
 ]);
 
@@ -31,6 +30,12 @@ export function classifyCall(result: CallResult, label: string, slug: string, to
     case 'denied':
       if (NEEDS_CONNECTION.has(result.reason)) {
         return { kind: 'needs_connection', message: `The shared ${label} account is not signed in. Reconnect it to resume this trigger.` };
+      }
+      if (result.reason === 'credential_not_shared') {
+        return {
+          kind: 'fatal',
+          message: `${label} signs in with a secret that is shared with specific people only. An event trigger needs one shared with the whole project.`,
+        };
       }
       if (result.reason === 'connector_not_found' || result.reason === 'connector_disabled') {
         return { kind: 'fatal', message: `Connector "${slug}" is missing or turned off.` };
