@@ -45,7 +45,7 @@ mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
 }));
 
 const { StandaloneSettingsRoute } = await import('./standalone-settings-route');
-const { useSettingsPanelStore } = await import('@/stores/settings-panel-store');
+const { useSettingsPanelStore } = await import('@kortix/ui/internal/stores/settings-panel-store');
 
 type StandaloneTab = Parameters<typeof StandaloneSettingsRoute>[0]['tab'];
 

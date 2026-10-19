@@ -5,17 +5,17 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   CopyCommand,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';

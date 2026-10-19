@@ -3,9 +3,9 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { ConnectorsPage } from '@/features/workspace/capabilities/connectors/connectors-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { ConnectorsPage } from '@kortix/ui/customize';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalog. See

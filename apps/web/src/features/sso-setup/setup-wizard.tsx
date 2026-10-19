@@ -1,7 +1,7 @@
 'use client';
 
-import { HubLink, useHubSearchParams } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
+import { HubLink, useHubSearchParams } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // Guided identity setup — Vercel-style wizards for SAML SSO and Directory
 // Sync (SCIM). Screen 1 picks the identity provider; screen 2 walks the
@@ -11,8 +11,8 @@ import { useTranslations } from '@/i18n/use-translations';
 // no bouncing to settings with values in a notepad. Step completion persists
 // per account+flow+provider in localStorage.
 
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
@@ -32,17 +32,17 @@ import Image from 'next/image';
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountState } from '@/hooks/billing/use-account-state';
+import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
 import { getEnv } from '@/lib/env-config';
 import {
   type CreatedScimToken,
@@ -55,7 +55,7 @@ import {
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 import { buildScimBaseUrl } from '@/lib/scim-url';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { relativeTime } from '@/lib/utils/date';
 import { listAccountMembers } from '@kortix/sdk';
 import {

@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
 import * as deviceCaches from '@/lib/device-caches';
-import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useMobileAppPromoStore } from '@/stores/mobile-app-promo-store';
-import { useTabStore } from '@/stores/tab-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useBrowserRecentsStore } from '@kortix/ui/internal/stores/browser-recents-store';
+import { useMobileAppPromoStore } from '@kortix/ui/internal/stores/mobile-app-promo-store';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   clearImpersonationSession,
   getImpersonationSession,

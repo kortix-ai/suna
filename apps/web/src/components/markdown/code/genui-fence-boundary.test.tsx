@@ -2,9 +2,9 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { lazy, Suspense } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import * as toMarkdown from '@/features/genui/to-markdown';
+import * as toMarkdown from '@kortix/ui/markdown/genui/to-markdown';
 
-import { GenuiFenceBoundary } from './markdown-code';
+import { GenuiFenceBoundary } from '@kortix/ui/genui';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 

@@ -1,5 +1,5 @@
-import { useAccountPanelStore } from '@/stores/account-panel-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountPanelStore } from '@kortix/ui/internal/stores/account-panel-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
@@ -126,7 +126,7 @@ describe('account creation handoff', () => {
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
         );
-      mock.module('@/components/ui/dropdown-menu', uiDropdownMenuMock);
+      mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
       const uiSidebarMock = () => ({
@@ -135,7 +135,7 @@ describe('account creation handoff', () => {
         SidebarMenuButton: children,
         SidebarMenuItem: children,
       });
-      mock.module('@/components/ui/sidebar', uiSidebarMock);
+      mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@/features/layout/user-menu-shared', () => ({
         HelpSubmenu: () => null,

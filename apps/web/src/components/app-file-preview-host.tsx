@@ -12,7 +12,7 @@
  * clickable paths).
  */
 
-import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useFilePreviewStore } from '@kortix/ui/internal/stores/file-preview-store';
 import dynamic from 'next/dynamic';
 
 const AppFilePreviewModal = dynamic(

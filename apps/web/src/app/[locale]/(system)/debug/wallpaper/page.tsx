@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@/lib/wallpapers';
+import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@kortix/ui/theme';
 
 /**
  * /debug/wallpaper — the full-bleed render harness the wallpaper exporter

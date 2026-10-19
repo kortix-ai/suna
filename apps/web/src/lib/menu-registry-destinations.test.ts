@@ -1,14 +1,14 @@
-import { VALID_TABS } from '@/features/accounts/hub/sections';
+import { VALID_TABS } from '@kortix/ui/internal/account-hub/sections';
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { CAPABILITY_TABS } from '@kortix/ui/internal/lib/capability-tab-routes';
 import {
-  CAPABILITY_TABS,
   capabilityTabHref,
   channelsHref,
   reviewHref,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
+} from '@kortix/ui/workspace';
 import {
   SETTINGS_TAB_SUBMENU_PAGE,
   SUBMENU_PAGE_BY_ID,

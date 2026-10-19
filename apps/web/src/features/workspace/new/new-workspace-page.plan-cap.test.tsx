@@ -134,7 +134,7 @@ mock.module('motion/react', () => ({
 }));
 
 const { NewWorkspacePage } = await import('./new-workspace-page');
-const { useUpgradeDialogStore } = await import('@/stores/upgrade-dialog-store');
+const { useUpgradeDialogStore } = await import('@kortix/ui/internal/stores/upgrade-dialog-store');
 
 const CAP_MESSAGE = 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.';
 

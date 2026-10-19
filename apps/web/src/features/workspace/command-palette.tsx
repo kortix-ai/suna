@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SessionSharedIcon } from '@kortix/ui/workspace/projects/session-shared-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,8 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+} from '@kortix/ui/alert-dialog';
+import { Badge } from '@kortix/ui/badge';
 import {
   CommandDialog,
   CommandFooter,
@@ -20,53 +20,57 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from '@/components/ui/command';
+} from '@kortix/ui/command';
 import { useCommandState } from 'cmdk';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Kbd } from '@/components/ui/kbd';
-import Loading from '@/components/ui/loading';
-import { SidebarContext } from '@/components/ui/sidebar';
-import { TextShimmer } from '@/components/ui/text-shimmer';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
-import { useAccountHubAccess } from '@/features/accounts/hub/use-account-hub-access';
-import { useWorkspaceSearch } from '@/features/files';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { Kbd } from '@kortix/ui/kbd';
+import Loading from '@kortix/ui/loading';
+import { SidebarContext } from '@kortix/ui/sidebar';
+import { TextShimmer } from '@kortix/ui/text-shimmer';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { preloadAccountHub } from '@kortix/ui/internal/account-hub/account-hub-entry';
+import { useAccountHubAccess } from '@kortix/ui/internal/account-hub/use-account-hub-access';
+import {
+  useWorkspaceSearch,
+  ChangeRequestDetailDialog,
+  ProjectFilesProvider,
+  openChangeRequestListQuery,
+} from '@kortix/ui/files';
 import {
   ThemeSwatch,
   useInterfaceTheme,
   useInterfaceThemePreview,
 } from '@/features/layout/interface-theme';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
-import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
-import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
-import { DiffDialog } from '@/features/session/diff-dialog';
-import { CompactModal } from '@/features/session/header/compact-modal';
-import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
+import { buildAgentGitReconciliationPrompt } from '@kortix/ui/session/status/agent-git-reconciliation';
+import { DiffDialog, openSessionQuickView } from '@kortix/ui/session-panel';
+import {
+  CompactModal,
+  sessionLastActivityAt,
+  sortSessionsByLastActivity,
+} from '@kortix/ui/session';
+import { pickerGroupId, pickerGroupLabel } from '@kortix/ui/session/models/model-grouping';
+import {
+  activeCapabilityTab,
+  useCapabilityAccess,
+  useProjectNavRows,
+  PROJECT_ACTIONS,
+  useProjectCan,
+  useProjectPageCans,
+} from '@kortix/ui/workspace';
 import {
   LEGACY_PALETTE_HIDDEN,
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
-import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
-import {
-  useCapabilityAccess,
-  useProjectNavRows,
-} from '@/features/workspace/project-sidebar/project-settings-nav';
-import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
+import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
+import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
   OPEN_COMMAND_PALETTE_EVENT,
   consumePendingCommandPalette,
-} from '@/features/workspace/open-command-palette';
-import {
-  sessionLastActivityAt,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+} from '@kortix/ui/internal/layout/open-command-palette';
 import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
@@ -77,7 +81,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   type SettingsTab,
   resolveSettingsOverlayHref,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import {
   type WorkspacePaletteRow,
@@ -88,13 +92,13 @@ import {
   workspacePageResults,
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
-import { copyToClipboard } from '@/lib/utils/clipboard';
-import { isDesktop } from '@/lib/desktop';
+import { copyToClipboard } from '@kortix/ui/internal/lib/utils/clipboard';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
@@ -104,23 +108,21 @@ import {
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
-import { useProjectCan, useProjectPageCans } from '@/lib/use-project-can';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { openCustomizeSidebar } from '@/stores/sidebar-nav-store';
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { useChatSendStore } from '@/stores/chat-send-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
+import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useProjectSwitchStore } from '@/stores/project-switch-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { openTabAndNavigate } from '@kortix/ui/internal/stores/tab-store';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
+import { type ConversationDensity, useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   type FeatureFlagKey,
   type KortixAccount,
@@ -178,11 +180,11 @@ import {
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy } from '@/features/icon/icons/copy';
 import {
+  Copy,
   SidebarToggle as PanelLeftClose,
   SidebarToggle as PanelLeftIcon,
-} from '@/features/icon/icons/sidebar-toggle';
+} from '@kortix/ui/icons';
 
 type PalettePage =
   | 'root'
@@ -2111,7 +2113,7 @@ export function CommandPalette() {
 
   const handleOpenProviderModal = useCallback(() => {
     close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
+    import('@kortix/ui/internal/stores/provider-modal-store').then(({ useProviderModalStore }) => {
       useProviderModalStore.getState().openProviderModal('connected');
     });
   }, [close]);

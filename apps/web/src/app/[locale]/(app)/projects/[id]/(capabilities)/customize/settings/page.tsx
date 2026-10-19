@@ -3,8 +3,8 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ProjectSettingsPage } from '@/features/workspace/capabilities/project-settings/project-settings-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ProjectSettingsPage } from '@kortix/ui/customize';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/config — the Customize bar's "Settings" tab: every

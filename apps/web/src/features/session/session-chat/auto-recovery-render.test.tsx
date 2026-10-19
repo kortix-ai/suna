@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 
-import { TranscriptTurnRow } from './transcript';
+import { TranscriptTurnRow } from '@kortix/ui/session';
 
 /**
  * How an automatic provider-error recovery chain renders (KRTX-2597). The

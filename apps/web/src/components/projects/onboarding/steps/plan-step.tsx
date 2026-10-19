@@ -18,13 +18,13 @@
 import { KeyIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { RadioGroup } from '@/components/ui/radio-group';
-import { Kortix } from '@/features/icon/icons/kortix';
-import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
-import { useAccountState } from '@/hooks/billing';
+import { Badge } from '@kortix/ui/badge';
+import { RadioGroup } from '@kortix/ui/radio-group';
+import { Kortix } from '@kortix/ui/internal/icons/kortix';
+import { useModelConnectionGate } from '@kortix/ui/session';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
 import { useTranslations } from '@/i18n/use-translations';
-import { billingStateAllowsRun, resolveBillingState } from '@/lib/billing/billing-gate-state';
+import { billingStateAllowsRun, resolveBillingState } from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { useProjectModels } from '@kortix/sdk/react';
 

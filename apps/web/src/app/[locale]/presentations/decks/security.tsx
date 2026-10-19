@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The security walkthrough.
@@ -39,7 +39,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *     agents, not human-only.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { getLocalizedConnectorsContent } from '@/features/marketing/connectors/content';
 import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
 import type { ReactNode } from 'react';

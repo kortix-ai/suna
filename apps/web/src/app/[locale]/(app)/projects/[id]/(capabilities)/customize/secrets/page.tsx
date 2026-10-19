@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { SecretsPage } from '@/features/workspace/capabilities/secrets/secrets-page';
+import { SecretsPage } from '@kortix/ui/customize';
 
 /**
  * /projects/[id]/secrets — the standalone Secrets page. See

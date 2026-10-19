@@ -4,11 +4,11 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import type { GlyphSelection } from '@/components/ui/glyph-picker';
-import { FLOATING_PANEL_SURFACE } from '@/components/ui/menu-recipe';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import type { GlyphSelection } from '@kortix/ui/glyph-picker';
+import { FLOATING_PANEL_SURFACE } from '@kortix/ui/menu-recipe';
 
-import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
+import { ProjectIconField, type ProjectIconValue } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');

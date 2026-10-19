@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { act, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import { useAutoScroll } from './use-auto-scroll';
+import { useAutoScroll } from '@kortix/ui/internal/hooks/use-auto-scroll';
 
 /**
  * The DOM half of the anchor contract, through the real hook.

@@ -16,10 +16,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,10 +29,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -41,13 +41,13 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+} from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Switch } from '@kortix/ui/switch';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { connectorHref } from '@kortix/ui/customize/connectors/connector-routes';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
@@ -65,9 +65,9 @@ import {
   desktopComputerPause,
   desktopComputerRequestGrants,
   desktopComputerResume,
-} from '@/lib/desktop';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/internal/lib/desktop';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 import {
   ComputerCapabilities,
   computerDisplayName,
@@ -81,7 +81,7 @@ import {
   useProjectComputerAccounts,
   useThisComputerState,
   type ComputerState,
-} from './computer-connect';
+} from '@kortix/ui/internal/tunnel/computer-connect';
 
 const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 

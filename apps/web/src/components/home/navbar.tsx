@@ -8,8 +8,8 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/context-menu';
+import Loading from '@kortix/ui/loading';
 import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
 import {
   NavigationMenu,
@@ -18,24 +18,23 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/navigation-menu';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
-import { Claude } from '@/features/icon/icons/claude';
-import { Github } from '@/features/icon/icons/github';
+import { Claude } from '@kortix/ui/internal/icons/claude';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
 import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useIsMobile } from '@/hooks/utils';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useIsMobile, cn } from '@kortix/ui';
+import { useGitHubStars } from '@kortix/ui/internal/hooks/use-github-stars';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
   StackIcon as Layers,
@@ -47,7 +46,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;

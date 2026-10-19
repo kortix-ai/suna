@@ -5,7 +5,7 @@ import { IDENTITY_MARKER_KEY, shouldResetClientState } from '@/lib/auth/identity
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isDefinitiveSessionRejection } from '@/lib/auth/session-rejection';
 import { adoptDeviceCaches } from '@/lib/device-caches';
-import { safeGetItem, safeSetItem } from '@/lib/storage/managed-storage';
+import { safeGetItem, safeSetItem } from '@kortix/ui/internal/lib/storage/managed-storage';
 import { createClient } from '@/lib/supabase/client';
 import { resetClientState } from '@/lib/utils/reset-client-state';
 import { Session, SupabaseClient, User } from '@supabase/supabase-js';

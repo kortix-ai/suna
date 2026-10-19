@@ -3,10 +3,10 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { CodeInput } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { CodeInput } from '@kortix/ui/internal/auth/auth-primitives';
 
 interface OtpVerificationProps {
   phoneNumber?: string;

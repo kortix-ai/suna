@@ -1,6 +1,6 @@
 'use client';
 
-import { KortixLogo as UiKortixLogo } from '@/components/ui/kortix-logo';
+import { KortixLogo as UiKortixLogo } from '@kortix/ui/kortix-logo';
 
 interface KortixLogoProps {
   size?: number;

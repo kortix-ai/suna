@@ -1,33 +1,30 @@
 'use client';
 
-import { errorToast } from '@/components/ui/toast';
-import type { AttachedFile } from '@/features/session/session-chat-input';
-import { promptFileParts } from '@/features/session/uploaded-file-refs';
+import { errorToast } from '@kortix/ui/toast';
+import type { AttachedFile } from '@kortix/ui/composer';
+import { promptFileParts } from '@kortix/ui/session/composer/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
-import {
-  ProjectHome,
-  type ProjectHomeSendOptions,
-} from '@/features/workspace/project-layout/project-home';
-import { useAccountState } from '@/hooks/billing';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { buildNewSessionCreateInput } from '@kortix/ui/workspace/layout/new-session-create';
+import { ProjectHome } from '@kortix/ui/workspace';
+import { type ProjectHomeSendOptions } from '@kortix/ui/workspace/layout/project-home';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
 import { usePendingSnapshot } from '@/hooks/use-pending-snapshot';
 import {
   billingDialogArgs,
   billingStateAllowsRun,
   resolveBillingState,
-} from '@/lib/billing/billing-gate-state';
+} from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
+import { useFirstPromptPreviewStore, type AttachmentSubmission } from '@kortix/ui/composer';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 import {
   postWhenUploaded,
   sentFailureMessage,
-  type AttachmentSubmission,
-} from '@/features/session/composer/attachment-submission';
+} from '@kortix/ui/session/composer/attachment-submission';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, startSessionWithPrompt, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';

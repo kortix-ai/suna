@@ -26,14 +26,12 @@ const uiModalMock = () =>
       'ModalTitle',
     ].map((name) => [name, host('div')]),
   );
-mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
 mock.module('motion/react', () => ({
   m: { div: host('div') },
   LazyMotion: ({ children }: { children?: React.ReactNode }) => children,
 }));
 const uiToastMock = () => ({ successToast: () => {} });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@kortix/ui/customize/sections/component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
 mock.module('@kortix/ui/markdown/copy-button', () => ({ CopyButton: host('span') }));
@@ -60,14 +58,13 @@ const uiSelectMock = () =>
       host(name === 'SelectItem' ? 'option' : 'div'),
     ]),
   );
-mock.module('@/components/ui/select', uiSelectMock);
 mock.module('@kortix/ui/select', uiSelectMock);
-const { SlackByoWizard } = await import('./component/slack-byo-wizard');
-const { TeamsByoWizard } = await import('./component/teams-byo-wizard');
-const { OAuth2CredentialFields } = await import('./connector-oauth2-fields');
-const { OAuth2ApplicationFields } = await import('./connector-oauth2-application-fields');
+const { SlackByoWizard } = await import('@kortix/ui/customize/sections/component/slack-byo-wizard');
+const { TeamsByoWizard } = await import('@kortix/ui/customize/sections/component/teams-byo-wizard');
+const { OAuth2CredentialFields } = await import('@kortix/ui/customize/sections/connector-oauth2-fields');
+const { OAuth2ApplicationFields } = await import('@kortix/ui/customize/sections/connector-oauth2-application-fields');
 const { EMPTY_OAUTH2_CREDENTIAL_FORM, EMPTY_OAUTH2_APPLICATION_FORM } =
-  await import('./connector-oauth2');
+  await import('@kortix/ui/customize/sections/connector-oauth2');
 async function render(element: React.ReactElement) {
   let renderer: ReactTestRenderer | undefined;
   await act(() => {

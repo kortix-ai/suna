@@ -1,5 +1,5 @@
-import { getSharedQueryClient } from '@/lib/query-client-singleton';
-import { registerDisposableFamily } from '@/lib/storage/managed-storage';
+import { getSharedQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { registerDisposableFamily } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
   createPersistedQueryCache,

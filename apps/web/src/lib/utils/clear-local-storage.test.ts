@@ -7,7 +7,7 @@ import {
   isAppOwnedStorageKey,
   isKeptStorageKey,
 } from './clear-local-storage';
-import { useDiagnosticsStore } from '@/stores/diagnostics-store';
+import { useDiagnosticsStore } from '@kortix/ui/internal/stores/diagnostics-store';
 
 /**
  * A minimal but FUNCTIONAL `Storage` — real `length`/`key(i)` iteration, not

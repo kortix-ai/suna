@@ -44,8 +44,8 @@ for (const key of Object.getOwnPropertyNames(win)) {
   if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = (win as unknown as Record<string, unknown>)[key];
 }
 
-import { ChangeList, DiffLayoutToggle, useChangeExpansion } from './change-list';
-import type { ChangeEntry, DiffLayout } from './change-vocabulary';
+import { ChangeList, DiffLayoutToggle, useChangeExpansion } from '@kortix/ui/changes';
+import type { ChangeEntry, DiffLayout } from '@kortix/ui/changes';
 
 const PATCH = [
   'diff --git a/src/app.ts b/src/app.ts',

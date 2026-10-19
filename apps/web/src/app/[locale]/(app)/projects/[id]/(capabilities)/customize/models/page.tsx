@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { ModelsPage } from '@/features/workspace/capabilities/models/models-page';
+import { ModelsPage } from '@kortix/ui/customize';
 
 /**
  * /projects/[id]/models — the standalone Models page. See

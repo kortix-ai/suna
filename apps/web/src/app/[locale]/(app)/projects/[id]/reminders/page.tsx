@@ -1,5 +1,5 @@
-import { remindersHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { withSearch } from '@/features/workspace/capabilities/shared/with-search';
+import { remindersHref } from '@kortix/ui/workspace';
+import { withSearch } from '@kortix/ui/customize/shared/with-search';
 import { redirect } from 'next/navigation';
 
 /**

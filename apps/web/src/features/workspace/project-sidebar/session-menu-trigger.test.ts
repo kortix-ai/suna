@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+const listSource = readFileSync(uiSourcePath('workspace/sidebar/project-session-list.tsx'), 'utf8');
 const globalsSource = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
 
 /** Throws rather than returning '' on a missing anchor, so a rename fails the

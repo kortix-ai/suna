@@ -9,9 +9,8 @@ import {
   CAPABILITY_TAB_ACTIONS,
   capabilityAccess,
   projectNavRows,
-} from '@/features/workspace/project-sidebar/project-settings-nav';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { PROJECT_PAGE_ACTIONS, type CanResult } from '@/lib/use-project-can';
+} from '@kortix/ui/internal/layout/project-settings-nav';
+import { PROJECT_ACTIONS, PROJECT_PAGE_ACTIONS, type CanResult } from '@kortix/ui/workspace';
 
 const verdict = (allowed: boolean): CanResult => ({
   allowed,

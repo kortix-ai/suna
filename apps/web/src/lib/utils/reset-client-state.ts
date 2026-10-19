@@ -1,15 +1,15 @@
 import { clearDeviceCaches } from '@/lib/device-caches';
-import { getSharedQueryClient } from '@/lib/query-client-singleton';
+import { getSharedQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { withTimeBudget } from '@/lib/utils/time-budget';
+import { withTimeBudget } from '@kortix/ui/internal/lib/utils/time-budget';
 // A sanctioned reach into an SDK internal module. Sign-out must purge
 // the saved session copies the device keeps in IndexedDB, and that
 // cache is browser-only: it cannot be re-exported from `@kortix/sdk`, whose
 // isomorphic-core tier has to load in React Native, a worker, and a CLI.
 // The internal subpath is its canonical address. See CANONICAL_SDK_ENTRIES in
 // scripts/sdk-boundary.mjs.
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-registry';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { resetAllRegisteredPersistedStores } from '@kortix/ui/internal/stores/persisted-store-registry';
 import { clearImpersonationSession } from '@kortix/sdk';
 import { resetIdentityState } from '@kortix/sdk/react';
 import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports

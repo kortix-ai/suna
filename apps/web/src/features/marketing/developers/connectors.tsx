@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { LaptopIcon } from '@phosphor-icons/react/ssr';
 import type { CSSProperties } from 'react';
 import { localizedDevelopersCopy } from './content';

@@ -36,8 +36,8 @@
 
 import { useEffect } from 'react';
 
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
 export function useEnsureSelectedAccount(): void {
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);

@@ -4,10 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import type { Agent } from '@kortix/sdk/react';
-import { COMPOSER_SHELL_CLASS } from './composer';
-import { ComposerUnderbar } from './composer-underbar';
+import { COMPOSER_SHELL_CLASS, ComposerUnderbar } from '@kortix/ui/composer';
 
 /**
  * Matrix row 18 — `TokenProgress` must render at EVERY viewport.

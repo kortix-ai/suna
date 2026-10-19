@@ -3,9 +3,9 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { ConnectorPage } from '@/features/workspace/capabilities/connectors/detail/connector-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { ConnectorPage } from '@kortix/ui/customize/connectors/detail/connector-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /** A hand-typed URL may carry a malformed escape; use the raw segment then. */
 function decodeSegment(value: string): string {

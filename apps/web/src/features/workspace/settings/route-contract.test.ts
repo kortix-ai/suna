@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { VALID_TABS } from '../../accounts/hub/sections';
+import { VALID_TABS } from '@kortix/ui/internal/account-hub/sections';
 import {
   ACCOUNT_GRADUATED,
   SETTINGS_TABS,
   isAccountGraduatedSection,
   legacySectionRedirect,
   parseSettingsTab,
-} from './settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 
 describe('settings route segments', () => {
   test('every tab id is a usable URL segment', () => {

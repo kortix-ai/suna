@@ -10,11 +10,11 @@
  * (`Users/ana/notes.md`); the API takes them with one.
  */
 
-import type { FileNode } from '@/features/file-browser/types';
-import type { FileContentResult, FileSource } from '@/features/file-viewer';
-import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
-import { useInvalidateDrives, saveDriveFile } from '@/hooks/drives/use-drives';
-import { blobToFileContent, typedDriveBlob } from './session-drive-files';
+import type { FileNode } from '@kortix/ui/internal/files/types';
+import type { FileContentResult, FileSource } from '@kortix/ui/file-viewer';
+import type { ExplorerQueryResult, FileExplorerSource } from '@kortix/ui/files';
+import { useInvalidateDrives, saveDriveFile } from '@kortix/ui/files';
+import { blobToFileContent, typedDriveBlob } from '@kortix/ui/internal/files/session-drive-files';
 import {
   deleteDriveFile,
   downloadDriveFile,

@@ -3,6 +3,7 @@ import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { wireToModelKey } from '@kortix/sdk/react';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * The two default SCOPES this tab owns.
@@ -30,7 +31,7 @@ function code(path: string): string {
     .replace(/^\s*\/\/.*$/gm, '');
 }
 
-const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
+const tabSource = code(uiSourcePath('customize/sections/llm-provider/models-tab.tsx'));
 
 describe('the identity a badged row is decided by', () => {
   /**

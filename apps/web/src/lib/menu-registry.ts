@@ -19,14 +19,14 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
-import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
+import { SidebarToggle as PanelLeftClose } from '@kortix/ui/icons';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
 import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import type { SettingsTabId } from '@/lib/settings-tab-id';
-import { WALLPAPERS } from '@/lib/wallpapers';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import type { SettingsTabId } from '@kortix/ui/internal/lib/settings-tab-id';
+import { WALLPAPERS } from '@kortix/ui/theme';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import type { RuntimeCapability } from '@kortix/sdk';
 import {

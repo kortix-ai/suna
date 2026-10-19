@@ -1,9 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { CodeInput } from '@/features/auth/auth-primitives';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { CodeInput, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import { useTranslations } from '@/i18n/use-translations';
 import type { EmailFlowMode } from '@/lib/auth/unified-auth-flow';
 import { m, useReducedMotion } from 'motion/react';

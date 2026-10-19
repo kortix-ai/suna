@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,18 +8,20 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Skeleton } from '@/components/ui/skeleton';
-import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
-import { Home } from '@/features/icon/icons/home';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { createFilesStore, useFilesStore } from '@kortix/ui/internal/stores/files-store';
+import { Home } from '@kortix/ui/internal/icons/home';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   DriveExplorer,
   FileExplorerSourceProvider,
   FilesStoreProvider,
-} from '@/features/project-files';
-import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
+  useDriveAvailability,
+  useDriveFolder,
+  useProjectDrive,
+} from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';

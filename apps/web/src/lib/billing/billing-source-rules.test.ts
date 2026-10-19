@@ -13,6 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const WEB_SRC = join(import.meta.dir, '..', '..');
 // The session UI moved to @kortix/ui. The same rules hold there; its files
@@ -159,7 +160,7 @@ describe('the wallet-floor bypass stays deleted', () => {
     // runs, and a drained paid account renders as runnable against a server
     // that has already started 402ing it. There is no billing model to branch
     // on any more, and the fallback must not grow one back.
-    const source = readFileSync(join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'), 'utf8');
+    const source = readFileSync(uiSourcePath('internal/lib/billing/billing-gate-state.ts'), 'utf8');
     const fallback = source.slice(
       source.indexOf('Fallback derivation'),
       source.indexOf("return 'no_subscription';"),

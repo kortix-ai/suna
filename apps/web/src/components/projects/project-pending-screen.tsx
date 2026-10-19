@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Button } from '@kortix/ui/button';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * The full-viewport frame shown while a project is being opened.

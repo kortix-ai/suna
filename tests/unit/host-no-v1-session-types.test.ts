@@ -134,7 +134,7 @@ function hostFiles(root: string): string[] {
 }
 
 describe('host files import no v1 part or turn type', () => {
-  const at = `${WEB_SRC}/features/session/tool/tools/task-tool.tsx`;
+  const at = `${WEB_SRC}/features/workspace/settings/tabs/profile-tab.tsx`;
 
   it('flags a planted import, an aliased one, a namespace import and an inline type import', () => {
     const planted = [

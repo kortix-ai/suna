@@ -7,7 +7,7 @@
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the
  * left one.
  */
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { getSessionDisplayTitle } from '@kortix/ui/session';
 import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 

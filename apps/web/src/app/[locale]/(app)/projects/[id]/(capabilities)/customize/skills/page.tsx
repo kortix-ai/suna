@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { SkillsPage } from '@/features/workspace/capabilities/skills/skills-page';
+import { SkillsPage } from '@kortix/ui/customize';
 
 /**
  * /projects/[id]/skills — the standalone Skills catalog. See

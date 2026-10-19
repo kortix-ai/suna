@@ -102,8 +102,8 @@ mock.module('@kortix/ui/internal/layout/open-command-palette', () => ({
   openCommandPalette: () => undefined,
 }));
 
-const { SidebarProvider, useSidebar } = await import('@/components/ui/sidebar');
-const { ProjectSidebar } = await import('./project-sidebar');
+const { SidebarProvider, useSidebar } = await import('@kortix/ui/sidebar');
+const { ProjectSidebar } = await import('@kortix/ui/workspace/sidebar/project-sidebar');
 
 let root: Root | undefined;
 // Cross-realm DOM: happy-dom's HTMLElement tree is structurally narrower

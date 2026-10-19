@@ -3,9 +3,9 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { AppPage } from '@/features/workspace/capabilities/connectors/detail/app-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { AppPage } from '@kortix/ui/customize/connectors/detail/app-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/customize/connectors/[app] — one catalogue app. See

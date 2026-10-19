@@ -28,10 +28,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { RouteLoadingFallback } from '@/components/common/route-loading';
-import { Button } from '@/components/ui/button';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Button } from '@kortix/ui/button';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -39,7 +39,7 @@ import {
   isAccountGraduatedSection,
   legacySectionRedirect,
   resolveOverlayTab,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import {
   STANDALONE_DEFAULT_SETTINGS_TAB,
   StandaloneSettingsRoute,

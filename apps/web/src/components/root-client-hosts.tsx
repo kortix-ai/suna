@@ -13,7 +13,7 @@
 // Not dynamic itself: one store subscription that loads the heavy modal body
 // on the first open (see app-file-preview-host.tsx).
 import { AppFilePreviewHost } from '@/components/app-file-preview-host';
-import { isDesktop } from '@/lib/desktop';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';
 

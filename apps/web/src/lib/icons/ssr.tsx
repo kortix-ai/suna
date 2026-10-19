@@ -20,7 +20,7 @@
 import type { Icon, IconProps } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { DEFAULT_ICON_WEIGHT } from './icon-config';
+import { DEFAULT_ICON_WEIGHT } from '@kortix/ui';
 
 import {
   ActivityIcon as ActivityBase,

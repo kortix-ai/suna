@@ -1,11 +1,11 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@kortix/ui/kortix-asterisk';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import {
   PackageIcon as Box,
   BuildingsIcon as Building2,

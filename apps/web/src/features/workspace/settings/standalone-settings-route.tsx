@@ -36,12 +36,12 @@ import { Suspense, useEffect, useRef } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
-import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { projectPathFromId } from '@/lib/onboarding/landing-destination';
-import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { projectPathFromId } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { readLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { ACCOUNT_PANEL_PARAM } from '@kortix/ui/internal/stores/account-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 
 /**
  * The tab `/settings` (no segment) opens on.

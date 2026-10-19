@@ -4,11 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { AccountSecretResourcesPanel } from '@/features/workspace/customize/sections/view/account-secret-resources-panel';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { ErrorState } from '@kortix/ui/error-state';
+import { AccountSecretResourcesPanel } from '@kortix/ui/customize/sections/view/account-secret-resources-panel';
 
 /**
  * Bring your own ChatGPT subscription from where a member picks a model.

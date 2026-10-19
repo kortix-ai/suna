@@ -1,7 +1,7 @@
-import { localizedKindCopy } from '@/components/projects/schedule/schedule-copy';
+import { localizedKindCopy } from '@kortix/ui/customize/triggers/schedule/schedule-copy';
 import { faq } from '@/features/marketing/faq/content';
 import { openSource } from '@/features/marketing/open-source/content';
-import { localizedSlashActions } from '@/features/session/composer/menus/slash-actions';
+import { localizedSlashActions } from '@kortix/ui/session/composer/menus/slash-actions';
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
@@ -19,8 +19,8 @@ import ja from '../../translations/ja.json';
 import pt from '../../translations/pt.json';
 import sr from '../../translations/sr.json';
 import zh from '../../translations/zh.json';
-import { localizeUiCatalog } from './localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from './remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 
 const srTranslator = createTranslator({
   locale: 'sr',

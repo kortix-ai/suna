@@ -1,10 +1,10 @@
 'use client';
 
-import { SystemMessage } from '@/components/ui/system-message';
+import { SystemMessage } from '@kortix/ui/system-message';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
-} from '@/features/session/message-parsing';
+} from '@kortix/ui/session/thread/message-parsing';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**

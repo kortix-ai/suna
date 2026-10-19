@@ -9,7 +9,7 @@ import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
 import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
-import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
+import { SHIPPED_ICON_WEIGHTS } from '@kortix/ui';
 import {
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,

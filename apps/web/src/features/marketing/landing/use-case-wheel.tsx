@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';

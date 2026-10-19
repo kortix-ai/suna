@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { languageLabel, normalizeLanguage } from './unified-markdown-utils';
+import { languageLabel, normalizeLanguage } from '@kortix/ui/markdown';
 
 const cases = [
   ['htm', 'html', 'html'],

@@ -6,12 +6,12 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { useMyInvites } from '@/hooks/account/use-my-invites';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { useMyInvites } from '@kortix/ui/internal/hooks/account/use-my-invites';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
-import { buildAccountSections, type AccountSection } from './project-selector-model';
+import { buildAccountSections, type AccountSection } from '@kortix/ui/workspace/project-selector/project-selector-model';
 
 /**
  * The account whose project list may be read BEFORE `GET /accounts` answers.

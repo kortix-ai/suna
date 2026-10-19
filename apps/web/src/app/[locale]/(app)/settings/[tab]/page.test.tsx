@@ -42,7 +42,6 @@ const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
 });
-mock.module('@/components/ui/button', uiButtonMock);
 mock.module('@kortix/ui/button', uiButtonMock);
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),

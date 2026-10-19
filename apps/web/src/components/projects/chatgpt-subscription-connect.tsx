@@ -8,28 +8,28 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { ChatGptDeviceChallenge } from '@kortix/ui/workspace/projects/chatgpt-device-challenge';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalContent,
   ModalDescription,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { successToast } from '@/components/ui/toast';
-import { ProviderLogo } from '@/features/providers/provider-branding';
+} from '@kortix/ui/modal';
+import { successToast } from '@kortix/ui/toast';
+import { ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
 import {
   type SharingSelection,
   isSharingComplete,
   selectionToIntent,
-} from '@/features/workspace/shared/sharing-picker';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+} from '@kortix/ui/access/sharing-picker';
+import { accountStateSelectors, useAccountState } from '@kortix/ui/internal/billing/index';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { cn } from '@kortix/ui';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { listProjectSecrets, runProjectProviderOAuthFlow } from '@kortix/sdk';
 import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 

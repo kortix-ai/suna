@@ -1,4 +1,4 @@
-import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { reviewHref } from '@kortix/ui/workspace';
 import { redirect } from 'next/navigation';
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { readSource } from '@/test-utils/read-source';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -122,9 +122,9 @@ describe('nav contract — the router bridge', () => {
   test('non-component modules have a soft-navigation path', () => {
     // Stores and lib/ helpers cannot call useRouter(), so they used to reach for
     // window.location.href — an unconditional full reload, every time.
-    const bridge = resolve(WEB_ROOT, 'src/lib/navigation/router-bridge.ts');
+    const bridge = uiSourcePath('internal/lib/navigation/router-bridge.ts');
     expect(existsSync(bridge)).toBe(true);
-    const source = readSource(bridge);
+    const source = readFileSync(bridge, 'utf8');
     expect(source).toContain('export function softNavigate');
     expect(source).toContain('export function softPrefetch');
   });
@@ -140,9 +140,7 @@ describe('nav contract — the router bridge', () => {
 
 describe('nav contract — session switching', () => {
   test('sidebar session links prefetch the full destination on intent', () => {
-    const source = readSource(
-      resolve(WEB_ROOT, 'src/features/workspace/project-sidebar/project-session-list.tsx'),
-    );
+    const source = readFileSync(uiSourcePath('workspace/sidebar/project-session-list.tsx'), 'utf8');
     expect(source).toMatch(
       /const sessionLink = \(\s*<HoverPrefetchLink\s+href=\{href\}\s+prefetch\s+onClick=\{onNavigate\}/,
     );

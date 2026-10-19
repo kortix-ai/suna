@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { sessionLogOfV1Rows, type SessionMessageAuthor } from '@kortix/sdk';
 
-import { UserMessage } from './user-message';
+import { UserMessage } from '@kortix/ui/session';
 
 const blair: SessionMessageAuthor = { kind: 'member', user_id: 'u2', name: 'Blair', email: 'blair@example.com' };
 const lead: SessionMessageAuthor = { kind: 'session', session_id: 's1', name: 'Deploy pipeline', agent: 'release-bot' };

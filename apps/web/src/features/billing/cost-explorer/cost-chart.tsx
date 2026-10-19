@@ -10,11 +10,11 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+} from '@kortix/ui/chart';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 
-import { formatSessionCostCredits } from '../session-cost-format';
+import { formatSessionCostCredits } from '@kortix/ui/internal/billing/session-cost-format';
 
 // Monochrome + one accent per the Kortix palette law: llm_cost and
 // compute_cost are two shades of the same warm chart ramp (--chart-1 /

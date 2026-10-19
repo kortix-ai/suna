@@ -1,7 +1,7 @@
 'use client';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // AccessHelp — the "how access works" reference, mounted as a real pane
 // (`/accounts/[id]?tab=help`) instead of the old `PermissionsHelpPopover`.
@@ -23,7 +23,7 @@ import {
   builtinRoleDescriptor,
   type OfferedProjectRole,
   PROJECT_ROLES_ASCENDING,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
 import type { AccountRole } from '@kortix/sdk';
 
 const ACCOUNT_ROLES_DESCENDING = [...ACCOUNT_ROLES_ASCENDING].reverse() as AccountRole[];

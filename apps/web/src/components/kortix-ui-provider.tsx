@@ -15,15 +15,15 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { forwardRef, useMemo, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { useBranding } from '@/features/branding/branding-provider';
+import { useBranding } from '@kortix/ui/internal/branding/branding-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { updateProfileMetadata } from '@/lib/auth/update-profile';
-import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
+import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
 import { isBillingEnabled, isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
 import { isStaticSitePath } from '@/lib/navigation/static-site-path';
 import { getEnv } from '@/lib/env-config';
-import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
+import { isSilentTimeoutMessage } from '@kortix/ui/internal/lib/timeout-toast-policy';
 import { track, type PanelEvent } from '@/lib/track';
 
 // Request-deadline noise never reaches a toast. Set at module load, before the first errorToast.
@@ -98,13 +98,13 @@ const components: UiHostComponents = {
     import('@/components/setup-links/connector-connect-modal').then((m) => m.ConnectorConnectModal),
   ),
   ShareSessionModal: lazyClient(() =>
-    import('@/features/workspace/project-sidebar/modal/share-session-modal').then(
+    import('@kortix/ui/workspace/sidebar/modal/share-session-modal').then(
       (m) => m.ShareSessionModal,
     ),
   ),
   // The whole Customize → Models surface: loaded on first open only.
   ProjectProviderModal: lazyClient(() =>
-    import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
+    import('@kortix/ui/customize/sections/llm-provider/llm-provider-modal').then(
       (m) => m.ProjectProviderModal,
     ),
   ),

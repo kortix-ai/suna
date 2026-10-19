@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 /**
  * The client-side guard for the 404 tab title.

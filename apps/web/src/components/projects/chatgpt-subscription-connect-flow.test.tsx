@@ -22,11 +22,10 @@ import { qk } from '@kortix/sdk/react';
 
 const toastSuccess = mock((_message: string) => {});
 const refreshProvider = mock((_queryClient: unknown, _projectId: string, _opts?: unknown) => {});
-const realToast = await import('@/components/ui/toast');
+const realToast = await import('@kortix/ui/toast');
 const realSdkReact = await import('@kortix/sdk/react');
 
 const uiToastMock = () => ({ ...realToast, successToast: toastSuccess });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,

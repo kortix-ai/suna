@@ -2,22 +2,22 @@
 
 import { localizedCopy } from './localized-copy';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { Github } from '@/features/icon/icons/github';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { useTranslations } from '@/i18n/use-translations';
-import { githubInstallationLabel, rememberGitHubSetupReturn } from '@/lib/github-installations';
-import { usePermission } from '@/lib/use-permission';
-import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
+import { githubInstallationLabel, rememberGitHubSetupReturn } from '@kortix/ui/internal/lib/github-installations';
+import { usePermission } from '@kortix/ui/workspace';
+import { hubTarget, type HubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { deleteGitHubInstallation, listGitHubInstallations } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export type ProviderRowStatus = 'loading' | 'connected' | 'disconnected' | 'error' | 'unavailable';

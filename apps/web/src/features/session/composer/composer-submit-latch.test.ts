@@ -29,15 +29,17 @@ import type { PromptAttachmentStatus, SessionPromptPart } from '@kortix/sdk';
 
 import {
   captureAttachmentSubmission,
-  deliverAfterPaint,
-  dispatchLatched,
   runComposerSend,
   type AttachmentSubmission,
+  createSubmitLatch,
+} from '@kortix/ui/composer';
+import {
+  deliverAfterPaint,
+  dispatchLatched,
   type AttachmentSubmissionController,
   type DispatchOutcome,
-} from './attachment-submission';
-import { createSubmitLatch } from './submit-latch';
-import type { AttachedFile } from './types';
+} from '@kortix/ui/session/composer/attachment-submission';
+import type { AttachedFile } from '@kortix/ui/composer';
 
 const source = readFileSync(fileURLToPath(new URL('../../../../../../packages/ui/src/session/composer/composer.tsx', import.meta.url)), 'utf8');
 // KRTX-373 phase 1 moved the card's JSX subtree into `ComposerCard.tsx`, so the

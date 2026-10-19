@@ -1,4 +1,4 @@
-import { hubTarget } from '@/stores/account-panel-store';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

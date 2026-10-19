@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 
-import { registerQueryClient } from '@/lib/query-client-singleton';
-import { safeSetItem } from '@/lib/storage/managed-storage';
+import { registerQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { safeSetItem } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   type SessionTranscriptSyncEnvelope,
   createPersistedQueryCache,

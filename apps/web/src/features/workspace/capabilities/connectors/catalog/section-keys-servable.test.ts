@@ -14,7 +14,7 @@
  * counted.
  */
 import { expect, test } from 'bun:test';
-import { OTHER, groupIntoSections, sectionKeysForEntry } from './connector-categories';
+import { OTHER, groupIntoSections, sectionKeysForEntry } from '@kortix/ui/customize/connectors/catalog/connector-categories';
 
 const entry = (categories: string[]) => ({ categories });
 

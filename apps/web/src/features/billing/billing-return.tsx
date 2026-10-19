@@ -1,15 +1,15 @@
 'use client';
 
-import { successToast } from '@/components/ui/toast';
+import { successToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
-import { invalidateAccountState } from '@/hooks/billing';
+import { invalidateAccountState } from '@kortix/ui/internal/billing/index';
 import { fireConfetti } from '@/lib/confetti';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { syncSubscription } from '@kortix/sdk';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 
 /**
  * Coming back from Stripe.

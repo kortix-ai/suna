@@ -23,10 +23,9 @@ import { useTranslations } from '@/i18n/use-translations';
  * unavailable actions.
  */
 
-import { FilePreviewModal } from '@/features/file-viewer';
-import { workspaceFileSource } from '@/features/files/file-source';
-import { getFileIcon } from '@/features/project-files';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { FilePreviewModal } from '@kortix/ui/file-viewer';
+import { workspaceFileSource, getFileIcon } from '@kortix/ui/files';
+import { useFilePreviewStore } from '@kortix/ui/internal/stores/file-preview-store';
 
 const NO_OP = () => {};
 

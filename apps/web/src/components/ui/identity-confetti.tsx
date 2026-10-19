@@ -61,8 +61,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Confetti, type ConfettiRef } from '@/components/magicui/confetti';
-import { glyphFace as glyphDrawing } from '@/components/ui/glyph-face';
-import { glyphForeground } from '@/components/ui/glyph-tint';
+import { glyphFace as glyphDrawing } from '@kortix/ui/glyph-face';
+import { glyphForeground } from '@kortix/ui/glyph-tint';
 import { resolveConfettiFace, type ConfettiIdentity } from '@/lib/confetti-identity';
 import {
   IDENTITY_SCALAR,
@@ -70,8 +70,7 @@ import {
   glyphConfettiShape,
   initialConfettiShape,
 } from '@/lib/confetti-shapes';
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { DEFAULT_ICON_WEIGHT, floatingZ, useDialogDepth } from '@kortix/ui';
 import { chalkColors } from '@kortix/shared';
 import type confetti from 'canvas-confetti';
 

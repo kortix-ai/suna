@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApiError } from '@kortix/sdk';
-import { isRetryableError, messageFor } from './use-create-workspace';
-import { readSource } from '@/test-utils/read-source';
+import { isRetryableError, messageFor } from '@kortix/ui/workspace/new/use-create-workspace';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const pageSource = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
-const hookSource = readSource(join(import.meta.dir, 'use-create-workspace.ts'));
+const hookSource = readFileSync(uiSourcePath('workspace/new/use-create-workspace.ts'), 'utf8');
 
 /**
  * Comments stripped, same convention as `new-workspace-page.test.ts` and

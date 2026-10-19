@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * Service account tokens: the account's machine identities.
@@ -40,18 +40,18 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { type FormEvent, type ReactNode, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -60,7 +60,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
@@ -70,15 +70,15 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/select';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
-import { CopyRow, RowKebab, type KebabItem } from '@/features/workspace/shared/access';
-import { cn } from '@/lib/utils';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { CopyRow, RowKebab, type KebabItem } from '@kortix/ui/access/access/index';
+import { cn } from '@kortix/ui';
 import {
   createServiceAccountApi,
   deleteServiceAccountApi,
@@ -86,7 +86,7 @@ import {
   getPatPolicy,
   listServiceAccountsApi,
 } from '@/lib/iam-client';
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import {
   KeyIcon,
   MagnifyingGlassIcon,
@@ -97,7 +97,7 @@ import {
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 
-import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from './api-key-expiry';
+import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from '@kortix/ui/access/iam/api-key-expiry';
 import { IamTable, IamTableCell, IamTableHead, IamTableRow } from './iam-table';
 import {
   type ApiKeyFilterValue,
@@ -107,7 +107,7 @@ import {
   buildApiKeyRows,
   countApiKeys,
   filterApiKeyRows,
-} from './api-key-rows';
+} from '@kortix/ui/access/iam/api-key-rows';
 
 /**
  * How each state reads in the Status badge.

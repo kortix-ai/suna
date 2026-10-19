@@ -42,7 +42,7 @@ import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { isAccountGraduatedSection, legacySectionRedirect } from './settings-tabs';
+import { isAccountGraduatedSection, legacySectionRedirect } from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export interface LegacySectionRedirect {

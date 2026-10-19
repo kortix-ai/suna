@@ -1,13 +1,13 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ArrowsLeftRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   ChartContainer,
   ChartLegend,
@@ -15,18 +15,18 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@kortix/ui/chart';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Field, FieldLabel } from '@/components/ui/field';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { Field, FieldLabel } from '@kortix/ui/field';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalContent,
@@ -34,16 +34,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -51,11 +51,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { cn } from '@kortix/ui';
 import type { AdminProviderSandbox } from '@kortix/sdk';
 import { useAdminProviderDistribution, useAdminProviderSandboxes, useAdminProviderAnalytics, useAdminProviderFallback, useSetAdminProviderDistribution, useMigrateAdminSandboxProvider, useSetAdminProviderFallback } from '@kortix/sdk/react';
 

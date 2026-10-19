@@ -33,15 +33,14 @@
 import { useSearchParams } from 'next/navigation';
 import { lazy, Suspense } from 'react';
 
-import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Modal, ModalContent, ModalTitle } from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { ACCOUNT_PANEL_PARAM, closeAccountPanel } from '@/stores/account-panel-store';
+import { cn, hasOpenFloatingLayer, hasOpenNestedDialog } from '@kortix/ui';
+import { ACCOUNT_PANEL_PARAM, closeAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 
-import { setAccountHubImporter } from './account-hub-entry';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from './account-settings-shell';
+import { setAccountHubImporter } from '@kortix/ui/internal/account-hub/account-hub-entry';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
 
 const importAccountHubBody = () => import('./account-hub-overlay-body');
 setAccountHubImporter(importAccountHubBody);

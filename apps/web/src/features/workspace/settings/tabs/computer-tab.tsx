@@ -18,12 +18,12 @@
 
 import { MonitorIcon, TerminalWindowIcon } from '@phosphor-icons/react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Download } from '@/features/icon/icons/download';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Download } from '@kortix/ui/internal/icons/download';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import {
   ComputerCapabilities,
   ComputerGlyph,
@@ -33,14 +33,14 @@ import {
   useConnectDesktopComputer,
   useOwnsPairedComputer,
   useThisComputerState,
-} from '@/features/tunnel/computer-connect';
-import { buildTunnelConnectCommand } from '@/features/tunnel/tunnel-connect-command';
-import { useCopy } from '@/hooks/use-copy';
+} from '@kortix/ui/internal/tunnel/computer-connect';
+import { buildTunnelConnectCommand } from '@kortix/ui/internal/tunnel/tunnel-connect-command';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
-import { desktopDownloadUrl, isDesktop, startDownload } from '@/lib/desktop';
+import { desktopDownloadUrl, isDesktop, startDownload } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 export function ComputerTab({ projectId }: { projectId: string }) {
   const t = useTranslations('computers');

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createTranslator } from 'next-intl';
 
 import deMessages from '../../../../translations/de.json';
-import { sidebarOpenerLabel } from './sidebar-opener';
+import { sidebarOpenerLabel } from '@kortix/ui/internal/layout/sidebar-opener';
 
 // The labels must come from the caller's catalog, not from hardcoded English:
 // assert the German copy so a hardcoded literal cannot pass as a translation.

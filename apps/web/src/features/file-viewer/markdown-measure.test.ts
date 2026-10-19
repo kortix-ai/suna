@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { getLanguageFromExt } from './preview-policy';
+import { getLanguageFromExt } from '@kortix/ui/file-viewer';
 
 const src = readFileSync(resolve(import.meta.dir, '../../../../../packages/ui/src/files/viewer/file-content-renderer.tsx'), 'utf8');
 

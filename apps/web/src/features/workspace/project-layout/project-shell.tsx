@@ -6,41 +6,41 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
-import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
+import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
-import { useBrandingScope } from '@/features/branding/branding-provider';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import { SidebarEdgePeek, useSidebar } from '@kortix/ui/sidebar';
+import { useBrandingScope } from '@kortix/ui/internal/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useCustomizePrefetch } from '@/features/workspace/capabilities/shared/use-customize-prefetch';
-import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
-import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
-import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
+import { useCustomizePrefetch } from '@kortix/ui/customize/shared/use-customize-prefetch';
+import { parseSidebarStateCookie } from '@kortix/ui/workspace/layout/sidebar-cookie';
+import { useDesktopShell } from '@kortix/ui/internal/layout/sidebar-opener';
+import { ProjectSidebar } from '@kortix/ui/workspace';
 import { WorkspaceSwitcher } from '@/features/workspace/project-sidebar/workspace-switcher';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
-import { SessionRouteCache } from '@/features/workspace/project-layout/session-route-cache';
+import { SessionRouteCache } from '@kortix/ui/workspace/layout/session-route-cache';
 import {
   isAccountGraduatedSection,
   legacySectionRedirect,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
+import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
   readLastProjectId,
   writeLastProjectId,
-} from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+} from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import {
@@ -50,7 +50,7 @@ import {
   useGatewayCatalogSync,
   useSessionsNeedingInput,
 } from '@kortix/sdk/react';
-import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { SidebarToggle as PanelLeft } from '@kortix/ui/icons';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -59,7 +59,7 @@ const CommandPalette = lazy(() =>
 );
 
 const PresentationViewerWrapper = lazy(() =>
-  import('@/stores/presentation-viewer-store').then((mod) => ({
+  import('@kortix/ui/files/renderers/presentation/presentation-viewer-store').then((mod) => ({
     default: mod.PresentationViewerWrapper,
   })),
 );

@@ -66,7 +66,6 @@ const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
 });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Modal and ConfirmDialog are Radix portals; the wiring under test is
@@ -81,7 +80,6 @@ const uiModalMock = () => ({
   ModalHeader: Pass,
   ModalTitle: Pass,
 });
-mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
 const uiConfirmDialogMock = () => ({
   ConfirmDialog: ({
@@ -97,7 +95,6 @@ const uiConfirmDialogMock = () => ({
       ? createElement('button', { onClick: onConfirm, 'data-testid': 'confirm-action' }, confirmLabel ?? 'confirm')
       : null,
 });
-mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
 mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 function makeKebab() {
@@ -126,7 +123,7 @@ const translationsMock = () => ({
 mock.module('@/i18n/use-translations', translationsMock);
 mock.module('@kortix/ui/i18n', translationsMock);
 
-const { TokensTab } = await import('./tokens-tab');
+const { TokensTab } = await import('@kortix/ui/customize/settings/tabs/tokens-tab');
 
 function Pass({ children }: { children?: ReactNode }) {
   return createElement(Fragment, null, children);

@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { readFileSync as readRawFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const dir = import.meta.dir;
+const dir = dirname(uiSourcePath('customize/sections/connectors-view.tsx'));
 
 /**
  * Comments stripped, so every assertion below is about CODE.
@@ -446,7 +447,7 @@ describe('Channels view — no banned primitives in the rebuilt surface', () => 
   for (const [name, source] of MODULES) {
     test(`${name} uses no SectionCard, List, or Dialog`, () => {
       expect(source).not.toContain('SectionCard');
-      expect(source).not.toContain("from '@/components/ui/list'");
+      expect(source).not.toMatch(/primitives\/list'/);
       expect(source).not.toContain('DialogContent');
     });
 

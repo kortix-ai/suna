@@ -32,7 +32,7 @@
  * re-derive the same project-scoped value, not an independent one.
  */
 
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
 /**
  * Pure resolver — exported so the fallback logic is unit-testable without a

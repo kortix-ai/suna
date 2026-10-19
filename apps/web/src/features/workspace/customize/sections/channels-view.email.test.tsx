@@ -66,7 +66,7 @@ mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
   AgentSelector: () => null,
 }));
 
-const { ChannelsSection } = await import('./view/channels-view');
+const { ChannelsSection } = await import('@kortix/ui/customize/sections/view/channels-view');
 
 function renderEmailRow() {
   const markup = renderToStaticMarkup(<ChannelsSection projectId="email-test" />);

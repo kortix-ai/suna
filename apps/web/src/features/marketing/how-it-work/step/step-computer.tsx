@@ -1,7 +1,7 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { ActivityBurst } from '@kortix/ui/session';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ToolCallBlock } from '@kortix/sdk';
 import { m, useReducedMotion, type Transition } from 'motion/react';

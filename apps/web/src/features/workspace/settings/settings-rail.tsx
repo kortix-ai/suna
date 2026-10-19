@@ -1,21 +1,21 @@
 'use client';
 
-import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
-import { Button } from '@/components/ui/button';
-import { ModalClose } from '@/components/ui/modal';
-import { TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
+import { Button } from '@kortix/ui/button';
+import { ModalClose } from '@kortix/ui/modal';
+import { TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import { hubTarget } from '@/stores/account-panel-store';
-import type { SettingsRailChromeCopy } from './rail-copy-context';
+import { cn } from '@kortix/ui';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import type { SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   accountRoleLabel,
   type AccountMembership,
   type AccountMembershipsCopy,
 } from './tabs/account-memberships';
-import type { RailGroup, RailItem } from './type';
+import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
 export function RailNav({
   groups,
   showGroupLabels,

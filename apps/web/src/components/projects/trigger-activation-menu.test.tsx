@@ -12,7 +12,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let leaves: Record<string, { allowed: boolean }> = {};
-const projectCan = await import('@/lib/use-project-can');
+const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...projectCan,
   useProjectCans: (_projectId: string, actions: readonly string[]) =>
@@ -21,8 +21,8 @@ mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { PROJECT_ACTIONS } = await import('@kortix/sdk');
-const { TooltipProvider } = await import('@/components/ui/tooltip');
-const { TriggerActivationMenu } = await import('./schedule-view');
+const { TooltipProvider } = await import('@kortix/ui/tooltip');
+const { TriggerActivationMenu } = await import('@kortix/ui/workspace/projects/schedule-view');
 
 const { PROJECT_WRITE, PROJECT_TRIGGER_CREATE, PROJECT_TRIGGER_FIRE, PROJECT_TRIGGER_UPDATE } =
   PROJECT_ACTIONS;
