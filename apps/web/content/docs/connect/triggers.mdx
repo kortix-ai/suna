@@ -550,6 +550,12 @@ With the project flag `notification_center` on, Kortix sends one `automation_fai
 
 `kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, app events, monitors and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For app events of source `mcp`, see Pause in [How checks work](#how-checks-work).
 
+**Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, app event or monitor of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
+
+- In the web app: **Account settings** → **Settings** → **Automations** → **Pause all automations**. The Triggers page of every project shows that automations are paused.
+- In the CLI: `kortix triggers pause --account-wide` and `kortix triggers resume --account-wide`.
+- In the API: `GET` and `PATCH /v1/accounts/<account_id>/automations` with `{ "paused": true }`. Any member may read it; changing it takes `account.write` (owners and admins by default). The trigger listing carries `account_automations_paused`.
+
 ### Run limits
 
 A trigger starts at most `max_runs_per_hour` runs in any 60 minutes, 60 when unset, and at most `max_runs_per_day` runs in a UTC day, no cap when unset. A run counts once its fire reached a session or a queued create.

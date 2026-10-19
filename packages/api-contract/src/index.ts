@@ -1559,6 +1559,8 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
+  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;

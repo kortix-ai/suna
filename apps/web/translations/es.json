@@ -21968,6 +21968,25 @@
       "hideRevoked": "Ocultar revocados"
     }
   },
+  "automationsPause": {
+    "groupTitle": "Automatizaciones",
+    "groupDescription": "Programaciones, recordatorios, webhooks, eventos de apps y monitores en cada proyecto de esta cuenta.",
+    "label": "Pausar todas las automatizaciones",
+    "description": "Nada se ejecuta por sí solo en ningún proyecto: ni programaciones, recordatorios, webhooks, eventos de apps ni monitores. Ejecutar un disparador a mano sigue funcionando.",
+    "readOnlyDescription": "Solo un propietario o administrador puede pausar o reanudar las automatizaciones.",
+    "pausedSince": "Pausado desde {date}.",
+    "pauseTitle": "¿Pausar todas las automatizaciones?",
+    "pauseDescription": "Ningún proyecto de esta cuenta iniciará sesiones por sí solo hasta que reanudes. Los webhooks se confirman y se omiten.",
+    "pauseConfirm": "Pausar todo",
+    "resumeTitle": "¿Reanudar todas las automatizaciones?",
+    "resumeDescription": "Los disparadores vuelven a ejecutarse por sí solos. Una programación perdida durante la pausa se ejecuta una vez.",
+    "resumeConfirm": "Reanudar todo",
+    "pausedToast": "Todas las automatizaciones en pausa",
+    "resumedToast": "Todas las automatizaciones reanudadas",
+    "failedToast": "No se pudieron cambiar las automatizaciones. Inténtalo de nuevo.",
+    "bannerTitle": "Todas las automatizaciones de esta cuenta están en pausa",
+    "bannerDescription": "Aquí nada se ejecuta por sí solo hasta que un propietario o administrador las reanude en la configuración de la cuenta. Ejecutar un disparador a mano sigue funcionando."
+  },
   "triggerConditions": {
     "operatorLabel": "Condición {value0}: operador",
     "equals": "es",

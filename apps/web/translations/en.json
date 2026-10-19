@@ -21743,7 +21743,7 @@
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
-        "searchOrAddApp": "Search apps, or add one by its app ID",
+        "searchOrAddApp": "Search apps, or add one by its app ID, program or name",
         "searchWebsites": "Search or add a website",
         "addApp": "Exclude {app}",
         "addDomain": "Exclude {domain}",
@@ -21802,7 +21802,7 @@
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
-        "addAppPlaceholder": "Add an app by its app ID, such as com.tinyspeck.slackmacgap or slack.exe",
+        "addAppPlaceholder": "Add an app by its app ID, program or name, such as slack.exe, com.tinyspeck.slackmacgap or AutoCAD*",
         "addSitePlaceholder": "Add a website, such as github.com",
         "addApp": "Include {app}",
         "addDomain": "Include {domain}",
@@ -21967,6 +21967,25 @@
       "showRevoked": "Show revoked ({count})",
       "hideRevoked": "Hide revoked"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automations",
+    "groupDescription": "Schedules, reminders, webhooks, app events and monitors in every project of this account.",
+    "label": "Pause all automations",
+    "description": "Nothing in any project runs on its own: no schedule, reminder, webhook, app event or monitor. Running a trigger by hand still works.",
+    "readOnlyDescription": "Only an owner or admin can pause or resume automations.",
+    "pausedSince": "Paused since {date}.",
+    "pauseTitle": "Pause all automations?",
+    "pauseDescription": "Every project of this account stops starting sessions on its own until you resume. Webhooks are acknowledged and skipped.",
+    "pauseConfirm": "Pause all",
+    "resumeTitle": "Resume all automations?",
+    "resumeDescription": "Triggers run on their own again. A schedule missed while paused runs once.",
+    "resumeConfirm": "Resume all",
+    "pausedToast": "All automations paused",
+    "resumedToast": "All automations resumed",
+    "failedToast": "Couldn't change automations. Try again.",
+    "bannerTitle": "All automations in this account are paused",
+    "bannerDescription": "Nothing here runs on its own until an owner or admin resumes them in account settings. Running a trigger by hand still works."
   },
   "triggerConditions": {
     "operatorLabel": "Condition {value0} — operator",

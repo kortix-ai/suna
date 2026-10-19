@@ -858,8 +858,18 @@ other tool. A rule under the tool's own name wins over its capability. OpenCode'
 hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
-action, or a glob-pattern -> action map matched against the `bash` command
-line or a workspace tool's path. A pattern map is never collapsed to its `*` entry.
+action, or a glob-pattern -> action map matched against a `bash` command or a
+workspace tool's path. A pattern map is never collapsed to its `*` entry.
+
+**A bash line is decided command by command, both harnesses.** OpenCode asks
+for each command its tree-sitter parse finds. pi splits the line
+(`pi/interactions.ts` `bashCommands`) on unquoted `;`, `&`, `|` and newlines,
+reads each `$(…)`, backtick, `<(…)`, `>(…)` and `( … )` body as commands of its
+own, and the strictest answer wins (`deny`, then `ask`, then `allow`). So
+`bash: { '*': deny, 'kortix connectors call x get *': allow }` runs that call
+and refuses `kortix connectors call x get a; env`. A line whose quotes or
+brackets do not balance is decided as a call with no subject: a restriction
+asks.
 
 **Precedence, both harnesses:** the most specific matching rule wins, whatever
 order the keys are written in (`@kortix/api-contract/permission-rules`). The

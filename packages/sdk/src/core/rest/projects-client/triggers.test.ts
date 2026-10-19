@@ -11,6 +11,8 @@ import type {
 } from './triggers';
 import {
   createProjectTrigger,
+  getAccountAutomations,
+  setAccountAutomationsPaused,
   fireProjectTrigger,
   listProjectTriggerRuns,
   listTriggerRuns,
@@ -627,4 +629,19 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
   expect(last().body).toEqual({ max_runs_per_day: null });
   const caps: Array<number | null | undefined> = [listing.triggers[0]!.max_runs_per_hour, listing.triggers[0]!.max_runs_per_day];
   expect(caps).toEqual([5, null]);
+});
+
+// KRTX-1721: the account's Pause all automations.
+test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
+  nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
+  const status = await getAccountAutomations('A1');
+  expect(last().url).toContain('/accounts/A1/automations');
+  expect(last().method ?? 'GET').toBe('GET');
+  expect(status.paused).toBe(false);
+
+  nextResponse = { status: 200, body: { paused: true, paused_at: '2026-10-19T10:00:00.000Z', paused_by: 'U1', can_change: true } };
+  const after = await setAccountAutomationsPaused('A1', true);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ paused: true });
+  expect([after.paused, after.paused_by]).toEqual([true, 'U1']);
 });

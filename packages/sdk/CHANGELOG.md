@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (Capture app ids)
+- `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
+  app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
+  (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
+  refuses empty, over-long, flag-like (`-x`) and control-character values.
+
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
   restore of a session log could not bring back, from the session record
