@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-19
 
+### K8 `@kortix/ui`: the interactive components for Apps
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
+- **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.
+- **Where:** `packages/ui`, `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App filter bar in `kortix-ai/company`.
+
 ### K7 `kit.css` adds the field
 - **Date:** 2026-10-19
 - **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.

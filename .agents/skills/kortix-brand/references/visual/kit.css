@@ -51,6 +51,34 @@ a { color: inherit; }
 /* ── Popover: floats above the page (bg-popover border shadow-md) ── */
 .k-popover { background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5); font-size: var(--text-xs); line-height: var(--text-xs-line-height); }
 
+/* ── Popover panel, option list, select, filter chips (@kortix/ui: Popover, OptionList, Select, FilterBar) ── */
+.k-popover-panel { padding: 0; min-width: 14rem; max-width: min(24rem, calc(100vw - calc(var(--spacing) * 4))); z-index: 50; font-size: var(--text-sm); overflow: hidden; }
+.k-option-search { display: block; width: 100%; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-sm); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); outline: none; }
+.k-option-search::placeholder { color: var(--muted-foreground); }
+.k-options { list-style: none; margin: 0; padding: calc(var(--spacing) * 1); max-height: 18rem; overflow: auto; outline: none; }
+.k-option { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2); border-radius: var(--radius-sm); cursor: pointer; min-width: 0; }
+.k-option[data-active="true"] { background: color-mix(in oklab, var(--foreground) 10%, transparent); }
+.k-option[aria-selected="true"]::after { content: '✓'; margin-left: auto; color: var(--muted-foreground); }
+.k-option-hint { margin-left: auto; font-size: var(--text-xs); color: var(--muted-foreground); white-space: nowrap; }
+.k-option[aria-selected="true"] .k-option-hint { margin-left: calc(var(--spacing) * 2); }
+.k-option-empty { padding: calc(var(--spacing) * 2); color: var(--muted-foreground); font-size: var(--text-xs); }
+.k-select-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 2); min-width: 8rem; max-width: 100%;
+  height: calc(var(--spacing) * 10); padding: 0 calc(var(--spacing) * 3); font: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--foreground);
+  background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer;
+}
+.k-select-trigger::after { content: ''; width: 0.4em; height: 0.4em; border-right: 1.5px solid var(--muted-foreground); border-bottom: 1.5px solid var(--muted-foreground); transform: translateY(-25%) rotate(45deg); flex-shrink: 0; }
+.k-select-trigger[data-size="sm"] { height: calc(var(--spacing) * 7.5); font-size: var(--text-xs); padding: 0 calc(var(--spacing) * 2.5); }
+.k-select-trigger[data-state="open"], .k-select-trigger:focus-visible { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 15%, transparent); }
+.k-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--spacing) * 1.5); min-width: 0; }
+.k-filter-trailing { margin-left: auto; display: inline-flex; align-items: center; gap: calc(var(--spacing) * 2); font-size: var(--text-xs); color: var(--muted-foreground); }
+.k-chip-group { display: inline-flex; align-items: stretch; height: calc(var(--spacing) * 7.5); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--background); }
+.k-chip { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1.5); border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-xs); padding: 0 calc(var(--spacing) * 2); cursor: pointer; white-space: nowrap; }
+.k-chip + .k-chip { border-left: 1px solid var(--border); color: var(--muted-foreground); }
+.k-chip:hover, .k-chip[data-state="open"] { background: var(--hover); color: var(--foreground); }
+.k-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.k-chip-key { color: var(--muted-foreground); }
+
 /* ── Button (button.tsx: default, outline, ghost, secondary; sizes sm/default) ── */
 .k-button {
   display: inline-flex; align-items: center; justify-content: center; gap: calc(var(--spacing) * 2);
