@@ -144,12 +144,13 @@ export async function setRowsStatus(
   status: 'active' | 'needs_connection' | 'error',
   lastError: string | null,
   previousError: string | null,
+  executor: Pick<typeof db, 'update'> = db,
 ): Promise<Array<{ projectId: string; slug: string; accountId: string }>> {
   const ownError = previousError === null ? sql`false` : sql`${subs.lastError} = ${previousError}`;
   const from = status === 'active'
     ? sql`(${subs.status} <> 'active' and ${ownError})`
     : sql`((${subs.status} = 'active' or ${ownError}) and (${subs.status} <> ${status} or ${subs.lastError} is distinct from ${lastError}))`;
-  return db
+  return executor
     .update(subs)
     .set({ status, lastError, updatedAt: new Date() })
     .where(and(eq(subs.provider, 'mcp'), eq(subs.externalId, externalId), from))

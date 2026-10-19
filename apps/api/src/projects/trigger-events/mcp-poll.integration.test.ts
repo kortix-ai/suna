@@ -258,6 +258,8 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     expect(await row('watch')).toMatchObject({ status: 'active', lastError: null });
     expect(await stream()).toMatchObject({ failures: 0, lastError: null });
     expect((await deliverJobs()).map((j) => j.jobKey.split(':')[1])).toEqual(['after-outage']);
+    await runJobBatch();
+    expect(fires.map((f) => f.payload.event.id)).toEqual(['after-outage']);
   });
 
   test('a stale claim commits nothing: its deliveries roll back with its state', async () => {

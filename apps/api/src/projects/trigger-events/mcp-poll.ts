@@ -305,9 +305,12 @@ async function check(stream: PollStream, now: number): Promise<void> {
     rateWindowStart: windowOpen ? stream.rateWindowStart : deliveries.length ? new Date(now) : null,
     rateWindowFires: firesThisHour + deliveries.length,
   };
-  await db.transaction(async (tx) => {
+  // The triggers recover in the same commit as the deliveries: a delivery that ran
+  // before an `active` write would find its trigger in `error` and be skipped.
+  const recovered = await db.transaction(async (tx) => {
     await enqueueJobs(DELIVER_QUEUE, deliveries, { maxAttempts: DELIVER_MAX_ATTEMPTS, executor: tx });
     if (!(await settleStream(stream, patch, tx))) throw new StaleClaimError();
+    return stream.lastError === null ? [] : setRowsStatus(stream.externalId, 'active', null, stream.lastError, tx);
   });
 
   if (deliveries.length && okRecords[0]) {
@@ -320,10 +323,8 @@ async function check(stream: PollStream, now: number): Promise<void> {
       budget: MAX_FIRES_PER_HOUR,
     });
   }
-  if (stream.lastError !== null) {
-    for (const row of await setRowsStatus(stream.externalId, 'active', null, stream.lastError)) {
-      await clearTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: row.slug, source: 'fire' });
-    }
+  for (const row of recovered) {
+    await clearTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: row.slug, source: 'fire' });
   }
 }
 
