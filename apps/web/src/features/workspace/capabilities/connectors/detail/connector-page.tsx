@@ -1,6 +1,6 @@
 'use client';
-import { invalidateConnections } from '../invalidate-connections';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
+import { invalidateConnections } from '../invalidate-connections';
 import {
   ConnectorNoticeRow,
   NOTICE_BODY,
@@ -43,6 +43,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 
 import { isManagedConnectorProvider } from '../provider-label';
 import { ConnectorDetailTabs } from './connector-detail-tabs';
+import { ConnectorMoveRow } from './connector-move-row';
 import { connectorNotice, noticeButton, noticeTarget } from './connector-notice';
 import { connectHandoff, connectorPageState } from './connector-page-state';
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
@@ -550,6 +551,13 @@ function ConnectorPageBody({
                 ) : null}
               </ConnectorNoticeRow>
             ) : null}
+            <ConnectorMoveRow
+              projectId={projectId}
+              connector={connector}
+              displayName={displayName}
+              canWrite={canWrite}
+              onMoved={onChanged}
+            />
           </div>
 
           <Tabs
