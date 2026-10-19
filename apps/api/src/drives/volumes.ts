@@ -244,19 +244,33 @@ export async function restoreVolume(volume: string, to: string): Promise<void> {
 let mountLimitCache: { value: number; at: number } | null = null;
 const MOUNT_LIMIT_TTL_MS = 10 * 60_000;
 
+/** Platinum's `GET /v1/volumes/limits`, the fields the mount plan reads. */
+export interface PlatinumMountLimits {
+  /** Private mounts per sandbox: each is a disk in the VM. */
+  max_mounts_per_sandbox?: number;
+  /** Mounts of any share per sandbox. Absent from a Platinum older than node-share counting. */
+  max_total_mounts_per_sandbox?: number;
+  /** Node share is on for this org: share "node" mounts take no disk. */
+  node_share?: boolean;
+}
+
 /**
- * How many volumes one sandbox may mount, from Platinum's own limits. Cached;
- * falls back to {@link DEFAULT_SANDBOX_MOUNT_LIMIT} when they cannot be read.
+ * How many folders one sandbox mounts. Every drive mount asks for share
+ * "node"; with node share on they take no disk, so the plan uses the total
+ * cap, else the private one. {@link DEFAULT_SANDBOX_MOUNT_LIMIT} when unknown.
  */
+export function mountSlotsFrom(limits: PlatinumMountLimits): number {
+  const pick = limits.node_share ? limits.max_total_mounts_per_sandbox : limits.max_mounts_per_sandbox;
+  const max = Number(pick ?? limits.max_mounts_per_sandbox);
+  return Number.isFinite(max) && max >= 1 ? Math.floor(max) : DEFAULT_SANDBOX_MOUNT_LIMIT;
+}
+
+/** {@link mountSlotsFrom} Platinum's live limits. Cached; the default when they cannot be read. */
 export async function sandboxMountLimit(): Promise<number> {
   if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
   let value = DEFAULT_SANDBOX_MOUNT_LIMIT;
   try {
-    const limits = await callJson<{ max_mounts_per_sandbox?: number }>('/v1/volumes/limits', {
-      signal: AbortSignal.timeout(5_000),
-    });
-    const max = Number(limits.max_mounts_per_sandbox);
-    if (Number.isFinite(max) && max >= 1) value = Math.floor(max);
+    value = mountSlotsFrom(await callJson<PlatinumMountLimits>('/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) }));
   } catch (err) {
     logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
     return value;
