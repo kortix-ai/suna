@@ -13,7 +13,7 @@
 import type { FileNode } from '@/features/file-browser/types';
 import type { FileContentResult, FileSource } from '@/features/file-viewer';
 import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
-import { useInvalidateDrives, saveDriveFile } from '@/hooks/drives/use-drives';
+import { saveDriveFile } from '@/hooks/drives/use-drives';
 import { blobToFileContent, typedDriveBlob } from './session-drive-files';
 import {
   deleteDriveFile,
@@ -25,21 +25,47 @@ import {
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { ScopedCache } from '@/lib/storage/managed-storage';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-const DriveFilesContext = createContext<{ driveId: string } | null>(null);
+const DriveFilesContext = createContext<{ driveId: string; userId?: string } | null>(null);
 
-export function DriveFilesProvider({ driveId, children }: { driveId: string; children: ReactNode }) {
-  const value = useMemo(() => ({ driveId }), [driveId]);
+/** `userId` turns on the saved listings below; they are kept per person. */
+export function DriveFilesProvider({
+  driveId,
+  userId,
+  children,
+}: {
+  driveId: string;
+  userId?: string;
+  children: ReactNode;
+}) {
+  const value = useMemo(() => ({ driveId, userId }), [driveId, userId]);
   return <DriveFilesContext.Provider value={value}>{children}</DriveFilesContext.Provider>;
 }
 
-function useDriveId(): string {
+function useDriveFilesContext() {
   const ctx = useContext(DriveFilesContext);
   if (!ctx) throw new Error('DriveFilesProvider is missing');
-  return ctx.driveId;
+  return ctx;
 }
+
+function useDriveId(): string {
+  return useDriveFilesContext().driveId;
+}
+
+type FolderListing = Awaited<ReturnType<typeof listDriveFolder>>;
+
+/**
+ * The last listing of each folder a person opened, kept across reloads so
+ * Drive and every folder's item count paint at once; the request still runs
+ * and replaces it. Scoped `user:drive:path`, so one person never sees
+ * another's. ScopedCache keeps the 300 most recent and gives way under quota.
+ */
+const folderCache = new ScopedCache<FolderListing>('kortix_drive_folder', 300);
+/** ponytail: a huge folder is not saved; page it in if those need to paint instantly too. */
+const MAX_CACHED_ENTRIES = 1_000;
 
 /** `Users/ana` or `/Users/ana/` -> `/Users/ana`; the root is `/`. */
 export function toDrivePath(p: string | null | undefined): string {
@@ -57,14 +83,23 @@ const idle = <T,>(): ExplorerQueryResult<T> => ({
 });
 
 function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
-  const driveId = useDriveId();
+  const { driveId, userId } = useDriveFilesContext();
   const path = toDrivePath(dirPath);
+  const scope = userId ? `${userId}:${driveId}:${path}` : null;
   const query = useQuery({
     queryKey: qk.drives.files(driveId, path),
     queryFn: () => listDriveFolder(driveId, path),
     refetchInterval: (q) => (q.state.status === 'error' ? false : 10_000),
     staleTime: 2_000,
+    // The saved listing paints first; updatedAt 0 marks it stale, so the
+    // request still runs on mount.
+    initialData: () => (scope ? folderCache.get(scope) : undefined),
+    initialDataUpdatedAt: 0,
   });
+  useEffect(() => {
+    if (!scope || !query.data || query.dataUpdatedAt === 0) return;
+    if (query.data.entries.length <= MAX_CACHED_ENTRIES) folderCache.set(scope, query.data);
+  }, [scope, query.data, query.dataUpdatedAt]);
   const data = useMemo<FileNode[] | undefined>(
     () =>
       query.data?.entries
@@ -185,12 +220,29 @@ function useDriveFileViewerSource(): FileSource {
   );
 }
 
-function useDriveMutation<TArgs>(run: (driveId: string, args: TArgs) => Promise<unknown>) {
+/**
+ * A drive write, followed by a refetch of ONLY the folders it changed
+ * (`touched`, drive paths). Each folder card in view is a live listing query,
+ * so refetching the whole drive scope after every file of a 12-file upload
+ * sent 12 × (every card + the root + access + conflicts) requests, and
+ * re-downloaded every thumbnail. Version history is marked stale (it refetches
+ * only if it is open).
+ */
+function useDriveMutation<TArgs>(
+  run: (driveId: string, args: TArgs) => Promise<unknown>,
+  touched: (args: TArgs) => string[],
+) {
   const driveId = useDriveId();
-  const invalidate = useInvalidateDrives();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (args: TArgs) => run(driveId, args),
-    onSettled: invalidate,
+    onSettled: (_data, _error, args) =>
+      Promise.all([
+        ...[...new Set(touched(args))].map((folder) =>
+          queryClient.invalidateQueries({ queryKey: qk.drives.files(driveId, folder), exact: true }),
+        ),
+        queryClient.invalidateQueries({ queryKey: qk.drives.versions(driveId), refetchType: 'none' }),
+      ]),
     // A create, move or delete is not idempotent: retrying one the server
     // already applied answers "already exists" / "not found" for a success.
     retry: false,
@@ -224,30 +276,80 @@ export const driveExplorerSource: FileExplorerSource = {
   useFileSearch: () => ({ data: undefined, isLoading: false, error: null }),
   useFileHistory: () => idle(),
   useFileCommitDiff: () => idle(),
-  useFileUpload: () =>
-    useDriveMutation<{ file: File | Blob; targetPath?: string }>((driveId, { file, targetPath }) => {
+  useFileUpload: () => {
+    const queryClient = useQueryClient();
+    return useDriveMutation<{
+      file: File | Blob;
+      targetPath?: string;
+      onProgress?: (sentBytes: number, totalBytes: number) => void;
+    }>(
+      async (driveId, { file, targetPath, onProgress }) => {
       const name = (file as File).name || 'file';
       const dir = toDrivePath(targetPath);
-      return uploadDriveFile(driveId, `${dir === '/' ? '' : dir}/${name}`, file);
-    }),
+      const path = `${dir === '/' ? '' : dir}/${name}`;
+      const key = blobKey(driveId, fromDrivePath(path));
+      const local = typedDriveBlob(file, name);
+      try {
+        const result = await uploadDriveFile(driveId, path, file, { onProgress });
+        queryClient.setQueryData(key, { blob: local, version: result.version ?? null });
+        return result;
+      } catch (err) {
+        queryClient.removeQueries({ queryKey: key, exact: true });
+        throw err;
+      }
+      },
+      ({ targetPath }) => [toDrivePath(targetPath)],
+    );
+  },
+  useUploadPreview: () => {
+    const driveId = useDriveId();
+    const queryClient = useQueryClient();
+    // The local bytes are the file's preview while it goes up, so its
+    // thumbnail paints at once and never asks the server for a file that is
+    // not there yet (a 404 showed "File not found" until the upload landed).
+    // ponytail: held fresh for 10 min; a slower upload refetches and may 404 once.
+    return useCallback(
+      (file: File, targetPath?: string) => {
+        const dir = toDrivePath(targetPath);
+        const path = `${dir === '/' ? '' : dir}/${file.name}`;
+        queryClient.setQueryData(
+          blobKey(driveId, fromDrivePath(path)),
+          { blob: typedDriveBlob(file, file.name), version: null },
+          { updatedAt: Date.now() + 10 * 60_000 },
+        );
+      },
+      [driveId, queryClient],
+    );
+  },
   useFileDelete: () =>
-    useDriveMutation<{ filePath: string }>((driveId, { filePath }) =>
-      deleteDriveFile(driveId, toDrivePath(filePath), { recursive: true }),
+    useDriveMutation<{ filePath: string }>(
+      (driveId, { filePath }) => deleteDriveFile(driveId, toDrivePath(filePath), { recursive: true }),
+      ({ filePath }) => [parentOf(toDrivePath(filePath))],
     ),
-  useFileMkdir: () => useDriveMutation<{ dirPath: string }>((driveId, { dirPath }) => makeDriveFolder(driveId, toDrivePath(dirPath))),
+  useFileMkdir: () =>
+    useDriveMutation<{ dirPath: string }>(
+      (driveId, { dirPath }) => makeDriveFolder(driveId, toDrivePath(dirPath)),
+      ({ dirPath }) => [parentOf(toDrivePath(dirPath))],
+    ),
   useFileRename: () =>
-    useDriveMutation<{ from: string; to: string }>((driveId, { from, to }) =>
-      moveDriveFile(driveId, toDrivePath(from), toDrivePath(to)),
+    useDriveMutation<{ from: string; to: string }>(
+      (driveId, { from, to }) => moveDriveFile(driveId, toDrivePath(from), toDrivePath(to)),
+      ({ from, to }) => [parentOf(toDrivePath(from)), parentOf(toDrivePath(to))],
     ),
   useFileCreate: () =>
-    useDriveMutation<{ filePath: string }>((driveId, { filePath }) =>
-      uploadDriveFile(driveId, toDrivePath(filePath), new Uint8Array() as Uint8Array<ArrayBuffer>),
+    useDriveMutation<{ filePath: string }>(
+      (driveId, { filePath }) =>
+        uploadDriveFile(driveId, toDrivePath(filePath), new Uint8Array() as Uint8Array<ArrayBuffer>),
+      ({ filePath }) => [parentOf(toDrivePath(filePath))],
     ),
   useFileCopy: () =>
-    useDriveMutation<{ sourcePath: string; destPath: string }>(async (driveId, { sourcePath, destPath }) => {
-      const blob = await downloadDriveFile(driveId, toDrivePath(sourcePath));
-      return uploadDriveFile(driveId, toDrivePath(destPath), blob);
-    }),
+    useDriveMutation<{ sourcePath: string; destPath: string }>(
+      async (driveId, { sourcePath, destPath }) => {
+        const blob = await downloadDriveFile(driveId, toDrivePath(sourcePath));
+        return uploadDriveFile(driveId, toDrivePath(destPath), blob);
+      },
+      ({ destPath }) => [parentOf(toDrivePath(destPath))],
+    ),
   useDirectoryDownload: () => ({ downloadDir: () => undefined, isDownloading: () => false }),
   useDownloadFile: () => {
     const driveId = useDriveId();

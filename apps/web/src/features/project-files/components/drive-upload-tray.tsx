@@ -2,8 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
-import { ProgressRing } from '@/components/ui/progress-ring';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -11,6 +9,7 @@ import { formatFileSize } from '@kortix/shared/constants';
 import { CaretDownIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
+import { uploadedFraction } from '../upload-batch';
 import { getFileIcon } from './file-icon';
 
 export interface DriveUpload {
@@ -19,13 +18,68 @@ export interface DriveUpload {
   /** Folder it lands in; `undefined` is the source's root. */
   targetPath?: string;
   status: 'queued' | 'uploading' | 'done' | 'error';
+  /** Bytes sent so far. */
+  sent?: number;
   error?: string;
+}
+
+/**
+ * A gauge: a round-capped arc for the share done, a clear gap at each end,
+ * then the track for what is left. It fills by bytes, so one large file moves
+ * as it goes up instead of jumping from empty to full.
+ */
+function UploadGauge({ value, className }: { value: number; className?: string }) {
+  const R = 8;
+  const STROKE = 2.5;
+  const C = 2 * Math.PI * R;
+  // Round caps reach STROKE/2 past each end: the visible gap is GAP.
+  const GAP = 1.5 + STROKE;
+  const arc = Math.max(0, Math.min(1, value)) * C;
+  const track = arc > 0 ? Math.max(0, C - arc - 2 * GAP) : C;
+  const ease = 'transition-[stroke-dasharray,stroke-dashoffset] duration-(--duration-moderate) ease-out motion-reduce:transition-none';
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(value * 100)}
+      className={cn('size-4 shrink-0 -rotate-90', className)}
+    >
+      {track > 0 ? (
+        <circle
+          cx="10"
+          cy="10"
+          r={R}
+          strokeWidth={STROKE}
+          strokeLinecap="round"
+          strokeDasharray={`${track} ${C}`}
+          strokeDashoffset={arc > 0 ? -(arc + GAP) : 0}
+          stroke="currentColor"
+          className={cn('text-border', ease)}
+        />
+      ) : null}
+      {arc > 0 ? (
+        <circle
+          cx="10"
+          cy="10"
+          r={R}
+          strokeWidth={STROKE}
+          strokeLinecap="round"
+          strokeDasharray={`${arc} ${C}`}
+          stroke="currentColor"
+          className={cn('text-foreground', ease)}
+        />
+      ) : null}
+    </svg>
+  );
 }
 
 /**
  * Every upload of this explorer, one row per file, docked bottom-right over
  * the listing — the listing stays usable while files go up. The header counts
- * what is left; a failed row keeps its reason and a Retry.
+ * files and fills by bytes; a failed row keeps its reason and a Retry.
  */
 export function DriveUploadTray({
   uploads,
@@ -45,6 +99,8 @@ export function DriveUploadTray({
   const failed = uploads.filter((u) => u.status === 'error').length;
   const active = total - done - failed;
 
+  const fraction = uploadedFraction(uploads);
+
   const title =
     active > 0
       ? t('uploadsInProgress', { done: done + failed, total })
@@ -59,15 +115,21 @@ export function DriveUploadTray({
     >
       <div className="flex h-10 items-center gap-2 pr-1.5 pl-3">
         {active > 0 ? (
-          <ProgressRing value={((done + failed) / total) * 100} className="shrink-0" />
+          <UploadGauge value={fraction} className="size-5" />
         ) : failed > 0 ? (
-          <WarningCircleIcon className="text-destructive size-4 shrink-0" />
+          <WarningCircleIcon className="text-kortix-red size-5 shrink-0" />
         ) : (
-          <SolidCheckIcon className="size-4 shrink-0" />
+          <SolidCheckIcon className="text-kortix-green size-5" />
         )}
         <p aria-live="polite" className="min-w-0 flex-1 truncate text-sm font-medium tabular-nums">
           {title}
         </p>
+        {active > 0 ? (
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            {/* 100% only once every file is confirmed, not when the last byte leaves. */}
+            {Math.min(99, Math.round(fraction * 100))}%
+          </span>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -128,9 +190,9 @@ function UploadStatus({ upload, onRetry }: { upload: DriveUpload; onRetry: () =>
         </span>
       );
     case 'uploading':
-      return <Loading className="size-3.5 shrink-0" />;
+      return <UploadGauge value={(upload.sent ?? 0) / Math.max(1, upload.file.size)} />;
     case 'done':
-      return <SolidCheckIcon className="text-muted-foreground size-3.5 shrink-0" />;
+      return <SolidCheckIcon className="text-kortix-green" />;
     case 'error':
       return (
         <Hint label={upload.error ?? t('uploadFailed', { name: upload.file.name })} side="left">

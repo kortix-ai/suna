@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Mostrar u ocultar subidas",
     "uploadsDismiss": "Cerrar subidas",
     "uploadRetry": "Reintentar",
+    "uploadFolder": "Subir carpeta",
+    "uploadingFile": "Subiendo {name}",
     "renamed": "Renombrado",
     "renameFailed": "No se pudo renombrar",
     "deleted": "Eliminado",

@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Прикажи или сакриј отпремања",
     "uploadsDismiss": "Затвори отпремања",
     "uploadRetry": "Покушај поново",
+    "uploadFolder": "Отпреми фасциклу",
+    "uploadingFile": "Отпремање: {name}",
     "renamed": "Преименовано",
     "renameFailed": "Преименовање није успело",
     "deleted": "Обрисано",

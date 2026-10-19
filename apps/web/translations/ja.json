@@ -21249,6 +21249,8 @@
     "uploadsToggle": "アップロードの表示を切り替え",
     "uploadsDismiss": "アップロードを閉じる",
     "uploadRetry": "再試行",
+    "uploadFolder": "フォルダをアップロード",
+    "uploadingFile": "{name} をアップロード中",
     "renamed": "名前を変更しました",
     "renameFailed": "名前を変更できませんでした",
     "deleted": "削除しました",

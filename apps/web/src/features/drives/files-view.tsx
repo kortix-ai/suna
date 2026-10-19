@@ -19,6 +19,7 @@ import {
   FileExplorerSourceProvider,
   FilesStoreProvider,
 } from '@/features/project-files';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
@@ -31,10 +32,12 @@ import {
   SquaresFourIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useDebounce } from '@/hooks/use-debounce';
 import { type ComponentType, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBar } from './drive-conflicts-bar';
+import { drivePathFromParam, drivePathToParam, driveUrlWithPath } from './drive-path-param';
 import {
   DriveFilesProvider,
   driveExplorerSource,
@@ -102,21 +105,43 @@ export function FilesView({ projectId }: { projectId: string }) {
 }
 
 function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string }) {
-  // The explorer's store starts at the top of Files, not at a sandbox path.
+  const { user } = useAuth();
+  const searchParams = useSearchParams();
+  // Read once: the URL picks the folder to open; after that the store leads.
+  const [openAt] = useState(() =>
+    drivePathFromParam(searchParams.get('path'), drive.personalFolder),
+  );
   const store = useMemo(() => {
     const s = createFilesStore();
-    // Held to `/`, so "home" (the root crumb, an empty path) is the top of
-    // Files and never the sandbox default `/workspace`, which Files has not.
-    s.setState({ currentPath: '/', rootPath: '/', expandedDirs: new Set() });
+    // Root held to `/`, so "home" (the root crumb, an empty path) is the top
+    // of Files and never the sandbox default `/workspace`, which Files has not.
+    s.setState({ currentPath: openAt, rootPath: '/', expandedDirs: new Set() });
     return s;
-  }, []);
+  }, [openAt]);
   return (
-    <DriveFilesProvider driveId={drive.driveId}>
+    <DriveFilesProvider driveId={drive.driveId} userId={user?.id}>
       <FilesStoreProvider store={store}>
+        <DrivePathInUrl personal={drive.personalFolder} />
         <FilesExplorer drive={drive} projectId={projectId} />
       </FilesStoreProvider>
     </DriveFilesProvider>
   );
+}
+
+/**
+ * Writes the folder in view to `?path=` (see `drive-path-param.ts`), so a
+ * reload or a shared link opens it. 300 ms after the last move, and through
+ * `history.replaceState`: no route re-render, no history entry per folder.
+ */
+function DrivePathInUrl({ personal }: { personal: string | null }) {
+  const currentPath = useFilesStore((s) => s.currentPath);
+  const { debouncedValue } = useDebounce(currentPath, 300);
+  useEffect(() => {
+    const next = driveUrlWithPath(window.location.href, drivePathToParam(debouncedValue, personal));
+    const now = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== now) window.history.replaceState(window.history.state, '', next);
+  }, [debouncedValue, personal]);
+  return null;
 }
 
 function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }) {
@@ -152,7 +177,11 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   const { locate } = useDriveLocation(drive);
   const here = locate(path);
   const HereGlyph = here.icon;
-  const location = { icon: <HereGlyph />, crumbs: [here.label, ...here.trail] };
+  // The drive's name, then the full path from the top of Drive.
+  const location = {
+    icon: <HereGlyph />,
+    crumbs: [here.label, ...path.split('/').filter(Boolean)],
+  };
 
   const leading = <DriveSwitcher drive={drive} path={path} onOpen={open} />;
   // Share closes the action group, after New and the view menu.
@@ -220,10 +249,10 @@ function absolute(path: string): string {
 type DriveGlyph = ComponentType<{ className?: string }>;
 
 /**
- * Names a drive path the way the switcher does: which drive it is in (My
- * drive, a company drive, a folder shared with the caller, or All files) and
- * the folders below that drive's top. The switcher's trigger and the create
- * dialog both read it, so "where am I" has one answer.
+ * Names the drive a path is in, the way the switcher does: My drive, a
+ * company drive, a folder shared with the caller, or All files. The
+ * switcher's trigger and the create dialog both read it, so "where am I" has
+ * one answer.
  */
 function useDriveLocation(drive: Drive) {
   const t = useTranslations('drives');
@@ -234,20 +263,17 @@ function useDriveLocation(drive: Drive) {
   const personal = drive.personalFolder;
   const shared = drive.sharedWithMe ?? [];
 
-  const locate = (path: string): { icon: DriveGlyph; label: string; trail: string[] } => {
-    const below = (base: string) => path.slice(base.length).split('/').filter(Boolean);
-    if (personal && isUnder(path, personal))
-      return { icon: Home, label: t('myDrive'), trail: below(personal) };
+  const locate = (path: string): { icon: DriveGlyph; label: string } => {
+    if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive') };
     const company = companyDrives.find((d) => isUnder(path, d.path));
-    if (company) return { icon: HardDriveIcon, label: company.name, trail: below(company.path) };
+    if (company) return { icon: HardDriveIcon, label: company.name };
     const sharedHere = shared.find((f) => isUnder(path, f.path));
     if (sharedHere)
       return {
         icon: FolderSimpleIcon,
         label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
-        trail: below(sharedHere.path),
       };
-    return { icon: SquaresFourIcon, label: t('allFiles'), trail: below('/') };
+    return { icon: SquaresFourIcon, label: t('allFiles') };
   };
   return { locate, companyDrives, isLoadingDrives: root.isLoading, personal, shared };
 }

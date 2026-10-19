@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Mostra o nascondi i caricamenti",
     "uploadsDismiss": "Chiudi i caricamenti",
     "uploadRetry": "Riprova",
+    "uploadFolder": "Carica cartella",
+    "uploadingFile": "Caricamento di {name}",
     "renamed": "Rinominato",
     "renameFailed": "Impossibile rinominare",
     "deleted": "Eliminato",

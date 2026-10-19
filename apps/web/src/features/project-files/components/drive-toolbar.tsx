@@ -25,6 +25,7 @@ import {
   CaretRightIcon as ChevronRight,
   DotsThreeIcon as DotsThree,
   FilePlusIcon,
+  FolderOpenIcon,
   FolderPlusIcon,
   SquaresFourIcon as LayoutGrid,
   ListIcon as ListSolid,
@@ -459,6 +460,8 @@ interface DriveNewMenuProps {
    * "New file", and offers only "New folder" where files cannot go.
    */
   onUpload?: () => void;
+  /** Pick a whole folder; its tree is recreated here. */
+  onUploadFolder?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
   /** Drop the label and render a `+` square. For narrow panels. */
@@ -486,16 +489,19 @@ export function DriveNewMenuItems({
   Item,
   Separator: MenuSeparator,
   onUpload,
+  onUploadFolder,
   onNewFile,
   onNewFolder,
 }: {
   Item: DriveMenuItemComponent;
   Separator: ComponentType;
   onUpload?: () => void;
+  onUploadFolder?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tDrives = useTranslations('drives');
   return (
     <>
       {onUpload ? (
@@ -504,7 +510,13 @@ export function DriveNewMenuItems({
           {tI18nComplete.raw('text4118deee6e13')}
         </Item>
       ) : null}
-      {onUpload && (onNewFile || onNewFolder) ? <MenuSeparator /> : null}
+      {onUploadFolder ? (
+        <Item onClick={onUploadFolder}>
+          <FolderOpenIcon className="size-3.5 shrink-0" />
+          {tDrives('uploadFolder')}
+        </Item>
+      ) : null}
+      {(onUpload || onUploadFolder) && (onNewFile || onNewFolder) ? <MenuSeparator /> : null}
       {onNewFile ? (
         <Item onClick={onNewFile}>
           <FilePlusIcon className="size-3.5 shrink-0" />
@@ -521,7 +533,13 @@ export function DriveNewMenuItems({
   );
 }
 
-export function DriveNewMenu({ onUpload, onNewFile, onNewFolder, compact }: DriveNewMenuProps) {
+export function DriveNewMenu({
+  onUpload,
+  onUploadFolder,
+  onNewFile,
+  onNewFolder,
+  compact,
+}: DriveNewMenuProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!hasWriteActions({ onUpload, onNewFile, onNewFolder })) return null;
 
@@ -549,6 +567,7 @@ export function DriveNewMenu({ onUpload, onNewFile, onNewFolder, compact }: Driv
           Item={DropdownMenuItem}
           Separator={DropdownMenuSeparator}
           onUpload={onUpload}
+          onUploadFolder={onUploadFolder}
           onNewFile={onNewFile}
           onNewFolder={onNewFolder}
         />

@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Mostrar ou ocultar envios",
     "uploadsDismiss": "Fechar envios",
     "uploadRetry": "Tentar de novo",
+    "uploadFolder": "Enviar pasta",
+    "uploadingFile": "Enviando {name}",
     "renamed": "Renomeado",
     "renameFailed": "Não foi possível renomear",
     "deleted": "Excluído",

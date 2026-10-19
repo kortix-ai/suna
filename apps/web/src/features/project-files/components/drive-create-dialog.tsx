@@ -25,10 +25,6 @@ export interface DriveLocation {
   crumbs: string[];
 }
 
-/** Long paths keep the drive and the last two folders: `My drive › … › a › b`. */
-function visibleCrumbs(crumbs: string[]): string[] {
-  return crumbs.length > 4 ? [crumbs[0]!, '…', ...crumbs.slice(-2)] : crumbs;
-}
 
 /**
  * "New folder" / "New file" in a modal. The name is checked as it is typed
@@ -75,14 +71,15 @@ export function DriveCreateDialog({
       <ModalContent className="lg:max-w-sm">
         <ModalHeader>
           <ModalTitle>{shownKind === 'folder' ? t('newFolder') : t('newFile')}</ModalTitle>
-          <ModalDescription className="flex min-w-0 items-center gap-1 [&_svg]:size-3.5 [&_svg]:shrink-0">
+          <ModalDescription className="flex min-w-0 flex-wrap items-center gap-1 [&_svg]:size-3.5 [&_svg]:shrink-0">
             {location.icon}
-            {visibleCrumbs(location.crumbs).map((crumb, i, all) => (
+            {/* Every folder, so the path reads in full; a long one wraps. */}
+            {location.crumbs.map((crumb, i, all) => (
               <Fragment key={`${i}-${crumb}`}>
                 {i > 0 ? <CaretRightIcon className="text-muted-foreground" /> : null}
                 <span
                   className={cn(
-                    'truncate',
+                    'break-all',
                     i === all.length - 1 && 'text-foreground font-medium',
                   )}
                 >

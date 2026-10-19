@@ -6,6 +6,7 @@
 import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
+import { platformRequestHeaders } from '../../http/transport';
 import { unwrap } from './shared';
 import { stripTrailingSlashes } from '../../../platform/strings';
 
@@ -233,25 +234,109 @@ export async function readDriveFile(
   return { blob: await response.blob(), version: response.headers.get('etag') };
 }
 
+type DriveUploadResult = { path: string; size: number; version?: string };
+
+/** The XMLHttpRequest members an upload with progress uses. Browsers and React Native provide them. */
+interface ProgressRequest {
+  upload: { onprogress: ((event: { loaded: number }) => void) | null };
+  onload: (() => void) | null;
+  onerror: (() => void) | null;
+  onabort: (() => void) | null;
+  status: number;
+  responseText: string;
+  open(method: string, url: string): void;
+  setRequestHeader(name: string, value: string): void;
+  send(body: Blob): void;
+  abort(): void;
+}
+
 /**
  * Write a file (at most 64 MiB), replacing any file at `path`. With `ifMatch`
  * (the version it was read at), a file someone changed since is refused with
  * 409 `file_changed` instead of being overwritten.
+ *
+ * `onProgress(sentBytes, totalBytes)` reports the body going up. `fetch` has
+ * no upload progress, so with it the body goes over `XMLHttpRequest` (same
+ * auth and headers); a host without one uses `fetch` and reports completion.
  */
 export async function uploadDriveFile(
   driveId: string,
   path: string,
   body: Blob | ArrayBuffer | Uint8Array<ArrayBuffer>,
-  options?: { signal?: AbortSignal; ifMatch?: string | null },
-): Promise<{ path: string; size: number; version?: string }> {
-  return unwrap(
-    await backendApi.putRaw<{ path: string; size: number; version?: string }>(
-      `${drivePath(driveId)}/files/content?${new URLSearchParams({ path })}`,
-      body,
-      { signal: options?.signal, ...(options?.ifMatch ? { headers: { 'If-Match': options.ifMatch } } : {}) },
-    ),
+  options?: {
+    signal?: AbortSignal;
+    ifMatch?: string | null;
+    onProgress?: (sentBytes: number, totalBytes: number) => void;
+  },
+): Promise<DriveUploadResult> {
+  const endpoint = `${drivePath(driveId)}/files/content?${new URLSearchParams({ path })}`;
+  const headers: Record<string, string> = options?.ifMatch ? { 'If-Match': options.ifMatch } : {};
+  const onProgress = options?.onProgress;
+  const Xhr = (globalThis as { XMLHttpRequest?: new () => ProgressRequest }).XMLHttpRequest;
+  if (onProgress && Xhr) {
+    const blob = body instanceof Blob ? body : new Blob([body]);
+    return uploadWithProgress(Xhr, endpoint, blob, headers, onProgress, options?.signal);
+  }
+  const result = unwrap(
+    await backendApi.putRaw<DriveUploadResult>(endpoint, body, { signal: options?.signal, headers }),
     'Failed to upload file',
   );
+  const size = body instanceof Blob ? body.size : body.byteLength;
+  onProgress?.(size, size);
+  return result;
+}
+
+async function uploadWithProgress(
+  Xhr: new () => ProgressRequest,
+  endpoint: string,
+  blob: Blob,
+  extraHeaders: Record<string, string>,
+  onProgress: (sentBytes: number, totalBytes: number) => void,
+  signal: AbortSignal | undefined,
+): Promise<DriveUploadResult> {
+  const url = `${stripTrailingSlashes(platformConfig().backendUrl)}${endpoint}`;
+  const { headers, rejected } = await platformRequestHeaders(url, {
+    'Content-Type': 'application/octet-stream',
+    ...extraHeaders,
+  });
+  return new Promise((resolve, reject) => {
+    const xhr = new Xhr();
+    const aborted = () => new ApiError('Request aborted', { name: 'AbortError', code: 'ABORTED' });
+    if (signal?.aborted) return reject(aborted());
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const done = () => signal?.removeEventListener('abort', onAbort);
+    xhr.open('PUT', url);
+    headers.forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.upload.onprogress = (event) => onProgress(event.loaded, blob.size);
+    xhr.onload = () => {
+      done();
+      let parsed: { message?: string; code?: string } | null = null;
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        parsed = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(parsed as DriveUploadResult);
+      if (xhr.status === 401) rejected();
+      reject(
+        new ApiError(parsed?.message || 'Failed to upload file', {
+          status: xhr.status,
+          code: parsed?.code,
+          url,
+        }),
+      );
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new ApiError('Network error while uploading', { name: 'TypeError', url }));
+    };
+    xhr.onabort = () => {
+      done();
+      reject(aborted());
+    };
+    xhr.send(blob);
+  });
 }
 
 export async function makeDriveFolder(driveId: string, path: string): Promise<{ path: string }> {

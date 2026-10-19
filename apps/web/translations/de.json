@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Uploads ein- oder ausblenden",
     "uploadsDismiss": "Uploads schließen",
     "uploadRetry": "Wiederholen",
+    "uploadFolder": "Ordner hochladen",
+    "uploadingFile": "{name} wird hochgeladen",
     "renamed": "Umbenannt",
     "renameFailed": "Umbenennen fehlgeschlagen",
     "deleted": "Gelöscht",

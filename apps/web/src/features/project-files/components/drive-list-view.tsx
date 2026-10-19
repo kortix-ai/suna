@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/table';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
 import { useFilesStore, type SortField } from '@/features/file-browser/store/files-store';
+import Loading from '@/components/ui/loading';
 import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -81,6 +82,8 @@ interface ListRowProps {
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
+  /** Still on its way up: a spinner after the name until the server has it. */
+  uploading?: boolean;
 }
 
 function ListRow({
@@ -97,8 +100,10 @@ function ListRow({
   onDropUpload,
   isDownloadingItem,
   isCut,
+  uploading,
 }: ListRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDrives = useTranslations('drives');
   const isDir = node.type === 'directory';
   const {
     isDragOver, isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
@@ -217,6 +222,11 @@ function ListRow({
                   {node.name}
                 </span>
               )}
+              {uploading ? (
+                <span role="status" aria-label={tDrives('uploadingFile', { name: node.name })} className="shrink-0">
+                  <Loading variant="spokes" className="size-3.5" />
+                </span>
+              ) : null}
             </div>
           </TableCell>
           <TableCell>
@@ -327,6 +337,8 @@ interface DriveListViewProps {
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
   readOnly?: boolean;
+  /** Paths still uploading. */
+  uploadingPaths?: ReadonlySet<string>;
   /**
    * The rows keep the server's name order (a partly loaded folder): the
    * column headers do not sort and show no arrow.
@@ -355,6 +367,7 @@ export function DriveListView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  uploadingPaths,
   sortDisabled = false,
 }: DriveListViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -455,6 +468,7 @@ export function DriveListView({
               onCut={onCut}
               gitStatus={gitStatusMap.get(node.path)}
               isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+              uploading={uploadingPaths?.has(node.path)}
             />
           ))}
         </TableBody>

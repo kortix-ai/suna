@@ -17,12 +17,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import Loading from '@/components/ui/loading';
 import type { FileNode } from '@/features/file-browser/types';
+import { Copy } from '@/features/icon/icons/copy';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClipboardIcon as ClipboardCopy,
-  CopyIcon as Copy,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   DotsThreeIcon as MoreVertical,
@@ -55,6 +56,8 @@ interface DriveGridItemProps {
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
+  /** Still on its way up: the card shows a spinner until the server has it. */
+  uploading?: boolean;
 }
 
 type DriveMenuItemComponent = ComponentType<{
@@ -382,8 +385,10 @@ const FileCard = memo(function FileCard({
   onCopy,
   onCut,
   isCut,
+  uploading,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDrives = useTranslations('drives');
   const {
     isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
     renameInputRef, handleDragStart, handleDragEnd, startRenaming, confirmRename,
@@ -432,6 +437,15 @@ const FileCard = memo(function FileCard({
             fileName={node.name}
             className="border-border h-[120px] rounded-lg border"
           />
+          {uploading ? (
+            <span
+              role="status"
+              aria-label={tDrives('uploadingFile', { name: node.name })}
+              className="bg-popover border-border absolute top-2 left-2 z-10 flex size-7 items-center justify-center rounded-md border shadow-xs"
+            >
+              <Loading variant="spokes" className="size-4" />
+            </span>
+          ) : null}
 
           {!isRenaming && (
             <DropdownMenu>
@@ -519,6 +533,8 @@ interface DriveGridViewProps {
   isDirDownloading: (path: string) => boolean;
   /** Hide mutation context-menu entries (delete/rename/cut/copy/history). */
   readOnly?: boolean;
+  /** Paths still uploading. */
+  uploadingPaths?: ReadonlySet<string>;
 }
 
 export function DriveGridView({
@@ -542,6 +558,7 @@ export function DriveGridView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  uploadingPaths,
 }: DriveGridViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
@@ -639,6 +656,7 @@ export function DriveGridView({
                 onCut={onCut}
                 gitStatus={gitStatusMap.get(node.path)}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+                uploading={uploadingPaths?.has(node.path)}
               />
             ))}
           </div>

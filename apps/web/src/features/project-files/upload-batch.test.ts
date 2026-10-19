@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   forEachLimit,
+  uploadedFraction,
   MAX_UPLOAD_BYTES,
   partitionUploadBatch,
   resolveUploadTarget,
@@ -139,5 +140,21 @@ describe('rowDragIntent — rows accept external files, not just internal moves'
 
   test('an unrelated drag is ignored', () => {
     expect(rowDragIntent(['text/uri-list'], writable)).toBeNull();
+  });
+});
+
+describe('uploadedFraction — the tray fills by bytes', () => {
+  const u = (size: number, status: string, sent?: number) => ({ file: { size }, status, sent });
+
+  test('one large file moves as its bytes go up, not 0 then 1', () => {
+    expect(uploadedFraction([u(1000, 'uploading', 250)])).toBe(0.25);
+  });
+
+  test('a finished file counts whole, a failed one drops out', () => {
+    expect(uploadedFraction([u(300, 'done'), u(100, 'uploading', 50), u(600, 'error')])).toBe(350 / 400);
+  });
+
+  test('empty files fall back to counting files', () => {
+    expect(uploadedFraction([u(0, 'done'), u(0, 'queued')])).toBe(0.5);
   });
 });

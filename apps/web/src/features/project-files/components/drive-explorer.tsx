@@ -12,6 +12,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -50,7 +57,13 @@ import { DriveCreateDialog, type DriveCreateKind, type DriveLocation } from './d
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { type DriveUpload, DriveUploadTray } from './drive-upload-tray';
-import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } from './drive-toolbar';
+import {
+  DRIVE_ACTION_ROW_CLASS,
+  DriveNewMenu,
+  DriveNewMenuItems,
+  DrivePathBar,
+  DriveViewMenu,
+} from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
@@ -131,6 +144,7 @@ export function DriveExplorer({
   children?: ReactNode;
 } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDrives = useTranslations('drives');
   // Plain <div> unless a tabbed host claims the listing as its panel.
   const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
@@ -166,19 +180,24 @@ export function DriveExplorer({
    * failed). `seen` is the listing in hand when the server confirmed it.
    */
   const [pending, setPending] = useState<{ dir: string; node: FileNode; seen?: unknown }[]>([]);
+  const [gone, setGone] = useState<{ path: string; seen?: unknown }[]>([]);
 
   const listing = source.useFileList(currentPath);
   const { data: listed, isLoading, isFetching, error, refetch: refetchFiles } = listing;
   const files = useMemo(() => {
     if (!listed) return listed;
-    const names = new Set(listed.map((f) => f.name.toLowerCase()));
+    const hiddenPaths = new Set(
+      gone.filter((g) => !('seen' in g) || g.seen === listed).map((g) => g.path),
+    );
+    const shown = hiddenPaths.size ? listed.filter((f) => !hiddenPaths.has(f.path)) : listed;
+    const names = new Set(shown.map((f) => f.name.toLowerCase()));
     const extra = pending
       .filter((p) => p.dir === currentPath && !names.has(p.node.name.toLowerCase()))
       // A listing fetched after the server confirmed the row is the truth.
       .filter((p) => !('seen' in p) || p.seen === listed)
       .map((p) => p.node);
-    return extra.length ? [...listed, ...extra] : listed;
-  }, [listed, pending, currentPath]);
+    return extra.length ? [...shown, ...extra] : shown;
+  }, [listed, pending, gone, currentPath]);
   const listedRef = useRef(listed);
   useEffect(() => {
     listedRef.current = listed;
@@ -199,6 +218,8 @@ export function DriveExplorer({
   const gitStatusMap = useMemo(() => buildGitStatusMap(gitStatuses), [gitStatuses]);
 
   const uploadMutation = source.useFileUpload();
+  // Called unconditionally: a source's hooks never change between renders.
+  const previewUpload = source.useUploadPreview?.();
   const deleteMutation = source.useFileDelete();
   const mkdirMutation = source.useFileMkdir();
   const renameMutation = source.useFileRename();
@@ -207,10 +228,21 @@ export function DriveExplorer({
   const downloadFile = source.useDownloadFile();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderPickerRef = useRef<HTMLInputElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isDragOverPage, setIsDragOverPage] = useState(false);
   const [uploads, setUploads] = useState<DriveUpload[]>([]);
+  // Cards and rows still on their way up show a spinner until the server has them.
+  const uploadingPaths = useMemo(
+    () =>
+      new Set(
+        uploads
+          .filter((u) => u.status === 'queued' || u.status === 'uploading')
+          .map((u) => (u.targetPath ? `${u.targetPath.replace(/\/+$/, '')}/${u.file.name}` : u.file.name)),
+      ),
+    [uploads],
+  );
   const dragPageCounter = useRef(0);
 
   const [createKind, setCreateKind] = useState<DriveCreateKind | null>(null);
@@ -342,14 +374,53 @@ export function DriveExplorer({
     [downloadDir],
   );
 
+  /** A listing row for `name` in the folder in view, before the server has it. */
+  const pendingNode = useCallback(
+    (name: string, type: FileNode['type']): FileNode => {
+      const path = normalizedCurrentPath ? `${normalizedCurrentPath}/${name}` : name;
+      return { name, path, absolute: path, type, ignored: false };
+    },
+    [normalizedCurrentPath],
+  );
+  /** `ok`: the server has it, keep the row until the next listing. Else remove it. */
+  const settlePending = useCallback((dir: string, name: string, ok: boolean) => {
+    const seen = listedRef.current;
+    const match = (p: { dir: string; node: FileNode }) => p.dir === dir && p.node.name === name;
+    setPending((prev) =>
+      prev
+        // Rows already handed over to a newer listing are dead weight.
+        .filter((p) => !('seen' in p) || p.seen === seen)
+        .flatMap((p) => (match(p) ? (ok ? [{ ...p, seen }] : []) : [p])),
+    );
+  }, []);
+
+  /**
+   * Rows hidden before the server confirms they are gone: a delete, or the old
+   * name of a rename or move. Same hand-over as `pending`: a failure brings the
+   * row back; a success keeps it hidden until a newer listing arrives.
+   */
+  const settleGone = useCallback((path: string, ok: boolean) => {
+    const seen = listedRef.current;
+    setGone((prev) =>
+      prev
+        .filter((g) => !('seen' in g) || g.seen === seen)
+        .flatMap((g) => (g.path === path ? (ok ? [{ ...g, seen }] : []) : [g])),
+    );
+  }, []);
+
   const handleRename = useCallback(
     async (node: FileNode, newName: string) => {
       if (!newName || newName === node.name) return;
       const parentPath = node.path.substring(0, node.path.lastIndexOf('/'));
       const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+      // The new name shows at once; the old row hides until the server answers.
+      const dir = currentPath;
+      setGone((prev) => [...prev, { path: node.path }]);
+      setPending((prev) => [...prev, { dir, node: { ...node, name: newName, path: newPath, absolute: newPath } }]);
+      let ok = false;
       try {
         await renameMutation.mutateAsync({ from: node.path, to: newPath });
-        successToast(tHardcodedUi('i18nComplete.text3c6bd1e4217c', { value0: newName }));
+        ok = true;
       } catch (err) {
         errorToast(
           tHardcodedUi('i18nComplete.textd6f8c9c8e719', {
@@ -359,9 +430,12 @@ export function DriveExplorer({
                 : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
           }),
         );
+      } finally {
+        settleGone(node.path, ok);
+        settlePending(dir, newName, ok);
       }
     },
-    [renameMutation, tHardcodedUi],
+    [currentPath, renameMutation, settleGone, settlePending, tHardcodedUi],
   );
 
   const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
@@ -376,11 +450,16 @@ export function DriveExplorer({
     [goBackToBrowser, filesStore],
   );
 
+  /** The row goes at once and the dialog closes; a refused delete brings it back. */
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setGone((prev) => [...prev, { path: target.path }]);
+    let ok = false;
     try {
-      await deleteMutation.mutateAsync({ filePath: deleteTarget.path });
-      successToast(tHardcodedUi('i18nComplete.text37bad7de9098', { value0: deleteTarget.name }));
+      await deleteMutation.mutateAsync({ filePath: target.path });
+      ok = true;
     } catch (err) {
       errorToast(
         tHardcodedUi('i18nComplete.text5d4ff119f3d4', {
@@ -389,9 +468,9 @@ export function DriveExplorer({
         }),
       );
     } finally {
-      setDeleteTarget(null);
+      settleGone(target.path, ok);
     }
-  }, [deleteTarget, deleteMutation, tHardcodedUi]);
+  }, [deleteTarget, deleteMutation, settleGone, tHardcodedUi]);
 
   const handleHistory = useCallback((node: FileNode) => {
     setHistoryPopoverPath(node.path);
@@ -418,8 +497,11 @@ export function DriveExplorer({
       const sourceName = sourcePath.split('/').pop() || '';
       const destPath = targetDirPath ? `${targetDirPath}/${sourceName}` : sourceName;
       if (sourcePath === destPath) return;
+      setGone((prev) => [...prev, { path: sourcePath }]);
+      let ok = false;
       try {
         await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
+        ok = true;
         successToast(tHardcodedUi('i18nComplete.text854362dd1a76', { value0: sourceName }));
       } catch (err) {
         errorToast(
@@ -430,34 +512,19 @@ export function DriveExplorer({
                 : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
           }),
         );
+      } finally {
+        settleGone(sourcePath, ok);
       }
     },
-    [renameMutation, tHardcodedUi],
+    [renameMutation, settleGone, tHardcodedUi],
   );
 
   // Upload
   const handleUpload = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
-
-  /** A listing row for `name` in the folder in view, before the server has it. */
-  const pendingNode = useCallback(
-    (name: string, type: FileNode['type']): FileNode => {
-      const path = normalizedCurrentPath ? `${normalizedCurrentPath}/${name}` : name;
-      return { name, path, absolute: path, type, ignored: false };
-    },
-    [normalizedCurrentPath],
-  );
-  /** `ok`: the server has it, keep the row until the next listing. Else remove it. */
-  const settlePending = useCallback((dir: string, name: string, ok: boolean) => {
-    const seen = listedRef.current;
-    const match = (p: { dir: string; node: FileNode }) => p.dir === dir && p.node.name === name;
-    setPending((prev) =>
-      prev
-        // Rows already handed over to a newer listing are dead weight.
-        .filter((p) => !('seen' in p) || p.seen === seen)
-        .flatMap((p) => (match(p) ? (ok ? [{ ...p, seen }] : []) : [p])),
-    );
+  const handlePickFolder = useCallback(() => {
+    folderPickerRef.current?.click();
   }, []);
 
   /**
@@ -469,19 +536,46 @@ export function DriveExplorer({
     async (upload: DriveUpload, shownIn: string | null) => {
       const patch = (next: Partial<DriveUpload>) =>
         setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, ...next } : u)));
-      patch({ status: 'uploading', error: undefined });
+      patch({ status: 'uploading', sent: 0, error: undefined });
       let ok = false;
       try {
-        await uploadAsync({ file: upload.file, targetPath: upload.targetPath });
+        await uploadAsync({
+          file: upload.file,
+          targetPath: upload.targetPath,
+          onProgress: (sent) => patch({ sent }),
+        });
         ok = true;
-        patch({ status: 'done' });
+        patch({ status: 'done', sent: upload.file.size });
       } catch (err) {
         patch({ status: 'error', error: err instanceof Error ? err.message : undefined });
       } finally {
         if (shownIn !== null) settlePending(shownIn, upload.file.name, ok);
       }
+      return ok;
     },
     [uploadAsync, settlePending],
+  );
+
+  /** Put files in the tray with their previews, then send them, 4 at a time. */
+  const startBatch = useCallback(
+    async (items: { file: File; targetPath?: string }[], shownIn: string | null) => {
+      const batch: DriveUpload[] = items.map(({ file, targetPath }) => ({
+        id: crypto.randomUUID(),
+        file,
+        targetPath,
+        status: 'queued',
+      }));
+      // A finished earlier batch makes way; one still running keeps its rows.
+      setUploads((prev) => (prev.every((u) => u.status === 'done') ? batch : [...prev, ...batch]));
+      for (const u of batch) previewUpload?.(u.file, u.targetPath);
+      let failed = 0;
+      await forEachLimit(batch, UPLOAD_CONCURRENCY, async (u) => {
+        if (!(await runUpload(u, shownIn))) failed++;
+      });
+      // One toast for the whole batch; a failure stays in the tray with Retry.
+      if (failed === 0) successToast(tDrives('uploaded', { count: batch.length }));
+    },
+    [previewUpload, runUpload, tDrives],
   );
 
   /**
@@ -507,31 +601,84 @@ export function DriveExplorer({
       // Only files landing in the folder in view get a row here.
       const shownIn = targetDirPath ? null : currentPath;
 
-      const batch: DriveUpload[] = accepted.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        targetPath,
-        status: 'queued',
-      }));
-      // A finished earlier batch makes way; one still running keeps its rows.
-      setUploads((prev) => (prev.every((u) => u.status === 'done') ? batch : [...prev, ...batch]));
       if (shownIn !== null) {
         setPending((prev) => [
           ...prev,
           ...accepted.map((file) => ({ dir: shownIn, node: pendingNode(file.name, 'file') })),
         ]);
       }
-      await forEachLimit(batch, UPLOAD_CONCURRENCY, (u) => runUpload(u, shownIn));
+      await startBatch(
+        accepted.map((file) => ({ file, targetPath })),
+        shownIn,
+      );
     },
-    [currentPath, isRootPath, pendingNode, runUpload],
+    [currentPath, isRootPath, pendingNode, startBatch],
+  );
+
+  /**
+   * Upload a picked folder: its tree is made here first, one depth at a time
+   * (a level's folders in parallel), then its files go up into it. The top
+   * folder shows in the listing at once.
+   */
+  const handleUploadFolder = useCallback(
+    async (fileList: FileList) => {
+      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList));
+      for (const { reason } of rejected) errorToast(reason);
+      if (accepted.length === 0) return;
+
+      const here = (rel: string) => (normalizedCurrentPath ? `${normalizedCurrentPath}/${rel}` : rel);
+      // `webkitRelativePath` is `Picked/sub/file.png`.
+      const dirOf = (file: File) => (file.webkitRelativePath || file.name).split('/').slice(0, -1);
+      const levels: string[][] = [];
+      for (const file of accepted) {
+        dirOf(file).forEach((_, depth, parts) => {
+          (levels[depth] ??= []).push(parts.slice(0, depth + 1).join('/'));
+        });
+      }
+      const top = levels[0]?.[0];
+      if (!top) return;
+
+      const dir = currentPath;
+      setPending((prev) => [...prev, { dir, node: pendingNode(top, 'directory') }]);
+      let ok = true;
+      try {
+        for (const level of levels) {
+          await Promise.all(
+            [...new Set(level)].map((d) =>
+              mkdirMutation.mutateAsync({ dirPath: here(d) }).catch((err: unknown) => {
+                // Already there (an earlier upload of the same folder): reuse it.
+                if ((err as { status?: number } | null)?.status !== 409) throw err;
+              }),
+            ),
+          );
+        }
+      } catch (err) {
+        ok = false;
+        errorToast(
+          tHardcodedUi('i18nComplete.text5334297c9387', {
+            value0: err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+          }),
+        );
+      } finally {
+        settlePending(dir, top, ok);
+      }
+      if (!ok) return;
+      await startBatch(
+        accepted.map((file) => ({ file, targetPath: here(dirOf(file).join('/')) })),
+        null,
+      );
+    },
+    [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi],
   );
 
   const handleRetryUpload = useCallback(
     (id: string) => {
       const upload = uploads.find((u) => u.id === id);
-      if (upload) void runUpload(upload, null);
+      if (!upload) return;
+      previewUpload?.(upload.file, upload.targetPath);
+      void runUpload(upload, null);
     },
-    [uploads, runUpload],
+    [uploads, previewUpload, runUpload],
   );
 
   // A clean run leaves the tray for 4 s; one with a failure stays until closed.
@@ -781,6 +928,7 @@ export function DriveExplorer({
             <DriveNewMenu
               compact={embedded}
               onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
+              onUploadFolder={canWrite ? handlePickFolder : undefined}
               onNewFile={
                 canWrite && filesAllowedHere && capabilities.newFile !== false ? () => setCreateKind('file') : undefined
               }
@@ -829,181 +977,214 @@ export function DriveExplorer({
         onChange={handleFileInputChange}
         multiple
       />
+      <input
+        type="file"
+        ref={folderPickerRef}
+        className="hidden"
+        multiple
+        // Not in React's input types; every current browser supports it.
+        {...{ webkitdirectory: '' }}
+        onChange={(e) => {
+          const picked = e.target.files;
+          if (picked?.length) void handleUploadFolder(picked);
+          e.target.value = '';
+        }}
+      />
 
       <ListingRegion className="relative min-h-0 flex-1">
-        <div className="absolute inset-0 overflow-y-auto">
-          {isLoading && showSkeleton && (
-            <div className="animate-in fade-in-0 p-4 duration-(--duration-moderate) motion-reduce:animate-none">
-              {viewMode === 'grid' ? (
-                <div className="space-y-6">
-                  <div>
-                    <Skeleton className="mb-3 h-4 w-16" />
-                    <div
-                      className="grid gap-2"
-                      style={{
-                        gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                      }}
-                    >
-                      {Array.from({ length: 6 }).map((_, i) => (
-                        <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
+        {/* Right-click on empty space: the New menu. A row's own menu wins —
+            it prevents the default, so this trigger never opens over it. */}
+        <ContextMenu>
+          <ContextMenuTrigger asChild disabled={!canWrite}>
+            <div className="absolute inset-0 overflow-y-auto">
+              {isLoading && showSkeleton && (
+                <div className="animate-in fade-in-0 p-4 duration-(--duration-moderate) motion-reduce:animate-none">
+                  {viewMode === 'grid' ? (
+                    <div className="space-y-6">
+                      <div>
+                        <Skeleton className="mb-3 h-4 w-16" />
+                        <div
+                          className="grid gap-2"
+                          style={{
+                            gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                          }}
+                        >
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Skeleton className="mb-3 h-4 w-12" />
+                        <div
+                          className="grid gap-2.5"
+                          style={{
+                            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                          }}
+                        >
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <Skeleton key={i} className="h-10 w-full rounded-sm" />
                       ))}
                     </div>
-                  </div>
-                  <div>
-                    <Skeleton className="mb-3 h-4 w-12" />
-                    <div
-                      className="grid gap-2.5"
-                      style={{
-                        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                      }}
-                    >
-                      {Array.from({ length: 8 }).map((_, i) => (
-                        <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
-                      ))}
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-1">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full rounded-sm" />
-                  ))}
-                </div>
+              )}
+
+              {!!error &&
+                !isLoading &&
+                (sandboxWaking ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                    <Loading className="text-muted-foreground size-4" />
+                    <p className="text-muted-foreground text-sm font-medium">
+                      {tHardcodedUi.raw('i18nComplete.text5e3de76869f3')}
+                    </p>
+                    <p className="text-muted-foreground max-w-xs text-xs">
+                      {tHardcodedUi.raw('i18nComplete.textc1b1dc22e207')}
+                    </p>
+                  </div>
+                ) : (
+                  <ErrorState
+                    title={tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
+                    )}
+                    description={
+                      error instanceof Error
+                        ? error.message
+                        : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2')
+                    }
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
+                        {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
+                      </Button>
+                    }
+                  />
+                ))}
+
+              {/* The mirror had nothing, but the branch push is best-effort, so the
+                  files may exist and simply be unreachable. "Empty folder" is the one
+                  thing this cannot state as fact. Same words as the Terminal panel. */}
+              {isEmpty && parked && (
+                <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
+              )}
+
+              {isEmpty && !parked && (
+                <EmptyState
+                  icon={FolderOpen}
+                  title={tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
+                  )}
+                  description={
+                    canWrite
+                      ? tHardcodedUi.raw('i18nComplete.text9720774edbde')
+                      : tHardcodedUi.raw(
+                          'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
+                        )
+                  }
+                  // An empty folder with no way to add a file is the worst case of
+                  // the missing-affordance bug — surface upload here, not only in
+                  // the toolbar menu.
+                  action={
+                    canWrite ? (
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={handleUpload}>
+                        <Upload className="size-3.5 shrink-0" />
+                        {tHardcodedUi.raw('i18nComplete.text4118deee6e13')}
+                      </Button>
+                    ) : undefined
+                  }
+                  secondaryAction={
+                    canWrite ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setCreateKind('folder')}
+                      >
+                        <FolderPlus className="size-3.5 shrink-0" />
+                        {tHardcodedUi.raw('i18nComplete.textcf28f49ec597')}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              )}
+
+              {!isLoading && !error && files && !isEmpty && (
+                <>
+                  {viewMode === 'grid' ? (
+                    <DriveGridView
+                      elevatedDirs={elevatedDirs}
+                      dirs={dirs}
+                      files={fileItems}
+                      onNavigateToDir={handleNavigateToDir}
+                      onOpenFile={handleOpenFile}
+                      onPreviewFile={handlePreviewFile}
+                      onDownload={handleDownload}
+                      onDownloadDir={handleDownloadDir}
+                      onRename={handleRename}
+                      onDelete={handleDelete}
+                      onHistory={handleHistory}
+                      onCopy={handleCopy}
+                      onCut={handleCut}
+                      onDropMove={handleDropMove}
+                      onDropUpload={handleRowDropUpload}
+                      gitStatusMap={gitStatusMap}
+                      clipboardPath={clipboard?.path}
+                      clipboardOperation={clipboard?.operation}
+                      isDirDownloading={isDirDownloading}
+                      readOnly={!canWrite}
+                      uploadingPaths={uploadingPaths}
+                    />
+                  ) : (
+                    <DriveListView
+                      elevatedDirs={elevatedDirs}
+                      dirs={dirs}
+                      files={fileItems}
+                      sortDisabled={partial}
+                      onNavigateToDir={handleNavigateToDir}
+                      onOpenFile={handleOpenFile}
+                      onPreviewFile={handlePreviewFile}
+                      onDownload={handleDownload}
+                      onDownloadDir={handleDownloadDir}
+                      onRename={handleRename}
+                      onDelete={handleDelete}
+                      onHistory={handleHistory}
+                      onCopy={handleCopy}
+                      onCut={handleCut}
+                      onDropMove={handleDropMove}
+                      onDropUpload={handleRowDropUpload}
+                      gitStatusMap={gitStatusMap}
+                      clipboardPath={clipboard?.path}
+                      clipboardOperation={clipboard?.operation}
+                      isDirDownloading={isDirDownloading}
+                      readOnly={!canWrite}
+                      uploadingPaths={uploadingPaths}
+                    />
+                  )}
+                  <LoadMoreRow listing={listing} />
+                </>
               )}
             </div>
-          )}
-
-          {!!error &&
-            !isLoading &&
-            (sandboxWaking ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <Loading className="text-muted-foreground size-4" />
-                <p className="text-muted-foreground text-sm font-medium">
-                  {tHardcodedUi.raw('i18nComplete.text5e3de76869f3')}
-                </p>
-                <p className="text-muted-foreground max-w-xs text-xs">
-                  {tHardcodedUi.raw('i18nComplete.textc1b1dc22e207')}
-                </p>
-              </div>
-            ) : (
-              <ErrorState
-                title={tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
-                )}
-                description={
-                  error instanceof Error
-                    ? error.message
-                    : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2')
-                }
-                action={
-                  <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
-                    {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
-                  </Button>
-                }
-              />
-            ))}
-
-          {/* The mirror had nothing, but the branch push is best-effort, so the
-              files may exist and simply be unreachable. "Empty folder" is the one
-              thing this cannot state as fact. Same words as the Terminal panel. */}
-          {isEmpty && parked && (
-            <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
-          )}
-
-          {isEmpty && !parked && (
-            <EmptyState
-              icon={FolderOpen}
-              title={tHardcodedUi.raw(
-                'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
-              )}
-              description={
-                canWrite
-                  ? tHardcodedUi.raw('i18nComplete.text9720774edbde')
-                  : tHardcodedUi.raw(
-                      'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
-                    )
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-48">
+            <DriveNewMenuItems
+              Item={ContextMenuItem}
+              Separator={ContextMenuSeparator}
+              onUpload={filesAllowedHere ? handleUpload : undefined}
+              onUploadFolder={handlePickFolder}
+              onNewFile={
+                filesAllowedHere && capabilities.newFile !== false ? () => setCreateKind('file') : undefined
               }
-              // An empty folder with no way to add a file is the worst case of
-              // the missing-affordance bug — surface upload here, not only in
-              // the toolbar menu.
-              action={
-                canWrite ? (
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleUpload}>
-                    <Upload className="size-3.5 shrink-0" />
-                    {tHardcodedUi.raw('i18nComplete.text4118deee6e13')}
-                  </Button>
-                ) : undefined
-              }
-              secondaryAction={
-                canWrite ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setCreateKind('folder')}
-                  >
-                    <FolderPlus className="size-3.5 shrink-0" />
-                    {tHardcodedUi.raw('i18nComplete.textcf28f49ec597')}
-                  </Button>
-                ) : undefined
-              }
+              onNewFolder={() => setCreateKind('folder')}
             />
-          )}
-
-          {!isLoading && !error && files && !isEmpty && (
-            <>
-              {viewMode === 'grid' ? (
-                <DriveGridView
-                  elevatedDirs={elevatedDirs}
-                  dirs={dirs}
-                  files={fileItems}
-                  onNavigateToDir={handleNavigateToDir}
-                  onOpenFile={handleOpenFile}
-                  onPreviewFile={handlePreviewFile}
-                  onDownload={handleDownload}
-                  onDownloadDir={handleDownloadDir}
-                  onRename={handleRename}
-                  onDelete={handleDelete}
-                  onHistory={handleHistory}
-                  onCopy={handleCopy}
-                  onCut={handleCut}
-                  onDropMove={handleDropMove}
-                  onDropUpload={handleRowDropUpload}
-                  gitStatusMap={gitStatusMap}
-                  clipboardPath={clipboard?.path}
-                  clipboardOperation={clipboard?.operation}
-                  isDirDownloading={isDirDownloading}
-                  readOnly={!canWrite}
-                />
-              ) : (
-                <DriveListView
-                  elevatedDirs={elevatedDirs}
-                  dirs={dirs}
-                  files={fileItems}
-                  sortDisabled={partial}
-                  onNavigateToDir={handleNavigateToDir}
-                  onOpenFile={handleOpenFile}
-                  onPreviewFile={handlePreviewFile}
-                  onDownload={handleDownload}
-                  onDownloadDir={handleDownloadDir}
-                  onRename={handleRename}
-                  onDelete={handleDelete}
-                  onHistory={handleHistory}
-                  onCopy={handleCopy}
-                  onCut={handleCut}
-                  onDropMove={handleDropMove}
-                  onDropUpload={handleRowDropUpload}
-                  gitStatusMap={gitStatusMap}
-                  clipboardPath={clipboard?.path}
-                  clipboardOperation={clipboard?.operation}
-                  isDirDownloading={isDirDownloading}
-                  readOnly={!canWrite}
-                />
-              )}
-              <LoadMoreRow listing={listing} />
-            </>
-          )}
-        </div>
+          </ContextMenuContent>
+        </ContextMenu>
 
         {panels}
       </ListingRegion>
@@ -1131,7 +1312,7 @@ export function DriveExplorer({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>
+            <AlertDialogCancel>
               {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
             </AlertDialogCancel>
             <AlertDialogAction
@@ -1140,10 +1321,9 @@ export function DriveExplorer({
                 e.preventDefault();
                 confirmDelete();
               }}
-              disabled={deleteMutation.isPending}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              {tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

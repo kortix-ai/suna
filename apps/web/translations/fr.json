@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Afficher ou masquer les envois",
     "uploadsDismiss": "Fermer les envois",
     "uploadRetry": "Réessayer",
+    "uploadFolder": "Importer un dossier",
+    "uploadingFile": "Envoi de {name}",
     "renamed": "Renommé",
     "renameFailed": "Impossible de renommer",
     "deleted": "Supprimé",

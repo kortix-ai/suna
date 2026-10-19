@@ -21249,6 +21249,8 @@
     "uploadsToggle": "Show or hide uploads",
     "uploadsDismiss": "Close uploads",
     "uploadRetry": "Retry",
+    "uploadFolder": "Upload folder",
+    "uploadingFile": "Uploading {name}",
     "renamed": "Renamed",
     "renameFailed": "Couldn't rename",
     "deleted": "Deleted",

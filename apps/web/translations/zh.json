@@ -21249,6 +21249,8 @@
     "uploadsToggle": "显示或隐藏上传",
     "uploadsDismiss": "关闭上传",
     "uploadRetry": "重试",
+    "uploadFolder": "上传文件夹",
+    "uploadingFile": "正在上传 {name}",
     "renamed": "已重命名",
     "renameFailed": "无法重命名",
     "deleted": "已删除",

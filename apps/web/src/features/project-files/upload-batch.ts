@@ -65,6 +65,24 @@ export function partitionUploadBatch<T extends UploadCandidate>(
   return { accepted, rejected };
 }
 
+/**
+ * Share of the run sent, 0-1, by bytes: a finished file counts whole, a failed
+ * one drops out. An all-empty batch falls back to counting files.
+ */
+export function uploadedFraction(
+  uploads: readonly { file: { size: number }; status: string; sent?: number }[],
+): number {
+  const live = uploads.filter((u) => u.status !== 'error');
+  if (live.length === 0) return 0;
+  const total = live.reduce((n, u) => n + u.file.size, 0);
+  if (total === 0) return live.filter((u) => u.status === 'done').length / live.length;
+  const sent = live.reduce(
+    (n, u) => n + (u.status === 'done' ? u.file.size : Math.min(u.sent ?? 0, u.file.size)),
+    0,
+  );
+  return sent / total;
+}
+
 /** Files sent at once. Enough to fill the pipe, few enough not to starve the listing. */
 export const UPLOAD_CONCURRENCY = 4;
 

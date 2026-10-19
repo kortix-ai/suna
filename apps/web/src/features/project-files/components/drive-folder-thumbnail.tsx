@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { chalkColors } from '@kortix/shared';
 
 import { useFileExplorerSource } from '../explorer-source';
 import { useNearViewport } from './file-thumbnail';
@@ -13,11 +14,22 @@ const PAGES = [
 
 /**
  * A folder in the grid: a neutral tile, two pages tilted out of a front
- * pocket, and the number of items on the pocket. Neutral on purpose: the list
- * and the grid read the same, and color is left for state (a drop target).
+ * pocket, and the number of items on the pocket. The pages wear the folder's
+ * chalk colour, picked from its name: one folder, one hue, the same on every
+ * visit and for every member. The page in front is the darker tint, the one
+ * behind it the lighter.
  */
 export function DriveFolderThumbnail({ path, className }: { path: string; className?: string }) {
   const [nearRef, near] = useNearViewport<HTMLDivElement>();
+  const chalk = chalkColors(path.split('/').filter(Boolean).pop() ?? path);
+  // Back page (index 0): the light tint. Front page: the deeper one, its
+  // edge and lines one step toward the hue's ink.
+  const deeper = (share: number) =>
+    `color-mix(in oklch, ${chalk.foreground} ${share}%, ${chalk.border})`;
+  const tints = [
+    { fill: chalk.background, edge: chalk.border, line: chalk.border },
+    { fill: chalk.border, edge: deeper(25), line: deeper(40) },
+  ] as const;
   return (
     <div
       ref={nearRef}
@@ -31,12 +43,17 @@ export function DriveFolderThumbnail({ path, className }: { path: string; classN
           key={i}
           aria-hidden
           className={cn(
-            'bg-background border-border absolute flex h-[76%] w-[44%] flex-col gap-1.5 rounded-md border p-2.5',
+            'absolute flex h-[76%] w-[44%] flex-col gap-1.5 rounded-md border p-2.5',
             page.className,
           )}
+          style={{ background: tints[i]!.fill, borderColor: tints[i]!.edge }}
         >
           {page.lines.map((w) => (
-            <span key={w} className={cn('bg-muted h-[3px] rounded-full', w)} />
+            <span
+              key={w}
+              className={cn('h-[3px] rounded-full', w)}
+              style={{ background: tints[i]!.line }}
+            />
           ))}
         </div>
       ))}
@@ -54,7 +71,7 @@ function FolderItemCount({ path }: { path: string }) {
   if (!listing.data) return null;
   const more = listing.hasNextPage || listing.truncated;
   return (
-    <span className="text-muted-foreground text-xl leading-none font-semibold tabular-nums">
+    <span className="text-muted-foreground text-base leading-none font-semibold tabular-nums">
       {listing.data.length}
       {more ? '+' : ''}
     </span>
