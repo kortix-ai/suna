@@ -74,7 +74,16 @@ function FolderContents({ path }: { path: string }) {
   );
 }
 
-function FolderPages({ name, count }: { name: string; count: number | null }) {
+export function FolderPages({
+  name,
+  count,
+  pocket = true,
+}: {
+  name: string;
+  count: number | null;
+  /** The solid front pocket the pages sit in. Off: just the two pages. */
+  pocket?: boolean;
+}) {
   const chalk = chalkColors(name.split('/').filter(Boolean).pop() ?? name);
   // The front page's edge and lines sit one step toward the hue's ink.
   const deeper = (share: number) => `color-mix(in oklch, ${chalk.foreground} ${share}%, ${chalk.border})`;
@@ -101,7 +110,7 @@ function FolderPages({ name, count }: { name: string; count: number | null }) {
         </div>
       ))}
       {/* Solid, so the pages stop at its edge instead of showing through. */}
-      <div className="bg-muted absolute inset-x-0 bottom-0 h-[47%] rounded-t-md" />
+      {pocket ? <div className="bg-muted absolute inset-x-0 bottom-0 h-[47%] rounded-t-md" /> : null}
     </>
   );
 }
