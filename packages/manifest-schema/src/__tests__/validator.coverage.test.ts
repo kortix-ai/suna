@@ -408,6 +408,23 @@ describe('validateManifest — trigger edge cases', () => {
     }
   });
 
+  // KRTX-1721: `filter` takes a value (equals) or one operator per path.
+  test('a filter with equality and every operator is accepted', () => {
+    const paths = errorPaths(
+      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\n` +
+        'filter = { "body.type" = "push", "body.sender.login" = { not = "kortix-bot" }, "body.action" = { in = ["opened", "reopened"] }, ' +
+        '"body.pull_request" = { exists = true }, "body.ref" = { not_prefix = "refs/heads/kortix/" }, "body.base" = { prefix = ["release/"] } }',
+    );
+    expect(paths.filter((p) => p.startsWith('triggers[0].filter'))).toEqual([]);
+  });
+
+  test('a filter with an unknown operator is rejected with the parser message', () => {
+    const issue = validateManifest(
+      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\nfilter = { "body.ref" = { nott = "x" } }`,
+    ).issues.find((i) => i.path === 'triggers[0].filter' && i.severity === 'error');
+    expect(issue?.message).toBe('filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix.');
+  });
+
   test('non-boolean enabled is rejected', () => {
     expect(
       errorPaths(

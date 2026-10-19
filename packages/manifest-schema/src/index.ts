@@ -22,6 +22,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
+import { parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
 import {
   CHANNEL_PLATFORMS,
@@ -122,6 +123,15 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  TRIGGER_FILTER_OPERATORS,
+  parseTriggerFilter,
+  triggerFilterValueMatches,
+  type TriggerFilter,
+  type TriggerFilterCondition,
+  type TriggerFilterOperator,
+  type TriggerFilterValue,
+} from './trigger-filter';
 export { appReleaseInputFromBlock } from './app-config';
 
 export {
@@ -1434,6 +1444,11 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       if (cap !== undefined && !(typeof cap === 'number' && Number.isInteger(cap) && cap >= 1)) {
         issues.push({ path: `${where}.${field}`, message: `${field} must be a whole number of at least 1.`, severity: 'error' });
       }
+    }
+    // The payload filter (KRTX-1721): a value (equals) or one operator per path.
+    if (entry.filter !== undefined) {
+      const parsed = parseTriggerFilter(entry.filter);
+      if ('error' in parsed) issues.push({ path: `${where}.filter`, message: `${parsed.error}.`, severity: 'error' });
     }
     // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.
     if (entry.max_lateness !== undefined) {
