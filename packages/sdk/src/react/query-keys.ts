@@ -523,6 +523,19 @@ export const qk = {
     projectTriggerRuns: (id: string, status?: string | null) =>
       [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
 
+    /** Every conversation read of a project (flag `agent_rooms`): the prefix of
+     *  the keys below, so a post or a read refreshes the list, the unread
+     *  counts and the thread together. */
+    rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
+    /** `listRooms` — the named rooms. */
+    roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
+    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `getRoom` — one conversation and its members. */
+    room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
+    /** `listRoomMessages` — the newest messages of one conversation. */
+    roomMessages: (id: string, roomId: string) => [...qk.project.rooms(id), 'messages', roomId] as const,
+
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
