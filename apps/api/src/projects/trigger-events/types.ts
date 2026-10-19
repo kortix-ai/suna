@@ -57,7 +57,7 @@ export interface EventSourceProvider {
   /** Apps the source offers events for. An app may list 0 types until it is connected (source `mcp`). */
   listApps(): Promise<EventApp[]>;
   /** True once the shared connection has the provider-side credential `subscribe` needs. Omitted: any active connection counts. */
-  connectionReady?(connection: EventSourceConnection): boolean;
+  connectionReady?(connection: EventSourceConnection): boolean | Promise<boolean>;
   subscribe(input: {
     connection: EventSourceConnection;
     type: string;

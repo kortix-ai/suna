@@ -156,7 +156,7 @@ export async function resolveSource(
     return { ...needs, providerId: provider.id };
   }
   const connection = { connectionId, connectorSlug: event.connector, app, metadata: row.metadata };
-  if (provider.connectionReady && !provider.connectionReady(connection)) {
+  if (provider.connectionReady && !(await provider.connectionReady(connection))) {
     return {
       kind: 'needs_connection',
       providerId: provider.id,

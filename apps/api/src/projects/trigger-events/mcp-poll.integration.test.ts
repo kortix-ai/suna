@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, tes
 import {
   accountMembers,
   accounts,
+  connectionCredentials,
   connectorActions,
   connectorCalls,
   connectorConnections,
@@ -397,6 +398,18 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     await runPoll(stale!);
     expect(await deliverJobs()).toEqual([]);
     expect((await stream())?.primedAt).toBeNull();
+  });
+
+  test('an account of a sign-in server is not connected until it holds a credential', async () => {
+    await db.update(connectors).set({ config: { url: `http://127.0.0.1:${mcp.port}/mcp`, transport: 'http', auth: { type: 'bearer', in: 'header', name: null, prefix: 'Bearer' } } }).where(eq(connectors.connectorId, CONNECTOR_ID));
+    await reconcile([spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'needs_connection', lastError: 'Finish connecting the shared Fake account to activate this trigger.' });
+    expect(await stream()).toBeUndefined();
+    // Listed, not connected: the app stays in the picker while its sign-in runs.
+    expect((await listEventApps(PROJECT_ID, ACCOUNT_ID)).find((a) => a.app === 'fake')).toMatchObject({ connected: false, eventCount: 1 });
+    await db.insert(connectionCredentials).values({ connectorId: CONNECTOR_ID, connectionId: CONNECTION_ID, kind: 'secret', valueEnc: 'synthetic-not-a-secret' });
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
+    expect(await row('watch')).toMatchObject({ status: 'active', lastError: null });
   });
 
   test('a failed fire retries from the delivery job, not from the vendor', async () => {

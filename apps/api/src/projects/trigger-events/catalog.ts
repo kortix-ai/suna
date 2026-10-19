@@ -152,7 +152,7 @@ async function loadSharedAccounts(
   projectId: string,
   accountId: string,
   rows: { connectorId: string; slug: string; name: string | null; config: unknown; provider: string }[],
-  provider: { connectionReady?: (c: { connectionId: string; connectorSlug: string; app: string; metadata: Record<string, unknown> }) => boolean },
+  provider: { connectionReady?: (c: { connectionId: string; connectorSlug: string; app: string; metadata: Record<string, unknown> }) => boolean | Promise<boolean> },
   app: string,
 ): Promise<EventAppConnector[]> {
   if (rows.length === 0) return [];
@@ -177,16 +177,16 @@ async function loadSharedAccounts(
     out.push({
       slug: row.slug,
       name: row.name?.trim() || app,
-      accounts: accounts
+      accounts: await Promise.all(accounts
         .filter((a) => a.connectorId === row.connectorId && audience(a.connectionId) === 'open')
-        .map((a) => ({
+        .map(async (a) => ({
           label: a.label,
           connectedAs: connectionIdentity(a) === a.label ? null : connectionIdentity(a),
           isDefault: a.connectionId === defaultId,
           connected: provider.connectionReady
-            ? provider.connectionReady({ connectionId: a.connectionId, connectorSlug: row.slug, app, metadata: a.metadata })
+            ? await provider.connectionReady({ connectionId: a.connectionId, connectorSlug: row.slug, app, metadata: a.metadata })
             : true,
-        })),
+        }))),
     });
   }
   return out;

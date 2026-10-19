@@ -5,8 +5,8 @@
  * project lock, so it makes no vendor call. The first check reports problems
  * onto the trigger rows within seconds.
  */
-import { connectorActions, connectorConnections, connectors } from '@kortix/db';
-import { and, asc, eq } from 'drizzle-orm';
+import { connectionCredentials, connectorActions, connectorConnections, connectors } from '@kortix/db';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import { MCP_APPS, availableMcpApps, mcpAppForUrl, mcpAppIcon } from '../../connectors/mcp-apps';
 import { db } from '../../shared/db';
 import { resolveProjectAutomationActor } from '../session-lifecycle/actor';
@@ -112,6 +112,34 @@ export const mcpEventSource: EventSourceProvider = {
 
   async listConnectorEventTypes({ connectorId, app }) {
     return [...curatedEventsFor(app), ...(await genericEventTypes(connectorId, app))].map(asInfo);
+  },
+
+  /**
+   * Signed in: the server needs no sign-in, a project secret signs it in, or
+   * the account (or, for the default account, the connector) holds a
+   * credential. Until then a trigger reads `needs_connection`, not `active`.
+   */
+  async connectionReady(connection) {
+    const [row] = await db
+      .select({ connectorId: connectors.connectorId, config: connectors.config, authSecret: connectors.authSecret, isDefault: connectorConnections.isDefault })
+      .from(connectorConnections)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+      .where(eq(connectorConnections.connectionId, connection.connectionId))
+      .limit(1);
+    if (!row) return false;
+    const auth = (row.config as { auth?: { type?: string } } | null)?.auth;
+    if (auth?.type === 'none' || row.authSecret) return true;
+    const [credential] = await db
+      .select({ n: sql<number>`1` })
+      .from(connectionCredentials)
+      .where(and(
+        eq(connectionCredentials.connectorId, row.connectorId),
+        row.isDefault
+          ? or(eq(connectionCredentials.connectionId, connection.connectionId), isNull(connectionCredentials.connectionId))
+          : eq(connectionCredentials.connectionId, connection.connectionId),
+      ))
+      .limit(1);
+    return credential !== undefined;
   },
 
   async listApps() {
