@@ -668,7 +668,7 @@ burns budget while hiding a design problem.
   the result — do not keep permuting code.
 - About to modify a test's assertion? **Stop and surface it.** That is case 2 or 3,
   and it needs a human, not a loop.
-- Failure is environmental (network, Daytona sandbox, a flaky port)? Say so, name
+- Failure is environmental (network, a sandbox provider, a flaky port)? Say so, name
   the evidence, and do not pretend a re-run is a fix.
 
 **Never report a subset as the whole.** `bun test src/foo.test.ts` passing tells

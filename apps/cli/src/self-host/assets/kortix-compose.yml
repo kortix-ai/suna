@@ -65,7 +65,7 @@ services:
       DAYTONA_API_KEY: ${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: ${DAYTONA_TARGET}
-      # The PUBLIC origin cloud (Daytona) sandboxes call back to — never the
+      # The PUBLIC origin cloud sandboxes call back to — never the
       # internal Docker hostname, which a remote cloud VM can never resolve or
       # reach. Set per reachability mode by the CLI (see reachabilityMode() in
       # self-host/tunnel.ts): the https://api.<domain> origin in domain mode,

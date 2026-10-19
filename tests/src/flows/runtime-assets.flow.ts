@@ -558,7 +558,7 @@ flow(
     domain: 'runtime-assets',
     // NOT `funded`. Nothing here runs a model turn, so this half is the one that
     // can run in every preview — which is the only place a real box exists.
-    requires: ['database', 'daytona'],
+    requires: ['database', 'sandbox'],
     timeoutMs: 900_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -617,7 +617,7 @@ flow(
   {
     domain: 'runtime-assets',
     // `funded`: every step below runs a real model turn. Operator-run.
-    requires: ['database', 'funded', 'daytona'],
+    requires: ['database', 'funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -676,7 +676,7 @@ flow(
     // THE SECRETS-GATE PARITY HALF, on a real box.
     //
     // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
-    // rewrites 4096 → 8000 upstream and Daytona passes it through. Before this
+    // rewrites 4096 → 8000 upstream and the legacy Daytona provider passes it through. Before this
     // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
     // DIFFERENT port variables for that one request, so the prompt got the
     // config convergence and the undeclared-agent drop but no secret refresh and

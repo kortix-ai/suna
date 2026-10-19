@@ -20,7 +20,11 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
+// Platinum is the reference provider. Daytona is a legacy fallback: its
+// removal is scheduled, existing Daytona sessions keep working for now, and it
+// gets no new features and no support guarantee. E2B support is discontinued;
+// the DB enum keeps `e2b` only so legacy rows stay readable.
+export type SandboxProviderName = 'platinum' | 'daytona';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -568,7 +572,8 @@ const envSchema = z.object({
   // ── Billing — RevenueCat (optional) ──────────────────────────────────────
   REVENUECAT_WEBHOOK_SECRET: optStr,
 
-  // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
+  // ── Daytona — LEGACY fallback provider (removal scheduled; use Platinum) ──
+  // Required only if ALLOWED_SANDBOX_PROVIDERS includes daytona.
   // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
   // boots from a per-project snapshot built by the snapshot builder
   // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
@@ -747,19 +752,12 @@ const envSchema = z.object({
   PLATINUM_API_URL_LOCAL: optStr,
   PLATINUM_API_KEY_LOCAL: optStr,
 
-  // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
-  // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
-  // E2B Cloud. A self-hosted deployment uses its own base domain.
-  // E2B_TEMPLATE is an optional ready fallback template. Project-specific
-  // templates built by the shared snapshot system take precedence.
-  E2B_API_KEY: optStr,
-  E2B_DOMAIN: optStrDefault('e2b.dev'),
-  E2B_TEMPLATE: optStr,
-
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
-  ALLOWED_SANDBOX_PROVIDERS: optStrDefault('daytona'),
+  // Comma-separated. The first entry is the default for new sessions.
+  // Platinum is the reference; `daytona` is a legacy opt-in fallback.
+  ALLOWED_SANDBOX_PROVIDERS: optStrDefault('platinum'),
 
   // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
   // Set as SDK create() params so a box self-manages even if the API/tunnel
@@ -970,23 +968,20 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
-  'daytona',
-  'platinum',
-  'e2b',
-] as const;
+// `e2b` is not listed: E2B support is discontinued, so the entry is ignored.
+export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['platinum', 'daytona'] as const;
 
 /**
- * Parse comma-separated provider list (e.g. "daytona,platinum"). `fallback` is
+ * Parse comma-separated provider list (e.g. "platinum,daytona"). `fallback` is
  * returned both when `raw` is empty and when every entry in it is unrecognised
- * — kept as a parameter (rather than hardcoding `['daytona']`) so a caller
+ * — kept as a parameter (rather than hardcoding `['platinum']`) so a caller
  * whose empty/all-invalid answer should mean "nothing enabled" does not
- * silently inherit ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety
+ * silently inherit ALLOWED_SANDBOX_PROVIDERS' "default to platinum" safety
  * belt.
  */
 export function parseAllowedProviders(
   raw: string,
-  fallback: SandboxProviderName[] = ['daytona'],
+  fallback: SandboxProviderName[] = ['platinum'],
 ): SandboxProviderName[] {
   if (!raw) return fallback;
   const names = raw
@@ -1041,19 +1036,19 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_API_KEY)
       issues.push({
         var: 'DAYTONA_API_KEY',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`,
+        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
         level: providerKeyLevel,
       });
     if (!raw.DAYTONA_SERVER_URL)
       issues.push({
         var: 'DAYTONA_SERVER_URL',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`,
+        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
         level: providerKeyLevel,
       });
     if (!raw.DAYTONA_TARGET)
       issues.push({
         var: 'DAYTONA_TARGET',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`,
+        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
         level: providerKeyLevel,
       });
   }
@@ -1070,13 +1065,6 @@ function validateEnv(): z.infer<typeof envSchema> {
         message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"${providerKeySuffix}`,
         level: providerKeyLevel,
       });
-  }
-  if (providers.includes('e2b') && !raw.E2B_API_KEY) {
-    issues.push({
-      var: 'E2B_API_KEY',
-      message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"${providerKeySuffix}`,
-      level: providerKeyLevel,
-    });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -1496,9 +1484,6 @@ export const config = {
   PLATINUM_API_URL: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
-  E2B_API_KEY: env.E2B_API_KEY,
-  E2B_DOMAIN: env.E2B_DOMAIN,
-  E2B_TEMPLATE: env.E2B_TEMPLATE,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
@@ -1639,8 +1624,6 @@ export const config = {
         return !!this.DAYTONA_API_KEY;
       case 'platinum':
         return !!this.PLATINUM_API_KEY;
-      case 'e2b':
-        return !!this.E2B_API_KEY;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -1650,12 +1633,12 @@ export const config = {
 
   /**
    * Default sandbox provider for new sessions. First entry of
-   * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
+   * ALLOWED_SANDBOX_PROVIDERS, with 'platinum' as the safety belt for an
    * empty list. The ordering is the automatic-selection preference; callers
    * that explicitly choose a provider bypass that preference.
    */
   getDefaultProvider(): SandboxProviderName {
-    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
+    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'platinum';
   },
 
   isPlatinumEnabled(): boolean {
