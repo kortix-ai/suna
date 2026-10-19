@@ -1170,6 +1170,13 @@
       "when": 1792378345572,
       "tag": "20261019025225_trigger_event_polls",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1792433362594,
+      "tag": "20261019180922_agent_rooms",
+      "breakpoints": true
     }
   ]
 }

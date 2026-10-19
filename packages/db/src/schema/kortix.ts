@@ -7972,6 +7972,67 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
+ * A room: a named, durable message log in a project that sessions and people
+ * talk in (`dev`, `platinum/dev`). `last_seq` numbers the room's messages; a
+ * post takes the next value under the row lock, so `seq` is gap-free per room.
+ */
+export const rooms = kortixSchema.table('rooms', {
+  roomId: uuid('room_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 64 }).notNull(),
+  topic: text('topic'),
+  lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
+  createdByUserId: uuid('created_by_user_id'),
+  createdBySessionId: text('created_by_session_id'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'rooms_project_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name),
+  check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
+]);
+
+/** One message in a room. `sender_kind`: `member` (a person) or `session` (an agent). */
+export const roomMessages = kortixSchema.table('room_messages', {
+  messageId: uuid('message_id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  senderKind: varchar('sender_kind', { length: 16 }).notNull(),
+  senderUserId: uuid('sender_user_id'),
+  senderSessionId: text('sender_session_id'),
+  senderLabel: text('sender_label').notNull(),
+  text: text('text').notNull(),
+  replyToSeq: bigint('reply_to_seq', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_messages_room_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_messages_room_seq').on(table.roomId, table.seq),
+  check('room_messages_sender_kind_check', sql`${table.senderKind} in ('member', 'session')`),
+]);
+
+/**
+ * A session that listens in a room. A message from anyone else lands in the
+ * session's prompt inbox as a steer, acting as `added_by_user_id` — the
+ * person who joined it, never the sender. `notify`: `all`, `mentions` or `none`.
+ */
+export const roomMembers = kortixSchema.table('room_members', {
+  roomId: uuid('room_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  notify: varchar('notify', { length: 16 }).default('all').notNull(),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.roomId, table.sessionId] }),
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_members_room_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'room_members_session_fk' }).onDelete('cascade'),
+  index('idx_room_members_session').on(table.sessionId),
+  check('room_members_notify_check', sql`${table.notify} in ('all', 'mentions', 'none')`),
+]);
+
+/**
  * A browser's Web Push subscription. Bound to the sign-in that registered it:
  * a push goes only while that sign-in lives, like push_device_tokens.
  */

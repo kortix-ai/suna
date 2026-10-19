@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 852,
+  "count": 864,
   "routes": [
     {
       "method": "GET",
@@ -2528,6 +2528,38 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/:sessionId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
@@ -2865,6 +2897,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
     },
     {
       "method": "GET",

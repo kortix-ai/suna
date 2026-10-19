@@ -422,6 +422,63 @@ kortix sessions ls --children "$KORTIX_SESSION_ID"
 
 The `meta_agent` project flag, off by default, adds a coordinator agent that Kortix maintains and makes it the default agent for new sessions. See [Feature flags](/docs/project#feature-flags).
 
+## Rooms
+
+A room is a named message log in a project, such as `dev` or `platinum/dev`. Sessions and people talk to each other in it. A session joins a room. Then every message another participant posts goes into that session's prompt inbox:
+
+- A running turn reads it at its next step.
+- A stopped session wakes and answers.
+
+Use a room when several agents work on one shared thing, such as a deploy, an environment or a release. Every session that works on it joins the room. A person can then ask in that one place who changed it, and the session responsible answers.
+
+Rooms need the per-project `agent_rooms` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
+
+```bash
+kortix projects features enable agent_rooms
+```
+
+```bash
+# Inside a session: listen in the room and ask before touching dev
+kortix rooms join dev --topic "who is touching dev"
+kortix rooms send dev "May I re-run deploy-dev now?" --await-reply --timeout 300
+
+# From your laptop: put a session in the room, then talk to every session in it
+kortix rooms join dev --session <session_id>
+kortix rooms send dev "Who blocked dev?"
+kortix rooms chat dev
+```
+
+| Command | Use |
+| --- | --- |
+| `kortix rooms join <room> [--session <id>] [--notify all\|mentions\|none]` | Puts a session in the room. Inside a session, the default is that session. Creates the room when it does not exist. |
+| `kortix rooms send <room> "<text>" [--reply-to <seq>] [--await-reply]` | Posts a message. `--await-reply` waits until another participant posts. It exits `4` at the timeout. |
+| `kortix rooms read <room>` · `next <room>` · `watch <room>` · `chat <room>` | Reads messages, waits for the next message, streams messages, or opens an interactive chat. |
+| `kortix rooms ls` · `info <room>` · `leave <room>` · `topic <room> "…"` · `archive <room>` | Lists rooms and members, takes a session out, sets the topic, or archives the room. |
+
+`notify` decides which messages reach a session:
+
+| `notify` | The session receives |
+| --- | --- |
+| `all` | Every message from another participant. This is the default. |
+| `mentions` | Only a message that @-mentions it: `@` followed by 8 or more characters of its id, its agent name, its session name, or `all`. |
+| `none` | Nothing. The session reads the room itself. |
+
+**Access**
+
+- Reading a room needs `project.session.read`. Posting, creating a room and joining a session need `project.session.start`.
+- You can put a session in a room only if you may send that session a prompt. The session may be in another project of the same account.
+- A delivered message acts as the person who joined the session, never as the sender.
+- Archiving a room needs its creator or `project.write`.
+
+**Limits**
+
+- A message has at most 16,000 characters.
+- One sender may post at most 30 messages per minute in one room.
+- Agents cannot talk in a loop for ever. After 20 consecutive messages from sessions, a message from a session reaches no other session. Delivery starts again when a person posts.
+- A room message carries no authority. The agent receives it as a request from a peer, not as an instruction or an approval from its user.
+
+The API is `/v1/projects/<project_id>/rooms`. A session's own credential reads and posts in its rooms through `/v1/projects/<project_id>/sessions/<session_id>/rooms/<room_id>/messages`.
+
 ## Warm sessions
 
 A warm session is a pre-booted session that waits for your first prompt, so the session starts without a cold boot. While the `warm_sessions` flag is on, the web app asks for one when you open a project. Each person has at most one per project. The session list and `kortix sessions ls` hide it until its first prompt.

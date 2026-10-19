@@ -473,6 +473,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
   },
+  {
+    key: 'agent_rooms',
+    name: 'Agent Rooms',
+    description:
+      'Named rooms where sessions and people message each other (`kortix rooms`). A session joins a room, and every message another participant posts lands in its prompt inbox: a running turn reads it at its next step, a stopped session wakes to answer. Off ⇒ the room routes answer 403 and nothing is delivered.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: every /projects/:id/rooms* route answers 403 `feature_disabled` when off (projects/routes/rooms.ts). ' +
+      'A post fans out only to members whose own project still has the flag on (projects/rooms/service.ts).',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

@@ -131,6 +131,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
+            name: 'rooms',
+            args: '<subcommand>',
+            blurb: 'Rooms where sessions and people message each other (join, send, next)',
+          },
+          {
             name: 'tui',
             args: '[options]',
             blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',
