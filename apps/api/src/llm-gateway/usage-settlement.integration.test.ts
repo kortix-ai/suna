@@ -23,9 +23,8 @@ Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_usage_settlement',
   STRIPE_WEBHOOK_SECRET: 'whsec_usage_settlement',
   KORTIX_URL: 'http://127.0.0.1:1',
-  DAYTONA_API_KEY: 'usage-settlement-test',
-  DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-  DAYTONA_TARGET: 'us',
+  PLATINUM_API_KEY: 'usage-settlement-test',
+  PLATINUM_API_URL: 'http://127.0.0.1:1',
 });
 
 const { db } = await import('../shared/db');

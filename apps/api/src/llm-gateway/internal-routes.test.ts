@@ -344,7 +344,7 @@ describe('POST /refresh-credential', () => {
     expect(res.status).toBe(200);
     const { descriptor } = (await res.json()) as { descriptor: Record<string, unknown> };
     expect(Object.keys(descriptor).sort()).toEqual(['apiKey', 'headers']);
-    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct' } });
+    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct', session_id: expect.any(String) } });
     expect(refreshCalls).toEqual([{
       projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
     }]);

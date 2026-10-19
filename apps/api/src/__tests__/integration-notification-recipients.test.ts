@@ -98,8 +98,13 @@ beforeAll(async () => {
       })),
     ),
   );
+  // A push goes only to a token bound to a live app sign-in (KRTX-2242). Each
+  // user's sign-in id is their user id: unique, and deleted with the user.
+  await db.execute(sql`
+    INSERT INTO auth.sessions (id, user_id)
+    VALUES ${sql.join(users.map((id) => sql`(${id}::uuid, ${id}::uuid)`), sql`, `)}`);
   await db.insert(pushDeviceTokens).values(
-    users.map((userId) => ({ token: `ExponentPushToken[${userId}]`, userId, platform: 'ios' })),
+    users.map((userId) => ({ token: `ExponentPushToken[${userId}]`, userId, platform: 'ios', authSessionId: userId })),
   );
   // A backend's service account the IAM lets read the project's sessions.
   await db.insert(serviceAccounts).values({

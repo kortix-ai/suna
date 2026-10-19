@@ -93,6 +93,9 @@ function indexOf(state: SessionLogState): Map<string, string> {
   return index;
 }
 
+/** The id of the thread whose runtime session id is `runtimeSessionId`. Internal. */
+export const sessionLogThreadIdOf = (state: SessionLogState, runtimeSessionId: string): string | undefined => indexOf(state).get(runtimeSessionId);
+
 /**
  * The thread whose runtime session id is `runtimeSessionId`. A native thread (pi) reads
  * through `toV1` too: the v1 store gets no frame on `schema=v2`. Its rows carry what the

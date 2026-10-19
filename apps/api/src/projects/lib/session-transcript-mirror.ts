@@ -64,11 +64,13 @@
  * engine's endpoint resolver and the digest must not carry that import graph.
  */
 
-import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { projects, projectSessions, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 
+import { config } from '../../config';
 import { db } from '../../shared/db';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { isRecord } from '@kortix/shared/guards';
 import { jsonbSafeValue } from './jsonb-safe';
 import { TranscriptReadError, isRuntimeUnavailableError } from './runtime-read-failure';
@@ -761,6 +763,14 @@ export async function setTranscriptRewindMarker(
   runtimeSessionId: string,
   messageId: string | null,
 ): Promise<void> {
+  // P8: a flag-on session writes no v1 row. A journal tombstones the reverted messages itself.
+  const [session] = await db
+    .select({ metadata: projects.metadata })
+    .from(projectSessions)
+    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (resolveFeatureFlag(session?.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) return;
   await db
     .update(sessionTranscriptMirrors)
     .set({ rewindMessageId: messageId })

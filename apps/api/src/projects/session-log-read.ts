@@ -6,12 +6,14 @@
  * `readStoredTranscriptWindow` is the stored transcript every v1 read serves (`transcript?shape=sync`,
  * the `shape=compact` fallback, the open bundle, the public share, and MCP `read_session` through
  * the transcript route). With the project flag `session_log` on it serves `toV1` of the log in the
- * mirror's window shape (`MirrorSnapshot`); otherwise, or when the log cannot answer, the mirror.
- * The log cannot answer when the session has no log, no stored message in the read thread, or a
- * thread `fromV1` did not build (no `kortix.transcript.v1` ext: the pi adapter writes its records
- * natively, without the v1 residuals, so `toV1` of them is not the mirror).
+ * mirror's window shape (`MirrorSnapshot`) and never reads the mirror for a session that has a
+ * log (P8): no stored message in the read thread answers null ("nothing saved"). A session with no
+ * log at all is history from before the journal that the backfill has not converted yet: the
+ * mirror answers it, so turning the flag on hides no saved transcript. With the flag off it serves
+ * the mirror. Both kinds of thread answer: a `fromV1` one (OpenCode) and a native one
+ * (pi, no `kortix.transcript.v1` ext), whose v1 rows are the ones the SDK renders through `toV1`.
  *
- * The v1 window over the log equals the mirror's window (deep equality), with these named differences:
+ * The v1 window over a `fromV1` thread equals the mirror's window (deep equality), with these named differences:
  * - `captured_at` is the log's last write (the read thread's newest message write, or the session
  *   record's), not the capture time.
  * - `head_complete` is true: the journal holds the whole session.
@@ -22,21 +24,10 @@
  *   the whole text. A text over 256 kB is a preview in the row (F3, `session-log-blobs.ts`):
  *   this read puts the whole text back from its object, after the transaction.
  * Paging assumes `seq` order is the mirror order (`created`, then id): the OpenCode adapter issues
- * seqs in `fromV1`'s order, which is that order. A cursor that names a message anchors on the
+ * seqs in `fromV1`'s order, which is that order; the pi adapter issues them in pi's append order,
+ * which is its creation order. A cursor that names a message anchors on the
  * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
  * then holds the ingest time). The two agree for every row with a creation time.
- *
- * The log also cannot answer when it is behind the mirror: the mirror's content time is more than
- * `STALE_LOG_MS` after the log's last write (the newest message or session write). The content time
- * is the newest `session_transcript_messages.captured_at`, which moves only when a row's info or
- * parts change. It is not `session_transcript_mirrors.captured_at`: that moves on every capture, and
- * the tail capture at stop changes nothing, so it would send every stopped session to the mirror.
- * The capture keeps the mirror current without a journal, so a log that stopped (the daemon's journal
- * off for a boot, a daemon build without one) must not freeze what a reader sees. A healthy journal
- * writes within seconds of the capture, so the margin is far above the normal gap. Caveat: a rewind
- * the mirror applied with no new rows deletes rows and does not move that max; the next turn's rows do.
- * The read warns once per session per process, and never again for that session: a second stale
- * episode in one process is silent.
  *
  * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
@@ -49,10 +40,9 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projects, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMessages } from '@kortix/db';
+import { projectSessions, projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import {
@@ -68,10 +58,8 @@ type J = Record<string, unknown>;
 type ThreadRow = { threadId: string; parentThreadId: string | null; record: J };
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
-/** The mirror may lead the log by this long before the v1 window serves the mirror (see the module header). */
-const STALE_LOG_MS = 60_000;
-// replica-local: sessions already warned about by this process; a restart warns again.
-const warnedStale = new Set<string>();
+/** `toV1` keeps a native thread's system and context messages only from this producer. */
+const V1_IMPORT = 'kortix-v1-import';
 /** Where `fromV1` keeps a superseded row's runtime session id. */
 const RUNTIME_PATH = `$.ext.* ? (@.version == "${KORTIX_TRANSCRIPT_SCHEMA}").data.runtime_session_id`;
 
@@ -195,7 +183,7 @@ export function withKeptToolInputs(session: J, thread: J | undefined, message: S
 
 // ─── v1 reads ────────────────────────────────────────────────────────────────
 
-/** The stored transcript window: `toV1` of the log when the flag is on and the log can answer, else the mirror. */
+/** The stored transcript window: `toV1` of the log when the flag is on, else the mirror. */
 export async function readStoredTranscriptWindow(input: {
   sessionId: string;
   limit: number;
@@ -203,7 +191,19 @@ export async function readStoredTranscriptWindow(input: {
   /** A runtime session inside this session (a sub-agent); omitted: the root. */
   opencodeSessionId?: string | null;
 }): Promise<MirrorSnapshot | null> {
-  return (await readLogTranscriptWindow(input)) ?? readSessionTranscriptMirror(input);
+  const window = await readLogTranscriptWindow(input);
+  return window === 'mirror' ? readSessionTranscriptMirror(input) : window;
+}
+
+/** The project flag `session_log` of the session's project. False for an unknown session. */
+export async function sessionLogEnabled(sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ projectMetadata: projects.metadata })
+    .from(projectSessions)
+    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return !!row && resolveFeatureFlag(row.projectMetadata, 'session_log');
 }
 
 /** The mirror order: `created` (missing first), then id. */
@@ -216,47 +216,40 @@ const keyCompare = (a: { at: number; id: string }, b: { at: number; id: string }
   a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const keyOf = (r: V1Row) => ({ at: created(r), id: idOf(r) });
 
-/** The window over the log, or null when the log cannot answer (see the module header). */
-export async function readLogTranscriptWindow(input: {
+/** The window over the log; null when the log has nothing to serve, `'mirror'` without the flag or without a log (see the module header). */
+async function readLogTranscriptWindow(input: {
   sessionId: string;
   limit: number;
   before?: string | null;
   opencodeSessionId?: string | null;
-}): Promise<MirrorSnapshot | null> {
+}): Promise<MirrorSnapshot | null | 'mirror'> {
   // One round trip for the flag, the session record and the threads: the mirror read's state query costs one too.
-  const [log] = await db
+  const [row] = await db
     .select({
       record: sessionLogs.record,
       updatedAt: sessionLogs.updatedAt,
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
-      mirrorMs: sql<number | null>`(SELECT extract(epoch from max(${sessionTranscriptMessages.capturedAt})) * 1000 FROM ${sessionTranscriptMessages} WHERE ${sessionTranscriptMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
-      lastWriteMs: sql<number | null>`(SELECT extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000 FROM ${sessionLogMessages} WHERE ${sessionLogMessages.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})::float8`,
-      threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
+      threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(projectSessions.sessionId)})`,
     })
-    .from(sessionLogs)
-    .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
-    .where(eq(sessionLogs.sessionId, input.sessionId))
+    .from(projectSessions)
+    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
+    .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!log || !resolveFeatureFlag(log.metadata, 'session_log')) return null;
-  const lastWriteMs = Math.max(new Date(log.updatedAt).getTime(), log.lastWriteMs ?? 0);
-  if (log.mirrorMs !== null && log.mirrorMs - lastWriteMs > STALE_LOG_MS) {
-    if (!warnedStale.has(input.sessionId)) {
-      if (warnedStale.size > 10_000) warnedStale.clear();
-      warnedStale.add(input.sessionId);
-      logger.warn('[session-log] log is behind the mirror; serving the mirror', { sessionId: input.sessionId, behindMs: Math.round(log.mirrorMs - lastWriteMs) });
-    }
-    return null;
-  }
-  const threads = log.threads ?? [];
+  if (!row || !resolveFeatureFlag(row.metadata, 'session_log')) return 'mirror';
+  // No log yet: pre-journal history the backfill has not converted (until P8.2 drops the mirror).
+  if (row.record === null || row.updatedAt === null || row.projectId === null) return 'mirror';
+  const log = { record: row.record, updatedAt: row.updatedAt, projectId: row.projectId };
+  const threads = row.threads ?? [];
   const root = rootOf(threads);
   const stated = v1Ext(log.record)?.data;
   const rootId = stated && 'root_id' in stated ? ((stated.root_id as string | null) ?? null) : root ? nativeOf(root) : null;
   const target = input.opencodeSessionId || rootId;
   // A runtime session that is no thread of its own is an old root, merged into the root thread.
   const thread = threads.find((t) => nativeOf(t) === target) ?? root;
-  // Decided before BEGIN: a pi session (no v1 ext) costs one query, not a transaction.
-  if (!target || !thread || !v1Ext(thread.record)) return null;
+  if (!target || !thread) return null;
+  const v1Thread = !!v1Ext(thread.record);
 
   const toRows = (records: J[]) =>
     toV1({ ...(log.record as object), session_id: input.sessionId, threads: [{ ...thread.record, messages: records }] } as unknown as SessionLog)
@@ -270,6 +263,10 @@ export async function readLogTranscriptWindow(input: {
       eq(sessionLogMessages.sessionId, input.sessionId),
       eq(sessionLogMessages.threadId, thread.threadId),
       isNull(sessionLogMessages.deletedAt),
+      // `toV1` gives a native thread's system and context messages no row.
+      v1Thread
+        ? undefined
+        : sql`(${sessionLogMessages.role} <> 'system' AND ${sessionLogMessages.kind} <> 'context' OR ${sessionLogMessages.producer} ->> 'harness' = ${V1_IMPORT})`,
       sql`CASE WHEN ${sessionLogMessages.inContext} THEN ${nativeIsTarget}::boolean
         WHEN jsonb_path_exists(${sessionLogMessages.record}, ${RUNTIME_PATH}::jsonpath)
           THEN jsonb_path_query_first(${sessionLogMessages.record}, ${RUNTIME_PATH}::jsonpath) #>> '{}' = ${target}

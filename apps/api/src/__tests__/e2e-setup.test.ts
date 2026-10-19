@@ -164,8 +164,8 @@ describe('/v1/setup', () => {
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/health');
       const data = await res.json();
-      expect(data.daytona).toBeDefined();
-      expect(typeof data.daytona.ok).toBe('boolean');
+      // One check per allowed provider. Platinum is the default (#10310).
+      expect(typeof data.platinum.ok).toBe('boolean');
     });
   });
 });
