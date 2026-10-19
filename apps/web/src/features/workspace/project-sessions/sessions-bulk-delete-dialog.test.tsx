@@ -28,7 +28,7 @@ describe('SessionsBulkDeleteDialog', () => {
     );
     expect(html).toContain('<h2>Delete 5 sessions?</h2>');
     expect(html).toContain(
-      '<p>Deletes each selected session and removes its sandbox. You can restore each session for 30 days. After that, its messages and files are deleted. Its branch is kept.</p>',
+      '<p>Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for 30 days. After that, its messages and files are deleted. Its branch is kept.</p>',
     );
     expect(html).not.toContain('cannot be undone');
     expect(html).toContain('>Delete 5</button>');

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { LONG_AGO, relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@/lib/relative-time';
 import type { ProjectSession } from '@kortix/sdk';
 
 /**
@@ -40,7 +40,7 @@ export function DeletedSessionRow({
           {deletedAt ? (
             <time dateTime={session.deleted_at!} title={exact(deletedAt)}>
               {t('deletedAgo', {
-                when: relativeTime(session.deleted_at, locale, undefined, LONG_AGO),
+                when: relativeTime(session.deleted_at, locale, undefined, { style: 'long' }),
               })}
             </time>
           ) : null}

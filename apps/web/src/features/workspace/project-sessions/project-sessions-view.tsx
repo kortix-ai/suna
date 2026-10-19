@@ -65,7 +65,7 @@ import {
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -267,6 +267,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tSessionDelete = useTranslations('sessionDelete');
   const queryClient = useQueryClient();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   // `?view=archived` opens the archive, `?view=deleted` Recently deleted (the
@@ -285,6 +286,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     const tab = viewTab(viewParam);
     if (tab) setStartedBy(tab);
   }
+  // A tab writes `?view=`: a reload keeps it, and the sidebar link opens the
+  // view again after the viewer picked another tab.
+  const selectTab = (tab: SessionsTab) => {
+    setStartedBy(tab);
+    const view = viewTab(tab);
+    if (view === viewParam) return;
+    const params = new URLSearchParams(searchParams?.toString());
+    if (view) params.set('view', view);
+    else params.delete('view');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the pages already loaded. Debounced so a keystroke is not a request.
   const searchQuery = useDebounce(search.trim(), SEARCH_DEBOUNCE_MS);
@@ -813,7 +826,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
           <Tabs
             value={startedBy}
-            onValueChange={(value) => setStartedBy(value as SessionsTab)}
+            onValueChange={(value) => selectTab(value as SessionsTab)}
             className="shrink-0"
           >
             <TabsListCompact aria-label={tSidebar('startedBy.label')}>
@@ -867,7 +880,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         onRestore={restoreSession}
                       />
                     ))}
-                    {loadMoreButton}
+                    {sessionsQuery.hasNextPage && loadMoreButton}
                   </div>
                 </FadedScrollArea>
               </div>
@@ -895,7 +908,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                   onClick={() => {
                     resetFilters(projectId, SURFACE);
                     setSearch('');
-                    setStartedBy('all');
+                    selectTab('all');
                   }}
                 >
                   {tI18nComplete.raw('text7179ea0035fc')}
