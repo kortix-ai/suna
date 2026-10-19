@@ -34,7 +34,7 @@
 import * as React from 'react';
 
 import { Field, FieldContent, FieldDescription, FieldTitle } from './field';
-import { cn } from '../internal/lib/utils';
+import { cn } from '../lib/utils';
 
 /**
  * The bordered container. Consecutive rows share one border and are separated

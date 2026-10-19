@@ -744,7 +744,6 @@
     "./internal/lib/utils/strip-html-tags": "./src/internal/lib/utils/strip-html-tags.ts",
     "./internal/lib/utils/structured-output": "./src/internal/lib/utils/structured-output.ts",
     "./internal/lib/utils/time-budget": "./src/internal/lib/utils/time-budget.ts",
-    "./internal/lib/wallpapers": "./src/internal/lib/wallpapers.ts",
     "./internal/lib/web-notifications": "./src/internal/lib/web-notifications.ts",
     "./internal/notifications/notification-bell": "./src/internal/notifications/notification-bell.tsx",
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
@@ -1282,6 +1281,7 @@
     "./textarea": "./src/primitives/textarea.tsx",
     "./theme": "./src/theme/index.ts",
     "./theme.css": "./src/styles/theme.css",
+    "./theme/wallpapers": "./src/theme/wallpapers.ts",
     "./toast": "./src/primitives/toast.tsx",
     "./toggle": "./src/primitives/toggle.tsx",
     "./tokens.css": "./src/styles/tokens.css",
@@ -4281,10 +4281,6 @@
         "types": "./dist/internal/lib/utils/time-budget.d.ts",
         "import": "./dist/internal/lib/utils/time-budget.js"
       },
-      "./internal/lib/wallpapers": {
-        "types": "./dist/internal/lib/wallpapers.d.ts",
-        "import": "./dist/internal/lib/wallpapers.js"
-      },
       "./internal/lib/web-notifications": {
         "types": "./dist/internal/lib/web-notifications.d.ts",
         "import": "./dist/internal/lib/web-notifications.js"
@@ -6421,6 +6417,10 @@
         "import": "./dist/theme/index.js"
       },
       "./theme.css": "./dist/styles/theme.css",
+      "./theme/wallpapers": {
+        "types": "./dist/theme/wallpapers.d.ts",
+        "import": "./dist/theme/wallpapers.js"
+      },
       "./toast": {
         "types": "./dist/primitives/toast.d.ts",
         "import": "./dist/primitives/toast.js"

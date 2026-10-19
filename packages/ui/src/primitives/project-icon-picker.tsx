@@ -6,7 +6,7 @@ import { useState } from 'react';
 import type { EmojiSelection } from './emoji-picker';
 import type { GlyphSelection } from './glyph-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
-import { cn } from '../internal/lib/utils';
+import { cn } from '../lib/utils';
 
 /**
  * Emoji and Icon side by side, one popover.

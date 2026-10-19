@@ -19,4 +19,4 @@ export {
   WALLPAPERS,
   getWallpaperById,
   type Wallpaper,
-} from '../internal/lib/wallpapers';
+} from './wallpapers';

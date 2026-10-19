@@ -7,7 +7,7 @@ import {
   type LightThemeId,
 } from '../lib/interface-theme-defaults';
 import { createSafeJSONStorage } from '../lib/storage/managed-storage';
-import { DEFAULT_WALLPAPER_ID } from '../lib/wallpapers';
+import { DEFAULT_WALLPAPER_ID } from '../../theme/wallpapers';
 import { create } from 'zustand';
 
 // A literal here for the persisted-store registry (persisted-store-coverage.test.ts reads
