@@ -418,7 +418,7 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       emitRuntime(sessionId, reconciler);
       void driveWakeLadder(sessionId, reconciler);
     }
-    if (full && mirror.status === 'fulfilled') {
+    if (full && mirror.status === 'fulfilled' && mirror.value) {
       emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
     }
     if (full && audit.status === 'fulfilled') {
