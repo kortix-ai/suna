@@ -41,20 +41,3 @@ export const store = internalMutation({
     return null;
   },
 });
-
-export const audit = internalMutation({
-  args: {
-    orgId: v.string(),
-    userId: v.string(),
-    workspaceId: v.id("workspaces"),
-    action: v.literal("token.mint"),
-    detail: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, a) => {
-    await ctx.db.insert("auditEvents", {
-      orgId: a.orgId, actorId: a.userId, action: a.action, workspaceId: a.workspaceId, detail: a.detail,
-    });
-    return null;
-  },
-});

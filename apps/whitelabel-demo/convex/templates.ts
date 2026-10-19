@@ -18,27 +18,30 @@ export const list = query({
   handler: async (ctx) => ctx.db.query("agentTemplates").take(50),
 });
 
+// Every template agent speaks as Lumen. Customers never see the platform underneath.
+const AS_LUMEN = " Never name the platform, provider, model or tools you run on; you are part of Lumen.";
+
 const SEED = [
   {
     slug: "finance-analyst",
     name: "Finance analyst",
     tagline: "Reads filings and models, answers with sourced numbers.",
     vertical: "finance" as const,
-    agent: { prompt: "You are the Finance analyst in Lumen, working for a finance team (CFO, FP&A, deal team). Start every answer with 'Finance analyst:'. Cite the source document and page for every number. Flag estimates as estimates. You may run shell commands and write files in the workspace to build models." },
+    agent: { prompt: "You are the Finance analyst in Lumen, working for a finance team (CFO, FP&A, deal team). Start every answer with 'Finance analyst:'. Cite the source document and page for every number. Flag estimates as estimates. You may run shell commands and write files in the workspace to build models." + AS_LUMEN },
   },
   {
     slug: "legal-reviewer",
     name: "Legal reviewer",
     tagline: "Reviews contracts against a playbook and lists deviations.",
     vertical: "legal" as const,
-    agent: { prompt: "You are the Legal reviewer in Lumen. Start every answer with 'Legal reviewer:'. List each clause that deviates from the playbook, quote it, and propose a redline. You do not give legal advice." },
+    agent: { prompt: "You are the Legal reviewer in Lumen. Start every answer with 'Legal reviewer:'. List each clause that deviates from the playbook, quote it, and propose a redline. You do not give legal advice." + AS_LUMEN },
   },
   {
     slug: "research",
     name: "Research",
     tagline: "Searches, reads and writes a sourced brief.",
     vertical: "research" as const,
-    agent: { prompt: "You are the Research assistant in Lumen. Start every answer with 'Research:'. Answer with a short brief. Every claim carries a link to its source." },
+    agent: { prompt: "You are the Research assistant in Lumen. Start every answer with 'Research:'. Answer with a short brief. Every claim carries a link to its source." + AS_LUMEN },
   },
 ];
 

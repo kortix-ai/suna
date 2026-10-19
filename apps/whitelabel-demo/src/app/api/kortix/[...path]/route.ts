@@ -4,25 +4,28 @@
  * 1. `resolveMember` turns the Better Auth cookie + `Bearer ws.<workspaceId>`
  *    into the member's project-scoped Kortix token (Convex checks membership).
  * 2. The path must be literal segments (`buildUpstreamPath`).
- * 3. Writes a Lumen member must not make are refused (`blockedReason`).
- * 4. `forwardKortixRequest` forwards with the member token and streams the
+ * 3. Account reads the session UI makes are answered here (`localAnswer`):
+ *    the member's identity is Lumen's, not the operator's Kortix user.
+ * 4. Anything outside the session surface is refused (`blockedReason`).
+ * 5. `forwardKortixRequest` forwards with the member token and streams the
  *    response (REST, SSE, runtime routes alike).
- * 5. A new session gets Lumen's tags and becomes a Lumen thread
+ * 6. A new session gets Lumen's tags and becomes a Lumen thread
  *    (`createSession`), whichever screen created it.
  *
- * Kortix enforces the tenant boundary: the member token is rejected on every
- * other project, on `GET /projects` and on account routes. The deny list
- * exists because a project-scoped token carries its minter's role on that
- * project (owner), which is more than a Lumen member gets.
+ * Kortix enforces the project boundary: the member token is rejected on
+ * every other project, on `GET /projects` and on most account routes. It is
+ * NOT rejected on `GET /accounts/me` or on project member lists, and it
+ * carries its minter's role on the project (owner). That is why the proxy
+ * allowlists paths instead of trusting Kortix's scope check alone.
  */
 
 import { fetchAuthMutation } from '@/server/auth-server';
 import { type Member, resolveMember } from '@/server/member';
-import { SESSION_CREATE, blockedReason } from '@/server/proxy-policy';
+import { SESSION_CREATE, blockedReason, localAnswer } from '@/server/proxy-policy';
 import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
-import { lumenSessionTags } from '@convex/tags';
+import { tagSessionCreate } from '@convex/tags';
 import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -37,10 +40,15 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   const built = buildUpstreamPath(path);
   if (!built.ok) return Response.json({ error: `Invalid request path: ${built.reason}` }, { status: 400 });
 
+  const search = new URL(req.url).search;
+  const body = req.method === 'POST' && built.path.startsWith('accounts/') ? await req.json().catch(() => null) : null;
+  const local = localAnswer(req.method, built.path, new URLSearchParams(search), body, resolved.member);
+  if (local) return local;
+
   const blocked = blockedReason(req.method, built.path);
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
-  const upstreamUrl = `${upstreamBase()}/${built.path}${new URL(req.url).search}`;
+  const upstreamUrl = `${upstreamBase()}/${built.path}${search}`;
   if (req.method === 'POST' && SESSION_CREATE.test(built.path)) {
     return createSession(req, upstreamUrl, resolved.member);
   }
@@ -54,13 +62,7 @@ async function createSession(req: NextRequest, upstreamUrl: string, member: Memb
   } catch {
     return Response.json({ error: 'Invalid request body' }, { status: 400 });
   }
-  const tags = lumenSessionTags(member, member.workspaceId);
-  const labels = Array.isArray(body.labels) ? body.labels.filter((l) => typeof l === 'string') : [];
-  const tagged = {
-    ...body,
-    labels: [...new Set([...labels, ...tags.labels])].slice(0, 20),
-    metadata: { ...(body.metadata as Record<string, unknown> | undefined), ...tags.metadata },
-  };
+  const tagged = tagSessionCreate(body, member, member.workspaceId);
   const res = await forwardKortixRequest({
     request: new Request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(tagged) }),
     upstreamUrl,

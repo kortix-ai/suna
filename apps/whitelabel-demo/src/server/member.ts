@@ -87,15 +87,6 @@ export function memberKortix(member: Member) {
   return createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => member.token });
 }
 
-/** A short-lived token for one preview iframe URL, separate from the member token. */
-export async function previewToken(member: Member): Promise<string> {
-  const minted = await fetchAuthAction(api.kortix.previewToken, {
-    workspaceId: member.workspaceId,
-    proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
-  });
-  return minted.token;
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Validate a session id before it reaches an SDK path. */

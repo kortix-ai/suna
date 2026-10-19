@@ -14,7 +14,8 @@ type Invitation = { organizationName: string; inviterEmail: string; email: strin
 
 /**
  * Accept an organization invitation. The recipient signs in (or signs up)
- * with the invited email; Better Auth refuses any other account.
+ * with the invited email and verifies it; Better Auth refuses any other
+ * account and any unverified one.
  */
 export default function InvitePage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -38,12 +39,17 @@ function Accept({ invitationId }: { invitationId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const [unverified, setUnverified] = useState(false);
+
   useEffect(() => {
     authClient.organization.getInvitation({ query: { id: invitationId } }).then(({ data, error }) => {
-      if (error || !data) setError(error?.message ?? 'This invitation is not valid.');
+      if (error?.code === 'EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION') setUnverified(true);
+      else if (error || !data) setError(error?.message ?? 'This invitation is not valid.');
       else setInvitation(data);
     });
   }, [invitationId]);
+
+  if (unverified) return <VerifyEmail invitationId={invitationId} />;
 
   async function accept() {
     setPending(true);
@@ -83,6 +89,42 @@ function Accept({ invitationId }: { invitationId: string }) {
             </Button>
           </>
         )}
+      </Card>
+    </div>
+  );
+}
+
+/** The invitation opens only for a verified email. The link returns here after verification. */
+function VerifyEmail({ invitationId }: { invitationId: string }) {
+  const { data } = authClient.useSession();
+  const email = data?.user.email;
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+
+  async function send() {
+    if (!email) return;
+    setState('sending');
+    const { error } = await authClient.sendVerificationEmail({ email, callbackURL: `/invite/${invitationId}` });
+    setState(error ? 'failed' : 'sent');
+  }
+
+  return (
+    <div className="grid min-h-dvh place-items-center bg-background px-4">
+      <Card className="w-full max-w-sm gap-3 p-6">
+        <BrandMark className="mb-2" />
+        <h1 className="text-lg font-semibold tracking-tight">Verify your email</h1>
+        <p className="text-sm text-muted-foreground">
+          {state === 'sent'
+            ? `We sent a link to ${email}. Open it to see the invitation.`
+            : `Verify ${email ?? 'your email'} to open this invitation.`}
+        </p>
+        {state === 'failed' && (
+          <p role="alert" className="text-sm text-destructive">
+            The link could not be sent. Try again.
+          </p>
+        )}
+        <Button onClick={send} disabled={!email || state === 'sending'}>
+          {state === 'sending' && <Loading className="size-4" />} {state === 'sent' ? 'Send again' : 'Send verification link'}
+        </Button>
       </Card>
     </div>
   );

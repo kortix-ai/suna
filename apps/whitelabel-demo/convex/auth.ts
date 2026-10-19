@@ -17,14 +17,23 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     baseURL: process.env.SITE_URL,
     database: authComponent.adapter(ctx),
-    // ponytail: no email provider in the example. Production turns on email
-    // verification and organization({ sendInvitationEmail }) and drops the
-    // requireEmailVerificationOnInvitation override below.
+    // Sign-in works before the email is verified; joining an organization does
+    // not (see organization() below). ponytail: the example has no email
+    // provider, so the verification link goes to the Convex log
+    // (`npx convex logs`). Production sends it with its email provider here.
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: 10 },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        console.log(`[lumen] verify ${user.email}: ${url}`);
+      },
+    },
     plugins: [
       // Invitations are shared as a link (/invite/<id>). The recipient must sign
-      // in with the invited email; Convex ids are not guessable.
-      organization({ requireEmailVerificationOnInvitation: false }),
+      // in with the invited email AND have verified it, so someone who
+      // registers that address first, and holds the link, cannot join.
+      organization({ requireEmailVerificationOnInvitation: true }),
       convex({ authConfig }),
     ],
   }) satisfies BetterAuthOptions;

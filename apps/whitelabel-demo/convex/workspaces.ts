@@ -98,13 +98,16 @@ export const forProvision = internalQuery({
   },
 });
 
+const SETUP_FAILED = "Setup failed. Try again.";
+
 export const settle = internalMutation({
   args: { workspaceId: v.id("workspaces"), kortixProjectId: v.union(v.null(), v.string()), error: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, { workspaceId, kortixProjectId, error }) => {
     const ws = await ctx.db.get(workspaceId);
     if (!ws) return null;
-    await ctx.db.patch(workspaceId, error ? { status: "failed", error } : { status: "ready", kortixProjectId });
+    // `error` is the raw cause: it goes to auditEvents only. Members read the generic text.
+    await ctx.db.patch(workspaceId, error ? { status: "failed", error: SETUP_FAILED } : { status: "ready", kortixProjectId });
     await ctx.db.insert("auditEvents", {
       orgId: ws.orgId, actorId: "system", action: error ? "workspace.failed" : "workspace.ready", workspaceId, detail: error ?? kortixProjectId ?? undefined,
     });

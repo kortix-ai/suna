@@ -13,7 +13,6 @@ import { type ActionCtx, action, internalAction } from "./_generated/server";
 import { lumenSessionTags } from "./tags";
 
 const MEMBER_TOKEN_TTL_MS = 60 * 60_000;
-const PREVIEW_TOKEN_TTL_MS = 15 * 60_000;
 
 function operator() {
   const backendUrl = process.env.KORTIX_UPSTREAM;
@@ -48,6 +47,7 @@ export const provisionWorkspace = internalAction({
   handler: async (ctx, { workspaceId }) => {
     const row = await ctx.runQuery(internal.workspaces.forProvision, { workspaceId });
     if (!row || row.ws.status !== "provisioning") return null;
+    let kortixProjectId: string;
     try {
       const { config, kortix } = operator();
       const project = await kortix.projects.provision({
@@ -64,10 +64,29 @@ export const provisionWorkspace = internalAction({
         });
         await updateProjectDefaultAgent(project.project_id, agentName);
       });
-      await ctx.runMutation(internal.workspaces.settle, { workspaceId, kortixProjectId: project.project_id });
+      kortixProjectId = project.project_id;
     } catch (err) {
-      const error = String((err as Error)?.message ?? err).slice(0, 500);
-      await ctx.runMutation(internal.workspaces.settle, { workspaceId, kortixProjectId: null, error });
+      // The customer sees a generic message; the Kortix error stays in auditEvents.
+      const detail = String((err as Error)?.message ?? err).slice(0, 500);
+      await ctx.runMutation(internal.workspaces.settle, { workspaceId, kortixProjectId: null, error: detail });
+      return null;
+    }
+    // Outside the try: a failed settle is a Convex hiccup (a timeout under
+    // load), not a failed Kortix project, so it is retried. After the last
+    // attempt the workspace is marked failed; "Try again" re-runs this action
+    // and the idempotency key returns the same project.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await ctx.runMutation(internal.workspaces.settle, { workspaceId, kortixProjectId });
+        break;
+      } catch (err) {
+        if (attempt === 3) {
+          const detail = `settle: ${String((err as Error)?.message ?? err)}`.slice(0, 500);
+          await ctx.runMutation(internal.workspaces.settle, { workspaceId, kortixProjectId: null, error: detail });
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
     }
     return null;
   },
@@ -126,25 +145,6 @@ export const memberToken = action({
     const minted = await mintScopedToken(ctx, `lumen-member-${a.userId}`, a.kortixProjectId, MEMBER_TOKEN_TTL_MS);
     await ctx.runMutation(internal.memberTokens.store, { workspaceId: a.workspaceId, orgId: a.orgId, userId: a.userId, ...minted });
     return { token: minted.secret, expiresAt: minted.expiresAt, ...who };
-  },
-});
-
-/**
- * A 15-minute token for one preview iframe URL. It is separate from the member
- * token because it reaches the browser. ponytail: it still carries the
- * project's full rights until Kortix can narrow a token (contract G2).
- */
-export const previewToken = action({
-  args: { workspaceId: v.string(), proxySecret: v.string() },
-  returns: v.object({ token: v.string(), projectId: v.string() }),
-  handler: async (ctx, { workspaceId, proxySecret }): Promise<{ token: string; projectId: string }> => {
-    requireProxy(proxySecret);
-    const a = await ctx.runQuery(internal.workspaces.access, { workspaceId });
-    const minted = await mintScopedToken(ctx, `lumen-preview-${a.userId}`, a.kortixProjectId, PREVIEW_TOKEN_TTL_MS);
-    await ctx.runMutation(internal.memberTokens.audit, {
-      orgId: a.orgId, userId: a.userId, workspaceId: a.workspaceId, action: "token.mint", detail: `preview ${minted.tokenId}`,
-    });
-    return { token: minted.secret, projectId: a.kortixProjectId };
   },
 });
 

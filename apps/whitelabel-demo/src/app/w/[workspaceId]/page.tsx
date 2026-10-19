@@ -59,7 +59,7 @@ function Workspace({ workspaceId: raw }: { workspaceId: string }) {
             Setting up the agent and its sandbox. This takes about 15 seconds.
           </Card>
         )}
-        {ws?.status === 'failed' && <ProvisionFailed workspaceId={workspaceId} error={ws.error} />}
+        {ws?.status === 'failed' && <ProvisionFailed workspaceId={workspaceId} />}
         {ws?.status === 'ready' && ws.kortixProjectId && (
           <>
             <NewThread workspaceId={workspaceId} />
@@ -84,12 +84,11 @@ function WorkspaceTitle({ name, slug }: { name: string; slug: string }) {
   );
 }
 
-function ProvisionFailed({ workspaceId, error }: { workspaceId: Id<'workspaces'>; error?: string }) {
+function ProvisionFailed({ workspaceId }: { workspaceId: Id<'workspaces'> }) {
   const retry = useMutation(api.workspaces.retry);
   return (
     <Card className="gap-3 p-6 text-sm">
-      <p className="font-medium text-destructive">The workspace could not be set up.</p>
-      {error && <p className="break-words font-mono text-xs text-muted-foreground">{error}</p>}
+      <p className="font-medium text-destructive">The workspace could not be set up. Try again.</p>
       <Button className="self-start" variant="secondary" onClick={() => retry({ workspaceId })}>
         Try again
       </Button>
