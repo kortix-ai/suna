@@ -1260,7 +1260,7 @@
         },
         "connectors_v2": {
           "name": "Connectors v2",
-          "description": "Verbinde einen Telegram-Bot als Kanal und chatte dort mit deinen Agenten. Eingehende Ereignisse laufen über einen dauerhaften Posteingang, und neue Connector-Konten werden nicht mehr standardmäßig mit dem ganzen Projekt geteilt."
+          "description": "Der MCP-App-Katalog unter Anpassen → Connectoren, mit Anmeldung über Kortix. Ist „App-Ereignis-Trigger“ an, prüft Kortix diese Apps auf neue E-Mails, Dateien und Einträge und startet einen Agenten. Dazu Telegram als Kanal. Neue Connector-Konten werden nicht mehr standardmäßig mit dem ganzen Projekt geteilt."
         }
       }
     },

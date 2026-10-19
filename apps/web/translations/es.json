@@ -1260,7 +1260,7 @@
         },
         "connectors_v2": {
           "name": "Conectores v2",
-          "description": "Conecta un bot de Telegram como canal y chatea allí con tus agentes. Los eventos entrantes pasan por una bandeja de entrada duradera, y las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
+          "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
         }
       }
     },
