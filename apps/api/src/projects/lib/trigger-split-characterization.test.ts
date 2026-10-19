@@ -55,9 +55,11 @@ describe('trigger split characterization', () => {
     [{ session_mode: 'unknown' }, 'session_mode must be one of'],
     [{ session_mode: 'pinned' }, 'requires a session_id'],
     [{ session_mode: 'keyed' }, 'requires a session_key'],
-    [{ filter: [] }, 'filter must be an object'],
-    [{ filter: { ' ': 'value' } }, 'filter keys must be non-empty'],
+    // KRTX-1721 (#10312): filter errors come from @kortix/manifest-schema.
+    [{ filter: [] }, 'filter must map payload paths to a value or one operator'],
+    [{ filter: { ' ': 'value' } }, 'filter paths must not be blank'],
     [{ filter: { event: null } }, 'filter.event must be'],
+    [{ filter: { event: { nott: 'x' } } }, 'filter.event has an unknown operator "nott"'],
     [{ secret_env: '' }, 'must declare `secret_env`'],
     [{ secret_env: 'lowercase' }, 'secret_env must look like'],
   ] as const)('rejects invalid draft field %j', (override, message) => {
