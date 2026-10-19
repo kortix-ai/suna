@@ -523,6 +523,36 @@ The MSI (`installer/windows/kortix-capture.wxs`, built by
 - uninstall stops the service (and every recorder it started), removes the
   files, the two values and `%ProgramData%\Kortix\Capture`. People's
   recordings stay in their profiles.
+- runs Microsoft's WebView2 bootstrapper (`MicrosoftEdgeWebview2Setup.exe
+  /silent /install`, in the MSI's Binary table) when
+  `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-…}` has
+  no `pv`. Windows 11 ships the runtime; some Windows 10 computers do not. The
+  bootstrapper downloads the runtime. Its failure does not fail the install
+  (`Return="ignore"`): the computer records, and the window says what is missing;
+- starts the service with a deferred `sc.exe start KortixCapture` that ignores a
+  failure (`StartMachineService`), not with `ServiceControl Start`: a service that
+  cannot start failed the install with error 1920 and rolled it back. The exes link
+  the C runtime statically (`apps/capture/.cargo/config.toml`), so a computer
+  without the Visual C++ Redistributable runs them;
+- adds the Start menu entry `kortix-capture.exe app` (`Show="minimized"` only
+  hides the console a click on a console exe opens; `app` starts itself again
+  without one, and that process shows the window).
+
+The Windows window (WebView2) keeps its profile in
+`%LOCALAPPDATA%\Kortix\WebView2`. Without a profile folder WebView2 writes
+next to the exe in `%ProgramFiles%`, which a person without admin rights cannot
+write: until 2026-10-19 the window then failed with `0x80070005` and closed at
+once. A window that cannot open (`app`, `ui`, `open`) appends the error to
+`<library>/logs/ui.log` and, on Windows, shows a message box with the error and
+the log path. A second click on the Start menu entry brings the open window
+forward (`ui.lock` and `ui-request.json`, see `src/memory/ui.rs`).
+
+Windows icons: `assets/icons/windows/` (`app.ico` 16-256 px, `app-256.png` for
+the window, `tray.png`, `trayIdle.png`), made by
+`scripts/make_windows_icons.py` from the Capture mark of `app-1024.png`. The
+exe resource (`build.rs`, `embed-resource`), the MSI (`ARPPRODUCTICON`, the
+shortcut), the window and the tray use them. macOS and Linux keep
+`assets/icons/app-*.png` and `tray*.png`.
 
 For every person who signs in to the computer, the machine service:
 

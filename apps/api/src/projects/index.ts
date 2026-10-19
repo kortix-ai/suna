@@ -47,6 +47,7 @@ import { registerModelsRoutes } from './routes/models';
 import { registerTurnQuestionsRoutes } from './routes/turn-questions';
 import { registerTurnPermissionsRoutes } from './routes/turn-permissions';
 import { registerOauth2ConnectorsRoutes } from './routes/oauth2-connectors';
+import { registerConnectorMoveRoutes } from './routes/connector-moves';
 import { registerProjectDetailRoutes } from './routes/project-detail';
 import { registerProjectFilesRoutes } from './routes/project-files';
 import { registerProjectSettingsRoutes } from './routes/project-settings';
@@ -133,6 +134,7 @@ export function registerAllProjectRoutes(): void {
   registerTurnQuestionsRoutes();
   registerTurnPermissionsRoutes();
   registerOauth2ConnectorsRoutes();
+  registerConnectorMoveRoutes();
   registerProjectDetailRoutes();
   registerProjectFilesRoutes();
   registerProjectSettingsRoutes();

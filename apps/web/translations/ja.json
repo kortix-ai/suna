@@ -546,7 +546,7 @@
           "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。"
         },
         "computer": {
-          "label": "コンピューター",
+          "label": "マイコンピューター",
           "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "デスクトップアプリはワンクリックでこのコンピューターを接続します。",
       "desktopLabel": "デスクトップアプリ",
       "download": "ダウンロード",
-      "cliLabel": "コマンドライン"
+      "cliLabel": "コマンドライン",
+      "otherComputerHint": "もう一台のコンピューターに Kortix デスクトップアプリをインストールしてサインインしてください。ワンクリックで接続します。"
     }
   },
   "triggers": {
@@ -20869,6 +20870,18 @@
     "noticeReconnectBody": "認証済みのアカウントがありません。「アカウント」タブで再接続してください。",
     "noticeErrorTitle": "Kortix は {name} を読み込めませんでした",
     "noticeErrorBody": "ツールの読み取りに失敗しました。認証情報と接続設定を確認して、もう一度お試しください。",
+    "moveTitle": "{app} を {provider} から移行",
+    "moveBody": "Kortix は {provider} の提供を終了します。{app} に一度サインインすると、このコネクターは Kortix で動作します。エージェント、トリガー、kortix.yaml は引き続き {slug} を使います。",
+    "moveNoneTitle": "{name} は {provider} 経由で動作しています",
+    "moveNoneBody": "Kortix にはまだ {name} への直接接続がありません。引き続き {provider} 経由で動作します。",
+    "moveAction": "Kortix に移行",
+    "moveFinishAction": "移行を完了",
+    "moveConfirmTitle": "{app} に移行しますか？",
+    "moveConfirmBody": "{count, plural, other {このコネクターの他の # 件のアカウントは、移行後に再度サインインが必要です。}} サインインが完了するまで {provider} は引き続き動作します。",
+    "moveNoSignIn": "このデプロイメントでは {app} のワンクリックサインインを利用できません。",
+    "moveDone": "{name} は Kortix で動作するようになりました。",
+    "movesBannerTitle": "{count, plural, other {# 件のコネクターを Kortix に移行できます}}",
+    "movesBannerBody": "Kortix は Pipedream と Composio の提供を終了します。各コネクターを開き、「Kortix に移行」を選んでください:",
     "nameLabel": "名前",
     "toolsEmptyBody": "{name} はツールを報告していません。接続後にここに表示されます。",
     "stripStatus": "ステータス",
@@ -21103,7 +21116,7 @@
     "lastSeen": "最終接続 {time}",
     "scopeLine": "あなたのプライベートセッションから、すべてのプロジェクトで、あなただけが使えます。",
     "capabilitiesTitle": "Kortix が使えるもの",
-    "capabilitiesHint": "このコンピューターを接続したときに選んだ内容です。変更するにはもう一度接続してください。",
+    "capabilitiesHint": "いつでもオンまたはオフにできます。次のリクエストから反映されます。",
     "capability": {
       "filesystem": "ファイル",
       "filesystemDescription": "ホームフォルダー",
@@ -21113,7 +21126,8 @@
       "desktopDescription": "アプリを見て操作",
       "allowed": "許可",
       "notAllowed": "許可なし",
-      "needsSetup": "設定が必要"
+      "needsSetup": "設定が必要",
+      "notAvailable": "このコンピューターでは現在利用できません"
     },
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
@@ -21124,10 +21138,10 @@
     "connectAnother": "別のコンピューターを接続",
     "approvingAs": "{email} として承認します。コンピューターはこのアカウントに紐づきます。",
     "alreadyConnected": "{name} はすでにあなたのアカウントに接続されています",
-    "alreadyConnectedHint": "承認すると、新しいキーと選択したアクセスで再接続します。プロジェクトと共有はそのまま残ります。",
+    "alreadyConnectedHint": "承認すると新しいキーで再接続します。プロジェクトと共有はそのまま残ります。",
     "alreadyConnectedLive": "現在オンラインです。承認するとこのリクエストに移行し、現在の接続は停止します。プロジェクトと共有はそのまま残ります。",
     "reconnect": "再接続",
-    "accessHint": "選択したアクセス権は、取り消すまで有効です。",
+    "accessHint": "Kortix エージェントは 3 つすべてを使えます。後から 設定 › マイコンピューター でいつでもオフにできます。",
     "setup": {
       "title": "コンピューターの設定を完了",
       "hint": "macOS が下の各権限を一度だけ確認します。権限は Kortix に付与されるため、エージェントの作業中に再び確認されることはありません。",
@@ -21152,7 +21166,8 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
-    }
+    },
+    "capabilitiesSaved": "アクセスを更新しました"
   },
   "messageFrom": {
     "from": "送信元",
@@ -21859,7 +21874,7 @@
       "createdBody": "Kortix がこのトークンを表示するのは一度だけです。取り消すまで、これを持つ人は誰でもこの組織にコンピューターを登録できます。",
       "installTitle": "各コンピューターにインストール",
       "installBody": {
-        "windows": "管理者として実行するか、Intune またはグループ ポリシーで配布します。次回のサインインで録画が始まります。",
+        "windows": "管理者として開いたコマンド プロンプトに貼り付けます。インストーラーをダウンロードしてインストールし、完了すると表示します。次回の Windows サインインから記録します。Intune やグループ ポリシーは IT セットアップ ガイドを参照してください。",
         "macos": "ターミナルで実行するか、MDM でパッケージを配布します。PPPC プロファイルで許可しない限り、画面収録の許可が一度だけ必要です。",
         "linux": "X11 のデスクトップで実行します。次回のサインインで録画が始まります。Wayland はまだ対応していません。"
       },

@@ -173,6 +173,7 @@ The source of an `event` trigger is the provider of its connector. The source de
 
 - With `connectors_v2` on, the app list shows each app of the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) that has a sign-in, with source `mcp`. DeepWiki and Context7 have no sign-in, so they have no events. Each project MCP server outside the catalog is an app too, under its connector slug. A connected app whose tools include none that lists items, and that has no Kortix event, shows 0 events. A Composio app shows only when the project already has a Composio connector for it.
 - Without `connectors_v2`, `composio` is the only source.
+- [Moving a Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix) rewrites its Gmail, Google Calendar and Google Drive event triggers to the Kortix events that replace them and deletes their Composio subscriptions. A connector with another Composio event trigger does not move until that trigger is deleted or changed.
 - Turning `connectors_v2` off moves every `mcp` trigger to `error` and stops its checks. Turning it on again resumes them without another save.
 
 ### Set up in the web app
@@ -256,7 +257,7 @@ triggers:
 | --- | --- | --- |
 | `active` | `live` | Subscribed. The next event fires the trigger. On source `mcp`, Kortix checks the app every `interval` minutes. |
 | `pending` | `pending` | Kortix is subscribing. Check again with `kortix triggers info <slug>`. |
-| `needs_connection` | `needs connection` | The connector has no usable shared account. Run `kortix connectors connect <slug> --owner project` and have a person open the link. On an `mcp` connector, sign in the shared account on the connector page instead. The trigger goes live when they finish. |
+| `needs_connection` | `needs connection` | The connector has no usable shared account. Run `kortix connectors connect <slug> --owner project` and have a person open the link. This works on a `composio` connector and on an `mcp` connector with one-click sign-in. On another `mcp` connector, sign in the shared account on the connector page instead. The trigger goes live when they finish. |
 | `error` | `error` | The subscription failed, the app disabled it, or checks of source `mcp` failed. The error text names the cause. Fix it, then save the trigger again. After failed checks, the next good check sets `active` again without a save. |
 
 - Only an account shared with the whole project feeds a trigger. A private account, or one shared with named people only, never does.

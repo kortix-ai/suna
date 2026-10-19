@@ -399,7 +399,7 @@
           "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate."
         },
         "computer": {
-          "label": "Рачунар",
+          "label": "Moj računar",
           "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "Десктоп апликација повезује овај рачунар једним кликом.",
       "desktopLabel": "Десктоп апликација",
       "download": "Преузми",
-      "cliLabel": "Командна линија"
+      "cliLabel": "Командна линија",
+      "otherComputerHint": "Instaliraj Kortix desktop aplikaciju na drugom računaru i prijavi se. Povezuje se jednim klikom."
     }
   },
   "triggers": {
@@ -20869,6 +20870,18 @@
     "noticeReconnectBody": "Ниједан налог није овлашћен. Поново повежите један на картици Налози.",
     "noticeErrorTitle": "Kortix није могао да учита {name}",
     "noticeErrorBody": "Последњи покушај читања алата није успео. Проверите акредитив и подешавања везе, па покушајте поново.",
+    "moveTitle": "Premesti {app} sa servisa {provider}",
+    "moveBody": "Kortix gasi {provider}. Prijavi se jednom na {app} i ovaj konektor radi na Kortixu. Agenti, okidači i kortix.yaml i dalje koriste {slug}.",
+    "moveNoneTitle": "{name} radi preko servisa {provider}",
+    "moveNoneBody": "Kortix još nema direktnu vezu za {name}. Nastavlja da radi preko servisa {provider}.",
+    "moveAction": "Premesti na Kortix",
+    "moveFinishAction": "Završi premeštanje",
+    "moveConfirmTitle": "Premestiti na {app}?",
+    "moveConfirmBody": "{count, plural, one {# drugi nalog ovog konektora se ponovo prijavljuje posle premeštanja.} few {# druga naloga ovog konektora se ponovo prijavljuju posle premeštanja.} other {# drugih naloga ovog konektora se ponovo prijavljuje posle premeštanja.}} {provider} radi dok ne završiš prijavu.",
+    "moveNoSignIn": "{app} nema prijavu jednim klikom na ovom okruženju.",
+    "moveDone": "{name} sada radi na Kortixu.",
+    "movesBannerTitle": "{count, plural, one {# konektor može da pređe} few {# konektora mogu da pređu} other {# konektora može da pređe}} na Kortix",
+    "movesBannerBody": "Kortix gasi Pipedream i Composio. Otvori svaki i izaberi „Premesti na Kortix“:",
     "nameLabel": "Назив",
     "toolsEmptyBody": "{name} није пријавио ниједан алат. Појавиће се овде након повезивања.",
     "stripStatus": "Status",
@@ -21103,7 +21116,7 @@
     "lastSeen": "последњи пут виђен {time}",
     "scopeLine": "Само ви можете да га користите, из својих приватних сесија, у сваком пројекту.",
     "capabilitiesTitle": "Шта Kortix може да користи",
-    "capabilitiesHint": "Изабрано када сте повезали овај рачунар. Повежите га поново да бисте то променили.",
+    "capabilitiesHint": "Uključi ili isključi bilo koji u svakom trenutku. Sledeći zahtev to poštuje.",
     "capability": {
       "filesystem": "Датотеке",
       "filesystemDescription": "Ваша почетна фасцикла",
@@ -21113,7 +21126,8 @@
       "desktopDescription": "Преглед и коришћење апликација",
       "allowed": "Дозвољено",
       "notAllowed": "Није дозвољено",
-      "needsSetup": "Потребно подешавање"
+      "needsSetup": "Потребно подешавање",
+      "notAvailable": "Trenutno nije dostupno na ovom računaru"
     },
     "runInBackground": "Ради у позадини",
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
@@ -21124,10 +21138,10 @@
     "connectAnother": "Повежи други рачунар",
     "approvingAs": "Одобраваш као {email}. Рачунар се везује за овај налог.",
     "alreadyConnected": "{name} је већ повезан са твојим налогом",
-    "alreadyConnectedHint": "Одобри да га поново повежеш са новим кључем и приступом који изабереш. Пројекти и дељења остају.",
+    "alreadyConnectedHint": "Odobri da ga ponovo povežeš novim ključem. Njegovi projekti i deljenja ostaju.",
     "alreadyConnectedLive": "Тренутно је на мрежи. Одобри да га пребациш на овај захтев: тренутна веза се прекида. Пројекти и дељења остају.",
     "reconnect": "Повежи поново",
-    "accessHint": "Изабрани приступ остаје активан док га не опозовете.",
+    "accessHint": "Kortix agenti dobijaju sva tri. Isključi bilo koji kasnije u Podešavanja › Moj računar.",
     "setup": {
       "title": "Заврши подешавање рачунара",
       "hint": "macOS једном тражи сваку дозволу испод. Иду Kortix-у, па ништа више не пита док агент ради.",
@@ -21152,7 +21166,8 @@
       "removeAll": "Уклони све",
       "confirmTitle": "Уклонити све старије везе?",
       "confirmDescription": "Kortix их уклања заједно са налозима из свих пројеката. Рачунар који још користи неку може поново да се повеже."
-    }
+    },
+    "capabilitiesSaved": "Pristup ažuriran"
   },
   "messageFrom": {
     "from": "Od",
@@ -21859,7 +21874,7 @@
       "createdBody": "Kortix приказује овај токен само једном. Свако ко га има може да региструје рачунаре у ову организацију док га не опозовеш.",
       "installTitle": "Инсталирај на сваком рачунару",
       "installBody": {
-        "windows": "Pokreni kao administrator ili rasporedi preko Intune ili grupnih smernica. Računar počinje snimanje pri sledećoj prijavi.",
+        "windows": "Nalepite u Komandnu liniju otvorenu kao administrator. Preuzima instalacioni program, instalira ga i javlja kada je gotovo. Računar snima od sledeće prijave na Windows. Za Intune ili smernice grupe pogledajte IT vodič.",
         "macos": "Pokreni u Terminalu ili rasporedi paket preko MDM-a. Osoba jednom dozvoljava snimanje ekrana, osim ako ga PPPC profil ne dodeli.",
         "linux": "Pokreni na desktopu sa X11. Računar počinje snimanje pri sledećoj prijavi. Wayland još nije podržan."
       },

@@ -708,14 +708,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      # Signing material lives in kortix-ci-env. Every key is optional: a build
-      # never hard-fails on missing certs. The read is skipped on Windows,
-      # where no signing material has ever been stored (WINDOWS_CERTIFICATE*
-      # stays empty, so Windows installers build UNSIGNED, as before). Only
-      # the Apple-ID notarization keys are stored today; the APPLE_API_* keys
-      # are read in case they are added later.
+      # Signing material lives in kortix-ci-env, read on every OS. Every key is
+      # optional: a build never hard-fails on missing certs. Windows signs through
+      # Microsoft Artifact Signing (the AZURE_SIGNING_* keys, same as Kortix
+      # Capture); see the kortix-capture skill, release-runbook "Windows signing setup".
       - name: Check out the aws-env action
-        if: runner.os != 'Windows'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -723,7 +720,6 @@ jobs:
           sparse-checkout: .github/actions
           persist-credentials: false
       - name: Read signing credentials from AWS Secrets Manager
-        if: runner.os != 'Windows'
         continue-on-error: true
         uses: ./.aws-env/.github/actions/aws-env
         with:
@@ -736,6 +732,12 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            AZURE_SIGNING_TENANT_ID?
+            AZURE_SIGNING_CLIENT_ID?
+            AZURE_SIGNING_CLIENT_SECRET?
+            AZURE_SIGNING_ENDPOINT?
+            AZURE_SIGNING_ACCOUNT?
+            AZURE_SIGNING_PROFILE?
             KORTIX_DESKTOP_SENTRY_DSN?
 
       # Never hard-fail on missing certs — a release should always ship an
@@ -749,11 +751,13 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD }}
           WINDOWS_CERTIFICATE: ${{ env.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ env.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          AZURE_SIGNING_PROFILE: ${{ env.AZURE_SIGNING_PROFILE }}
         run: |
           enabled=false
           case "${{ runner.os }}" in
             macOS)   [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && enabled=true ;;
-            Windows) [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            Windows) { [ -n "$AZURE_SIGNING_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_PROFILE" ]; } || { [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; } && enabled=true ;;
             *)       enabled=true ;;
           esac
           echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
@@ -780,7 +784,16 @@ jobs:
       - name: Build desktop installer (Electron)
         shell: bash
         run: |
+          # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
+          # scripts/sign-windows-azure.js signs each file with the ArtifactSigning module (the one
+          # azure/trusted-signing-action uses): electron-builder 25's azureSignOptions uses the
+          # retired TrustedSigning module, whose NuGet v2 downloads fail. The script signs SHA-256 only.
+          azure=()
+          if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
+            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js")
+          fi
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
+          "${azure[@]}" \
             --publish never \
             --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
@@ -799,9 +812,22 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID) || '' }}
           WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          # Windows Artifact Signing (electron-builder `win.azureSignOptions` reads these).
+          AZURE_TENANT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_SECRET || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: The Windows installer is signed by Kortix AI Corp
+        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem apps/desktop-electron/dist/*.exe) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
+          }
       - name: Upload installer artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

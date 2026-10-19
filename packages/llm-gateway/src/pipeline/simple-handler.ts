@@ -601,7 +601,7 @@ export async function handleChatCompletions(
       // timeout would end a silent `max`-effort reasoning stretch with
       // `TimeoutError: The operation timed out.` (see upstream-fetch.ts).
       fetchImpl: fetchImpl ?? upstreamFetch,
-      resolveCandidates: (model) => hooks.resolveUpstream(principal, model),
+      resolveCandidates: (model) => hooks.resolveUpstream(principal, model, { fallbackFor: routeModel }),
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
         : undefined,

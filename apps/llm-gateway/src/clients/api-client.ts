@@ -48,7 +48,7 @@ export interface ApiClient {
     principal: AuthedPrincipal,
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
-  resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
+  resolveUpstream: (principal: AuthedPrincipal, model: string, options?: { fallbackFor?: string }) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
   refreshCredential: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
@@ -163,7 +163,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       );
       return result.route ?? null;
     },
-    resolveUpstream: async (principal, model) => {
+    resolveUpstream: async (principal, model, options) => {
       const result = await post<{
         candidates?: UpstreamDescriptor[];
         resolutionError?: {
@@ -172,7 +172,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
           suggestion: string;
           retryAfterSeconds?: number;
         };
-      }>('/internal/gateway/resolve-upstream', { principal, model }, RETRY_SLOW);
+      }>('/internal/gateway/resolve-upstream', { principal, model, fallbackFor: options?.fallbackFor }, RETRY_SLOW);
       // The API catches GatewayResolutionError in /resolve-upstream and returns
       // it in a 200 body instead of letting it propagate as a 500 (which would
       // be captured to Sentry AND retried 3x here). Re-throw it as the typed

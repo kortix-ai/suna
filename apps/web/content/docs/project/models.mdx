@@ -10,7 +10,7 @@ A model is the LLM that a session's agent runs on. A project can use Kortix-mana
     Start a [session](/docs/work/sessions). On Kortix Cloud it runs on the platform default, `deepseek-v4.1-flash`. You set up nothing.
   </Step>
   <Step title="Pick another model">
-    Choose a model in the composer's model picker, or run `kortix sessions new --model kimi-k3`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
+    Choose a model in the composer's model picker, or run `kortix sessions new --model glm-5.3-flash`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
   </Step>
   <Step title="Connect your own provider">
     Open **Customize → Models → Providers** and paste a key, or run `kortix providers set anthropic` and paste the key on stdin.
@@ -26,11 +26,11 @@ Every model request goes through the LLM gateway. The gateway finds the credenti
 
 | Shape | Example | Who supplies the credentials | Who bills |
 | --- | --- | --- | --- |
-| Bare managed id | `kimi-k3` | Kortix | Kortix credits |
+| Bare managed id | `glm-5.3-flash` | Kortix | Kortix credits |
 | `provider/model` | `anthropic/<model-id>` | Your provider API key | Your provider; past $1,000 a month, a 5% Kortix fee in credits |
 | `codex/<id>` | `codex/gpt-5.6-sol` | Your ChatGPT Plus or Pro subscription | OpenAI, through your plan |
 
-Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/kimi-k3`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
+Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/glm-5.3-flash`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
 
 The catalog comes from [models.dev](https://models.dev) and the Codex model list. The API refreshes it every hour, so a new provider model appears without a Kortix release.
 
@@ -38,11 +38,10 @@ The `llm_gateway` project flag selects this path. It is on by default. With the 
 
 ## Kortix-managed models
 
-Kortix Cloud serves three managed models. You need no key.
+Kortix Cloud serves two managed models. You need no key. Kimi K3 left the lineup on 2026-10-19: a session or default that names `kimi-k3` runs on DeepSeek V4.1 Flash.
 
 | Model | Id | Tier | Context | Max output | Images |
 | --- | --- | --- | --- | --- | --- |
-| Kimi K3 2.8T | `kimi-k3` | flagship | 1,000,000 | 65,536 | Yes |
 | DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | balanced, platform default | 1,000,000 | 65,536 | Yes |
 | GLM 5.3 Flash | `glm-5.3-flash` | fast | 1,000,000 | 65,536 | Yes |
 
@@ -151,11 +150,11 @@ Open **Customize → Models → Routing**, or use the CLI:
 ```bash
 kortix gateway routing                      # effective policy and its sources
 kortix gateway routing set \
-  --default-model kimi-k3 \
+  --default-model glm-5.3-flash \
   --fallback anthropic/<model-id>,glm-5.3-flash \
   --fallback-on transient \
-  --vision-model kimi-k3
-kortix gateway routing preview kimi-k3 --image
+  --vision-model glm-5.3-flash
+kortix gateway routing preview glm-5.3-flash --image
 kortix gateway routing reset
 ```
 
@@ -220,7 +219,7 @@ kortix gateway usage --days 7      # requests, errors and cost by model
 kortix gateway sources --hours 24  # spend by trigger, member, channel and API
 kortix gateway logs --failed       # recent failed requests
 kortix gateway logs <log-id>       # one request in full
-kortix gateway test kimi-k3 glm-5.3-flash --prompt "Say hi"
+kortix gateway test deepseek-v4.1-flash glm-5.3-flash --prompt "Say hi"
 ```
 
 The **Costs** and **Logs** tabs show the same data. For account-wide usage, see [Plans & credits](/docs/credits).
@@ -247,7 +246,7 @@ The gateway reads the key from `Authorization: Bearer`, and on `/v1/messages` al
 curl https://gateway.kortix.com/v1/chat/completions \
   -H "Authorization: Bearer kortix_gw_..." \
   -H "Content-Type: application/json" \
-  -d '{"model": "kimi-k3", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "glm-5.3-flash", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 **Claude Code:**
@@ -255,13 +254,13 @@ curl https://gateway.kortix.com/v1/chat/completions \
 ```bash
 ANTHROPIC_BASE_URL=https://gateway.kortix.com \
 ANTHROPIC_AUTH_TOKEN=kortix_gw_... \
-claude --model kimi-k3
+claude --model glm-5.3-flash
 ```
 
 **Codex CLI** speaks only the Responses protocol. Add a provider to `~/.codex/config.toml`:
 
 ```toml
-model = "kimi-k3"
+model = "glm-5.3-flash"
 model_provider = "kortix"
 
 [model_providers.kortix]

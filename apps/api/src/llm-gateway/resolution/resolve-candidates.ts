@@ -368,8 +368,23 @@ async function resolveByokCandidates(context: Context, provider: string,
  * on, so a self-host falls through to "model not available on this deployment".
  * An empty result (no transport credential configured) falls through the same way.
  */
+/**
+ * `model` is in the platform's own fallback chain for the platform default
+ * `fallbackFor`. Every tier may use the default, so every tier keeps its
+ * fallback: on 2026-10-17/18, 119 Free accounts got DeepSeek's 429s with no
+ * fallback because GLM is plan-gated. A project's own chain gets nothing here.
+ */
+function isPlatformDefaultFallback(model: string, fallbackFor: string | undefined): boolean {
+  if (!fallbackFor) return false;
+  const routed = toWireModel(fallbackFor);
+  if (!isPlatformDefaultModelId(routed)) return false;
+  return config.LLM_GATEWAY_FALLBACK_POLICIES.some(
+    (policy) => policy.models.includes(routed) && policy.fallbackModels.includes(model),
+  );
+}
+
 async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveModel: string,
-  access: Awaited<ReturnType<typeof getProjectModelAccess>>): Promise<UpstreamDescriptor[]> {
+  access: Awaited<ReturnType<typeof getProjectModelAccess>>, fallbackFor?: string): Promise<UpstreamDescriptor[]> {
   const managed = getRuntimeManagedModel(effectiveModel);
   if (!managed || !config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
@@ -378,7 +393,7 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
   // The platform default is the ONE managed model every tier may use — a fresh
   // free account's only working model (KRTX-1067). The rest of the lineup
   // keeps its plan gates.
-  const platformDefault = isPlatformDefaultModelId(effectiveModel);
+  const platformDefault = isPlatformDefaultModelId(effectiveModel) || isPlatformDefaultFallback(effectiveModel, fallbackFor);
   if (!platformDefault) {
     if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
       `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
@@ -420,7 +435,7 @@ function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolu
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
-  options?: { providerSecretPools?: Record<string, string[]>; probe?: boolean },
+  options?: { providerSecretPools?: Record<string, string[]>; probe?: boolean; fallbackFor?: string },
 ): Promise<UpstreamDescriptor[]> {
   const effectiveModel = toWireModel(model);
   // Whose PERSONAL keys apply (spec 2026-09-22 §2.3): absent = the token user
@@ -456,7 +471,7 @@ export async function resolveCandidates(
     const candidates = await resolveByokCandidates(context, provider, byok);
     if (candidates.length) return candidates;
   }
-  const candidates = await resolveManagedCandidates(principal, effectiveModel, access);
+  const candidates = await resolveManagedCandidates(principal, effectiveModel, access, options?.fallbackFor);
   if (candidates.length) return candidates;
 
   // A BYOK-recognized provider with no usable key wins over the generic

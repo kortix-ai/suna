@@ -546,7 +546,7 @@
           "description": "Utilisez Kortix depuis Claude, Claude Code, Cursor, Codex ou tout client MCP. Vous vous connectez une seule fois. Rien à installer."
         },
         "computer": {
-          "label": "Ordinateur",
+          "label": "Mon ordinateur",
           "description": "Laissez les agents Kortix utiliser les fichiers, le terminal et les applications de votre ordinateur."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "L'application de bureau connecte cet ordinateur en un clic.",
       "desktopLabel": "Application de bureau",
       "download": "Télécharger",
-      "cliLabel": "Ligne de commande"
+      "cliLabel": "Ligne de commande",
+      "otherComputerHint": "Installez l’app de bureau Kortix sur l’autre ordinateur et connectez-vous. Il se connecte en un clic."
     }
   },
   "triggers": {
@@ -20869,6 +20870,18 @@
     "noticeReconnectBody": "Aucun compte n’est autorisé. Reconnectez-en un dans l’onglet Comptes.",
     "noticeErrorTitle": "Kortix n’a pas pu charger {name}",
     "noticeErrorBody": "La dernière tentative de lecture de ses outils a échoué. Vérifiez l’identifiant et les paramètres de connexion, puis réessayez.",
+    "moveTitle": "Sortir {app} de {provider}",
+    "moveBody": "Kortix arrête {provider}. Connectez-vous une fois à {app} et ce connecteur passe sur Kortix. Les agents, les déclencheurs et kortix.yaml continuent d'utiliser {slug}.",
+    "moveNoneTitle": "{name} passe par {provider}",
+    "moveNoneBody": "Kortix n'a pas encore de connexion directe pour {name}. Il continue de fonctionner via {provider}.",
+    "moveAction": "Passer sur Kortix",
+    "moveFinishAction": "Terminer le transfert",
+    "moveConfirmTitle": "Passer sur {app} ?",
+    "moveConfirmBody": "{count, plural, one {# autre compte de ce connecteur devra se reconnecter après le transfert.} other {# autres comptes de ce connecteur devront se reconnecter après le transfert.}} {provider} continue de fonctionner jusqu'à la fin de votre connexion.",
+    "moveNoSignIn": "{app} n'a pas de connexion en un clic sur ce déploiement.",
+    "moveDone": "{name} fonctionne maintenant sur Kortix.",
+    "movesBannerTitle": "{count, plural, one {# connecteur peut passer} other {# connecteurs peuvent passer}} sur Kortix",
+    "movesBannerBody": "Kortix arrête Pipedream et Composio. Ouvrez chacun et choisissez « Passer sur Kortix » :",
     "nameLabel": "Nom",
     "toolsEmptyBody": "{name} n’a signalé aucun outil. Ils apparaîtront ici après la connexion.",
     "stripStatus": "Statut",
@@ -21103,7 +21116,7 @@
     "lastSeen": "vu {time}",
     "scopeLine": "Vous seul pouvez l’utiliser, depuis vos sessions privées, dans tous les projets.",
     "capabilitiesTitle": "Ce que Kortix peut utiliser",
-    "capabilitiesHint": "Choisi lors de la connexion de cet ordinateur. Reconnectez-le pour le modifier.",
+    "capabilitiesHint": "Activez ou désactivez chacun à tout moment. La prochaine requête en tient compte.",
     "capability": {
       "filesystem": "Fichiers",
       "filesystemDescription": "Votre dossier personnel",
@@ -21113,7 +21126,8 @@
       "desktopDescription": "Voir et utiliser vos apps",
       "allowed": "Autorisé",
       "notAllowed": "Non autorisé",
-      "needsSetup": "À configurer"
+      "needsSetup": "À configurer",
+      "notAvailable": "Indisponible sur cet ordinateur pour le moment"
     },
     "runInBackground": "Exécuter en arrière-plan",
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
@@ -21124,10 +21138,10 @@
     "connectAnother": "Connecter un autre ordinateur",
     "approvingAs": "Vous approuvez en tant que {email}. L’ordinateur est associé à ce compte.",
     "alreadyConnected": "{name} est déjà connecté à votre compte",
-    "alreadyConnectedHint": "Approuvez pour le reconnecter avec une nouvelle clé et l’accès choisi. Ses projets et partages sont conservés.",
+    "alreadyConnectedHint": "Approuvez pour le reconnecter avec une nouvelle clé. Ses projets et partages sont conservés.",
     "alreadyConnectedLive": "Il est en ligne. Approuvez pour le transférer vers cette demande : la connexion actuelle s’arrête. Ses projets et partages sont conservés.",
     "reconnect": "Reconnecter",
-    "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation.",
+    "accessHint": "Les agents Kortix obtiennent les trois. Désactivez-en un plus tard dans Paramètres › Mon ordinateur.",
     "setup": {
       "title": "Terminez la configuration de votre ordinateur",
       "hint": "macOS demande une fois chaque autorisation ci-dessous. Elles vont à Kortix, donc rien ne redemande pendant qu’un agent travaille.",
@@ -21152,7 +21166,8 @@
       "removeAll": "Tout supprimer",
       "confirmTitle": "Supprimer toutes les anciennes connexions ?",
       "confirmDescription": "Kortix les supprime avec leurs comptes de tous les projets. Un ordinateur qui en utilise encore une peut se reconnecter."
-    }
+    },
+    "capabilitiesSaved": "Accès mis à jour"
   },
   "messageFrom": {
     "from": "De",
@@ -21859,7 +21874,7 @@
       "createdBody": "Kortix n’affiche ce jeton qu’une fois. Quiconque le possède peut inscrire des ordinateurs dans cette organisation jusqu’à ce que vous le révoquiez.",
       "installTitle": "Installer sur chaque ordinateur",
       "installBody": {
-        "windows": "Exécutez-le en administrateur, ou déployez-le avec Intune ou une stratégie de groupe. L’ordinateur commence à enregistrer à la prochaine connexion.",
+        "windows": "Collez dans l’invite de commandes ouverte en administrateur. Elle télécharge le programme d’installation, l’installe et indique quand c’est fini. L’ordinateur enregistre dès la prochaine connexion Windows. Pour Intune ou une stratégie de groupe, voir le guide IT.",
         "macos": "Exécutez-le dans le Terminal, ou déployez le paquet avec votre MDM. La personne autorise l’enregistrement de l’écran une fois, sauf si un profil PPPC l’accorde.",
         "linux": "Exécutez-le sur un bureau X11. L’ordinateur commence à enregistrer à la prochaine connexion. Wayland n’est pas encore pris en charge."
       },

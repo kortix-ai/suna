@@ -148,6 +148,7 @@ describe('install really starts the service', () => {
       expect(xml).toContain('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>');
       expect(xml).toContain('<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>');
       expect(xml).toContain('<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>');
+      expect(xml).toContain('<Command>conhost.exe</Command><Arguments>--headless powershell.exe ');
       expect(xml).toContain('-WindowStyle Hidden');
       expect(renderWindowsTaskXml(paths, 'DOMAIN\\a&b')).toContain('<UserId>DOMAIN\\a&amp;b</UserId>');
     } finally {

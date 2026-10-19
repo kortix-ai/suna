@@ -328,6 +328,42 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect((await store.get(PROJECT_ID, 'a'))?.externalId).toBe('ti_EXAMPLE_NEW_MESSAGE_{"label":"two"}');
   });
 
+  test('a connector that moves to another source drops the old instance through the old source', async () => {
+    await connect();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect((await store.get(PROJECT_ID, 'a'))?.externalId).toBe('ti_EXAMPLE_NEW_MESSAGE_{}');
+    // The connector moves to Kortix: provider mcp, in a connectors_v2 project.
+    setEventSourceForTest('mcp', {
+      ...fake,
+      id: 'mcp',
+      subscribe: async () => {
+        calls.push('mcp:subscribe');
+        return { externalId: 'mcp_example' };
+      },
+      unsubscribe: async (id: string) => {
+        calls.push(`mcp:unsubscribe:${id}`);
+      },
+    });
+    try {
+      await testDb()
+        .update(projects)
+        .set({ metadata: { experimental: { event_triggers: true, notification_center: true, connectors_v2: true } } })
+        .where(eq(projects.projectId, PROJECT_ID));
+      await testDb()
+        .update(connectors)
+        .set({ providerType: 'mcp', config: { url: 'https://mcp.example.test/mcp' } })
+        .where(eq(connectors.connectorId, CONNECTOR_ID));
+      calls.length = 0;
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      // Composio drops its own instance; the Kortix source never sees the Composio id.
+      expect(calls).toContain('unsubscribe:ti_EXAMPLE_NEW_MESSAGE_{}');
+      expect(calls.some((call) => call.startsWith('mcp:unsubscribe'))).toBe(false);
+      expect((await store.get(PROJECT_ID, 'a'))?.provider).toBe('mcp');
+    } finally {
+      setEventSourceForTest('mcp', undefined);
+    }
+  });
+
   test('two triggers on one instance: unsubscribe only when the last row goes', async () => {
     await connect();
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a'), spec('b')]);
