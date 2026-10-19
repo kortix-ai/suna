@@ -28,7 +28,8 @@
  * The fourth arm saves a turn that dispatched a sub-agent. A sub-agent runs in
  * its own OpenCode session, and its row opens that transcript, which only the
  * running computer could answer: while it was off, the view waited. Now saved
- * history holds the sub-agent's transcript too, and the view draws its steps.
+ * history holds the sub-agent's transcript too: the row opens its steps in
+ * place, and its 'View' action opens the whole transcript.
  *
  * The fifth arm stores a tool call the way saved history stored it before it
  * kept tool calls 1:1: no input, no output, only the title (OpenCode titles a
@@ -658,7 +659,18 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     // #9774 each run of work under the fold has its own closed, named line.
     await openWork(page);
     await page.getByRole('button', { name: 'Asked a helper agent', exact: true }).click();
+    // The row reads the sub-agent's thread from the session log as it mounts. Until the
+    // steps are in hand it is a plain button onto the full view; with them it is a
+    // closed disclosure that opens them in place (`TaskTool`). Click it only then.
+    const agentRow = page.getByRole('button', { name: new RegExp(SUBAGENT_TASK), expanded: false });
+    await expect(agentRow).toBeVisible({ timeout: 30_000 });
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
+    await expect(page.getByRole('button', { name: `List the source files ${SUBAGENT_COMMAND}` })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The row's 'View' action opens the sub-agent's whole transcript.
+    await page.getByRole('button', { name: 'Open full view', exact: true }).click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
     // The sub-agent's own settled turn folds the same way.
