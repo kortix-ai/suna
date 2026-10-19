@@ -1191,13 +1191,14 @@ export function SessionChat({
   );
   const { data: modelUsage, refetch: refetchModelUsage } = useSessionModelUsage(projectId, projectSessionId);
   useEffect(() => {
-    if (!newestAssistantMessageId) return;
+    // `refetch` ignores `enabled`: a chat with no project session (the sub-agent modal) asks nothing.
+    if (!newestAssistantMessageId || !projectId || !projectSessionId) return;
     // `cancelRefetch: false`: a read already in flight (the mount's own) is the read.
     void refetchModelUsage({ cancelRefetch: false });
     if (effectiveBusy) return;
     const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
+  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage, projectId, projectSessionId]);
   // Not gated on the composer's selection: the session modal reports the
   // session, not what the composer will send next.
   const sessionServedModel = useMemo(
@@ -1612,6 +1613,10 @@ export function SessionChat({
     }, 2 * OLDER_LOADING_MIN_MS);
   }, [loadOlder, scrollRef, contentRef, releaseOlderAnchor]);
   const olderSentinelRef = useRef<HTMLDivElement>(null);
+  // A sub-agent's chat on the session log pulls an older page whenever its top is in view,
+  // scrolled or not: its first page is often shorter than the viewport (a turn folds to one
+  // row), and a reader who cannot scroll has no other way to reach the rest.
+  const subAgentOnLog = !sessionState && !!liveThread;
   useEffect(() => {
     const node = olderSentinelRef.current;
     if (!node || !hasOlder) return;
@@ -1624,7 +1629,7 @@ export function SessionChat({
           isLoadingOlder,
           lastPullFailed: olderPullFailed,
           autoLoadedPages,
-          readerScrolledUp: readerScrolledUpRef.current,
+          readerScrolledUp: readerScrolledUpRef.current || subAgentOnLog,
           armed: olderAutoloadArmedRef.current,
         });
         olderAutoloadArmedRef.current = nextOlderAutoloadArm({
@@ -1652,6 +1657,7 @@ export function SessionChat({
     handleLoadOlder,
     scrollRef,
     sessionId,
+    subAgentOnLog,
   ]);
 
   // Scroll to the bottom on initial load / session change.
