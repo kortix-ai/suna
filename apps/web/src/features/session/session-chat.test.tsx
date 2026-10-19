@@ -7,7 +7,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import type { ChangeRequest, SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
+import { TestUiHost } from '@/test-utils/ui-host';
 import { sessionAuditKey } from './session-audit-shared';
+
+const ROUTE = { id: 'project-fixture', sessionId: 'project-session-fixture' };
 import { TurnErrorDisplay } from './session-error-banner';
 
 const realSdk = await import('@kortix/sdk/react');
@@ -73,11 +76,13 @@ mock.module('@kortix/sdk/react', () => ({
     serverOpenTurnToken: null,
   }),
 }));
+// Converted code reads the viewer and the route from @kortix/ui (TestUiHost);
+// these mocks serve the components that still read useAuth / next/navigation.
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
 }));
 mock.module('next/navigation', () => ({
-  useParams: () => ({ id: 'project-fixture', sessionId: 'project-session-fixture' }),
+  useParams: () => ROUTE,
   usePathname: () => '/',
   useRouter: () => ({ push: () => {} }),
   useSearchParams: () => new URLSearchParams(),
@@ -214,13 +219,15 @@ describe('SessionChat transcript rows', () => {
     renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
-          <SidebarProvider>
-            <SessionChat
-              sessionId="session-fixture"
-              projectId="project-fixture"
-              projectSessionId="project-session-fixture"
-            />
-          </SidebarProvider>
+          <TestUiHost params={ROUTE} viewerId="viewer-1">
+            <SidebarProvider>
+              <SessionChat
+                sessionId="session-fixture"
+                projectId="project-fixture"
+                projectSessionId="project-session-fixture"
+              />
+            </SidebarProvider>
+          </TestUiHost>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
@@ -393,13 +400,15 @@ describe('SessionChat moved turn sections', () => {
     renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
-          <SidebarProvider>
-            <SessionChat
-              sessionId="session-fixture"
-              projectId="project-fixture"
-              projectSessionId="project-session-fixture"
-            />
-          </SidebarProvider>
+          <TestUiHost params={ROUTE} viewerId="viewer-1">
+            <SidebarProvider>
+              <SessionChat
+                sessionId="session-fixture"
+                projectId="project-fixture"
+                projectSessionId="project-session-fixture"
+              />
+            </SidebarProvider>
+          </TestUiHost>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
@@ -753,13 +762,15 @@ describe('SessionChat command-list resolution wire', () => {
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
-          <SidebarProvider>
-            <SessionChat
-              sessionId="session-fixture"
-              projectId="project-fixture"
-              projectSessionId="project-session-fixture"
-            />
-          </SidebarProvider>
+          <TestUiHost params={ROUTE} viewerId="viewer-1">
+            <SidebarProvider>
+              <SessionChat
+                sessionId="session-fixture"
+                projectId="project-fixture"
+                projectSessionId="project-session-fixture"
+              />
+            </SidebarProvider>
+          </TestUiHost>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );

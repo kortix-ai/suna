@@ -74,7 +74,7 @@ import {
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
 import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
   parseAgentMentionReferences,
@@ -152,7 +152,7 @@ export const BUBBLE_SURFACE = cn(
  */
 export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const projectId = useUiParams<{ id?: string }>()?.id ?? null;
+  const projectId = useSessionIds().projectId ?? null;
   const bareSlackId = info.platform === 'Slack' && /^[CDG][A-Z0-9]+$/.test(info.context);
   const { data } = useChannelBindings(bareSlackId ? projectId : null);
   const binding = bareSlackId
@@ -249,9 +249,9 @@ function PlatformPromptMessage({
  */
 function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('reminders');
-  const params = useUiParams<{ id?: string; sessionId?: string }>();
+  const ids = useSessionIds();
   const manageHref =
-    params?.id && params.sessionId ? `/projects/${params.id}/reminders?session=${params.sessionId}` : null;
+    ids.projectId && ids.sessionId ? `/projects/${ids.projectId}/reminders?session=${ids.sessionId}` : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"

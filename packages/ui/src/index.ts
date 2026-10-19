@@ -37,6 +37,7 @@ export {
   type UiStringsInput,
   type UseUiBrand,
 } from './providers/ui-provider';
+export { SessionIdsProvider, useSessionIds, type UiSessionIds } from './providers/session-ids';
 export { useIsDark } from './hooks/use-is-dark';
 export {
   Button,

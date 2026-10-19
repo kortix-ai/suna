@@ -2,6 +2,7 @@
 
 import { UiProvider, type UiNavigation, type UiStringsInput } from '@kortix/ui';
 import type { UiI18nHost } from '@kortix/ui/i18n';
+import { SessionIdsProvider } from '@kortix/ui/providers/session-ids';
 import { setUiTelemetry } from '@kortix/ui/lib/telemetry';
 import { setSilentErrorToastFilter } from '@kortix/ui/toast';
 import * as Sentry from '@sentry/nextjs';
@@ -23,8 +24,15 @@ setSilentErrorToastFilter(isSilentTimeoutMessage);
 
 // Package telemetry goes to posthog (`lib/track`) and Sentry. A transient
 // "runtime not ready" crash is an expected state, never a Sentry event.
+// `track` accepts only PanelEvent names: a misspelled event fails tsc.
+declare module '@kortix/ui/lib/telemetry' {
+  interface UiTelemetryRegister {
+    event: PanelEvent;
+  }
+}
+
 setUiTelemetry({
-  track: (event, properties) => track(event as PanelEvent, properties),
+  track,
   captureException: (error, context) => {
     if (isRuntimeNotReadyNoiseMessage((error as Error | null)?.message)) return;
     Sentry.captureException(error, context);
@@ -36,6 +44,18 @@ setUiTelemetry({
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
+
+const one = (value: string | string[] | undefined) => (typeof value === 'string' ? value : undefined);
+
+/** The session UI reads its ids from `/projects/[id]/sessions/[sessionId]`. */
+function RouteSessionIds({ children }: { children: ReactNode }) {
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  return (
+    <SessionIdsProvider projectId={one(params?.id)} sessionId={one(params?.sessionId)}>
+      {children}
+    </SessionIdsProvider>
+  );
+}
 
 /**
  * Feeds @kortix/ui the viewer's language, next/link, next/image, next/navigation, the
@@ -70,7 +90,7 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
       useViewerId={useViewerId}
       config={config}
     >
-      {children}
+      <RouteSessionIds>{children}</RouteSessionIds>
     </UiProvider>
   );
 }

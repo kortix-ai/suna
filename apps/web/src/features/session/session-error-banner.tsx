@@ -6,7 +6,8 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useQuery } from '@tanstack/react-query';
-import { useUiParams, useUiViewerId } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useState, type ComponentProps, type ReactNode } from 'react';
 import {
   type ChatGptConnectionAction,
@@ -668,9 +669,9 @@ export function TurnErrorDisplay({
  * informational, exactly as before.
  */
 function ChatGptConnectionSlot({ action }: { action: ChatGptConnectionAction }) {
-  const params = useUiParams<{ id?: string; sessionId?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
-  const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : null;
+  const ids = useSessionIds();
+  const projectId = ids.projectId ?? null;
+  const sessionId = ids.sessionId ?? null;
   if (!projectId || !sessionId) return null;
   return <ChatGptConnectionButton action={action} projectId={projectId} sessionId={sessionId} />;
 }

@@ -27,7 +27,7 @@ Outside it: tell the user, style with plain CSS over the section 6 variables, ne
 3. Dark mode is the `dark` class on `<html>` (`useIsDark()` reads it). Mount once at the root:
    `UiProvider` (`strings`, `chat` included; `link` and `image`: your router's link and image; `useBrand`:
    an organization's logo; `navigation`, `i18n`, `useViewerId`, `config`: router hooks, translation hooks,
-   user id, flags), `IconProvider` (`@kortix/ui/icon-provider`, the house icon weight; not the icon-set provider of `lib/icon-context`) and one `<Toaster />` from `@kortix/ui/toast`. `setUiTelemetry` (`@kortix/ui/lib/telemetry`) once at module load.
+   user id, flags; README "Host adapters" lists each default), `SessionIdsProvider` around each session view (`projectId`, `sessionId`: read with `useSessionIds`, never route params), `IconProvider` (`@kortix/ui/icon-provider`, the house icon weight; not the icon-set provider of `lib/icon-context`) and one `<Toaster />` from `@kortix/ui/toast`. `setUiTelemetry` (`@kortix/ui/lib/telemetry`) once at module load.
 4. Import by subpath: `import { Modal } from '@kortix/ui/modal'`. The root `@kortix/ui` holds only the
    light core in section 7. Heavy parts (charts, maps, grids, mermaid, emoji data) load only from their own
    subpath.
@@ -97,7 +97,7 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 
 | Import from | Names |
 | --- | --- |
-| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `defaultChatStrings`, `useUiStrings`, `useUiLink`, `useUiImage`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `ChatStrings`, `UiLinkProps`, `UiLinkComponent`, `UiImageProps`, `UiImageComponent`, `UiBrand`, `UseUiBrand`, `useIsDark`, `useUiRouter`, `useUiPathname`, `useUiSearchParams`, `useUiParams`, `defaultUiNavigation`, `UiNavigation`, `UiRouter`, `UiRouteParams`, `UiSearchParams`, `useUiViewerId`, `useUiHostConfig`, `defaultUiHostConfig`, `UiHostConfig` |
+| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `defaultChatStrings`, `useUiStrings`, `useUiLink`, `useUiImage`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `ChatStrings`, `UiLinkProps`, `UiLinkComponent`, `UiImageProps`, `UiImageComponent`, `UiBrand`, `UseUiBrand`, `useIsDark`, `useUiRouter`, `useUiPathname`, `useUiSearchParams`, `useUiParams`, `defaultUiNavigation`, `UiNavigation`, `UiRouter`, `UiRouteParams`, `UiSearchParams`, `useUiViewerId`, `useUiHostConfig`, `defaultUiHostConfig`, `UiHostConfig`, `SessionIdsProvider`, `useSessionIds`, `UiSessionIds` |
 | `@kortix/ui` (actions, display) | `Button`, `buttonVariants`, `ButtonProps`, `Badge`, `badgeVariants`, `Card`, `CardAction`, `CardButton`, `CardContent`, `CardDescription`, `CardEyebrow`, `CardFeature`, `CardFooter`, `CardGroup`, `CardHeader`, `CardImage`, `CardMedia`, `CardTitle`, `CardButtonProps`, `CardButtonSize`, `CardButtonVariant`, `CardGroupProps`, `CardLogo`, `CardProps`, `Separator`, `Skeleton` |
 | `@kortix/ui` (forms) | `Input`, `inputFocusClasses`, `inputInvalidClasses`, `inputSurfaceClasses`, `inputTransitionClasses`, `InputProps`, `useAutosizeTextArea`, `Textarea`, `AutosizeTextAreaRef`, `AutosizeTextAreaProps`, `Label`, `Checkbox`, `CheckboxProps`, `CheckboxVariant`, `Switch`, `SwitchProps`, `Select`, `SelectContent`, `SelectGroup`, `SelectItem`, `SelectLabel`, `SelectScrollDownButton`, `SelectScrollUpButton`, `SelectSeparator`, `SelectTrigger`, `SelectValue`, `SelectTriggerProps` |
 | `@kortix/ui` (overlays) | `Modal`, `ModalBody`, `ModalClose`, `ModalContent`, `ModalContentInner`, `ModalDescription`, `ModalFooter`, `ModalHeader`, `ModalOverlay`, `ModalPortal`, `ModalTitle`, `ModalTrigger`, `Hint`, `HintProps`, `Popover`, `PopoverAnchor`, `PopoverContent`, `PopoverTrigger`, `DropdownMenu`, `DropdownMenuCheckboxItem`, `DropdownMenuContent`, `DropdownMenuGroup`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuPortal`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`, `DropdownMenuSeparator`, `DropdownMenuShortcut`, `DropdownMenuSub`, `DropdownMenuSubContent`, `DropdownMenuSubTrigger`, `DropdownMenuTrigger` |
@@ -112,7 +112,7 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 | `@kortix/ui/chat` (streaming) | `streamingMarkdown`, `holdBackFenceOpener`, `closeUnterminatedCodeFence`, `holdBackTableHeader` |
 
 Every other component is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>`
-for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` and `@kortix/ui/icons/<name>`.
+for the dot matrices), plus `@kortix/ui/lib/<name>`, `@kortix/ui/hooks/<name>` and `@kortix/ui/icons/<name>`. Host-free helpers: `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures; `UiTranslator`, `UiI18nHost`, `UiMessages`, `UiUseTranslations`, `defaultUiMessages`: the bundled English catalog; `createTranslator`), `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event` so tsc checks event names), `lib/lazy-client` (`lazyClient(load, { fallback })`: `next/dynamic` `ssr: false` without Next), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`; reports to `captureException`).
 
 ## 8. Chat recipe
 

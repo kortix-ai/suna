@@ -12,21 +12,33 @@ const uiModalMock = () => ({
 await mock.module('@/components/ui/modal', uiModalMock);
 await mock.module('@kortix/ui/modal', uiModalMock);
 await mock.module('@/features/session/session-chat', () => ({
-  SessionChat: ({ sessionId, readOnly }: { sessionId: string; readOnly: boolean }) =>
-    <div data-chat-session={sessionId} data-read-only={String(readOnly)} />,
+  SessionChat: ({
+    sessionId,
+    readOnly,
+    savedHistoryScope,
+  }: {
+    sessionId: string;
+    readOnly: boolean;
+    savedHistoryScope?: string;
+  }) => (
+    <div data-chat-session={sessionId} data-read-only={String(readOnly)} data-scope={String(savedHistoryScope)} />
+  ),
 }));
-await mock.module('next/navigation', () => ({ useParams: () => ({ id: 'project', sessionId: 'parent' }) }));
 const { SubSessionModalContent } = await import('./sub-session-modal-content');
+const { TestUiHost } = await import('@/test-utils/ui-host');
 
 describe('opened sub-session modal', () => {
   test('mounts the child chat read-only under the parent history scope', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        <SubSessionModalContent open onOpenChange={() => {}} sessionId="child" title="Child" />
+        <TestUiHost params={{ id: 'project', sessionId: 'parent' }}>
+          <SubSessionModalContent open onOpenChange={() => {}} sessionId="child" title="Child" />
+        </TestUiHost>
       </NextIntlClientProvider>,
     );
     expect(html).toContain('data-chat-session="child"');
     expect(html).toContain('data-read-only="true"');
+    expect(html).toContain('data-scope="project/parent"');
     expect(html).toContain('Child');
   });
 });

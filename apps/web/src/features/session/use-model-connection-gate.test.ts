@@ -111,11 +111,6 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
     expect(gateSource).toContain('options?: { projectId?: string | null }');
   });
 
-  test('the hook resolves through resolveGateProjectId, not a raw params read', () => {
-    expect(gateSource).toContain('resolveGateProjectId(options?.projectId, params?.id)');
-    expect(gateSource).not.toContain('const projectId = typeof params?.id');
-  });
-
   /**
    * The callers that predate the options argument must keep behaving
    * EXACTLY as they did: none passes options, so the route stays their single

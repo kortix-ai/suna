@@ -14,7 +14,7 @@
 //    '@kortix/shared' specifier in dist/**/*.js is rewritten to that file. A .d.ts
 //    that names @kortix/shared fails the build.
 // 5. Guards: no '@kortix/shared' specifier is left, every source 'use client' survives,
-//    every publishConfig.exports target exists.
+//    every publishConfig.exports target exists, the i18n and provider entries load in Node.
 // dist/styles.css is built separately (scripts/build-styles.mjs) and committed; this
 // script keeps it.
 import { execFileSync } from 'node:child_process';
@@ -142,6 +142,19 @@ const pkg = JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8'));
 const targets = Object.values(pkg.publishConfig.exports).flatMap((t) => (typeof t === 'string' ? [t] : Object.values(t)));
 const missing = targets.filter((t) => !existsSync(join(PKG_DIR, t)));
 if (missing.length) fail(`publishConfig.exports targets missing after build: ${missing.join(', ')}`);
+
+// Plain Node ESM loads the entry points that hold data or contexts (no bundler, no
+// JSON import attributes): Vite SSR, Remix and Node prerendering resolve dist/ this way.
+for (const entry of ['dist/i18n/index.js', 'dist/providers/session-ids.js', 'dist/providers/ui-provider.js']) {
+  try {
+    execFileSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(`./${entry}`)});`], {
+      cwd: PKG_DIR,
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    fail(`${entry} does not load in Node ESM: ${String(error.stderr ?? error).split('\n').find(Boolean)}`);
+  }
+}
 
 const js = walk(DIST).filter((p) => p.endsWith('.js')).length;
 console.log(

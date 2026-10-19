@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-// Writes src/i18n/en.json, the English catalog @kortix/ui renders with when the
+// Writes src/i18n/en.ts, the English catalog @kortix/ui renders with when the
 // host passes no translations. It copies, from apps/web/translations/en.json,
-// every message the scanned sources read.
+// every message the scanned sources read. The catalog is a .ts module, not
+// .json: plain Node ESM refuses a JSON import without `with { type: 'json' }`,
+// and a .d.ts that imports .json needs `resolveJsonModule` in every consumer.
 //
 //   node scripts/gen-i18n-catalog.mjs           write
-//   node scripts/gen-i18n-catalog.mjs --check   exit 1 when en.json drifts (src/i18n/i18n.test.tsx runs it)
+//   node scripts/gen-i18n-catalog.mjs --check   exit 1 when en.ts drifts (src/i18n/i18n.test.tsx runs it)
 //
-// Scanned: packages/ui/src, the apps/web session UI that moves into the package
-// (features/session, components/markdown, components/diff), and every other
+// Scanned: the import graph of packages/ui/src and of the apps/web session UI
+// that moves into the package (features/session, components/markdown,
+// components/diff), following relative and '@/' imports, plus every other
 // apps/web file that imports '@kortix/ui/i18n'.
 //
 // Per file, a translator is a name bound to a namespace:
@@ -19,24 +22,28 @@
 // t.markup('k') or t.has('k'); t(`a.${x}`) copies the subtree `a`. A call on an
 // unbound translator name (a `t` passed in untyped) copies the key from every
 // namespace that has it. A string literal that names a message of a namespace
-// the file binds is copied too (`titleKey: 'a.b'`, then `t(titleKey)`).
+// the file binds is copied too (`titleKey: 'a.b'`, then `t(titleKey)`). Every
+// 'text<hex12>' literal is copied from hardcodedUi.i18nComplete: key maps such
+// as components/iam/audit-credential-label.ts bind no translator themselves.
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PKG_DIR = join(fileURLToPath(import.meta.url), '..', '..');
 const REPO = join(PKG_DIR, '..', '..');
 const SOURCE = join(REPO, 'apps/web/translations/en.json');
-const OUT = join(PKG_DIR, 'src/i18n/en.json');
-const SCAN = [
+const OUT = join(PKG_DIR, 'src/i18n/en.ts');
+const WEB_SRC = join(REPO, 'apps/web/src');
+const ROOTS = [
   'packages/ui/src',
   'apps/web/src/features/session',
   'apps/web/src/components/markdown',
   'apps/web/src/components/diff',
 ].map((dir) => join(REPO, dir));
-const ADOPTERS = join(REPO, 'apps/web/src');
+const ADOPTERS = WEB_SRC;
 const SMALL = 50_000;
 const UI_TRANSLATOR_NS = 'hardcodedUi.i18nComplete';
+export const HEX_KEY = /(['"`])(text[0-9a-f]{12})\1/g;
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
@@ -45,6 +52,74 @@ function walk(dir) {
     if (statSync(path).isDirectory()) return name === 'node_modules' ? [] : walk(path);
     return /\.tsx?$/.test(name) && !/\.d\.ts$/.test(name) ? [path] : [];
   });
+}
+
+const IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\(\s*)(['"])([^'"\n]+)\1/g;
+
+function resolveModule(from, spec) {
+  let base;
+  if (spec.startsWith('.')) base = join(dirname(from), spec);
+  else if (spec.startsWith('@/')) base = join(WEB_SRC, spec.slice(2));
+  else return null;
+  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
+    if (/\.tsx?$/.test(candidate) && !/\.d\.ts$/.test(candidate) && existsSync(candidate) && statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+// A web file that imports one of these stays in apps/web, so the package never
+// renders it: the graph does not enter it (the same rule as the move closure).
+const TEST = /\.(test|stories)\.tsx?$/;
+const HOST_ONLY = /^(next|next\/.*|next-intl.*|next-themes|server-only|@supabase\/.*|@sentry\/.*|posthog-js.*|@vercel\/.*)$/;
+const hostOnly = (code) =>
+  /process\.env\.(?!NODE_ENV)/.test(code) || [...code.matchAll(IMPORT)].some((m) => HOST_ONLY.test(m[2]));
+
+/**
+ * The files the package renders, or will once the session UI moves: every
+ * .ts/.tsx file under ROOTS (tests excluded), plus the movable apps/web
+ * modules they import, transitively. A module is movable when neither it nor
+ * anything it imports is host-only (the rule of the move closure). A blocked
+ * non-root module stays in apps/web, which passes its own i18n.
+ */
+export function scannedFiles() {
+  const roots = ROOTS.flatMap(walk).filter((f) => !TEST.test(f) && f !== OUT);
+  const deps = new Map(); // file → resolved imports
+  const own = new Map(); // file → host-only by its own source
+  const queue = [...roots];
+  while (queue.length) {
+    const file = queue.pop();
+    if (deps.has(file)) continue;
+    const code = readFileSync(file, 'utf8');
+    own.set(file, hostOnly(code));
+    const next = [...code.matchAll(IMPORT)]
+      .map((m) => resolveModule(file, m[2]))
+      .filter((f) => f && !TEST.test(f));
+    deps.set(file, next);
+    queue.push(...next);
+  }
+  const blocked = new Set([...own].filter(([, v]) => v).map(([f]) => f));
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [file, next] of deps) {
+      if (!blocked.has(file) && next.some((d) => blocked.has(d))) {
+        blocked.add(file);
+        changed = true;
+      }
+    }
+  }
+  const seen = new Set(roots);
+  const stack = [...roots];
+  while (stack.length) {
+    for (const dep of deps.get(stack.pop())) {
+      if (!seen.has(dep) && !blocked.has(dep)) {
+        seen.add(dep);
+        stack.push(dep);
+      }
+    }
+  }
+  return [...seen].sort();
 }
 
 const at = (tree, path) =>
@@ -72,7 +147,7 @@ export function buildCatalog() {
   const namespaces = new Set();
   const keyed = []; // [namespace ('' = root, null = unknown), key or subtree path, message only]
   const adopters = walk(ADOPTERS).filter((f) => readFileSync(f, 'utf8').includes("'@kortix/ui/i18n'"));
-  for (const file of new Set([...SCAN.flatMap(walk), ...adopters])) {
+  for (const file of new Set([...scannedFiles(), ...adopters])) {
     const code = readFileSync(file, 'utf8');
     // name → namespaces. One file can bind `t` in several components.
     const bound = new Map();
@@ -85,6 +160,7 @@ export function buildCatalog() {
       bind(m[1], m[2] ?? null);
     }
     for (const set of bound.values()) for (const ns of set) if (ns) namespaces.add(ns);
+    for (const m of code.matchAll(HEX_KEY)) keyed.push([UI_TRANSLATOR_NS, m[2], true]);
     for (const m of code.matchAll(/\b(\w+)(?:\.(?:raw|rich|markup|has))?\(\s*(['"`])([^'"`\n]*?)(\$\{|\2)/g)) {
       const [, name, , key, end] = m;
       const set = bound.get(name) ?? (/^t([A-Z]\w*)?$/.test(name) ? new Set([null]) : null);
@@ -115,7 +191,8 @@ export function buildCatalog() {
       if (at(out, path) === undefined) put(out, path, value);
     }
   }
-  return `${JSON.stringify(ordered(source, out), null, 2)}\n`;
+  const body = JSON.stringify(ordered(source, out), null, 2);
+  return `// Generated by scripts/gen-i18n-catalog.mjs from apps/web/translations/en.json. Do not edit.\nconst catalog = ${body};\n\nexport default catalog;\n`;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

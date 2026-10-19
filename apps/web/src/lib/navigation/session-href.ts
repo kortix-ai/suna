@@ -1,6 +1,6 @@
 'use client';
 
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 
 /**
  * The real, routable URL for a session.
@@ -28,7 +28,6 @@ export function projectSessionHref(projectId: string, sessionId: string): string
  * rather than fabricating an id.
  */
 export function useProjectSessionHref(): (sessionId: string) => string | null {
-  const params = useUiParams<{ id?: string }>();
-  const projectId = params?.id;
+  const projectId = useSessionIds().projectId;
   return (sessionId: string) => (projectId ? projectSessionHref(projectId, sessionId) : null);
 }

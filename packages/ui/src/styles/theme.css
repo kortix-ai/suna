@@ -23,7 +23,7 @@
 /* Tailwind scans the package source for class names. The i18n catalog is
    copy, not markup: its words must not become utilities. */
 @source "../";
-@source not "../i18n/en.json";
+@source not "../i18n/en.ts";
 
 @import './dotmatrix-loader.css';
 

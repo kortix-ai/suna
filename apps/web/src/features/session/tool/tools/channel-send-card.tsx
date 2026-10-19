@@ -6,7 +6,7 @@ import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { PaperclipIcon } from '@phosphor-icons/react';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { channelSendText, type ChannelSend } from './channel-send';
 
 const REPLIED_IN_KEY: Record<ChannelPlatform, string> = {
@@ -34,7 +34,7 @@ export function ChannelSendCard({ send }: { send: ChannelSend }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const color = CHANNEL_BRAND_COLOR[send.platform];
   const slack = send.platform === 'Slack';
-  const projectId = useUiParams<{ id?: string }>()?.id ?? null;
+  const projectId = useSessionIds().projectId ?? null;
   const { data } = useChannelBindings(slack && send.channel ? projectId : null);
   const binding = slack
     ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === send.channel)

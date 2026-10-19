@@ -177,6 +177,7 @@
     "./preview-image": "./src/components/ui/preview-image.tsx",
     "./progress": "./src/components/ui/progress.tsx",
     "./progress-ring": "./src/components/ui/progress-ring.tsx",
+    "./providers/session-ids": "./src/providers/session-ids.tsx",
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/components/ui/radio-group.tsx",
     "./resizable": "./src/components/ui/resizable.tsx",
@@ -838,6 +839,10 @@
       "./progress-ring": {
         "types": "./dist/components/ui/progress-ring.d.ts",
         "import": "./dist/components/ui/progress-ring.js"
+      },
+      "./providers/session-ids": {
+        "types": "./dist/providers/session-ids.d.ts",
+        "import": "./dist/providers/session-ids.js"
       },
       "./providers/ui-provider": {
         "types": "./dist/providers/ui-provider.d.ts",

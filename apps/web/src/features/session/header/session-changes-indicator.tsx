@@ -43,7 +43,7 @@ import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import { ArrowRightIcon, FilesIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { useState } from 'react';
 
 /** Splits `src/app/page.tsx` into the part you read and the part you skim. */
@@ -57,8 +57,8 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const changeStatusMeta = useLocalizedUiCatalog(CHANGE_STATUS_META);
-  const { id: projectId, sessionId: gitSessionId } = useUiParams<{
-    id: string;
+  const { projectId, sessionId: gitSessionId } = useSessionIds<{
+    projectId: string;
     sessionId: string;
   }>();
 

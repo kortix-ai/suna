@@ -5,6 +5,16 @@
  * `addBreadcrumb` do nothing; `captureException` logs to the console.
  * Properties carry kinds, counts and sources only: never a name, path, URL or title.
  */
+/**
+ * A host narrows the event names `track` accepts by declaration merging:
+ *   declare module '@kortix/ui/lib/telemetry' {
+ *     interface UiTelemetryRegister { event: 'panel_opened' | 'panel_closed' }
+ *   }
+ * Without it, any string is accepted.
+ */
+export interface UiTelemetryRegister {}
+export type UiTrackEvent = UiTelemetryRegister extends { event: infer E extends string } ? E : string;
+
 export type UiTrackProperties = Record<string, string | number | boolean>;
 export type UiSeverity = 'fatal' | 'error' | 'warning' | 'info' | 'debug';
 
@@ -20,7 +30,7 @@ export interface UiBreadcrumb {
 }
 
 export interface UiTelemetry {
-  track(event: string, properties?: UiTrackProperties): void;
+  track(event: UiTrackEvent, properties?: UiTrackProperties): void;
   captureException(error: unknown, context?: UiCaptureContext): void;
   captureMessage(message: string, context?: UiCaptureContext): void;
   addBreadcrumb(breadcrumb: UiBreadcrumb): void;

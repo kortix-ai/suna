@@ -40,7 +40,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
 import {
@@ -431,8 +431,7 @@ export function ModelSelector({
     showUpgradeOption,
   } = useModelConnectionGate(models);
 
-  const params = useUiParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = useSessionIds().projectId ?? null;
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId as string),

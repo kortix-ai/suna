@@ -8,7 +8,7 @@ import {
 } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { useCallback, useMemo, useState } from 'react';
 
 /**
@@ -124,8 +124,7 @@ export function useModelPricingLookup(
 ): ModelPricingLookup {
   // Every caller renders under `/projects/[id]/…` (session chat, the
   // sub-session modal, the context modal). No project id → no fallback.
-  const params = useUiParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = useSessionIds().projectId ?? null;
 
   const [catalogWanted, setCatalogWanted] = useState(false);
   // A disabled query still returns (and subscribes to) data another observer

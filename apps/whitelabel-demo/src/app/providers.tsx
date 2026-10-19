@@ -1,11 +1,12 @@
 'use client';
 
-import { UiProvider } from '@kortix/ui';
+import { UiProvider, type UiNavigation } from '@kortix/ui';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import Loading from '@kortix/ui/loading';
 import { TooltipProvider } from '@kortix/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NextLink from 'next/link';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 // Importing the client configures the SDK platform seam once (createKortix),
@@ -19,6 +20,9 @@ import { fetchWrapperMode } from '@/lib/mode';
 import { Toaster } from '@kortix/ui/toast';
 
 const WrapperModeContext = createContext(false);
+
+// Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
+const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
 
 /**
  * True when this server has `KORTIX_API_KEY` set — Lumen is running as a BFF
@@ -77,10 +81,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WrapperModeContext.Provider value={wrapperMode}>
       <QueryClientProvider client={queryClient}>
-        {/* @kortix/ui's host adapters: links navigate with next/link; copy keeps
-            the English defaults. IconProvider gives every Phosphor icon the house
+        {/* @kortix/ui's host adapters: links and router calls navigate with
+            next/link and next/navigation; copy keeps the English defaults; images
+            stay plain <img> (next/image would need images.remotePatterns for
+            organization logos). IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
-        <UiProvider link={NextLink}>
+        <UiProvider link={NextLink} navigation={navigation}>
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />

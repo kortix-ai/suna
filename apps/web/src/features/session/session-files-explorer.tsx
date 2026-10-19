@@ -24,7 +24,7 @@ import { getSessionFilesStore } from '@/features/session/session-files-store-reg
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { useEffect, useRef, useState } from 'react';
 
 export type { SessionPanelMode };
@@ -100,8 +100,8 @@ function SessionFilesExplorerInner({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The git branch == the ROUTE session id; the chat session id is passed in.
-  const { id: routeProjectId, sessionId: gitSessionId } = useUiParams<{
-    id: string;
+  const { projectId: routeProjectId, sessionId: gitSessionId } = useSessionIds<{
+    projectId: string;
     sessionId: string;
   }>();
 

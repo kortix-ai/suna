@@ -3,7 +3,7 @@
 import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
 import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -51,8 +51,8 @@ export function SessionFilesPanel({
   const statusBadges = useLocalizedUiCatalog(STATUS_BADGE);
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
   // the OpenCode chat session id (used to message the agent).
-  const { id: projectId, sessionId: gitSessionId } = useUiParams<{
-    id: string;
+  const { projectId, sessionId: gitSessionId } = useSessionIds<{
+    projectId: string;
     sessionId: string;
   }>();
 

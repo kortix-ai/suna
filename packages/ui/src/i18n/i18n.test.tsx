@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { UiProvider } from '../providers/ui-provider';
-import { useLocale, useTranslations, type UiUseTranslations } from './index';
+import { defaultUiMessages, useLocale, useTranslations, type UiUseTranslations } from './index';
 
 function Probe({ ns, run }: { ns: string; run: (t: ReturnType<UiUseTranslations>) => string }) {
   const t = useTranslations(ns);
@@ -64,9 +65,23 @@ describe('@kortix/ui/i18n with host hooks', () => {
   });
 });
 
-test('en.json matches its sources (run: pnpm --filter @kortix/ui gen-i18n-catalog)', () => {
+test('en.ts matches its sources (run: pnpm --filter @kortix/ui gen-i18n-catalog)', () => {
   const script = fileURLToPath(new URL('../../scripts/gen-i18n-catalog.mjs', import.meta.url));
   const run = spawnSync('node', [script, '--check'], { encoding: 'utf8' });
   expect(run.stderr).toBe('');
   expect(run.status).toBe(0);
+});
+
+test('every hardcodedUi.i18nComplete key held in data in a scanned file is in the catalog', async () => {
+  const { HEX_KEY, scannedFiles } = await import('../../scripts/gen-i18n-catalog.mjs');
+  const web = JSON.parse(readFileSync(fileURLToPath(new URL('../../../../apps/web/translations/en.json', import.meta.url)), 'utf8'));
+  const source: Record<string, string> = web.hardcodedUi.i18nComplete;
+  const bundled: Record<string, string> = defaultUiMessages.hardcodedUi.i18nComplete;
+  const missing = scannedFiles().flatMap((file) =>
+    [...readFileSync(file, 'utf8').matchAll(HEX_KEY)]
+      .map((m) => m[2])
+      .filter((key) => key in source && !(key in bundled))
+      .map((key) => `${file}: ${key}`),
+  );
+  expect(missing).toEqual([]);
 });

@@ -2,7 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { lazyClient } from '@kortix/ui/lib/lazy-client';
-import { useUiHostConfig, useUiParams } from '@kortix/ui/providers/ui-provider';
+import { useSessionIds } from '@kortix/ui/providers/session-ids';
+import { useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo, useState } from 'react';
 
 import { useAccountState } from '@/hooks/billing';
@@ -85,8 +86,7 @@ export function useModelConnectionGate(
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const params = useUiParams<{ id?: string }>();
-  const projectId = resolveGateProjectId(options?.projectId, params?.id);
+  const projectId = resolveGateProjectId(options?.projectId, useSessionIds().projectId);
 
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId ?? ''),
