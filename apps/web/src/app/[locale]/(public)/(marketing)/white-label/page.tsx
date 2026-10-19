@@ -6,17 +6,12 @@ import { RowList, SectionDivider } from '@/features/marketing/component/public-r
 import SectionHeader from '@/features/marketing/component/section-header';
 import {
   AGREEMENT_URL,
-  closing,
   CUSTOM_TERMS_URL,
-  deal,
   ENV_LINES,
-  hero,
-  platinum,
-  scenarios,
+  getLocalizedWhiteLabelContent,
   SIGN_URL,
-  steps,
-  terms,
 } from '@/features/marketing/white-label/content';
+import { getTranslations } from '@/i18n/get-translations';
 import { ArrowRightIcon } from '@/lib/icons/ssr';
 import type { ReactNode } from 'react';
 
@@ -27,10 +22,7 @@ function Bullets({ title, items }: { title: string; items: readonly string[] }):
       <ul className="mt-6 space-y-4">
         {items.map((item) => (
           <li key={item} className="flex items-start gap-3">
-            <span
-              aria-hidden
-              className="bg-muted-foreground mt-2 size-1.5 shrink-0 rounded-full"
-            />
+            <span aria-hidden className="bg-muted-foreground mt-2 size-1.5 shrink-0 rounded-full" />
             <span className="text-muted-foreground text-sm leading-relaxed">{item}</span>
           </li>
         ))}
@@ -48,7 +40,10 @@ function Bullets({ title, items }: { title: string; items: readonly string[] }):
  *
  * Unlisted on purpose: no nav, footer or menu links here.
  */
-export default function WhiteLabelPage(): ReactNode {
+export default async function WhiteLabelPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { closing, deal, hero, platinum, scenarios, steps, terms } =
+    getLocalizedWhiteLabelContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero
@@ -114,7 +109,7 @@ export default function WhiteLabelPage(): ReactNode {
       {/* ── 4 · how it works ────────────────────────────────────────────── */}
       <section id="how-it-works" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeader eyebrow={steps.eyebrow} title={steps.title} description={steps.sub} />
-        <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="mt-10 grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="lg:col-span-7">
             <ol className="border-border bg-card overflow-hidden rounded-sm border">
               {steps.items.map((item, i) => (

@@ -1,9 +1,14 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+import { WHITE_LABEL_TRANSLATION_KEYS } from '@/i18n/white-label-translation-keys.generated';
+
 /**
  * `/white-label` copy.
  *
- * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
- * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
- * Wire i18n keys only once the copy is locked.
+ * Plain English lives here. Every string is also a `hardcodedUi.i18nComplete`
+ * key in the nine catalogs (`text` + the first 12 hex of its SHA-256), mapped in
+ * `i18n/white-label-translation-keys.generated.ts`. Change a string and you
+ * change its key: add the new key to all nine catalogs in the same commit.
  *
  * Voice rules: the `kortix-brand` skill. Never name a license — "open source"
  * and stop. Say "sandbox", never "container". No price, no invented number.
@@ -205,3 +210,11 @@ export const closing = {
   secondaryLabel: 'Read the agreement',
   tertiaryLabel: 'Ask for custom terms',
 } as const;
+
+export function getLocalizedWhiteLabelContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, scenarios, deal, platinum, steps, terms, closing },
+    tI18nComplete,
+    WHITE_LABEL_TRANSLATION_KEYS,
+  );
+}
