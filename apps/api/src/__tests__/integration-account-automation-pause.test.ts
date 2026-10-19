@@ -67,6 +67,25 @@ async function seedDueCron(where: SeededProject, slug: string) {
   });
 }
 
+/** A due session reminder: a schedule row with `reminder` set, claimable while the project has the `reminders` flag. */
+async function seedDueReminder(where: SeededProject, slug: string) {
+  await db.update(projects).set({ metadata: { experimental: { reminders: true } } }).where(eq(projects.projectId, where.project_id));
+  await db.insert(projectTriggerRuntime).values({
+    projectId: where.project_id,
+    slug,
+    triggerType: 'cron',
+    enabled: true,
+    scheduleRevision: 'r'.repeat(64),
+    scheduleSpec: {
+      ...cronSpec(slug),
+      sessionMode: 'pinned',
+      pinnedSessionId: crypto.randomUUID(),
+      reminder: { everySeconds: 3600, createdAt: new Date().toISOString() },
+    },
+    nextFireAt: new Date(Date.now() - 30_000),
+  });
+}
+
 beforeAll(async () => {
   paused = await seedProject('automation-pause');
   running = await seedProject('automation-running');
@@ -90,19 +109,23 @@ describe('the switch', () => {
 });
 
 describe('a paused account', () => {
-  test('its due schedule slot is not claimed, another account’s is, and resuming claims the missed slot once', async () => {
+  test('its due schedule slot and reminder are not claimed, another account’s are, and resuming claims each missed slot once', async () => {
     await seedDueCron(paused, 'paused-nightly');
+    await seedDueReminder(paused, 'reminder.0a0a0a0a0a0a');
     await seedDueCron(running, 'running-nightly');
+    await seedDueReminder(running, 'reminder.0b0b0b0b0b0b');
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: true, userId: PERSON });
 
     const claimed = await claimDueScheduleSlots({ now: new Date(), limit: 50 });
     const mine = claimed.map(({ execution }) => `${execution.projectId}:${execution.slug}`);
     expect(mine).toContain(`${running.project_id}:running-nightly`);
+    expect(mine).toContain(`${running.project_id}:reminder.0b0b0b0b0b0b`);
     expect(mine).not.toContain(`${paused.project_id}:paused-nightly`);
+    expect(mine).not.toContain(`${paused.project_id}:reminder.0a0a0a0a0a0a`);
 
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: false, userId: PERSON });
     const after = (await claimDueScheduleSlots({ now: new Date(), limit: 50 })).filter(({ execution }) => execution.projectId === paused.project_id);
-    expect(after.map(({ execution }) => execution.slug)).toEqual(['paused-nightly']);
+    expect(after.map(({ execution }) => execution.slug).sort()).toEqual(['paused-nightly', 'reminder.0a0a0a0a0a0a']);
   });
 
   test('a slot already queued when the account pauses is skipped by the drain with the reason, and starts nothing', async () => {
