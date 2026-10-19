@@ -255,7 +255,8 @@ const launchd: ServiceDriver = {
 
   status(paths, installed) {
     const disabled = run('launchctl', ['print-disabled', launchdTarget()]);
-    const enabled = !new RegExp(`"${paths.label.replace(/\./g, '\\.')}" => (disabled|true)`).test(disabled.detail);
+    // Plain substring match: the label is data, never a regex.
+    const enabled = ![`"${paths.label}" => disabled`, `"${paths.label}" => true`].some((line) => disabled.detail.includes(line));
     const status = run('launchctl', ['print', `${launchdTarget()}/${paths.label}`]);
     return {
       active: status.ok,

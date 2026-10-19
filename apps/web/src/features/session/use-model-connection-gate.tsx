@@ -14,7 +14,7 @@ import { useProjectPageCans } from '@/lib/use-project-can';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { getProject, listProjectSecrets } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from './entitlements-pending';
 
@@ -91,13 +91,15 @@ export function useModelConnectionGate(
   const params = useParams<{ id?: string }>();
   const projectId = resolveGateProjectId(options?.projectId, params?.id);
 
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
+  // The gateway flag rides the bare project row (~10 ms), not `/detail`,
+  // which reads git and held the picker spinner for up to 2.6 s on prod.
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   const caps = useProjectPageCans(projectId ?? undefined);
   // The provider modal's writes are `project.model.write`, the same leaf the
   // model picker gates its "+" and sliders on.
@@ -171,7 +173,7 @@ export function useModelConnectionGate(
   // spun over a catalog already sitting in the browser. `fetchStatus` answers
   // the question without a copy to keep in sync — see `entitlements-pending`.
   const entitlementsPending = resolveEntitlementsPending([
-    projectDetailQuery,
+    projectRowQuery,
     secretsQuery,
     accountStateQuery,
   ]);
@@ -191,9 +193,9 @@ export function useModelConnectionGate(
   const openUpgrade = useCallback(() => {
     openUpgradeDialog({
       reason: 'subscription_required',
-      accountId: projectDetailQuery.data?.project.account_id,
+      accountId: projectRowQuery.data?.account_id,
     });
-  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
+  }, [openUpgradeDialog, projectRowQuery.data?.account_id]);
 
   const providerModalOpened = useOpenedOnce(projectModalOpen);
   const modal =

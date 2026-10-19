@@ -38,4 +38,15 @@ describe('Drive ?path= value', () => {
     );
     expect(driveUrlWithPath('http://x/p/1/drive?path=~/a', '')).toBe('/p/1/drive');
   });
+
+  test('extra slashes are trimmed, and a long slash run returns fast', () => {
+    expect(drivePathFromParam('//Company/Briefs//', ME)).toBe('Company/Briefs');
+    expect(drivePathToParam('/Company/Briefs/', ME)).toBe('Company/Briefs');
+    const slashes = '/'.repeat(100_000);
+    const started = performance.now();
+    // The old `/\/+$/` trim took ~12 s on this input.
+    expect(drivePathFromParam(`x${slashes}a`, ME)).toBe(`x${slashes}a`);
+    expect(drivePathToParam(`x${slashes}a`, ME)).toBe(`x${slashes}a`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
