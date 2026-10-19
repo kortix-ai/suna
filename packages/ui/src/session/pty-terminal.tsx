@@ -4,18 +4,13 @@ import { cn } from '../lib/utils';
 import type { Pty } from '@kortix/sdk';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import * as xtermModule from '@xterm/xterm';
-import type { ITheme, Terminal as XTerm } from '@xterm/xterm';
+import { ITheme, Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { RefObject } from 'react';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { PtyAttachStatus } from './pty-attach-status';
 import type { ConnectionStatus } from './pty-connection';
 import { usePtyConnection } from './use-pty-connection';
-
-// @xterm/xterm ships CommonJS. Node ESM sees only `default`; a bundler sees the named export.
-const { Terminal: XTermCtor } =
-  (xtermModule as typeof xtermModule & { default?: typeof xtermModule }).default ?? xtermModule;
 
 export { isTerminalReport, sanitizeTerminalChunk } from './pty-terminal-sanitize';
 
@@ -120,7 +115,7 @@ function usePtyTerminalXterm(
 
     const container = terminalRef.current;
 
-    const term = new XTermCtor({
+    const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
       fontSize: 13,

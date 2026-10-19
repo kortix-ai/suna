@@ -17,7 +17,7 @@
  * Run from packages/ui:  node scripts/smoke-install.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,8 @@ const PACKAGES = [
   { name: '@kortix/ui', dir: UI_DIR, build: 'build' },
 ];
 const VERSION = '0.0.0-smoke';
+/** Exports a host loads only in the browser (see smoke.mjs). */
+const BROWSER_ONLY = ['./session/pty-terminal'];
 
 const walkFiles = (dir) =>
   existsSync(dir)
@@ -106,7 +108,12 @@ for (const file of ${JSON.stringify(shipped)}) {
   if (!existsSync(new URL('./node_modules/@kortix/ui/' + file, import.meta.url))) throw new Error('tarball is missing ' + file);
 }
 const keys = Object.keys(pkg.exports);
+// Browser-only modules: resolved, never imported. A host loads them with a
+// dynamic import on the client (session-terminal-panel loads pty-terminal).
+// pty-terminal: @xterm/xterm reads \`self\` at module load.
+const BROWSER_ONLY = ${JSON.stringify(BROWSER_ONLY)};
 const failures = [];
+let browserOnly = 0;
 let js = 0;
 let css = 0;
 for (const key of keys) {
@@ -120,6 +127,10 @@ for (const key of keys) {
     }
     const file = fileURLToPath(import.meta.resolve(spec));
     if (/['"]@kortix\\/shared/.test(readFileSync(file, 'utf8'))) throw new Error('imports @kortix/shared');
+    if (BROWSER_ONLY.includes(key)) {
+      browserOnly += 1;
+      continue;
+    }
     await import(spec);
     js += 1;
   } catch (error) {
@@ -143,13 +154,14 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { createElement } = await import('react');
 const html = renderToStaticMarkup(createElement(root.Button, null, 'Hi'));
 if (!html.startsWith('<button') || !html.includes('Hi')) throw new Error('Button did not render: ' + html);
-console.log('OK: ' + js + ' JS exports imported, ' + css + ' file exports resolved (' + keys.length + ' total), ${shipped.length} shipped files present; Button SSR: ' + html.slice(0, 60) + '…');
+console.log('OK: ' + js + ' JS exports imported, ' + browserOnly + ' browser-only resolved, ' + css + ' file exports resolved (' + keys.length + ' total), ${shipped.length} shipped files present; Button SSR: ' + html.slice(0, 60) + '…');
 `,
   );
   process.stdout.write(run('node', ['smoke.mjs'], workdir));
 
   console.log('→ type-checking every JS export through the published .d.ts');
-  const installed = JSON.parse(run('node', ['-p', "JSON.stringify(require('./node_modules/@kortix/ui/package.json').exports)"], workdir));
+  // Read the file, not `node -p`: a piped stdout over 64 KB arrives cut (502 exports).
+  const installed = JSON.parse(readFileSync(join(workdir, 'node_modules', '@kortix', 'ui', 'package.json'), 'utf8')).exports;
   const specs = Object.keys(installed)
     .filter((key) => !key.endsWith('.css') && key !== './package.json')
     .map((key) => (key === '.' ? '@kortix/ui' : `@kortix/ui/${key.slice(2)}`));
