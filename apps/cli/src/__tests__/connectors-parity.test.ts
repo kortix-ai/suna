@@ -840,12 +840,13 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stderr).toContain('kortix projects features enable connectors_v2');
   });
 
-  test('move on an already-moved connector prints that it keeps its slug', async () => {
+  test('move on a connector already on its Kortix app says there is nothing to move', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'move', 'linear', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls).toEqual([{ method: 'POST', path: `/v1/projects/${PROJECT}/connectors/linear/move`, body: {} }]);
-    expect(r.stdout).toContain('linear now uses its Kortix app (provider mcp) and keeps its slug.');
+    expect(r.stdout).toContain('linear already uses its Kortix app (provider mcp). Nothing to move.');
+    expect(r.stdout).not.toContain('sign in again');
   });
 
   test('move signs in on the marked account, waits for the token, then finishes the move', async () => {

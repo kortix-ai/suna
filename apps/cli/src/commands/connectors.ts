@@ -2244,7 +2244,11 @@ async function moveToKortix(
       moveConnector(ctx.projectId, slug, opts.connectionId ? { connectionId: opts.connectionId } : {}),
     );
   const first = await move();
-  if (first.status === 'moved') return printMoved(slug, null);
+  if (first.status === 'moved') {
+    // No sign-in happened in this run: the connector was already on its Kortix app.
+    process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset} already uses its Kortix app (provider mcp). Nothing to move.`)}\n`);
+    return 0;
+  }
   if (!first.connection_id || !first.to) {
     process.stderr.write(`${status.err('The server started the move but named no account to sign in on.')}\n`);
     return 1;
@@ -2324,9 +2328,9 @@ async function waitForSignIn(client: ApiClient, oauth2: string): Promise<number>
   }
 }
 
-function printMoved(slug: string, toName: string | null): number {
+function printMoved(slug: string, toName: string): number {
   process.stdout.write(
-    `${status.ok(`${C.bold}${slug}${C.reset} now uses ${toName ?? 'its Kortix app'} (provider mcp) and keeps its slug.`)}\n` +
+    `${status.ok(`${C.bold}${slug}${C.reset} now uses ${toName} (provider mcp) and keeps its slug.`)}\n` +
       `  ${C.dim}Its tools now come from the vendor's MCP server. Other accounts on it sign in again.${C.reset}\n`,
   );
   return 0;
