@@ -114,7 +114,8 @@ reply, an upload, a worker that finished):
 
    Store the id it prints in `reminder_id`. When `next_wake_at` changes,
    remove the old reminder (`kortix reminders rm <id>`) and create the new
-   one. Wake at the earliest of: the next `due`, the next nag, or 24 hours.
+   one. Wake at the earliest of: the next `due`, the next nag, 15 minutes
+   while a worker runs, or 24 hours.
    After any change, run `kortix reminders ls` and confirm that exactly one
    active reminder is left and that its id is `reminder_id`. Never write that
    you created or removed a reminder before `ls` shows it.
@@ -185,8 +186,8 @@ too.
    kortix sessions new --prompt "Verify the goal in <goal folder>. Load the kortix-goals skill. You did none of the work. For each success criterion in goal.json, check its evidence yourself. Answer PASS or FAIL per criterion with the reason, and write the verdict to evidence/verification.md." --json
    ```
 
-   Record it in `sessions` with role `verifier`. On the next wake, read its
-   verdict (`kortix sessions wait-for <id> --timeout 5`, then the file).
+   Record it in `sessions` with role `verifier`. Wait for it in this turn
+   (`kortix sessions wait-for <id> --timeout 900`), then read the file.
 2. All PASS: set `status` to `done` and `verified_by` to the verifier's
    session id, remove the heartbeat reminder and confirm with
    `kortix reminders ls`, then send the user one message: the outcome, and
