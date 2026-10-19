@@ -5,31 +5,74 @@ import type { KortixTheme } from '@kortix/ui/theme';
  * layout.tsx compiles it with `themeToCss` into one <style>. Every unset
  * field keeps the Kortix default.
  *
- * Lumen replaces the one Kortix accent (blue) with indigo, tints the
- * hairlines indigo, uses a tighter radius and its own type face. Neutrals
- * (--background, --foreground, --primary) stay Kortix ink. `--brand` is
- * Lumen's own variable for its highlights (`bg-brand`, see globals.css).
+ * Lumen is lagoon teal on warm sand: tinted neutrals for every surface and
+ * one accent. Dark mode is deep teal ink, not grey. `--brand` is Lumen's own
+ * variable for its highlights (`bg-brand`, see globals.css). Contrast (WCAG):
+ * body text 15.8 light / 16.4 dark, muted text >= 5.3, text on the accent
+ * 5.0 light / 8.6 dark.
  */
-const indigo = { light: 'oklch(0.585 0.22 277)', dark: 'oklch(0.62 0.2 277)' };
-
 const accent = {
-  '--brand-foreground': 'oklch(0.985 0 0)',
   // Checked switches, checkboxes, radios, tabs, the brand/blue Button and
   // Badge variants, info alerts and status.
   blue: 'var(--brand)',
   // Focus rings. focusRing, sidebarRing, sidebarPrimary and brand follow it.
   ring: 'var(--brand)',
-  selection: 'color-mix(in oklch, var(--brand) 35%, transparent)',
+  selection: 'color-mix(in oklch, var(--brand) 30%, transparent)',
   selectionForeground: 'var(--foreground)',
   sidebarPrimaryForeground: 'var(--brand-foreground)',
 } as const;
 
 export const LUMEN_THEME: KortixTheme = {
-  light: { '--brand': indigo.light, ...accent, border: 'oklch(0.9 0.03 277)' },
-  dark: { '--brand': indigo.dark, ...accent, border: 'oklch(0.32 0.06 277)' },
-  radius: '0.25rem',
+  light: {
+    '--brand': 'oklch(0.52 0.1 200)',
+    '--brand-foreground': 'oklch(0.99 0.005 85)',
+    ...accent,
+    background: 'oklch(0.985 0.008 85)',
+    pane: 'oklch(0.975 0.01 82)',
+    surface: 'oklch(0.975 0.01 82)',
+    card: 'oklch(1 0 0)',
+    popover: 'oklch(1 0 0)',
+    foreground: 'oklch(0.24 0.025 55)',
+    cardForeground: 'oklch(0.24 0.025 55)',
+    popoverForeground: 'oklch(0.24 0.025 55)',
+    primary: 'oklch(0.24 0.025 55)',
+    primaryForeground: 'oklch(0.985 0.008 85)',
+    muted: 'oklch(0.955 0.012 80)',
+    mutedForeground: 'oklch(0.5 0.02 60)',
+    secondary: 'oklch(0.955 0.012 80)',
+    accent: 'oklch(0.95 0.016 80)',
+    border: 'oklch(0.9 0.02 78)',
+    input: 'oklch(0.9 0.02 78)',
+    sidebar: 'oklch(0.97 0.012 82)',
+    sidebarBorder: 'oklch(0.9 0.02 78)',
+  },
+  dark: {
+    '--brand': 'oklch(0.74 0.12 190)',
+    '--brand-foreground': 'oklch(0.18 0.03 215)',
+    ...accent,
+    background: 'oklch(0.175 0.014 215)',
+    pane: 'oklch(0.19 0.015 215)',
+    surface: 'oklch(0.19 0.015 215)',
+    card: 'oklch(0.21 0.016 215)',
+    popover: 'oklch(0.22 0.017 215)',
+    foreground: 'oklch(0.95 0.01 85)',
+    cardForeground: 'oklch(0.95 0.01 85)',
+    popoverForeground: 'oklch(0.95 0.01 85)',
+    primary: 'oklch(0.95 0.01 85)',
+    primaryForeground: 'oklch(0.175 0.014 215)',
+    muted: 'oklch(0.24 0.018 215)',
+    mutedForeground: 'oklch(0.7 0.015 210)',
+    secondary: 'oklch(0.24 0.018 215)',
+    accent: 'oklch(0.26 0.02 210)',
+    border: 'oklch(0.31 0.02 210)',
+    input: 'oklch(0.31 0.02 210)',
+    sidebar: 'oklch(0.16 0.014 215)',
+    sidebarBorder: 'oklch(0.28 0.02 210)',
+  },
+  radius: '0.5rem',
   fonts: {
-    sans: '"Avenir Next", Avenir, "Segoe UI", system-ui, sans-serif',
-    mono: 'Menlo, Consolas, ui-monospace, monospace',
+    // Loaded by next/font in layout.tsx; the stacks behind it are the fallback.
+    sans: 'var(--font-lumen-sans), "Avenir Next", system-ui, sans-serif',
+    mono: 'var(--font-lumen-mono), Menlo, ui-monospace, monospace',
   },
 };
