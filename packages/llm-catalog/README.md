@@ -16,11 +16,31 @@ The displayed prices are the OpenRouter pool prices, or the pool cap for GLM. Op
 
 The OpenCode reference is `kortix/<gateway model ID>`. The bundled sandbox fallback (`MINIMAL_FALLBACK_MODELS`) uses the same IDs, prices, and capabilities.
 
-### Routing: per-model Morph selection
+### Routing: Morph direct, then Zen, then the OpenRouter pool
 
-1. `MORPH_MANAGED_MODELS` is a comma-separated list of managed model IDs. Its default is `deepseek-v4.1-flash,kimi-k3`. GLM uses OpenRouter only. An empty value disables Morph for every managed model. Add `glm-5.3-flash` to explicitly enable Morph for GLM. The change takes effect after an API restart or deployment. A selected model uses Morph direct first when `MORPH_API_KEY` exists, then OpenRouter on a retryable error.
-2. OpenRouter routes inside the model's endpoint pool: `only` lists the pool, `allow_fallbacks: true` lets OpenRouter move to the next pool member on an endpoint error, `zdr: true` and `data_collection: deny` are forced by the gateway, and `max_price` (USD per 1M tokens) excludes premium tiers. The gateway intersects operator-defined pools with the verified US endpoint list. Morph is excluded from every OpenRouter pool.
-3. The OpenRouter model ID names the model author, not the inference host. The allowlist names the permitted hosts.
+A managed model tries its upstreams in this order (`managedCandidates`). A 429, 5xx, or network error moves the request to the next one. After the last one fails, the model's fallback policy moves it to the fallback model (`deepseek-v4.1-flash` falls back to `glm-5.3-flash`).
+
+| Order | Upstream | Selected by | Default |
+| --- | --- | --- | --- |
+| 1 | Morph direct (signed ZDR terms) | `MORPH_MANAGED_MODELS` + `MORPH_API_KEY` | `deepseek-v4.1-flash,glm-5.3-flash` |
+| 2 | OpenCode Zen | `OPENCODE_ZEN_MANAGED_MODELS` + `OPENCODE_ZEN_API_KEY` | `glm-5.3-flash,deepseek-v4.1-flash` |
+| 3 | OpenRouter endpoint pool | the model's `openrouterProvider.only` + `OPENROUTER_API_KEY` | every managed model |
+
+Why: from 2026-10-16 22:00 to 2026-10-19 04:00 UTC, DeepSeek had one upstream, the OpenRouter pool pinned to `coreweave/fp8`. That endpoint answered 60 to 80% of requests with HTTP 429 (`limit_source: upstream_provider_shared_pool`). OpenRouter's uptime page showed it at 100% the whole time: its uptime does not count shared-pool 429s.
+
+Measured on 2026-10-19 with the prod keys, ~150k-token prompts, streaming, one tool call (first token p50 / max, all requests answered with a tool call):
+
+| Route | DeepSeek V4.1 Flash, 8 parallel | DeepSeek, 40 parallel | GLM-5.3-Flash, 8 parallel | GLM, 40 parallel |
+| --- | --- | --- | --- | --- |
+| Morph direct | 2.9 s / 3.2 s (1017 snapshot) | 8.0 s / 10.8 s, 40/40 | 7.9 s / 8.2 s | 11.3 s / 12.6 s, 40/40 |
+| OpenRouter `morph/fp8` | 5.4 s / 5.9 s (1017 snapshot) | not measured | not measured | not measured |
+| OpenCode Zen | 12.9 s / 16.6 s | 10.5 s / 18.7 s, 40/40 | 9.8 s / 12.0 s | not measured |
+
+1. An empty `MORPH_MANAGED_MODELS` or `OPENCODE_ZEN_MANAGED_MODELS` removes that upstream for every managed model (the kill switch). The change takes effect after an API restart or deployment.
+2. The gateway fails over on an error and on the 90 s header timeout, never on a slow first token. Direct Morph was off from 2026-09-27 to 2026-10-19 for that reason (p90 67 s then).
+3. A Free account may use only the platform default. It may also use the platform policy's fallback model, as that fallback only (`isPlatformDefaultFallback` in `resolve-candidates.ts`). On 2026-10-17 and 10-18, 119 Free accounts got DeepSeek's 429 on 8,469 requests with no fallback.
+4. OpenRouter routes inside the model's endpoint pool: `only` lists the pool, `allow_fallbacks: true` lets OpenRouter move to the next pool member on an endpoint error, `zdr: true` and `data_collection: deny` are forced by the gateway, and `max_price` (USD per 1M tokens) excludes premium tiers. The gateway intersects operator-defined pools with the verified US endpoint list.
+5. The OpenRouter model ID names the model author, not the inference host. The allowlist names the permitted hosts.
 
 A failure after output has started is not retried. The client receives the stream error.
 
@@ -28,13 +48,13 @@ Billing uses OpenRouter's reported `usage.cost` for the endpoint that served the
 
 The project model picker lists each eligible managed route's estimated customer price for input, cached input, and output tokens. The API refreshes allowed OpenRouter endpoint rates from its endpoint API at most once every five minutes. A feed failure keeps the verified public rate table. The API applies `KORTIX_LLM_MARKUP` (default `1.2`) before returning prices. OpenRouter may select any allowed endpoint; its reported `usage.cost` determines the settled charge. Direct Morph rates use the public table until updated in the catalog. The fallback tables were checked against [OpenRouter's model endpoint pages](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model) and [Morph's current pricing](https://www.morphllm.com/pricing) on 2026-09-26.
 
-For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environment and restart the API. For example, `MORPH_MANAGED_MODELS=deepseek-v4.1-flash,kimi-k3,glm-5.3-flash` enables all three. Set `MORPH_MANAGED_MODELS=` to disable Morph globally. Direct Morph does not inherit OpenRouter's ZDR and US location controls; verify its contract before selecting models with restricted data.
+For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environment and restart the API. For example, `MORPH_MANAGED_MODELS=deepseek-v4.1-flash,kimi-k3,glm-5.3-flash` enables all three. Set `MORPH_MANAGED_MODELS=` to disable Morph globally. Direct Morph does not inherit OpenRouter's ZDR and US location controls: Kortix has signed ZDR terms with Morph directly (2026-10-19).
 
 Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected models require `MORPH_API_KEY` or `OPENROUTER_API_KEY`.
 
-### OpenCode Zen first
+### OpenCode Zen
 
-`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves first. The OpenRouter pool is their fallback: a 429, 5xx, or network error on Zen moves the request to the pool, and the reverse. Its default is `glm-5.3-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
+`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves after Morph direct and before the OpenRouter pool. Its default is `glm-5.3-flash,deepseek-v4.1-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
 
 1. Zen states that it hosts every model in the US and that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
 2. Zen serves the managed IDs unchanged (`glm-5.3-flash`, `kimi-k3`, `deepseek-v4.1-flash`) on `/chat/completions`.

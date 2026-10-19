@@ -335,7 +335,7 @@ describe('managed OpenCode Zen route', () => {
     config.OPENCODE_ZEN_API_URL = undefined;
   });
 
-  test('a listed model tries Zen first, billed at the managed price, then the OpenRouter pool', () => {
+  test('a listed model tries Zen, billed at the managed price, then the OpenRouter pool', () => {
     const candidates = managedCandidates(glm);
     expect(candidates.map((candidate) => candidate.provider)).toEqual(['opencode', 'openrouter']);
     expect(candidates[0]).toMatchObject({
@@ -344,6 +344,18 @@ describe('managed OpenCode Zen route', () => {
       failover: true, publicProvider: 'kortix',
     });
     expect(candidates[1].failover).toBe(true);
+  });
+
+  test('Morph direct comes first, then Zen, then the OpenRouter pool', () => {
+    const saved = { models: config.MORPH_MANAGED_MODELS, key: config.MORPH_API_KEY };
+    config.MORPH_MANAGED_MODELS = ['glm-5.3-flash'];
+    config.MORPH_API_KEY = 'morph-test-key';
+    try {
+      expect(managedCandidates(glm).map((candidate) => candidate.provider)).toEqual(['morph', 'opencode', 'openrouter']);
+    } finally {
+      config.MORPH_MANAGED_MODELS = saved.models;
+      config.MORPH_API_KEY = saved.key;
+    }
   });
 
   test('a model with no price adds no Zen candidate: a credit-billed route never settles at $0', () => {

@@ -100,25 +100,27 @@ const optFallbackPolicies = z
 //   - OPTIONAL:    graceful degradation or sane default if missing
 
 /**
- * Morph direct is OFF by default (2026-09-27). Its deepseek-v4.1-flash endpoint
- * ran at 78.9% uptime over 30 min on OpenRouter's public stats while our users
- * waited 18-75 s per call: the gateway fails over only on errors and a 90 s
- * header timeout, never on a slow first byte. Managed models are served by
- * their OpenRouter pool instead. Re-enable per environment by setting
- * MORPH_MANAGED_MODELS to a comma-separated list of managed model ids.
+ * Managed model ids served by Morph direct (signed ZDR terms) FIRST, then Zen,
+ * then the OpenRouter pool (`managedCandidates`). From 2026-10-16 22:00 to
+ * 10-19 04:00 UTC the OpenRouter pool alone (one shared endpoint) answered
+ * 60-80% of DeepSeek requests with 429. Measured 2026-10-19 at ~150k-token
+ * prompts, streaming, tool calls: Morph direct DeepSeek 1017 first token p50
+ * 2.9 s (8 parallel), 8.0 s (40 parallel, 40/40 OK); GLM 7.9 s / 11.3 s.
+ * It was off from 2026-09-27 for slowness (p90 67 s then): the gateway fails
+ * over only on errors and a 90 s header timeout, never on a slow first byte.
+ * An empty list is the kill switch.
  */
-export const MORPH_MANAGED_MODELS_DEFAULT = '';
+export const MORPH_MANAGED_MODELS_DEFAULT = 'deepseek-v4.1-flash,glm-5.3-flash';
 
 /**
- * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention) is
- * the FIRST candidate for these managed models; the OpenRouter pool is the
- * fallback. At the prod request shape (~160k-token prompts, cached follow-up
- * turns) Zen served 60 concurrent sessions (239/240, 404 req/min) while the
- * OpenRouter GLM pool timed out or 429'd on 73/240 (2026-09-29). Zen serves
- * the same model ids. Without OPENCODE_ZEN_API_KEY the list has no effect;
- * an empty list is the kill switch.
+ * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention)
+ * serves these managed models after Morph direct and before the OpenRouter
+ * pool: capacity outside both. At ~160k-token prompts Zen served 60
+ * concurrent sessions (239/240, 404 req/min, 2026-09-29) and 40 parallel
+ * DeepSeek requests 40/40 (first token p50 10.5 s, 2026-10-19). Without
+ * OPENCODE_ZEN_API_KEY the list has no effect; an empty list is the kill switch.
  */
-export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash';
+export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash,deepseek-v4.1-flash';
 
 export function parseMorphManagedModels(value: string): string[] {
   return value.split(',').map((id) => id.trim()).filter(Boolean);
@@ -497,13 +499,12 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
-  // Managed model IDs that use Morph direct as their first candidate.
-  // An empty value disables Morph for every managed model — the default since
-  // 2026-09-27 (see MORPH_MANAGED_MODELS_DEFAULT).
+  // Managed model IDs that use Morph direct as their first candidate
+  // (see MORPH_MANAGED_MODELS_DEFAULT). An empty value disables Morph.
   MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
   OPENCODE_ZEN_API_KEY: optStr,
-  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  // Managed model IDs served by OpenCode Zen after Morph (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.

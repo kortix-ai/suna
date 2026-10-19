@@ -76,11 +76,12 @@ export function createInternalGatewayRoutes() {
   });
 
   app.post('/resolve-upstream', async (c) => {
-    const { principal, model } = await c.req.json();
+    const { principal, model, fallbackFor } = await c.req.json();
     try {
       const candidates = await resolveCandidates(
         principal as AuthedPrincipal,
         typeof model === 'string' ? model : '',
+        typeof fallbackFor === 'string' ? { fallbackFor } : undefined,
       );
       return c.json({ candidates });
     } catch (err) {

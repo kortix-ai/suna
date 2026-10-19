@@ -232,9 +232,9 @@ function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null 
 }
 
 /**
- * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
- * OpenRouter fallback stays inside the verified US endpoint pool.
- * OPENCODE_ZEN_MANAGED_MODELS puts OpenCode Zen first; the others become its fallback.
+ * A managed model's upstreams, best first: Morph direct (MORPH_MANAGED_MODELS),
+ * OpenCode Zen (OPENCODE_ZEN_MANAGED_MODELS), then the verified US OpenRouter
+ * pool. Each fails over to the next on a 429, 5xx or network error.
  */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
@@ -246,7 +246,7 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   const morph = morphManagedDescriptor(managed);
   const openrouter = openRouterManagedDescriptor(managed);
   const zen = zenManagedDescriptor(managed);
-  return [zen, morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
+  return [morph, zen, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
 /**
