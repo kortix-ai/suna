@@ -128,6 +128,14 @@ export interface FileExplorerSource {
    * Optional: a source without it fetches as usual.
    */
   useUploadPreview?: () => (file: File, targetPath?: string) => void;
+  /**
+   * Save several files and folders as one zip (a multi-selection's "Download
+   * as zip"). Optional: without it, a selection downloads its files one by one.
+   */
+  useDownloadZip?: () => (
+    items: { path: string; name: string; type: 'file' | 'directory' }[],
+    zipName: string,
+  ) => Promise<void>;
   useFileDelete: () => ExplorerMutation<{ filePath: string }>;
   useFileMkdir: () => ExplorerMutation<{ dirPath: string }>;
   useFileRename: () => ExplorerMutation<{ from: string; to: string }>;

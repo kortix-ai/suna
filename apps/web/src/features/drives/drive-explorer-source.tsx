@@ -321,6 +321,40 @@ export const driveExplorerSource: FileExplorerSource = {
       [driveId, queryClient],
     );
   },
+  useDownloadZip: () => {
+    const driveId = useDriveId();
+    return useCallback(
+      async (items: { path: string; name: string; type: 'file' | 'directory' }[], zipName: string) => {
+        // ponytail: bytes are held in memory to build the zip; stream it if Drive holds GBs.
+        const { default: JSZip } = await import('jszip');
+        const zip = new JSZip();
+        const add = async (path: string, inZip: string, type: 'file' | 'directory'): Promise<void> => {
+          if (type === 'file') {
+            zip.file(inZip, await downloadDriveFile(driveId, toDrivePath(path)));
+            return;
+          }
+          zip.folder(inZip);
+          const { entries } = await listDriveFolder(driveId, toDrivePath(path));
+          for (const e of entries) {
+            if (e.type === 'symlink') continue;
+            await add(fromDrivePath(e.path), `${inZip}/${e.name}`, e.type === 'dir' ? 'directory' : 'file');
+          }
+        };
+        for (const item of items) await add(item.path, item.name, item.type);
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = zipName.endsWith('.zip') ? zipName : `${zipName}.zip`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        // Revoke on the next task: Safari cancels a download revoked in the click's tick.
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      },
+      [driveId],
+    );
+  },
   useFileDelete: () =>
     useDriveMutation<{ filePath: string }>(
       (driveId, { filePath }) => deleteDriveFile(driveId, toDrivePath(filePath), { recursive: true }),

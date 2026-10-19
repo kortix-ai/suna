@@ -32,9 +32,16 @@ import {
   ClipboardIcon as Clipboard,
   FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
+  ClipboardTextIcon,
   MoonIcon,
+  XIcon,
+  UploadSimpleIcon,
   UploadIcon as Upload,
+  ArrowsLeftRightIcon,
+  CheckSquareIcon,
+  TrashIcon,
 } from '@phosphor-icons/react';
+import { Download } from '@/features/icon/icons/download';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   useCallback,
@@ -42,6 +49,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ElementType,
   type ReactNode,
 } from 'react';
@@ -53,6 +61,14 @@ import {
   resolveUploadTarget,
   UPLOAD_CONCURRENCY,
 } from '../upload-batch';
+import {
+  droppedEntries,
+  type DroppedEntry,
+  hasFolder,
+  readDroppedTree,
+  type TreeFile,
+  treeLevels,
+} from '../drop-tree';
 import { DriveCreateDialog, type DriveCreateKind, type DriveLocation } from './drive-create-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
@@ -64,6 +80,14 @@ import {
   DrivePathBar,
   DriveViewMenu,
 } from './drive-toolbar';
+import {
+  createSelectionStore,
+  DRIVE_ITEM_ATTR,
+  type DriveSelection,
+  DriveSelectionContext,
+} from './drive-selection';
+import { DriveSelectionBar } from './drive-selection-bar';
+import { DriveRenameContext, DriveRenameDialog } from './drive-rename-dialog';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
@@ -226,6 +250,8 @@ export function DriveExplorer({
   const uploadMutation = source.useFileUpload();
   // Called unconditionally: a source's hooks never change between renders.
   const previewUpload = source.useUploadPreview?.();
+  const downloadZip = source.useDownloadZip?.();
+  const setClipboardItems = useFilesStore((s) => s.setClipboardItems);
   const deleteMutation = source.useFileDelete();
   const mkdirMutation = source.useFileMkdir();
   const renameMutation = source.useFileRename();
@@ -254,8 +280,19 @@ export function DriveExplorer({
   const dragPageCounter = useRef(0);
 
   const [createKind, setCreateKind] = useState<DriveCreateKind | null>(null);
+  const [renameTarget, setRenameTarget] = useState<FileNode | null>(null);
+  const filesStoreApi = useFilesStoreApi();
+  const requestRename = useCallback(
+    (node: FileNode) => {
+      // An open preview sits above every dialog; close it first.
+      if (filesStoreApi.getState().selectedFilePath) filesStoreApi.getState().goBackToBrowser();
+      setRenameTarget(node);
+    },
+    [filesStoreApi],
+  );
 
-  const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<FileNode[]>([]);
+  const deleteTarget = deleteTargets.length === 1 ? deleteTargets[0]! : null;
 
   const { downloadDir, isDownloading: isDirDownloading } = source.useDirectoryDownload();
 
@@ -453,32 +490,36 @@ export function DriveExplorer({
       // An open preview sits above every dialog; close it so the confirmation
       // is not hidden behind it.
       if (filesStore.getState().selectedFilePath) goBackToBrowser();
-      setDeleteTarget(node);
+      setDeleteTargets([node]);
     },
     [goBackToBrowser, filesStore],
   );
 
-  /** The row goes at once and the dialog closes; a refused delete brings it back. */
+  /** The rows go at once and the dialog closes; a refused delete brings its row back. */
   const confirmDelete = useCallback(async () => {
-    if (!deleteTarget) return;
-    const target = deleteTarget;
-    setDeleteTarget(null);
-    setGone((prev) => [...prev, { path: target.path }]);
-    let ok = false;
-    try {
-      await deleteMutation.mutateAsync({ filePath: target.path });
-      ok = true;
-    } catch (err) {
-      errorToast(
-        tHardcodedUi('i18nComplete.text5d4ff119f3d4', {
-          value0:
-            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
-        }),
-      );
-    } finally {
-      settleGone(target.path, ok);
-    }
-  }, [deleteTarget, deleteMutation, settleGone, tHardcodedUi]);
+    const targets = deleteTargets;
+    if (targets.length === 0) return;
+    setDeleteTargets([]);
+    setGone((prev) => [...prev, ...targets.map((t) => ({ path: t.path }))]);
+    // Four at a time, like uploads: 200 parallel deletes trip rate limits and
+    // each one refetches the folder.
+    await forEachLimit(targets, UPLOAD_CONCURRENCY, async (target) => {
+      let ok = false;
+      try {
+        await deleteMutation.mutateAsync({ filePath: target.path });
+        ok = true;
+      } catch (err) {
+        errorToast(
+          tHardcodedUi('i18nComplete.text5d4ff119f3d4', {
+            value0:
+              err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
+          }),
+        );
+      } finally {
+        settleGone(target.path, ok);
+      }
+    });
+  }, [deleteTargets, deleteMutation, settleGone, tHardcodedUi]);
 
   const handleHistory = useCallback((node: FileNode) => {
     setHistoryPopoverPath(node.path);
@@ -510,7 +551,6 @@ export function DriveExplorer({
       try {
         await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
         ok = true;
-        successToast(tHardcodedUi('i18nComplete.text854362dd1a76', { value0: sourceName }));
       } catch (err) {
         errorToast(
           tHardcodedUi('i18nComplete.text66d6798adfa9', {
@@ -652,36 +692,33 @@ export function DriveExplorer({
   );
 
   /**
-   * Upload a picked folder: its tree is made here first, one depth at a time
-   * (a level's folders in parallel), then its files go up into it. The top
-   * folder shows in the listing at once.
+   * Upload a tree (a picked or dropped folder) into `base`: its folders are
+   * made first, one depth at a time (a level in parallel), then its files go
+   * up into them. Top folders landing in the folder in view show at once.
    */
-  const handleUploadFolder = useCallback(
-    async (fileList: FileList) => {
-      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList));
+  const uploadTree = useCallback(
+    async (tree: TreeFile[], base: string) => {
+      const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file));
       for (const { reason } of rejected) errorToast(reason);
-      if (accepted.length === 0) return;
+      const items = tree.filter((t) => accepted.includes(t.file));
+      if (items.length === 0) return;
 
-      const here = (rel: string) => (normalizedCurrentPath ? `${normalizedCurrentPath}/${rel}` : rel);
-      // `webkitRelativePath` is `Picked/sub/file.png`.
-      const dirOf = (file: File) => (file.webkitRelativePath || file.name).split('/').slice(0, -1);
-      const levels: string[][] = [];
-      for (const file of accepted) {
-        dirOf(file).forEach((_, depth, parts) => {
-          (levels[depth] ??= []).push(parts.slice(0, depth + 1).join('/'));
-        });
-      }
-      const top = levels[0]?.[0];
-      if (!top) return;
+      const root = base === '/' ? '' : base.replace(/\/+$/, '');
+      const at = (rel: string) => (root && rel ? `${root}/${rel}` : root || rel);
+      const levels = treeLevels(items);
+      const tops = levels[0] ?? [];
 
       const dir = currentPath;
-      setPending((prev) => [...prev, { dir, node: pendingNode(top, 'directory') }]);
+      const inView = root === normalizedCurrentPath;
+      if (inView) {
+        setPending((prev) => [...prev, ...tops.map((top) => ({ dir, node: pendingNode(top, 'directory') }))]);
+      }
       let ok = true;
       try {
         for (const level of levels) {
           await Promise.all(
-            [...new Set(level)].map((d) =>
-              mkdirMutation.mutateAsync({ dirPath: here(d) }).catch((err: unknown) => {
+            level.map((d) =>
+              mkdirMutation.mutateAsync({ dirPath: at(d) }).catch((err: unknown) => {
                 // Already there (an earlier upload of the same folder): reuse it.
                 if ((err as { status?: number } | null)?.status !== 409) throw err;
               }),
@@ -696,16 +733,60 @@ export function DriveExplorer({
           }),
         );
       } finally {
-        settlePending(dir, top, ok);
+        if (inView) for (const top of tops) settlePending(dir, top, ok);
       }
       if (!ok) return;
       await startBatch(
-        accepted.map((file) => ({ file, targetPath: here(dirOf(file).join('/')) })),
-        null,
-        here(top),
+        items.map(({ file, dir: rel }) => ({ file, targetPath: at(rel) || undefined })),
+        // Loose files dropped beside the folders land in the view.
+        inView ? currentPath : null,
+        tops.length === 1 ? at(tops[0]!) : root || '/',
       );
     },
     [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi],
+  );
+
+  /** The folder picker (`webkitRelativePath` is `Picked/sub/file.png`). The browser already asked. */
+  const handleUploadFolder = useCallback(
+    (fileList: FileList) =>
+      uploadTree(
+        Array.from(fileList).map((file) => ({
+          file,
+          dir: (file.webkitRelativePath || file.name).split('/').slice(0, -1).join('/'),
+        })),
+        normalizedCurrentPath || '/',
+      ),
+    [uploadTree, normalizedCurrentPath],
+  );
+
+  /**
+   * A drop: plain files upload at once; a drop with folders in it is read as
+   * a tree and asks first, in our own dialog (a drop never gets the
+   * browser's prompt). `base` is the folder dropped onto, or the view.
+   */
+  const [treeToConfirm, setTreeToConfirm] = useState<{
+    tree: TreeFile[];
+    base: string;
+    name: string;
+    folders: number;
+  } | null>(null);
+  const handleDrop = useCallback(
+    async (files: File[], entries: DroppedEntry[], targetDirPath?: string) => {
+      if (!hasFolder(entries)) {
+        if (files.length) await handleUploadFiles(files, targetDirPath);
+        return;
+      }
+      const tree = await readDroppedTree(entries);
+      if (tree.length === 0) return;
+      const folders = entries.filter((e) => e.isDirectory);
+      setTreeToConfirm({
+        tree,
+        base: targetDirPath ?? (normalizedCurrentPath || '/'),
+        name: folders.length === 1 ? folders[0]!.name : '',
+        folders: folders.length,
+      });
+    },
+    [handleUploadFiles, normalizedCurrentPath],
   );
 
   /**
@@ -715,12 +796,12 @@ export function DriveExplorer({
    * also clears the page drop overlay — otherwise it would stay on screen.
    */
   const handleRowDropUpload = useCallback(
-    (files: File[], targetDirPath: string) => {
+    (files: File[], targetDirPath: string, entries: DroppedEntry[] = []) => {
       dragPageCounter.current = 0;
       setIsDragOverPage(false);
-      void handleUploadFiles(files, targetDirPath);
+      void handleDrop(files, entries, targetDirPath);
     },
-    [handleUploadFiles],
+    [handleDrop],
   );
 
   const handleFileInputChange = useCallback(
@@ -775,69 +856,65 @@ export function DriveExplorer({
     [currentPath, pendingNode, settlePending, mkdirMutation, createMutation, tHardcodedUi],
   );
 
-  // Paste
+  // Paste: every item on the clipboard, into the folder in view.
+  const clipboardItems = useFilesStore((s) => s.clipboardItems);
+  // One flag for the whole run: the per-mutation `isPending` drops between
+  // items and misses folder creation, which let Paste be pressed twice.
+  const [pasting, setPasting] = useState(false);
   const handlePaste = useCallback(async () => {
-    if (!clipboard) return;
-    const destDir = normalizedCurrentPath;
-    let destName = clipboard.name;
-
-    if (files) {
-      const existingNames = new Set(files.map((f) => f.name.toLowerCase()));
-      if (existingNames.has(destName.toLowerCase())) {
-        if (clipboard.operation === 'copy') {
+    if (clipboardItems.length === 0 || pasting) return;
+    setPasting(true);
+    try {
+      const destDir = normalizedCurrentPath;
+      const taken = new Set((files ?? []).map((f) => f.name.toLowerCase()));
+      const isCut = clipboardItems[0]!.operation === 'cut';
+      let pasted = 0;
+      for (const item of clipboardItems) {
+        let destName = item.name;
+        const sourceDir = item.path.substring(0, item.path.lastIndexOf('/'));
+        if (isCut && sourceDir === destDir) continue; // already here
+        if (taken.has(destName.toLowerCase())) {
+          if (isCut) {
+            errorToast(tHardcodedUi('i18nComplete.textf445afc1e6ed', { value0: destName }));
+            continue;
+          }
           const ext = destName.includes('.') ? destName.substring(destName.lastIndexOf('.')) : '';
           const baseName = ext ? destName.substring(0, destName.lastIndexOf('.')) : destName;
-          let counter = 0;
+          let n = 1;
           let candidate = `${baseName} (copy)${ext}`;
-          while (existingNames.has(candidate.toLowerCase())) {
-            counter++;
-            candidate = `${baseName} (copy ${counter + 1})${ext}`;
-          }
+          while (taken.has(candidate.toLowerCase())) candidate = `${baseName} (copy ${++n})${ext}`;
           destName = candidate;
-        } else {
-          const sourceDir = clipboard.path.substring(0, clipboard.path.lastIndexOf('/')) || '.';
-          const normalizedSourceDir = sourceDir === '' ? '.' : sourceDir;
-          const normalizedDestDir = destDir === '' ? '.' : destDir;
-          if (normalizedSourceDir === normalizedDestDir) {
-            errorToast(tHardcodedUi.raw('i18nComplete.text7a1bdceb4943'));
-            return;
-          }
+        }
+        taken.add(destName.toLowerCase());
+        const destPath = destDir ? `${destDir}/${destName}` : destName;
+        try {
+          if (!isCut && item.type === 'file') await copyMutation.mutateAsync({ sourcePath: item.path, destPath });
+          else if (!isCut) await mkdirMutation.mutateAsync({ dirPath: destPath });
+          else await renameMutation.mutateAsync({ from: item.path, to: destPath });
+          pasted++;
+        } catch (err) {
+          errorToast(
+            tHardcodedUi('i18nComplete.texta619e901f9c0', {
+              value0: err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+            }),
+          );
         }
       }
-    }
-
-    const destPath = destDir ? `${destDir}/${destName}` : destName;
-
-    try {
-      if (clipboard.operation === 'copy') {
-        if (clipboard.type === 'file') {
-          await copyMutation.mutateAsync({ sourcePath: clipboard.path, destPath });
-          successToast(tHardcodedUi('i18nComplete.textbb45167cfb4d', { value0: clipboard.name }));
-        } else {
-          await mkdirMutation.mutateAsync({ dirPath: destPath });
-          successToast(tHardcodedUi('i18nComplete.textd6318e7ae71a', { value0: clipboard.name }));
-        }
-      } else {
-        await renameMutation.mutateAsync({ from: clipboard.path, to: destPath });
-        successToast(tHardcodedUi('i18nComplete.text59004552be50', { value0: clipboard.name }));
-        clearClipboard();
-      }
-    } catch (err) {
-      errorToast(
-        tHardcodedUi('i18nComplete.texta619e901f9c0', {
-          value0:
-            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
-        }),
-      );
+      if (pasted > 0) successToast(tDrives('pasted', { count: pasted }));
+      if (isCut) clearClipboard();
+    } finally {
+      setPasting(false);
     }
   }, [
-    clipboard,
+    pasting,
+    clipboardItems,
     normalizedCurrentPath,
     files,
     copyMutation,
     renameMutation,
     mkdirMutation,
     clearClipboard,
+    tDrives,
     tHardcodedUi,
   ]);
 
@@ -917,11 +994,286 @@ export function DriveExplorer({
       e.stopPropagation();
       dragPageCounter.current = 0;
       setIsDragOverPage(false);
-
-      if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
-      await handleUploadFiles(e.dataTransfer.files);
+      // Both read now: the DataTransfer empties once this handler returns.
+      const files = Array.from(e.dataTransfer.files ?? []);
+      const entries = droppedEntries(e.dataTransfer);
+      await handleDrop(files, entries);
     },
-    [canWrite, filesAllowedHere, handleUploadFiles],
+    [canWrite, filesAllowedHere, handleDrop],
+  );
+
+  // ── Multi-selection ───────────────────────────────────────────
+  // The selection lives in a store, not React state: cards subscribe to their
+  // own "am I selected", the bar to the count. A drag that changes three
+  // cards re-renders three cards. Leaving the folder clears it.
+  const [selectionStore] = useState(createSelectionStore);
+  useEffect(() => selectionStore.clear(), [currentPath, selectionStore]);
+  const selectMode = useSyncExternalStore(selectionStore.subscribe, selectionStore.mode, () => false);
+  const ordered = useMemo(() => [...elevatedDirs, ...dirs, ...fileItems], [elevatedDirs, dirs, fileItems]);
+  // Read by the stable callbacks below at the moment they run.
+  const orderedRef = useRef(ordered);
+  useEffect(() => {
+    orderedRef.current = ordered;
+  }, [ordered]);
+  const anchorRef = useRef<string | null>(null);
+  const exitSelect = useCallback(() => selectionStore.clear(), [selectionStore]);
+  const selectAll = useCallback(
+    () => selectionStore.set(new Set(orderedRef.current.map((n) => n.path))),
+    [selectionStore],
+  );
+  const selectedNodes = useCallback(() => {
+    const paths = selectionStore.paths();
+    return orderedRef.current.filter((n) => paths.has(n.path));
+  }, [selectionStore]);
+
+  const [zipping, setZipping] = useState(false);
+  const bulkDownload = useCallback(
+    async (nodes: FileNode[]) => {
+      if (nodes.length === 0) return;
+      if (!downloadZip) {
+        for (const n of nodes) if (n.type === 'file') await handleDownload(n);
+        return;
+      }
+      setZipping(true);
+      try {
+        const folder = normalizedCurrentPath.split('/').filter(Boolean).pop() ?? rootLabel ?? 'files';
+        await downloadZip(
+          nodes.map((n) => ({ path: n.path, name: n.name, type: n.type })),
+          nodes.length === 1 ? nodes[0]!.name : folder,
+        );
+      } catch (err) {
+        errorToast(tDrives('zipFailed', { message: err instanceof Error ? err.message : '' }));
+      } finally {
+        setZipping(false);
+      }
+    },
+    [downloadZip, handleDownload, normalizedCurrentPath, rootLabel, tDrives],
+  );
+  const bulkClipboard = useCallback(
+    (nodes: FileNode[], operation: 'copy' | 'cut') => {
+      setClipboardItems(nodes.map((n) => ({ path: n.path, name: n.name, type: n.type })), operation);
+      exitSelect();
+    },
+    [setClipboardItems, exitSelect],
+  );
+  const bulkDelete = useCallback(
+    (nodes: FileNode[]) => {
+      if (filesStore.getState().selectedFilePath) goBackToBrowser();
+      setDeleteTargets(nodes);
+      exitSelect();
+    },
+    [filesStore, goBackToBrowser, exitSelect],
+  );
+
+  // Stable for the life of the folder view: every callback reads the store and
+  // `orderedRef` when it runs, so a selection change never re-renders cards
+  // through this context.
+  const zippingRef = useRef(zipping);
+  useEffect(() => {
+    zippingRef.current = zipping;
+  }, [zipping]);
+  const selectionValue = useMemo<DriveSelection>(
+    () => ({
+      store: selectionStore,
+      onItemClick: (node, event, open) => {
+        const paths = selectionStore.paths();
+        const list = orderedRef.current;
+        if (event.shiftKey && anchorRef.current) {
+          // A range from the last clicked item, added to what is selected.
+          const a = list.findIndex((n) => n.path === anchorRef.current);
+          const b = list.findIndex((n) => n.path === node.path);
+          if (a >= 0 && b >= 0) {
+            const next = new Set(paths);
+            for (const n of list.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(n.path);
+            selectionStore.set(next);
+            return;
+          }
+        }
+        anchorRef.current = node.path;
+        if (!(selectionStore.mode() || event.metaKey || event.ctrlKey)) {
+          open();
+          return;
+        }
+        const next = new Set(paths);
+        if (next.has(node.path)) next.delete(node.path);
+        else next.add(node.path);
+        selectionStore.set(next);
+      },
+      selectItem: (node) => {
+        anchorRef.current = node.path;
+        selectionStore.set(new Set([...selectionStore.paths(), node.path]));
+      },
+      dragPaths: (node) => {
+        const paths = selectionStore.paths();
+        return paths.has(node.path) && paths.size > 1 ? [...paths] : [node.path];
+      },
+      // Built when a menu opens, from the selection at that moment.
+      selectionMenu: (node, Item, Separator) => {
+        const paths = selectionStore.paths();
+        if (!(paths.has(node.path) && paths.size > 1)) return null;
+        const count = paths.size;
+        const nodes = selectedNodes();
+        return (
+          <>
+            <Item onClick={() => void bulkDownload(nodes)} disabled={zippingRef.current}>
+              <Download />
+              {tDrives('downloadZipCount', { count })}
+            </Item>
+            {canWrite ? (
+              <>
+                <Separator />
+                <Item onClick={() => bulkClipboard(nodes, 'copy')}>
+                  <Clipboard />
+                  {tDrives('copyCount', { count })}
+                </Item>
+                <Item onClick={() => bulkClipboard(nodes, 'cut')}>
+                  <ArrowsLeftRightIcon />
+                  {tDrives('moveCount', { count })}
+                </Item>
+                <Separator />
+                <Item onClick={() => bulkDelete(nodes)}>
+                  <TrashIcon />
+                  {tDrives('deleteCount', { count })}
+                </Item>
+              </>
+            ) : null}
+            <Separator />
+            <Item onClick={exitSelect}>
+              <XIcon />
+              {tDrives('deselectAll')}
+            </Item>
+          </>
+        );
+      },
+    }),
+    [selectionStore, selectedNodes, bulkDownload, bulkClipboard, bulkDelete, exitSelect, canWrite, tDrives],
+  );
+
+  // ⌘/Ctrl+A selects every item in view; Escape leaves selecting. Neither
+  // fires while a preview or any dialog is open: those own the keyboard.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (filesStore.getState().selectedFilePath) return;
+      if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && orderedRef.current.length > 0) {
+        e.preventDefault();
+        selectAll();
+      } else if (e.key === 'Escape' && selectionStore.mode()) {
+        exitSelect();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filesStore, selectAll, exitSelect, selectionStore]);
+
+  // Drag on empty space draws a rectangle; what it touches is selected
+  // (added to the selection with Shift or ⌘/Ctrl). A click there clears it.
+  //
+  // Cost per pointer move is fixed: the items' boxes are measured once when
+  // the drag starts (in scroll-content coordinates, so a scroll mid-drag keeps
+  // them right), the work runs at most once per frame, the rectangle is moved
+  // by its style (no React render), and the store notifies only when the hit
+  // set actually changed.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const marqueeBoxRef = useRef<HTMLDivElement>(null);
+  const marqueeRef = useRef<{
+    x: number;
+    y: number;
+    lastX: number;
+    lastY: number;
+    base: ReadonlySet<string>;
+    items: { path: string; left: number; top: number; right: number; bottom: number }[];
+    moved: boolean;
+    frame: number;
+  } | null>(null);
+  const onMarqueeDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      if (target.closest(`[${DRIVE_ITEM_ATTR}],button,a,input,[role="menuitem"]`)) return;
+      const box = e.currentTarget;
+      const rect = box.getBoundingClientRect();
+      // A press on the scrollbar scrolls; it never starts a rectangle.
+      if (e.clientX >= rect.left + box.clientWidth) return;
+      // Content coordinates: viewport position + the scroll at this moment.
+      const toContent = (b: DOMRect) => ({
+        left: b.left - rect.left + box.scrollLeft,
+        top: b.top - rect.top + box.scrollTop,
+        right: b.right - rect.left + box.scrollLeft,
+        bottom: b.bottom - rect.top + box.scrollTop,
+      });
+      const items = Array.from(box.querySelectorAll<HTMLElement>(`[${DRIVE_ITEM_ATTR}]`), (el) => ({
+        path: el.getAttribute(DRIVE_ITEM_ATTR)!,
+        ...toContent(el.getBoundingClientRect()),
+      }));
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+      marqueeRef.current = {
+        x: e.clientX - rect.left + box.scrollLeft,
+        y: e.clientY - rect.top + box.scrollTop,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        base: additive ? new Set(selectionStore.paths()) : new Set(),
+        items,
+        moved: false,
+        frame: 0,
+      };
+      box.setPointerCapture(e.pointerId);
+    },
+    [selectionStore],
+  );
+  const drawMarquee = useCallback(() => {
+    const m = marqueeRef.current;
+    const box = scrollRef.current;
+    const el = marqueeBoxRef.current;
+    if (!m || !box || !el) return;
+    m.frame = 0;
+    const rect = box.getBoundingClientRect();
+    const x = m.lastX - rect.left + box.scrollLeft;
+    const y = m.lastY - rect.top + box.scrollTop;
+    const r = { left: Math.min(m.x, x), right: Math.max(m.x, x), top: Math.min(m.y, y), bottom: Math.max(m.y, y) };
+    el.style.display = 'block';
+    el.style.transform = `translate(${r.left}px, ${r.top}px)`;
+    el.style.width = `${r.right - r.left}px`;
+    el.style.height = `${r.bottom - r.top}px`;
+    const next = new Set(m.base);
+    for (const it of m.items) {
+      if (it.right > r.left && it.left < r.right && it.bottom > r.top && it.top < r.bottom) next.add(it.path);
+    }
+    // ponytail: no auto-scroll at the edges; select in two drags or scroll first.
+    selectionStore.set(next, next.size > 0 || selectionStore.mode());
+  }, [selectionStore]);
+  const onMarqueeMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const m = marqueeRef.current;
+      if (!m) return;
+      m.lastX = e.clientX;
+      m.lastY = e.clientY;
+      if (!m.moved) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const dx = e.clientX - rect.left + e.currentTarget.scrollLeft - m.x;
+        const dy = e.clientY - rect.top + e.currentTarget.scrollTop - m.y;
+        if (Math.hypot(dx, dy) < 4) return;
+        m.moved = true;
+        // No text selection while the rectangle is out.
+        e.currentTarget.style.userSelect = 'none';
+      }
+      if (!m.frame) m.frame = requestAnimationFrame(drawMarquee);
+    },
+    [drawMarquee],
+  );
+  const onMarqueeUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const m = marqueeRef.current;
+      marqueeRef.current = null;
+      if (m?.frame) cancelAnimationFrame(m.frame);
+      if (marqueeBoxRef.current) marqueeBoxRef.current.style.display = 'none';
+      e.currentTarget.style.userSelect = '';
+      // A plain click on empty space clears the selection.
+      if (m && !m.moved && selectionStore.paths().size > 0) exitSelect();
+    },
+    [selectionStore, exitSelect],
   );
 
   const isEmpty =
@@ -934,6 +1286,8 @@ export function DriveExplorer({
     fileItems.length === 0;
 
   return (
+    <DriveSelectionContext.Provider value={selectionValue}>
+    <DriveRenameContext.Provider value={canWrite ? requestRename : null}>
     <div
       className="bg-background relative flex h-full flex-col"
       onDragEnter={handlePageDragEnter}
@@ -1015,8 +1369,21 @@ export function DriveExplorer({
         {/* Right-click on empty space: the New menu. A row's own menu wins —
             it prevents the default, so this trigger never opens over it. */}
         <ContextMenu>
-          <ContextMenuTrigger asChild disabled={!canWrite}>
-            <div className="absolute inset-0 overflow-y-auto">
+          <ContextMenuTrigger asChild>
+            <div
+              ref={scrollRef}
+              className="absolute inset-0 overflow-y-auto"
+              onPointerDown={onMarqueeDown}
+              onPointerMove={onMarqueeMove}
+              onPointerUp={onMarqueeUp}
+              onPointerCancel={onMarqueeUp}
+            >
+              {/* Moved by its style during a drag (see \`drawMarquee\`), never by a render. */}
+              <div
+                ref={marqueeBoxRef}
+                aria-hidden
+                className="border-kortix-base bg-kortix-base/15 pointer-events-none absolute top-0 left-0 z-20 hidden rounded-sm border"
+              />
               {isLoading && showSkeleton && (
                 <div className="animate-in fade-in-0 p-4 duration-(--duration-moderate) motion-reduce:animate-none">
                   {viewMode === 'grid' ? (
@@ -1196,68 +1563,119 @@ export function DriveExplorer({
             <DriveNewMenuItems
               Item={ContextMenuItem}
               Separator={ContextMenuSeparator}
-              onUpload={filesAllowedHere ? handleUpload : undefined}
-              onUploadFolder={handlePickFolder}
+              onUpload={canWrite && filesAllowedHere ? handleUpload : undefined}
+              onUploadFolder={canWrite ? handlePickFolder : undefined}
               onNewFile={
-                filesAllowedHere && capabilities.newFile !== false ? () => setCreateKind('file') : undefined
+                canWrite && filesAllowedHere && capabilities.newFile !== false
+                  ? () => setCreateKind('file')
+                  : undefined
               }
-              onNewFolder={() => setCreateKind('folder')}
+              onNewFolder={canWrite ? () => setCreateKind('folder') : undefined}
             />
+            {ordered.length > 0 ? (
+              <>
+                {canWrite ? <ContextMenuSeparator /> : null}
+                <ContextMenuItem onClick={() => selectionStore.set(new Set(selectionStore.paths()), true)}>
+                  <CheckSquareIcon />
+                  {tDrives('select')}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={selectAll}>
+                  <CheckSquareIcon />
+                  {tDrives('selectAll')}
+                </ContextMenuItem>
+              </>
+            ) : null}
           </ContextMenuContent>
         </ContextMenu>
 
         {panels}
       </ListingRegion>
 
-      {/* Drag & drop overlay */}
+      {/* Drag & drop overlay: inset from the edges, the focus-ring blue for
+          "this is the target", and the folder the drop lands in. */}
       {canWrite && filesAllowedHere && isDragOverPage && (
-        <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-md">
-              <Upload className="text-primary h-8 w-8" />
-            </div>
-            <div>
-              <p className="text-foreground text-base font-medium">
-                {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileExplorerPage.line771JsxTextDropFilesToUpload',
-                )}
+        <div className="bg-background/85 pointer-events-none absolute inset-0 z-50 p-3 backdrop-blur-sm">
+          {/* Blue is the border's alone; the centre reads like Drive's empty
+              state: a muted glyph (the New menu's Upload glyph), then the words. */}
+          <div className="border-kortix-base flex h-full flex-col items-center justify-center gap-4 rounded-md border-2 border-dashed p-6 text-center">
+            <UploadSimpleIcon className="text-muted-foreground size-10" />
+            <div className="max-w-xs space-y-1.5">
+              <p className="text-foreground text-sm font-semibold tracking-tight">
+                {tDrives('dropToUpload', {
+                  folder: normalizedCurrentPath.split('/').filter(Boolean).pop() ?? rootLabel ?? '/',
+                })}
               </p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsFileExplorerPage.line773JsxTextFilesWillBeUploadedToTheCurrentDirectory',
-                )}
-              </p>
+              <p className="text-muted-foreground text-sm">{tDrives('dropHint')}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Clipboard indicator bar */}
-      {canWrite && clipboard && (
-        <div className="border-border/40 bg-muted/20 text-muted-foreground flex shrink-0 items-center justify-between gap-2 border-t px-4 py-2 text-xs">
-          <div className="flex items-center gap-2">
-            <Clipboard className="h-3.5 w-3.5" />
-            <span>
-              {clipboard.operation === 'cut' ? 'Moving' : 'Copying'}:{' '}
-              <span className="text-foreground font-medium">{clipboard.name}</span>
-            </span>
+      {/* Clipboard bar: floats at the bottom centre of the listing, inside its
+          edges, like the Triggers page's selection bar (\`schedule-view.tsx\`). */}
+      {selectMode ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-xl">
+            <DriveSelectionBar
+              store={selectionStore}
+              total={ordered.length}
+              zipping={zipping}
+              canWrite={canWrite}
+              onSelectAll={selectAll}
+              onClearSelection={() => selectionStore.set(new Set())}
+              onDownload={() => void bulkDownload(selectedNodes())}
+              onCopy={() => bulkClipboard(selectedNodes(), 'copy')}
+              onMove={() => bulkClipboard(selectedNodes(), 'cut')}
+              onDelete={() => bulkDelete(selectedNodes())}
+              onExit={exitSelect}
+            />
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs"
-              onClick={handlePaste}
-              disabled={copyMutation.isPending || renameMutation.isPending}
-            >
-              {tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}
-            </Button>
-            <button
-              onClick={clearClipboard}
-              className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-            >
-              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
-            </button>
+        </div>
+      ) : null}
+
+      {canWrite && clipboard && !selectMode && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
+          <div className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md">
+            <Clipboard className="text-muted-foreground size-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm" aria-live="polite">
+              {clipboardItems.length > 1
+                ? tDrives(clipboard.operation === 'cut' ? 'clipboardMovingMany' : 'clipboardCopyingMany', {
+                    count: clipboardItems.length,
+                  })
+                : tDrives(clipboard.operation === 'cut' ? 'clipboardMoving' : 'clipboardCopying', {
+                    name: clipboard.name,
+                  })}
+            </span>
+            <ButtonGroup className="shrink-0">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5 active:scale-[0.96]"
+                onClick={handlePaste}
+                disabled={pasting}
+              >
+                {pasting ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <ClipboardTextIcon className="size-3.5 shrink-0" />
+                )}
+                {tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5 active:scale-[0.96]"
+                onClick={clearClipboard}
+                // A paste already sent cannot be taken back; Cancel would only
+                // hide the bar while it finishes.
+                disabled={pasting}
+              >
+                <XIcon className="size-3.5 shrink-0" />
+                {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
+              </Button>
+            </ButtonGroup>
           </div>
         </div>
       )}
@@ -1278,6 +1696,13 @@ export function DriveExplorer({
         onClose={() => setCreateKind(null)}
       />
 
+      <DriveRenameDialog
+        node={renameTarget}
+        isTaken={nameTaken}
+        onRename={(node, newName) => void handleRename(node, newName)}
+        onClose={() => setRenameTarget(null)}
+      />
+
       {/* File preview modal */}
       <FilePreviewModal embedded={embedded} shareContext={shareContext} />
 
@@ -1291,8 +1716,37 @@ export function DriveExplorer({
         </div>
       )}
 
+      {/* A dropped folder asks first: how many files, from where, into where. */}
+      <AlertDialog open={!!treeToConfirm} onOpenChange={(open) => !open && setTreeToConfirm(null)}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {treeToConfirm?.name
+                ? tDrives('uploadTreeTitle', { count: treeToConfirm.tree.length, name: treeToConfirm.name })
+                : tDrives('uploadTreesTitle', {
+                    count: treeToConfirm?.tree.length ?? 0,
+                    folders: treeToConfirm?.folders ?? 0,
+                  })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{tDrives('uploadTreeDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tDrives('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pick = treeToConfirm;
+                setTreeToConfirm(null);
+                if (pick) void uploadTree(pick.tree, pick.base);
+              }}
+            >
+              {tDrives('upload')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Delete confirmation dialog */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+      <AlertDialog open={deleteTargets.length > 0} onOpenChange={() => setDeleteTargets([])}>
         <AlertDialogContent
           className="sm:max-w-md"
           onOpenAutoFocus={(e) => {
@@ -1300,6 +1754,12 @@ export function DriveExplorer({
             deleteButtonRef.current?.focus();
           }}
         >
+          {deleteTargets.length > 1 ? (
+            <AlertDialogHeader>
+              <AlertDialogTitle>{tDrives('deleteManyTitle', { count: deleteTargets.length })}</AlertDialogTitle>
+              <AlertDialogDescription>{tDrives('deleteManyDescription')}</AlertDialogDescription>
+            </AlertDialogHeader>
+          ) : (
           <AlertDialogHeader>
             <AlertDialogTitle>
               {tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}{' '}
@@ -1323,6 +1783,7 @@ export function DriveExplorer({
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>
               {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
@@ -1343,5 +1804,7 @@ export function DriveExplorer({
 
       {children}
     </div>
+    </DriveRenameContext.Provider>
+    </DriveSelectionContext.Provider>
   );
 }
