@@ -65,6 +65,14 @@ describe('durable pause (R3)', () => {
     expect(uid).toBeGreaterThanOrEqual(0);
   });
 
+  test('launchd: status matches the label literally, regex characters included', () => {
+    const odd = { ...paths, label: 'com.kortix.a+b(1)\\x' };
+    recordCommands({ 'launchctl print-disabled': { ok: true, detail: `"${odd.label}" => true` } });
+    expect(serviceDriverFor('darwin')!.status(odd, false).enabled).toBe(false);
+    recordCommands({ 'launchctl print-disabled': { ok: true, detail: `"comXkortix.a+b(1)\\x" => disabled` } });
+    expect(serviceDriverFor('darwin')!.status(odd, false).enabled).toBe(true);
+  });
+
   test('systemd: pause is disable --now; resume is enable --now', () => {
     const calls = recordCommands();
     serviceDriverFor('linux')!.pause(paths, true);
