@@ -22,7 +22,7 @@ import {
 } from '@/features/session/turn/queued-prompt-bubbles';
 import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploaded-file-refs';
 import { useInstantSessionSend } from '@/features/session/use-instant-session-send';
-import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
+import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/home/welcome-body';
 import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';

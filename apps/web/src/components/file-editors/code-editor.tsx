@@ -21,7 +21,7 @@ import {
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contentAfterExternalChange } from './external-content';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
@@ -319,7 +319,7 @@ export function CodeEditor({
 }: CodeEditorProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   const [mounted, setMounted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [localContent, setLocalContent] = useState(content);
@@ -546,7 +546,7 @@ export function CodeEditor({
   }, [handleKeyDown]);
 
   // Theme selection
-  const theme = mounted && resolvedTheme === 'dark' ? pierreDarkCm : pierreLightCm;
+  const theme = mounted && isDark ? pierreDarkCm : pierreLightCm;
 
   // Build the diagnostics CodeMirror extension from the diagnostics prop
   const diagExt = useMemo(() => {

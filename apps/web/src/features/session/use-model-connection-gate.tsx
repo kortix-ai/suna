@@ -1,12 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { lazyClient } from '@kortix/ui/lib/lazy-client';
 import { useSessionIds } from '@kortix/ui/providers/session-ids';
-import { useUiHostConfig } from '@kortix/ui/providers/ui-provider';
+import { useUiComponents, useUiHostConfig } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useMemo, useState } from 'react';
 
-import { useAccountState } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing/use-account-state';
 import { useOpenedOnce } from '@/hooks/utils/use-opened-once';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -24,15 +23,6 @@ import { resolveEntitlementsPending } from './entitlements-pending';
  * one `providers` surface, so both of those now resolve to it; only 'models'
  * still names a distinct tab.
  */
-// The provider modal pulls the whole Customize → Models surface (gateway tabs,
-// usage charts, the provider catalog). Every composer renders this gate — the
-// marketing home demo included — so the modal body loads on first open only.
-const ProjectProviderModal = lazyClient(() =>
-  import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
-    (mod) => mod.ProjectProviderModal,
-  ),
-);
-
 export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
   return tab === 'models' ? 'models' : 'providers';
 }
@@ -84,6 +74,9 @@ export function useModelConnectionGate(
   options?: { projectId?: string | null },
 ) {
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
+  // The host's project provider modal (Customize → Models). Without it, every
+  // action uses the global provider modal store.
+  const { ProjectProviderModal } = useUiComponents();
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const projectId = resolveGateProjectId(options?.projectId, useSessionIds().projectId);
@@ -175,14 +168,14 @@ export function useModelConnectionGate(
 
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {
-      if (projectId) {
+      if (projectId && ProjectProviderModal) {
         setProjectModalTab(projectProviderModalTab(tab));
         setProjectModalOpen(true);
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, openProviderModal],
+    [projectId, ProjectProviderModal, openProviderModal],
   );
 
   const openUpgrade = useCallback(() => {
@@ -194,7 +187,7 @@ export function useModelConnectionGate(
 
   const providerModalOpened = useOpenedOnce(projectModalOpen);
   const modal =
-    projectId && providerModalOpened ? (
+    projectId && providerModalOpened && ProjectProviderModal ? (
       <ProjectProviderModal
         projectId={projectId}
         open={projectModalOpen}

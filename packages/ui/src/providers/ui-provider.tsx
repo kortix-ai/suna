@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 
+import type { ProjectSession } from '@kortix/sdk';
+
 import type { UiI18nHost } from '../i18n';
 
 /**
@@ -10,8 +12,11 @@ import type { UiI18nHost } from '../i18n';
  * organization marks KortixLogo renders, the image and router components, translations, the viewer
  * and host flags. A host mounts <UiProvider> once at its root. Without one,
  * components render the English defaults, a plain <a>, the Kortix logo and
- * navigate with `window.location`. Telemetry is module-level:
- * `setUiTelemetry` in `@kortix/ui/lib/telemetry`.
+ * navigate with `window.location`. `components` fills the slots for app
+ * features the UI renders whole (`UiHostComponents`); a missing slot hides
+ * its control. Telemetry and deployment values are module-level:
+ * `setUiTelemetry` in `@kortix/ui/lib/telemetry`, `setUiHostEnv` in
+ * `@kortix/ui/lib/host-env`.
  */
 /**
  * The copy @kortix/ui/chat renders. Every key has an English default; a host
@@ -303,6 +308,53 @@ export const defaultUiHostConfig: UiHostConfig = { billingEnabled: false };
 
 const useNoViewer = (): string | undefined => undefined;
 
+/**
+ * App features the UI renders whole but does not own. Every slot is
+ * optional: without it, the UI hides the control that opens it.
+ */
+export interface UiHostComponents {
+  /** Lists, connects and removes the viewer's ChatGPT accounts for a project. */
+  ChatGptAccountsDialog?: React.ComponentType<{
+    projectId: string;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }>;
+  /** Connects the app a connector setup link names. Without it, the connector card is hidden. */
+  ConnectorConnectModal?: React.ComponentType<{
+    /** The setup link token. */
+    token: string;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onConnected: () => void;
+    /** The app name to show until the link info loads. */
+    fallbackName: string;
+  }>;
+  /**
+   * Connects model providers and picks a project's models. Without it,
+   * "connect a model" opens the global provider modal store instead.
+   */
+  ProjectProviderModal?: React.ComponentType<{
+    projectId: string;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    defaultTab?: 'providers' | 'models';
+    /** False or missing: read only. */
+    canWrite?: boolean;
+  }>;
+  /** The decorative background of an empty session. Without it, the plain surface. */
+  Wallpaper?: React.ComponentType;
+  /** Who can open a session, and its public link. Without it, the header has no Share button. */
+  ShareSessionModal?: React.ComponentType<{
+    projectId: string;
+    session: ProjectSession | null;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onSaved?: () => void;
+  }>;
+}
+
+const NO_COMPONENTS: UiHostComponents = {};
+
 interface UiContextValue {
   strings: UiStrings;
   link: UiLinkComponent;
@@ -312,6 +364,7 @@ interface UiContextValue {
   i18n: UiI18nHost | null;
   useViewerId: () => string | undefined;
   config: UiHostConfig;
+  components: UiHostComponents;
 }
 
 const UiContext = React.createContext<UiContextValue>({
@@ -323,6 +376,7 @@ const UiContext = React.createContext<UiContextValue>({
   i18n: null,
   useViewerId: useNoViewer,
   config: defaultUiHostConfig,
+  components: NO_COMPONENTS,
 });
 
 export function UiProvider({
@@ -334,6 +388,7 @@ export function UiProvider({
   i18n,
   useViewerId,
   config,
+  components,
   children,
 }: {
   strings?: UiStringsInput;
@@ -349,6 +404,8 @@ export function UiProvider({
   /** A hook that returns the signed-in user's id. Default: no viewer. */
   useViewerId?: () => string | undefined;
   config?: Partial<UiHostConfig>;
+  /** Default: no slots. Pass a stable object. */
+  components?: UiHostComponents;
   children: React.ReactNode;
 }) {
   const value = React.useMemo<UiContextValue>(
@@ -361,8 +418,9 @@ export function UiProvider({
       i18n: i18n ?? null,
       useViewerId: useViewerId ?? useNoViewer,
       config: { ...defaultUiHostConfig, ...config },
+      components: components ?? NO_COMPONENTS,
     }),
-    [strings, link, image, useBrand, navigation, i18n, useViewerId, config],
+    [strings, link, image, useBrand, navigation, i18n, useViewerId, config, components],
   );
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
 }
@@ -408,6 +466,11 @@ export function useUiViewerId(): string | undefined {
 
 export function useUiHostConfig(): UiHostConfig {
   return React.useContext(UiContext).config;
+}
+
+/** The host's component slots. A missing slot means: hide the control. */
+export function useUiComponents(): UiHostComponents {
+  return React.useContext(UiContext).components;
 }
 
 /** The host's translation hooks, or null for the bundled catalog. Read by `@kortix/ui/i18n`. */

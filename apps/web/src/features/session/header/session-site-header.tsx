@@ -41,9 +41,13 @@ import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-ope
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { useNotificationCenter } from '@/features/notifications/use-notification-center';
-import { useUiPathname, useUiRouter, useUiViewerId } from '@kortix/ui/providers/ui-provider';
+import {
+  useUiComponents,
+  useUiPathname,
+  useUiRouter,
+  useUiViewerId,
+} from '@kortix/ui/providers/ui-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
@@ -141,6 +145,7 @@ export function SessionSiteHeader({
   // E1: a runtime without on-demand compaction (pi) offers no Compact item.
   const canCompact = useRuntimeSupports('session.compact');
   const [shareOpen, setShareOpen] = useState(false);
+  const { ShareSessionModal } = useUiComponents();
   // The name edits in place: the name button swaps for a field. The menu's
   // Rename item opens the same field, so there is one rename surface.
   const [isRenaming, setIsRenaming] = useState(false);
@@ -715,7 +720,7 @@ export function SessionSiteHeader({
             {isProjectSession && projectSession && (
               <SessionParticipantStack participants={sessionParticipants} />
             )}
-            {isProjectSession && projectSession && (
+            {isProjectSession && projectSession && ShareSessionModal && (
               <Hint
                 side="bottom"
                 sideOffset={4}
@@ -806,17 +811,19 @@ export function SessionSiteHeader({
             onConfirm={() => reloadConfig.reload({ force: true })}
             onDismiss={reloadConfig.clearBusy}
           />
-          <ShareSessionModal
-            projectId={projectId!}
-            session={projectSession}
-            open={shareOpen}
-            onOpenChange={setShareOpen}
-            onSaved={() =>
-              queryClient.invalidateQueries({
-                queryKey: qk.project.sessionsScope(projectId ?? ''),
-              })
-            }
-          />
+          {ShareSessionModal && (
+            <ShareSessionModal
+              projectId={projectId!}
+              session={projectSession}
+              open={shareOpen}
+              onOpenChange={setShareOpen}
+              onSaved={() =>
+                queryClient.invalidateQueries({
+                  queryKey: qk.project.sessionsScope(projectId ?? ''),
+                })
+              }
+            />
+          )}
           <SessionDeleteModal
             projectId={projectId!}
             sessionId={projectSessionId!}

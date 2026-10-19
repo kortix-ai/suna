@@ -25,6 +25,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import type { SettingsTabId } from '@/lib/settings-tab-id';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import type { RuntimeCapability } from '@kortix/sdk';
@@ -105,17 +106,7 @@ export type MenuItemKind =
    */
   | 'account';
 
-export type SettingsTabId =
-  | 'general'
-  | 'security'
-  | 'appearance'
-  | 'sounds'
-  | 'notifications'
-  | 'billing'
-  | 'transactions'
-  | 'referrals'
-  | 'tokens'
-  | 'shortcuts';
+export type { SettingsTabId };
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =

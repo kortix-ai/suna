@@ -1,4 +1,4 @@
-import type { SettingsTabId } from '@/lib/menu-registry';
+import type { SettingsTabId } from '@/lib/settings-tab-id';
 import { hubTarget, openAccountPanel, type HubTarget } from '@/stores/account-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 

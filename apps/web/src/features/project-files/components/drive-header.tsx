@@ -10,7 +10,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { filesNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { useParams } from 'next/navigation';
+import { useUiParams } from '@kortix/ui/providers/ui-provider';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
@@ -93,7 +93,7 @@ export function DriveHeader({
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
-  const params = useParams<{ id?: string }>();
+  const params = useUiParams<{ id?: string }>();
   // Volumes on for the project: the repo browser is Repo; off, it is Files.
   const volumes = useFeatureFlag(params?.id, 'drives');
 

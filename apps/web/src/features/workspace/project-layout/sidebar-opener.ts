@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import type { UiTranslator } from '@/i18n/translator';
-import { desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
+import { desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop-detect';
 
 /**
  * Who is allowed to draw a "bring the sidebar back" control.

@@ -1,4 +1,4 @@
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useAccountState } from '@/hooks/billing';
 import type { AccountState } from '@kortix/sdk';
 import React, { useEffect } from 'react';
@@ -49,8 +49,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
 
 // Hook to sync React Query with Zustand store
 export function useSubscriptionStoreSync() {
-  const { user } = useAuth();
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!useUiViewerId();
 
   const {
     data: accountState,

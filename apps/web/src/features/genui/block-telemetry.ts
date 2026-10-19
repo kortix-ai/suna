@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 
-import { track } from '@/lib/track';
+import { track } from '@kortix/ui/lib/telemetry';
 
 import type { GenuiBlockEvent } from './sdk';
 

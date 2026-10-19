@@ -6,6 +6,7 @@ import { parseGenui } from '@kortix/sdk/genui';
 import { createTranslator } from 'next-intl';
 
 import { MAP_DEFAULTS, watchMapLoad } from '@/components/ui/map';
+import { setUiHostEnv } from '@kortix/ui/lib/host-env';
 
 import en from '../../../../translations/en.json';
 import type { GenuiNode } from '../sdk';
@@ -22,6 +23,8 @@ const render = (styleUrl: string | undefined) =>
 
 const STYLE_ENV = 'NEXT_PUBLIC_GENUI_MAP_STYLE_URL';
 const savedStyle = process.env[STYLE_ENV];
+// The web host reads the map style from the env; the test sets the env per case.
+setUiHostEnv(() => ({ mapStyleUrl: process.env[STYLE_ENV] }));
 afterEach(() => {
   if (savedStyle === undefined) delete process.env[STYLE_ENV];
   else process.env[STYLE_ENV] = savedStyle;

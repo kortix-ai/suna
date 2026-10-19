@@ -1,13 +1,12 @@
 'use client';
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useQuery } from '@tanstack/react-query';
 import { useSessionIds } from '@kortix/ui/providers/session-ids';
-import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
+import { useUiComponents, useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { useState, type ComponentProps, type ReactNode } from 'react';
 import {
   type ChatGptConnectionAction,
@@ -32,7 +31,7 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useAccountState } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing/use-account-state';
 import {
   canManageBilling,
   getProjectDetail,
@@ -703,8 +702,10 @@ function ChatGptConnectionButton({
   const session = useProjectSession(projectId, sessionId, { enabled });
   const pools = useSessionProviderSecretPools(enabled ? projectId : null, sessionId);
   const [open, setOpen] = useState(false);
+  const { ChatGptAccountsDialog } = useUiComponents();
 
   const applies =
+    !!ChatGptAccountsDialog &&
     enabled &&
     !(access.data?.disabledProviders ?? []).includes('codex') &&
     chatGptActionApplies({
@@ -715,7 +716,7 @@ function ChatGptConnectionButton({
         ? pools.data.pools.some((pool) => pool.provider_id === 'codex')
         : undefined,
     });
-  if (!applies) return null;
+  if (!applies || !ChatGptAccountsDialog) return null;
 
   return (
     <div className="mt-2 pl-7">

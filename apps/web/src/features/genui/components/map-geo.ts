@@ -1,5 +1,7 @@
 /** Coordinates for the generative UI Map: range checks, bounds, routes, links. No React, no MapLibre. */
 
+import { uiHostEnv } from '@kortix/ui/lib/host-env';
+
 export type LatLng = { lat: number; lng: number };
 
 export type MapPlace = LatLng & {
@@ -25,9 +27,9 @@ const OPENFREEMAP = 'https://tiles.openfreemap.org/styles';
  * map, only the place rows (the kill switch if the tile host is down).
  */
 export function mapStyles(): { light: string; dark: string } | null {
-  const url = process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL;
+  const { mapStyleUrl: url, mapStyleUrlDark } = uiHostEnv();
   if (url === 'off') return null;
-  if (url) return { light: url, dark: process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL_DARK || url };
+  if (url) return { light: url, dark: mapStyleUrlDark || url };
   return { light: `${OPENFREEMAP}/positron`, dark: `${OPENFREEMAP}/dark` };
 }
 

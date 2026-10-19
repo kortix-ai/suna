@@ -19,7 +19,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useUiPathname, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
@@ -385,8 +385,8 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const openCrCountQuery = useOpenChangeRequestList({ refetchInterval: 10_000 });
   const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
 
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
+  const searchParams = useUiSearchParams();
+  const pathname = useUiPathname();
   useEffect(() => {
     const cr = searchParams.get('cr');
     const requestedPanel = requestedFilesRightPanel(searchParams.get('panel'));

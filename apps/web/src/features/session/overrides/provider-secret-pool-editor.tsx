@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
-import { useUiLink } from '@kortix/ui/providers/ui-provider';
+import { useUiComponents, useUiLink } from '@kortix/ui/providers/ui-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   type AccountSecretResource, getProjectDetail,
@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import Loading from '@/components/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { needsReconnection } from '@/features/workspace/customize/sections/view/account-secret-access';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -38,7 +37,8 @@ function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
   const t = useTranslations('pooledSecrets');
   const [open, setOpen] = useState(false);
   const access = useModelAccess(projectId);
-  if ((access.data?.disabledProviders ?? []).includes('codex')) return null;
+  const { ChatGptAccountsDialog } = useUiComponents();
+  if (!ChatGptAccountsDialog || (access.data?.disabledProviders ?? []).includes('codex')) return null;
   return <>
     <Button size="sm" variant={variant} disabled={disabled} onClick={() => setOpen(true)}>
       {t(action === 'connect' ? 'connectChatGpt' : 'manageChatGptAccounts')}

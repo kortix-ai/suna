@@ -12,7 +12,6 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import Loading from '@/components/ui/loading';
-import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
@@ -41,6 +40,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionIds } from '@kortix/ui/providers/session-ids';
+import { useUiComponents } from '@kortix/ui/providers/ui-provider';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
 import {
@@ -444,8 +444,9 @@ export function ModelSelector({
   // a manager disabled the ChatGPT provider for the project.
   const tPooled = useTranslations('pooledSecrets');
   const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const { ChatGptAccountsDialog } = useUiComponents();
   const chatGptPossible =
-    offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+    !!ChatGptAccountsDialog && offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
   const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
@@ -618,7 +619,7 @@ export function ModelSelector({
   return (
     <>
       {connectionModal}
-      {projectId && chatGptPossible && (
+      {projectId && chatGptPossible && ChatGptAccountsDialog && (
         <ChatGptAccountsDialog projectId={projectId} open={chatGptOpen} onOpenChange={setChatGptOpen} />
       )}
       <CommandPopover

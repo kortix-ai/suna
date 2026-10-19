@@ -4,13 +4,13 @@ import {
   isGitMirrorUnavailableNoiseMessage,
   isServerDeadlineNoiseMessage,
 } from '@/lib/browser-error-noise';
-import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import { openAccountSettings } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
-import * as Sentry from '@sentry/nextjs';
+import { uiHostEnv } from '@kortix/ui/lib/host-env';
+import { captureException } from '@kortix/ui/lib/telemetry';
 
 export interface ApiError extends Error {
   status?: number;
@@ -231,7 +231,7 @@ export const handleApiError = (
     (status >= 500 && !isServerDeadline503 && !isGitMirrorUnavailable503) ||
     error?.code === 'NETWORK_ERROR'
   ) {
-    Sentry.captureException(
+    captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
         tags: {
@@ -275,7 +275,7 @@ export const handleApiError = (
   // account whose wallet ran dry gets the top-up view (packages + custom amount
   // + auto-top-up) — never the wrong "you're on Free" pitch.
   if (
-    isBillingEnabled() &&
+    uiHostEnv().billingEnabled &&
     v2Status === 402 &&
     (v2Code === 'subscription_required' ||
       v2Code === 'no_account' ||

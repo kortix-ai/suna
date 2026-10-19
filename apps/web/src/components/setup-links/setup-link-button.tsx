@@ -13,10 +13,10 @@ import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { useUiComponents } from '@kortix/ui/providers/ui-provider';
 import { CheckIcon, KeyIcon, PlugIcon } from '@phosphor-icons/react';
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { ConnectorAppMark, ConnectorHandshake } from './connector-handshake';
-import { ConnectorConnectModal } from './connector-connect-modal';
 import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
 import { SecretIntakeForm } from './secret-intake-form';
 import { onSetupLinkModalClose } from './setup-link-close-finalize';
@@ -91,7 +91,7 @@ export function SetupLinkButton({
    */
   token: string | null;
   children?: React.ReactNode;
-}): React.ReactElement {
+}): React.ReactElement | null {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   /**
@@ -131,6 +131,8 @@ export function SetupLinkButton({
   // `undefined` while the info loads (skeleton), `null` once known to have none.
   const iconUrl = info === undefined ? undefined : (info?.icon_url ?? null);
 
+  const { ConnectorConnectModal } = useUiComponents();
+
   /** Stable so `ConnectorIntake`'s notify effect does not refire on every render. */
   const handleSettled = useCallback((): void => setSettled(true), []);
 
@@ -169,6 +171,9 @@ export function SetupLinkButton({
     }),
     [token, pending, label, settled, copy.doneStatus, copy.action, tI18nComplete],
   );
+
+  // A connector card with no host modal has nothing to open.
+  if (kind === 'connector' && !ConnectorConnectModal) return null;
 
   const card = inline ? (
     <button
@@ -221,7 +226,7 @@ export function SetupLinkButton({
     <>
       {card}
 
-      {token !== null && kind === 'connector' ? (
+      {token !== null && kind === 'connector' && ConnectorConnectModal ? (
         <ConnectorConnectModal
           token={token}
           open={open}

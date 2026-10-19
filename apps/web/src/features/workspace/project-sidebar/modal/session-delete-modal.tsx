@@ -12,7 +12,7 @@ import {
 import { deleteProjectSession, restoreProjectSession } from '@kortix/sdk';
 import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useUiParams, useUiRouter } from '@kortix/ui/providers/ui-provider';
 import { useTranslations } from '@/i18n/use-translations';
 
 /** Days a deleted session stays restorable (`SESSION_DELETE_ROWS_DAYS` in the API). */
@@ -65,8 +65,8 @@ export function SessionDeleteModal({
   const t = useTranslations('sessionDelete');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const openSessionId = useParams<{ sessionId?: string }>()?.sessionId;
+  const router = useUiRouter();
+  const openSessionId = useUiParams<{ sessionId?: string }>()?.sessionId;
 
   // Runs from the toast, after the dialog closed (and maybe unmounted).
   const undoDelete = async (id: string, toastId: string) => {

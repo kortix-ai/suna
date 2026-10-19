@@ -1,8 +1,11 @@
 'use client';
 
 import { UiProvider, type UiNavigation, type UiStringsInput } from '@kortix/ui';
+import { lazyClient } from '@kortix/ui/lib/lazy-client';
+import type { UiHostComponents } from '@kortix/ui/providers/ui-provider';
 import type { UiI18nHost } from '@kortix/ui/i18n';
 import { SessionIdsProvider } from '@kortix/ui/providers/session-ids';
+import { setUiHostEnv } from '@kortix/ui/lib/host-env';
 import { setUiTelemetry } from '@kortix/ui/lib/telemetry';
 import { setSilentErrorToastFilter } from '@kortix/ui/toast';
 import * as Sentry from '@sentry/nextjs';
@@ -11,11 +14,13 @@ import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, type ReactNode } from 'react';
 
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useBranding } from '@/features/branding/branding-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
+import { getEnv } from '@/lib/env-config';
 import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
 import { track, type PanelEvent } from '@/lib/track';
 
@@ -41,9 +46,45 @@ setUiTelemetry({
   addBreadcrumb: (breadcrumb) => Sentry.addBreadcrumb(breadcrumb),
 });
 
+// The reader runs per call: the browser reads the runtime config script after module load.
+setUiHostEnv(() => {
+  const env = getEnv();
+  return {
+    billingEnabled: env.BILLING_ENABLED,
+    appUrl: env.APP_URL,
+    backendUrl: env.BACKEND_URL,
+    // Build-time values: Next inlines NEXT_PUBLIC_* into the client bundle.
+    mapStyleUrl: process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL,
+    mapStyleUrlDark: process.env.NEXT_PUBLIC_GENUI_MAP_STYLE_URL_DARK,
+  };
+});
+
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
+
+// App features the session UI renders whole. Dialogs load lazily, so the
+// root bundle stays small. The wallpaper is static: it paints on first frame.
+const components: UiHostComponents = {
+  Wallpaper: WallpaperBackground,
+  ChatGptAccountsDialog: lazyClient(() =>
+    import('@/features/providers/chatgpt-accounts-dialog').then((m) => m.ChatGptAccountsDialog),
+  ),
+  ConnectorConnectModal: lazyClient(() =>
+    import('@/components/setup-links/connector-connect-modal').then((m) => m.ConnectorConnectModal),
+  ),
+  ShareSessionModal: lazyClient(() =>
+    import('@/features/workspace/project-sidebar/modal/share-session-modal').then(
+      (m) => m.ShareSessionModal,
+    ),
+  ),
+  // The whole Customize → Models surface: loaded on first open only.
+  ProjectProviderModal: lazyClient(() =>
+    import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
+      (m) => m.ProjectProviderModal,
+    ),
+  ),
+};
 
 const one = (value: string | string[] | undefined) => (typeof value === 'string' ? value : undefined);
 
@@ -89,6 +130,7 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
       i18n={i18n}
       useViewerId={useViewerId}
       config={config}
+      components={components}
     >
       <RouteSessionIds>{children}</RouteSessionIds>
     </UiProvider>

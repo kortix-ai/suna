@@ -152,6 +152,7 @@
     "./lib/dotmatrix-hooks": "./src/lib/dotmatrix-hooks.ts",
     "./lib/favicon": "./src/lib/favicon.ts",
     "./lib/font-weight": "./src/lib/font-weight.ts",
+    "./lib/host-env": "./src/lib/host-env.ts",
     "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/icon-context": "./src/lib/icon-context.tsx",
     "./lib/lazy-client": "./src/lib/lazy-client.tsx",
@@ -1043,6 +1044,10 @@
       "./lib/font-weight": {
         "types": "./dist/lib/font-weight.d.ts",
         "import": "./dist/lib/font-weight.js"
+      },
+      "./lib/host-env": {
+        "types": "./dist/lib/host-env.d.ts",
+        "import": "./dist/lib/host-env.js"
       },
       "./lib/icon-config": {
         "types": "./dist/lib/icon-config.d.ts",

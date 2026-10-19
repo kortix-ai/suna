@@ -8,16 +8,19 @@
  * should be fetched at click time either — `preloadAccountHub()` warms the
  * chunk on pointer or focus intent, which `HubLink` does on every row.
  *
- * Its own module so a call site can warm the chunk without importing the modal
- * itself, and so the modal and the links share one `import()` specifier —
- * which is what makes them one chunk.
+ * Its own module, free of the hub's imports, so a link can warm the chunk
+ * without pulling the hub into its own graph. `account-hub-panel.tsx` owns the
+ * one `import()` specifier and registers it here at module load.
  */
 
-const importAccountHubBody = () => import('./account-hub-overlay-body');
+let importBody: (() => Promise<unknown>) | null = null;
 
-export { importAccountHubBody };
+/** Called once by the hub panel with its body import. */
+export function setAccountHubImporter(load: () => Promise<unknown>): void {
+  importBody = load;
+}
 
-/** Idempotent: the module registry dedupes, so call it freely. */
+/** Idempotent: the module registry dedupes, so call it freely. No-op before the panel loads. */
 export function preloadAccountHub(): void {
-  void importAccountHubBody();
+  void importBody?.();
 }

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import * as trackModule from '@/lib/track';
+import * as trackModule from '@kortix/ui/lib/telemetry';
 
 import { GenuiTelemetryContext, type GenuiTelemetryScope } from './block-telemetry';
 

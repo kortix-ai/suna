@@ -13,7 +13,7 @@
  */
 
 import type { MapOptions } from 'maplibre-gl';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '@kortix/ui/hooks/use-is-dark';
 import { useState, type ReactNode } from 'react';
 
 import { MarkdownImage } from '@/components/markdown/unified-markdown';
@@ -165,7 +165,7 @@ export default function GenuiMapCanvas({
   fallback?: ReactNode;
 }) {
   const t = useTranslations('genui');
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
   // No document in a server render (the share page): the client computes it when it hydrates.
   const [routeColor] = useState(() => (route && typeof document !== 'undefined' ? routeRgb() : null));
 
@@ -186,7 +186,7 @@ export default function GenuiMapCanvas({
 
   return (
     <MapLibreMap
-      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+      theme={isDark ? 'dark' : 'light'}
       styles={styles}
       fallback={fallback}
       {...view}

@@ -4,7 +4,7 @@
  * browser-only download helper.
  */
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useUiViewerId } from '@kortix/ui/providers/ui-provider';
 import { downloadDriveFile } from '@kortix/sdk';
 import { useProjectDrive as useProjectDriveFor } from '@kortix/sdk/react';
 
@@ -23,8 +23,7 @@ export {
 
 /** The project's drive, and the signed-in user's own folder in it. */
 export function useProjectDrive(projectId: string | undefined, enabled = true) {
-  const { user } = useAuth();
-  return useProjectDriveFor(projectId, user?.id, enabled);
+  return useProjectDriveFor(projectId, useUiViewerId(), enabled);
 }
 
 /** Fetches one file with the caller's credentials and hands it to the browser. */

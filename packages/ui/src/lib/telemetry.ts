@@ -20,6 +20,8 @@ export type UiSeverity = 'fatal' | 'error' | 'warning' | 'info' | 'debug';
 
 export interface UiCaptureContext {
   level?: UiSeverity;
+  /** Indexed, searchable values: kinds, codes and statuses only. */
+  tags?: Record<string, string | undefined>;
   extra?: Record<string, unknown>;
 }
 

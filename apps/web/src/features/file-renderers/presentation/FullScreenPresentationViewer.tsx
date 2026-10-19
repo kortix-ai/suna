@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
-import { useDownloadRestriction } from '@/hooks/billing';
+import { useDownloadRestriction } from '@/hooks/billing/use-download-restriction';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';

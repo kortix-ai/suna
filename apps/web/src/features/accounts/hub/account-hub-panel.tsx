@@ -40,8 +40,11 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { ACCOUNT_PANEL_PARAM, closeAccountPanel } from '@/stores/account-panel-store';
 
-import { importAccountHubBody } from './account-hub-entry';
+import { setAccountHubImporter } from './account-hub-entry';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from './account-settings-shell';
+
+const importAccountHubBody = () => import('./account-hub-overlay-body');
+setAccountHubImporter(importAccountHubBody);
 
 const AccountHubOverlayBody = lazy(() =>
   importAccountHubBody().then((mod) => ({ default: mod.AccountHubOverlayBody })),
