@@ -345,7 +345,7 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
-          // Every harness ends its turns here, so the session's own hook runs for all of them.
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
           runOnIdleHook(current)
           return true
         }
