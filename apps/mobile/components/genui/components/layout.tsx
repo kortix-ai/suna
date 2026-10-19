@@ -91,29 +91,36 @@ function CardRating({ rating, reviews, price }: { rating: unknown; reviews: unkn
 }
 
 /**
- * A card's text in either layout: title (underlined when it links), rating, location line, the tags as tone-dot
- * pills (as on web), and the description.
+ * A card's text in either layout, as web's CardText: the title (underlined when it links) with the badges top
+ * right (so a pick reads at a glance), rating, location line, and the description.
  */
 function CardText({ props }: { props: GenuiNode['props'] }) {
   const badges = kids(props.badges);
   return (
     <View className="flex-1 gap-1">
-      <Text className={`font-medium ${props.href ? 'underline' : ''}`}>{String(props.title)}</Text>
+      <View className="flex-row items-baseline justify-between gap-3">
+        <Text className={`flex-1 font-medium ${props.href ? 'underline' : ''}`}>{String(props.title)}</Text>
+        {/* Web keeps the badges at their width; a phone row is narrow, so they wrap within half of it. */}
+        {badges.length > 0 ? (
+          <View className="max-w-[50%] flex-row flex-wrap justify-end gap-1.5">
+            {badges.map((badge) => (
+              // A plain secondary pill; a good pick (the recommendation) leads with a gold star at the text size.
+              <View key={badge.id} className="flex-row items-center gap-1.5 rounded-md bg-secondary/80 px-2 py-0.5">
+                {badge.props.tone === 'good' ? <Icon as={StarIcon} size={12} weight="fill" className="text-kortix-yellow" /> : null}
+                <Text className="text-xs leading-4 text-secondary-foreground">{String(badge.props.label)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
       <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
       {props.subtitle ? <Text variant="muted">{String(props.subtitle)}</Text> : null}
-      {badges.length > 0 ? (
-        <View className="flex-row flex-wrap gap-1.5 pt-0.5">
-          {badges.map((badge) => (
-            <CardBadge key={badge.id} badge={badge} well="bg-secondary" />
-          ))}
-        </View>
-      ) : null}
       {props.body ? <Text variant="small" className="leading-5">{String(props.body)}</Text> : null}
     </View>
   );
 }
 
-/** The list thumbnail and the Steps photo: a 72pt square. A photo fills it; a logo sits whole inside a 6pt inset. */
+/** The list thumbnail and the Steps photo: a 96pt square. A photo fills it; a logo sits whole inside a 6pt inset. */
 export const THUMB = 96;
 /** Below this width the grid is one column (every phone); a tablet gets two. */
 const CARD_TWO_COLUMNS_MIN = 480;
@@ -129,6 +136,8 @@ const INSET_PAD = 24;
 function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' | 'grid' }) {
   const [width, setWidth] = useState(0);
   const [shapes, setShapes] = useState<Record<string, CardShape>>({});
+  // Keyed by URL: a list thumbnail that failed to load drops its box, as on web.
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   const mode = cardListLayout(layout, Object.values(shapes));
   const look = (id: string, extra: MarkdownImageLook = {}): MarkdownImageLook => ({
     ...extra,
@@ -145,17 +154,18 @@ function GenuiCardList({ cards, layout }: { cards: GenuiNode[]; layout?: 'list' 
       <View className="rounded-2xl bg-card">
         {cards.map(({ id, props }, i) => {
           const shape = shapes[id] ?? cardImageShape(0, 0);
+          const image = props.image && !failed.has(String(props.image)) ? String(props.image) : null;
           return (
             <View key={id}>
               {i > 0 ? <Separator /> : null}
               <Pressable accessibilityRole={props.href ? 'link' : undefined} disabled={!props.href} onPress={open(props.href)} className="flex-row gap-3 px-4 py-3 active:opacity-70">
-                {props.image ? (
+                {image ? (
                   <View style={{ width: THUMB, height: THUMB }} className={`overflow-hidden rounded-lg bg-secondary ${shape.inset ? 'p-1.5' : ''}`}>
                     <GenuiImageView
-                      src={String(props.image)}
+                      src={image}
                       alt=""
                       fixedHeight={shape.inset ? THUMB - 12 : THUMB}
-                      look={look(id, { resizeMode: shape.inset ? 'contain' : 'cover' })}
+                      look={look(id, { resizeMode: shape.inset ? 'contain' : 'cover', onError: () => setFailed((known) => new Set(known).add(image)) })}
                     />
                   </View>
                 ) : null}
@@ -227,20 +237,17 @@ export function GenuiCard({ props }: GenuiComponentProps) {
     <View className={`gap-3 rounded-2xl bg-card ${image ? 'p-1.5 pb-3.5' : 'px-4 py-3'}`}>
       {image ? (
         <View className="overflow-hidden rounded-xl">
-          {/* Decorative: the title below names the item. */}
-          <GenuiImageView src={props.image} alt="" fixedHeight={CARD_IMAGE_HEIGHT} />
+          {/* Decorative: the title below names the item. The photo fills the well, which is its frame: no outline. */}
+          <GenuiImageView src={props.image} alt="" fixedHeight={CARD_IMAGE_HEIGHT} look={{ resizeMode: 'cover', bare: true }} />
           {badges.length > 0 ? <View className="absolute left-2.5 top-2.5 flex-row flex-wrap gap-1.5">{pills('bg-background')}</View> : null}
         </View>
       ) : null}
       <View className={`gap-1 ${image ? 'px-2.5' : ''}`}>
         <View className="flex-row items-baseline justify-between gap-3">
           <Text className={`flex-1 font-medium ${props.href ? 'underline' : ''}`}>{props.title}</Text>
-          {props.subtitle ? (
-            <Text variant="muted" className="max-w-[50%] text-right">
-              {props.subtitle}
-            </Text>
-          ) : null}
+          {props.subtitle ? <Text className="max-w-[50%] text-right font-mono text-xs text-foreground">{props.subtitle}</Text> : null}
         </View>
+        <CardRating rating={props.rating} reviews={props.reviews} price={props.price} />
         {props.body ? <Text variant="muted">{props.body}</Text> : null}
         {/* Without an image the pills sit under the body, on the secondary well instead of the surface. */}
         {badges.length > 0 && !image ? <View className="flex-row flex-wrap gap-1.5 pt-1.5">{pills('bg-secondary')}</View> : null}

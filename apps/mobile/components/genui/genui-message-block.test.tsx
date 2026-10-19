@@ -326,7 +326,7 @@ c = Callout("success", "C")`);
     expect(tints.map((c) => c.match(/bg-kortix-\w+\/15/)![0])).toEqual(['bg-kortix-blue/15', 'bg-kortix-orange/15', 'bg-kortix-green/15']);
   });
 
-  test('badges follow Paper Badge 01: the tone paints the /15 tint and the label; neutral is the secondary well', () => {
+  test('badges: the tone paints the /15 tint only, the label stays ink (AA on every tint); neutral is the secondary well', () => {
     const root = render(`root = Stack([bad, good, warn, plain])
 bad = Badge("Sold out", "bad")
 good = Badge("Top pick", "good")
@@ -343,11 +343,12 @@ plain = Badge("Hotel")`);
       'bg-secondary',
     ]);
     expect(found.map((chip) => className(chip.label).match(/text-[\w-]+/)![0])).toEqual([
-      'text-kortix-red',
-      'text-kortix-green',
-      'text-kortix-orange',
+      'text-foreground',
+      'text-foreground',
+      'text-foreground',
       'text-foreground',
     ]);
+    for (const chip of found) expect(className(chip.label)).not.toMatch(/text-kortix-/);
     expect(all(root, 'badge')).toHaveLength(0);
   });
 
@@ -411,6 +412,22 @@ w = Badge("2 rooms left", "warn")`);
     expect(all(root, 'markdown-image')[0]!.props.fixedHeight).toBe(160);
   });
 
+  test('a single card shows rating, reviews and price on one line, a mono ink subtitle, and a covering photo with no outline', () => {
+    const root = render(`root = Card("Taj", "Sea-facing rooms.", "Colaba, South Mumbai", "https://example.com/taj.jpg", null, null, 4.7, 33899, "From 24,000 INR")`);
+    const shown = texts(root);
+    // As web's CardRating: ★ 4.7 (33,899) · price.
+    const at = shown.indexOf('4.7');
+    expect(shown.slice(at, at + 4)).toEqual(['4.7', '(33,899)', '·', 'From 24,000 INR']);
+    expect(all(root, 'icon').some((n) => n.props.as === 'star')).toBe(true);
+    const subtitle = all(root, 'text').find((n) => texts(n).join('') === 'Colaba, South Mumbai')!;
+    expect(className(subtitle)).toEqual(expect.stringContaining('font-mono'));
+    expect(className(subtitle)).toContain('text-xs');
+    expect(className(subtitle)).toContain('text-foreground');
+    expect(subtitle.props.variant).toBeUndefined();
+    const image = all(root, 'markdown-image')[0]!;
+    expect([image.props.fixedHeight, image.props.look?.resizeMode, image.props.look?.bare]).toEqual([160, 'cover', true]);
+  });
+
   test('two or more cards without a hint are a list: a 96pt thumbnail beside the title, rating, location, body, and tag pills', () => {
     const root = render(`root = Stack([a, b])
 a = Card("Python", "General-purpose.", "Language", "https://example.com/python.png", "https://python.org", [t, g], 4.7, 1200, "Free")
@@ -428,15 +445,32 @@ g = Badge("Best for a first project", "good")`);
     expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([84, 'contain']);
     expect(className(thumbs[0]!)).toContain('p-1.5');
     expect(texts(root)).toEqual(expect.arrayContaining(['Python', '4.7', '(1,200)', 'Free', 'Language', 'General-purpose.', 'Popular', 'Go']));
-    // List tags are tone-dot pills on the secondary well, not a muted "A · B" line.
-    const pill = all(root, 'view').find((n) => className(n).includes('rounded-full px-2') && texts(n).join('') === 'Best for a first project')!;
-    expect(className(pill)).toContain('bg-secondary');
-    expect(all(pill, 'view').some((n) => className(n).includes('bg-kortix-green'))).toBe(true);
+    // The badges sit on the title row, top right, as secondary pills; not a muted "A · B" line, no tone dot.
+    const row = all(root, 'view').find((n) => className(n).includes('justify-between') && texts(n).includes('Python'))!;
+    const pills = all(row, 'view').filter((n) => className(n).includes('bg-secondary/80'));
+    expect(pills.map((n) => texts(n).join(''))).toEqual(['Popular', 'Best for a first project']);
+    expect(all(root, 'view').some((n) => /bg-kortix-\w+$|bg-kortix-\w+ /.test(className(n)))).toBe(false);
+    // Only the good pick leads with a gold star, at the label's size.
+    const stars = all(row, 'icon').filter((n) => n.props.as === 'star');
+    expect(stars).toHaveLength(1);
+    expect(all(pills[1]!, 'icon')).toEqual(stars);
+    expect([stars[0]!.props.weight, stars[0]!.props.size, className(stars[0]!)]).toEqual(['fill', 12, 'text-kortix-yellow']);
     expect(texts(root)).not.toContain('Popular · Best for a first project');
     expect(all(root, 'separator')).toHaveLength(1);
     const link = all(root, 'pressable').find((n) => n.props.accessibilityRole === 'link')!;
     act(() => (link.props.onPress as () => void)());
     expect(opened).toEqual(['https://python.org/']);
+  });
+
+  test('a list thumbnail that fails to load drops its box, as on web', () => {
+    const root = render(`root = Stack([a, b])
+a = Card("Python", null, null, "https://example.com/python.png")
+b = Card("Go", null, null, "https://example.com/go.png")`);
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(2);
+    act(() => (all(root, 'markdown-image')[0]!.props.look.onError as () => void)());
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(1);
+    expect(all(root, 'markdown-image').map((n) => n.props.src)).toEqual(['https://example.com/go.png']);
+    expect(texts(root)).toEqual(expect.arrayContaining(['Python', 'Go']));
   });
 
   test('cards switch to the grid once most loaded images prove to be photos; logos keep the list', () => {
