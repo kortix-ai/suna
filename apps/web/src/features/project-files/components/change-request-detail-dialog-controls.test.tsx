@@ -56,7 +56,7 @@ let leaves: Record<string, { allowed: boolean }> = {};
 
 const idleMutation = { mutate() {}, isPending: false, error: null, variables: undefined };
 const changeRequests = await import('../hooks/use-change-requests');
-mock.module('../hooks/use-change-requests', () => ({
+mock.module('@kortix/ui/shared/features/project-files/hooks/use-change-requests', () => ({
   ...changeRequests,
   useChangeRequest: () => ({
     data: {

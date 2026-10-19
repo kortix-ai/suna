@@ -39,7 +39,7 @@ mock.module('next/link', () => ({
   default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
     React.createElement('a', { href, ...props }, children),
 }));
-mock.module('@/hooks/utils', () => ({ useIsMobile: () => false }));
+mock.module('@kortix/ui/shared/hooks/utils/index', () => ({ useIsMobile: () => false }));
 mock.module('@/components/ui/sidebar', () => ({
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,

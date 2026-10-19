@@ -57,7 +57,7 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: authUser }),
 }));
-mock.module('@/hooks/utils/use-github-stars', () => ({
+mock.module('@kortix/ui/shared/hooks/utils/use-github-stars', () => ({
   useGitHubStars: () => ({ stars, formattedStars: stars === null ? null : '4,321', loading: false }),
 }));
 mock.module('@/lib/analytics/gtm', () => ({ trackCtaSignup: () => undefined }));

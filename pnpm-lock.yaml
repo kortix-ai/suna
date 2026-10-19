@@ -1721,9 +1721,15 @@ importers:
 
   packages/ui:
     dependencies:
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
       '@phosphor-icons/react':
         specifier: 2.1.10
         version: 2.1.10(react-dom@19.3.0)(react@19.3.0)
+      '@pierre/diffs':
+        specifier: 1.1.22
+        version: 1.1.22(react-dom@19.3.0)(react@19.3.0)
       '@radix-ui/react-accordion':
         specifier: ^1.2.11
         version: 1.2.20(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -1787,6 +1793,45 @@ importers:
       '@radix-ui/react-visually-hidden':
         specifier: ^1.2.4
         version: 1.2.11(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      '@tanstack/react-query':
+        specifier: ^5.75.2
+        version: 5.103.0(react@19.3.0)
+      '@tiptap/core':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/pm@3.30.5)
+      '@tiptap/extension-document':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-hard-break':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-paragraph':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-placeholder':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/extensions@3.30.5)
+      '@tiptap/extension-text':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extensions':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/pm':
+        specifier: 3.30.5
+        version: 3.30.5
+      '@tiptap/suggestion':
+        specifier: 3.30.5
+        version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: ^0.11.0
+        version: 0.11.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
       ag-grid-community:
         specifier: ^35.1.0
         version: 35.3.1
@@ -1802,9 +1847,24 @@ importers:
       cmdk:
         specifier: ^0.2.1
         version: 0.2.1(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      color-bits:
+        specifier: ^1.1.0
+        version: 1.2.0
+      date-fns:
+        specifier: ^3.6.0
+        version: 3.6.0
+      diff:
+        specifier: ^8.0.3
+        version: 8.0.4
       frimousse:
         specifier: ^0.3.0
         version: 0.3.0(react@19.3.0)(typescript@5.9.3)
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.2
+      katex:
+        specifier: ^0.16.22
+        version: 0.16.47
       maplibre-gl:
         specifier: 6.12.0
         version: 6.12.0
@@ -1832,21 +1892,39 @@ importers:
       recharts:
         specifier: ^3.2.1
         version: 3.10.1(@types/react@19.2.18)(react-dom@19.3.0)(react-is@19.3.0)(react@19.3.0)(redux@5.0.1)
+      rehype-sanitize:
+        specifier: ^6.0.0
+        version: 6.0.0
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      shiki:
+        specifier: ^3.12.0
+        version: 3.23.0
       sonner:
         specifier: ^2.0.3
         version: 2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      streamdown:
+        specifier: ^1.6.11
+        version: 1.6.11(micromark@4.0.3)(react@19.3.0)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.7.0
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       use-intl:
         specifier: ^4.13.4
         version: 4.14.5(react@19.3.0)
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      zustand:
+        specifier: ^5.0.3
+        version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
     devDependencies:
       '@kortix/sdk':
         specifier: workspace:*
@@ -1876,6 +1954,9 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0
       react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+      react-test-renderer:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
       tailwind-scrollbar:
@@ -8685,7 +8766,7 @@ packages:
     dependencies:
       '@pierre/theme': 2.0.0
       '@pierre/theming': 1.0.1(@pierre/theme@2.0.0)(react-dom@19.3.0)(react@19.3.0)(shiki@3.23.0)
-      '@shikijs/transformers': 3.23.0
+      '@shikijs/transformers': 4.4.3
       diff: 9.0.0
       hast-util-to-html: 9.0.5
       lru_map: 0.4.1
@@ -25238,7 +25319,7 @@ packages:
       micromark-factory-space: 2.0.1
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
     dev: false
 
   /micromark-extension-mdx-expression@3.0.1:
@@ -25447,9 +25528,6 @@ packages:
 
   /micromark-util-symbol@2.0.1:
     resolution: {integrity: sha512-vs5t8Apaud9N28kgCrRUdEed4UJ+wWNvicHLPxCa9ENlYuAY31M0ETy5y1vA33YoNPDFTghEbnh6efaE8h4x0Q==}
-
-  /micromark-util-types@2.0.2:
-    resolution: {integrity: sha512-Yw0ECSpJoViF1qTU4DC6NwtC4aWGt1EkzaQB8KPPyCRR8z9TWeV0HbEFGTO+ZY1wB22zmxnJqhPyTpOVCpeHTA==}
 
   /micromark-util-types@2.0.3:
     resolution: {integrity: sha512-oxB2Ik03hI0gv+VNn9tnh1t1YEe9MDPptViAEgfdf3YQHsn0pzGTgCdlSCJXcwhqm8phaEuM7zeEu3QQzVBrPg==}
@@ -28843,7 +28921,7 @@ packages:
     dependencies:
       '@types/mdast': 4.0.4
       mdast-util-from-markdown: 2.0.3
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color

@@ -19,7 +19,7 @@ const poolWrites: Array<{ providerId: string; secretIds: string[] | null }> = []
 const scopeWrites: unknown[] = [];
 const toasts: string[] = [];
 
-mock.module('./session-overrides-control', () => ({
+mock.module('@kortix/ui/session/overrides/session-overrides-control', () => ({
   SessionOverridesControl: (props: { rows: SessionOverrideRow[]; saveDisabled?: boolean; disabled?: boolean; onSave: () => Promise<boolean> }) => {
     rows = props.rows;
     control = props;
@@ -60,13 +60,13 @@ mock.module('@kortix/sdk/react', () => ({
     setPool: { mutateAsync: async (write: { providerId: string; secretIds: string[] | null }) => { poolWrites.push(write); } },
   }),
 }));
-mock.module('./provider-pool-draft-context', () => ({
+mock.module('@kortix/ui/session/overrides/provider-pool-draft-context', () => ({
   useProviderPoolEditingState: () => ({
     providerDrafts, setProviderDrafts: () => {}, saveError: null, setSaveError: () => {},
     saving: false, setSaving: () => {}, savingRef: { current: false },
   }),
 }));
-mock.module('./provider-pool-draft', () => ({
+mock.module('@kortix/ui/session/overrides/provider-pool-draft', () => ({
   effectiveProviderPools: () => selection,
   updateProviderPoolDraft: () => ({}),
 }));

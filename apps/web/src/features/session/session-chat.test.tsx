@@ -90,7 +90,7 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/session/header/session-site-header', () => ({
   SessionSiteHeader: () => null,
 }));
-mock.module('@/features/session/session-approval-prompt', () => ({
+mock.module('@kortix/ui/session/session-approval-prompt', () => ({
   SessionApprovalPrompt: () =>
     auditPending ? <button type="button">Approve this call</button> : null,
 }));

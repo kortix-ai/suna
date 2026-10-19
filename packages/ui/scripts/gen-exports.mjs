@@ -7,7 +7,8 @@
 // Rules (one subpath per source module, never a "./*" wildcard):
 //   src/index.ts                     → "."
 //   src/components/ui/<path>.tsx     → "./<path>"         (subfolders kept: "./dot-matrix/dotm-square-1")
-//   src/{lib,hooks,icons,providers}/<name>.ts(x) → "./<dir>/<name>"
+//   src/{lib,hooks,icons,providers,session,markdown,diff,shared}/<path>.ts(x) → "./<dir>/<path>"
+//   src/i18n/<path>.ts(x) other than index → "./i18n/<path>"
 //   src/chat/index.ts(x)             → "./chat"
 //   src/theme/index.ts               → "./theme"
 //   src/i18n/index.ts                → "./i18n"
@@ -63,10 +64,14 @@ export function buildExports() {
   for (const file of modules(join(SRC, 'components', 'ui'))) {
     out[`./${posix(relative(join(SRC, 'components', 'ui'), file)).replace(MODULE, '')}`] = rel(file);
   }
-  for (const dir of ['lib', 'hooks', 'icons', 'providers']) {
+  for (const dir of ['lib', 'hooks', 'icons', 'providers', 'session', 'markdown', 'diff', 'shared']) {
     for (const file of modules(join(SRC, dir))) {
       out[`./${dir}/${posix(relative(join(SRC, dir), file)).replace(MODULE, '')}`] = rel(file);
     }
+  }
+  for (const file of modules(join(SRC, 'i18n'))) {
+    const sub = posix(relative(join(SRC, 'i18n'), file)).replace(MODULE, '');
+    if (sub !== 'index') out[`./i18n/${sub}`] = rel(file);
   }
   for (const file of walk(join(SRC, 'styles')).filter((p) => p.endsWith('.css'))) {
     out[`./${posix(relative(join(SRC, 'styles'), file))}`] = rel(file);

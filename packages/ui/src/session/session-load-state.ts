@@ -1,0 +1,136 @@
+import type { UseSessionResult } from '@kortix/sdk/react';
+
+export function gatedRuntimeError(input: {
+  phase: UseSessionResult['phase'];
+  runtimeError: unknown;
+}): unknown {
+  return input.phase === 'error' ? input.runtimeError : null;
+}
+
+/**
+ * The SAME phase gate for the connection store's boot/readiness error
+ * (`runtimeBootError`, `sandbox-connection-store.runtimeError`).
+ *
+ * A cold boot's routine 503 (`{status:'starting', reason:'schema not ready'}`)
+ * no longer lands in that field at all — the SDK's `runtimeErrorFromHealth`
+ * keeps only a genuine `boot_error` (RC-1). This is the second half of that
+ * fix: even a genuine boot error must not paint a terminal card while `/start`
+ * is still in flight. `derivePhase` holds `phase` at `'starting'` until
+ * `/start` settles or gives up (~61.5s worst case), so gating the boot error on
+ * `phase === 'error'` means it can only become terminal AFTER the server has
+ * had its say — never on a transient mid-boot blip.
+ */
+export function gatedRuntimeBootError<T>(input: {
+  phase: UseSessionResult['phase'];
+  runtimeBootError: T;
+}): T | null {
+  return input.phase === 'error' ? input.runtimeBootError : null;
+}
+
+/**
+ * Runtime transport loss is local to the live layer when the conversation has
+ * a resolved OpenCode identity. The cached transcript remains useful and must
+ * not be replaced by a full-page error.
+ */
+export function runtimeErrorPresentation(input: {
+  chatSessionId: string | null;
+  runtimeError: unknown;
+  runtimeBootError: unknown;
+}): { replaceSession: boolean; inlineRecovery: boolean } {
+  const hasRuntimeError = Boolean(input.runtimeError || input.runtimeBootError);
+  if (!hasRuntimeError) return { replaceSession: false, inlineRecovery: false };
+  if (input.chatSessionId) return { replaceSession: false, inlineRecovery: true };
+  return { replaceSession: true, inlineRecovery: false };
+}
+
+export function canMountSessionChat(input: {
+  switched: boolean;
+  runtimeSessionId: string | null;
+}) {
+  return input.switched || Boolean(input.runtimeSessionId);
+}
+
+/**
+ * The transcript pin for the session being opened.
+ *
+ * Takes the RESOLVED session row, not the project's session list. It used to
+ * search the list, which stopped being sound the moment that list became a
+ * bounded page (`useProjectSessions`): a session older than the first page is
+ * simply absent from it, and the search answered `null` — an open session with
+ * no pin, i.e. a blank transcript. The session page reads its own row by id
+ * (`useProjectSession`), which is exact at any age and also returns metadata
+ * whole, where the list trims it.
+ */
+export function findInitialSessionPin(
+  // `runtime_session_id` since W4; an older API answers only `opencode_session_id`.
+  session: { runtime_session_id?: string | null; opencode_session_id?: string | null } | undefined | null,
+) {
+  return session?.runtime_session_id ?? session?.opencode_session_id ?? null;
+}
+
+/**
+ * A terminal surface is on screen NOW: the route renders an `InlineSessionError`
+ * itself, so the boot shell may crossfade out immediately — holding it over the
+ * message would only hide it.
+ *
+ * `chatSessionId` is deliberately NOT part of this. It used to be, and it meant
+ * the route started the 300ms fade as soon as SessionChat could MOUNT — which
+ * is earlier than SessionChat has anything to paint. The fade landed on that
+ * component's own compact "starting" loader and then swapped again to the
+ * transcript: two handovers for one arrival, seen as a flicker. The ordinary
+ * path now waits for the chat's own `onContentReady`.
+ */
+export function sessionErrorSurfaceReady(input: {
+  runtimeError: unknown;
+  runtimeBootError: unknown;
+}) {
+  return Boolean(input.runtimeError || input.runtimeBootError);
+}
+
+export function resolveSessionContentState(input: {
+  runtimeReady: boolean;
+  sessionFetched: boolean;
+  hasRuntimeSession: boolean;
+  hasMessages: boolean;
+  hasOptimisticPrompt: boolean;
+  /**
+   * A message read has SUCCEEDED for this session — `useSessionSync`'s
+   * `isLoading === false`, which the store sets only when an authoritative read
+   * lands.
+   *
+   * Without this, "the session object exists" was taken as proof the
+   * conversation had been read, and those are two different requests. The
+   * session GET is small and lands first; the message read is the big one and
+   * is the one that loses to a waking box. When it lost, the page rendered the
+   * full shell — header, composer, empty thread — over a session with a long
+   * history, and the user saw an EMPTY CONVERSATION rather than a wait
+   * (screenshot, sampleco 2026-08-24: composer live, thread blank, runtime
+   * terminal holding the whole session).
+   *
+   * Optional so existing callers keep their behaviour; `undefined` means the
+   * caller does not track it and the old rule applies.
+   */
+  transcriptLoaded?: boolean;
+}) {
+  const sessionResolved = input.runtimeReady && input.sessionFetched;
+  const isNotFound =
+    !input.hasRuntimeSession && sessionResolved && !input.hasMessages && !input.hasOptimisticPrompt;
+  const readOutstanding = input.transcriptLoaded === false;
+  // On an EXISTING session (a runtime session is known), the transcript read
+  // decides — not the inbox. The prompt-inbox rows are one fast DB read off
+  // the open bundle, and letting them count as "content" dismissed the loader
+  // onto a page of user-only bubbles; the assistant replies then popped in
+  // seconds later when the mirror/runtime read landed (Jay, 2026-08-28). The
+  // paint is atomic: hold the loader until the first read lands, then paint
+  // the whole conversation at once. Messages already on screen are never
+  // hidden, and a caller that does not track the read keeps the old rule.
+  //
+  // On a BRAND-NEW session there is no transcript to wait for, so the
+  // optimistic first prompt is the page — the Enter-paints-now contract.
+  const isDataLoading =
+    !isNotFound &&
+    !input.hasMessages &&
+    (input.hasRuntimeSession ? readOutstanding : !input.hasOptimisticPrompt);
+
+  return { isNotFound, isDataLoading };
+}

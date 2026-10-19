@@ -1,7 +1,1 @@
-/**
- * Utility Hooks
- */
-export { useGitHubStars } from './use-github-stars';
-export { useMediaQuery } from './use-media-query';
-export { useIsMobile } from './use-mobile';
-export { useSlashFocus } from './use-slash-focus';
+export * from '@kortix/ui/shared/hooks/utils/index';

@@ -41,7 +41,7 @@ mock.module('@/hooks/channels/use-teams-installations', () => ({
   useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
   useTeamsManifest: () => ({ data: null }),
 }));
-mock.module('@/hooks/channels/use-channel-bindings', () => ({
+mock.module('@kortix/ui/shared/hooks/channels/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),
   useUpdateChannelBinding: disconnect,
 }));

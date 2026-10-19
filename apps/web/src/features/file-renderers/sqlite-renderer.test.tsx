@@ -23,15 +23,15 @@ const uiToastMock = () => ({ errorToast: () => {}, successToast: () => {} });
 mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 const uiLibUtilsMock = () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') });
-mock.module('@/lib/utils', uiLibUtilsMock);
+mock.module('@kortix/ui/shared/lib/utils', uiLibUtilsMock);
 mock.module('@kortix/ui/lib/utils', uiLibUtilsMock);
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 mock.module('@kortix/ui/hooks/use-is-dark', () => ({ useIsDark: () => false }));
 mock.module('ag-grid-react', () => ({ AgGridReact: Grid }));
-mock.module('@/features/files/api/runtime-files', () => ({
+mock.module('@kortix/ui/shared/features/files/api/runtime-files', () => ({
   readFileAsBlob: async () => new Blob([new Uint8Array(createDatabaseBytes())]),
 }));
-mock.module('@/features/files/api/runtime-file-read', () => ({
+mock.module('@kortix/ui/shared/features/files/api/runtime-file-read', () => ({
   readRuntimeFileWithRetry: (_path: string, read: () => Promise<Blob>) => read(),
 }));
 

@@ -63,7 +63,7 @@ mock.module('@kortix/ui/toast', uiToastMock);
 const uiHintMock = () => ({ default: Passthrough });
 mock.module('@/components/ui/hint', uiHintMock);
 mock.module('@kortix/ui/hint', uiHintMock);
-mock.module('@/lib/use-deployment-cli-install-command', () => ({
+mock.module('@kortix/ui/shared/lib/use-deployment-cli-install-command', () => ({
   useDeploymentCliInstallCommand: () => 'install kortix',
 }));
 mock.module('@/lib/use-project-can', () => ({

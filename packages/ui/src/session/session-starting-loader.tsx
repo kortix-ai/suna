@@ -1,0 +1,399 @@
+'use client';
+
+import { Button } from '../components/ui/button';
+import Loading from '../components/ui/loading';
+import { useRestartProjectSession } from '../shared/hooks/projects/use-restart-project-session';
+import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catalog';
+import { useTranslations } from '../i18n';
+import { cn } from '../lib/utils';
+import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
+import { useProjectSession } from '@kortix/sdk/react';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
+
+/**
+ * The ONE loader shown while a session's Kortix Computer comes up — full-screen
+ * for resumes, and dead-center in the side panel while a fresh session boots.
+ * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
+ * server-side behind POST /sessions/:id/start; this just reports the real stage.
+ *
+ * Visual: one stable heading, one short stage label, one four-stage rail, and
+ * one small spinner. The spinner is the only perpetual motion. The rail moves
+ * only when the backend stage advances, so it never claims progress we do not
+ * have.
+ */
+const LOADER_DELAY_MS = 100;
+/**
+ * How long we sit in the backend `starting` stage before softly advancing from
+ * "Loading your workspace" to "Waking the agent". Both happen within that one
+ * backend stage (clone → OpenCode boot), so the advance reflects real order.
+ */
+const STARTING_SUBSTEP_MS = 5_000;
+/** After this long, show copy that sets expectations for a cold start. */
+const SLOW_AFTER_MS = 15_000;
+/**
+ * After this long, offer a manual restart. Sandboxes occasionally wedge (e.g. a
+ * stuck provider-side proxy) with no server-side signal that anything is wrong —
+ * a stop/start of the sandbox is the known fix, so surface it as a fallback
+ * instead of leaving the user staring at "Connecting" indefinitely.
+ */
+export const STUCK_AFTER_MS = 45_000;
+
+interface Step {
+  /** User-visible label for the active startup stage. */
+  label: string;
+}
+
+/**
+ * Accepted for input compatibility. Both values intentionally render the same
+ * loader.
+ */
+type BootStepVariant = 'stepper' | 'compact';
+type StartFailure = SessionStartResult['failure'];
+
+/**
+ * The longest retry clock worth counting down. The server's cooldown is 2, 5
+ * or 10 minutes (`RUNTIME_START_RETRY_BACKOFF_MS`); a clock further away comes
+ * from a skewed or unset `now`, and it rendered as tens of millions of minutes.
+ */
+const MAX_COUNTDOWN_SECONDS = 60 * 60;
+
+/**
+ * Keep the server's retry visible while `/start` waits for its retry clock.
+ * The server re-attempts on its own, so this is a waiting state, not an error.
+ */
+export function sessionWakeStatusNote(input: {
+  reason?: string | null;
+  failure?: StartFailure;
+  note?: string | null;
+  now: number;
+}): string | null {
+  if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
+  const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
+  const nextAttempt = attempts + 1;
+  const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
+  const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
+  if (!Number.isFinite(seconds) || seconds > MAX_COUNTDOWN_SECONDS) {
+    return `Still starting your computer. Trying again automatically (attempt ${nextAttempt}).`;
+  }
+  if (seconds === 0) return `Still starting your computer. Trying again now (attempt ${nextAttempt}).`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  // One unit: a line break never falls between the minutes and the seconds.
+  const duration = minutes > 0 ? `${minutes}m\u00a0${remainder}s` : `${remainder}s`;
+  return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
+}
+
+/** Copy is deliberately parallel, so stage changes read as one continuous task. */
+export const STEPS: Step[] = [
+  { label: 'Reserving your computer' },
+  { label: 'Loading your workspace' },
+  { label: 'Waking the agent' },
+  { label: 'Connecting' },
+];
+
+/**
+ * Resolve which step is CURRENTLY active from the backend stage plus how long
+ * we've been in it. The index is the floor we KNOW we're at — earlier steps are
+ * genuinely complete, later ones haven't started.
+ */
+export function activeStep(stage: SessionStartStage, msInStage: number): number {
+  if (stage === 'provisioning') return 0;
+  if (stage === 'starting') return msInStage >= STARTING_SUBSTEP_MS ? 2 : 1;
+  return 3;
+}
+
+/**
+ * The shared boot clock: a 1s tick that resolves the current active step from
+ * the backend stage plus time-in-stage, and exposes `now` for elapsed-time UI.
+ */
+function useBootProgress(stage: SessionStartStage): { active: number; now: number } {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const [stageEnteredAt, setStageEnteredAt] = useState(now);
+  const [prevStage, setPrevStage] = useState(stage);
+  if (prevStage !== stage) {
+    setPrevStage(stage);
+    setStageEnteredAt(now);
+  }
+
+  return { active: activeStep(stage, now - stageEnteredAt), now };
+}
+
+/**
+ * The boot clock a restart carries. The shared restart hook owns the whole
+ * mutation, so the success signal this file used to read out of a hand-rolled
+ * `onSuccess` is the hook's own state: its `errorMessage` is null exactly when
+ * a settled restart succeeded, so a pending→idle edge without an error resets
+ * the clock. A rejected restart keeps the old clock, so the stuck fallback
+ * stays available for a retry.
+ */
+function useRestartedBootClock(restart: {
+  isPending: boolean;
+  errorMessage: string | null;
+}): number {
+  const [clockStart, setClockStart] = useState(() => Date.now());
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !restart.isPending && !restart.errorMessage) {
+      setClockStart(Date.now());
+    }
+    wasPending.current = restart.isPending;
+  }, [restart.isPending, restart.errorMessage]);
+  return clockStart;
+}
+
+/**
+ * Whether the stuck-boot restart offer may render. Restart is the session
+ * owner's or a project manager's; the server answers anyone else 403
+ * (`can_manage_lifecycle`, the same verdict every session menu follows). A
+ * member who can open the session still gets the loader, just without the
+ * escape hatch. An absent row cannot deny yet: a fresh session's row arrives
+ * with the boot that wedged.
+ */
+export function canOfferBootRestart(
+  session: { can_manage_lifecycle?: boolean } | undefined,
+  projectId?: string,
+  sessionId?: string,
+): boolean {
+  return Boolean(projectId && sessionId) && session?.can_manage_lifecycle !== false;
+}
+
+/** The stalled-boot escape hatch, shared by the loader and instant session shell. */
+export function RestartFallback({
+  show,
+  pending,
+  onRestart,
+  className,
+  buttonClassName,
+}: {
+  show: boolean;
+  pending: boolean;
+  onRestart: () => void;
+  className?: string;
+  buttonClassName?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  if (!show) return null;
+
+  return (
+    <div className={cn('mt-5 w-full', className)}>
+      <p className="text-muted-foreground mb-2 text-xs text-pretty">
+        {tI18nComplete.raw('textbeda94e911d3')}
+      </p>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className={cn('w-full active:scale-[0.96]', buttonClassName)}
+        disabled={pending}
+        onClick={onRestart}
+      >
+        {pending ? (
+          <Loading className="size-3.5 shrink-0 text-current motion-reduce:animate-none" />
+        ) : (
+          <RotateCcw className="size-3.5 shrink-0" />
+        )}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
+      </Button>
+    </div>
+  );
+}
+
+interface QuietProgressLoaderProps {
+  active: number;
+  canRestart: boolean;
+  note?: string | null;
+  onRestart: () => void;
+  pending: boolean;
+  show: boolean;
+  slow: boolean;
+  stuck: boolean;
+}
+
+/**
+ * One stable headline, one source of perpetual motion, and an honest four-stage
+ * rail. Progress changes immediately when the backend stage changes.
+ */
+function QuietProgressLoader({
+  active,
+  canRestart,
+  note,
+  onRestart,
+  pending,
+  show,
+  slow,
+  stuck,
+}: QuietProgressLoaderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
+      {show ? (
+        <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">
+          <Loading
+            variant="spokes"
+            className="text-muted-foreground mt-0.5 size-4 shrink-0 motion-reduce:animate-none"
+          />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-foreground text-sm font-medium text-balance">
+              {tI18nComplete.raw('textac4e05b19878')}
+            </h2>
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">{note ?? step.label}</p>
+
+            <div
+              role="progressbar"
+              aria-label={tI18nComplete.raw('text4cbf9c0d5628')}
+              aria-valuemin={1}
+              aria-valuemax={steps.length}
+              aria-valuenow={active + 1}
+              aria-valuetext={`Step ${active + 1} of ${steps.length}: ${step.label}`}
+              className="mt-3 grid grid-cols-4 gap-1.5"
+            >
+              {steps.map((item, index) => (
+                <span
+                  key={item.label}
+                  aria-hidden
+                  className={cn(
+                    'h-1 rounded-full',
+                    index <= active ? 'bg-kortix-green' : 'bg-border/70',
+                  )}
+                />
+              ))}
+            </div>
+
+            {slow ? (
+              <p className="text-muted-foreground mt-3 text-xs text-pretty">
+                {tI18nComplete.raw('textbb2ab0401c3c')}
+              </p>
+            ) : null}
+
+            <RestartFallback show={stuck && canRestart} pending={pending} onRestart={onRestart} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function SessionStartingLoader({
+  stage = 'provisioning',
+  /** Delay before the content appears. Warm opens avoid flashing the loader. */
+  delayMs = LOADER_DELAY_MS,
+  projectId,
+  sessionId,
+  /** Honest one-liner from the SDK wake escalation ladder. */
+  note,
+  reason,
+  failure,
+}: {
+  stage?: SessionStartStage;
+  delayMs?: number;
+  projectId?: string;
+  sessionId?: string;
+  variant?: BootStepVariant;
+  note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
+}) {
+  const [delayElapsed, setDelayElapsed] = useState(false);
+  const show = delayMs <= 0 || delayElapsed;
+  useEffect(() => {
+    if (delayMs <= 0) return;
+    const timeout = setTimeout(() => setDelayElapsed(true), delayMs);
+    return () => clearTimeout(timeout);
+  }, [delayMs]);
+
+  const { data: session } = useProjectSession(projectId, sessionId);
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
+  const { active, now } = useBootProgress(stage);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
+  const clockStart = useRestartedBootClock(restart);
+  const slow = now - clockStart >= SLOW_AFTER_MS;
+  const stuck = now - clockStart >= STUCK_AFTER_MS;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
+
+  return (
+    <QuietProgressLoader
+      active={active}
+      canRestart={canRestart}
+      note={statusNote}
+      onRestart={restart.restart}
+      pending={restart.isPending}
+      show={show}
+      slow={slow}
+      stuck={stuck}
+    />
+  );
+}
+
+/**
+ * Compact status above a readable conversation while its runtime wakes. The
+ * transcript remains scrollable because only the restart control accepts input.
+ */
+export function SessionConnectingBanner({
+  stage = 'provisioning',
+  projectId,
+  sessionId,
+  className,
+  note,
+  reason,
+  failure,
+}: {
+  stage?: SessionStartStage;
+  projectId?: string;
+  sessionId?: string;
+  className?: string;
+  note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { data: session } = useProjectSession(projectId, sessionId);
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
+  const { active, now } = useBootProgress(stage);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
+  const clockStart = useRestartedBootClock(restart);
+  const stuck = now - clockStart >= STUCK_AFTER_MS;
+  const canRestart = canOfferBootRestart(session, projectId, sessionId);
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-session-connecting-banner=""
+      className={cn(
+        'pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-3 pt-3',
+        className,
+      )}
+    >
+      <div className="bg-background/85 text-muted-foreground flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-xs backdrop-blur-sm">
+        <Loading
+          variant="spokes"
+          className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
+        />
+        <span className="min-w-0 text-pretty">{statusNote ?? step.label}</span>
+        {stuck && canRestart ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="pointer-events-auto -mr-2 h-6 px-2 text-xs"
+            disabled={restart.isPending}
+            onClick={restart.restart}
+          >
+            {restart.isPending ? tI18nComplete.raw('text75d0f1469d16') : 'Restart'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

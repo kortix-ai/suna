@@ -1,6 +1,6 @@
 import { expect, test, mock } from 'bun:test';
 
-mock.module('../api/runtime-files', () => ({
+mock.module('@kortix/ui/shared/features/files/api/runtime-files', () => ({
   findFiles: async () => [],
   listFiles: async (path: string) => path === '/workspace'
     ? [{ path: '/workspace/src', type: 'directory' }]

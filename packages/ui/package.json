@@ -49,6 +49,7 @@
     "./date-range-picker": "./src/components/ui/date-range-picker.tsx",
     "./definition-list": "./src/components/ui/definition-list.tsx",
     "./dialog": "./src/components/ui/dialog.tsx",
+    "./diff/diff-view": "./src/diff/diff-view.tsx",
     "./disclosure": "./src/components/ui/disclosure.tsx",
     "./dot-matrix/dotm-3x3-10": "./src/components/ui/dot-matrix/dotm-3x3-10.tsx",
     "./dot-matrix/dotm-3x3-12": "./src/components/ui/dot-matrix/dotm-3x3-12.tsx",
@@ -128,6 +129,10 @@
     "./hooks/use-proximity-hover": "./src/hooks/use-proximity-hover.ts",
     "./hover-card": "./src/components/ui/hover-card.tsx",
     "./i18n": "./src/i18n/index.ts",
+    "./i18n/en": "./src/i18n/en.ts",
+    "./i18n/ui-catalog/localize-ui-catalog": "./src/i18n/ui-catalog/localize-ui-catalog.ts",
+    "./i18n/ui-catalog/remaining-ui-translation-keys.generated": "./src/i18n/ui-catalog/remaining-ui-translation-keys.generated.ts",
+    "./i18n/ui-catalog/use-localized-ui-catalog": "./src/i18n/ui-catalog/use-localized-ui-catalog.ts",
     "./icon-provider": "./src/components/ui/icon-provider.tsx",
     "./icons/close": "./src/icons/close.tsx",
     "./icons/copy": "./src/icons/copy.tsx",
@@ -161,6 +166,23 @@
     "./loading": "./src/components/ui/loading.tsx",
     "./local-time": "./src/components/ui/local-time.tsx",
     "./map": "./src/components/ui/map.tsx",
+    "./markdown/code/children-text": "./src/markdown/code/children-text.ts",
+    "./markdown/code/code-block": "./src/markdown/code/code-block.tsx",
+    "./markdown/code/copy-overlay": "./src/markdown/code/copy-overlay.tsx",
+    "./markdown/code/genui-fence": "./src/markdown/code/genui-fence.ts",
+    "./markdown/code/inline-chip": "./src/markdown/code/inline-chip.tsx",
+    "./markdown/code/inline-code": "./src/markdown/code/inline-code.tsx",
+    "./markdown/code/inside-link-context": "./src/markdown/code/inside-link-context.ts",
+    "./markdown/code/shiki-highlighter": "./src/markdown/code/shiki-highlighter.ts",
+    "./markdown/copy-button": "./src/markdown/copy-button.tsx",
+    "./markdown/file-links": "./src/markdown/file-links.ts",
+    "./markdown/katex-block": "./src/markdown/katex-block.tsx",
+    "./markdown/katex-markdown": "./src/markdown/katex-markdown.ts",
+    "./markdown/markdown-policy": "./src/markdown/markdown-policy.ts",
+    "./markdown/ordered-list": "./src/markdown/ordered-list.tsx",
+    "./markdown/setup-link-blocks": "./src/markdown/setup-link-blocks.ts",
+    "./markdown/stream-words": "./src/markdown/stream-words.tsx",
+    "./markdown/unified-markdown-utils": "./src/markdown/unified-markdown-utils.ts",
     "./marker": "./src/components/ui/marker.tsx",
     "./menu-recipe": "./src/components/ui/menu-recipe.ts",
     "./mermaid-render": "./src/components/ui/mermaid-render.ts",
@@ -186,7 +208,286 @@
     "./section-card": "./src/components/ui/section-card.tsx",
     "./select": "./src/components/ui/select.tsx",
     "./separator": "./src/components/ui/separator.tsx",
+    "./session/action-panel/easy/apps-card": "./src/session/action-panel/easy/apps-card.tsx",
+    "./session/action-panel/easy/easy-panel-logic": "./src/session/action-panel/easy/easy-panel-logic.ts",
+    "./session/action-panel/easy/outputs-card": "./src/session/action-panel/easy/outputs-card.tsx",
+    "./session/action-panel/easy/panel-card": "./src/session/action-panel/easy/panel-card.tsx",
+    "./session/action-panel/easy/plan-card": "./src/session/action-panel/easy/plan-card.tsx",
+    "./session/action-panel/easy/step-icon": "./src/session/action-panel/easy/step-icon.tsx",
+    "./session/action-panel/easy/viewer-actions": "./src/session/action-panel/easy/viewer-actions.tsx",
+    "./session/action-panel/shared/action-navigator": "./src/session/action-panel/shared/action-navigator.tsx",
+    "./session/action-panel/shared/action-navigator-logic": "./src/session/action-panel/shared/action-navigator-logic.ts",
+    "./session/action-panel/shared/deliverable-readiness": "./src/session/action-panel/shared/deliverable-readiness.ts",
+    "./session/action-panel/shared/derive-panels": "./src/session/action-panel/shared/derive-panels.ts",
+    "./session/action-panel/shared/output-priority": "./src/session/action-panel/shared/output-priority.ts",
+    "./session/action-panel/shared/run-outcome": "./src/session/action-panel/shared/run-outcome.ts",
+    "./session/action-panel/shared/sandbox-browser-chrome": "./src/session/action-panel/shared/sandbox-browser-chrome.tsx",
+    "./session/action-panel/shared/use-deliverable-readiness": "./src/session/action-panel/shared/use-deliverable-readiness.ts",
+    "./session/agent-git-reconciliation": "./src/session/agent-git-reconciliation.ts",
+    "./session/ask-owner-for-credits-button": "./src/session/ask-owner-for-credits-button.tsx",
+    "./session/attachment-mime": "./src/session/attachment-mime.ts",
+    "./session/attachment-tile": "./src/session/attachment-tile.tsx",
+    "./session/chat-minimap": "./src/session/chat-minimap.tsx",
+    "./session/chat-minimap-items": "./src/session/chat-minimap-items.ts",
+    "./session/chatgpt-connection-action": "./src/session/chatgpt-connection-action.ts",
+    "./session/clipboard-files": "./src/session/clipboard-files.ts",
+    "./session/composer/agent-selector": "./src/session/composer/agent-selector.tsx",
+    "./session/composer/animated-placeholder": "./src/session/composer/animated-placeholder.tsx",
+    "./session/composer/command-attachments": "./src/session/composer/command-attachments.ts",
+    "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
+    "./session/composer/composer-drop-zone": "./src/session/composer/composer-drop-zone.tsx",
+    "./session/composer/composer-text-metrics": "./src/session/composer/composer-text-metrics.ts",
+    "./session/composer/composer-underbar": "./src/session/composer/composer-underbar.tsx",
+    "./session/composer/context-ring": "./src/session/composer/context-ring.tsx",
+    "./session/composer/context-usage": "./src/session/composer/context-usage.ts",
+    "./session/composer/delivery-chain": "./src/session/composer/delivery-chain.ts",
+    "./session/composer/editor/extensions": "./src/session/composer/editor/extensions.ts",
+    "./session/composer/editor/first-visual-line": "./src/session/composer/editor/first-visual-line.ts",
+    "./session/composer/editor/suggestion": "./src/session/composer/editor/suggestion.ts",
+    "./session/composer/held-send-guard": "./src/session/composer/held-send-guard.ts",
+    "./session/composer/hooks/use-composer-focus": "./src/session/composer/hooks/use-composer-focus.ts",
+    "./session/composer/hooks/use-debounced-value": "./src/session/composer/hooks/use-debounced-value.ts",
+    "./session/composer/hooks/use-latest-ref": "./src/session/composer/hooks/use-latest-ref.ts",
+    "./session/composer/menus/menu-nav-state": "./src/session/composer/menus/menu-nav-state.ts",
+    "./session/composer/menus/menu-navigation": "./src/session/composer/menus/menu-navigation.ts",
+    "./session/composer/menus/menu-selection": "./src/session/composer/menus/menu-selection.ts",
+    "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
+    "./session/composer/menus/mount": "./src/session/composer/menus/mount.ts",
+    "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
+    "./session/composer/menus/slash-files": "./src/session/composer/menus/slash-files.ts",
+    "./session/composer/menus/slash-items": "./src/session/composer/menus/slash-items.ts",
+    "./session/composer/menus/slash-menu": "./src/session/composer/menus/slash-menu.tsx",
+    "./session/composer/send-blockers": "./src/session/composer/send-blockers.ts",
+    "./session/composer/send-stop-control": "./src/session/composer/send-stop-control.tsx",
+    "./session/composer/submit-latch": "./src/session/composer/submit-latch.ts",
+    "./session/composer/token-progress": "./src/session/composer/token-progress.tsx",
+    "./session/detect-command": "./src/session/detect-command.ts",
+    "./session/diff-dialog": "./src/session/diff-dialog.tsx",
+    "./session/entitlements-pending": "./src/session/entitlements-pending.ts",
+    "./session/esc-to-stop": "./src/session/esc-to-stop.ts",
+    "./session/file-availability": "./src/session/file-availability.ts",
+    "./session/first-prompt-handover": "./src/session/first-prompt-handover.ts",
+    "./session/header/compact-modal": "./src/session/header/compact-modal.tsx",
+    "./session/header/export-transcript-modal": "./src/session/header/export-transcript-modal.tsx",
+    "./session/header/session-pending-approvals-indicator": "./src/session/header/session-pending-approvals-indicator.tsx",
+    "./session/header/session-reload-progress-view": "./src/session/header/session-reload-progress-view.tsx",
+    "./session/header/session-title-input": "./src/session/header/session-title-input.tsx",
+    "./session/header/subagent-hover-card": "./src/session/header/subagent-hover-card.tsx",
+    "./session/image-output-path": "./src/session/image-output-path.ts",
+    "./session/image-preview": "./src/session/image-preview.tsx",
+    "./session/inbox-live-prompt": "./src/session/inbox-live-prompt.ts",
+    "./session/inbox-row-claims": "./src/session/inbox-row-claims.ts",
+    "./session/kortix-app-url": "./src/session/kortix-app-url.ts",
+    "./session/mention-chip": "./src/session/mention-chip.tsx",
+    "./session/mention-segments": "./src/session/mention-segments.ts",
+    "./session/message-parsing": "./src/session/message-parsing.tsx",
+    "./session/model-availability": "./src/session/model-availability.ts",
+    "./session/model-grouping": "./src/session/model-grouping.ts",
+    "./session/model-tags": "./src/session/model-tags.ts",
+    "./session/open-session-quick-view": "./src/session/open-session-quick-view.ts",
+    "./session/outcomes/anchor-outcomes": "./src/session/outcomes/anchor-outcomes.ts",
+    "./session/outcomes/change-request-outcomes": "./src/session/outcomes/change-request-outcomes.ts",
+    "./session/outcomes/outcome-card": "./src/session/outcomes/outcome-card.tsx",
+    "./session/outcomes/outcome-types": "./src/session/outcomes/outcome-types.ts",
+    "./session/outcomes/outcome-vocabulary": "./src/session/outcomes/outcome-vocabulary.ts",
+    "./session/outcomes/session-outcomes-provider": "./src/session/outcomes/session-outcomes-provider.tsx",
+    "./session/outcomes/turn-outcomes": "./src/session/outcomes/turn-outcomes.tsx",
+    "./session/overrides/provider-pool-draft": "./src/session/overrides/provider-pool-draft.ts",
+    "./session/overrides/provider-pool-draft-context": "./src/session/overrides/provider-pool-draft-context.tsx",
+    "./session/overrides/session-overrides-control": "./src/session/overrides/session-overrides-control.tsx",
+    "./session/participants/session-participants": "./src/session/participants/session-participants.tsx",
+    "./session/persisted-turn-failure": "./src/session/persisted-turn-failure.ts",
+    "./session/pinned-root-session": "./src/session/pinned-root-session.ts",
+    "./session/plan-surface": "./src/session/plan-surface.ts",
+    "./session/previous-repository-session": "./src/session/previous-repository-session.tsx",
+    "./session/print/load-entire-history": "./src/session/print/load-entire-history.ts",
+    "./session/print/print-chain": "./src/session/print/print-chain.ts",
+    "./session/print/session-print-header": "./src/session/print/session-print-header.tsx",
+    "./session/print/use-session-print": "./src/session/print/use-session-print.ts",
+    "./session/provider-failure-recovery": "./src/session/provider-failure-recovery.tsx",
+    "./session/provisioning-failure": "./src/session/provisioning-failure.ts",
+    "./session/pty-attach-status": "./src/session/pty-attach-status.tsx",
+    "./session/pty-connection": "./src/session/pty-connection.ts",
+    "./session/pty-terminal": "./src/session/pty-terminal.tsx",
+    "./session/pty-terminal-sanitize": "./src/session/pty-terminal-sanitize.ts",
+    "./session/question-prompt": "./src/session/question-prompt.tsx",
+    "./session/queued-message-restore": "./src/session/queued-message-restore.ts",
+    "./session/reasoning-effort-selector": "./src/session/reasoning-effort-selector.tsx",
+    "./session/reload-forensics": "./src/session/reload-forensics.ts",
+    "./session/reply-context": "./src/session/reply-context.ts",
+    "./session/sandbox-image": "./src/session/sandbox-image.tsx",
+    "./session/sandbox-loading-boundary": "./src/session/sandbox-loading-boundary.tsx",
+    "./session/saved-session-skeleton-rows": "./src/session/saved-session-skeleton-rows.tsx",
+    "./session/saved-session-skeleton-shape": "./src/session/saved-session-skeleton-shape.ts",
+    "./session/scope/create-scoped-session": "./src/session/scope/create-scoped-session.ts",
+    "./session/scope/session-scope-control": "./src/session/scope/session-scope-control.tsx",
+    "./session/scope/session-scope-model": "./src/session/scope/session-scope-model.ts",
+    "./session/scope/session-scope-toolbar": "./src/session/scope/session-scope-toolbar.tsx",
+    "./session/session-approval-prompt": "./src/session/session-approval-prompt.tsx",
+    "./session/session-approval-review": "./src/session/session-approval-review.ts",
+    "./session/session-audit-panel": "./src/session/session-audit-panel.tsx",
+    "./session/session-audit-shared": "./src/session/session-audit-shared.tsx",
+    "./session/session-busy-indicator": "./src/session/session-busy-indicator.tsx",
+    "./session/session-changes-shared": "./src/session/session-changes-shared.tsx",
+    "./session/session-chat-busy": "./src/session/session-chat-busy.ts",
+    "./session/session-composer-readiness": "./src/session/session-composer-readiness.ts",
+    "./session/session-context-message-explorer": "./src/session/session-context-message-explorer.tsx",
+    "./session/session-context-metrics": "./src/session/session-context-metrics.ts",
+    "./session/session-context-modal": "./src/session/session-context-modal.tsx",
+    "./session/session-context-sub-sessions": "./src/session/session-context-sub-sessions.tsx",
+    "./session/session-diff-viewer": "./src/session/session-diff-viewer.tsx",
+    "./session/session-files-explorer-logic": "./src/session/session-files-explorer-logic.ts",
+    "./session/session-files-panel": "./src/session/session-files-panel.tsx",
+    "./session/session-files-store-registry": "./src/session/session-files-store-registry.ts",
+    "./session/session-history": "./src/session/session-history.tsx",
+    "./session/session-history-scroll": "./src/session/session-history-scroll.ts",
+    "./session/session-load-state": "./src/session/session-load-state.ts",
+    "./session/session-notice-banner": "./src/session/session-notice-banner.tsx",
+    "./session/session-older-autoload": "./src/session/session-older-autoload.ts",
+    "./session/session-older-loading": "./src/session/session-older-loading.ts",
+    "./session/session-panel-header": "./src/session/session-panel-header.tsx",
+    "./session/session-resume": "./src/session/session-resume.ts",
+    "./session/session-start-gate": "./src/session/session-start-gate.ts",
+    "./session/session-starting-loader": "./src/session/session-starting-loader.tsx",
+    "./session/session-surface": "./src/session/session-surface.ts",
+    "./session/session-tab-title": "./src/session/session-tab-title.ts",
+    "./session/session-tab-title-sync": "./src/session/session-tab-title-sync.tsx",
+    "./session/session-terminal-connect-bar": "./src/session/session-terminal-connect-bar.tsx",
+    "./session/session-terminal-panel": "./src/session/session-terminal-panel.tsx",
+    "./session/session-terminal-state": "./src/session/session-terminal-state.ts",
+    "./session/session-transcript-class": "./src/session/session-transcript-class.ts",
+    "./session/session-turn-meta": "./src/session/session-turn-meta.tsx",
+    "./session/session-turn-meta-rows": "./src/session/session-turn-meta-rows.ts",
+    "./session/session-wallpaper-layer": "./src/session/session-wallpaper-layer.tsx",
+    "./session/stop-refusal": "./src/session/stop-refusal.ts",
+    "./session/terminal-card-gate": "./src/session/terminal-card-gate.ts",
+    "./session/tool/foreign-tool-calls": "./src/session/tool/foreign-tool-calls.ts",
+    "./session/tool/inline-permission-reply": "./src/session/tool/inline-permission-reply.ts",
+    "./session/tool/shared/file-list": "./src/session/tool/shared/file-list.tsx",
+    "./session/tool/shared/infrastructure-contexts": "./src/session/tool/shared/infrastructure-contexts.tsx",
+    "./session/tool/shared/infrastructure-parts": "./src/session/tool/shared/infrastructure-parts.tsx",
+    "./session/tool/shared/infrastructure-row-header": "./src/session/tool/shared/infrastructure-row-header.tsx",
+    "./session/tool/shared/infrastructure-rows": "./src/session/tool/shared/infrastructure-rows.tsx",
+    "./session/tool/shared/patch-helpers": "./src/session/tool/shared/patch-helpers.tsx",
+    "./session/tool/shared/registry": "./src/session/tool/shared/registry.ts",
+    "./session/tool/shared/result-card": "./src/session/tool/shared/result-card.tsx",
+    "./session/tool/shared/structured-output": "./src/session/tool/shared/structured-output.tsx",
+    "./session/tool/shared/surface": "./src/session/tool/shared/surface.tsx",
+    "./session/tool/shared/todo-helpers": "./src/session/tool/shared/todo-helpers.tsx",
+    "./session/tool/shared/tool-action-bar": "./src/session/tool/shared/tool-action-bar.tsx",
+    "./session/tool/shared/types": "./src/session/tool/shared/types.ts",
+    "./session/tool/shared/web-source-row": "./src/session/tool/shared/web-source-row.tsx",
+    "./session/tool/tool-meta": "./src/session/tool/tool-meta.ts",
+    "./session/tool/tools/channel-send": "./src/session/tool/tools/channel-send.ts",
+    "./session/tool/tools/channel-send-card": "./src/session/tool/tools/channel-send-card.tsx",
+    "./session/tool/tools/session-spawn-urls": "./src/session/tool/tools/session-spawn-urls.ts",
+    "./session/turn/burst-summary-trigger": "./src/session/turn/burst-summary-trigger.tsx",
+    "./session/turn/chain-step-trigger": "./src/session/turn/chain-step-trigger.tsx",
+    "./session/turn/channel-brand": "./src/session/turn/channel-brand.tsx",
+    "./session/turn/channel-message": "./src/session/turn/channel-message.ts",
+    "./session/turn/expandable-output": "./src/session/turn/expandable-output.tsx",
+    "./session/turn/fallback-row": "./src/session/turn/fallback-row.tsx",
+    "./session/turn/message-author": "./src/session/turn/message-author.ts",
+    "./session/turn/message-author-label": "./src/session/turn/message-author-label.tsx",
+    "./session/turn/message-time-label": "./src/session/turn/message-time-label.tsx",
+    "./session/turn/plan-anchor": "./src/session/turn/plan-anchor.ts",
+    "./session/turn/plan-card": "./src/session/turn/plan-card.tsx",
+    "./session/turn/queued-prompt-bubbles": "./src/session/turn/queued-prompt-bubbles.tsx",
+    "./session/turn/same-parts": "./src/session/turn/same-parts.ts",
+    "./session/turn/served-model": "./src/session/turn/served-model.ts",
+    "./session/turn/source-pill": "./src/session/turn/source-pill.tsx",
+    "./session/turn/status-elapsed": "./src/session/turn/status-elapsed.ts",
+    "./session/turn/streaming-cadence": "./src/session/turn/streaming-cadence.ts",
+    "./session/turn/thought-chain-step": "./src/session/turn/thought-chain-step.tsx",
+    "./session/turn/turn-viewport": "./src/session/turn/turn-viewport.tsx",
+    "./session/turn/turn-work-accordion": "./src/session/turn/turn-work-accordion.tsx",
+    "./session/use-bounded-runtime-wait": "./src/session/use-bounded-runtime-wait.ts",
+    "./session/use-oc-file-open": "./src/session/use-oc-file-open.ts",
+    "./session/use-pty-connection": "./src/session/use-pty-connection.ts",
+    "./session/use-readiness-settling": "./src/session/use-readiness-settling.ts",
+    "./session/use-session-panel-layout": "./src/session/use-session-panel-layout.ts",
+    "./session/use-session-panel-state": "./src/session/use-session-panel-state.ts",
     "./shader-safe": "./src/components/ui/shader-safe.tsx",
+    "./shared/components/approvals/approval-request": "./src/shared/components/approvals/approval-request.tsx",
+    "./shared/components/common/hover-prefetch-link": "./src/shared/components/common/hover-prefetch-link.tsx",
+    "./shared/components/iam/audit-credential-label": "./src/shared/components/iam/audit-credential-label.ts",
+    "./shared/components/projects/session-label": "./src/shared/components/projects/session-label.ts",
+    "./shared/components/setup-links/util": "./src/shared/components/setup-links/util.ts",
+    "./shared/features/changes/change-list": "./src/shared/features/changes/change-list.tsx",
+    "./shared/features/changes/change-vocabulary": "./src/shared/features/changes/change-vocabulary.ts",
+    "./shared/features/changes/index": "./src/shared/features/changes/index.ts",
+    "./shared/features/drives/session-drive-files": "./src/shared/features/drives/session-drive-files.ts",
+    "./shared/features/file-browser/store/files-store": "./src/shared/features/file-browser/store/files-store.ts",
+    "./shared/features/file-browser/types": "./src/shared/features/file-browser/types.ts",
+    "./shared/features/file-renderers/shared/viewer-download-button": "./src/shared/features/file-renderers/shared/viewer-download-button.tsx",
+    "./shared/features/files/api/runtime-file-read": "./src/shared/features/files/api/runtime-file-read.ts",
+    "./shared/features/files/api/runtime-files": "./src/shared/features/files/api/runtime-files.ts",
+    "./shared/features/files/hooks/file-read-retry": "./src/shared/features/files/hooks/file-read-retry.ts",
+    "./shared/features/files/hooks/server-health-state": "./src/shared/features/files/hooks/server-health-state.ts",
+    "./shared/features/files/hooks/system-dir": "./src/shared/features/files/hooks/system-dir.ts",
+    "./shared/features/files/hooks/use-file-content": "./src/shared/features/files/hooks/use-file-content.ts",
+    "./shared/features/files/hooks/use-git-status": "./src/shared/features/files/hooks/use-git-status.ts",
+    "./shared/features/files/hooks/use-server-health": "./src/shared/features/files/hooks/use-server-health.ts",
+    "./shared/features/genui/to-markdown": "./src/shared/features/genui/to-markdown.ts",
+    "./shared/features/icon/icons/download": "./src/shared/features/icon/icons/download.tsx",
+    "./shared/features/icon/icons/home": "./src/shared/features/icon/icons/home.tsx",
+    "./shared/features/icon/icons/microsoft-teams": "./src/shared/features/icon/icons/microsoft-teams.tsx",
+    "./shared/features/icon/icons/slack": "./src/shared/features/icon/icons/slack.tsx",
+    "./shared/features/icon/icons/solid-check-icon": "./src/shared/features/icon/icons/solid-check-icon.tsx",
+    "./shared/features/layout/section/empty-state": "./src/shared/features/layout/section/empty-state.tsx",
+    "./shared/features/layout/section/error-state": "./src/shared/features/layout/section/error-state.tsx",
+    "./shared/features/project-files/api/branches": "./src/shared/features/project-files/api/branches.ts",
+    "./shared/features/project-files/api/change-requests": "./src/shared/features/project-files/api/change-requests.ts",
+    "./shared/features/project-files/api/commits": "./src/shared/features/project-files/api/commits.ts",
+    "./shared/features/project-files/components/file-icon": "./src/shared/features/project-files/components/file-icon.tsx",
+    "./shared/features/project-files/context": "./src/shared/features/project-files/context.tsx",
+    "./shared/features/project-files/hooks/use-branches": "./src/shared/features/project-files/hooks/use-branches.ts",
+    "./shared/features/project-files/hooks/use-change-requests": "./src/shared/features/project-files/hooks/use-change-requests.ts",
+    "./shared/features/project-files/hooks/use-commits": "./src/shared/features/project-files/hooks/use-commits.ts",
+    "./shared/features/workspace/project-sidebar/modal/rename-session-cache": "./src/shared/features/workspace/project-sidebar/modal/rename-session-cache.ts",
+    "./shared/features/workspace/project-sidebar/modal/use-rename-session": "./src/shared/features/workspace/project-sidebar/modal/use-rename-session.ts",
+    "./shared/features/workspace/project-sidebar/project-session-list-helpers": "./src/shared/features/workspace/project-sidebar/project-session-list-helpers.ts",
+    "./shared/hooks/channels/use-channel-bindings": "./src/shared/hooks/channels/use-channel-bindings.ts",
+    "./shared/hooks/projects/session-reload-progress": "./src/shared/hooks/projects/session-reload-progress.ts",
+    "./shared/hooks/projects/use-restart-project-session": "./src/shared/hooks/projects/use-restart-project-session.ts",
+    "./shared/hooks/use-copy": "./src/shared/hooks/use-copy.ts",
+    "./shared/hooks/use-public-share-link": "./src/shared/hooks/use-public-share-link.ts",
+    "./shared/hooks/use-sandbox-proxy": "./src/shared/hooks/use-sandbox-proxy.ts",
+    "./shared/hooks/use-session-public-shares": "./src/shared/hooks/use-session-public-shares.ts",
+    "./shared/hooks/utils/index": "./src/shared/hooks/utils/index.ts",
+    "./shared/hooks/utils/use-github-stars": "./src/shared/hooks/utils/use-github-stars.ts",
+    "./shared/hooks/utils/use-media-query": "./src/shared/hooks/utils/use-media-query.ts",
+    "./shared/hooks/utils/use-slash-focus": "./src/shared/hooks/utils/use-slash-focus.ts",
+    "./shared/lib/code-theme": "./src/shared/lib/code-theme.ts",
+    "./shared/lib/interface-theme-defaults": "./src/shared/lib/interface-theme-defaults.ts",
+    "./shared/lib/kortix-cli": "./src/shared/lib/kortix-cli.ts",
+    "./shared/lib/model-pricing": "./src/shared/lib/model-pricing.ts",
+    "./shared/lib/navigation/session-href": "./src/shared/lib/navigation/session-href.ts",
+    "./shared/lib/object-url-cache": "./src/shared/lib/object-url-cache.ts",
+    "./shared/lib/site-metadata": "./src/shared/lib/site-metadata.ts",
+    "./shared/lib/storage/managed-storage": "./src/shared/lib/storage/managed-storage.ts",
+    "./shared/lib/use-deployment-cli-install-command": "./src/shared/lib/use-deployment-cli-install-command.ts",
+    "./shared/lib/utils": "./src/shared/lib/utils.ts",
+    "./shared/lib/utils/app-access-token": "./src/shared/lib/utils/app-access-token.ts",
+    "./shared/lib/utils/clipboard": "./src/shared/lib/utils/clipboard.ts",
+    "./shared/lib/utils/file-utils": "./src/shared/lib/utils/file-utils.ts",
+    "./shared/lib/utils/kortix-system-tags": "./src/shared/lib/utils/kortix-system-tags.ts",
+    "./shared/lib/utils/path-detection": "./src/shared/lib/utils/path-detection.ts",
+    "./shared/lib/utils/sandbox-proxy": "./src/shared/lib/utils/sandbox-proxy.ts",
+    "./shared/lib/utils/strip-html-tags": "./src/shared/lib/utils/strip-html-tags.ts",
+    "./shared/lib/utils/structured-output": "./src/shared/lib/utils/structured-output.ts",
+    "./shared/lib/wallpapers": "./src/shared/lib/wallpapers.ts",
+    "./shared/stores/browser-recents-store": "./src/shared/stores/browser-recents-store.ts",
+    "./shared/stores/chat-send-store": "./src/shared/stores/chat-send-store.ts",
+    "./shared/stores/file-preview-store": "./src/shared/stores/file-preview-store.ts",
+    "./shared/stores/kortix-computer-store": "./src/shared/stores/kortix-computer-store.ts",
+    "./shared/stores/persisted-store-registry": "./src/shared/stores/persisted-store-registry.ts",
+    "./shared/stores/session-browser-store": "./src/shared/stores/session-browser-store.ts",
+    "./shared/stores/session-panel-memory-store": "./src/shared/stores/session-panel-memory-store.ts",
+    "./shared/stores/tab-store": "./src/shared/stores/tab-store.ts",
+    "./shared/stores/user-preferences-store": "./src/shared/stores/user-preferences-store.ts",
+    "./shared/ui/index": "./src/shared/ui/index.ts",
+    "./shared/ui/types": "./src/shared/ui/types.ts",
     "./sheet": "./src/components/ui/sheet.tsx",
     "./sidebar": "./src/components/ui/sidebar.tsx",
     "./sidebar-context": "./src/components/ui/sidebar-context.tsx",
@@ -336,6 +637,10 @@
       "./dialog": {
         "types": "./dist/components/ui/dialog.d.ts",
         "import": "./dist/components/ui/dialog.js"
+      },
+      "./diff/diff-view": {
+        "types": "./dist/diff/diff-view.d.ts",
+        "import": "./dist/diff/diff-view.js"
       },
       "./disclosure": {
         "types": "./dist/components/ui/disclosure.d.ts",
@@ -647,6 +952,22 @@
         "types": "./dist/i18n/index.d.ts",
         "import": "./dist/i18n/index.js"
       },
+      "./i18n/en": {
+        "types": "./dist/i18n/en.d.ts",
+        "import": "./dist/i18n/en.js"
+      },
+      "./i18n/ui-catalog/localize-ui-catalog": {
+        "types": "./dist/i18n/ui-catalog/localize-ui-catalog.d.ts",
+        "import": "./dist/i18n/ui-catalog/localize-ui-catalog.js"
+      },
+      "./i18n/ui-catalog/remaining-ui-translation-keys.generated": {
+        "types": "./dist/i18n/ui-catalog/remaining-ui-translation-keys.generated.d.ts",
+        "import": "./dist/i18n/ui-catalog/remaining-ui-translation-keys.generated.js"
+      },
+      "./i18n/ui-catalog/use-localized-ui-catalog": {
+        "types": "./dist/i18n/ui-catalog/use-localized-ui-catalog.d.ts",
+        "import": "./dist/i18n/ui-catalog/use-localized-ui-catalog.js"
+      },
       "./icon-provider": {
         "types": "./dist/components/ui/icon-provider.d.ts",
         "import": "./dist/components/ui/icon-provider.js"
@@ -779,6 +1100,74 @@
         "types": "./dist/components/ui/map.d.ts",
         "import": "./dist/components/ui/map.js"
       },
+      "./markdown/code/children-text": {
+        "types": "./dist/markdown/code/children-text.d.ts",
+        "import": "./dist/markdown/code/children-text.js"
+      },
+      "./markdown/code/code-block": {
+        "types": "./dist/markdown/code/code-block.d.ts",
+        "import": "./dist/markdown/code/code-block.js"
+      },
+      "./markdown/code/copy-overlay": {
+        "types": "./dist/markdown/code/copy-overlay.d.ts",
+        "import": "./dist/markdown/code/copy-overlay.js"
+      },
+      "./markdown/code/genui-fence": {
+        "types": "./dist/markdown/code/genui-fence.d.ts",
+        "import": "./dist/markdown/code/genui-fence.js"
+      },
+      "./markdown/code/inline-chip": {
+        "types": "./dist/markdown/code/inline-chip.d.ts",
+        "import": "./dist/markdown/code/inline-chip.js"
+      },
+      "./markdown/code/inline-code": {
+        "types": "./dist/markdown/code/inline-code.d.ts",
+        "import": "./dist/markdown/code/inline-code.js"
+      },
+      "./markdown/code/inside-link-context": {
+        "types": "./dist/markdown/code/inside-link-context.d.ts",
+        "import": "./dist/markdown/code/inside-link-context.js"
+      },
+      "./markdown/code/shiki-highlighter": {
+        "types": "./dist/markdown/code/shiki-highlighter.d.ts",
+        "import": "./dist/markdown/code/shiki-highlighter.js"
+      },
+      "./markdown/copy-button": {
+        "types": "./dist/markdown/copy-button.d.ts",
+        "import": "./dist/markdown/copy-button.js"
+      },
+      "./markdown/file-links": {
+        "types": "./dist/markdown/file-links.d.ts",
+        "import": "./dist/markdown/file-links.js"
+      },
+      "./markdown/katex-block": {
+        "types": "./dist/markdown/katex-block.d.ts",
+        "import": "./dist/markdown/katex-block.js"
+      },
+      "./markdown/katex-markdown": {
+        "types": "./dist/markdown/katex-markdown.d.ts",
+        "import": "./dist/markdown/katex-markdown.js"
+      },
+      "./markdown/markdown-policy": {
+        "types": "./dist/markdown/markdown-policy.d.ts",
+        "import": "./dist/markdown/markdown-policy.js"
+      },
+      "./markdown/ordered-list": {
+        "types": "./dist/markdown/ordered-list.d.ts",
+        "import": "./dist/markdown/ordered-list.js"
+      },
+      "./markdown/setup-link-blocks": {
+        "types": "./dist/markdown/setup-link-blocks.d.ts",
+        "import": "./dist/markdown/setup-link-blocks.js"
+      },
+      "./markdown/stream-words": {
+        "types": "./dist/markdown/stream-words.d.ts",
+        "import": "./dist/markdown/stream-words.js"
+      },
+      "./markdown/unified-markdown-utils": {
+        "types": "./dist/markdown/unified-markdown-utils.d.ts",
+        "import": "./dist/markdown/unified-markdown-utils.js"
+      },
       "./marker": {
         "types": "./dist/components/ui/marker.d.ts",
         "import": "./dist/components/ui/marker.js"
@@ -876,9 +1265,1125 @@
         "types": "./dist/components/ui/separator.d.ts",
         "import": "./dist/components/ui/separator.js"
       },
+      "./session/action-panel/easy/apps-card": {
+        "types": "./dist/session/action-panel/easy/apps-card.d.ts",
+        "import": "./dist/session/action-panel/easy/apps-card.js"
+      },
+      "./session/action-panel/easy/easy-panel-logic": {
+        "types": "./dist/session/action-panel/easy/easy-panel-logic.d.ts",
+        "import": "./dist/session/action-panel/easy/easy-panel-logic.js"
+      },
+      "./session/action-panel/easy/outputs-card": {
+        "types": "./dist/session/action-panel/easy/outputs-card.d.ts",
+        "import": "./dist/session/action-panel/easy/outputs-card.js"
+      },
+      "./session/action-panel/easy/panel-card": {
+        "types": "./dist/session/action-panel/easy/panel-card.d.ts",
+        "import": "./dist/session/action-panel/easy/panel-card.js"
+      },
+      "./session/action-panel/easy/plan-card": {
+        "types": "./dist/session/action-panel/easy/plan-card.d.ts",
+        "import": "./dist/session/action-panel/easy/plan-card.js"
+      },
+      "./session/action-panel/easy/step-icon": {
+        "types": "./dist/session/action-panel/easy/step-icon.d.ts",
+        "import": "./dist/session/action-panel/easy/step-icon.js"
+      },
+      "./session/action-panel/easy/viewer-actions": {
+        "types": "./dist/session/action-panel/easy/viewer-actions.d.ts",
+        "import": "./dist/session/action-panel/easy/viewer-actions.js"
+      },
+      "./session/action-panel/shared/action-navigator": {
+        "types": "./dist/session/action-panel/shared/action-navigator.d.ts",
+        "import": "./dist/session/action-panel/shared/action-navigator.js"
+      },
+      "./session/action-panel/shared/action-navigator-logic": {
+        "types": "./dist/session/action-panel/shared/action-navigator-logic.d.ts",
+        "import": "./dist/session/action-panel/shared/action-navigator-logic.js"
+      },
+      "./session/action-panel/shared/deliverable-readiness": {
+        "types": "./dist/session/action-panel/shared/deliverable-readiness.d.ts",
+        "import": "./dist/session/action-panel/shared/deliverable-readiness.js"
+      },
+      "./session/action-panel/shared/derive-panels": {
+        "types": "./dist/session/action-panel/shared/derive-panels.d.ts",
+        "import": "./dist/session/action-panel/shared/derive-panels.js"
+      },
+      "./session/action-panel/shared/output-priority": {
+        "types": "./dist/session/action-panel/shared/output-priority.d.ts",
+        "import": "./dist/session/action-panel/shared/output-priority.js"
+      },
+      "./session/action-panel/shared/run-outcome": {
+        "types": "./dist/session/action-panel/shared/run-outcome.d.ts",
+        "import": "./dist/session/action-panel/shared/run-outcome.js"
+      },
+      "./session/action-panel/shared/sandbox-browser-chrome": {
+        "types": "./dist/session/action-panel/shared/sandbox-browser-chrome.d.ts",
+        "import": "./dist/session/action-panel/shared/sandbox-browser-chrome.js"
+      },
+      "./session/action-panel/shared/use-deliverable-readiness": {
+        "types": "./dist/session/action-panel/shared/use-deliverable-readiness.d.ts",
+        "import": "./dist/session/action-panel/shared/use-deliverable-readiness.js"
+      },
+      "./session/agent-git-reconciliation": {
+        "types": "./dist/session/agent-git-reconciliation.d.ts",
+        "import": "./dist/session/agent-git-reconciliation.js"
+      },
+      "./session/ask-owner-for-credits-button": {
+        "types": "./dist/session/ask-owner-for-credits-button.d.ts",
+        "import": "./dist/session/ask-owner-for-credits-button.js"
+      },
+      "./session/attachment-mime": {
+        "types": "./dist/session/attachment-mime.d.ts",
+        "import": "./dist/session/attachment-mime.js"
+      },
+      "./session/attachment-tile": {
+        "types": "./dist/session/attachment-tile.d.ts",
+        "import": "./dist/session/attachment-tile.js"
+      },
+      "./session/chat-minimap": {
+        "types": "./dist/session/chat-minimap.d.ts",
+        "import": "./dist/session/chat-minimap.js"
+      },
+      "./session/chat-minimap-items": {
+        "types": "./dist/session/chat-minimap-items.d.ts",
+        "import": "./dist/session/chat-minimap-items.js"
+      },
+      "./session/chatgpt-connection-action": {
+        "types": "./dist/session/chatgpt-connection-action.d.ts",
+        "import": "./dist/session/chatgpt-connection-action.js"
+      },
+      "./session/clipboard-files": {
+        "types": "./dist/session/clipboard-files.d.ts",
+        "import": "./dist/session/clipboard-files.js"
+      },
+      "./session/composer/agent-selector": {
+        "types": "./dist/session/composer/agent-selector.d.ts",
+        "import": "./dist/session/composer/agent-selector.js"
+      },
+      "./session/composer/animated-placeholder": {
+        "types": "./dist/session/composer/animated-placeholder.d.ts",
+        "import": "./dist/session/composer/animated-placeholder.js"
+      },
+      "./session/composer/command-attachments": {
+        "types": "./dist/session/composer/command-attachments.d.ts",
+        "import": "./dist/session/composer/command-attachments.js"
+      },
+      "./session/composer/composer-agent-access": {
+        "types": "./dist/session/composer/composer-agent-access.d.ts",
+        "import": "./dist/session/composer/composer-agent-access.js"
+      },
+      "./session/composer/composer-drop-zone": {
+        "types": "./dist/session/composer/composer-drop-zone.d.ts",
+        "import": "./dist/session/composer/composer-drop-zone.js"
+      },
+      "./session/composer/composer-text-metrics": {
+        "types": "./dist/session/composer/composer-text-metrics.d.ts",
+        "import": "./dist/session/composer/composer-text-metrics.js"
+      },
+      "./session/composer/composer-underbar": {
+        "types": "./dist/session/composer/composer-underbar.d.ts",
+        "import": "./dist/session/composer/composer-underbar.js"
+      },
+      "./session/composer/context-ring": {
+        "types": "./dist/session/composer/context-ring.d.ts",
+        "import": "./dist/session/composer/context-ring.js"
+      },
+      "./session/composer/context-usage": {
+        "types": "./dist/session/composer/context-usage.d.ts",
+        "import": "./dist/session/composer/context-usage.js"
+      },
+      "./session/composer/delivery-chain": {
+        "types": "./dist/session/composer/delivery-chain.d.ts",
+        "import": "./dist/session/composer/delivery-chain.js"
+      },
+      "./session/composer/editor/extensions": {
+        "types": "./dist/session/composer/editor/extensions.d.ts",
+        "import": "./dist/session/composer/editor/extensions.js"
+      },
+      "./session/composer/editor/first-visual-line": {
+        "types": "./dist/session/composer/editor/first-visual-line.d.ts",
+        "import": "./dist/session/composer/editor/first-visual-line.js"
+      },
+      "./session/composer/editor/suggestion": {
+        "types": "./dist/session/composer/editor/suggestion.d.ts",
+        "import": "./dist/session/composer/editor/suggestion.js"
+      },
+      "./session/composer/held-send-guard": {
+        "types": "./dist/session/composer/held-send-guard.d.ts",
+        "import": "./dist/session/composer/held-send-guard.js"
+      },
+      "./session/composer/hooks/use-composer-focus": {
+        "types": "./dist/session/composer/hooks/use-composer-focus.d.ts",
+        "import": "./dist/session/composer/hooks/use-composer-focus.js"
+      },
+      "./session/composer/hooks/use-debounced-value": {
+        "types": "./dist/session/composer/hooks/use-debounced-value.d.ts",
+        "import": "./dist/session/composer/hooks/use-debounced-value.js"
+      },
+      "./session/composer/hooks/use-latest-ref": {
+        "types": "./dist/session/composer/hooks/use-latest-ref.d.ts",
+        "import": "./dist/session/composer/hooks/use-latest-ref.js"
+      },
+      "./session/composer/menus/menu-nav-state": {
+        "types": "./dist/session/composer/menus/menu-nav-state.d.ts",
+        "import": "./dist/session/composer/menus/menu-nav-state.js"
+      },
+      "./session/composer/menus/menu-navigation": {
+        "types": "./dist/session/composer/menus/menu-navigation.d.ts",
+        "import": "./dist/session/composer/menus/menu-navigation.js"
+      },
+      "./session/composer/menus/menu-selection": {
+        "types": "./dist/session/composer/menus/menu-selection.d.ts",
+        "import": "./dist/session/composer/menus/menu-selection.js"
+      },
+      "./session/composer/menus/menu-shell": {
+        "types": "./dist/session/composer/menus/menu-shell.d.ts",
+        "import": "./dist/session/composer/menus/menu-shell.js"
+      },
+      "./session/composer/menus/mount": {
+        "types": "./dist/session/composer/menus/mount.d.ts",
+        "import": "./dist/session/composer/menus/mount.js"
+      },
+      "./session/composer/menus/slash-actions": {
+        "types": "./dist/session/composer/menus/slash-actions.d.ts",
+        "import": "./dist/session/composer/menus/slash-actions.js"
+      },
+      "./session/composer/menus/slash-files": {
+        "types": "./dist/session/composer/menus/slash-files.d.ts",
+        "import": "./dist/session/composer/menus/slash-files.js"
+      },
+      "./session/composer/menus/slash-items": {
+        "types": "./dist/session/composer/menus/slash-items.d.ts",
+        "import": "./dist/session/composer/menus/slash-items.js"
+      },
+      "./session/composer/menus/slash-menu": {
+        "types": "./dist/session/composer/menus/slash-menu.d.ts",
+        "import": "./dist/session/composer/menus/slash-menu.js"
+      },
+      "./session/composer/send-blockers": {
+        "types": "./dist/session/composer/send-blockers.d.ts",
+        "import": "./dist/session/composer/send-blockers.js"
+      },
+      "./session/composer/send-stop-control": {
+        "types": "./dist/session/composer/send-stop-control.d.ts",
+        "import": "./dist/session/composer/send-stop-control.js"
+      },
+      "./session/composer/submit-latch": {
+        "types": "./dist/session/composer/submit-latch.d.ts",
+        "import": "./dist/session/composer/submit-latch.js"
+      },
+      "./session/composer/token-progress": {
+        "types": "./dist/session/composer/token-progress.d.ts",
+        "import": "./dist/session/composer/token-progress.js"
+      },
+      "./session/detect-command": {
+        "types": "./dist/session/detect-command.d.ts",
+        "import": "./dist/session/detect-command.js"
+      },
+      "./session/diff-dialog": {
+        "types": "./dist/session/diff-dialog.d.ts",
+        "import": "./dist/session/diff-dialog.js"
+      },
+      "./session/entitlements-pending": {
+        "types": "./dist/session/entitlements-pending.d.ts",
+        "import": "./dist/session/entitlements-pending.js"
+      },
+      "./session/esc-to-stop": {
+        "types": "./dist/session/esc-to-stop.d.ts",
+        "import": "./dist/session/esc-to-stop.js"
+      },
+      "./session/file-availability": {
+        "types": "./dist/session/file-availability.d.ts",
+        "import": "./dist/session/file-availability.js"
+      },
+      "./session/first-prompt-handover": {
+        "types": "./dist/session/first-prompt-handover.d.ts",
+        "import": "./dist/session/first-prompt-handover.js"
+      },
+      "./session/header/compact-modal": {
+        "types": "./dist/session/header/compact-modal.d.ts",
+        "import": "./dist/session/header/compact-modal.js"
+      },
+      "./session/header/export-transcript-modal": {
+        "types": "./dist/session/header/export-transcript-modal.d.ts",
+        "import": "./dist/session/header/export-transcript-modal.js"
+      },
+      "./session/header/session-pending-approvals-indicator": {
+        "types": "./dist/session/header/session-pending-approvals-indicator.d.ts",
+        "import": "./dist/session/header/session-pending-approvals-indicator.js"
+      },
+      "./session/header/session-reload-progress-view": {
+        "types": "./dist/session/header/session-reload-progress-view.d.ts",
+        "import": "./dist/session/header/session-reload-progress-view.js"
+      },
+      "./session/header/session-title-input": {
+        "types": "./dist/session/header/session-title-input.d.ts",
+        "import": "./dist/session/header/session-title-input.js"
+      },
+      "./session/header/subagent-hover-card": {
+        "types": "./dist/session/header/subagent-hover-card.d.ts",
+        "import": "./dist/session/header/subagent-hover-card.js"
+      },
+      "./session/image-output-path": {
+        "types": "./dist/session/image-output-path.d.ts",
+        "import": "./dist/session/image-output-path.js"
+      },
+      "./session/image-preview": {
+        "types": "./dist/session/image-preview.d.ts",
+        "import": "./dist/session/image-preview.js"
+      },
+      "./session/inbox-live-prompt": {
+        "types": "./dist/session/inbox-live-prompt.d.ts",
+        "import": "./dist/session/inbox-live-prompt.js"
+      },
+      "./session/inbox-row-claims": {
+        "types": "./dist/session/inbox-row-claims.d.ts",
+        "import": "./dist/session/inbox-row-claims.js"
+      },
+      "./session/kortix-app-url": {
+        "types": "./dist/session/kortix-app-url.d.ts",
+        "import": "./dist/session/kortix-app-url.js"
+      },
+      "./session/mention-chip": {
+        "types": "./dist/session/mention-chip.d.ts",
+        "import": "./dist/session/mention-chip.js"
+      },
+      "./session/mention-segments": {
+        "types": "./dist/session/mention-segments.d.ts",
+        "import": "./dist/session/mention-segments.js"
+      },
+      "./session/message-parsing": {
+        "types": "./dist/session/message-parsing.d.ts",
+        "import": "./dist/session/message-parsing.js"
+      },
+      "./session/model-availability": {
+        "types": "./dist/session/model-availability.d.ts",
+        "import": "./dist/session/model-availability.js"
+      },
+      "./session/model-grouping": {
+        "types": "./dist/session/model-grouping.d.ts",
+        "import": "./dist/session/model-grouping.js"
+      },
+      "./session/model-tags": {
+        "types": "./dist/session/model-tags.d.ts",
+        "import": "./dist/session/model-tags.js"
+      },
+      "./session/open-session-quick-view": {
+        "types": "./dist/session/open-session-quick-view.d.ts",
+        "import": "./dist/session/open-session-quick-view.js"
+      },
+      "./session/outcomes/anchor-outcomes": {
+        "types": "./dist/session/outcomes/anchor-outcomes.d.ts",
+        "import": "./dist/session/outcomes/anchor-outcomes.js"
+      },
+      "./session/outcomes/change-request-outcomes": {
+        "types": "./dist/session/outcomes/change-request-outcomes.d.ts",
+        "import": "./dist/session/outcomes/change-request-outcomes.js"
+      },
+      "./session/outcomes/outcome-card": {
+        "types": "./dist/session/outcomes/outcome-card.d.ts",
+        "import": "./dist/session/outcomes/outcome-card.js"
+      },
+      "./session/outcomes/outcome-types": {
+        "types": "./dist/session/outcomes/outcome-types.d.ts",
+        "import": "./dist/session/outcomes/outcome-types.js"
+      },
+      "./session/outcomes/outcome-vocabulary": {
+        "types": "./dist/session/outcomes/outcome-vocabulary.d.ts",
+        "import": "./dist/session/outcomes/outcome-vocabulary.js"
+      },
+      "./session/outcomes/session-outcomes-provider": {
+        "types": "./dist/session/outcomes/session-outcomes-provider.d.ts",
+        "import": "./dist/session/outcomes/session-outcomes-provider.js"
+      },
+      "./session/outcomes/turn-outcomes": {
+        "types": "./dist/session/outcomes/turn-outcomes.d.ts",
+        "import": "./dist/session/outcomes/turn-outcomes.js"
+      },
+      "./session/overrides/provider-pool-draft": {
+        "types": "./dist/session/overrides/provider-pool-draft.d.ts",
+        "import": "./dist/session/overrides/provider-pool-draft.js"
+      },
+      "./session/overrides/provider-pool-draft-context": {
+        "types": "./dist/session/overrides/provider-pool-draft-context.d.ts",
+        "import": "./dist/session/overrides/provider-pool-draft-context.js"
+      },
+      "./session/overrides/session-overrides-control": {
+        "types": "./dist/session/overrides/session-overrides-control.d.ts",
+        "import": "./dist/session/overrides/session-overrides-control.js"
+      },
+      "./session/participants/session-participants": {
+        "types": "./dist/session/participants/session-participants.d.ts",
+        "import": "./dist/session/participants/session-participants.js"
+      },
+      "./session/persisted-turn-failure": {
+        "types": "./dist/session/persisted-turn-failure.d.ts",
+        "import": "./dist/session/persisted-turn-failure.js"
+      },
+      "./session/pinned-root-session": {
+        "types": "./dist/session/pinned-root-session.d.ts",
+        "import": "./dist/session/pinned-root-session.js"
+      },
+      "./session/plan-surface": {
+        "types": "./dist/session/plan-surface.d.ts",
+        "import": "./dist/session/plan-surface.js"
+      },
+      "./session/previous-repository-session": {
+        "types": "./dist/session/previous-repository-session.d.ts",
+        "import": "./dist/session/previous-repository-session.js"
+      },
+      "./session/print/load-entire-history": {
+        "types": "./dist/session/print/load-entire-history.d.ts",
+        "import": "./dist/session/print/load-entire-history.js"
+      },
+      "./session/print/print-chain": {
+        "types": "./dist/session/print/print-chain.d.ts",
+        "import": "./dist/session/print/print-chain.js"
+      },
+      "./session/print/session-print-header": {
+        "types": "./dist/session/print/session-print-header.d.ts",
+        "import": "./dist/session/print/session-print-header.js"
+      },
+      "./session/print/use-session-print": {
+        "types": "./dist/session/print/use-session-print.d.ts",
+        "import": "./dist/session/print/use-session-print.js"
+      },
+      "./session/provider-failure-recovery": {
+        "types": "./dist/session/provider-failure-recovery.d.ts",
+        "import": "./dist/session/provider-failure-recovery.js"
+      },
+      "./session/provisioning-failure": {
+        "types": "./dist/session/provisioning-failure.d.ts",
+        "import": "./dist/session/provisioning-failure.js"
+      },
+      "./session/pty-attach-status": {
+        "types": "./dist/session/pty-attach-status.d.ts",
+        "import": "./dist/session/pty-attach-status.js"
+      },
+      "./session/pty-connection": {
+        "types": "./dist/session/pty-connection.d.ts",
+        "import": "./dist/session/pty-connection.js"
+      },
+      "./session/pty-terminal": {
+        "types": "./dist/session/pty-terminal.d.ts",
+        "import": "./dist/session/pty-terminal.js"
+      },
+      "./session/pty-terminal-sanitize": {
+        "types": "./dist/session/pty-terminal-sanitize.d.ts",
+        "import": "./dist/session/pty-terminal-sanitize.js"
+      },
+      "./session/question-prompt": {
+        "types": "./dist/session/question-prompt.d.ts",
+        "import": "./dist/session/question-prompt.js"
+      },
+      "./session/queued-message-restore": {
+        "types": "./dist/session/queued-message-restore.d.ts",
+        "import": "./dist/session/queued-message-restore.js"
+      },
+      "./session/reasoning-effort-selector": {
+        "types": "./dist/session/reasoning-effort-selector.d.ts",
+        "import": "./dist/session/reasoning-effort-selector.js"
+      },
+      "./session/reload-forensics": {
+        "types": "./dist/session/reload-forensics.d.ts",
+        "import": "./dist/session/reload-forensics.js"
+      },
+      "./session/reply-context": {
+        "types": "./dist/session/reply-context.d.ts",
+        "import": "./dist/session/reply-context.js"
+      },
+      "./session/sandbox-image": {
+        "types": "./dist/session/sandbox-image.d.ts",
+        "import": "./dist/session/sandbox-image.js"
+      },
+      "./session/sandbox-loading-boundary": {
+        "types": "./dist/session/sandbox-loading-boundary.d.ts",
+        "import": "./dist/session/sandbox-loading-boundary.js"
+      },
+      "./session/saved-session-skeleton-rows": {
+        "types": "./dist/session/saved-session-skeleton-rows.d.ts",
+        "import": "./dist/session/saved-session-skeleton-rows.js"
+      },
+      "./session/saved-session-skeleton-shape": {
+        "types": "./dist/session/saved-session-skeleton-shape.d.ts",
+        "import": "./dist/session/saved-session-skeleton-shape.js"
+      },
+      "./session/scope/create-scoped-session": {
+        "types": "./dist/session/scope/create-scoped-session.d.ts",
+        "import": "./dist/session/scope/create-scoped-session.js"
+      },
+      "./session/scope/session-scope-control": {
+        "types": "./dist/session/scope/session-scope-control.d.ts",
+        "import": "./dist/session/scope/session-scope-control.js"
+      },
+      "./session/scope/session-scope-model": {
+        "types": "./dist/session/scope/session-scope-model.d.ts",
+        "import": "./dist/session/scope/session-scope-model.js"
+      },
+      "./session/scope/session-scope-toolbar": {
+        "types": "./dist/session/scope/session-scope-toolbar.d.ts",
+        "import": "./dist/session/scope/session-scope-toolbar.js"
+      },
+      "./session/session-approval-prompt": {
+        "types": "./dist/session/session-approval-prompt.d.ts",
+        "import": "./dist/session/session-approval-prompt.js"
+      },
+      "./session/session-approval-review": {
+        "types": "./dist/session/session-approval-review.d.ts",
+        "import": "./dist/session/session-approval-review.js"
+      },
+      "./session/session-audit-panel": {
+        "types": "./dist/session/session-audit-panel.d.ts",
+        "import": "./dist/session/session-audit-panel.js"
+      },
+      "./session/session-audit-shared": {
+        "types": "./dist/session/session-audit-shared.d.ts",
+        "import": "./dist/session/session-audit-shared.js"
+      },
+      "./session/session-busy-indicator": {
+        "types": "./dist/session/session-busy-indicator.d.ts",
+        "import": "./dist/session/session-busy-indicator.js"
+      },
+      "./session/session-changes-shared": {
+        "types": "./dist/session/session-changes-shared.d.ts",
+        "import": "./dist/session/session-changes-shared.js"
+      },
+      "./session/session-chat-busy": {
+        "types": "./dist/session/session-chat-busy.d.ts",
+        "import": "./dist/session/session-chat-busy.js"
+      },
+      "./session/session-composer-readiness": {
+        "types": "./dist/session/session-composer-readiness.d.ts",
+        "import": "./dist/session/session-composer-readiness.js"
+      },
+      "./session/session-context-message-explorer": {
+        "types": "./dist/session/session-context-message-explorer.d.ts",
+        "import": "./dist/session/session-context-message-explorer.js"
+      },
+      "./session/session-context-metrics": {
+        "types": "./dist/session/session-context-metrics.d.ts",
+        "import": "./dist/session/session-context-metrics.js"
+      },
+      "./session/session-context-modal": {
+        "types": "./dist/session/session-context-modal.d.ts",
+        "import": "./dist/session/session-context-modal.js"
+      },
+      "./session/session-context-sub-sessions": {
+        "types": "./dist/session/session-context-sub-sessions.d.ts",
+        "import": "./dist/session/session-context-sub-sessions.js"
+      },
+      "./session/session-diff-viewer": {
+        "types": "./dist/session/session-diff-viewer.d.ts",
+        "import": "./dist/session/session-diff-viewer.js"
+      },
+      "./session/session-files-explorer-logic": {
+        "types": "./dist/session/session-files-explorer-logic.d.ts",
+        "import": "./dist/session/session-files-explorer-logic.js"
+      },
+      "./session/session-files-panel": {
+        "types": "./dist/session/session-files-panel.d.ts",
+        "import": "./dist/session/session-files-panel.js"
+      },
+      "./session/session-files-store-registry": {
+        "types": "./dist/session/session-files-store-registry.d.ts",
+        "import": "./dist/session/session-files-store-registry.js"
+      },
+      "./session/session-history": {
+        "types": "./dist/session/session-history.d.ts",
+        "import": "./dist/session/session-history.js"
+      },
+      "./session/session-history-scroll": {
+        "types": "./dist/session/session-history-scroll.d.ts",
+        "import": "./dist/session/session-history-scroll.js"
+      },
+      "./session/session-load-state": {
+        "types": "./dist/session/session-load-state.d.ts",
+        "import": "./dist/session/session-load-state.js"
+      },
+      "./session/session-notice-banner": {
+        "types": "./dist/session/session-notice-banner.d.ts",
+        "import": "./dist/session/session-notice-banner.js"
+      },
+      "./session/session-older-autoload": {
+        "types": "./dist/session/session-older-autoload.d.ts",
+        "import": "./dist/session/session-older-autoload.js"
+      },
+      "./session/session-older-loading": {
+        "types": "./dist/session/session-older-loading.d.ts",
+        "import": "./dist/session/session-older-loading.js"
+      },
+      "./session/session-panel-header": {
+        "types": "./dist/session/session-panel-header.d.ts",
+        "import": "./dist/session/session-panel-header.js"
+      },
+      "./session/session-resume": {
+        "types": "./dist/session/session-resume.d.ts",
+        "import": "./dist/session/session-resume.js"
+      },
+      "./session/session-start-gate": {
+        "types": "./dist/session/session-start-gate.d.ts",
+        "import": "./dist/session/session-start-gate.js"
+      },
+      "./session/session-starting-loader": {
+        "types": "./dist/session/session-starting-loader.d.ts",
+        "import": "./dist/session/session-starting-loader.js"
+      },
+      "./session/session-surface": {
+        "types": "./dist/session/session-surface.d.ts",
+        "import": "./dist/session/session-surface.js"
+      },
+      "./session/session-tab-title": {
+        "types": "./dist/session/session-tab-title.d.ts",
+        "import": "./dist/session/session-tab-title.js"
+      },
+      "./session/session-tab-title-sync": {
+        "types": "./dist/session/session-tab-title-sync.d.ts",
+        "import": "./dist/session/session-tab-title-sync.js"
+      },
+      "./session/session-terminal-connect-bar": {
+        "types": "./dist/session/session-terminal-connect-bar.d.ts",
+        "import": "./dist/session/session-terminal-connect-bar.js"
+      },
+      "./session/session-terminal-panel": {
+        "types": "./dist/session/session-terminal-panel.d.ts",
+        "import": "./dist/session/session-terminal-panel.js"
+      },
+      "./session/session-terminal-state": {
+        "types": "./dist/session/session-terminal-state.d.ts",
+        "import": "./dist/session/session-terminal-state.js"
+      },
+      "./session/session-transcript-class": {
+        "types": "./dist/session/session-transcript-class.d.ts",
+        "import": "./dist/session/session-transcript-class.js"
+      },
+      "./session/session-turn-meta": {
+        "types": "./dist/session/session-turn-meta.d.ts",
+        "import": "./dist/session/session-turn-meta.js"
+      },
+      "./session/session-turn-meta-rows": {
+        "types": "./dist/session/session-turn-meta-rows.d.ts",
+        "import": "./dist/session/session-turn-meta-rows.js"
+      },
+      "./session/session-wallpaper-layer": {
+        "types": "./dist/session/session-wallpaper-layer.d.ts",
+        "import": "./dist/session/session-wallpaper-layer.js"
+      },
+      "./session/stop-refusal": {
+        "types": "./dist/session/stop-refusal.d.ts",
+        "import": "./dist/session/stop-refusal.js"
+      },
+      "./session/terminal-card-gate": {
+        "types": "./dist/session/terminal-card-gate.d.ts",
+        "import": "./dist/session/terminal-card-gate.js"
+      },
+      "./session/tool/foreign-tool-calls": {
+        "types": "./dist/session/tool/foreign-tool-calls.d.ts",
+        "import": "./dist/session/tool/foreign-tool-calls.js"
+      },
+      "./session/tool/inline-permission-reply": {
+        "types": "./dist/session/tool/inline-permission-reply.d.ts",
+        "import": "./dist/session/tool/inline-permission-reply.js"
+      },
+      "./session/tool/shared/file-list": {
+        "types": "./dist/session/tool/shared/file-list.d.ts",
+        "import": "./dist/session/tool/shared/file-list.js"
+      },
+      "./session/tool/shared/infrastructure-contexts": {
+        "types": "./dist/session/tool/shared/infrastructure-contexts.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-contexts.js"
+      },
+      "./session/tool/shared/infrastructure-parts": {
+        "types": "./dist/session/tool/shared/infrastructure-parts.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-parts.js"
+      },
+      "./session/tool/shared/infrastructure-row-header": {
+        "types": "./dist/session/tool/shared/infrastructure-row-header.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-row-header.js"
+      },
+      "./session/tool/shared/infrastructure-rows": {
+        "types": "./dist/session/tool/shared/infrastructure-rows.d.ts",
+        "import": "./dist/session/tool/shared/infrastructure-rows.js"
+      },
+      "./session/tool/shared/patch-helpers": {
+        "types": "./dist/session/tool/shared/patch-helpers.d.ts",
+        "import": "./dist/session/tool/shared/patch-helpers.js"
+      },
+      "./session/tool/shared/registry": {
+        "types": "./dist/session/tool/shared/registry.d.ts",
+        "import": "./dist/session/tool/shared/registry.js"
+      },
+      "./session/tool/shared/result-card": {
+        "types": "./dist/session/tool/shared/result-card.d.ts",
+        "import": "./dist/session/tool/shared/result-card.js"
+      },
+      "./session/tool/shared/structured-output": {
+        "types": "./dist/session/tool/shared/structured-output.d.ts",
+        "import": "./dist/session/tool/shared/structured-output.js"
+      },
+      "./session/tool/shared/surface": {
+        "types": "./dist/session/tool/shared/surface.d.ts",
+        "import": "./dist/session/tool/shared/surface.js"
+      },
+      "./session/tool/shared/todo-helpers": {
+        "types": "./dist/session/tool/shared/todo-helpers.d.ts",
+        "import": "./dist/session/tool/shared/todo-helpers.js"
+      },
+      "./session/tool/shared/tool-action-bar": {
+        "types": "./dist/session/tool/shared/tool-action-bar.d.ts",
+        "import": "./dist/session/tool/shared/tool-action-bar.js"
+      },
+      "./session/tool/shared/types": {
+        "types": "./dist/session/tool/shared/types.d.ts",
+        "import": "./dist/session/tool/shared/types.js"
+      },
+      "./session/tool/shared/web-source-row": {
+        "types": "./dist/session/tool/shared/web-source-row.d.ts",
+        "import": "./dist/session/tool/shared/web-source-row.js"
+      },
+      "./session/tool/tool-meta": {
+        "types": "./dist/session/tool/tool-meta.d.ts",
+        "import": "./dist/session/tool/tool-meta.js"
+      },
+      "./session/tool/tools/channel-send": {
+        "types": "./dist/session/tool/tools/channel-send.d.ts",
+        "import": "./dist/session/tool/tools/channel-send.js"
+      },
+      "./session/tool/tools/channel-send-card": {
+        "types": "./dist/session/tool/tools/channel-send-card.d.ts",
+        "import": "./dist/session/tool/tools/channel-send-card.js"
+      },
+      "./session/tool/tools/session-spawn-urls": {
+        "types": "./dist/session/tool/tools/session-spawn-urls.d.ts",
+        "import": "./dist/session/tool/tools/session-spawn-urls.js"
+      },
+      "./session/turn/burst-summary-trigger": {
+        "types": "./dist/session/turn/burst-summary-trigger.d.ts",
+        "import": "./dist/session/turn/burst-summary-trigger.js"
+      },
+      "./session/turn/chain-step-trigger": {
+        "types": "./dist/session/turn/chain-step-trigger.d.ts",
+        "import": "./dist/session/turn/chain-step-trigger.js"
+      },
+      "./session/turn/channel-brand": {
+        "types": "./dist/session/turn/channel-brand.d.ts",
+        "import": "./dist/session/turn/channel-brand.js"
+      },
+      "./session/turn/channel-message": {
+        "types": "./dist/session/turn/channel-message.d.ts",
+        "import": "./dist/session/turn/channel-message.js"
+      },
+      "./session/turn/expandable-output": {
+        "types": "./dist/session/turn/expandable-output.d.ts",
+        "import": "./dist/session/turn/expandable-output.js"
+      },
+      "./session/turn/fallback-row": {
+        "types": "./dist/session/turn/fallback-row.d.ts",
+        "import": "./dist/session/turn/fallback-row.js"
+      },
+      "./session/turn/message-author": {
+        "types": "./dist/session/turn/message-author.d.ts",
+        "import": "./dist/session/turn/message-author.js"
+      },
+      "./session/turn/message-author-label": {
+        "types": "./dist/session/turn/message-author-label.d.ts",
+        "import": "./dist/session/turn/message-author-label.js"
+      },
+      "./session/turn/message-time-label": {
+        "types": "./dist/session/turn/message-time-label.d.ts",
+        "import": "./dist/session/turn/message-time-label.js"
+      },
+      "./session/turn/plan-anchor": {
+        "types": "./dist/session/turn/plan-anchor.d.ts",
+        "import": "./dist/session/turn/plan-anchor.js"
+      },
+      "./session/turn/plan-card": {
+        "types": "./dist/session/turn/plan-card.d.ts",
+        "import": "./dist/session/turn/plan-card.js"
+      },
+      "./session/turn/queued-prompt-bubbles": {
+        "types": "./dist/session/turn/queued-prompt-bubbles.d.ts",
+        "import": "./dist/session/turn/queued-prompt-bubbles.js"
+      },
+      "./session/turn/same-parts": {
+        "types": "./dist/session/turn/same-parts.d.ts",
+        "import": "./dist/session/turn/same-parts.js"
+      },
+      "./session/turn/served-model": {
+        "types": "./dist/session/turn/served-model.d.ts",
+        "import": "./dist/session/turn/served-model.js"
+      },
+      "./session/turn/source-pill": {
+        "types": "./dist/session/turn/source-pill.d.ts",
+        "import": "./dist/session/turn/source-pill.js"
+      },
+      "./session/turn/status-elapsed": {
+        "types": "./dist/session/turn/status-elapsed.d.ts",
+        "import": "./dist/session/turn/status-elapsed.js"
+      },
+      "./session/turn/streaming-cadence": {
+        "types": "./dist/session/turn/streaming-cadence.d.ts",
+        "import": "./dist/session/turn/streaming-cadence.js"
+      },
+      "./session/turn/thought-chain-step": {
+        "types": "./dist/session/turn/thought-chain-step.d.ts",
+        "import": "./dist/session/turn/thought-chain-step.js"
+      },
+      "./session/turn/turn-viewport": {
+        "types": "./dist/session/turn/turn-viewport.d.ts",
+        "import": "./dist/session/turn/turn-viewport.js"
+      },
+      "./session/turn/turn-work-accordion": {
+        "types": "./dist/session/turn/turn-work-accordion.d.ts",
+        "import": "./dist/session/turn/turn-work-accordion.js"
+      },
+      "./session/use-bounded-runtime-wait": {
+        "types": "./dist/session/use-bounded-runtime-wait.d.ts",
+        "import": "./dist/session/use-bounded-runtime-wait.js"
+      },
+      "./session/use-oc-file-open": {
+        "types": "./dist/session/use-oc-file-open.d.ts",
+        "import": "./dist/session/use-oc-file-open.js"
+      },
+      "./session/use-pty-connection": {
+        "types": "./dist/session/use-pty-connection.d.ts",
+        "import": "./dist/session/use-pty-connection.js"
+      },
+      "./session/use-readiness-settling": {
+        "types": "./dist/session/use-readiness-settling.d.ts",
+        "import": "./dist/session/use-readiness-settling.js"
+      },
+      "./session/use-session-panel-layout": {
+        "types": "./dist/session/use-session-panel-layout.d.ts",
+        "import": "./dist/session/use-session-panel-layout.js"
+      },
+      "./session/use-session-panel-state": {
+        "types": "./dist/session/use-session-panel-state.d.ts",
+        "import": "./dist/session/use-session-panel-state.js"
+      },
       "./shader-safe": {
         "types": "./dist/components/ui/shader-safe.d.ts",
         "import": "./dist/components/ui/shader-safe.js"
+      },
+      "./shared/components/approvals/approval-request": {
+        "types": "./dist/shared/components/approvals/approval-request.d.ts",
+        "import": "./dist/shared/components/approvals/approval-request.js"
+      },
+      "./shared/components/common/hover-prefetch-link": {
+        "types": "./dist/shared/components/common/hover-prefetch-link.d.ts",
+        "import": "./dist/shared/components/common/hover-prefetch-link.js"
+      },
+      "./shared/components/iam/audit-credential-label": {
+        "types": "./dist/shared/components/iam/audit-credential-label.d.ts",
+        "import": "./dist/shared/components/iam/audit-credential-label.js"
+      },
+      "./shared/components/projects/session-label": {
+        "types": "./dist/shared/components/projects/session-label.d.ts",
+        "import": "./dist/shared/components/projects/session-label.js"
+      },
+      "./shared/components/setup-links/util": {
+        "types": "./dist/shared/components/setup-links/util.d.ts",
+        "import": "./dist/shared/components/setup-links/util.js"
+      },
+      "./shared/features/changes/change-list": {
+        "types": "./dist/shared/features/changes/change-list.d.ts",
+        "import": "./dist/shared/features/changes/change-list.js"
+      },
+      "./shared/features/changes/change-vocabulary": {
+        "types": "./dist/shared/features/changes/change-vocabulary.d.ts",
+        "import": "./dist/shared/features/changes/change-vocabulary.js"
+      },
+      "./shared/features/changes/index": {
+        "types": "./dist/shared/features/changes/index.d.ts",
+        "import": "./dist/shared/features/changes/index.js"
+      },
+      "./shared/features/drives/session-drive-files": {
+        "types": "./dist/shared/features/drives/session-drive-files.d.ts",
+        "import": "./dist/shared/features/drives/session-drive-files.js"
+      },
+      "./shared/features/file-browser/store/files-store": {
+        "types": "./dist/shared/features/file-browser/store/files-store.d.ts",
+        "import": "./dist/shared/features/file-browser/store/files-store.js"
+      },
+      "./shared/features/file-browser/types": {
+        "types": "./dist/shared/features/file-browser/types.d.ts",
+        "import": "./dist/shared/features/file-browser/types.js"
+      },
+      "./shared/features/file-renderers/shared/viewer-download-button": {
+        "types": "./dist/shared/features/file-renderers/shared/viewer-download-button.d.ts",
+        "import": "./dist/shared/features/file-renderers/shared/viewer-download-button.js"
+      },
+      "./shared/features/files/api/runtime-file-read": {
+        "types": "./dist/shared/features/files/api/runtime-file-read.d.ts",
+        "import": "./dist/shared/features/files/api/runtime-file-read.js"
+      },
+      "./shared/features/files/api/runtime-files": {
+        "types": "./dist/shared/features/files/api/runtime-files.d.ts",
+        "import": "./dist/shared/features/files/api/runtime-files.js"
+      },
+      "./shared/features/files/hooks/file-read-retry": {
+        "types": "./dist/shared/features/files/hooks/file-read-retry.d.ts",
+        "import": "./dist/shared/features/files/hooks/file-read-retry.js"
+      },
+      "./shared/features/files/hooks/server-health-state": {
+        "types": "./dist/shared/features/files/hooks/server-health-state.d.ts",
+        "import": "./dist/shared/features/files/hooks/server-health-state.js"
+      },
+      "./shared/features/files/hooks/system-dir": {
+        "types": "./dist/shared/features/files/hooks/system-dir.d.ts",
+        "import": "./dist/shared/features/files/hooks/system-dir.js"
+      },
+      "./shared/features/files/hooks/use-file-content": {
+        "types": "./dist/shared/features/files/hooks/use-file-content.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-file-content.js"
+      },
+      "./shared/features/files/hooks/use-git-status": {
+        "types": "./dist/shared/features/files/hooks/use-git-status.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-git-status.js"
+      },
+      "./shared/features/files/hooks/use-server-health": {
+        "types": "./dist/shared/features/files/hooks/use-server-health.d.ts",
+        "import": "./dist/shared/features/files/hooks/use-server-health.js"
+      },
+      "./shared/features/genui/to-markdown": {
+        "types": "./dist/shared/features/genui/to-markdown.d.ts",
+        "import": "./dist/shared/features/genui/to-markdown.js"
+      },
+      "./shared/features/icon/icons/download": {
+        "types": "./dist/shared/features/icon/icons/download.d.ts",
+        "import": "./dist/shared/features/icon/icons/download.js"
+      },
+      "./shared/features/icon/icons/home": {
+        "types": "./dist/shared/features/icon/icons/home.d.ts",
+        "import": "./dist/shared/features/icon/icons/home.js"
+      },
+      "./shared/features/icon/icons/microsoft-teams": {
+        "types": "./dist/shared/features/icon/icons/microsoft-teams.d.ts",
+        "import": "./dist/shared/features/icon/icons/microsoft-teams.js"
+      },
+      "./shared/features/icon/icons/slack": {
+        "types": "./dist/shared/features/icon/icons/slack.d.ts",
+        "import": "./dist/shared/features/icon/icons/slack.js"
+      },
+      "./shared/features/icon/icons/solid-check-icon": {
+        "types": "./dist/shared/features/icon/icons/solid-check-icon.d.ts",
+        "import": "./dist/shared/features/icon/icons/solid-check-icon.js"
+      },
+      "./shared/features/layout/section/empty-state": {
+        "types": "./dist/shared/features/layout/section/empty-state.d.ts",
+        "import": "./dist/shared/features/layout/section/empty-state.js"
+      },
+      "./shared/features/layout/section/error-state": {
+        "types": "./dist/shared/features/layout/section/error-state.d.ts",
+        "import": "./dist/shared/features/layout/section/error-state.js"
+      },
+      "./shared/features/project-files/api/branches": {
+        "types": "./dist/shared/features/project-files/api/branches.d.ts",
+        "import": "./dist/shared/features/project-files/api/branches.js"
+      },
+      "./shared/features/project-files/api/change-requests": {
+        "types": "./dist/shared/features/project-files/api/change-requests.d.ts",
+        "import": "./dist/shared/features/project-files/api/change-requests.js"
+      },
+      "./shared/features/project-files/api/commits": {
+        "types": "./dist/shared/features/project-files/api/commits.d.ts",
+        "import": "./dist/shared/features/project-files/api/commits.js"
+      },
+      "./shared/features/project-files/components/file-icon": {
+        "types": "./dist/shared/features/project-files/components/file-icon.d.ts",
+        "import": "./dist/shared/features/project-files/components/file-icon.js"
+      },
+      "./shared/features/project-files/context": {
+        "types": "./dist/shared/features/project-files/context.d.ts",
+        "import": "./dist/shared/features/project-files/context.js"
+      },
+      "./shared/features/project-files/hooks/use-branches": {
+        "types": "./dist/shared/features/project-files/hooks/use-branches.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-branches.js"
+      },
+      "./shared/features/project-files/hooks/use-change-requests": {
+        "types": "./dist/shared/features/project-files/hooks/use-change-requests.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-change-requests.js"
+      },
+      "./shared/features/project-files/hooks/use-commits": {
+        "types": "./dist/shared/features/project-files/hooks/use-commits.d.ts",
+        "import": "./dist/shared/features/project-files/hooks/use-commits.js"
+      },
+      "./shared/features/workspace/project-sidebar/modal/rename-session-cache": {
+        "types": "./dist/shared/features/workspace/project-sidebar/modal/rename-session-cache.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/modal/rename-session-cache.js"
+      },
+      "./shared/features/workspace/project-sidebar/modal/use-rename-session": {
+        "types": "./dist/shared/features/workspace/project-sidebar/modal/use-rename-session.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/modal/use-rename-session.js"
+      },
+      "./shared/features/workspace/project-sidebar/project-session-list-helpers": {
+        "types": "./dist/shared/features/workspace/project-sidebar/project-session-list-helpers.d.ts",
+        "import": "./dist/shared/features/workspace/project-sidebar/project-session-list-helpers.js"
+      },
+      "./shared/hooks/channels/use-channel-bindings": {
+        "types": "./dist/shared/hooks/channels/use-channel-bindings.d.ts",
+        "import": "./dist/shared/hooks/channels/use-channel-bindings.js"
+      },
+      "./shared/hooks/projects/session-reload-progress": {
+        "types": "./dist/shared/hooks/projects/session-reload-progress.d.ts",
+        "import": "./dist/shared/hooks/projects/session-reload-progress.js"
+      },
+      "./shared/hooks/projects/use-restart-project-session": {
+        "types": "./dist/shared/hooks/projects/use-restart-project-session.d.ts",
+        "import": "./dist/shared/hooks/projects/use-restart-project-session.js"
+      },
+      "./shared/hooks/use-copy": {
+        "types": "./dist/shared/hooks/use-copy.d.ts",
+        "import": "./dist/shared/hooks/use-copy.js"
+      },
+      "./shared/hooks/use-public-share-link": {
+        "types": "./dist/shared/hooks/use-public-share-link.d.ts",
+        "import": "./dist/shared/hooks/use-public-share-link.js"
+      },
+      "./shared/hooks/use-sandbox-proxy": {
+        "types": "./dist/shared/hooks/use-sandbox-proxy.d.ts",
+        "import": "./dist/shared/hooks/use-sandbox-proxy.js"
+      },
+      "./shared/hooks/use-session-public-shares": {
+        "types": "./dist/shared/hooks/use-session-public-shares.d.ts",
+        "import": "./dist/shared/hooks/use-session-public-shares.js"
+      },
+      "./shared/hooks/utils/index": {
+        "types": "./dist/shared/hooks/utils/index.d.ts",
+        "import": "./dist/shared/hooks/utils/index.js"
+      },
+      "./shared/hooks/utils/use-github-stars": {
+        "types": "./dist/shared/hooks/utils/use-github-stars.d.ts",
+        "import": "./dist/shared/hooks/utils/use-github-stars.js"
+      },
+      "./shared/hooks/utils/use-media-query": {
+        "types": "./dist/shared/hooks/utils/use-media-query.d.ts",
+        "import": "./dist/shared/hooks/utils/use-media-query.js"
+      },
+      "./shared/hooks/utils/use-slash-focus": {
+        "types": "./dist/shared/hooks/utils/use-slash-focus.d.ts",
+        "import": "./dist/shared/hooks/utils/use-slash-focus.js"
+      },
+      "./shared/lib/code-theme": {
+        "types": "./dist/shared/lib/code-theme.d.ts",
+        "import": "./dist/shared/lib/code-theme.js"
+      },
+      "./shared/lib/interface-theme-defaults": {
+        "types": "./dist/shared/lib/interface-theme-defaults.d.ts",
+        "import": "./dist/shared/lib/interface-theme-defaults.js"
+      },
+      "./shared/lib/kortix-cli": {
+        "types": "./dist/shared/lib/kortix-cli.d.ts",
+        "import": "./dist/shared/lib/kortix-cli.js"
+      },
+      "./shared/lib/model-pricing": {
+        "types": "./dist/shared/lib/model-pricing.d.ts",
+        "import": "./dist/shared/lib/model-pricing.js"
+      },
+      "./shared/lib/navigation/session-href": {
+        "types": "./dist/shared/lib/navigation/session-href.d.ts",
+        "import": "./dist/shared/lib/navigation/session-href.js"
+      },
+      "./shared/lib/object-url-cache": {
+        "types": "./dist/shared/lib/object-url-cache.d.ts",
+        "import": "./dist/shared/lib/object-url-cache.js"
+      },
+      "./shared/lib/site-metadata": {
+        "types": "./dist/shared/lib/site-metadata.d.ts",
+        "import": "./dist/shared/lib/site-metadata.js"
+      },
+      "./shared/lib/storage/managed-storage": {
+        "types": "./dist/shared/lib/storage/managed-storage.d.ts",
+        "import": "./dist/shared/lib/storage/managed-storage.js"
+      },
+      "./shared/lib/use-deployment-cli-install-command": {
+        "types": "./dist/shared/lib/use-deployment-cli-install-command.d.ts",
+        "import": "./dist/shared/lib/use-deployment-cli-install-command.js"
+      },
+      "./shared/lib/utils": {
+        "types": "./dist/shared/lib/utils.d.ts",
+        "import": "./dist/shared/lib/utils.js"
+      },
+      "./shared/lib/utils/app-access-token": {
+        "types": "./dist/shared/lib/utils/app-access-token.d.ts",
+        "import": "./dist/shared/lib/utils/app-access-token.js"
+      },
+      "./shared/lib/utils/clipboard": {
+        "types": "./dist/shared/lib/utils/clipboard.d.ts",
+        "import": "./dist/shared/lib/utils/clipboard.js"
+      },
+      "./shared/lib/utils/file-utils": {
+        "types": "./dist/shared/lib/utils/file-utils.d.ts",
+        "import": "./dist/shared/lib/utils/file-utils.js"
+      },
+      "./shared/lib/utils/kortix-system-tags": {
+        "types": "./dist/shared/lib/utils/kortix-system-tags.d.ts",
+        "import": "./dist/shared/lib/utils/kortix-system-tags.js"
+      },
+      "./shared/lib/utils/path-detection": {
+        "types": "./dist/shared/lib/utils/path-detection.d.ts",
+        "import": "./dist/shared/lib/utils/path-detection.js"
+      },
+      "./shared/lib/utils/sandbox-proxy": {
+        "types": "./dist/shared/lib/utils/sandbox-proxy.d.ts",
+        "import": "./dist/shared/lib/utils/sandbox-proxy.js"
+      },
+      "./shared/lib/utils/strip-html-tags": {
+        "types": "./dist/shared/lib/utils/strip-html-tags.d.ts",
+        "import": "./dist/shared/lib/utils/strip-html-tags.js"
+      },
+      "./shared/lib/utils/structured-output": {
+        "types": "./dist/shared/lib/utils/structured-output.d.ts",
+        "import": "./dist/shared/lib/utils/structured-output.js"
+      },
+      "./shared/lib/wallpapers": {
+        "types": "./dist/shared/lib/wallpapers.d.ts",
+        "import": "./dist/shared/lib/wallpapers.js"
+      },
+      "./shared/stores/browser-recents-store": {
+        "types": "./dist/shared/stores/browser-recents-store.d.ts",
+        "import": "./dist/shared/stores/browser-recents-store.js"
+      },
+      "./shared/stores/chat-send-store": {
+        "types": "./dist/shared/stores/chat-send-store.d.ts",
+        "import": "./dist/shared/stores/chat-send-store.js"
+      },
+      "./shared/stores/file-preview-store": {
+        "types": "./dist/shared/stores/file-preview-store.d.ts",
+        "import": "./dist/shared/stores/file-preview-store.js"
+      },
+      "./shared/stores/kortix-computer-store": {
+        "types": "./dist/shared/stores/kortix-computer-store.d.ts",
+        "import": "./dist/shared/stores/kortix-computer-store.js"
+      },
+      "./shared/stores/persisted-store-registry": {
+        "types": "./dist/shared/stores/persisted-store-registry.d.ts",
+        "import": "./dist/shared/stores/persisted-store-registry.js"
+      },
+      "./shared/stores/session-browser-store": {
+        "types": "./dist/shared/stores/session-browser-store.d.ts",
+        "import": "./dist/shared/stores/session-browser-store.js"
+      },
+      "./shared/stores/session-panel-memory-store": {
+        "types": "./dist/shared/stores/session-panel-memory-store.d.ts",
+        "import": "./dist/shared/stores/session-panel-memory-store.js"
+      },
+      "./shared/stores/tab-store": {
+        "types": "./dist/shared/stores/tab-store.d.ts",
+        "import": "./dist/shared/stores/tab-store.js"
+      },
+      "./shared/stores/user-preferences-store": {
+        "types": "./dist/shared/stores/user-preferences-store.d.ts",
+        "import": "./dist/shared/stores/user-preferences-store.js"
+      },
+      "./shared/ui/index": {
+        "types": "./dist/shared/ui/index.d.ts",
+        "import": "./dist/shared/ui/index.js"
+      },
+      "./shared/ui/types": {
+        "types": "./dist/shared/ui/types.d.ts",
+        "import": "./dist/shared/ui/types.js"
       },
       "./sheet": {
         "types": "./dist/components/ui/sheet.d.ts",
@@ -1025,7 +2530,9 @@
     "smoke:install": "node scripts/smoke-install.mjs"
   },
   "dependencies": {
+    "@kortix/llm-catalog": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
+    "@pierre/diffs": "1.1.22",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.11",
     "@radix-ui/react-checkbox": "^1.3.3",
@@ -1047,12 +2554,30 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.4",
+    "@tanstack/react-query": "^5.75.2",
+    "@tiptap/core": "3.30.5",
+    "@tiptap/extension-document": "3.30.5",
+    "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-paragraph": "3.30.5",
+    "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-text": "3.30.5",
+    "@tiptap/extensions": "3.30.5",
+    "@tiptap/pm": "3.30.5",
+    "@tiptap/suggestion": "3.30.5",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
     "ag-grid-community": "^35.1.0",
     "ag-grid-react": "^35.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^0.2.1",
+    "color-bits": "^1.1.0",
+    "date-fns": "^3.6.0",
+    "diff": "^8.0.3",
     "frimousse": "^0.3.0",
+    "jszip": "^3.10.1",
+    "katex": "^0.16.22",
     "maplibre-gl": "6.12.0",
     "mermaid": "^11.12.0",
     "motion": "^12.40.0",
@@ -1062,11 +2587,17 @@
     "react-phone-number-input": "^3.4.12",
     "react-resizable-panels": "^3.0.6",
     "recharts": "^3.2.1",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "shiki": "^3.12.0",
     "sonner": "^2.0.3",
+    "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
+    "unified": "^11.0.5",
     "use-intl": "^4.13.4",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "zustand": "^5.0.3"
   },
   "peerDependencies": {
     "@kortix/sdk": "workspace:^",
@@ -1105,6 +2636,7 @@
     "happy-dom": "^20.14.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-test-renderer": "^19.3.0",
     "tailwind-scrollbar": "^4.0.2",
     "tailwind-scrollbar-hide": "^2.0.0",
     "tailwindcss": "4.3.3",

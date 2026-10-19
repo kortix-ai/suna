@@ -34,7 +34,7 @@ mock.module('@/features/workspace/settings/standalone-settings-route', () => ({
   STANDALONE_DEFAULT_SETTINGS_TAB: 'profile',
   StandaloneSettingsRoute: ({ tab }: { tab: string }) => createElement('main', null, tab),
 }));
-mock.module('@/features/layout/section/error-state', () => ({
+mock.module('@kortix/ui/shared/features/layout/section/error-state', () => ({
   ErrorState: ({ title, action }: { title: string; action: React.ReactNode }) =>
     createElement('section', null, title, action),
 }));

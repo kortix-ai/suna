@@ -14,7 +14,15 @@
 
 import { locales } from '@/i18n/config';
 
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  type DarkThemeId,
+  type LightThemeId,
+} from './interface-theme-defaults';
 import terminalThemes from './kortix-themes.generated.json';
+
+export { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, type DarkThemeId, type LightThemeId };
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -47,20 +55,15 @@ export const LIGHT_THEME_IDS: readonly string[] = [
   ...KORTIX_LIGHT_THEME_IDS,
   ...TERMINAL_THEMES.filter((t) => t.mode === 'light').map((t) => t.id),
 ];
-export type LightThemeId = string;
 
 /** Dark palettes, in picker order. */
 export const DARK_THEME_IDS: readonly string[] = [
   ...KORTIX_DARK_THEME_IDS,
   ...TERMINAL_THEMES.filter((t) => t.mode === 'dark').map((t) => t.id),
 ];
-export type DarkThemeId = string;
 
 /** Ids stored by earlier builds that now live under a terminal-theme id. */
 const LEGACY_THEME_IDS: Record<string, string> = { jellybean: 'jellybeans-default' };
-
-export const DEFAULT_LIGHT_THEME: LightThemeId = 'pure-light';
-export const DEFAULT_DARK_THEME: DarkThemeId = 'pure-dark';
 
 /** The rows of the theme picker, in display order. */
 export const INTERFACE_THEME_IDS: readonly string[] = [

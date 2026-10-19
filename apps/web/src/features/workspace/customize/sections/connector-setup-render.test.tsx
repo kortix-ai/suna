@@ -5,7 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => ({ raw: (key: string) => key }),
 }));
-mock.module('@/i18n/use-localized-ui-catalog', () => ({
+mock.module('@kortix/ui/i18n/ui-catalog/use-localized-ui-catalog', () => ({
   useLocalizedUiCatalog: (value: unknown) => value,
 }));
 const host = (tag: string) =>
@@ -31,7 +31,7 @@ const uiToastMock = () => ({ successToast: () => {} });
 mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('./component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
-mock.module('@/components/markdown/copy-button', () => ({ CopyButton: host('span') }));
+mock.module('@kortix/ui/markdown/copy-button', () => ({ CopyButton: host('span') }));
 const mutation = {
   isPending: false,
   mutate: (_value: unknown, options: { onSuccess: () => void }) => options.onSuccess(),
