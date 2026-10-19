@@ -60,7 +60,8 @@ Access:
 
 Observability:
   usage [--days N]                  Request/error/cost totals + by-model. --json.
-  sources [--hours N]               Spend by source: trigger, member, channel, API (default 24h). --json.
+  sources [--hours N]               Spend by source: trigger, member, channel, API (default 24h).
+                                    A worker bills to the trigger that started it. --json.
   logs [--limit N] [--failed]       Recent gateway requests. --json.
   logs <logId|requestId>            One request's full detail (JSON).
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
@@ -491,6 +492,12 @@ async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Pro
           `  ${pad(s.source, 40)} ${spend(s.cost).padStart(14)}  ${String(s.sessions).padStart(4)} sess  ` +
             `${String(s.requests).padStart(6)} req  ${C.dim}avg ${Number(s.avg_input_tokens).toLocaleString('en-US')} tok${C.reset}\n`,
         );
+        // A worker bills to the trigger that started it: show how much of the line is workers.
+        if (Number(s.worker_sessions) > 0) {
+          process.stdout.write(
+            `  ${C.dim}${pad('  of which workers', 40)} ${spend(s.worker_cost).padStart(14)}  ${String(s.worker_sessions).padStart(4)} sess${C.reset}\n`,
+          );
+        }
       }
     }
     process.stdout.write('\n');

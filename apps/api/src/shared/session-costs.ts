@@ -30,6 +30,7 @@ import {
   providerBilledSpendSql,
   rowKortixBilledSpendSql,
   totalSpendSql,
+  totalSpendWhereSql,
 } from './llm-spend';
 
 type ProjectSessionStatus = typeof projectSessions.$inferSelect.status;
@@ -953,6 +954,10 @@ export interface GatewaySourceSpendRow {
   /** Total LLM spend in USD: what Kortix debited plus what an own key paid. */
   cost: number;
   kortix_cost: number;
+  /** The part of `sessions` and `cost` from sessions billed through their parent:
+   * the workers a trigger session started. `cost - worker_cost` is the trigger's own run. */
+  worker_sessions: number;
+  worker_cost: number;
   input_tokens: number;
   cached_tokens: number;
   output_tokens: number;
@@ -992,9 +997,13 @@ export async function listProjectGatewaySourceSpend(input: {
     'unknown'
   )`;
 
+  const workerSql = sql`coalesce(${projectSessions.initiatorType}::text, '') <> 'trigger' and ${parent.initiatorType} = 'trigger'`;
+
   const rows = await db
     .select({
       source: sourceSql,
+      workerSessions: sql<number>`count(distinct ${gatewayRequestLogs.sessionId}) filter (where ${workerSql})::int`,
+      workerCost: totalSpendWhereSql(workerSql),
       sessions: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
       requests: sql<number>`count(*)::int`,
       errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
@@ -1034,6 +1043,8 @@ export async function listProjectGatewaySourceSpend(input: {
         errors: numberValue(row.errors),
         cost: numberValue(row.cost),
         kortix_cost: numberValue(row.kortixCost),
+        worker_sessions: numberValue(row.workerSessions),
+        worker_cost: numberValue(row.workerCost),
         input_tokens: inputTokens,
         cached_tokens: numberValue(row.cachedTokens),
         output_tokens: numberValue(row.outputTokens),
@@ -1043,7 +1054,7 @@ export async function listProjectGatewaySourceSpend(input: {
     })
     .sort((left, right) => right.cost - left.cost);
 
-  const sum = (key: 'sessions' | 'requests' | 'errors' | 'cost' | 'kortix_cost' | 'input_tokens' | 'cached_tokens' | 'output_tokens') =>
+  const sum = (key: 'sessions' | 'requests' | 'errors' | 'cost' | 'kortix_cost' | 'worker_sessions' | 'worker_cost' | 'input_tokens' | 'cached_tokens' | 'output_tokens') =>
     sources.reduce((acc, row) => acc + row[key], 0);
   const totalRequests = sum('requests');
   const totalInput = sum('input_tokens');
@@ -1055,6 +1066,8 @@ export async function listProjectGatewaySourceSpend(input: {
       errors: sum('errors'),
       cost: sum('cost'),
       kortix_cost: sum('kortix_cost'),
+      worker_sessions: sum('worker_sessions'),
+      worker_cost: sum('worker_cost'),
       input_tokens: totalInput,
       cached_tokens: sum('cached_tokens'),
       output_tokens: sum('output_tokens'),
