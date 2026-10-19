@@ -6,6 +6,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { ComposerDropZone } from '@/features/session/composer/composer-drop-zone';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -280,7 +281,9 @@ export function ProjectHome({
   );
 
   return (
-    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
+    // A file dropped anywhere on the page attaches to the composer, as on a
+    // session page.
+    <ComposerDropZone className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
       <AccessRequestsBell
@@ -328,6 +331,6 @@ export function ProjectHome({
           composer={composer}
         />
       )}
-    </div>
+    </ComposerDropZone>
   );
 }

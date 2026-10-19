@@ -18,6 +18,7 @@ import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
 import { resetIdentityState } from '@kortix/sdk/react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SessionRuntimeProvider, type BoundSession } from '@/components/session/SessionRuntime';
+import { useQuestionReminders } from '@/hooks/useQuestionReminders';
 import { useRuntimeStream } from '@/hooks/useRuntimeStream';
 import { useDisclosureStore } from '@/lib/session/disclosure-store';
 import { log } from '@/lib/logger';
@@ -79,6 +80,8 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   // Cues, the "Live updates paused" state and the foreground/online signals
   // of the live stream the SDK runs for the bound session (below).
   useRuntimeStream();
+  // The local reminder for a question left unanswered for 60 s (KRTX-2138).
+  useQuestionReminders(override?.session ?? null, isAuthenticated);
 
   // Reset the session and disclosure stores on logout and clear override
   useEffect(() => {

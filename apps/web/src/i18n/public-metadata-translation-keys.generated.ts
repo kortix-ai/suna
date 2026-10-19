@@ -94,4 +94,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "AI agents for sales teams": 'text09e71792c6c3',
   "AI agents for marketing teams": 'textaaab3a59b808',
   "AI agents for finance teams": 'text8f480bae8d16',
+  'White-label: your AI product on Platinum.dev compute': 'texta0990a4a86dc',
+  'Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.':
+    'text6189ab6313de',
 };

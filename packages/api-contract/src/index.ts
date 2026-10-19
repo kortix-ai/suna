@@ -1155,6 +1155,8 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** A deleted session: the last instant `POST …/restore` takes it back (KRTX-2853). */
+  restore_until: z.string().nullable().optional(),
   /** When the requesting person pinned / archived it (KRTX-2418). Present on
    *  the list and the read by id for a person; absent for an agent, an API
    *  key or a service account, and on other responses. */

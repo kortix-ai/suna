@@ -411,6 +411,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Requests are checked against the saved secret .': 'textc6fbb4b00507',
   'research/': 'text2f80158a9d89',
   'Reserving your computer': 'texta7d795204fda',
+  Reminders: 'text7971dd752669',
   Review: 'textaff0766a5290',
   Revoked: 'textf6f738d04392',
   Routing: 'textbcba696f3eb1',

@@ -183,6 +183,11 @@ export interface ProjectSession {
    *  Absent for an agent, an API key or a service account. */
   pinned_at?: string | null;
   archived_at?: string | null;
+  /** A deleted session (`ls --deleted`): when, by whom, and the last instant
+   *  `sessions restore` takes it back. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  restore_until?: string | null;
 }
 
 export interface ProjectSessionInitiator {

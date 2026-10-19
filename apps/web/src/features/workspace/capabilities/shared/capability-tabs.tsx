@@ -134,6 +134,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
+/** Tabs that need a project flag: left out of the bar until access settles. */
+const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
+
 function GroupSeam() {
   return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
 }
@@ -147,12 +150,12 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Repo (key `files`) is the one flag-gated tab: it exists only once the
-  // project turns `drives` on, and only for admins. `capabilityAccess()`
-  // applies both; before it settles the bar is invisible and Repo is left out.
+  // Repo (key `files`) and Reminders are the flag-gated tabs: each exists only
+  // once the project turns its flag on. `capabilityAccess()` applies the flags
+  // and the leaves; before it settles the bar is invisible and both are left out.
   const access = useCapabilityAccess(projectId);
   const tabs = allTabs.filter((tab) =>
-    access.settled ? access.tabs.includes(tab.key) : tab.key !== 'files',
+    access.settled ? access.tabs.includes(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
   );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));

@@ -29,8 +29,9 @@ const RESTORE_RETRY_MS = [2_000, 4_000, 8_000, 16_000];
 const removalPending = (err: unknown) =>
   (err as { code?: unknown } | null)?.code === 'session_sandbox_removal_pending';
 
-/** Restore a deleted session, retrying while its old sandbox is still being removed. */
-async function restoreWhenRemoved(projectId: string, sessionId: string): Promise<void> {
+/** Restore a deleted session, retrying while its old sandbox is still being removed.
+ *  Undo here, and Restore session under Recently deleted (KRTX-2853). */
+export async function restoreWhenRemoved(projectId: string, sessionId: string): Promise<void> {
   for (const wait of RESTORE_RETRY_MS) {
     try {
       await restoreProjectSession(projectId, sessionId);

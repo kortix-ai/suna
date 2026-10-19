@@ -273,6 +273,7 @@ export function SessionFilterMenu({
 }: SessionFilterMenuProps) {
   const t = useTranslations('sidebar.filter');
   const tPinArchive = useTranslations('sidebar.pinArchive');
+  const tDeleted = useTranslations('sidebar.recentlyDeleted');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
   const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
@@ -653,11 +654,16 @@ export function SessionFilterMenu({
       >
         {t('collapseAll')}
       </DropdownMenuItem>
-      {/* The sidebar hides archived sessions; the sessions page lists them. */}
+      {/* The sidebar hides archived and deleted sessions; the sessions page lists them. */}
       {!pageFacets && (
-        <DropdownMenuItem asChild className="cursor-pointer">
-          <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
-        </DropdownMenuItem>
+        <>
+          <DropdownMenuItem asChild className="cursor-pointer">
+            <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild className="cursor-pointer">
+            <Link href={`/projects/${projectId}/sessions?view=deleted`}>{tDeleted('view')}</Link>
+          </DropdownMenuItem>
+        </>
       )}
     </DropdownMenuContent>
   );
