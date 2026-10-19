@@ -121,12 +121,55 @@ describe('mobile genui chart', () => {
     for (const value of ['1,200', '900', '400', '500', 'Revenue (USD)']) expect(texts(sheet)).toContain(value);
   });
 
-  test('after layout, bars draw on the brand chart ramp with the max value labelled', () => {
+  test('after layout, bars draw on the brand chart ramp over a compact y axis with a grid line per tick', () => {
     const root = render(BARS);
     layOut(root, 300);
     const fills = all(root, 'svg-path').map((n) => n.props.fill).filter(Boolean);
     expect(fills).toEqual(['hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)', 'hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)']);
-    expect(texts(root)).toContain('1,200 USD');
+    // Ticks top to bottom, in web's compact form; no separate max label.
+    const ticks = all(root, 'text').filter((n) => n.props.accessibilityElementsHidden === true).map((n) => texts(n).join(''));
+    expect(ticks).toEqual(['1.5K', '1K', '500', '0']);
+    expect(texts(root)).not.toContain('1,200 USD');
+    const grid = all(root, 'svg-path').filter((n) => n.props.testID === 'grid');
+    expect(grid).toHaveLength(1);
+    expect(grid[0]!.props.d.match(/M/g)).toHaveLength(4);
+  });
+
+  test('a negative bar hangs below the zero line', () => {
+    const root = render(`root = Stack([c])
+c = BarChart(["Q1", "Q2"], [s], "ledger")
+s = Series("Net", [-30, 50])`);
+    layOut(root, 302);
+    const ticks = all(root, 'text').filter((n) => n.props.accessibilityElementsHidden === true).map((n) => texts(n).join(''));
+    expect(ticks).toEqual(['60', '40', '20', '0', '-20', '-40']);
+    const [down, up] = all(root, 'svg-path').filter((n) => n.props.fill).map((n) => String(n.props.d));
+    // The plot is 144pt tall on a -40..60 domain: zero at y 86.4. The negative bar starts on it and goes down.
+    expect(down!.startsWith('M')).toBe(true);
+    expect(down!.split(' ')[0]!.endsWith(',86.40')).toBe(true);
+    expect(up!.split(' ')[0]!.endsWith(',86.40')).toBe(true);
+    expect(up).toContain('V');
+  });
+
+  test('a tap on a legend item focuses its series, others dim to 0.15; a second tap clears it', () => {
+    const root = render(BARS);
+    layOut(root, 300);
+    const item = (name: string) => all(root, 'pressable').find((n) => n.props.accessibilityRole === 'button' && texts(n).includes(name))!;
+    press(item('Cost'));
+    expect(item('Cost').props.accessibilityState).toEqual({ selected: true });
+    expect(all(root, 'svg-path').filter((n) => n.props.fill).map((n) => n.props.fillOpacity)).toEqual([0.15, 1, 0.15, 1]);
+    press(item('Cost'));
+    expect(item('Cost').props.accessibilityState).toEqual({ selected: false });
+    expect(all(root, 'svg-path').filter((n) => n.props.fill).every((n) => n.props.fillOpacity === 1)).toBe(true);
+  });
+
+  test('legend focus dims the other lines', () => {
+    const root = render(`root = Stack([c])
+c = LineChart(["Jan", "Feb"], [a, b], "analytics")
+a = Series("Web", [1, 2])
+b = Series("Mobile", [2, 1])`);
+    layOut(root, 300);
+    press(all(root, 'pressable').find((n) => n.props.accessibilityRole === 'button' && texts(n).includes('Web'))!);
+    expect(all(root, 'svg-path').filter((n) => n.props.fill === 'none').map((n) => n.props.strokeOpacity)).toEqual([1, 0.15]);
   });
 
   test('a pie has no series legend row and defaults to a gauge for two slices, a donut for more', () => {
@@ -194,6 +237,10 @@ c = BarChart(["Q1", "Q2"], [s], "billing export", "USD")
 s = Series("Revenue", [0, 0])`);
     // Only the title carries the unit; no "1 USD" max label.
     expect(texts(root).filter((text) => text.endsWith(' USD'))).toEqual(['billing export · USD']);
+    layOut(root, 300);
+    // The y axis is one 0 tick, never a made-up 1.
+    const ticks = all(root, 'text').filter((n) => n.props.accessibilityElementsHidden === true).map((n) => texts(n).join(''));
+    expect(ticks).toEqual(['0']);
   });
 
   test('Show data keeps values past the last label, in rows numbered by position', () => {
@@ -242,10 +289,9 @@ s = Series("Visits", [3, 5, 4])`);
     layOut(root, 302);
     tap(plot(root), 250);
     expect(texts(root)).toEqual(expect.arrayContaining(['Q2', '900 USD', '500 USD']));
-    expect(texts(root)).not.toContain('1,200 USD');
     expect(all(root, 'svg-path').filter((n) => n.props.fill).map((n) => n.props.fillOpacity)).toEqual([0.3, 0.3, 1, 1]);
     tap(plot(root), 250);
-    expect(texts(root)).toContain('1,200 USD');
+    expect(texts(root)).not.toContain('900 USD');
     expect(all(root, 'svg-path').filter((n) => n.props.fill).every((n) => n.props.fillOpacity === 1)).toBe(true);
   });
 

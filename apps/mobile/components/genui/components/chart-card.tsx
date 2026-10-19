@@ -4,7 +4,7 @@
  * bar/line model lives in `./charts`, the pie model in `./chart-pie`.
  */
 
-import { useRef, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -17,12 +17,30 @@ import { Text } from '@/components/ui/text';
 export type Cell = string | number | null;
 export type Slice = { key: string; label: string; value: number; percent: number; fill: string };
 
+/** Web's `DIMMED`: the opacity of every series but the focused one. */
+export const DIMMED = 0.15;
+
+/**
+ * The series (or slice) a reader focused from the legend, by index. Web previews on hover and selects on
+ * click; a phone has only the tap, so a tap selects and a second tap on the same item clears it.
+ */
+export function useSeriesFocus() {
+  const [focused, setFocused] = useState<number | null>(null);
+  return {
+    focused,
+    toggle: (index: number) => setFocused((current) => (current === index ? null : index)),
+    opacity: (index: number) => (focused === null || focused === index ? 1 : DIMMED),
+  };
+}
+export type SeriesFocus = ReturnType<typeof useSeriesFocus>;
+
 /** The card every genui chart renders through: the title + Show-data header
  * row, the series legend, the figure, and the values sheet. */
 export function ChartCard({
   title,
   legend,
   palette = [],
+  focus,
   head,
   rows,
   format,
@@ -32,6 +50,8 @@ export function ChartCard({
   legend: string[];
   /** Legend swatch colors, one per series; a card without a legend (pie) needs none. */
   palette?: string[];
+  /** When set, a tap on a legend item focuses its series (`useSeriesFocus`). */
+  focus?: SeriesFocus;
   head: string[];
   rows: Cell[][];
   format: (value: Cell) => string;
@@ -56,13 +76,27 @@ export function ChartCard({
         </Pressable>
       </View>
       {legend.length > 0 ? (
-        <View className="flex-row flex-wrap gap-x-4 gap-y-1">
-          {legend.map((name, i) => (
-            <View key={i} className="flex-row items-center gap-1.5">
-              <View style={{ backgroundColor: palette[i] }} className="size-2.5 rounded-sm" />
-              <Text variant="muted">{name}</Text>
-            </View>
-          ))}
+        // Web's legend pill: the focused item keeps the hover fill and turns ink.
+        <View className="-mx-1.5 flex-row flex-wrap gap-x-1 gap-y-1">
+          {legend.map((name, i) => {
+            const selected = focus?.focused === i;
+            return (
+              <Pressable
+                key={i}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                disabled={!focus}
+                hitSlop={4}
+                onPress={() => focus?.toggle(i)}
+                className={`flex-row items-center gap-1.5 rounded-md px-1.5 py-0.5 ${selected ? 'bg-secondary' : ''}`}
+              >
+                <View style={{ backgroundColor: palette[i] }} className="size-2.5 rounded-sm" />
+                <Text variant="muted" className={selected ? 'text-foreground' : undefined}>
+                  {name}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       ) : null}
       {children}
