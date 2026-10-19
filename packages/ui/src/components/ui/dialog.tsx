@@ -3,6 +3,7 @@ import * as React from 'react';
 
 import { Close } from '../../icons/close';
 import { cn } from '../../lib/utils';
+import { useUiStrings } from '../../providers/ui-provider';
 import {
   dialogContentZ,
   DialogDepthProvider,
@@ -14,6 +15,7 @@ import { cva, VariantProps } from 'class-variance-authority';
 import { buttonVariants } from './button';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
+/** @deprecated In feature code use `Modal` (`@kortix/ui/modal`). `Dialog` is the primitive other components build on. */
 const Dialog = ({ open, defaultOpen, onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
   const layer = useDialogRootLayer({ open, defaultOpen, onOpenChange });
 
@@ -80,6 +82,7 @@ const DialogVariants = cva(
   },
 );
 
+/** @deprecated In feature code use `ModalContent` (`@kortix/ui/modal`). */
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> &
@@ -102,6 +105,7 @@ const DialogContent = React.forwardRef<
     ref,
   ) => {
     const depth = useDialogDepth();
+    const strings = useUiStrings();
 
     return (
       <DialogPortal>
@@ -121,7 +125,7 @@ const DialogContent = React.forwardRef<
               )}
             >
               <Close className="h-4 w-4" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{strings.close}</span>
             </DialogPrimitive.Close>
           )}
         </DialogPrimitive.Content>

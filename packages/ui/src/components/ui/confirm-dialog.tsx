@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
 } from './alert-dialog';
 import { buttonVariants } from './button';
-import { useTranslations } from '@/i18n/use-translations';
+import { useUiStrings } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
 
 interface ConfirmDialogProps {
@@ -62,8 +62,8 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   // The defaults are the viewer's language: an English literal here put
   // "Cancel" under every translated dialog that passed no label (KRTX-2326).
-  const t = useTranslations('common');
-  const confirmText = confirmLabel ?? t('confirm');
+  const strings = useUiStrings();
+  const confirmText = confirmLabel ?? strings.confirm;
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="sm:max-w-md" overlayClassName="bg-black/25 backdrop-blur-sm">
@@ -74,7 +74,7 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>{cancelLabel ?? t('cancel')}</AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>{cancelLabel ?? strings.cancel}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();

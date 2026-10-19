@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(fileURLToPath(new URL('./emoji-picker.tsx', import.meta.url)), 'utf8');
-// The tokens live in globals.css (:root/.dark) and @kortix/ui theme.css (@theme).
-const globalsCss = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+// The tokens live in @kortix/ui theme.css (@theme) and tokens.css (:root/.dark).
+const tokenCss = ['../../styles/theme.css', '../../styles/tokens.css']
   .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
   .join('\n');
 
@@ -97,7 +96,7 @@ describe('emoji picker tint rotation', () => {
     expect(code.match(/['"`][^'"`\n]*(?:nth-\[6n|data-\[active\])[^'"`\n]*\$\{/g)).toBeNull();
   });
 
-  test('tint values live in globals.css, not as raw colours in the component', () => {
+  test('tint values live in @kortix/ui theme.css, not as raw colours in the component', () => {
     // The design system forbids raw hex/hsl/oklch and hand-written dark:
     // palette overrides in app code.
     expect(code).not.toMatch(/(?:bg|inset-ring)-\[(?:hsl|rgb|oklch|#)/);
@@ -112,7 +111,7 @@ describe('emoji picker tint rotation', () => {
       expect(code).toContain(`bg-emoji-fill-${name}`);
       expect(code).toContain(`inset-ring-emoji-ring-${name}`);
       for (const family of FAMILIES) {
-        expect(globalsCss).toMatch(
+        expect(tokenCss).toMatch(
           new RegExp(
             `--color-emoji-${family}-${name}:\\s*light-dark\\(hsl\\([^)]*\\),\\s*hsl\\([^)]*\\)\\)`,
           ),
@@ -202,65 +201,5 @@ describe('emoji picker conventions', () => {
     // spread would be replaced outright and the tint system would go dead.
     expect(countIn(code, 'props.className')).toBe(3);
     expect(code).not.toMatch(/className=[^\n]*\n\s*\{\.\.\.props\}/);
-  });
-});
-
-/**
- * Discoverability on /design-system.
- *
- * The design system's own rule for this repo: a new `components/ui/*` primitive
- * is not shipped until the living styleguide renders it. The page is public and
- * unauthenticated, so it is also the only place the picker can be looked at
- * without a project, an account, or a create-modal.
- */
-const designSystemPage = readFileSync(
-  join(import.meta.dir, '../../app/[locale]/(public)/(marketing)/design-system/page.tsx'),
-  'utf8',
-);
-
-/** The `comp-emoji-picker` demo block: from its own anchor to the next one. */
-const demoBlock = (() => {
-  const start = designSystemPage.indexOf('id="comp-emoji-picker"');
-  if (start < 0) return '';
-  const next = designSystemPage.slice(start + 1).search(/id="(?:comp|pat)-/);
-  return next < 0 ? designSystemPage.slice(start) : designSystemPage.slice(start, start + 1 + next);
-})();
-
-/** Where `<EmojiPicker …>` is actually rendered. `[\s/>]` so the demo wrapper
- *  `<EmojiPickerDemo />`, which is a prefix of it, cannot stand in for it. */
-const renderIndex = designSystemPage.search(/<EmojiPicker[\s/>]/);
-
-describe('emoji picker on /design-system', () => {
-  test('the styleguide renders the real primitive, not a screenshot of it', () => {
-    expect(designSystemPage).toMatch(
-      /import \{[^}]*\bEmojiPicker\b[^}]*\} from '@\/components\/ui\/emoji-picker'/,
-    );
-    expect(renderIndex).toBeGreaterThan(-1);
-  });
-
-  test('the demo has its own anchor, listed in the table of contents', () => {
-    // The anchor alone is not discoverable: the left nav is generated from
-    // TOC_SECTIONS, and ALL_SECTION_IDS — the intersection observer's list — is
-    // derived from the same array. A section with no entry is reachable only by
-    // scrolling past it and never highlights.
-    expect(demoBlock).toMatch(/<EmojiPicker(?:Demo)?[\s/>]/);
-    expect(designSystemPage).toContain("{ id: 'comp-emoji-picker', label: 'Emoji Picker' }");
-  });
-
-  test('the demo mounts the picker behind a trigger, not on page load', () => {
-    // The picker fetches ~782 KB of emoji data the first time it mounts. Inline
-    // on the page, every visitor to a PUBLIC marketing route would pay that
-    // without ever opening it; inside the popover it is paid on click, which is
-    // also how the picker is really used (features/projects/modal).
-    //
-    // "Inside a PopoverContent" rather than "a PopoverTrigger appears earlier in
-    // the file": the last PopoverContent opened before the picker has to still
-    // be open, so moving the picker out of the popover — but leaving the page's
-    // other popovers above it — fails.
-    const before = designSystemPage.slice(0, renderIndex);
-
-    expect(before.lastIndexOf('<PopoverContent')).toBeGreaterThan(
-      before.lastIndexOf('</PopoverContent>'),
-    );
   });
 });

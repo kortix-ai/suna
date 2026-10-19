@@ -1,11 +1,13 @@
 import { Button } from './button';
 import Loading from './loading';
 import { Close } from '../../icons/close';
-import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
 import { cn } from '../../lib/utils';
 import { WarningCircleIcon } from '@phosphor-icons/react';
 import * as React from 'react';
 import { toast } from 'sonner';
+
+/** The toast host. Mount it once at the app root; every toast below renders into it. */
+export { Toaster } from 'sonner';
 
 /** A text-link action under the toast body. A click dismisses the toast first. */
 export type ToastAction = { label: string; onClick: () => void };
@@ -422,8 +424,19 @@ export const loadingToast = <T,>(
   );
 };
 
+let isSilentErrorMessage: (message: string) => boolean = () => false;
+
+/**
+ * Sets the host's rule for error messages that `errorToast` drops without a
+ * toast (apps/web drops request-deadline noise). Default: none is dropped.
+ * Call it once at module load, before the first toast.
+ */
+export function setSilentErrorToastFilter(filter: (message: string) => boolean): void {
+  isSilentErrorMessage = filter;
+}
+
 export const errorToast = (message: string, options?: ToastOptions) => {
-  if (isSilentTimeoutMessage(message)) return;
+  if (isSilentErrorMessage(message)) return;
 
   renderToast(message, 'error', options, options?.duration || DEFAULT_DURATION);
 };

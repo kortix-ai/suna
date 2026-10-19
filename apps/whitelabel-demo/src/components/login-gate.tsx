@@ -1,16 +1,16 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { BRAND } from '@/config/brand';
 import { setSessionToken } from '@/lib/session';
-import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { SignInIcon } from '@phosphor-icons/react';
 
 /**
  * Wrapper-mode's own login — replaces `ApiKeyGate` when the app is running as
@@ -83,7 +83,7 @@ export function LoginGate({ onReady }: { onReady: () => void }) {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={pending || !email.trim() || !password}>
-            {pending ? <Loading className="size-4" /> : <LogIn className="size-4" />}
+            {pending ? <Loading className="size-4" /> : <SignInIcon className="size-4" />}
             Sign in
           </Button>
         </form>

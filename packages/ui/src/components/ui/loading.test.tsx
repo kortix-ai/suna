@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(fileURLToPath(new URL('./loading.tsx', import.meta.url)), 'utf8');
 // The spinner keyframes and classes moved to @kortix/ui theme.css.
-const css = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+const css = ['../../styles/theme.css', '../../styles/tokens.css']
   .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
   .join('\n');
 

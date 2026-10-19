@@ -1,6 +1,6 @@
 ---
 title: React
-description: "@kortix/sdk/react: useSession for a whole session view, a chat kit, and data hooks for everything else."
+description: "@kortix/sdk/react: useSession for a whole session view, a headless chat kit, and data hooks for everything else."
 ---
 
 `@kortix/sdk/react` is the React layer of the SDK. It gives you one hook that runs a whole session view, a headless chat kit, and data hooks for accounts, projects, sessions, secrets, triggers, Apps, notifications and access checks. It works in React and React Native.
@@ -233,7 +233,27 @@ While the view is mounted, its event stream raises these. When the view unmounts
 
 ## Build a chat UI
 
-`messages` are runtime messages. The chat kit turns each one into typed parts you can render with no knowledge of the harness.
+Start with `SessionThread` from [`@kortix/ui/chat`](/docs/sdk/ui#add-a-chat). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
+
+```tsx
+import { useSession } from '@kortix/sdk/react';
+import { SessionThread } from '@kortix/ui/chat';
+
+function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  return (
+    <div className="h-dvh">
+      <SessionThread session={session} />
+    </div>
+  );
+}
+```
+
+Its `renderTool` and `renderers` props replace one tool card or one part kind, and its parts (`MessageList`, `MessageView`, `Composer`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+
+### Render the parts yourself
+
+To draw every part with your own components, use the headless chat kit. `messages` are runtime messages. The kit turns each one into typed parts you can render with no knowledge of the harness.
 
 ```tsx
 import { toolViewModel } from '@kortix/sdk';

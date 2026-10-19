@@ -128,7 +128,7 @@ describe('modalDismissesOnOutsideInteraction', () => {
   });
 });
 
-// Characterization: the surviving public surface of `@/components/ui/modal`.
+// Characterization: the surviving public surface of `@kortix/ui/modal`.
 // These names must stay exported across the dead-code deletion; this file
 // passes before and after it.
 const SURVIVING_EXPORTS = [

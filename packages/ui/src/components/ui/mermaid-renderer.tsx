@@ -1,6 +1,6 @@
 'use client';
 
-import { CODE_SETTLE_MS, useSettledValue } from '@/components/markdown/code/settle';
+import { CODE_SETTLE_MS, useSettledValue } from '../../lib/settle';
 import { Button } from './button';
 import { ButtonGroup } from './button-group';
 import Hint from './hint';

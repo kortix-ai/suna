@@ -1,3 +1,6 @@
 # dist/styles.css is committed: the "./styles.css" export points at it and a
 # fresh checkout must resolve it. src/exports.test.ts fails when it drifts.
+# Everything else in dist/ is the npm build (pnpm --filter @kortix/ui build).
 !dist/
+dist/*
+!dist/styles.css

@@ -12,7 +12,7 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
-import { useTheme } from 'next-themes';
+import { useIsDark } from '../../hooks/use-is-dark';
 import { useCallback, useMemo, useRef } from 'react';
 
 // Register all community modules once
@@ -67,7 +67,7 @@ export function DataGrid({
   suppressContextMenu = false,
 }: DataGridProps) {
   const gridRef = useRef<AgGridReact>(null);
-  const { resolvedTheme } = useTheme();
+  const isDark = useIsDark();
 
   // ── Column defs ──────────────────────────────────────────────────────
   const columnDefs: ColDef[] = useMemo(() => {
@@ -136,9 +136,9 @@ export function DataGrid({
 
   // ── Theme resolved ───────────────────────────────────────────────────
   const theme = useMemo(() => {
-    const colorScheme = resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
+    const colorScheme = isDark ? colorSchemeDarkBlue : colorSchemeLight;
     return gridTheme.withPart(colorScheme);
-  }, [resolvedTheme]);
+  }, [isDark]);
 
   // ── No data ──────────────────────────────────────────────────────────
   if (!rowData || rowData.length === 0) {

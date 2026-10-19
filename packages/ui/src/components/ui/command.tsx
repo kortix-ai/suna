@@ -1,7 +1,7 @@
 'use client';
 
 import { Command as CommandPrimitive } from 'cmdk';
-import { useTranslations } from '@/i18n/use-translations';
+import { useUiStrings } from '../../providers/ui-provider';
 import * as React from 'react';
 
 import {
@@ -77,13 +77,13 @@ function CommandDialog({
   className?: string;
   showCloseButton?: boolean;
 }) {
-  const t = useTranslations('commandPalette');
+  const strings = useUiStrings();
 
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title ?? t('title')}</DialogTitle>
-        <DialogDescription>{description ?? t('description')}</DialogDescription>
+        <DialogTitle>{title ?? strings.commandPaletteTitle}</DialogTitle>
+        <DialogDescription>{description ?? strings.commandPaletteDescription}</DialogDescription>
       </DialogHeader>
       <DialogContent
         // `data-[state=closed]:animate-none!` on the panel AND the overlay: the

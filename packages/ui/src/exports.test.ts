@@ -5,7 +5,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // @ts-expect-error -- plain .mjs script, no declaration file
-import { buildExports } from '../scripts/gen-exports.mjs';
+import { buildExports, INTERNAL as INTERNAL_MODULES } from '../scripts/gen-exports.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -24,8 +24,9 @@ describe('package.json exports', () => {
   // buildExports() only walks known roots and extensions, so the drift test above
   // cannot see a module it skips. This walks every file under src/ instead.
   test('every source file is an export target or a listed internal', () => {
-    const INTERNAL = new Set<string>([]); // './src/...' paths that are deliberately not exported
-    const SKIP = /\.test\.tsx?$|\.d\.ts$|\/__snapshots__\/|^\.\/src\/chat\/(?!index\.tsx?$)/;
+    // './src/...' paths that are deliberately not exported (gen-exports INTERNAL).
+    const INTERNAL = new Set<string>([...(INTERNAL_MODULES as Set<string>)].map((p) => `./src/${p}`));
+    const SKIP = /\.test\.tsx?$|\.d\.ts$|\/__snapshots__\/|^\.\/src\/test-utils\/|^\.\/src\/chat\/(?!index\.tsx?$)/;
     const src = fileURLToPath(new URL('.', import.meta.url));
     const files = readdirSync(src, { recursive: true, withFileTypes: true })
       .filter((d) => d.isFile())

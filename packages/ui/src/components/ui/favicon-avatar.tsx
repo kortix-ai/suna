@@ -1,7 +1,7 @@
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
-import { faviconUrlForValue } from '@/lib/favicon';
+import { faviconUrlForValue } from '../../lib/favicon';
 import { cn } from '../../lib/utils';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
 

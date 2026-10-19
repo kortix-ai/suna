@@ -2,12 +2,12 @@
 
 import { BRAND } from '@/config/brand';
 import { setApiKey } from '@/lib/kortix';
-import { KeyRound } from 'lucide-react';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
-import { Input } from './ui/input';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { KeyIcon } from '@phosphor-icons/react';
 
 /**
  * The single auth surface: paste a Kortix API key. One token, stored locally,
@@ -36,7 +36,7 @@ export function ApiKeyGate({ onReady }: { onReady: () => void }) {
           }}
         >
           <div className="relative">
-            <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <KeyIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
               value={value}

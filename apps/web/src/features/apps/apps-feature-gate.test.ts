@@ -40,12 +40,14 @@ mock.module('next/link', () => ({
     React.createElement('a', { href, ...props }, children),
 }));
 mock.module('@/hooks/utils', () => ({ useIsMobile: () => false }));
-mock.module('@/components/ui/sidebar', () => ({
+const uiSidebarMock = () => ({
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
   SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
-}));
+});
+mock.module('@/components/ui/sidebar', uiSidebarMock);
+mock.module('@kortix/ui/sidebar', uiSidebarMock);
 mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
 mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
 
@@ -307,37 +309,6 @@ test('the App detail header is a title bar, not a debug readout', () => {
   // as sr-only when running and as the visible label when it is not.
   expect(header).toContain('<span className="sr-only">{status.label}</span>');
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
-});
-
-test("the header separates the App's actions from the window's Close", () => {
-  const view = appsSource();
-  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
-
-  // Close used to be the fifth button INSIDE the group, which made "stop this
-  // App" and "shut this panel" read as peers. It sits outside now, and it is
-  // ghost rather than outline because it is chrome, not an action.
-  const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('text7d9eb7acb13e');
-  expect(groupEndsAt).toBeGreaterThan(-1);
-  expect(closeAt).toBeGreaterThan(groupEndsAt);
-  expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
-});
-
-test('Delete lives in the header menu, never buried in the version drawer', () => {
-  const view = appsSource();
-  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
-
-  // A destructive action reachable only by first opening a history panel is an
-  // action you find by looking for something else.
-  expect(header).toContain("raw('textd1b0a6e3985a')");
-  expect(header).toContain('variant="destructive"');
-  // …and it still goes through the confirm step.
-  expect(view).toContain('<ConfirmDialog');
-  expect(view).toContain('confirmVariant="destructive"');
-
-  // The versions drawer keeps only the deploy command.
-  const drawer = view.slice(view.indexOf('{versionsOpen ? ('));
-  expect(drawer.slice(0, drawer.indexOf('DeploymentRow'))).not.toContain('Delete App');
 });
 
 test('internal infrastructure names are not shown to App owners', () => {

@@ -4,10 +4,10 @@ import { Button } from './button';
 import { useProximityHover } from '../../hooks/use-proximity-hover';
 import { fontWeights } from '../../lib/font-weight';
 import { useIcon, type IconComponent } from '../../lib/icon-context';
+import { useUiLink } from '../../providers/ui-provider';
 import { spring } from '../../lib/springs';
 import { cn } from '../../lib/utils';
 import { AnimatePresence, m } from 'motion/react';
-import Link from 'next/link';
 import {
   Children,
   cloneElement,
@@ -275,6 +275,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
     const internalRef = useRef<HTMLDivElement>(null);
     const group = useContext(CardGroupContext);
     const XIcon = useIcon('x');
+    const Link = useUiLink();
 
     const orientation = group?.orientation ?? 'card';
     const columns = group?.columns ?? 1;
@@ -827,6 +828,7 @@ function CardButton({
   disabled = false,
 }: CardButtonProps) {
   const ArrowRight = useIcon('arrow-right');
+  const Link = useUiLink();
   const position = iconPosition ?? (external ? 'end' : 'start');
 
   // No size class on either glyph: Button's own svg rules own the scale, so an

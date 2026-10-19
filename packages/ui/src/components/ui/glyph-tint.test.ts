@@ -33,10 +33,10 @@ describe('glyph tint', () => {
     }
   });
 
-  test('every token used here is defined in globals.css or @kortix/ui theme.css', () => {
+  test('every token used here is defined in @kortix/ui theme.css or tokens.css', () => {
     // Catches a class naming a token nobody declared — which compiles to a
     // valid-looking class with no colour behind it.
-    const css = ['../../app/globals.css', '../../../../../packages/ui/src/styles/theme.css']
+    const css = ['../../styles/theme.css', '../../styles/tokens.css']
       .map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'))
       .join('\n');
     for (const color of PROJECT_GLYPH_COLORS) {

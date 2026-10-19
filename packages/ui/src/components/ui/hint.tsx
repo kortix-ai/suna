@@ -44,4 +44,5 @@ const Hint = ({
   );
 };
 
+export { Hint };
 export default Hint;

@@ -2,8 +2,4 @@
    for hosts without Tailwind. source(none): only theme.css's @source (the
    package src) is scanned, never the directory the build runs in. */
 @import 'tailwindcss' source(none);
-@import 'tw-animate-css';
-@import '../src/styles/tokens.css';
-@import '../src/styles/theme.css';
-@plugin 'tailwind-scrollbar';
-@plugin 'tailwind-scrollbar-hide';
+@import '../src/styles/tailwind.css';

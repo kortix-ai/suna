@@ -3114,11 +3114,16 @@ test('does NOT suppress the old-browser DOM null-deref when a first-party frame 
     { filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' },
     { filename: 'apps/web/src/features/workspace/project-sidebar/session-title.tsx' },
     { filename: 'app:///apps/web/src/components/ui/portal.tsx' },
+    // Both modules live in @kortix/ui now and de-minify to packages/ui/src.
+    { filename: 'app:///packages/ui/src/hooks/use-proximity-hover.ts' },
+    { filename: 'packages/ui/src/components/ui/portal.tsx' },
   ];
   for (const frames of [
     [firstPartyFrames[0]],
     [firstPartyFrames[1]],
     [firstPartyFrames[2]],
+    [firstPartyFrames[3]],
+    [firstPartyFrames[4]],
     // A stack that mixes a first-party frame with the minified chunk frame
     // STILL keeps reporting — the first-party frame is the actionable anchor.
     [firstPartyFrames[0], { filename: MEASURE_SCROLL_CHUNK }],

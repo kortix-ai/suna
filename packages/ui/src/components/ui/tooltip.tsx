@@ -5,10 +5,12 @@ import { cn } from '../../lib/utils';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
+/** @deprecated In feature code use `Hint` (`@kortix/ui/hint`). `Tooltip` is the primitive `Hint` builds on. */
 const Tooltip = TooltipPrimitive.Root;
 
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
+/** @deprecated In feature code use `Hint` (`@kortix/ui/hint`). */
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>

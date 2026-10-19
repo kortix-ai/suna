@@ -14,7 +14,7 @@ const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
 
 const source = read('./project-icon-field.tsx');
-const pickerSource = read('../../../components/ui/emoji-picker.tsx');
+const pickerSource = read('../../../../../../packages/ui/src/components/ui/emoji-picker.tsx');
 const buttonSource = read('../../../../../../packages/ui/src/components/ui/button.tsx');
 
 /**

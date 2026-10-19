@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { stripTags } from '@/test-utils/strip-tags';
+import { stripTags } from '../../test-utils/strip-tags';
 import { EntityAvatar, type EntityAvatarSize } from './entity-avatar';
 
 const render = (props: Parameters<typeof EntityAvatar>[0]) =>

@@ -1,12 +1,16 @@
 /* @kortix/ui component layer. Tailwind v4 input, not plain CSS.
  *
- * A Tailwind host imports it once, after `@import 'tailwindcss'`:
- *   @import '@kortix/ui/tokens.css';   (or its own :root/.dark values)
- *   @import '@kortix/ui/theme.css';
+ * A Tailwind host imports the bundle once, after `@import 'tailwindcss'`:
+ *   @import '@kortix/ui/tailwind.css';
+ * It loads tw-animate-css, tokens.css, this file and the tailwind-scrollbar /
+ * tailwind-scrollbar-hide plugins. A host that imports tokens.css and theme.css
+ * directly must add `@import 'tw-animate-css'` and both `@plugin` lines itself,
+ * or overlays lose their enter/exit animations and `scrollbar-hide` is undefined.
  * A host without Tailwind loads the prebuilt '@kortix/ui/styles.css' instead.
  *
  * It holds what @kortix/ui components need from the stylesheet: the `dark`
- * variant, the @theme keys their classes resolve against, the @utility
+ * variant, the host-neutral base rules (body colors, borders, color-scheme,
+ * selection, pointer cursor), the @theme keys their classes resolve against, the @utility
  * definitions, keyframes and spinner classes. Values come from CSS variables
  * (tokens.css), so a white-label host re-themes by overriding those variables
  * in :root / .dark. Never fork a component to change a color.
@@ -22,6 +26,69 @@
 @import './dotmatrix-loader.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Host-neutral base rules. Every host gets them, so the page itself follows the
+   tokens: the body paints --background and --foreground (a white-label
+   override of either reaches the page), borders and outlines default to
+   --border / --ring, native controls follow the theme (color-scheme), the
+   selection follows --selection (default: the inverted --primary), and every
+   interactive element shows the pointer cursor (Tailwind v4 sets
+   `cursor: default` on <button>). */
+@layer base {
+  ::selection {
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
+  }
+
+  ::-moz-selection {
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
+  }
+
+  * {
+    /* stylelint-disable-next-line at-rule-no-unknown */
+    @apply border-border outline-ring/50;
+  }
+
+  /* Disabled elements keep the default cursor: :disabled, aria-disabled, data-disabled. */
+  :is(
+      a[href],
+      button,
+      input[type='checkbox'],
+      input[type='file'],
+      input[type='radio'],
+      label[for],
+      select,
+      summary,
+      [role='button'],
+      [role='checkbox'],
+      [role='link'],
+      [role='menuitem'],
+      [role='menuitemcheckbox'],
+      [role='menuitemradio'],
+      [role='option'],
+      [role='radio'],
+      [role='switch'],
+      [role='tab'],
+      [role='treeitem']
+    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
+    cursor: pointer;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  body {
+    /* stylelint-disable-next-line at-rule-no-unknown */
+    @apply bg-background text-foreground;
+    min-height: 100dvh;
+  }
+}
 
 @theme inline {
   --color-background: var(--background);

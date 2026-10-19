@@ -1,10 +1,3 @@
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
 /** A short, human-friendly relative time ("2m ago"). */
 export function relativeTime(iso?: string | null): string {
   if (!iso) return '';

@@ -26,10 +26,8 @@ const mockHooks = () => ({
     onMouseLeave: () => {},
   }),
 });
-// The hooks live in @kortix/ui; '@/lib/dotmatrix-hooks' is its shim. Mock both
-// so dotmatrix-core (inside the package) reads the sampled values too.
+// bun mocks by resolved file, so dotmatrix-core reads the sampled values too.
 mock.module('../../../lib/dotmatrix-hooks', mockHooks);
-mock.module('@kortix/ui/lib/dotmatrix-hooks', mockHooks);
 
 const { DotmCircular1 } = await import('./dotm-circular-1');
 const { DotmSquare14 } = await import('./dotm-square-14');

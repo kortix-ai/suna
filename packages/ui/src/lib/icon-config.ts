@@ -9,7 +9,7 @@
  * How it reaches icons — you never pass a weight prop:
  *   • Client components  → IconProvider (src/components/ui/icon-provider.tsx)
  *     feeds it to Phosphor's IconContext.
- *   • Server components  → icons imported from '@/lib/icons/ssr' have it
+ *   • Server components  → icons imported from '@phosphor-icons/react/ssr' have it
  *     pre-bound (RSC cannot use React context, so the weight is bound there).
  *
  * The only intentional exception is weight="fill" on solid/status icons

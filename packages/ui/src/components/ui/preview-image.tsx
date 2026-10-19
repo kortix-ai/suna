@@ -2,7 +2,6 @@
 
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
-import Image from 'next/image';
 import * as React from 'react';
 
 import { Close } from '../../icons/close';
@@ -132,12 +131,11 @@ const PreviewImageContent = React.forwardRef<
             }}
           >
             {fileContent ? (
-              <Image
+              <img
                 src={fileContent}
                 alt={fileName || 'Image preview'}
                 width={1920}
                 height={1080}
-                unoptimized
                 className="max-h-[100vh] w-auto object-contain"
               />
             ) : null}

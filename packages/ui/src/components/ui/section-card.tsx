@@ -5,7 +5,8 @@ import { cn } from '../../lib/utils';
 import * as React from 'react';
 
 /**
- * Kortix <SectionCard> — the one panel pattern.
+ * Kortix <SectionCard>. Deprecated: new panels use <Card> and its slots
+ * (`@kortix/ui/card`). It stays for the screens that already render it.
  *
  * Composes the design-system <Card> (rounded-2xl surface) and adds the
  * divided header every settings/list panel needs: a title, an optional
@@ -39,6 +40,7 @@ export interface SectionCardProps {
   children?: React.ReactNode;
 }
 
+/** @deprecated Use `Card` and its slots (`@kortix/ui/card`). */
 export function SectionCard({
   title,
   count,

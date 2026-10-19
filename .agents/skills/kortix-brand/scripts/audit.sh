@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Kortix brand audit.
 # Mechanical enforcement of the allowlists in references/visual/*.md.
-# Usage: audit.sh [--summary] [path ...]   (default: apps/web/src)
+# Usage: audit.sh [--summary] [path ...]   (default: apps/web/src packages/ui/src)
 #
 # Exit 0 = clean. Exit 1 = violations found.
 # --summary prints one "count<TAB>rule" line per rule that has hits, and nothing else.
 #
 # Profiles. Every path is audited in one of two profiles:
-#   app        apps/web product chrome. Every rule applies.
+#   app        apps/web product chrome and @kortix/ui (packages/ui/src). Every rule applies.
 #   marketing  paths under /marketing/, /(marketing)/, /(seo)/, /presentations/, /components/home/.
 #              Color, dark:, spacing, bracket, easing, weight and motion-property rules
 #              still apply. The type-size ceiling, the radius ceiling and large shadows
@@ -41,7 +41,7 @@ if [ ${#ARGS[@]} -eq 0 ]; then
   if [ ! -d apps/web/src ]; then
     root=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$root" || exit 2
   fi
-  ARGS=(apps/web/src)
+  ARGS=(apps/web/src packages/ui/src)
 fi
 TARGETS=("${ARGS[@]}")
 FOUND=0
@@ -59,7 +59,9 @@ LOGO_RE='(/features/icon/icons/(apple-cursor|chat-gpt|claude|gemini|github|gmail
 # Escape hatch: a third-party brand color in a named constant next to the component.
 CONST_RE=':[0-9]+: *(export )?const [A-Z][A-Z0-9_]* ='
 
-# The one sanctioned spinner and the one sanctioned uppercase chip.
+# The one sanctioned spinner and the one sanctioned uppercase chip. They live in
+# packages/ui/src/components/ui/ (@kortix/ui); the apps/web/src/components/ui/
+# path is the re-export shim. The unanchored /components/ui/ matches both.
 LOADING_RE='(/components/ui/(loading|kortix-loader)\.)'
 BADGE_RE='(/components/ui/badge\.)'
 

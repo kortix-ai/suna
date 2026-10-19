@@ -25,7 +25,7 @@ export const useAutosizeTextArea = ({
   const [init, setInit] = React.useState(true);
   const [currentHeight, setCurrentHeight] = React.useState(minHeight);
   const previousContentRef = React.useRef(triggerAutoSize);
-  const resizeTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const resizeTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     const offsetBorder = 6;

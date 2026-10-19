@@ -3,6 +3,7 @@
 import { cn } from '../../lib/utils';
 import * as React from 'react';
 
+/** @deprecated Use `<ul className="space-y-2">` rows inside a `Card`. */
 export function List({ className, ...props }: React.ComponentProps<'ul'>) {
   return <ul data-slot="list" className={cn('divide-border divide-y', className)} {...props} />;
 }
@@ -18,6 +19,7 @@ export interface ListRowProps {
   compact?: boolean;
 }
 
+/** @deprecated Use `<ul className="space-y-2">` rows inside a `Card`. */
 export function ListRow({
   leading,
   title,

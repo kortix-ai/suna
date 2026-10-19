@@ -142,9 +142,17 @@ function rowParity(props: { role?: string; 'aria-rowindex'?: number }): 'even' |
 export function EmojiPicker({
   onEmojiSelect,
   className,
+  emojibaseUrl = '/emojibase',
 }: {
   onEmojiSelect: (emoji: EmojiSelection) => void;
   className?: string;
+  /**
+   * Root-relative URL that serves `en/data.json` and `en/messages.json` from
+   * `emojibase-data`. apps/web copies them to `public/emojibase/`. A host that
+   * serves them elsewhere passes its own path; a host that serves nothing gets
+   * a picker that stays on its loading state (frimousse has no error slot).
+   */
+  emojibaseUrl?: string;
 }) {
   return (
     <Frimousse.Root
@@ -166,11 +174,11 @@ export function EmojiPicker({
       // gzipped, fetched on first open and never part of the JS bundle.
       //
       // These two literals are the same values the copy script spells out, and
-      // nothing but src/components/ui/emoji-picker-data.test.ts ties them
+      // nothing but apps/web/src/components/ui/emoji-picker-data.test.ts ties them
       // together: a build script cannot import a client component's constants.
       // `locale` is written out rather than left to frimousse's `en` default so
       // the coupling is visible at the place someone would change it.
-      emojibaseUrl="/emojibase"
+      emojibaseUrl={emojibaseUrl}
       locale="en"
       className={cn('isolate flex h-[368px] w-full flex-col', className)}
     >

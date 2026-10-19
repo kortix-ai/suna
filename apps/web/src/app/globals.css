@@ -67,14 +67,14 @@
   --focus-ring: var(--ring);
   --sidebar: oklch(0.9672 0 0); /* surface-1 #f4f4f4 */
   --sidebar-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
-  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff */
+  --sidebar-primary: var(--ring);
   --sidebar-primary-foreground: oklch(1 0 0); /* #ffffff */
   --sidebar-accent: oklch(0.9461 0 0); /* surface-2 #ededed */
   --sidebar-accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --sidebar-row: var(--card);
   --sidebar-row-control: var(--sidebar-accent);
   --sidebar-border: oklch(0.9128 0 0); /* hairline / hairline-soft #e2e2e2 */
-  --sidebar-ring: oklch(0.669 0.1837 248.8066); /* #0099ff */
+  --sidebar-ring: var(--ring);
   --kortix-base: var(--color-ring); /* #0099ff */
   --kortix-green: oklch(0.581 0.165 146.619); /* #199338 */
   --kortix-red: oklch(0.648 0.202 24.745); /* #f14b4c */
@@ -137,11 +137,13 @@
   --focus-ring: var(--ring);
   --sidebar: oklch(0.1913 0 0); /* surface-1 #141414 */
   --sidebar-foreground: oklch(1 0 0); /* ink #ffffff */
+  --sidebar-primary: var(--ring);
   --sidebar-accent: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
   --sidebar-accent-foreground: oklch(1 0 0); /* ink #ffffff */
   --sidebar-row: var(--sidebar-accent);
   --sidebar-row-control: oklch(0.2686 0 0); /* #262626 */
   --sidebar-border: oklch(0.2178 0 0); /* hairline / hairline-soft #1a1a1a */
+  --sidebar-ring: var(--ring);
   --kortix-base: var(--color-ring); /* #0099ff */
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
@@ -356,53 +358,9 @@
   --kortix-purple: #ab80d6;
 }
 @layer base {
-  /* Themed routes set --selection per palette; unthemed pages keep the
-     original inverted selection. */
-  ::selection {
-    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
-    color: var(--selection-foreground, var(--primary-foreground));
-  }
-
-  ::-moz-selection {
-    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
-    color: var(--selection-foreground, var(--primary-foreground));
-  }
-
-  * {
-    /* stylelint-disable-next-line at-rule-no-unknown */
-    @apply border-border outline-ring/50;
-  }
-
-  /* Tailwind v4 makes <button> default to `cursor: default`; restore the
-     pointer on every genuinely interactive element: buttons, links, native
-     checkboxes/radios/file inputs, labels bound to a control, selects,
-     summaries, and the ARIA roles a non-button control renders with.
-     Disabled elements keep the default cursor: :disabled, aria-disabled,
-     data-disabled. */
-  :is(
-      a[href],
-      button,
-      input[type='checkbox'],
-      input[type='file'],
-      input[type='radio'],
-      label[for],
-      select,
-      summary,
-      [role='button'],
-      [role='checkbox'],
-      [role='link'],
-      [role='menuitem'],
-      [role='menuitemcheckbox'],
-      [role='menuitemradio'],
-      [role='option'],
-      [role='radio'],
-      [role='switch'],
-      [role='tab'],
-      [role='treeitem']
-    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
-    cursor: pointer;
-  }
-
+  /* ::selection, `* { border-border outline-ring/50 }`, the pointer cursor,
+     color-scheme and the body colors live in @kortix/ui/theme.css (one base
+     for every host). Themed routes still set --selection per palette. */
   html {
     scroll-behavior: smooth;
     text-rendering: optimizeLegibility;
@@ -416,17 +374,7 @@
       'ss14' on,
       'palt';
   }
-  :root {
-    color-scheme: light;
-  }
-
-  .dark {
-    color-scheme: dark;
-  }
-
   body {
-    /* stylelint-disable-next-line at-rule-no-unknown */
-    @apply bg-background text-foreground;
     font-feature-settings:
       'ss10' on,
       'ss09' on,
@@ -434,7 +382,6 @@
       'ss04' on,
       'ss14' on,
       'palt';
-    min-height: 100dvh;
   }
 
   /* Add font fallbacks for CJK characters */

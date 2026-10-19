@@ -1,7 +1,7 @@
 'use client';
 
-import { useBranding } from '@/features/branding/branding-provider';
 import { cn } from '../../lib/utils';
+import { useUiBrand } from '../../providers/ui-provider';
 import type { ComponentPropsWithoutRef } from 'react';
 
 export type KortixLogoVariant = 'icon' | 'brandmark';
@@ -22,7 +22,8 @@ interface KortixLogoProps extends Omit<
  * surrounding text color (`text-foreground` in app surfaces).
  *
  * Organization branding: when the active account carries its own marks
- * (`useBranding()` — Enterprise `branding` entitlement), the matching slot
+ * (`useUiBrand()`, which apps/web feeds from `useBranding()` — Enterprise
+ * `branding` entitlement), the matching slot
  * renders that image instead: `brandmark` → `logo_url` (falling back to
  * `icon_url` so a square-only brand still replaces the wordmark), `icon` →
  * `icon_url`. Same box, same `size` semantics, so no call site changes.
@@ -42,7 +43,7 @@ export function KortixLogo({
   style,
   ...props
 }: KortixLogoProps) {
-  const branding = useBranding();
+  const branding = useUiBrand();
   // Light is the base; dark is an optional override. A square-only brand
   // stands in for the wordmark, per scheme: a dark icon is a better dark
   // brandmark than a light logo.

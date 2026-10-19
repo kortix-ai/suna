@@ -47,12 +47,10 @@ describe('glyphFace', () => {
     expect(onDisk).toBe(renderGlyphPathsModule());
   });
 
-  test('components rendered on every app page do not import the full glyph registry', () => {
+  test('entity-avatar, rendered on every app page, does not import the full glyph registry', () => {
     // The registry ships every Phosphor weight of 202 glyphs; importing it from
     // an always-loaded component puts it back in the shared client chunk.
-    for (const file of ['entity-avatar.tsx', 'identity-confetti.tsx']) {
-      const source = readFileSync(join(import.meta.dir, file), 'utf8');
-      expect(source, file).not.toContain('glyph-registry');
-    }
+    const source = readFileSync(join(import.meta.dir, 'entity-avatar.tsx'), 'utf8');
+    expect(source).not.toContain('glyph-registry');
   });
 });

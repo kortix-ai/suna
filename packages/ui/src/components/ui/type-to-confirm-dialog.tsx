@@ -37,6 +37,7 @@
 
 import { useId, useState, type ReactNode } from 'react';
 
+import { useUiStrings } from '../../providers/ui-provider';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
@@ -135,10 +136,11 @@ function TypeToConfirmBody({
   reassurance,
   confirmPhrase,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   onConfirm,
   isPending = false,
 }: Omit<TypeToConfirmDialogProps, 'open'>) {
+  const strings = useUiStrings();
   const [typed, setTyped] = useState('');
   const inputId = useId();
 
@@ -235,7 +237,7 @@ function TypeToConfirmBody({
             disabled={isPending}
             className="w-full sm:w-auto"
           >
-            {cancelLabel}
+            {cancelLabel ?? strings.cancel}
           </Button>
           <Button
             type="submit"

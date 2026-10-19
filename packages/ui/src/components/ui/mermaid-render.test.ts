@@ -10,10 +10,6 @@ import {
 } from './mermaid-render';
 
 const RENDERER_SOURCE = readFileSync(new URL('./mermaid-renderer.tsx', import.meta.url), 'utf8');
-const MARKDOWN_CODE_SOURCE = readFileSync(
-  new URL('../markdown/code/markdown-code.tsx', import.meta.url),
-  'utf8',
-);
 
 /** A document with a few named nodes; records which ones were removed. */
 function fakeDocument(ids: string[]) {
@@ -85,10 +81,6 @@ describe('Mermaid SVG cache', () => {
 });
 
 describe('Mermaid in a streaming message', () => {
-  test('markdown hands the streaming flag to the diagram', () => {
-    expect(MARKDOWN_CODE_SOURCE).toMatch(/<MermaidRenderer[^>]*isStreaming=\{isStreaming\}/);
-  });
-
   test('the diagram renders a settled source, not every token', () => {
     expect(RENDERER_SOURCE).toContain('useSettledValue(chart.trim(), isStreaming, CODE_SETTLE_MS)');
   });

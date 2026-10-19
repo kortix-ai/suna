@@ -41,7 +41,7 @@ mock.module('sonner', () => ({
   },
 }));
 
-const { successToast, progressToast, loadingToast, errorToast, infoToast, warningToast, undoToast } =
+const { successToast, progressToast, loadingToast, errorToast, infoToast, warningToast, undoToast, setSilentErrorToastFilter } =
   await import('./toast');
 
 const setViewport = (width: number) => {
@@ -217,8 +217,15 @@ describe('toast factories — position and id', () => {
   });
 });
 
-describe('errorToast — silent timeout no-op', () => {
-  test('a timeout message renders no toast', () => {
+describe('errorToast — silent message no-op', () => {
+  test('without a host filter every message renders', () => {
+    reset();
+    errorToast('Request exceeded the 25s server processing deadline');
+    expect(customCalls).toHaveLength(1);
+  });
+
+  test('a message the host filter matches renders no toast', () => {
+    setSilentErrorToastFilter((message) => message.includes('processing deadline'));
     reset();
     errorToast('Request exceeded the 25s server processing deadline');
     expect(customCalls).toHaveLength(0);

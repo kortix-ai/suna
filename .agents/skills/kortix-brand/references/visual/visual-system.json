@@ -128,13 +128,10 @@
       },
       "sidebar-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-sidebar-foreground", "mobile": true },
       "sidebar-primary": {
-        "light": "oklch(0.669 0.1837 248.8066)",
-        "dark": "oklch(0.669 0.1837 248.8066)",
-        "hex": ["#0099ff", "#0099ff"],
-        "ramp": "accent-blue",
+        "ref": "ring",
         "utility": "bg-sidebar-primary",
         "mobile": true,
-        "use": "Selection in the sidebar. 0 class uses in apps/web at audit time."
+        "use": "Selection in the sidebar. Follows --ring, so a white-label accent reaches the sidebar. 0 class uses in apps/web at audit time."
       },
       "sidebar-primary-foreground": { "light": "oklch(1 0 0)", "dark": "oklch(1 0 0)", "hex": ["#ffffff", "#ffffff"], "utility": "text-sidebar-primary-foreground", "mobile": true },
       "sidebar-accent": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-sidebar-accent", "mobile": true },
@@ -156,7 +153,7 @@
         "use": "A control on a filled sidebar row: one step above sidebar-row."
       },
       "sidebar-border": { "light": "oklch(0.9128 0 0)", "dark": "oklch(0.2178 0 0)", "hex": ["#e2e2e2", "#1a1a1a"], "ramp": "hairline / hairline-soft", "utility": "border-sidebar-border", "mobile": true },
-      "sidebar-ring": { "light": "oklch(0.669 0.1837 248.8066)", "dark": "oklch(0.669 0.1837 248.8066)", "hex": ["#0099ff", "#0099ff"], "utility": "ring-sidebar-ring", "mobile": true }
+      "sidebar-ring": { "ref": "ring", "utility": "ring-sidebar-ring", "mobile": true, "use": "Focus ring in the sidebar. Follows --ring, so a white-label focus color reaches the sidebar." }
     },
     "accents": {
       "rule": "The only sources of hue in product UI. Theme-invariant today (same value in light and dark). Tinted fill = /15, glyph = solid. Two opacities, no others.",

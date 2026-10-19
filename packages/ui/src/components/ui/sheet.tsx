@@ -6,6 +6,7 @@ import * as React from 'react';
 
 import { Close } from '../../icons/close';
 import { cn } from '../../lib/utils';
+import { useUiStrings } from '../../providers/ui-provider';
 import {
   DialogDepthProvider,
   dialogContentZ,
@@ -114,6 +115,7 @@ const SheetContent = React.forwardRef<
     ref,
   ) => {
     const depth = useDialogDepth();
+    const strings = useUiStrings();
 
     return (
       <SheetPortal>
@@ -133,7 +135,7 @@ const SheetContent = React.forwardRef<
               )}
             >
               <Close className="size-[1.15rem] stroke-0" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{strings.close}</span>
             </SheetPrimitive.Close>
           )}
         </SheetPrimitive.Content>
