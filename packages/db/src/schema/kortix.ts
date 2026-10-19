@@ -8067,6 +8067,33 @@ export const roomMembers = kortixSchema.table('room_members', {
 ]);
 
 /**
+ * A one-shot "tell me when this session goes idle" (flag `session_messaging`).
+ * When the target session's turn ends, the watcher gets one direct message
+ * from the target with the outcome, and the row is deleted. A row past
+ * `expires_at` is dropped unanswered.
+ */
+export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
+  watchId: uuid('watch_id').defaultRandom().primaryKey(),
+  targetSessionId: text('target_session_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  watcherKind: varchar('watcher_kind', { length: 16 }).notNull(),
+  watcherSessionId: text('watcher_session_id'),
+  watcherUserId: uuid('watcher_user_id'),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.targetSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_idle_watches_target_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_idle_watches_project_fk' }).onDelete('cascade'),
+  index('idx_session_idle_watches_target').on(table.targetSessionId),
+  check(
+    'session_idle_watches_kind_check',
+    sql`(${table.watcherKind} = 'session' and ${table.watcherSessionId} is not null and ${table.watcherUserId} is null) or (${table.watcherKind} = 'person' and ${table.watcherUserId} is not null and ${table.watcherSessionId} is null)`,
+  ),
+]);
+
+/**
  * A browser's Web Push subscription. Bound to the sign-in that registered it:
  * a push goes only while that sign-in lives, like push_device_tokens.
  */

@@ -36,7 +36,9 @@ members (\`kortix dm\`). A member is a session or a person:
             current turn ends; a stopped session wakes to answer.
   person    each message from someone else is unread for you, and with the
             notification center on you get a notification.
-Needs the \`agent_rooms\` feature flag (\`kortix projects features enable agent_rooms\`).
+Rooms need the \`agent_rooms\` feature flag; direct messages, \`peers\` and
+\`--notify-when-idle\` need \`session_messaging\`
+(\`kortix projects features enable <flag>\`).
 
 Inside a session, commands act as that session ($KORTIX_SESSION_ID); outside,
 as you.
@@ -69,6 +71,10 @@ Subcommands:
   dm <who> ["<text>"]        Direct message a session (<id or 8+ char prefix>)
                              or a person (<email|user-id>). Without text, print
                              the conversation. Same as \`kortix dm\`.
+                             --notify-when-idle (a session): one message from
+                             it when its current turn ends (alone: no text sent).
+  peers                      Who you can message: this project's sessions with
+                             their status, and its people. Same as \`kortix peers\`.
   topic <room> "<topic>"     Set the topic ("" clears it).
   archive <room>             Archive: keeps the log, takes no new messages.
                              --undo unarchives. Creator or project.write.
@@ -162,6 +168,7 @@ interface Flags {
   archived: boolean;
   mine: boolean;
   undo: boolean;
+  notifyWhenIdle: boolean;
 }
 
 interface Ctx {
@@ -216,7 +223,7 @@ export function pickReply(messages: RoomMessage[], seq: number, self: Self): Roo
   return others.find((message) => message.reply_to_seq === seq) ?? others[0] ?? null;
 }
 
-const KNOWN = ['ls', 'list', 'create', 'info', 'join', 'leave', 'send', 'read', 'next', 'watch', 'chat', 'people', 'dm', 'topic', 'archive'];
+const KNOWN = ['ls', 'list', 'create', 'info', 'join', 'leave', 'send', 'read', 'next', 'watch', 'chat', 'people', 'peers', 'dm', 'topic', 'archive'];
 
 export async function runRooms(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
@@ -241,6 +248,7 @@ export async function runRooms(argv: string[]): Promise<number> {
       archived: takeFlagBool(rest, ['--archived']),
       mine: takeFlagBool(rest, ['--mine']),
       undo: takeFlagBool(rest, ['--undo']),
+      notifyWhenIdle: takeFlagBool(rest, ['--notify-when-idle']),
     };
   } catch (err) {
     return fail((err as Error).message);
@@ -273,6 +281,8 @@ export async function runRooms(argv: string[]): Promise<number> {
         return await joinRoom(ctx, rest[0], flags);
       case 'people':
         return await listPeople(ctx, rest.join(' '), flags);
+      case 'peers':
+        return await listPeers(ctx, flags);
       case 'dm':
         return await directMessage(ctx, rest[0], rest.slice(1), flags);
       case 'topic':
@@ -305,6 +315,11 @@ export async function runRooms(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+/** `kortix peers` is `kortix rooms peers`. */
+export function runPeers(argv: string[]): Promise<number> {
+  return runRooms(['peers', ...argv]);
 }
 
 /** `kortix dm …` is `kortix rooms dm …`. */
@@ -553,9 +568,66 @@ async function directMessage(ctx: Ctx, who: string | undefined, args: string[], 
   else if (who.includes('@')) body.email = who;
   else if (UUID.test(who)) body.user_id = who;
   else return fail(`"${who}" is not a session id, an email or a user id.`);
+  if (flags.notifyWhenIdle && !sessionId) return fail('--notify-when-idle needs a session, not a person.');
   const room = await ctx.client.post<Room>(`/projects/${ctx.projectId}/rooms/direct`, body);
+  // Claude Code's notify_when_idle: with a message, send it and subscribe;
+  // alone, only subscribe.
+  if (flags.notifyWhenIdle && args.length === 0) return notifyWhenIdle(ctx, sessionId!, room, flags);
   if (args.length === 0 && process.stdin.isTTY === true) return readMessages(ctx, room, flags);
-  return sendMessage(ctx, room, args, flags);
+  const code = await sendMessage(ctx, room, args, { ...flags, json: flags.json && !flags.notifyWhenIdle });
+  if (code !== 0 || !flags.notifyWhenIdle) return code;
+  return notifyWhenIdle(ctx, sessionId!, room, flags);
+}
+
+async function notifyWhenIdle(ctx: Ctx, sessionId: string, room: Room, flags: Flags): Promise<number> {
+  const watch = await ctx.client.post<{ watch_id: string | null; fired_now: boolean; expires_at: string }>(
+    `/projects/${ctx.projectId}/sessions/${sessionId}/idle-notice`,
+  );
+  if (flags.json) emitJson({ ...watch, room_id: room.room_id });
+  else if (watch.fired_now) {
+    process.stdout.write(`${status.ok(`Session ${shortId(sessionId)} is idle now; its notice is in ${C.bold}${roomTitle(room)}${C.reset}`)}\n`);
+  } else {
+    process.stdout.write(
+      `${status.ok(`You get one message from session ${shortId(sessionId)} when its turn ends`)} ${C.dim}(in ${roomTitle(room)}; expires ${new Date(watch.expires_at).toLocaleString()})${C.reset}\n`,
+    );
+  }
+  return 0;
+}
+
+async function listPeers(ctx: Ctx, flags: Flags): Promise<number> {
+  const [sessions, people] = await Promise.all([
+    ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions?limit=50`),
+    ctx.client.get<{ people: { user_id: string; name: string | null; email: string | null }[] }>(`/projects/${ctx.projectId}/rooms/people`)
+      .then((r) => r.people)
+      .catch((err) => {
+        // Listing people needs project.members.read; sessions stay listable without it.
+        if (err instanceof ApiError && err.status === 403) return null;
+        throw err;
+      }),
+  ]);
+  const me = await selfIdentity(ctx);
+  const others = sessions.filter((s) => s.session_id !== me.sessionId);
+  if (flags.json) {
+    emitJson({
+      self: me,
+      sessions: others.map((s) => ({ session_id: s.session_id, name: s.name ?? null, agent: s.agent_name ?? null, status: s.status })),
+      people,
+    });
+    return 0;
+  }
+  if (me.sessionId) process.stdout.write(`\n  ${C.dim}You are session ${shortId(me.sessionId)}.${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}${pad('SESSION', 10)} ${pad('STATUS', 10)} ${pad('AGENT', 14)} NAME${C.reset}\n`);
+  for (const s of others) {
+    process.stdout.write(`  ${pad(shortId(s.session_id), 10)} ${pad(s.status, 10)} ${pad(s.agent_name ?? '-', 14)} ${s.name ?? ''}\n`);
+  }
+  if (people) {
+    process.stdout.write(`\n  ${C.dim}${pad('PERSON', 28)} EMAIL${C.reset}\n`);
+    for (const p of people) process.stdout.write(`  ${pad(p.name ?? '-', 28)} ${p.email ?? '-'}\n`);
+  } else {
+    process.stdout.write(`\n  ${C.dim}People: hidden (needs project.members.read).${C.reset}\n`);
+  }
+  process.stdout.write(`\n  ${C.dim}Message one: kortix dm <session id or 8+ chars | email> "…"${C.reset}\n\n`);
+  return 0;
 }
 
 async function readStdinText(): Promise<string> {

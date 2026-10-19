@@ -303,3 +303,17 @@ describe('logHeaderState — the `sessions log` header names the sandbox and, wh
     expect(logHeaderState('running', null)).toBe('sandbox running');
   });
 });
+
+describe('roomMessageHeader', () => {
+  test('a delivered room message prints where it came from and who sent it, never the reply footer', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomPromptText } = await import('@kortix/shared');
+    const text = roomPromptText({
+      kind: 'room', room: 'dev', roomId: 'r1', seq: 4, senderKind: 'session', sender: '3f2a1b9c (builder)', replyTo: 2, text: 'dev is clear',
+    });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4 · from agent session 3f2a1b9c (builder) ↳#2', body: 'dev is clear' });
+    const direct = roomPromptText({ kind: 'direct', room: null, roomId: 'r2', seq: 1, senderKind: 'member', sender: 'Ada', replyTo: null, text: 'yes' });
+    expect(roomMessageHeader(direct)).toEqual({ header: 'direct message #1 · from Ada', body: 'yes' });
+    expect(roomMessageHeader('hello')).toBeNull();
+  });
+});

@@ -151,6 +151,7 @@ export {
   rooms,
   roomMessages,
   roomMembers,
+  sessionIdleWatches,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO

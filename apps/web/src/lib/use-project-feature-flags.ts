@@ -48,6 +48,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
   const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
+  const sessionMessaging = useFeatureFlag(projectId, 'session_messaging');
 
   return {
     flags: {
@@ -72,8 +73,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       session_log_restore: sessionLogRestore.enabled,
       connectors_v2: connectorsV2.enabled,
       agent_rooms: agentRooms.enabled,
+      session_messaging: sessionMessaging.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: agentRooms.isLoading,
+    isLoading: sessionMessaging.isLoading,
   };
 }

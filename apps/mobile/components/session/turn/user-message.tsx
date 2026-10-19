@@ -28,6 +28,7 @@ import { TeamsIcon } from '@/components/icons/teams-icon';
 import { TelegramIcon } from '@/components/icons/telegram-icon';
 import {
   AlarmIcon,
+  ChatCircleIcon,
   CheckIcon,
   CopyIcon,
   LightningIcon,
@@ -40,7 +41,7 @@ import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
 import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
-import { parseReminderPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { parseReminderPrompt, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -347,6 +348,8 @@ export function UserMessage({
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
+  // A message from a room or a direct conversation: `[room dev · #2 · from …]` + the text.
+  const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -366,7 +369,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo && !roomInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -444,6 +447,27 @@ export function UserMessage({
       <ChannelSourcePill info={channelMessageInfo} />,
       channelMessageInfo.messageText ? <ChannelMessageText text={channelMessageInfo.messageText} /> : null,
       channelMessageInfo.messageText,
+    );
+  }
+
+  if (roomInfo) {
+    const source = roomInfo.kind === 'direct' ? 'Direct message' : roomInfo.room ?? 'Room';
+    const sender = roomInfo.senderKind === 'session' ? `Agent ${roomInfo.sender}` : roomInfo.sender;
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
+        source={source}
+        sender={sender}
+        title={source}
+        subtitle={sender}
+        rows={[
+          { label: 'Message', value: `#${roomInfo.seq}` },
+          ...(roomInfo.replyTo ? [{ label: 'Reply to', value: `#${roomInfo.replyTo}` }] : []),
+        ]}
+      />,
+      roomInfo.text ? <Text style={BUBBLE_TEXT_STYLE}>{roomInfo.text}</Text> : null,
+      roomInfo.text,
     );
   }
 

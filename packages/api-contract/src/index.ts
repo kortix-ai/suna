@@ -71,6 +71,7 @@ export const FeatureFlagMapSchema = z.object({
   session_log_restore: z.boolean(),
   connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
+  session_messaging: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

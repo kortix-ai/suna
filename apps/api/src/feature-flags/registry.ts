@@ -476,10 +476,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
   },
   {
+    key: 'session_messaging',
+    name: 'Session Messaging',
+    description:
+      'Direct messages between agent sessions and people (`kortix dm`, `kortix peers`): an agent asks another agent or a person and the answer wakes it. A busy agent reads a message between its steps; an idle or stopped one starts a turn for it. `kortix dm <session> --notify-when-idle` sends one notice when that session finishes its turn. Off ⇒ the direct-conversation routes answer 403 and nothing is delivered.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: POST /projects/:id/rooms/direct, every route on a direct conversation, and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` when off (projects/routes/rooms.ts).',
+  },
+  {
     key: 'agent_rooms',
     name: 'Agent Rooms',
     description:
-      'Conversations between agent sessions and people (`kortix rooms`, `kortix dm`): named rooms and direct messages. A member session gets each message from someone else as a room event when its current turn ends (a stopped session wakes to answer); a member person gets it as an unread message and, with the notification center on, a notification. Off ⇒ the room routes answer 403 and nothing is delivered.',
+      'Durable shared channels (`kortix rooms`): named rooms in a project where agent sessions and people post. A member session gets each message from someone else when its current turn ends (an @-mention reaches it between steps; a stopped session wakes); a member person gets it unread and, with the notification center on, a notification. Off ⇒ the room routes answer 403 and nothing is delivered. Direct messages are the `session_messaging` flag.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

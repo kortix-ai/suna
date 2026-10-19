@@ -48,7 +48,7 @@ import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runDm, runRooms } from './commands/rooms.ts';
+import { runDm, runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -270,6 +270,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   uninstall: (rest) => runUninstall(rest),
   rooms: (rest) => runRooms(rest),
   dm: (rest) => runDm(rest),
+  peers: (rest) => runPeers(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {

@@ -9,28 +9,37 @@
  * A member is an agent session or a person. A message from anyone else
  * reaches each member the way that member can take it:
  *
- *   session  a room event at the session's next turn boundary: a durable
- *            `continue_session` automation row (no `clientMessageId`), so it
- *            never shows in a person's prompt queue and never steers a turn a
- *            person started. A stopped session wakes. The row is written in
- *            the SAME transaction as the message, and acts as the person who
- *            added the session (`added_by_user_id`), never as the sender.
+ *   session  a durable `continue_session` automation row (no
+ *            `clientMessageId`, so never a person's queued prompt), written
+ *            in the SAME transaction as the message. A message addressed to
+ *            the session — a direct message, or an @-mention — steers a
+ *            running turn (read between steps, as Claude Code delivers a
+ *            cross-session message); room chatter waits for the turn to end.
+ *            An idle session starts a turn; a stopped one wakes. It acts as
+ *            the person who added the session (`added_by_user_id`), never as
+ *            the sender, and only when the sender could prompt it.
  *   person   an unread count (`last_read_seq`) and, with the project's
  *            notification center on, a `message` notification (bell, push,
  *            email digest). Delivery re-checks `filterRoomRecipients`.
  */
-import { projectSessions, projects, roomMembers, roomMessages, rooms, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, projects, roomMembers, roomMessages, rooms, sessionIdleWatches, sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { filterRoomRecipients, mayPromptSessions } from '../../notifications/access';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { deliver } from '../../notifications/notifier';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import { sessionHoldsLiveTurn } from '../session-lifecycle/inbox-admission';
+import { mintWireMessageId } from '../wire-message-id';
 import { promptModelOverride } from '../lib/prompt-model';
 import { AGENT_CHAIN_LIMIT, agentChainReached, mentionTokens, mentionsMember, roomMessagePrompt } from './envelope';
 
 export const AGENT_ROOMS_FLAG = 'agent_rooms' as const;
+export const SESSION_MESSAGING_FLAG = 'session_messaging' as const;
+/** How long `--notify-when-idle` waits for the session's turn to end. */
+export const IDLE_WATCH_TTL_MS = 24 * 60 * 60_000;
 export const ROOM_NAME = /^[a-z0-9][a-z0-9._/-]{0,63}$/;
 export const ROOM_MESSAGE_MAX_CHARS = 16_000;
 export const ROOM_TOPIC_MAX_CHARS = 500;
@@ -405,7 +414,7 @@ export async function postRoomMessage(input: {
   );
 
   const deliveries: RoomDelivery[] = [];
-  const sessionTargets: typeof members = [];
+  const sessionTargets: Array<(typeof members)[number] & { steer: boolean }> = [];
   const personTargets: string[] = [];
   for (const member of members) {
     const ref = refOfRow(member);
@@ -431,7 +440,7 @@ export async function postRoomMessage(input: {
     else if (!promptable.has(member.sessionId!)) verdict('skipped', 'sender_cannot_prompt');
     else if (paused) verdict('skipped', 'agent_chain');
     else {
-      sessionTargets.push(member);
+      sessionTargets.push({ ...member, steer: mentioned });
       verdict('queued');
     }
   }
@@ -479,8 +488,12 @@ export async function postRoomMessage(input: {
           }),
           idempotencyKey,
           // An automation row, like a reminder: no clientMessageId, so it is
-          // not a person's queued prompt, and it waits for a running turn to
-          // end instead of steering it.
+          // not a person's queued prompt. Addressed to this session, it
+          // steers a running turn (falls back to the turn boundary when the
+          // turn's prompter is someone else); otherwise it waits.
+          ...(member.steer
+            ? { delivery: 'steer' as const, wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id, remintOnDelivery: true }
+            : {}),
           overrides: {
             agent: null,
             model: promptModelOverride(null, member.metadata as Record<string, unknown> | null),
@@ -536,4 +549,87 @@ async function projectsWithFlagOff(roomProjectId: string, projectIds: string[]):
     .from(projects).where(inArray(projects.projectId, others));
   const on = new Set(rows.filter((row) => resolveFeatureFlag(row.metadata as Record<string, unknown> | null, AGENT_ROOMS_FLAG)).map((row) => row.projectId));
   return new Set(others.filter((id) => !on.has(id)));
+}
+
+// ── Idle notices ────────────────────────────────────────────────────────────
+
+/**
+ * Ask for one direct message from `targetSessionId` when its turn ends. When
+ * the session holds no live turn, the notice goes out now.
+ */
+export async function watchSessionIdle(input: {
+  targetSessionId: string;
+  projectId: string;
+  accountId: string;
+  watcher: MemberRef;
+  addedByUserId: string;
+}): Promise<{ watchId: string | null; firedNow: boolean; expiresAt: string }> {
+  const expiresAt = new Date(Date.now() + IDLE_WATCH_TTL_MS);
+  const watcher = input.watcher;
+  const [row] = await db.insert(sessionIdleWatches).values({
+    targetSessionId: input.targetSessionId,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    watcherKind: watcher.kind,
+    watcherSessionId: watcher.kind === 'session' ? watcher.sessionId : null,
+    watcherUserId: watcher.kind === 'person' ? watcher.userId : null,
+    addedByUserId: input.addedByUserId,
+    expiresAt,
+  }).returning();
+  if (!(await sessionHoldsLiveTurn(input.targetSessionId))) {
+    await fireIdleWatches(input.targetSessionId, 'idle');
+    return { watchId: row!.watchId, firedNow: true, expiresAt: expiresAt.toISOString() };
+  }
+  return { watchId: row!.watchId, firedNow: false, expiresAt: expiresAt.toISOString() };
+}
+
+/**
+ * The target session's turn ended: send each watcher one direct message from
+ * the session with the outcome, and drop the watches (expired ones unsent).
+ * Never throws: it runs inside the turn-end relay.
+ */
+export async function fireIdleWatches(targetSessionId: string, outcome: 'idle' | 'error', errorName?: string | null): Promise<number> {
+  try {
+    const due = await db.delete(sessionIdleWatches)
+      .where(eq(sessionIdleWatches.targetSessionId, targetSessionId))
+      .returning();
+    const live = due.filter((w) => w.expiresAt.getTime() > Date.now());
+    if (live.length === 0) return 0;
+    const home = await sessionHome(targetSessionId);
+    if (!home) return 0;
+    const label = idleSenderLabel(targetSessionId, home.agentName, home.metadata);
+    const what = outcome === 'error' ? `ended with an error${errorName ? ` (${errorName})` : ''}` : 'finished its turn and is idle';
+    let sent = 0;
+    for (const watch of live) {
+      const watcher: MemberRef = watch.watcherKind === 'session'
+        ? { kind: 'session', sessionId: watch.watcherSessionId! }
+        : { kind: 'person', userId: watch.watcherUserId! };
+      const watcherProject = watcher.kind === 'session' ? (await sessionHome(watcher.sessionId))?.projectId ?? home.projectId : home.projectId;
+      const { row: room } = await openDirect({
+        projectId: home.projectId,
+        accountId: home.accountId,
+        a: { ref: { kind: 'session', sessionId: targetSessionId }, projectId: home.projectId, addedByUserId: watch.addedByUserId },
+        b: { ref: watcher, projectId: watcherProject, addedByUserId: watch.addedByUserId },
+        createdByUserId: watch.addedByUserId,
+        createdBySessionId: null,
+      });
+      await postRoomMessage({
+        room,
+        sender: { kind: 'session', userId: watch.addedByUserId, sessionId: targetSessionId, label },
+        text: `Session ${targetSessionId.slice(0, 8)} ${what}. Read its answer: kortix sessions log ${targetSessionId} --limit 2`,
+        replyToSeq: null,
+      });
+      sent += 1;
+    }
+    return sent;
+  } catch (err) {
+    logger.warn('[rooms] idle notice failed', { targetSessionId, error: err instanceof Error ? err.message : String(err) });
+    return 0;
+  }
+}
+
+function idleSenderLabel(sessionId: string, agentName: string | null, metadata: unknown): string {
+  const name = sessionDisplayName(metadata);
+  const agent = agentName && agentName !== 'default' ? agentName : null;
+  return [sessionId.slice(0, 8), agent && `(${agent})`, name && `"${name}"`].filter(Boolean).join(' ');
 }

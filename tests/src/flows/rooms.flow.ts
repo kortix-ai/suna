@@ -351,7 +351,10 @@ flow(
     const team = await ctx.fixtures.team();
     const home = await team.project();
     const other = await team.project();
-    for (const project of [home, other]) await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
+    for (const project of [home, other]) {
+      await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
+      await setDatabaseProjectFeature(ctx.env, project.id, 'session_messaging', true);
+    }
     const seed = async (projectId: string, name: string) => {
       const id = await createDatabaseSession(ctx.env, {
         projectId, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name },
@@ -458,6 +461,7 @@ flow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
     try {
       await world.setFeature('agent_rooms', true);
+      await world.setFeature('session_messaging', true);
       await world.writeManifest(GOVERNED_MANIFEST, 'ke2e: rooms agents');
       const talker = await world.mintAgentSession({ agent: 'talker', launcher: ctx.P.OWNER, visibility: 'project' });
       const reader = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER, visibility: 'project' });
@@ -519,6 +523,11 @@ flow(
     for (const who of [ada, bob]) await team.grantProjectRole(project.id, who.userId!, 'member');
     await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
     await setDatabaseProjectFeature(ctx.env, project.id, 'notification_center', true);
+    await ctx.step('direct messages are their own flag: session_messaging off → POST /rooms/direct 403 feature_disabled', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post(DIRECT, { user_id: ada.userId }, { params: { projectId: project.id } }))
+        .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'session_messaging');
+    });
+    await setDatabaseProjectFeature(ctx.env, project.id, 'session_messaging', true);
     const owner = ctx.client.as(ctx.P.OWNER);
     const asAda = ctx.client.as(ada);
     const asBob = ctx.client.as(bob);
@@ -592,6 +601,63 @@ flow(
       if (mine.find((x) => x.room_id === roomId)?.unread !== 1) throw new Error(JSON.stringify(mine));
       (await asBob.del(PERSON_MEMBER, { params: { ...r, userId: bob.userId! } })).status(200).body().has('$.removed', true);
       (await ctx.client.as(ada).del(PERSON_MEMBER, { params: { ...r, userId: bob.userId! } })).status(200).body().has('$.removed', false);
+    });
+  },
+);
+
+const IDLE_NOTICE = '/v1/projects/:projectId/sessions/:sessionId/idle-notice';
+
+/** The delivery mode of the newest room event owed to a session. */
+async function newestDelivery(ctx: FlowContext, sessionId: string): Promise<string | null> {
+  return withDb(ctx, async (db) => (await db.query<{ delivery: string | null }>(
+    `SELECT payload->>'delivery' AS delivery FROM kortix.session_lifecycle_commands
+      WHERE session_id = $1 AND source = 'system:room-message' ORDER BY created_at DESC LIMIT 1`,
+    [sessionId],
+  )).rows[0]?.delivery ?? null);
+}
+
+flow(
+  'ROOM-8',
+  { domain: 'rooms', requires: ['database'], routes: ['POST /v1/projects/:projectId/sessions/:sessionId/idle-notice'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const p = { projectId: project.id };
+    const worker = await createDatabaseSession(ctx.env, {
+      projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Worker' },
+    });
+    ctx.track('session', worker, { projectId: project.id });
+
+    await ctx.step('session_messaging off → idle-notice 403 feature_disabled', async () => {
+      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(403).body().has('$.code', 'feature_disabled');
+    });
+    for (const flag of ['agent_rooms', 'session_messaging']) await setDatabaseProjectFeature(ctx.env, project.id, flag, true);
+
+    await ctx.step('a direct message and an @-mention steer the running turn; room chatter waits for the turn to end', async () => {
+      const direct = (await owner.post(DIRECT, { session_id: worker }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+      (await owner.post(MESSAGES, { text: 'status?' }, { params: { ...p, roomId: direct } })).status(201);
+      if ((await newestDelivery(ctx, worker)) !== 'steer') throw new Error('direct message is not a steer');
+      const roomId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+      (await owner.put(SESSION_MEMBER, {}, { params: { ...p, roomId, sessionId: worker } })).status(200);
+      (await owner.post(MESSAGES, { text: 'deploy at 5' }, { params: { ...p, roomId } })).status(201);
+      if ((await newestDelivery(ctx, worker)) !== null) throw new Error('room chatter should wait for the turn boundary');
+      (await owner.post(MESSAGES, { text: `@${worker.slice(0, 8)} hold the deploy` }, { params: { ...p, roomId } })).status(201);
+      if ((await newestDelivery(ctx, worker)) !== 'steer') throw new Error('an @-mention is not a steer');
+    });
+
+    await ctx.step('idle-notice on a session with no live turn fires now: the owner gets a direct message from it', async () => {
+      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(200).body().has('$.fired_now', true);
+      const mine = (await owner.get(`${ROOMS}?mine=true`, { params: p })).json<{ rooms: Conversation[] }>().rooms;
+      const direct = mine.find((r) => r.kind === 'direct' && r.peer?.kind === 'session');
+      if (!direct) throw new Error(JSON.stringify(mine));
+      const page = (await owner.get(MESSAGES, { params: { ...p, roomId: direct.room_id } })).json<{ messages: { sender_kind: string; text: string }[] }>().messages;
+      const notice = page.at(-1)!;
+      if (notice.sender_kind !== 'session' || !notice.text.includes('finished its turn and is idle')) throw new Error(JSON.stringify(page));
+    });
+    await ctx.step('NONMEMBER → 403; an unknown session → 404', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(403);
+      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: crypto.randomUUID() } })).status(404);
     });
   },
 );

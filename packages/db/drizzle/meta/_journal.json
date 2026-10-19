@@ -1184,6 +1184,13 @@
       "when": 1792439870935,
       "tag": "20261019195750_agent_rooms",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1792443636451,
+      "tag": "20261019210036_session_idle_watches",
+      "breakpoints": true
     }
   ]
 }
