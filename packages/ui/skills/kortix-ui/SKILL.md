@@ -1,6 +1,6 @@
 ---
 name: kortix-ui
-description: "Build React UI with @kortix/ui, the Kortix component library: Kortix Apps, white-label hosts, SDK customer apps and apps/web. Load before you write a component, a page, a chat view or a className in a React host that renders Kortix UI, or when you theme Kortix components for another brand. Covers setup, which component to compose, banned primitives, tokens, status tones, the SessionThread chat recipe, white-label theming and the verify steps."
+description: "Build React UI with @kortix/ui, the Kortix component library: Kortix Apps, white-label hosts, SDK customer apps and apps/web. Load before you write a component, a page, a chat view, a custom dashboard or App on @kortix/sdk, or a className in a React host that renders Kortix UI, or when you theme Kortix components for another brand. Covers setup, which component to compose, banned primitives, tokens, status tones, the SessionThread chat recipe, the dashboard guide, white-label theming and the verify steps."
 ---
 
 # @kortix/ui
@@ -125,8 +125,10 @@ export function Chat({ projectId, sessionId }: { projectId: string; sessionId: s
 ```
 
 - It is the thread apps/web renders. Host needs: `QueryClientProvider`, `UiProvider`, `<Toaster />`. The parent sets the height.
+  Install `@tanstack/react-query`, `@openuidev/lang-core@0.3.1` and `zod` with it: optional `@kortix/sdk` peers the thread needs.
 - A custom tool row: `ToolRegistry.register('<tool name>', Row)`; `Row` gets `ToolProps`, draws `BasicTool`.
 - A layout of your own composes the blocks above from the same `useSession` result. Never a raw `fetch`.
+- A whole dashboard or App (install, client, providers, theme, project and session lists, embedded thread, custom tool row, App sign-in): `references/custom-dashboard.md`. Every sample in it compiles.
 
 ## 9. Verify
 

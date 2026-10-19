@@ -230,6 +230,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
 | "call Gmail / a CRM / any connector from an App (a backend included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
+| "build a dashboard / custom UI / chat over Kortix sessions" (an App or any React host) | `@kortix/sdk` + `@kortix/ui`, never a raw API `fetch` · `kortix system-skills file kortix-ui references/custom-dashboard.md` |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |

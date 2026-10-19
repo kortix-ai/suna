@@ -14,8 +14,8 @@ After the first npm release: `npm i @kortix/ui`.
 - Agent skill: `skills/kortix-ui/SKILL.md`. Kortix sessions load the same file
   from `packages/starter/templates/managed/skills/kortix-ui/SKILL.md`
   (`kortix-ui` is in `KORTIX_MANAGED_SKILL_NAMES`, so the sandbox bake ships it).
-  `src/skill.test.ts` fails when the copies differ or when the skill's
-  Components table misses an export of `src/index.ts` or `src/chat/index.ts`.
+  `src/skill.test.ts` fails when the copies (SKILL.md and `references/`) differ,
+  or when the skill's Components table misses an export of a barrel.
 - Live catalog: the `/design-system` route of `apps/web`.
 
 ## Use it
@@ -107,7 +107,7 @@ const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 
 <UiProvider
-  strings={{ confirm: t('confirm'), chat: { send: t('send') } }}
+  strings={{ confirm: t('confirm'), chat: { model: t('model') } }}
   link={NextLink}
   image={NextImage}
   navigation={navigation}
@@ -168,8 +168,9 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 Every part of `@kortix/ui/session` needs `@kortix/sdk` and `@tanstack/react-query`
 5 (`@kortix/sdk/react` imports it; it is an optional peer, so npm does not
 warn when it is missing and the bundler fails instead):
-`npm i @kortix/ui @kortix/sdk @tanstack/react-query`, plus one
-`QueryClientProvider`.
+`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`
+(the last two are the optional `@kortix/sdk` peers the thread's genui blocks need),
+plus one `QueryClientProvider`.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
@@ -202,6 +203,11 @@ ToolRegistry.register('lookup', LookupRow);
 ```
 
 A fully custom transcript uses `renderParts` from `@kortix/sdk/react`.
+
+A whole dashboard or App (client, providers, theme, project and session lists,
+the embedded thread, a custom tool row, an App's viewer sign-in):
+`skills/kortix-ui/references/custom-dashboard.md`. Its samples are copies of a
+Vite + React 19 app that type-checks, builds and runs against a live API.
 
 ## Theming
 

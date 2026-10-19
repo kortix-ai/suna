@@ -34,8 +34,8 @@ file (the shadow ladder that never existed, the press value) are recorded in
 
 - **One component source.** Every primitive is in `packages/ui` (`@kortix/ui`):
   `packages/ui/src/components/ui/<name>.tsx`, helpers in `packages/ui/src/lib/`,
-  hooks in `packages/ui/src/hooks/`, the session chat in `packages/ui/src/chat/`
-  (`@kortix/ui/chat`). `apps/web`, Kortix Apps, the white-label demo and SDK hosts
+  hooks in `packages/ui/src/hooks/`, the session thread in `packages/ui/src/session/`
+  (`@kortix/ui/session`). `apps/web`, Kortix Apps, the white-label demo and SDK hosts
   render the same files (decision K9 in [`decisions.md`](../kortix-brand/references/decisions.md)).
 - **The shim rule.** `apps/web/src/components/ui/<name>.tsx` is a one-line shim:
   `export * from '@kortix/ui/<name>'`, plus `'use client'` and
@@ -55,6 +55,8 @@ file (the shadow ladder that never existed, the press value) are recorded in
   imports to relative paths, and leave a shim behind.
 - **Outside `apps/web`** (a Kortix App, an SDK host): follow the package skill,
   [`packages/ui/skills/kortix-ui/SKILL.md`](../../../packages/ui/skills/kortix-ui/SKILL.md).
+  A dashboard or App over Kortix sessions:
+  [`references/custom-dashboard.md`](../../../packages/ui/skills/kortix-ui/references/custom-dashboard.md).
   `kit.css` (`k-*` classes) is only for plain HTML without React.
 
 ## Philosophy

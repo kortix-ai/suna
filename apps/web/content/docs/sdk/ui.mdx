@@ -27,11 +27,12 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | --- | --- |
 | `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
 | `@kortix/ui/session` or `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
 After the first npm release:
 
 ```bash
-npm i @kortix/ui @kortix/sdk @tanstack/react-query
+npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod
 ```
 
 <Callout type="info">
@@ -93,8 +94,8 @@ import { IconProvider } from '@kortix/ui/icon-provider';
 import { Toaster } from '@kortix/ui/toast';
 import { Link } from 'react-router-dom';
 
-// Any router: `UiProvider` passes anchor props with `href`.
-const RouterLink: UiLinkComponent = ({ href = '', ...props }) => <Link to={href} {...props} />;
+// Any router: `UiProvider` passes anchor props with `href` and a Next.js-style `prefetch` hint.
+const RouterLink: UiLinkComponent = ({ href, prefetch: _prefetch, ...props }) => <Link to={href} {...props} />;
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -110,7 +111,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 | Provider | What it does | Without it |
 | --- | --- | --- |
-| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for the `ModelPicker` and `AgentPicker` copy (`defaultChatStrings` lists the keys and their English values; the session thread reads `i18n`). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks). `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in user's id. `config`: host flags (`billingEnabled`). | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off. |
+| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for the `ModelPicker` and `AgentPicker` copy (`defaultChatStrings` lists the keys and their English values; the session thread reads `i18n`). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks). `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in user's id. `config`: host flags (`billingEnabled`). `components`: the app features the thread opens but does not own (`ShareSessionModal`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `Wallpaper`). `UiProvider` also loads the animation features: without it, expanded rows stay closed. | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off, no slots: a control that opens a missing slot is hidden. |
 | `SessionIdsProvider` | `projectId` and `sessionId` of the session view it wraps. The session UI reads them with `useSessionIds`, never from your route. | Both ids are `undefined`: components that need them render nothing. |
 | `setUiTelemetry` from `@kortix/ui/lib/telemetry` | Not a provider: call it once at module load with `track`, `captureException`, `captureMessage`, `addBreadcrumb`. Declare `UiTelemetryRegister { event: YourEvents }` to make `tsc` check event names. | `track` does nothing; `captureException` logs to the console. |
 | `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
@@ -290,9 +291,206 @@ The building blocks of the thread come from `@kortix/ui/session` and read the sa
 
 To draw every part with your own components, skip `@kortix/ui/session` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
 
+## Build a dashboard
+
+A dashboard is three SDK hooks and one component: `useProjects` lists projects, `useProjectSessions` lists one project's sessions, and `SessionThread` renders the session `useSession` opens. The samples below compiled with `tsc --noEmit` and `vite build` in a fresh Vite + React 19 app that installed both packages from their packed tarballs, and ran against a live Kortix API.
+
+<Steps>
+<Step title="Create the client">
+Create it once, at module scope. `getToken` runs on every call, so a key never sits in the bundle.
+
+```ts title="src/kortix.ts"
+import { createKortix } from '@kortix/sdk';
+
+const TOKEN_KEY = 'kortix_token';
+
+export function readToken(): string | null {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token.trim());
+}
+
+// One client per host, created once at module scope. Every @kortix/sdk/react
+// hook and every @kortix/ui/session component reads it.
+export const kortix = createKortix({
+  backendUrl: import.meta.env.VITE_KORTIX_API_URL ?? 'https://api.kortix.com/v1',
+  getToken: async () => readToken(),
+});
+```
+
+The browser origin must be in the API's CORS list. In local development, proxy `/v1` through your dev server and point `backendUrl` at it. Inside a [Kortix App](/docs/apps), the client acts as the viewer: run `kortix apps access <app> --viewer api`, then `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`.
+</Step>
+<Step title="Mount the providers and your theme">
+```tsx title="src/providers.tsx"
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { UiProvider } from '@kortix/ui';
+import { IconProvider } from '@kortix/ui/icon-provider';
+import { themeToCss } from '@kortix/ui/theme';
+import { Toaster } from '@kortix/ui/toast';
+import { useState, type ReactNode } from 'react';
+
+import './kortix';
+import { acmeTheme } from './theme';
+
+const themeCss = themeToCss(acmeTheme);
+
+export function Providers({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* No props: plain <a> links, full page loads, the English catalog. */}
+      <UiProvider>
+        <IconProvider>
+          <style href="acme-theme" precedence="default">{themeCss}</style>
+          {children}
+          <Toaster />
+        </IconProvider>
+      </UiProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+React 19 hoists `<style href precedence>` into `<head>`. `acmeTheme` is a `KortixTheme` (see [Theming](#theming)): for example a teal `blue` and `ring`, `radius: '0.25rem'`, `borderWidth: '2px'` and `fonts.sans`.
+</Step>
+<Step title="List projects and sessions, open one">
+```tsx title="src/dashboard.tsx"
+import { generateSessionId } from '@kortix/sdk';
+import { useProjectSessions, useProjects, useSession } from '@kortix/sdk/react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@kortix/ui';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@kortix/ui/empty';
+import Loading from '@kortix/ui/loading';
+import { SessionThread } from '@kortix/ui/session';
+import { errorToast } from '@kortix/ui/toast';
+import { useState } from 'react';
+
+import { kortix } from './kortix';
+
+export function Dashboard() {
+  const projects = useProjects();
+  const [picked, setPicked] = useState<string>();
+  const projectId = picked ?? projects.data?.[0]?.project_id;
+  const [sessionId, setSessionId] = useState<string>();
+
+  return (
+    <div className="grid h-dvh grid-cols-[18rem_1fr] bg-background text-foreground">
+      <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-r p-4">
+        <h1 className="text-lg font-medium">Acme Agents</h1>
+        <Card>
+          <CardHeader>
+            <CardTitle>Projects</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1">
+            {projects.isLoading && <Loading />}
+            {projects.data?.map((project) => (
+              <Button
+                key={project.project_id}
+                variant={project.project_id === projectId ? 'secondary' : 'ghost'}
+                className="justify-start"
+                onClick={() => {
+                  setPicked(project.project_id);
+                  setSessionId(undefined);
+                }}
+              >
+                {project.name}
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+        {projectId && <SessionList projectId={projectId} selected={sessionId} onSelect={setSessionId} />}
+      </aside>
+      <main className="min-h-0">
+        {projectId && sessionId ? (
+          <Thread key={sessionId} projectId={projectId} sessionId={sessionId} />
+        ) : (
+          <Empty className="h-full">
+            <EmptyHeader>
+              <EmptyTitle>No session open</EmptyTitle>
+              <EmptyDescription>Pick a session or start a new one.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function SessionList({
+  projectId,
+  selected,
+  onSelect,
+}: {
+  projectId: string;
+  selected?: string;
+  onSelect: (sessionId: string) => void;
+}) {
+  const { sessions, isLoading, refetch } = useProjectSessions(projectId, { limit: 20 });
+  const [creating, setCreating] = useState(false);
+
+  async function startSession() {
+    setCreating(true);
+    try {
+      const sessionId = generateSessionId();
+      await kortix.project(projectId).sessions.create({ session_id: sessionId, name: 'Dashboard session' });
+      await refetch();
+      onSelect(sessionId);
+    } catch (error) {
+      errorToast('Could not start a session', { description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sessions</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        <Button variant="brand" disabled={creating} onClick={startSession}>
+          New session
+        </Button>
+        {isLoading && <Loading />}
+        {sessions.map((session) => (
+          <Button
+            key={session.session_id}
+            variant={session.session_id === selected ? 'secondary' : 'ghost'}
+            className="justify-between"
+            onClick={() => onSelect(session.session_id)}
+          >
+            <span className="truncate">{session.name ?? session.branch_name}</span>
+            <Badge size="sm" variant="muted">
+              {session.status}
+            </Badge>
+          </Button>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// useSession owns the whole session: start, the live stream, the transcript.
+function Thread({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  return <SessionThread session={session} hideHeader />;
+}
+```
+</Step>
+</Steps>
+
+- `useProjectSessions` does not poll. Pass `refetchInterval` (ms) to keep each `status` fresh.
+- More data for a dashboard: `useProjectApps`, `useProjectTriggers`, `useChangeRequests`, `useGatewayOverview` and `useCan` ([Hooks](/docs/sdk/react#hooks)).
+- Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, that is an SDK gap to report.
+
 ## For agents
 
-The package ships a skill at `packages/ui/skills/kortix-ui/SKILL.md`, and every Kortix session loads it as the `kortix-ui` skill. It tells an agent how to set up the package, which component to compose, which primitives are banned, and how to verify a page. Point your own coding agent at it before it writes UI with `@kortix/ui`.
+The package ships a skill at `packages/ui/skills/kortix-ui/SKILL.md`, and every Kortix session loads it as the `kortix-ui` skill. It tells an agent how to set up the package, which component to compose, which primitives are banned, and how to verify a page. Its guide `references/custom-dashboard.md` is this page's dashboard as one checklist: install, client, providers, theme, the dashboard, a custom tool row, an App's sign-in and the verify steps. In a Kortix session, an agent reads it with `kortix system-skills file kortix-ui references/custom-dashboard.md`. Point your own coding agent at both files before it writes UI with `@kortix/ui`.
 
 ## Next steps
 

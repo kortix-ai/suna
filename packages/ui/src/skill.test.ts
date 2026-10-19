@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 // The kortix-ui skill ships with the package and is the first file an agent
 // reads. Its Components table must name every export of the three barrels, and
@@ -45,6 +45,22 @@ describe('kortix-ui skill', () => {
 
   test('the managed copy for Kortix sessions is identical (copy packages/ui/skills/kortix-ui/SKILL.md)', () => {
     expect(MIRROR).toBe(SKILL);
+  });
+
+  test('the managed copy has the same reference files (copy packages/ui/skills/kortix-ui/references/)', () => {
+    const dir = (path: string) => new URL(path, import.meta.url);
+    const own = readdirSync(dir('../skills/kortix-ui/references/')).sort();
+    expect(own.length).toBeGreaterThan(0);
+    expect(readdirSync(dir('../../starter/templates/managed/skills/kortix-ui/references/')).sort()).toEqual(own);
+    for (const name of own) {
+      expect(read(`../../starter/templates/managed/skills/kortix-ui/references/${name}`)).toBe(read(`../skills/kortix-ui/references/${name}`));
+    }
+  });
+
+  test('every reference the skill names exists', () => {
+    for (const [, name] of SKILL.matchAll(/`references\/([\w.-]+)`/g)) {
+      expect(readdirSync(new URL('../skills/kortix-ui/references/', import.meta.url))).toContain(name);
+    }
   });
 
   test('stays at or under 150 lines', () => {
