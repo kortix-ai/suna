@@ -1720,6 +1720,15 @@
       "showArchived": "Sessioni archiviate",
       "pinnedMark": "Fissata"
     },
+    "recentlyDeleted": {
+      "view": "Eliminate di recente",
+      "empty": "Le sessioni che elimini verranno mostrate qui per {days} giorni.",
+      "deletedAgo": "Eliminata {when}",
+      "restorableUntil": "Ripristinabile fino al {date}",
+      "restore": "Ripristina sessione",
+      "restoreNamed": "Ripristina {title}",
+      "openSession": "Apri sessione"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personalizza barra laterale",
@@ -1876,8 +1885,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinare la sessione per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
-    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinare ogni sessione per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
+    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinarla da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
+    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinarle da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
     "restoring": "Ripristino della sessione…",
     "undo": "Annulla",
     "restored": "Sessione ripristinata",

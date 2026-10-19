@@ -183,7 +183,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `new … --with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt goes in. Repeatable. |
 | `new … --label <label>`, `--meta <key>=<value>` | Classify the session. Both are repeatable. |
 | `new … --connector <alias>=<connection-id>` | Bind a connection to the session. Repeatable. `--no-connectors` binds none. |
-| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. The list leaves out the sessions you archived and marks a pinned session `(pinned)`. `--pinned` lists only your pinned sessions, `--archived` only your archived ones. |
+| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. The list leaves out the sessions you archived and marks a pinned session `(pinned)`. `--pinned` lists only your pinned sessions, `--archived` only your archived ones. `--deleted` lists the deleted sessions you can restore, with their full IDs and the date each one stays restorable. |
 | `pin <session_id>…`, `unpin <session_id>…` | Pin sessions in your own list, or unpin them. Only your list changes. |
 | `archive <session_id>…`, `unarchive <session_id>…` | Take sessions out of your own list, or put them back. Archiving unpins a session and does not stop it. |
 | `status` | One line per active session with what its agent is doing now. `--all` adds stopped sessions. |
@@ -241,7 +241,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `rename <session_id> <name>` | Set the name. `""` restores the automatic title. |
 | `update [<session_id>]` | Add or remove labels and metadata. |
 | `rm <session_id>…` | Stop and delete sessions. Each one is restorable for 30 days, and its branch is kept. Prints the `restore` command for each session. `--json` adds `restore_until` and `project_id`. |
-| `restore <session_id>` | Restore a deleted session within 30 days. Pass the full session ID, and `--project` when the session is not in the linked project. |
+| `restore <session_id>` | Restore a deleted session within 30 days. Pass the full session ID (`ls --deleted` lists it), and `--project` when the session is not in the linked project. |
 
 ### Access
 

@@ -14,7 +14,11 @@ import { useSessionNeedsYouCounts } from '@/features/review-center/hooks/use-rev
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
-import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import {
+  RESTORE_DAYS,
+  restoreWhenRemoved,
+  SessionDeleteModal,
+} from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   projectSessionsRefetchInterval,
@@ -61,7 +65,7 @@ import {
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSessionListActions } from '@/features/workspace/project-sidebar/use-session-list-actions';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -74,6 +78,7 @@ import {
   summarizeBulkDelete,
   toggleSelection,
 } from './project-sessions-helpers';
+import { DeletedSessionRow } from './deleted-session-row';
 import { SessionDetail } from './session-detail';
 import { SessionsBulkDeleteDialog } from './sessions-bulk-delete-dialog';
 import { SessionRow, type SessionRowActions } from './session-row';
@@ -100,8 +105,12 @@ const SEARCH_DEBOUNCE_MS = 250;
 const CHILDREN_PAGE_SIZE = 20;
 
 type StartedByFilter = 'all' | 'me' | 'others' | 'automated';
-/** The tabs: who started the session, or the viewer's own archive (KRTX-2418). */
-type SessionsTab = StartedByFilter | 'archived';
+/** The tabs: who started the session, the viewer's own archive (KRTX-2418),
+ *  or Recently deleted: the deleted sessions they may restore (KRTX-2853). */
+type SessionsTab = StartedByFilter | 'archived' | 'deleted';
+/** A `?view=` that opens a tab: the sidebar menu's Archived / Recently deleted links. */
+const viewTab = (view: string | null | undefined): SessionsTab | null =>
+  view === 'archived' || view === 'deleted' ? view : null;
 const STARTED_BY_FILTERS: readonly StartedByFilter[] = ['all', 'me', 'others', 'automated'];
 
 /** Concurrent DELETEs during a bulk removal. There is no bulk endpoint, so a
@@ -254,21 +263,27 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSidebar = useTranslations('sidebar');
   const tPinArchive = useTranslations('sidebar.pinArchive');
+  const tDeleted = useTranslations('sidebar.recentlyDeleted');
+  const tSessionDelete = useTranslations('sessionDelete');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
-  // `?view=archived` opens the archive (the sidebar's "Archived sessions" link).
-  const [startedBy, setStartedBy] = useState<SessionsTab>(() =>
-    searchParams?.get('view') === 'archived' ? 'archived' : 'all',
+  // `?view=archived` opens the archive, `?view=deleted` Recently deleted (the
+  // sidebar menu's links).
+  const [startedBy, setStartedBy] = useState<SessionsTab>(
+    () => viewTab(searchParams?.get('view')) ?? 'all',
   );
   const archivedTab = startedBy === 'archived';
+  const deletedTab = startedBy === 'deleted';
   // The sidebar's link can land while this page is already open: a new
   // `?view=archived` opens the archive (state adjusted during render).
   const viewParam = searchParams?.get('view') ?? null;
   const [seenViewParam, setSeenViewParam] = useState(viewParam);
   if (viewParam !== seenViewParam) {
     setSeenViewParam(viewParam);
-    if (viewParam === 'archived') setStartedBy('archived');
+    const tab = viewTab(viewParam);
+    if (tab) setStartedBy(tab);
   }
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the pages already loaded. Debounced so a keystroke is not a request.
@@ -307,11 +322,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const listFilters = {
     // Top-level sessions only; spawned sessions load under their parent. The
     // archive is flat: an archived spawned session is listed on its own.
-    parent: archivedTab ? undefined : 'root',
-    startedBy: startedBy === 'all' || archivedTab ? undefined : startedBy,
+    parent: archivedTab || deletedTab ? undefined : 'root',
+    startedBy: startedBy === 'all' || archivedTab || deletedTab ? undefined : startedBy,
     q: searchQuery || undefined,
     labels: labelFilters.length > 0 ? labelFilters : undefined,
-    view: archivedTab ? 'archived' : undefined,
+    view: archivedTab ? 'archived' : deletedTab ? 'deleted' : undefined,
   } as const;
   const sessionsQuery = useProjectSessions(projectId, {
     enabled: !manage.isLoading,
@@ -607,6 +622,27 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
 
   const listActions = useSessionListActions(projectId);
 
+  // Recently deleted: take one back. The row leaves this tab and the session
+  // returns to every list (the prefix invalidation reaches both scopes).
+  const restoreMutation = useMutation({
+    mutationFn: (session: ProjectSession) => restoreWhenRemoved(projectId, session.session_id),
+    onSuccess: (_result, session) => {
+      successToast(tSessionDelete('restored'), {
+        actions: [
+          {
+            label: tDeleted('openSession'),
+            onClick: () => router.push(`/projects/${projectId}/sessions/${session.session_id}`),
+          },
+        ],
+      });
+      invalidateSessions();
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error && err.message ? err.message : tSessionDelete('restoreFailed'));
+    },
+  });
+  const restoreSession = restoreMutation.mutate;
+
   // Depends on the two `mutate` functions, not on the mutation objects.
   // `useMutation` returns a NEW object every render (isPending, variables and
   // friends all live on it), so the old deps rebuilt `rowActions` on every
@@ -749,7 +785,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       onSearchOpenChange={setSearchOpen}
       onEnterSelectMode={() => setSelectMode(true)}
       creatingSession={creatingSession}
-      canSelect={sessions.length > 0}
+      canSelect={sessions.length > 0 && !deletedTab}
     />
   );
 
@@ -787,6 +823,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </TabsTriggerCompact>
               ))}
               <TabsTriggerCompact value="archived">{tPinArchive('view')}</TabsTriggerCompact>
+              <TabsTriggerCompact value="deleted">{tDeleted('view')}</TabsTriggerCompact>
             </TabsListCompact>
           </Tabs>
           {listState === 'loading' ? (
@@ -810,6 +847,31 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             <div className="pt-6">{loadMoreButton}</div>
           ) : listState === 'empty' && !searching && archivedTab ? (
             <EmptyState size="sm" title={tPinArchive('empty')} />
+          ) : listState === 'empty' && !searching && deletedTab ? (
+            <EmptyState size="sm" title={tDeleted('empty', { days: RESTORE_DAYS })} />
+          ) : deletedTab && listState !== 'empty' ? (
+            // Flat, newest first as the server pages it. No grouping or client
+            // facets: these are the rows the restore route would still take.
+            <div className="relative min-h-0 flex-1">
+              <div className="absolute inset-0">
+                <FadedScrollArea fadeColor="from-background" className="pt-4">
+                  <div className="space-y-2 pb-6" aria-live="polite" data-recently-deleted>
+                    {sessions.map((session) => (
+                      <DeletedSessionRow
+                        key={session.session_id}
+                        session={session}
+                        restoring={
+                          restoreMutation.isPending &&
+                          restoreMutation.variables?.session_id === session.session_id
+                        }
+                        onRestore={restoreSession}
+                      />
+                    ))}
+                    {loadMoreButton}
+                  </div>
+                </FadedScrollArea>
+              </div>
+            </div>
           ) : listState === 'empty' && !searching && startedBy === 'all' ? (
             <SessionsEmptyState className="flex-1 pb-24" />
           ) : grouped.sections.length === 0 || listState === 'empty' ? (

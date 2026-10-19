@@ -147,9 +147,12 @@ export interface ProjectSession {
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
   runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
-  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  /** Server-managed soft-deletion audit fields: the `project` inventory and
+   *  the `deleted: 'only'` list (Recently deleted). */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** A deleted session: the last instant `restoreProjectSession` takes it back. */
+  restore_until?: string | null;
   /** When the caller pinned / archived this session in their own list
    *  (KRTX-2418). Present for a person's list and read by id; absent for an
    *  agent, an API key or a service account. */
@@ -361,8 +364,10 @@ export interface ListProjectSessionsOptions {
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
   /** Only the caller's pinned or archived sessions. Omit for the list, which
-   *  leaves out the sessions the caller archived. */
-  view?: 'pinned' | 'archived';
+   *  leaves out the sessions the caller archived. `'deleted'`: Recently
+   *  deleted, the deleted sessions the caller may restore
+   *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** One keyset page of a project's sessions. */

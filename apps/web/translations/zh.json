@@ -1720,6 +1720,15 @@
       "showArchived": "已归档的会话",
       "pinnedMark": "已置顶"
     },
+    "recentlyDeleted": {
+      "view": "最近删除",
+      "empty": "你删除的会话将在这里保留 {days} 天。",
+      "deletedAgo": "删除于{when}",
+      "restorableUntil": "可恢复至 {date}",
+      "restore": "恢复会话",
+      "restoreNamed": "恢复 {title}",
+      "openSession": "打开会话"
+    },
     "drive": "云盘",
     "repo": "Repo",
     "customizeSidebar": "自定义侧边栏",
@@ -1876,8 +1885,8 @@
     }
   },
   "sessionDelete": {
-    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内恢复该会话。之后，其消息和文件将被删除。分支会保留。",
-    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复它。之后，其消息和文件将被删除。分支会保留。",
+    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
     "restoring": "正在恢复会话…",
     "undo": "撤销",
     "restored": "会话已恢复",

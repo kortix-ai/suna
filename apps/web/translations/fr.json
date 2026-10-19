@@ -1720,6 +1720,15 @@
       "showArchived": "Sessions archivées",
       "pinnedMark": "Épinglée"
     },
+    "recentlyDeleted": {
+      "view": "Supprimées récemment",
+      "empty": "Les sessions que vous supprimez apparaîtront ici pendant {days} jours.",
+      "deletedAgo": "Supprimée {when}",
+      "restorableUntil": "Restaurable jusqu’au {date}",
+      "restore": "Restaurer la session",
+      "restoreNamed": "Restaurer {title}",
+      "openSession": "Ouvrir la session"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personnaliser la barre latérale",
@@ -1876,8 +1885,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Supprime <name>{label}</name> et retire son sandbox. Vous pouvez restaurer la session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
-    "bulkDescription": "Supprime chaque session sélectionnée et retire son sandbox. Vous pouvez restaurer chaque session pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "description": "Supprime <name>{label}</name> et retire son sandbox. Vous pouvez la restaurer depuis Supprimées récemment pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
+    "bulkDescription": "Supprime chaque session sélectionnée et retire son sandbox. Vous pouvez restaurer chacune depuis Supprimées récemment pendant {days} jours. Ensuite, ses messages et ses fichiers sont supprimés. Sa branche est conservée.",
     "restoring": "Restauration de la session…",
     "undo": "Annuler",
     "restored": "Session restaurée",

@@ -370,6 +370,10 @@ export function registerProjectSessionsRoutes(): void {
             // either, the list leaves out the sessions the person archived.
             pinned: z.literal('only').optional(),
             archived: z.literal('only').optional(),
+            // Recently deleted (KRTX-2853): the deleted sessions the caller may
+            // restore (its owner or a project manager), inside their window,
+            // each with `restore_until`. Combines with no other view.
+            deleted: z.literal('only').optional(),
           }),
         },
       responses: {
@@ -440,6 +444,9 @@ export function registerProjectSessionsRoutes(): void {
     if (query.pinned && query.archived) {
       return c.json({ error: 'Choose pinned=only or archived=only, not both' }, 400);
     }
+    if (query.deleted && (query.pinned || query.archived)) {
+      return c.json({ error: 'deleted=only does not combine with pinned=only or archived=only' }, 400);
+    }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
@@ -460,6 +467,7 @@ export function registerProjectSessionsRoutes(): void {
         labels: query.label === undefined ? null : [query.label].flat(),
         personId,
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
+        deleted: query.deleted === 'only',
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,

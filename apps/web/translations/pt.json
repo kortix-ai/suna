@@ -1720,6 +1720,15 @@
       "showArchived": "Sessões arquivadas",
       "pinnedMark": "Fixada"
     },
+    "recentlyDeleted": {
+      "view": "Excluídas recentemente",
+      "empty": "As sessões que você excluir aparecerão aqui por {days} dias.",
+      "deletedAgo": "Excluída {when}",
+      "restorableUntil": "Pode ser restaurada até {date}",
+      "restore": "Restaurar sessão",
+      "restoreNamed": "Restaurar {title}",
+      "openSession": "Abrir sessão"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personalizar barra lateral",
@@ -1876,8 +1885,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Exclui <name>{label}</name> e remove o sandbox dela. Você pode restaurar a sessão por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
-    "bulkDescription": "Exclui cada sessão selecionada e remove o sandbox dela. Você pode restaurar cada sessão por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
+    "description": "Exclui <name>{label}</name> e remove o sandbox dela. Você pode restaurá-la em Excluídas recentemente por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
+    "bulkDescription": "Exclui cada sessão selecionada e remove o sandbox dela. Você pode restaurar cada uma em Excluídas recentemente por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
     "restoring": "Restaurando a sessão…",
     "undo": "Desfazer",
     "restored": "Sessão restaurada",

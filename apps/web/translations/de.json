@@ -1720,6 +1720,15 @@
       "showArchived": "Archivierte Sitzungen",
       "pinnedMark": "Angeheftet"
     },
+    "recentlyDeleted": {
+      "view": "Zuletzt gelöscht",
+      "empty": "Sitzungen, die du löschst, erscheinen hier {days} Tage lang.",
+      "deletedAgo": "Gelöscht {when}",
+      "restorableUntil": "Wiederherstellbar bis {date}",
+      "restore": "Sitzung wiederherstellen",
+      "restoreNamed": "{title} wiederherstellen",
+      "openSession": "Sitzung öffnen"
+    },
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Seitenleiste anpassen",
@@ -1876,8 +1885,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst die Sitzung {days} Tage lang wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
-    "bulkDescription": "Löscht jede ausgewählte Sitzung und entfernt ihre Sandbox. Du kannst jede Sitzung {days} Tage lang wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst sie {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "bulkDescription": "Löscht jede ausgewählte Sitzung und entfernt ihre Sandbox. Du kannst jede {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
     "restoring": "Sitzung wird wiederhergestellt…",
     "undo": "Rückgängig",
     "restored": "Sitzung wiederhergestellt",
