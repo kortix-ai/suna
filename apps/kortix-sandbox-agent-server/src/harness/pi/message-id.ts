@@ -6,7 +6,7 @@
  *
  * The id IS the transcript's sort key today. The web client splits messages
  * into "placed by the server" and "local to this tab" with `/^msg_[0-9a-f]{12}/`
- * (`compareMessagesForDisplay`, packages/sdk `core/turns/grouping.ts`) and
+ * (`compareMessagesForDisplay`, packages/sdk `core/turns/display-order.ts`) and
  * sorts every local one AFTER every placed one, so a reply minted here must
  * carry a real clock and sort strictly after the user message it answers.
  *

@@ -36,8 +36,8 @@ mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => false,
   getCachedAccountTier: async () => accountTier,
   // Mirrors the real resolver's tier-derived default (no operator override in
-  // these fixtures). Uses the REAL tiers helper so 'free' vs paid semantics
-  // can't drift from production.
+  // these fixtures). Uses the REAL tiers helper so 'none' vs managed-model
+  // tier semantics can't drift from production.
   accountMayUseManagedModels: async () => tierGrantsAllModels(accountTier),
 }));
 
@@ -144,8 +144,9 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     if (!result.ok) expect(result.errorCode).toBe('subscription_required');
   });
 
-  test('a free tier wallet never receives an LLM admission hold', async () => {
-    accountTier = 'free';
+  // `none` is the tier without managed models. Free has them since #10147.
+  test('an account without managed models never receives an LLM admission hold', async () => {
+    accountTier = 'none';
 
     const result = await authorizeRequest('good');
 
@@ -157,8 +158,8 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     }
   });
 
-  test('a paid tier keeps the LLM admission hold', async () => {
-    accountTier = 'credits';
+  test.each(['credits', 'free'])('the %s tier keeps the LLM admission hold', async (tier) => {
+    accountTier = tier;
 
     const result = await authorizeRequest('good');
 
@@ -293,7 +294,7 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
   });
 
   test('an entitlement-less account skips the gate for a request that spends nothing', async () => {
-    accountTier = 'free';
+    accountTier = 'none';
 
     await assertLlmBillingActive('acct-1');
 
@@ -307,7 +308,7 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
   // this, a drained free wallet runs platform-default turns with no floor and
   // the settle drives the balance negative.
   test('a Kortix-billed request takes the hold for an entitlement-less account', async () => {
-    accountTier = 'free';
+    accountTier = 'none';
 
     await assertLlmBillingActive('acct-1', { creditsRequest: true });
 
