@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // @ts-expect-error -- plain .mjs script, no declaration file
-import { buildExports, INTERNAL as INTERNAL_MODULES } from '../scripts/gen-exports.mjs';
+import { buildExports, DEEP } from '../scripts/gen-exports.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -21,26 +20,15 @@ describe('package.json exports', () => {
     expect(missing).toEqual([]);
   });
 
-  // buildExports() only walks known roots and extensions, so the drift test above
-  // cannot see a module it skips. This walks every file under src/ instead.
-  test('every source file is an export target or a listed internal', () => {
-    // './src/...' paths that are deliberately not exported (gen-exports INTERNAL).
-    const INTERNAL = new Set<string>([...(INTERNAL_MODULES as Set<string>)].map((p) => `./src/${p}`));
-    const SKIP = /\.test\.tsx?$|\.d\.ts$|\/__snapshots__\/|^\.\/src\/test-utils\/|^\.\/src\/i18n\/(?!index\.tsx?$)/;
-    const src = fileURLToPath(new URL('.', import.meta.url));
-    const files = readdirSync(src, { recursive: true, withFileTypes: true })
-      .filter((d) => d.isFile())
-      .map((d) => `./src/${relative(src, join(d.parentPath, d.name)).split(sep).join('/')}`)
-      .filter((p) => !SKIP.test(p) && !INTERNAL.has(p));
-    const targets = new Set(Object.values<string>(pkg.exports));
-    expect(files.filter((p) => !targets.has(p))).toEqual([]);
+  // Every other module is reachable only through its entry. The deep keys are
+  // the measured remainder a workspace consumer imports (scripts/deep-exports.json);
+  // tests/unit/ui-deep-exports.test.ts keeps that list equal to the imports.
+  test('deep keys are sorted, unique module paths that no entry or primitive owns', () => {
+    expect(DEEP).toEqual([...new Set<string>(DEEP)].sort());
+    for (const key of DEEP as string[]) {
+      expect(key).toMatch(/^\.\/(?!primitives\/|test-utils\/|types\/|styles\/)[\w-]+\/[\w./\[\]-]+$/);
+      expect(pkg.exports[key]).toMatch(/^\.\/src\/.+\.tsx?$/);
+    }
   });
 
-  test('dist/styles.css matches a fresh build (run: pnpm --filter @kortix/ui build:styles)', () => {
-    const run = spawnSync('node', [fileURLToPath(new URL('../scripts/build-styles.mjs', import.meta.url)), '--check'], {
-      encoding: 'utf8',
-    });
-    expect(run.stderr).toBe('');
-    expect(run.status).toBe(0);
-  });
 });

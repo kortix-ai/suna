@@ -84,14 +84,12 @@ describe('files route loading boundary', () => {
     ]);
     expect(heavyImports("import { X } from '@kortix/ui/workspace';")).toEqual(['@kortix/ui/workspace']);
     // A package file names the same modules relatively.
-    expect(heavyImports("import { X } from '../../files/viewer/file-viewer';", SKELETON)).toEqual([
-      '@kortix/ui/files/viewer/file-viewer',
+    expect(heavyImports("import { X } from '../../files/project/context';", SKELETON)).toEqual([
+      '@kortix/ui/files/project/context',
     ]);
     // Side-effect import — no `from` clause — used to be missed entirely,
     // silently switching this constraint off for that import form.
-    expect(heavyImports("import '@kortix/ui/files/some-styles.css';")).toEqual([
-      '@kortix/ui/files/some-styles.css',
-    ]);
+    expect(heavyImports("import '@kortix/ui/files';")).toEqual(['@kortix/ui/files']);
     expect(heavyImports('// mentions @kortix/ui/files in prose only')).toEqual([]);
   });
 });
