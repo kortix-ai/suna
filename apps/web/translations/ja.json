@@ -21297,7 +21297,12 @@
     "resultSpecific": "{count, plural, other {このフォルダーを開けるのは、プロジェクト管理者と選択した # 件の対象のみです。}}",
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
-    "viewFolderAccess": "アクセスを表示"
+    "viewFolderAccess": "アクセスを表示",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "データを表示",

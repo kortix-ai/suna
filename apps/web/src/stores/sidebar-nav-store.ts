@@ -38,9 +38,9 @@ export const SIDEBAR_NAV_ACTIVITY_ITEMS: ReadonlySet<SidebarNavItemId> = new Set
  *  shows while a reminder can still fire. */
 export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'customize', visibility: 'always' },
+  { id: 'files', visibility: 'always' },
   { id: 'apps', visibility: 'always' },
   { id: 'reminders', visibility: 'active' },
-  { id: 'files', visibility: 'always' },
 ];
 
 function isItemId(value: unknown): value is SidebarNavItemId {

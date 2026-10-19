@@ -21297,7 +21297,12 @@
     "resultSpecific": "{count, plural, one {Somente os administradores do projeto e quem você escolheu podem abrir esta pasta.} other {Somente os administradores do projeto e os # que você escolheu podem abrir esta pasta.}}",
     "you": "Você",
     "manageFolderAccess": "Gerenciar acesso",
-    "viewFolderAccess": "Ver acesso"
+    "viewFolderAccess": "Ver acesso",
+    "myDrive": "My drive",
+    "allFiles": "All files",
+    "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "folderHint": "A folder inside {name}",
+    "driveLabel": "Drive"
   },
   "genui": {
     "showData": "Mostrar dados",

@@ -14,7 +14,7 @@ import {
   AlarmIcon,
   AppWindowIcon,
   FoldersIcon,
-  GitBranchIcon,
+  HardDrivesIcon,
 } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
@@ -36,14 +36,13 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
   const reminders = useFeatureFlag(projectId, 'reminders');
-  const volumes = useFeatureFlag(projectId, 'drives');
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
     const base = `/projects/${projectId}`;
-    const files = filesTarget ? filesRow(projectId, filesTarget, volumes.enabled) : null;
+    const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
         ? {
@@ -70,7 +69,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
         ? {
             files: {
               label: t(files.label),
-              icon: files.label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />,
+              icon: files.label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />,
               href: files.href,
             },
           }
@@ -84,6 +83,5 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
     appsVisible,
     reminders.enabled,
     filesTarget,
-    volumes.enabled,
   ]);
 }
