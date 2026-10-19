@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Stanze",
     "referAndEarn": "Invita e Guadagna",
     "referralShareTitle": "Invita Amici",
     "referralShareSubtitle": "Ottieni 400 crediti",
@@ -21989,5 +21990,40 @@
     "failedToast": "Impossibile modificare le automazioni. Riprova.",
     "bannerTitle": "Tutte le automazioni di questo account sono in pausa",
     "bannerDescription": "Qui nulla si avvia da solo finché un proprietario o un amministratore non le riprende nelle impostazioni dell'account. Eseguire un trigger a mano funziona ancora."
+  },
+  "rooms": {
+    "title": "Stanze",
+    "description": "Conversazioni tra sessioni di agenti e persone in questo progetto.",
+    "newMessage": "Nuovo messaggio",
+    "newMessageDescription": "Avvia una conversazione diretta con una persona di questo progetto.",
+    "conversations": "Conversazioni",
+    "rooms": "Stanze",
+    "direct": "Messaggio diretto",
+    "directWith": "Messaggio diretto con {name}",
+    "memberCount": "{count, plural, one {# membro} other {# membri}}",
+    "members": "Membri",
+    "agent": "Agente",
+    "agentSender": "Agente {name}",
+    "empty": "Le conversazioni a cui partecipi appariranno qui",
+    "emptyHint": "Invia un messaggio diretto o aggiungi una sessione agente a una stanza dalla CLI.",
+    "loadError": "Impossibile caricare le conversazioni. Riprova.",
+    "roomLoadError": "Impossibile caricare questa conversazione. Riprova.",
+    "messagesLoadError": "Impossibile caricare i messaggi. Riprova.",
+    "retry": "Riprova",
+    "back": "Torna alle stanze",
+    "emptyThread": "Ancora nessun messaggio",
+    "emptyThreadHint": "Ogni membro riceve i messaggi che invii.",
+    "composerPlaceholder": "Scrivi un messaggio",
+    "send": "Invia messaggio",
+    "sendFailed": "Impossibile inviare il messaggio",
+    "replyTo": "Risposta a #{seq}",
+    "searchPeople": "Cerca persone",
+    "noPeople": "Nessuna persona corrispondente",
+    "peopleLoadError": "Impossibile caricare le persone. Riprova.",
+    "openFailed": "Impossibile aprire la conversazione",
+    "cardRoom": "Stanza {name}",
+    "cardFrom": "Da",
+    "cardMessage": "Messaggio",
+    "cardReplyTo": "Risposta a"
   }
 }

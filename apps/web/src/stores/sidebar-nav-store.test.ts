@@ -22,6 +22,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'files', visibility: 'never' },
       { id: 'customize', visibility: 'always' },
       { id: 'apps', visibility: 'always' },
+      { id: 'rooms', visibility: 'never' },
     ];
     expect(normalizeSidebarNav(saved)).toEqual(saved);
   });
@@ -32,7 +33,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'settings', visibility: 'always' },
       { id: 'files', visibility: 'never' },
     ]);
-    expect(ids(out)).toEqual(['customize', 'files', 'apps']);
+    expect(ids(out)).toEqual(['customize', 'files', 'apps', 'rooms']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
 
@@ -46,6 +47,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'customize', visibility: 'always' },
       { id: 'files', visibility: 'always' },
       { id: 'apps', visibility: 'never' },
+      { id: 'rooms', visibility: 'always' },
     ]);
   });
 
@@ -60,7 +62,7 @@ describe('moveSidebarNavItem', () => {
     const items = normalizeSidebarNav(null);
     expect(ids(moveSidebarNavItem(items, 'files', -1)).slice(0, 2)).toEqual(['files', 'customize']);
     expect(ids(moveSidebarNavItem(items, 'customize', -1))).toEqual(ids(items));
-    expect(ids(moveSidebarNavItem(items, 'apps', 1))).toEqual(ids(items));
+    expect(ids(moveSidebarNavItem(items, 'rooms', 1))).toEqual(ids(items));
   });
 });
 
@@ -68,12 +70,12 @@ describe('useSidebarNavStore', () => {
   test('setItems, setVisibility and reset', () => {
     const store = useSidebarNavStore.getState();
     store.setItems(
-      (['files', 'apps', 'customize'] as const).map((id) => ({
+      (['files', 'apps', 'customize', 'rooms'] as const).map((id) => ({
         id,
         visibility: 'always' as const,
       })),
     );
-    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize']);
+    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize', 'rooms']);
     store.setVisibility('apps', 'never');
     store.setVisibility('files', 'active' as never); // ignored: not a visibility
     const items = useSidebarNavStore.getState().items;

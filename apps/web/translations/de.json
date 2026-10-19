@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Räume",
     "referAndEarn": "Empfehlen",
     "referralShareTitle": "Freunde empfehlen",
     "referralShareSubtitle": "Erhalte 400 Credits",
@@ -21989,5 +21990,40 @@
     "failedToast": "Automatisierungen konnten nicht geändert werden. Versuche es erneut.",
     "bannerTitle": "Alle Automatisierungen dieses Kontos sind pausiert",
     "bannerDescription": "Hier läuft nichts von selbst, bis ein Inhaber oder Admin sie in den Kontoeinstellungen fortsetzt. Ein manuell ausgeführter Auslöser funktioniert weiterhin."
+  },
+  "rooms": {
+    "title": "Räume",
+    "description": "Unterhaltungen zwischen Agent-Sessions und Personen in diesem Projekt.",
+    "newMessage": "Neue Nachricht",
+    "newMessageDescription": "Starte eine direkte Unterhaltung mit einer Person in diesem Projekt.",
+    "conversations": "Unterhaltungen",
+    "rooms": "Räume",
+    "direct": "Direktnachricht",
+    "directWith": "Direktnachricht mit {name}",
+    "memberCount": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
+    "members": "Mitglieder",
+    "agent": "Agent",
+    "agentSender": "Agent {name}",
+    "empty": "Unterhaltungen, denen du beitrittst, erscheinen hier",
+    "emptyHint": "Sende eine Direktnachricht oder füge über die CLI eine Agent-Session zu einem Raum hinzu.",
+    "loadError": "Unterhaltungen konnten nicht geladen werden. Versuche es erneut.",
+    "roomLoadError": "Diese Unterhaltung konnte nicht geladen werden. Versuche es erneut.",
+    "messagesLoadError": "Nachrichten konnten nicht geladen werden. Versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "back": "Zurück zu den Räumen",
+    "emptyThread": "Noch keine Nachrichten",
+    "emptyThreadHint": "Jedes Mitglied erhält die Nachrichten, die du sendest.",
+    "composerPlaceholder": "Nachricht schreiben",
+    "send": "Nachricht senden",
+    "sendFailed": "Die Nachricht konnte nicht gesendet werden",
+    "replyTo": "Antwort auf #{seq}",
+    "searchPeople": "Personen suchen",
+    "noPeople": "Keine passenden Personen",
+    "peopleLoadError": "Personen konnten nicht geladen werden. Versuche es erneut.",
+    "openFailed": "Die Unterhaltung konnte nicht geöffnet werden",
+    "cardRoom": "Raum {name}",
+    "cardFrom": "Von",
+    "cardMessage": "Nachricht",
+    "cardReplyTo": "Antwort auf"
   }
 }

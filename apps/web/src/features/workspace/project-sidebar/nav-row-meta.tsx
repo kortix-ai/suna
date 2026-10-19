@@ -2,6 +2,7 @@
 
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { useRoomsRowVisible } from '@/features/workspace/project-sidebar/footer/project-rooms-nav';
 import { filesRow } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import {
   CustomizeGlyph,
@@ -9,7 +10,7 @@ import {
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SidebarNavItemId } from '@/stores/sidebar-nav-store';
-import { AppWindowIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, ChatsTeardropIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -29,6 +30,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
+  const roomsVisible = useRoomsRowVisible(projectId);
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
@@ -55,6 +57,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
+      ...(roomsVisible
+        ? {
+            rooms: {
+              label: t('rooms'),
+              icon: <ChatsTeardropIcon />,
+              href: `${base}/rooms`,
+            },
+          }
+        : {}),
       ...(files
         ? {
             files: {
@@ -65,5 +76,5 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
           }
         : {}),
     };
-  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, filesTarget]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, roomsVisible, filesTarget]);
 }

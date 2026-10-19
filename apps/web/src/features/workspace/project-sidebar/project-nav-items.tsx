@@ -1,6 +1,7 @@
 'use client';
 
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { ProjectRoomsNavItem } from '@/features/workspace/project-sidebar/footer/project-rooms-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
 import {
@@ -166,5 +167,7 @@ function NavItem({ entry }: { entry: SidebarNavEntry }) {
       return <ProjectAppsNavItem />;
     case 'files':
       return <ProjectFilesNavItem />;
+    case 'rooms':
+      return <ProjectRoomsNavItem />;
   }
 }

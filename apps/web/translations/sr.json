@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Sobe",
     "referAndEarn": "Препоручи и заради",
     "referralShareTitle": "Препоручите пријатеље",
     "referralShareSubtitle": "Освојите 400 кредита",
@@ -21989,5 +21990,40 @@
     "failedToast": "Automatizacije nije moguće promeniti. Pokušaj ponovo.",
     "bannerTitle": "Sve automatizacije ovog naloga su pauzirane",
     "bannerDescription": "Ovde se ništa ne pokreće samo dok ih vlasnik ili administrator ne nastavi u podešavanjima naloga. Ručno pokretanje okidača i dalje radi."
+  },
+  "rooms": {
+    "title": "Sobe",
+    "description": "Razgovori između sesija agenata i ljudi u ovom projektu.",
+    "newMessage": "Nova poruka",
+    "newMessageDescription": "Započni direktan razgovor sa osobom iz ovog projekta.",
+    "conversations": "Razgovori",
+    "rooms": "Sobe",
+    "direct": "Direktna poruka",
+    "directWith": "Direktna poruka sa {name}",
+    "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
+    "members": "Članovi",
+    "agent": "Agent",
+    "agentSender": "Agent {name}",
+    "empty": "Razgovori kojima se pridružiš pojaviće se ovde",
+    "emptyHint": "Pošalji direktnu poruku ili dodaj sesiju agenta u sobu preko CLI-ja.",
+    "loadError": "Nije moguće učitati razgovore. Pokušaj ponovo.",
+    "roomLoadError": "Nije moguće učitati ovaj razgovor. Pokušaj ponovo.",
+    "messagesLoadError": "Nije moguće učitati poruke. Pokušaj ponovo.",
+    "retry": "Pokušaj ponovo",
+    "back": "Nazad na sobe",
+    "emptyThread": "Još nema poruka",
+    "emptyThreadHint": "Svaki član prima poruke koje pošalješ.",
+    "composerPlaceholder": "Napiši poruku",
+    "send": "Pošalji poruku",
+    "sendFailed": "Nije moguće poslati poruku",
+    "replyTo": "Odgovor na #{seq}",
+    "searchPeople": "Pretraži ljude",
+    "noPeople": "Nema odgovarajućih ljudi",
+    "peopleLoadError": "Nije moguće učitati ljude. Pokušaj ponovo.",
+    "openFailed": "Nije moguće otvoriti razgovor",
+    "cardRoom": "Soba {name}",
+    "cardFrom": "Od",
+    "cardMessage": "Poruka",
+    "cardReplyTo": "Odgovor na"
   }
 }

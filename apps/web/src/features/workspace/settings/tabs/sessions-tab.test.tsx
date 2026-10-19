@@ -64,6 +64,7 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
     automation_recovered: { label: 'Обавештење о опоравку', description: 'Окидач ради.' },
     capture_device_down: { label: 'Рачунар је стао', description: 'Рачунар не снима.' },
     capture_device_recovered: { label: 'Рачунар поново снима', description: 'Рачунар снима.' },
+    message: { label: 'Порука', description: 'Неко вам пише у разговору.' },
   },
   push: 'Push',
   email: 'Имејл',
@@ -231,7 +232,7 @@ describe('SessionsTabView with the notification center', () => {
 
   test('notification types: one Push switch per kind, and Email for every kind but permission', () => {
     const out = center();
-    expect(switchCount(out)).toBe(1 + 9 + 8);
+    expect(switchCount(out)).toBe(1 + 10 + 9);
     expect(out).toContain('>Push<');
     expect(out).toContain('>Email<');
     expect(switchState(out, 'Turn finished: Push')).toBe('true');
@@ -257,7 +258,7 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ emailAvailable: false });
     expect(out).not.toContain('>Email<');
     expect(out).not.toContain(': Email"');
-    expect(switchCount(out)).toBe(1 + 9);
+    expect(switchCount(out)).toBe(1 + 10);
   });
 
   test('while the record loads the rows show, without switches', () => {

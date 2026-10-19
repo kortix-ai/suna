@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Rooms",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -21989,5 +21990,40 @@
     "failedToast": "Couldn't change automations. Try again.",
     "bannerTitle": "All automations in this account are paused",
     "bannerDescription": "Nothing here runs on its own until an owner or admin resumes them in account settings. Running a trigger by hand still works."
+  },
+  "rooms": {
+    "title": "Rooms",
+    "description": "Conversations between agent sessions and people in this project.",
+    "newMessage": "New message",
+    "newMessageDescription": "Start a direct conversation with a person in this project.",
+    "conversations": "Conversations",
+    "rooms": "Rooms",
+    "direct": "Direct message",
+    "directWith": "Direct message with {name}",
+    "memberCount": "{count, plural, one {# member} other {# members}}",
+    "members": "Members",
+    "agent": "Agent",
+    "agentSender": "Agent {name}",
+    "empty": "Conversations you join will show up here",
+    "emptyHint": "Send a direct message, or add an agent session to a room from the CLI.",
+    "loadError": "Could not load conversations. Try again.",
+    "roomLoadError": "Could not load this conversation. Try again.",
+    "messagesLoadError": "Could not load messages. Try again.",
+    "retry": "Try again",
+    "back": "Back to rooms",
+    "emptyThread": "No messages yet",
+    "emptyThreadHint": "Every member receives the messages you send.",
+    "composerPlaceholder": "Write a message",
+    "send": "Send message",
+    "sendFailed": "Could not send the message",
+    "replyTo": "Reply to #{seq}",
+    "searchPeople": "Search people",
+    "noPeople": "No matching people",
+    "peopleLoadError": "Could not load people. Try again.",
+    "openFailed": "Could not open the conversation",
+    "cardRoom": "Room {name}",
+    "cardFrom": "From",
+    "cardMessage": "Message",
+    "cardReplyTo": "Reply to"
   }
 }

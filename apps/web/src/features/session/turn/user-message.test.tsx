@@ -16,7 +16,7 @@ import {
   sentAttachmentsOf,
   uploadedFileRefXml,
 } from '../uploaded-file-refs';
-import { serializePromptWithPastes } from '@kortix/shared';
+import { roomPromptText, serializePromptWithPastes } from '@kortix/shared';
 import {
   MessageAttachments,
   UserMessage,
@@ -1468,6 +1468,48 @@ describe('UserMessage platform prompts', () => {
     expect(markup).toContain('>One-time</span>');
     expect(markup).toContain('Check whether the vendor replied.');
     expect(markup).not.toContain('[REMINDER');
+  });
+
+  test('a room message is a source pill over its text, without the header or the reply footer', () => {
+    const markup = renderText(
+      roomPromptText({
+        kind: 'room',
+        room: 'dev',
+        roomId: 'room-1',
+        seq: 42,
+        senderKind: 'session',
+        sender: '3f2a1b9c (builder)',
+        replyTo: 41,
+        text: 'The build is green.\nShip it?',
+      }),
+    );
+    expect(markup).toContain('data-testid="room-turn"');
+    expect(markup).toContain('data-room-seq="42"');
+    expect(markup).toContain('>dev</span>');
+    expect(markup).toContain('>Agent 3f2a1b9c (builder)</span>');
+    expect(markup).toContain('The build is green.\nShip it?');
+    expect(markup).not.toContain('[room dev');
+    expect(markup).not.toContain('kortix rooms send');
+  });
+
+  test('a direct message names "Direct message" and a person sender', () => {
+    const markup = renderText(
+      roomPromptText({
+        kind: 'direct',
+        room: null,
+        roomId: 'room-2',
+        seq: 3,
+        senderKind: 'member',
+        sender: 'Ada',
+        replyTo: null,
+        text: 'Can you check the logs?',
+      }),
+    );
+    expect(markup).toContain('data-testid="room-turn"');
+    expect(markup).toContain('>Direct message</span>');
+    expect(markup).toContain('>Ada</span>');
+    expect(markup).toContain('Can you check the logs?');
+    expect(markup).not.toContain('[direct message');
   });
 
   test('a trigger fire names the trigger in the pill and the prompt in the bubble', () => {

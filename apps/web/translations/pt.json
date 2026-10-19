@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Salas",
     "referAndEarn": "Indicar e Ganhar",
     "referralShareTitle": "Indicar Amigos",
     "referralShareSubtitle": "Ganhe 400 créditos",
@@ -21989,5 +21990,40 @@
     "failedToast": "Não foi possível alterar as automações. Tente novamente.",
     "bannerTitle": "Todas as automações desta conta estão pausadas",
     "bannerDescription": "Nada aqui roda sozinho até que um proprietário ou administrador as retome nas configurações da conta. Executar um gatilho manualmente continua funcionando."
+  },
+  "rooms": {
+    "title": "Salas",
+    "description": "Conversas entre sessões de agentes e pessoas neste projeto.",
+    "newMessage": "Nova mensagem",
+    "newMessageDescription": "Inicie uma conversa direta com uma pessoa deste projeto.",
+    "conversations": "Conversas",
+    "rooms": "Salas",
+    "direct": "Mensagem direta",
+    "directWith": "Mensagem direta com {name}",
+    "memberCount": "{count, plural, one {# membro} other {# membros}}",
+    "members": "Membros",
+    "agent": "Agente",
+    "agentSender": "Agente {name}",
+    "empty": "As conversas em que você entrar aparecerão aqui",
+    "emptyHint": "Envie uma mensagem direta ou adicione uma sessão de agente a uma sala pela CLI.",
+    "loadError": "Não foi possível carregar as conversas. Tente novamente.",
+    "roomLoadError": "Não foi possível carregar esta conversa. Tente novamente.",
+    "messagesLoadError": "Não foi possível carregar as mensagens. Tente novamente.",
+    "retry": "Tentar novamente",
+    "back": "Voltar para as salas",
+    "emptyThread": "Ainda não há mensagens",
+    "emptyThreadHint": "Todos os membros recebem as mensagens que você envia.",
+    "composerPlaceholder": "Escreva uma mensagem",
+    "send": "Enviar mensagem",
+    "sendFailed": "Não foi possível enviar a mensagem",
+    "replyTo": "Resposta a #{seq}",
+    "searchPeople": "Pesquisar pessoas",
+    "noPeople": "Nenhuma pessoa encontrada",
+    "peopleLoadError": "Não foi possível carregar as pessoas. Tente novamente.",
+    "openFailed": "Não foi possível abrir a conversa",
+    "cardRoom": "Sala {name}",
+    "cardFrom": "De",
+    "cardMessage": "Mensagem",
+    "cardReplyTo": "Resposta a"
   }
 }

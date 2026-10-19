@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "ルーム",
     "referAndEarn": "紹介して獲得",
     "referralShareTitle": "友達を紹介",
     "referralShareSubtitle": "400クレジット獲得",
@@ -21989,5 +21990,40 @@
     "failedToast": "自動化を変更できませんでした。もう一度お試しください。",
     "bannerTitle": "このアカウントのすべての自動化は一時停止中です",
     "bannerDescription": "オーナーまたは管理者がアカウント設定で再開するまで、ここでは何も自動で実行されません。トリガーの手動実行は引き続き使えます。"
+  },
+  "rooms": {
+    "title": "ルーム",
+    "description": "このプロジェクトのエージェントセッションと人の間の会話です。",
+    "newMessage": "新しいメッセージ",
+    "newMessageDescription": "このプロジェクトのメンバーとダイレクトな会話を始めます。",
+    "conversations": "会話",
+    "rooms": "ルーム",
+    "direct": "ダイレクトメッセージ",
+    "directWith": "{name} とのダイレクトメッセージ",
+    "memberCount": "{count, plural, other {# 人のメンバー}}",
+    "members": "メンバー",
+    "agent": "エージェント",
+    "agentSender": "エージェント {name}",
+    "empty": "参加した会話がここに表示されます",
+    "emptyHint": "ダイレクトメッセージを送るか、CLI でエージェントセッションをルームに追加します。",
+    "loadError": "会話を読み込めませんでした。もう一度お試しください。",
+    "roomLoadError": "この会話を読み込めませんでした。もう一度お試しください。",
+    "messagesLoadError": "メッセージを読み込めませんでした。もう一度お試しください。",
+    "retry": "再試行",
+    "back": "ルームに戻る",
+    "emptyThread": "まだメッセージはありません",
+    "emptyThreadHint": "送信したメッセージはすべてのメンバーに届きます。",
+    "composerPlaceholder": "メッセージを入力",
+    "send": "メッセージを送信",
+    "sendFailed": "メッセージを送信できませんでした",
+    "replyTo": "#{seq} への返信",
+    "searchPeople": "メンバーを検索",
+    "noPeople": "一致するメンバーはいません",
+    "peopleLoadError": "メンバーを読み込めませんでした。もう一度お試しください。",
+    "openFailed": "会話を開けませんでした",
+    "cardRoom": "ルーム {name}",
+    "cardFrom": "送信者",
+    "cardMessage": "メッセージ",
+    "cardReplyTo": "返信先"
   }
 }

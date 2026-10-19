@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Salons",
     "referAndEarn": "Parrainer et Gagner",
     "referralShareTitle": "Parrainer des Amis",
     "referralShareSubtitle": "Gagnez 400 crédits",
@@ -21989,5 +21990,40 @@
     "failedToast": "Impossible de modifier les automatisations. Réessayez.",
     "bannerTitle": "Toutes les automatisations de ce compte sont en pause",
     "bannerDescription": "Rien ne s'exécute seul ici tant qu'un propriétaire ou un administrateur ne les reprend pas dans les paramètres du compte. Lancer un déclencheur à la main fonctionne toujours."
+  },
+  "rooms": {
+    "title": "Salons",
+    "description": "Conversations entre les sessions d'agents et les personnes de ce projet.",
+    "newMessage": "Nouveau message",
+    "newMessageDescription": "Démarrez une conversation directe avec une personne de ce projet.",
+    "conversations": "Conversations",
+    "rooms": "Salons",
+    "direct": "Message direct",
+    "directWith": "Message direct avec {name}",
+    "memberCount": "{count, plural, one {# membre} other {# membres}}",
+    "members": "Membres",
+    "agent": "Agent",
+    "agentSender": "Agent {name}",
+    "empty": "Les conversations que vous rejoignez s'afficheront ici",
+    "emptyHint": "Envoyez un message direct ou ajoutez une session d'agent à un salon depuis la CLI.",
+    "loadError": "Impossible de charger les conversations. Réessayez.",
+    "roomLoadError": "Impossible de charger cette conversation. Réessayez.",
+    "messagesLoadError": "Impossible de charger les messages. Réessayez.",
+    "retry": "Réessayer",
+    "back": "Retour aux salons",
+    "emptyThread": "Aucun message pour l'instant",
+    "emptyThreadHint": "Chaque membre reçoit les messages que vous envoyez.",
+    "composerPlaceholder": "Écrire un message",
+    "send": "Envoyer le message",
+    "sendFailed": "Impossible d'envoyer le message",
+    "replyTo": "Réponse à #{seq}",
+    "searchPeople": "Rechercher des personnes",
+    "noPeople": "Aucune personne correspondante",
+    "peopleLoadError": "Impossible de charger les personnes. Réessayez.",
+    "openFailed": "Impossible d'ouvrir la conversation",
+    "cardRoom": "Salon {name}",
+    "cardFrom": "De",
+    "cardMessage": "Message",
+    "cardReplyTo": "Réponse à"
   }
 }

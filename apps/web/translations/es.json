@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Salas",
     "referAndEarn": "Referir y Ganar",
     "referralShareTitle": "Referir Amigos",
     "referralShareSubtitle": "Obtén 400 créditos",
@@ -21989,5 +21990,40 @@
     "failedToast": "No se pudieron cambiar las automatizaciones. Inténtalo de nuevo.",
     "bannerTitle": "Todas las automatizaciones de esta cuenta están en pausa",
     "bannerDescription": "Aquí nada se ejecuta por sí solo hasta que un propietario o administrador las reanude en la configuración de la cuenta. Ejecutar un disparador a mano sigue funcionando."
+  },
+  "rooms": {
+    "title": "Salas",
+    "description": "Conversaciones entre sesiones de agentes y personas en este proyecto.",
+    "newMessage": "Nuevo mensaje",
+    "newMessageDescription": "Inicia una conversación directa con una persona de este proyecto.",
+    "conversations": "Conversaciones",
+    "rooms": "Salas",
+    "direct": "Mensaje directo",
+    "directWith": "Mensaje directo con {name}",
+    "memberCount": "{count, plural, one {# miembro} other {# miembros}}",
+    "members": "Miembros",
+    "agent": "Agente",
+    "agentSender": "Agente {name}",
+    "empty": "Las conversaciones a las que te unas aparecerán aquí",
+    "emptyHint": "Envía un mensaje directo o añade una sesión de agente a una sala desde la CLI.",
+    "loadError": "No se pudieron cargar las conversaciones. Inténtalo de nuevo.",
+    "roomLoadError": "No se pudo cargar esta conversación. Inténtalo de nuevo.",
+    "messagesLoadError": "No se pudieron cargar los mensajes. Inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "back": "Volver a las salas",
+    "emptyThread": "Aún no hay mensajes",
+    "emptyThreadHint": "Cada miembro recibe los mensajes que envías.",
+    "composerPlaceholder": "Escribe un mensaje",
+    "send": "Enviar mensaje",
+    "sendFailed": "No se pudo enviar el mensaje",
+    "replyTo": "Respuesta a #{seq}",
+    "searchPeople": "Buscar personas",
+    "noPeople": "No hay personas que coincidan",
+    "peopleLoadError": "No se pudieron cargar las personas. Inténtalo de nuevo.",
+    "openFailed": "No se pudo abrir la conversación",
+    "cardRoom": "Sala {name}",
+    "cardFrom": "De",
+    "cardMessage": "Mensaje",
+    "cardReplyTo": "Respuesta a"
   }
 }

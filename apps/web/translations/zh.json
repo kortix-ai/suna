@@ -1474,6 +1474,7 @@
     }
   },
   "sidebar": {
+    "rooms": "聊天室",
     "referAndEarn": "推荐赚取",
     "referralShareTitle": "推荐好友",
     "referralShareSubtitle": "获得 400 积分",
@@ -21989,5 +21990,40 @@
     "failedToast": "无法更改自动化。请重试。",
     "bannerTitle": "此账户的所有自动化已暂停",
     "bannerDescription": "在所有者或管理员于账户设置中恢复之前，这里不会自动运行任何内容。手动运行触发器仍然可用。"
+  },
+  "rooms": {
+    "title": "聊天室",
+    "description": "此项目中智能体会话与成员之间的对话。",
+    "newMessage": "新消息",
+    "newMessageDescription": "与此项目中的成员开始私信对话。",
+    "conversations": "对话",
+    "rooms": "聊天室",
+    "direct": "私信",
+    "directWith": "与 {name} 的私信",
+    "memberCount": "{count, plural, other {# 位成员}}",
+    "members": "成员",
+    "agent": "智能体",
+    "agentSender": "智能体 {name}",
+    "empty": "你加入的对话会显示在这里",
+    "emptyHint": "发送私信，或通过 CLI 将智能体会话加入聊天室。",
+    "loadError": "无法加载对话。请重试。",
+    "roomLoadError": "无法加载此对话。请重试。",
+    "messagesLoadError": "无法加载消息。请重试。",
+    "retry": "重试",
+    "back": "返回聊天室",
+    "emptyThread": "暂无消息",
+    "emptyThreadHint": "你发送的消息会送达每位成员。",
+    "composerPlaceholder": "输入消息",
+    "send": "发送消息",
+    "sendFailed": "无法发送消息",
+    "replyTo": "回复 #{seq}",
+    "searchPeople": "搜索成员",
+    "noPeople": "没有匹配的成员",
+    "peopleLoadError": "无法加载成员。请重试。",
+    "openFailed": "无法打开对话",
+    "cardRoom": "聊天室 {name}",
+    "cardFrom": "发送者",
+    "cardMessage": "消息",
+    "cardReplyTo": "回复"
   }
 }
