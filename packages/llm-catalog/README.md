@@ -17,14 +17,14 @@ The displayed prices are the OpenRouter pool prices, or the pool cap for GLM. Op
 
 The OpenCode reference is `kortix/<gateway model ID>`. The bundled sandbox fallback (`MINIMAL_FALLBACK_MODELS`) uses the same IDs, prices, and capabilities.
 
-### Routing: Zen, then Morph direct, then the OpenRouter pool
+### Routing: Morph direct, then Zen, then the OpenRouter pool
 
-DeepSeek V4.1 Flash and GLM-5.3-Flash try their upstreams in this order (`managedCandidates`). OpenRouter is last. Kimi K3 is on neither list: it uses the OpenRouter pool only. A 429, 5xx, or network error moves the request to the next one. After the last one fails, the model's fallback policy moves it to the fallback model (`deepseek-v4.1-flash` falls back to `glm-5.3-flash`).
+DeepSeek V4.1 Flash and GLM-5.3-Flash try their upstreams in this order (`managedCandidates`). OpenRouter is last. Any failed attempt (an HTTP error, a network error, the 90 s header timeout, or an error frame in the first 10 s of a stream) moves the request to the next one. After the last one fails, the platform fallback policy moves the request to the other managed model: `deepseek-v4.1-flash` falls back to `glm-5.3-flash` and back (`LLM_GATEWAY_FALLBACK_POLICIES`, `policy-config.ts`). `codex/gpt-5.6-sol` falls back to both, in that order.
 
 | Order | Upstream | Selected by | Default |
 | --- | --- | --- | --- |
-| 1 | OpenCode Zen | `OPENCODE_ZEN_MANAGED_MODELS` + `OPENCODE_ZEN_API_KEY` | `glm-5.3-flash,deepseek-v4.1-flash` |
-| 2 | Morph direct (signed ZDR terms) | `MORPH_MANAGED_MODELS` + `MORPH_API_KEY` | `deepseek-v4.1-flash,glm-5.3-flash` |
+| 1 | Morph direct (signed ZDR terms) | `MORPH_MANAGED_MODELS` + `MORPH_API_KEY` | `deepseek-v4.1-flash,glm-5.3-flash` |
+| 2 | OpenCode Zen | `OPENCODE_ZEN_MANAGED_MODELS` + `OPENCODE_ZEN_API_KEY` | `glm-5.3-flash,deepseek-v4.1-flash` |
 | 3 | OpenRouter endpoint pool | the model's `openrouterProvider.only` + `OPENROUTER_API_KEY` | every managed model |
 
 Why: from 2026-10-16 22:00 to 2026-10-19 04:00 UTC, DeepSeek had one upstream, the OpenRouter pool pinned to `coreweave/fp8`. That endpoint answered 60 to 80% of requests with HTTP 429 (`limit_source: upstream_provider_shared_pool`). OpenRouter's uptime page showed it at 100% the whole time: its uptime does not count shared-pool 429s.
@@ -56,7 +56,7 @@ Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected mode
 
 ### OpenCode Zen
 
-`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves first, before Morph direct and the OpenRouter pool. Its default is `glm-5.3-flash,deepseek-v4.1-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
+`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves after Morph direct and before the OpenRouter pool. Its default is `glm-5.3-flash,deepseek-v4.1-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
 
 1. Zen states that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
 2. Zen serves the managed IDs unchanged (`glm-5.3-flash`, `kimi-k3`, `deepseek-v4.1-flash`) on `/chat/completions`.

@@ -100,8 +100,8 @@ const optFallbackPolicies = z
 //   - OPTIONAL:    graceful degradation or sane default if missing
 
 /**
- * Managed model ids served by Morph direct (signed ZDR terms) after Zen and
- * before the OpenRouter pool (`managedCandidates`). From 2026-10-16 22:00 to
+ * Managed model ids served by Morph direct (signed ZDR terms) FIRST, then Zen,
+ * then the OpenRouter pool (`managedCandidates`). From 2026-10-16 22:00 to
  * 10-19 04:00 UTC the OpenRouter pool alone (one shared endpoint) answered
  * 60-80% of DeepSeek requests with 429. Measured 2026-10-19 at ~150k-token
  * prompts, streaming, tool calls, first token p50: DeepSeek 1017 2.9 s (8
@@ -113,8 +113,8 @@ export const MORPH_MANAGED_MODELS_DEFAULT = 'deepseek-v4.1-flash,glm-5.3-flash';
 
 /**
  * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention)
- * serves these managed models FIRST; Morph direct, then the OpenRouter pool,
- * are its fallbacks. At ~160k-token prompts Zen served 60 concurrent sessions
+ * serves these managed models after Morph direct and before the OpenRouter
+ * pool. At ~160k-token prompts Zen served 60 concurrent sessions
  * (239/240, 404 req/min, 2026-09-29) and 40 parallel DeepSeek requests 40/40
  * (first token p50 10.5 s, 2026-10-19). Without
  * OPENCODE_ZEN_API_KEY the list has no effect; an empty list is the kill switch.
@@ -498,12 +498,12 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
-  // Managed model IDs that use Morph direct after Zen
+  // Managed model IDs that use Morph direct first
   // (see MORPH_MANAGED_MODELS_DEFAULT). An empty value disables Morph.
   MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
   OPENCODE_ZEN_API_KEY: optStr,
-  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  // Managed model IDs served by OpenCode Zen after Morph (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
