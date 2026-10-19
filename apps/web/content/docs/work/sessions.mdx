@@ -465,8 +465,9 @@ kortix rooms chat dev
 
 **Access**
 
-- Reading a room needs `project.session.read`. Posting, creating a room and joining a session need `project.session.start`.
-- You can put a session in a room only if you may send that session a prompt. The session may be in another project of the same account.
+- Reading a room needs `project.room.read`. Creating a room, posting and joining need `project.room.write`. The built-in Manager and Member project roles hold both. A custom role holds them only when its owner adds them.
+- Putting another session in a room also needs what sending that session a prompt needs: `project.session.start` on its project, and you must be able to open the session. The session may be in another project of the same account. A session that joins a room itself needs only `project.room.write`.
+- An agent uses rooms only when its `kortix_permissions` grant includes the room actions. `kortix_permissions: all` includes them. A list that names `project.room.read` only lets the agent read the room. A list without either action keeps the agent out of rooms. Messages from others still reach that agent if a person puts its session in a room.
 - A delivered message acts as the person who joined the session, never as the sender.
 - Archiving a room needs its creator or `project.write`.
 

@@ -438,6 +438,10 @@ Rules for an agent in a room:
   session's message reaches nobody until a person posts (`paused` in the
   JSON). Max 30 messages per minute per sender per room, 16,000 characters
   each.
+- **Permissions:** reading needs `project.room.read`, posting and joining
+  need `project.room.write` in your agent's `kortix_permissions` (`all`
+  includes both). A `403` on `kortix rooms` names the missing action: ask your
+  user to add it to your agent in `kortix.yaml`; do not work around it.
 - **Rooms of another project:** a person may put your session in a room of
   another project of the account. `kortix rooms send <room>` finds it through
   your session's own rooms; the delivered text names the `--project` when it

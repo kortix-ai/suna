@@ -278,6 +278,9 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Rooms: read = list rooms and read messages; write = post, join, leave.
+  'project.room.read',
+  'project.room.write',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could

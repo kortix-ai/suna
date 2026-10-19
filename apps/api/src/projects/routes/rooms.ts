@@ -2,10 +2,13 @@
 // and people talk in. A joined session receives every other participant's
 // message in its prompt inbox. Logic lives in `projects/rooms/service.ts`.
 //
-// Authorization, per route:
-//   read  (list, get, messages) project.session.read  + the agent grant for it
-//   write (create, post, patch) project.session.start + the agent grant for it
-//   join / leave a session      the above on the ROOM's project, and on the
+// Authorization, per route. Every leaf is asserted for the caller's role AND
+// for an agent's `kortix_permissions` grant, so a manifest decides per agent
+// whether it may use rooms:
+//   read  (list, get, messages) project.room.read
+//   write (create, post, patch) project.room.write
+//   join / leave a session      project.room.write on the ROOM's project and,
+//                               unless a session acts on itself, on the
 //                               SESSION's project: project.session.start, the
 //                               session visible to the caller, and its agent
 //                               launchable by the caller — exactly what sending
@@ -164,11 +167,13 @@ function sessionName(metadata: unknown): string | null {
 
 /** Load the project, apply the flag and the read or write authorization. */
 async function authorizeRooms(c: Context, projectId: string, mode: 'read' | 'write') {
-  const loaded = await loadProjectForUser(c, projectId, mode === 'read' ? 'read' : 'session');
+  // Loaded for read: the room leaves below are the gate. 'session' would also
+  // assert project.session.start, which an agent granted only rooms lacks.
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
   const disabled = requireFeatureFlag(c, loaded.row.metadata, AGENT_ROOMS_FLAG);
   if (disabled) return { ok: false as const, response: disabled };
-  const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_SESSION_READ : PROJECT_ACTIONS.PROJECT_SESSION_START;
+  const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ROOM_READ : PROJECT_ACTIONS.PROJECT_ROOM_WRITE;
   assertAgentScope(c, action);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   return { ok: true as const, loaded };
@@ -193,14 +198,18 @@ async function authorizeMemberSession(c: Context, room: RoomRow, loaded: Loaded,
   if (!home || home.accountId !== room.accountId) return { ok: false as const, response: c.json({ error: 'Session not found' }, 404) };
   let target: Loaded = loaded;
   if (home.projectId !== room.projectId) {
-    const other = await loadProjectForUser(c, home.projectId, 'session');
+    const other = await loadProjectForUser(c, home.projectId, 'read');
     if (!other) return { ok: false as const, response: c.json({ error: 'Session not found' }, 404) };
     const disabled = requireFeatureFlag(c, other.row.metadata, AGENT_ROOMS_FLAG);
     if (disabled) return { ok: false as const, response: disabled };
-    await assertProjectCapability(c, other.userId, other.row.accountId, home.projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
     target = other;
   }
   const callerSessionId = callerKortixSessionId(c);
+  // A session acting on itself is not prompting anyone else.
+  if (!(isProjectSessionPrincipal(c) && callerSessionId === sessionId)) {
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    await assertProjectCapability(c, target.userId, target.row.accountId, home.projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  }
   const visible = await loadVisibleSession(target, sessionId, callerSessionId, callerSessionId);
   if (!visible) return { ok: false as const, response: c.json({ error: 'Session not found' }, 404) };
   if (typeof (visible.row.metadata as Record<string, unknown> | null)?.deletedAt === 'string') {

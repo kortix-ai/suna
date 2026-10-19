@@ -235,4 +235,8 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
     group: 'Review',
     actions: ['project.review.read', 'project.review.submit', 'project.review.act'],
   },
+  {
+    group: 'Rooms',
+    actions: ['project.room.read', 'project.room.write'],
+  },
 ];

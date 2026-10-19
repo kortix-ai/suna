@@ -4,6 +4,7 @@
  * pause, the delivered text) are pinned in apps/api/src/projects/rooms/envelope.test.ts.
  */
 import { flow } from '../core/flow';
+import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession, setDatabaseProjectFeature } from '../fixtures/database-project';
 import type { FlowContext } from '../core/types';
@@ -392,6 +393,68 @@ flow(
       for (const [projectId, token] of [[home.id, alphaToken], [other.id, gammaToken]] as const) {
         await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', { params: { projectId, tokenId: token.token_id } }).catch(() => {});
       }
+    }
+  },
+);
+
+const GOVERNED_MANIFEST = [
+  'kortix_version: 2',
+  'project:',
+  '  name: ke2e-rooms',
+  'default_agent: talker',
+  'agents:',
+  '  talker:',
+  '    kortix_permissions: [project.session.read, project.room.read, project.room.write]',
+  '  reader:',
+  '    kortix_permissions: [project.session.read, project.room.read]',
+  '  mute:',
+  '    kortix_permissions: [project.session.read]',
+  '',
+].join('\n');
+
+flow(
+  'ROOM-6',
+  { domain: 'rooms', requires: ['database'], timeoutMs: 180_000, routes: [] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
+    try {
+      await world.setFeature('agent_rooms', true);
+      await world.writeManifest(GOVERNED_MANIFEST, 'ke2e: rooms agents');
+      const talker = await world.mintAgentSession({ agent: 'talker', launcher: ctx.P.OWNER, visibility: 'project' });
+      const reader = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER, visibility: 'project' });
+      const mute = await world.mintAgentSession({ agent: 'mute', launcher: ctx.P.OWNER, visibility: 'project' });
+      const owner = ctx.client.as(ctx.P.OWNER);
+      const p = { projectId: project.id };
+      const roomId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+      const r = { ...p, roomId };
+
+      await ctx.step('an agent granted project.room.write joins itself and posts → 200, 201', async () => {
+        (await talker.client.put(MEMBER, {}, { params: { ...r, sessionId: talker.sessionId } })).status(200);
+        (await talker.client.post(MESSAGES, { text: 'talker here' }, { params: r })).status(201);
+      });
+      await ctx.step('putting ANOTHER session in the room also needs project.session.start → the talker gets 403', async () => {
+        (await talker.client.put(MEMBER, {}, { params: { ...r, sessionId: reader.sessionId } })).status(403);
+      });
+      await ctx.step('an agent granted only project.room.read reads the room but cannot post or join → 200, 403, 403', async () => {
+        (await reader.client.get(MESSAGES, { params: r })).status(200).body().has('$.messages[0].text', 'talker here');
+        (await reader.client.post(MESSAGES, { text: 'x' }, { params: r })).status(403);
+        (await reader.client.put(MEMBER, {}, { params: { ...r, sessionId: reader.sessionId } })).status(403);
+      });
+      await ctx.step('an agent with no room permission cannot list or read rooms → 403', async () => {
+        (await mute.client.get(ROOMS, { params: p })).status(403);
+        (await mute.client.get(MESSAGES, { params: r })).status(403);
+      });
+      await ctx.step('the owner may put the mute agent in the room; a delivery reaches it, but it cannot answer → 403', async () => {
+        (await owner.put(MEMBER, {}, { params: { ...r, sessionId: mute.sessionId } })).status(200);
+        const res = await owner.post(MESSAGES, { text: 'ping' }, { params: r });
+        res.status(201);
+        if (delivery(res.json<PostResult>(), mute.sessionId).state !== 'queued') throw new Error('mute not queued');
+        (await mute.client.post(`${SESSION_ROOMS}/:roomId/messages`, { text: 'pong' }, { params: { ...p, sessionId: mute.sessionId, roomId } })).status(403);
+      });
+    } finally {
+      await world.close();
     }
   },
 );

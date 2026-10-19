@@ -240,7 +240,8 @@ describe('the built-in member role reads no directory', () => {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(49);
+    // 51 since rooms' `project.room.read` and `project.room.write` (20261019190000000).
+    expect(PROJECT_LEAVES.length).toBe(51);
     // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
     expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
@@ -308,14 +309,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(49);
+    expect(fold.totalCount).toBe(51);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(49);
+    expect(fold.selectedCount).toBe(51);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );
