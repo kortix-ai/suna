@@ -14,7 +14,7 @@ import { Eyebrow, ProductShot, Section } from './shared';
 
 /**
  * The three policy tints, taken verbatim from the product
- * (`features/workspace/customize/sections/connectors-view.tsx` → POLICY_LABEL).
+ * (`packages/ui/src/customize/sections/connectors-view.tsx` → POLICY_LABEL).
  * The marketing page and the screenshot beside it must agree on what green,
  * amber and red mean, or the screenshot stops being evidence.
  */

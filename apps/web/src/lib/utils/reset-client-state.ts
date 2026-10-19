@@ -61,7 +61,7 @@ import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // e
  * Does NOT clear `kortix_last_project`. That cookie is owner-bound
  * (`<userId>:<projectId>`) and deliberately survives sign-out — the
  * middleware reads its owner half to attribute a post-logout bounce. See
- * `lib/onboarding/last-project-cookie.ts` and the tripwire test at
+ * `packages/ui/src/internal/lib/onboarding/last-project-cookie.ts` and the tripwire test at
  * `lib/auth/sign-out-navigation.test.ts`.
  */
 export async function resetClientState({

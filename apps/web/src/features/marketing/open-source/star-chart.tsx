@@ -96,7 +96,7 @@ const AREA_CLIP_PATH = `${smoothPath(
  * Decorative backdrop for the open-source section: a faint line chart that
  * wipes in left to right — 0 → today's stars — in sync with the count-up.
  *
- * The fill under the curve is the house Bayer dither (`@/lib/shaders-react`
+ * The fill under the curve is the house Bayer dither (`@kortix/ui/internal/lib/shaders-react`
  * `Dither`, same colors/params as the CTA's `DitherShader`): a vertical
  * luminance ramp quantized to ordered pixels, clipped to the under-curve
  * region. Density is highest at the line and dissolves toward the baseline,

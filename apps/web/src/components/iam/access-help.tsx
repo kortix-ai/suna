@@ -13,7 +13,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // out as plain page sections.
 //
 // Every role blurb comes from `ACCOUNT_ROLE_DESCRIPTORS` /
-// `PROJECT_ROLE_DESCRIPTORS` in `features/workspace/shared/access` — the same
+// `PROJECT_ROLE_DESCRIPTORS` in `packages/ui/src/access/access` — the same
 // source `RoleSelect` renders in the dialog, so the help text and the picker
 // can never drift.
 

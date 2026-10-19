@@ -293,7 +293,7 @@ const MARKDOWN_COMPONENTS = {
   a: MarkdownLink,
 
   // Every fence kind and inline code resolve in one shared place; see
-  // components/markdown/code.
+  // packages/ui/src/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
     const { isStreaming, policy, trust, variant, genui } = useContext(MarkdownRenderContext);
     return (

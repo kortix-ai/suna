@@ -1,7 +1,7 @@
 /**
  * Project Files feature — read-only, git-backed.
  *
- * Mirrors the sandbox `features/files` module's public surface but every
+ * Mirrors the sandbox `packages/ui/src/files/runtime` module's public surface but every
  * data hook reads from `/v1/projects/:projectId/files` via React context.
  */
 

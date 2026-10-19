@@ -106,7 +106,7 @@ export function groupWorkspacesByAccount({
  *    reads the menu as "settings for where I am", and the open workspace is
  *    the only unambiguous statement of that;
  * 2. `selectedAccountId`, for a mount with no workspace in the URL. It is
- *    persisted (`stores/current-account-store`) so it is present on the first
+ *    persisted (`packages/ui/src/internal/stores/current-account-store`) so it is present on the first
  *    paint of a returning visit, before any query resolves;
  * 3. the first account, matching the seed `useEnsureSelectedAccount` writes.
  *

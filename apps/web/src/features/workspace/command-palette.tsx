@@ -238,7 +238,7 @@ function sanitizeCmdkValue(value: string): string {
  * be unique — two rows sharing a `value` are both marked `aria-selected` and
  * Enter always fires the first one. cmdk 0.2.1 (the installed version, checked
  * against `node_modules/cmdk/dist/index.d.ts`) has no separate `keywords` prop
- * to move the search text onto, and `CommandDialog` in `components/ui/command`
+ * to move the search text onto, and `CommandDialog` in `packages/ui/src/primitives/command`
  * forwards neither `filter` nor `shouldFilter`, so the value is the only lever.
  * Uniqueness therefore rests on the curated text itself, which is safe because
  * a collision means two rows with the SAME label and the SAME keywords — rows
@@ -1421,7 +1421,7 @@ export function CommandPalette() {
       .then((session) => {
         // LEGACY, unreachable in the product: this branch runs only when
         // there is NO projectId, and every authed route is `/projects/[id]/*`.
-        // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
+        // `/sessions/<id>` is not a route — see `packages/ui/src/internal/lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: tHardcodedUi.raw('i18nComplete.textcffdba22adf2'),
@@ -1914,7 +1914,7 @@ export function CommandPalette() {
    *
    * Calling `openSettings()` where no panel is mounted did two things, both
    * bad: the click did nothing, AND `open: true` stuck in the module-level
-   * store (`stores/settings-panel-store.ts`), so the overlay sprang open
+   * store (`packages/ui/src/internal/stores/settings-panel-store.ts`), so the overlay sprang open
    * unrequested on the next client-side navigation into a project.
    */
   const openSettingsTab = useCallback(

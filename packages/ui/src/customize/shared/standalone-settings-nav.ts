@@ -132,7 +132,7 @@ export function buildStandaloneCapabilityNav(state: {
       // break this adapter's "opens the overlay, not a route" contract.
       if (state.accountId && isAccountGraduatedSection(tab)) {
         // A modal over the page the caller is already on, not a navigation:
-        // the account hub has no route (`stores/account-panel-store.ts`).
+        // the account hub has no route (`packages/ui/src/internal/stores/account-panel-store.ts`).
         openAccountPanel(hubTarget(state.accountId, { tab: ACCOUNT_GRADUATED[tab] }));
         return;
       }

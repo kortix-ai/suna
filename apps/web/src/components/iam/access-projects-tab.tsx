@@ -21,7 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *                                         `approveProjectAccessRequest` / `rejectProjectAccessRequest`
  *
  * **Everything visual comes from the shared access primitives**
- * (`features/workspace/shared/access`): `AccessRow` for every list row (flattened
+ * (`packages/ui/src/access/access`): `AccessRow` for every list row (flattened
  * to a Linear list row by `FLAT_ROW_CLASS`), and `AccessDialog` for
  * every "give / edit access" interaction. This file owns NO picker, role
  * select, list row, modal, or destructive-confirm copy of its own — the

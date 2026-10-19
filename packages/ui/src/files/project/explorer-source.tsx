@@ -14,11 +14,11 @@ import { createContext, useContext, type ReactNode } from 'react';
  * (<DriveExplorer> and its data-touching children: toolbar refresh, search
  * overlay, history popover, thumbnails, preview modal).
  *
- * Extends the `features/file-viewer` FileSource idea to the whole explorer:
+ * Extends the `packages/ui/src/files/viewer` FileSource idea to the whole explorer:
  * each surface supplies its own implementation —
- *   • live sandbox workspace (`features/files` hooks, writable) — the session
+ *   • live sandbox workspace (`packages/ui/src/files/runtime` hooks, writable) — the session
  *     side panel;
- *   • project git-ref view (`features/project-files` hooks, read-only) — the
+ *   • project git-ref view (`packages/ui/src/files/project` hooks, read-only) — the
  *     customize → Files section.
  *
  * All `use*` members are React hooks. The explorer calls them unconditionally

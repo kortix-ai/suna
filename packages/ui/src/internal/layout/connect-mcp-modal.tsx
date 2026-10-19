@@ -6,7 +6,7 @@
  * can open. The client signs in with OAuth on first use (apps/api/src/mcp), so
  * there is nothing to install.
  *
- * Same split frame as "Connect your computer" (`features/tunnel/computer-connect.tsx`):
+ * Same split frame as "Connect your computer" (`packages/ui/src/internal/tunnel/computer-connect.tsx`):
  * the Beams art with the client marks on the left, one row per client with its
  * own one-click action on the right.
  */

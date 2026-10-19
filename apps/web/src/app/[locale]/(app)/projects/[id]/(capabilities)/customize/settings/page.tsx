@@ -11,7 +11,7 @@ import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-ske
  * project-scoped configuration surface that used to sit in the Settings
  * overlay's `Workspace` and `Agent` rail groups, plus Feature flags and
  * Upgrades. See
- * `features/workspace/capabilities/project-settings/project-settings-page.tsx`
+ * `packages/ui/src/customize/project-settings/project-settings-page.tsx`
  * for the page body and why the move happened.
  *
  * The segment is `config`, not `settings`: `/projects/[id]/settings` is the

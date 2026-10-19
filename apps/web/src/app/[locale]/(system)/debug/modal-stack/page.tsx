@@ -44,7 +44,7 @@ import { cn, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@kortix/ui';
  * card. Depth used to come only from React context, so a modal that is not
  * nested in the open one's JSX (a global host, a store-driven modal) resolved
  * depth 1 and its overlay rendered under the card it should dim.
- * `lib/z-stack.tsx` now stacks by open order.
+ * `packages/ui/src/lib/z-stack.tsx` now stacks by open order.
  *
  * Every scenario below opens several layers. The inspector (bottom right) reads
  * the computed z-index of each open dialog and its overlay from the DOM and

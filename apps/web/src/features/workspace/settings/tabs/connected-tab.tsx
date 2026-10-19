@@ -33,7 +33,7 @@ export interface ConnectedAccountsTabViewProps {
   isGitHubActionPending?: boolean;
   githubOtherInstallationsCount?: number;
   /** The account hub's Git pane — a modal target, not a URL: the hub has no
-   *  route (`stores/account-panel-store.ts`). */
+   *  route (`packages/ui/src/internal/stores/account-panel-store.ts`). */
   githubManageAllTo?: HubTarget;
   copy?: ConnectedAccountsTabCopy;
 }

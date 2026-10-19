@@ -144,7 +144,7 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain('Mirkos Org');
       // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
       // route — it is a modal addressed by a query param on whatever page it
-      // opens over (`stores/account-panel-store.ts`). Rendered with no router
+      // opens over (`packages/ui/src/internal/stores/account-panel-store.ts`). Rendered with no router
       // context, as this shell deliberately is, `HubLink` emits the
       // query-only relative form, which resolves against the current page.
       expect(html).toContain('href="?accountId=acc-1"');

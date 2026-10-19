@@ -15,7 +15,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // It used to draw its own `bg-popover rounded-md border` box, which is why
 // the organization pane read as four unrelated cards instead of one settings
 // form. It is a ROW now, in the Linear shape every other pane on this branch
-// uses (`components/ui/settings-row.tsx`); the group that hosts it owns the
+// uses (`packages/ui/src/primitives/settings-row.tsx`); the group that hosts it owns the
 // border and the hairlines. `key-rules-card.tsx` made the same move first.
 //
 // The control is a `Switch`, not the old Require/Disable button pair. Both

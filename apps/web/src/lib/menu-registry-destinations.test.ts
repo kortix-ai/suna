@@ -123,7 +123,7 @@ const paletteHrefs = new Set(
  *
  * Account rows are `kind: 'account'`, not `navigate`, and carry no href — the
  * hub has no route, only `?accountId=` on the page you are already on
- * (`stores/account-panel-store.ts`). So the reachability check below is
+ * (`packages/ui/src/internal/stores/account-panel-store.ts`). So the reachability check below is
  * against `VALID_TABS` rather than against `src/app`, which is a STRONGER
  * join: it compares a row to the section catalog the hub actually renders
  * from, instead of to a directory that merely has to exist.
@@ -178,7 +178,7 @@ describe('every account section has a palette row', () => {
    * `/accounts/[id]/page.tsx`, so this read the page's source and parsed it
    * with a regex — importing the page drags every IAM tab module in with it.
    * The allowlist is an exported constant of the hub catalog now
-   * (`features/accounts/hub/sections.ts`), which imports only icons, so the
+   * (`packages/ui/src/internal/account-hub/sections.ts`), which imports only icons, so the
    * join is a plain import and cannot silently stop matching.
    */
   test('the allowlist is not empty', () => {

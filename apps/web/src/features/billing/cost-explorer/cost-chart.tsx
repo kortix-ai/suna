@@ -50,7 +50,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
   const localizedChartConfig = useLocalizedUiCatalog(chartConfig);
   if (isLoading) {
     // Skeleton only forwards `className`/`children` (see
-    // components/ui/skeleton.tsx), not arbitrary DOM props, so the label goes
+    // packages/ui/src/primitives/skeleton.tsx), not arbitrary DOM props, so the label goes
     // on a wrapping element — the same shape CostSummaryTiles' loading state
     // uses for its own aria-label.
     return (

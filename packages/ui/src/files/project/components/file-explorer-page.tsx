@@ -402,7 +402,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     // Dropping a param changes the router cache key, so `router.replace` would
     // buy a cold RSC fetch for nothing. Next patches `replaceState` and updates
     // its own canonical URL, so `useSearchParams` still reports the stripped
-    // URL. Same mechanism as `openTabAndNavigate` in `stores/tab-store.ts`.
+    // URL. Same mechanism as `openTabAndNavigate` in `packages/ui/src/internal/stores/tab-store.ts`.
     window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
   }, [searchParams, pathname]);
 

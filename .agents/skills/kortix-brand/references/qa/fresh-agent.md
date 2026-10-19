@@ -52,29 +52,29 @@ mkdir -p $W/app $W/components
 cp "$REPO/$W/app/globals.css" $W/app/
 cp -R "$REPO/$W/components/ui" $W/components/ui
 for f in \
-  components/markdown/copy-button.tsx \
+  packages/ui/src/markdown/copy-button.tsx \
   components/projects/project-pending-screen.tsx \
-  components/projects/schedule-view.tsx \
-  components/setup-links/connector-handshake.tsx \
-  features/layout/section/empty-state.tsx \
-  features/layout/section/error-state.tsx \
-  features/review-center/review-detail.tsx \
-  features/tunnel/computer-connect.tsx \
+  packages/ui/src/workspace/projects/schedule-view.tsx \
+  packages/ui/src/markdown/setup-links/connector-handshake.tsx \
+  packages/ui/src/primitives/empty-state.tsx \
+  packages/ui/src/primitives/error-state.tsx \
+  packages/ui/src/workspace/review/review-detail.tsx \
+  packages/ui/src/internal/tunnel/computer-connect.tsx \
   features/workspace/command-palette.tsx \
-  features/workspace/project-sessions/project-sessions-view.tsx \
-  features/workspace/project-sidebar/project-sidebar.tsx \
-  features/workspace/shared/access/access-row.tsx \
-  features/workspace/capabilities/agents/agents-page.tsx \
-  features/workspace/capabilities/skills/skills-page.tsx \
-  features/workspace/capabilities/project-settings/project-settings-page.tsx \
-  features/workspace/capabilities/shared/capability-page-shell.tsx \
-  features/workspace/capabilities/shared/capability-tabs.tsx \
-  features/workspace/customize/sections/component/section-wrapper.tsx \
-  features/workspace/customize/sections/view/secrets-view.tsx \
-  features/workspace/customize/sections/view/channels-view.tsx \
-  features/workspace/customize/sections/view/sandbox-provider-coverage.tsx \
-  features/workspace/customize/sections/view/gateway/gateway-keys.tsx \
-  lib/icons/icon-config.ts lib/icons/ssr.tsx; do
+  packages/ui/src/workspace/sessions/project-sessions-view.tsx \
+  packages/ui/src/workspace/sidebar/project-sidebar.tsx \
+  packages/ui/src/access/access/access-row.tsx \
+  packages/ui/src/customize/agents/agents-page.tsx \
+  packages/ui/src/customize/skills/skills-page.tsx \
+  packages/ui/src/customize/project-settings/project-settings-page.tsx \
+  packages/ui/src/customize/shared/capability-page-shell.tsx \
+  packages/ui/src/customize/shared/capability-tabs.tsx \
+  packages/ui/src/customize/sections/component/section-wrapper.tsx \
+  packages/ui/src/customize/sections/view/secrets-view.tsx \
+  packages/ui/src/customize/sections/view/channels-view.tsx \
+  packages/ui/src/customize/sections/view/sandbox-provider-coverage.tsx \
+  packages/ui/src/customize/sections/view/gateway/gateway-keys.tsx \
+  packages/ui/src/lib/icon-config.ts lib/icons/ssr.tsx; do
   mkdir -p "$W/$(dirname "$f")" && cp "$REPO/$W/$f" "$W/$f" || echo "MISSING $f"
 done   # must print no MISSING line
 

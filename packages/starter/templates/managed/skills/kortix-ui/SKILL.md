@@ -112,7 +112,7 @@ Pass the organization's marks to `UiProvider useBrand`. Never load `fonts.css` (
 
 Every other primitive is one subpath per file: `@kortix/ui/<file name>` (`@kortix/ui/dot-matrix/<name>` for the dot matrices).
 Each module has one entry; `references/modules.md` lists every export and what to mount it in: `@kortix/ui/session`, `@kortix/ui/composer`, `@kortix/ui/session-panel`, `@kortix/ui/workspace`, `@kortix/ui/files`, `@kortix/ui/file-viewer`, `@kortix/ui/markdown`, `@kortix/ui/genui`, `@kortix/ui/diff`, `@kortix/ui/changes`, `@kortix/ui/terminal`, `@kortix/ui/browser`, `@kortix/ui/apps`, `@kortix/ui/access`, `@kortix/ui/customize`, `@kortix/ui/icons`, `@kortix/ui/theme`, `@kortix/ui/i18n` (`useTranslations`, `useLocale`: next-intl signatures over `UiProvider i18n` or the bundled English catalog).
-A deep path (`@kortix/ui/<module>/<path>`) has no semver: apps/web reads them through its shims; a host imports the entry. Also: `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event`), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`).
+A deep path (`@kortix/ui/<module>/<path>`) has no semver and exists only for the files in `scripts/deep-exports.json`; a host imports the entry. Also: `lib/telemetry` (`UiTelemetryRegister`: declaration-merge `event`), `error-boundary` (`ErrorBoundary`, `ErrorBoundaryFallback`).
 
 ## 8. Chat recipe
 
@@ -144,5 +144,5 @@ export function Chat({ projectId, sessionId }: { projectId: string; sessionId: s
 In `kortix-ai/suna`, these skills are the law and win over this file:
 - `kortix-brand` (values, voice, decisions): https://github.com/kortix-ai/suna/blob/dev/.agents/skills/kortix-brand/SKILL.md
 - `kortix-design-system` (which component, reference screens): https://github.com/kortix-ai/suna/blob/dev/.agents/skills/kortix-design-system/SKILL.md
-- `apps/web` imports keep their old paths (`@/components/ui/<name>`): those files are one-line shims.
-  Edit the component in `packages/ui/src/primitives/<name>.tsx`, never the shim.
+- `apps/web` imports `@kortix/ui/<name>` and the entries directly; it keeps no re-export shims.
+  Edit the component in `packages/ui/src/primitives/<name>.tsx`.

@@ -23,20 +23,20 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 ### Paper shaders: Grain, Neuro, Beams
 
 - **What:** `GrainShader` (a soft banded gradient with a fine film-grain finish), `NeuroShader` (neuro-noise) and `BeamsShader` (light beams through grained paper, then four crisp 1px hairlines at fixed percent positions) in `packages/ui/src/primitives/paper-wallpaper-shaders.tsx`. Built on `@paper-design/shaders-react`, single-pass WebGL2.
-- **Where:** Beams on the art pane of the connect modal (`features/tunnel/computer-connect.tsx`) and on the `/download` card (`features/marketing/download/card-images.tsx`). Grain and Neuro as wallpapers.
+- **Where:** Beams on the art pane of the connect modal (`packages/ui/src/internal/tunnel/computer-connect.tsx`) and on the `/download` card (`features/marketing/download/card-images.tsx`). Grain and Neuro as wallpapers.
 - **Not:** inside a data panel. Beams is static. It does not animate.
 - **Mobile:** metal and dither shaders (`apps/mobile/lib/effects/`, `dithering-sksl.ts`, `heatmap-sksl.ts`).
 
 ### Wallpapers
 
-- **What:** the user-selectable page backdrop. The registry is `apps/web/src/lib/wallpapers.ts`. Ids: `dither` (the default), `brandmark` (the outline wallpaper, "brandmark-bg"), `nebula` (display name "Pixel Beams"), `silk`, `grain`, `neuro`, `blank`.
+- **What:** the user-selectable page backdrop. The registry is `packages/ui/src/theme/wallpapers.ts`. Ids: `dither` (the default), `brandmark` (the outline wallpaper, "brandmark-bg"), `nebula` (display name "Pixel Beams"), `silk`, `grain`, `neuro`, `blank`.
 - **Where:** `components/ui/wallpaper-background.tsx` renders it. Thumbnails are `apps/web/public/wallpapers/<id>-{dark,light}.jpg`. Downloads are `apps/web/public/wallpapers/downloads/kortix-<id>-{dark,light}-*`.
 - **Note:** a wallpaper follows the theme, unlike an art pane. Its picker thumbnails are per theme.
 - **Rename pending:** the wallpaper id `brandmark` collides with D6 ("brandmark" is retired for the symbol). OPEN in `decisions.md`.
 
 ### Pixel and dither Kortix mark
 
-- **What:** the symbol sampled onto a 12 by 10 grid. `#` is a full cell and `+` is a partial cell drawn as a checker, so the curves read as dither (`apps/web/src/components/ui/pixel-kortix-mark.tsx`, `PixelKortixMark`). It is `aria-hidden` and uses `currentColor`.
+- **What:** the symbol sampled onto a 12 by 10 grid. `#` is a full cell and `+` is a partial cell drawn as a checker, so the curves read as dither (`packages/ui/src/primitives/pixel-kortix-mark.tsx`, `PixelKortixMark`). It is `aria-hidden` and uses `currentColor`.
 - **Where:** a first-run empty state, with one muted line below it (#7337: "Sessions you start will show up here"). Mobile has the same idea as a pixel flower (`apps/mobile/components/kortix/PixelDeadFlower.tsx`).
 - **Not:** as a logo substitute. It is art, not the brand mark.
 
@@ -48,7 +48,7 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 
 ### Kortix asterisk
 
-- **What:** a four-arm asterisk bullet (`apps/web/src/components/ui/kortix-asterisk.tsx`). `variant="gradient"` runs through the accents (`KORTIX_BULLET_GRADIENT`). `variant="solid"` is one color.
+- **What:** a four-arm asterisk bullet (`packages/ui/src/primitives/kortix-asterisk.tsx`). `variant="gradient"` runs through the accents (`KORTIX_BULLET_GRADIENT`). `variant="solid"` is one color.
 - **Where:** marketing lists and deck bullets (`presentations/engine/parts.tsx`).
 - **Not:** in app chrome, and not as a loader. Do not spin it (D4f bans spinning icons). Use the `kortix-bullet-flow` animation when it must move. Existing `animate-spin` uses on marketing pages are debt.
 
@@ -59,12 +59,12 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 
 ### Handshake
 
-- **What:** two same-size tiles joined by a dotted bridge: Kortix, then the app. A green check sits on the app corner when connected. The title names the app: "Connect {App} to {Project}". Never a generic plug (`components/setup-links/connector-handshake.tsx`, #7660, #8421). Mobile: `apps/mobile/components/session/connector-handshake.tsx`.
+- **What:** two same-size tiles joined by a dotted bridge: Kortix, then the app. A green check sits on the app corner when connected. The title names the app: "Connect {App} to {Project}". Never a generic plug (`packages/ui/src/markdown/setup-links/connector-handshake.tsx`, #7660, #8421). Mobile: `apps/mobile/components/session/connector-handshake.tsx`.
 - **Rules:** the Kortix tile is the page surface plus a hairline. The app tile is white in both themes through a named constant. Below 28rem the app logo leads alone (container query). See `color.md`.
 
 ### Glyph face (project and entity glyphs)
 
-- **What:** the catalogue glyph that identifies a project or entity, drawn in the app's icon weight (`apps/web/src/components/ui/glyph-face.tsx`, `glyphFace(name)`). The color palette is `color.glyph.*`, chosen by the user, and it clears 3:1 against the fill. The picker loads the full registry (`glyph-picker.tsx`). The avatar loads only the one path.
+- **What:** the catalogue glyph that identifies a project or entity, drawn in the app's icon weight (`packages/ui/src/primitives/glyph-face.tsx`, `glyphFace(name)`). The color palette is `color.glyph.*`, chosen by the user, and it clears 3:1 against the fill. The picker loads the full registry (`glyph-picker.tsx`). The avatar loads only the one path.
 - **Where:** `EntityAvatar`, project tiles.
 - **Not:** the Kortix mark. An account brand icon (`useBranding()`) replaces the mark, not the glyph.
 

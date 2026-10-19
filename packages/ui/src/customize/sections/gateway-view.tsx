@@ -49,7 +49,7 @@ import { useTranslations } from '../../i18n';
  *
  * This view reads `useSettingsNav()`, never a store directly, so it mounts
  * under either the legacy Customize panel or the new Settings panel — see
- * `features/workspace/shared/settings-nav-context.tsx`.
+ * `packages/ui/src/internal/layout/settings-nav-context.tsx`.
  *
  * ## This module is also the dialog
  *

@@ -8,7 +8,7 @@ import { SettingsNavProvider } from '../../internal/layout/settings-nav-context'
  * The page body for /projects/[id]/secrets — Secrets graduated out of the
  * project Settings sub-nav into its own top-level Customize tab. It is the
  * one section editor-tier (`project.secret.read/write`, deliberately not
- * member baseline — see `lib/project-actions.ts`'s header comment) rather
+ * member baseline — see `packages/ui/src/internal/lib/project-actions.ts`'s header comment) rather
  * than reusing a broader settings leaf, and that gate travels with the
  * component itself, unchanged by this move.
  *

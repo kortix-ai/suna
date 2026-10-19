@@ -1,7 +1,7 @@
 /**
  * Iframe `sandbox` token sets. A frame that shows agent-written content does
  * not pick one of these itself: it asks `framePolicy` in
- * `features/file-viewer/preview-policy.ts`, which owns the origin rule.
+ * `packages/ui/src/files/viewer/preview-policy.ts`, which owns the origin rule.
  */
 
 /** A running app on an origin of its own: same-origin, scripts, forms, popups, downloads, modals. */

@@ -5,7 +5,7 @@ import { createSafeJSONStorage } from '../lib/storage/managed-storage';
 
 /**
  * Whether this browser closed the "Kortix mobile" introduction on the project
- * page (`features/workspace/project-layout/home/mobile-app-promo.tsx`). Closed
+ * page (`packages/ui/src/workspace/home/mobile-app-promo.tsx`). Closed
  * once, it stays closed: the X, Escape, a click outside and a store button all
  * count.
  */

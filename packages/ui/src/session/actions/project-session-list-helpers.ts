@@ -16,7 +16,7 @@ import { type ChangeRequest, type ProjectSession, type ProjectSessionStatus } fr
  *   (`resolveSessionListViewState`, also read by the Sessions page).
  *
  * Display status itself is NOT decided here — `sessionDisplayStatus` in
- * `components/projects/session-label` owns that mapping, and this file reads it.
+ * `packages/ui/src/session/actions/session-label` owns that mapping, and this file reads it.
  */
 
 export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [

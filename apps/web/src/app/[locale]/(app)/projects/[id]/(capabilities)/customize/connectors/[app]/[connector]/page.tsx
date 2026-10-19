@@ -18,7 +18,7 @@ function decodeSegment(value: string): string {
 
 /**
  * /projects/[id]/customize/connectors/[app]/[connector] — one connector, as a
- * page. See `features/workspace/capabilities/connectors/detail/connector-page.tsx`.
+ * page. See `packages/ui/src/customize/connectors/detail/connector-page.tsx`.
  *
  * The `Suspense` boundary is required: `ConnectorPage` reads
  * `useSearchParams()` (the tab, the install hand-off, the `?oauth2=` return

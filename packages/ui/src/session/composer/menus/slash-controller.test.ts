@@ -396,7 +396,7 @@ describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
  * The point of the feature, stated as behavior: a file the Outputs card shows
  * can be picked from the `/` palette and lands in the document as the SAME
  * mention the `@` menu inserts — so the send path (`editor/serialize.ts` ->
- * `lib/project-preamble.ts`'s `<file_ref>` block) needs nothing new, and the
+ * `packages/ui/src/internal/lib/project-preamble.ts`'s `<file_ref>` block) needs nothing new, and the
  * user keeps typing with the file attached.
  */
 const reportFile: SlashFile = {

@@ -14,7 +14,7 @@ import { localizedCopy } from './localized-copy';
  * opens on its heading and a hairline rule, then rows: label on the left, its
  * control on the right, consecutive rows sharing ONE bordered box separated by
  * hairlines — `SettingsRowGroup` / `SettingsRow`
- * (`components/ui/settings-row.tsx`, whose header explains the rationale).
+ * (`packages/ui/src/primitives/settings-row.tsx`, whose header explains the rationale).
  * Sections between groups are a plain small label, not a card header. Three
  * consequences worth naming, because each replaced something that used to be
  * here:

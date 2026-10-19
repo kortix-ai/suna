@@ -87,11 +87,11 @@ function StandaloneSettingsBody({ tab }: { tab: SettingsTab }) {
 
   // The account hub is a full-screen modal over THIS route exactly like the
   // panel is, and it is mounted one level up in `(app)/layout.tsx` with the
-  // `?accountId=` param as its open state (`stores/account-panel-store.ts`).
+  // `?accountId=` param as its open state (`packages/ui/src/internal/stores/account-panel-store.ts`).
   // On a hard-loaded hub deep link (`/settings?accountId=<id>` — the URL the
   // hub shows in the address bar and the href of its Manage link) the hub is
   // therefore already open when this route mounts, and the z-stack hands the
-  // top layer to the dialog that opened last (`lib/z-stack.tsx`): raising the
+  // top layer to the dialog that opened last (`packages/ui/src/lib/z-stack.tsx`): raising the
   // personal panel here buries the hub the URL names, and the deep link lands
   // on Profile. So the panel yields — it opens only when the hub is not on
   // the URL, i.e. on a plain load, or once the hub closes and drops the param.

@@ -9,7 +9,7 @@ interface KortixLogoProps {
 }
 
 /**
- * Back-compat shim over the canonical `@/components/ui/kortix-logo` —
+ * Back-compat shim over the canonical `@kortix/ui/kortix-logo` —
  * `symbol` maps to `icon`, `logomark` maps to `brandmark`. New code should
  * import the ui component directly.
  */

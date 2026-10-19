@@ -9,7 +9,7 @@ import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-ske
 
 /**
  * /projects/[id]/customize/connectors/[app] — one catalogue app. See
- * `features/workspace/capabilities/connectors/detail/app-page.tsx`.
+ * `packages/ui/src/customize/connectors/detail/app-page.tsx`.
  *
  * The `Suspense` boundary is required: `AppPage` reads `useSearchParams()`
  * (`?id=` for a Discover app, `?src=apps` for a managed one).

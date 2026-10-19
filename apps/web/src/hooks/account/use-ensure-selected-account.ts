@@ -10,14 +10,14 @@
  * `useSettingsAccountId` — `project?.account_id ?? selectedAccountId` — so a
  * surface mounted with no project AND no seeded id cannot resolve an account at
  * all. `usePermission(undefined, 'account.write')` then reports `allowed:
- * false` (its documented fail-closed default, `lib/use-permission.ts:26-27`),
+ * false` (its documented fail-closed default, `packages/ui/src/internal/lib/use-permission.ts:26-27`),
  * which renders Billing/Usage/Identity/Audit/API keys/Organization as EMPTY —
  * indistinguishable from "you lack permission".
  *
  * This lived inline in `features/layout/user-menu.tsx`, back when a `UserMenu`
  * sat in the project sidebar's footer next to every `SettingsPanel` mount. That
  * footer menu is gone. `ProjectSidebar` now renders `WorkspaceSwitcher`
- * (`features/workspace/project-sidebar/project-sidebar.tsx:116`) and no
+ * (`packages/ui/src/workspace/sidebar/project-sidebar.tsx:116`) and no
  * `UserMenu` at all, and `UserMenu` has no remaining mount. So the effect had
  * to become callable on its own rather than be copied, and each of the three surfaces
  * that needs it calls it directly:

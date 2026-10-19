@@ -71,7 +71,7 @@ import {
 } from './guides';
 
 // Monochrome brand marks (same currentColor + dark:invert technique as the
-// LLM provider pickers — see features/providers/provider-branding.tsx). The
+// LLM provider pickers — see packages/ui/src/internal/lib/provider-branding.tsx). The
 // dedicated google-workspace mark exists because provider-icons/google.svg is
 // the Gemini star, not the Workspace G.
 const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {

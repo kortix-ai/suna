@@ -216,7 +216,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
   // ONE resolver for "what is this account's billing situation" (see
-  // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
+  // packages/ui/src/internal/lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
   // `noPlan` with a subscribe pitch — which told an account on an ACTIVE
   // subscription with a $0.0099 wallet that it had no plan, while the modal
   // that CTA opened correctly said "Out of credits — your plan is unaffected".
@@ -1587,7 +1587,7 @@ function ActiveSessionChat({
     // route. Next patches `replaceState` and updates its own canonical URL, so
     // `useSearchParams` still reports the stripped URL and this effect settles
     // on its next run. Same mechanism as `openTabAndNavigate` in
-    // `stores/tab-store.ts`.
+    // `packages/ui/src/internal/stores/tab-store.ts`.
     window.history.replaceState(
       null,
       '',

@@ -179,7 +179,7 @@ export async function resolveCostExport(result: CostExportResult): Promise<Resol
 }
 
 /** Saves a blob to the user's machine. Mirrors `downloadFile` in
- *  `features/files/api/runtime-files.ts` — anchor click, then revoke, since
+ *  `packages/ui/src/internal/files/runtime-files.ts` — anchor click, then revoke, since
  *  revoking synchronously can race Safari's own read of the URL. */
 function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

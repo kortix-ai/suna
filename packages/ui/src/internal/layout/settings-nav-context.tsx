@@ -3,7 +3,7 @@
 /**
  * Panel-agnostic navigation surface for the section/tab views mounted under
  * the Settings overlay (`settings/settings-panel.tsx`, backed by
- * `stores/settings-panel-store.ts`). Until the settings-panel cutover, this
+ * `packages/ui/src/internal/stores/settings-panel-store.ts`). Until the settings-panel cutover, this
  * same surface also served the legacy Customize overlay
  * (the legacy Customize panel, backed by the legacy Customize store) —
  * both panels provided their own adapter over their own store, so the shared

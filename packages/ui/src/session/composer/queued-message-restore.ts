@@ -57,7 +57,7 @@ export function restoreQueuedMessage(
  * The latch is belt-and-braces beside the server's unique index — a second POST
  * would be deduped, not duplicated — but it is what stops the second request
  * being issued at all. `infoToast` renders `options.button` verbatim
- * (`components/ui/toast.tsx`), so the button stays on screen for the full 5s
+ * (`packages/ui/src/primitives/toast.tsx`), so the button stays on screen for the full 5s
  * after it is pressed, and the dismiss animation is not instant.
  */
 export function createQueueUndoAction(args: {

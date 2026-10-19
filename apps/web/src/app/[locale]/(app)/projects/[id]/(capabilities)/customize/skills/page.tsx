@@ -6,7 +6,7 @@ import { SkillsPage } from '@kortix/ui/customize';
 
 /**
  * /projects/[id]/skills — the standalone Skills catalog. See
- * `features/workspace/capabilities/skills/skills-page.tsx` for the page body.
+ * `packages/ui/src/customize/skills/skills-page.tsx` for the page body.
  */
 export default function ProjectSkillsPage() {
   const { id: projectId } = useParams<{ id: string }>();

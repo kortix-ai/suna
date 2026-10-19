@@ -152,7 +152,7 @@ import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
 // backend would reject. See `entitlements` on the account-state `tier` block.
 
 // `formatDate` and `principalLabel` come from
-// `features/workspace/shared/access` — this file used to carry its own copy of
+// `packages/ui/src/access/access` — this file used to carry its own copy of
 // both, byte-identical to the ones the project/group/audit surfaces carried.
 
 /** Copy an invite URL to the clipboard with a friendly toast either way. */
@@ -505,7 +505,7 @@ export function AccountHubContent() {
               2026-08-18: service account tokens first, the rules that govern
               them second. A person's own API keys are not account
               configuration and left for `/settings/tokens`
-              (`features/workspace/settings/tabs/tokens-tab.tsx`);
+              (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`);
               `ApiKeysSection` carries the one line that points there. Both
               components carry their own section headers, so the pane header
               above is the only other chrome. */}

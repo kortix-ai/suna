@@ -27,7 +27,7 @@ function navFor(activeTab = 'members', accountId?: string) {
  * A fake browser, because the account-hub branch below opens a MODAL rather
  * than navigating: the hub has no route, so its destination is `?accountId=`
  * written onto the current page with `history.pushState`
- * (`stores/account-panel-store.ts`). `pushed` therefore stays empty for those
+ * (`packages/ui/src/internal/stores/account-panel-store.ts`). `pushed` therefore stays empty for those
  * ids, and `hubUrl()` is what proves the click went somewhere.
  */
 const originalWindow = (globalThis as { window?: unknown }).window;

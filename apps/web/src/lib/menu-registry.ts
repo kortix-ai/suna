@@ -100,7 +100,7 @@ export type MenuItemKind =
   /**
    * Opens the account hub modal. NOT `navigate`: the hub has no route — it is
    * `?accountId=` on whatever page you are already on
-   * (`stores/account-panel-store.ts`), so there is no href to give. The
+   * (`packages/ui/src/internal/stores/account-panel-store.ts`), so there is no href to give. The
    * destination is `accountTab` below, and the account is whichever one is
    * selected at the moment the row is chosen.
    */
@@ -168,7 +168,7 @@ export interface MenuItemDef {
   /**
    * For kind='account': which hub section to open (`?accountTab=`), or omitted
    * for the hub's account list. Values come from `VALID_TABS` in
-   * `features/accounts/hub/sections.ts`, which
+   * `packages/ui/src/internal/account-hub/sections.ts`, which
    * `menu-registry-destinations.test.ts` checks this against.
    */
   accountTab?: string;
@@ -1065,7 +1065,7 @@ export const menuRegistry: MenuItemDef[] = [
   // These eight rows are the palette's only route to the account-scoped
   // surfaces. They spent one release as settings tabs, derived from
   // `railGroups()` like every other tab; they are not settings tabs any more
-  // (`ACCOUNT_GRADUATED` in `features/workspace/settings/settings-tabs.ts`
+  // (`ACCOUNT_GRADUATED` in `packages/ui/src/customize/settings/settings-tabs.ts`
   // redirects every stale `/settings/<id>` bookmark onto this page), so the
   // derived list cannot produce them and they are hand-written here — the same
   // arrangement `proj-triggers` uses for the same reason.

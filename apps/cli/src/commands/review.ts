@@ -536,7 +536,7 @@ async function reviewSubmit(f: Record<string, string | undefined>, json: boolean
   return 0;
 }
 
-// ── id routing (mirrors apps/web/src/features/review-center/review-actions.ts) ─
+// ── id routing (mirrors packages/ui/src/workspace/review/review-actions.ts) ─
 
 /** Strip a namespace prefix, or null when `id` does not carry it. */
 function strip(id: string, prefix: string): string | null {

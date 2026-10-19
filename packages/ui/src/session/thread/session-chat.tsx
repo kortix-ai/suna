@@ -4017,7 +4017,7 @@ export function SessionChat({
       // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309. Next
       // patches `replaceState` and updates its own canonical URL, so
       // `useSearchParams` still reports the new URL. Same mechanism as
-      // `openTabAndNavigate` in `stores/tab-store.ts`.
+      // `openTabAndNavigate` in `packages/ui/src/internal/stores/tab-store.ts`.
       window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
     },
     [readOnly, pathname, searchParams],

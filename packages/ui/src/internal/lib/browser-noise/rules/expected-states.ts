@@ -28,7 +28,7 @@ const RUNTIME_NOT_READY_NOISE_PATTERNS = [
 // a 402 carrying one of these exact strings in the response body
 // (`{ error: <message>, code, balance, account_id }`); the SDK surfaces them as
 // an `ApiError` (message === the body's `error` field). They are EXPECTED,
-// user-facing business states — `apps/web/src/lib/error-handler.tsx:handleApiError`
+// user-facing business states — `packages/ui/src/internal/lib/error-handler.tsx:handleApiError`
 // already routes a structured 402 to a top-up toast / upgrade dialog and
 // intentionally only reports 5xx/network/timeout to Sentry. But the `ApiError`
 // can leak through capture paths that bypass that guard

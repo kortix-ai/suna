@@ -348,7 +348,7 @@ export function describeConditions(filter: Record<string, string> | null | undef
 /**
  * Per-kind wording for the Schedules and Webhooks screens, heading included.
  *
- * The heading lived in `features/workspace/settings/rail.ts` for as long as
+ * The heading lived in `packages/ui/src/customize/settings/rail.ts` for as long as
  * these were two tabs of the Settings overlay — every pane in that overlay
  * takes its title and description from its rail entry, and being the one
  * exception is what let the copy drift before. They are capability PAGES now

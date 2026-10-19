@@ -70,7 +70,7 @@ export const DELETE_WORKSPACE_REASSURANCE =
  *
  * Deliberately duplicated in `profile-tab.tsx` rather than shared: the two
  * Linear restyles landed in parallel and neither should have edited the other
- * agent's file. Promote it to `components/ui/settings-row.tsx` once a third
+ * agent's file. Promote it to `packages/ui/src/primitives/settings-row.tsx` once a third
  * pane needs it.
  */
 export interface GeneralTabViewProps {

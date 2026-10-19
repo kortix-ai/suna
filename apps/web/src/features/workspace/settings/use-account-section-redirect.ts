@@ -22,7 +22,7 @@
  *   2. `useCurrentAccountStore`'s `selectedAccountId`, via
  *      `useSettingsAccountId` — the same fallback every account-scoped
  *      settings tab already used, and the same one
- *      `stores/account-settings-modal-store.ts` uses to build this exact URL.
+ *      `packages/ui/src/internal/stores/account-settings-modal-store.ts` uses to build this exact URL.
  *      Covers the case where the detail read fails or the caller has no
  *      project.
  *

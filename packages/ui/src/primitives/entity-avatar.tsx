@@ -160,7 +160,7 @@ export function EntityAvatar({
         // The tile always sits beside the name it belongs to, so the glyph is
         // decorative: announced, it reads the emoji's CLDR name immediately
         // before the label that says the same thing. Same treatment as the
-        // picker trigger in features/projects/modal/project-icon-field.tsx.
+        // picker trigger in packages/ui/src/workspace/projects/modal/project-icon-field.tsx.
         <span aria-hidden className="leading-none">
           {emoji}
         </span>

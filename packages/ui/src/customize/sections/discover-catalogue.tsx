@@ -67,7 +67,7 @@ type DiscoverConnectorTarget =
  *
  * ── Known duplication, read before changing this file ──────────────────────
  * The app page's Install
- * (`features/workspace/capabilities/connectors/install/install.ts`) runs the
+ * (`packages/ui/src/customize/connectors/install/install.ts`) runs the
  * same add journey (pick a surface -> `createConnector` -> credential entry)
  * for the Connectors page's catalogue. The two are separate implementations
  * of one journey and must stay behaviourally consistent; a fix here very

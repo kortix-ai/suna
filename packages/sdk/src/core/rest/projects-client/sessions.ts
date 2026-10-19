@@ -167,8 +167,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own

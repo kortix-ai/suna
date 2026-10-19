@@ -78,7 +78,7 @@ mock.module('@/lib/device-caches', () => ({
  * not `mock.module` on `@/lib/utils/clear-local-storage`. `mock.module` is
  * PROCESS-WIDE in this
  * repo: it replaced `clearUserLocalStorage` for every test that shares this
- * process, so `bun test src/lib/utils` outside `--isolate` broke
+ * process, so `bun test packages/ui/src/internal/lib/utils` outside `--isolate` broke
  * `clear-local-storage.test.ts`'s own tests of the real function with an
  * error belonging to a module this file never runs. The gated CI command
  * (`bun test --isolate --parallel=4`) never saw it — one process per file —

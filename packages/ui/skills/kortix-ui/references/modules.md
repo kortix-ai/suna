@@ -2,7 +2,7 @@
 
 One curated barrel per module. Every name below is public API (semver). Each piece needs
 `<UiProvider>` and a `QueryClientProvider` at the root; a missing `UiHostComponents` slot hides its control.
-Deep paths (`@kortix/ui/<module>/<path>`) exist for apps/web and carry no semver: import the entry.
+Deep paths (`@kortix/ui/<module>/<path>`) exist only for the files in `scripts/deep-exports.json` and carry no semver: import the entry.
 `src/skill.test.ts` fails when an entry exports a name this file does not list.
 
 ## `@kortix/ui/icons`

@@ -349,7 +349,7 @@ export default async function RootLayout({
               <TooltipProvider delayDuration={150}>
                 <AuthProvider>
                   <I18nProvider initialLocale={htmlLang}>
-                    {/* Publishes the App Router to lib/navigation/router-bridge so
+                    {/* Publishes the App Router to packages/ui/src/internal/lib/navigation/router-bridge so
                     stores and error handlers navigate softly instead of
                     reloading the document. */}
                     <RouterBridge />

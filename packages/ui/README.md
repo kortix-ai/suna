@@ -3,8 +3,8 @@
 The shared React component library for `apps/web`, Kortix Apps, the
 white-label demo and SDK hosts. Components are Tailwind v4 class strings themed
 by CSS variables. The whole session UI lives here, one module per
-responsibility (layout below); `apps/web` keeps a one-line re-export shim at
-each old path of a file that moved here.
+responsibility (layout below). `apps/web` imports it like any host: the module
+entries, the primitives, and a short list of deep paths (below).
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
@@ -229,8 +229,11 @@ a lower layer; `internal` has no public entry and no semver.
 "Sandbox files" are a live session's workspace (`files/runtime`); "project
 files" are the git-backed repo (`files/project`). Each entry is an explicit
 barrel (no `export *`), listed in `scripts/gen-exports.mjs` `ENTRIES`. Every
-other module file also gets a deep key (`./<module>/<path>`) for apps/web's
-shims; deep keys carry no semver.
+other module file is reachable through its entry only. A deep key
+(`./<module>/<path>`, no semver) exists for each file in
+`scripts/deep-exports.json`: the module files apps/web, the white-label demo and
+the repo tests import today. `tests/unit/ui-deep-exports.test.ts` keeps that list
+equal to the imports, so a new deep import is a deliberate edit.
 
 ## Theming
 
@@ -297,9 +300,8 @@ How it stays themable:
 - Imports inside the package are relative. Never import `apps/web` code.
 - `@kortix/shared` and `@kortix/manifest-schema` are private: they are
   devDependencies, and `scripts/build.mjs` inlines what dist imports from them.
-- Edit a component here, never its `apps/web` shim. A shim is only
-  `export * from '@kortix/ui/<name>'` (plus `'use client'` and the default
-  re-export when the component has them).
+- Edit a component here. `apps/web` keeps no re-export shims
+  (`tests/unit/web-no-ui-shims.test.ts`); it imports `@kortix/ui/<name>` or the entry.
 - `package.json` `exports` is generated: `pnpm --filter @kortix/ui gen-exports`.
   `src/exports.test.ts` fails on drift and on an export target that does not exist.
 - `src/styles/tokens.css`, `src/styles/fonts.css` and the `theme` region of

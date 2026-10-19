@@ -11,7 +11,7 @@ import {
 
 /**
  * `/projects/[id]/customize/settings` is the SECOND host of `SettingsNav` — the context
- * `features/workspace/shared/settings-nav-context.tsx` was deliberately kept
+ * `packages/ui/src/internal/layout/settings-nav-context.tsx` was deliberately kept
  * panel-agnostic for. The panes it still mounts (General, the Sandbox/Snapshots
  * pair) speak the settings overlay's vocabulary, so the adapter's whole job is
  * translating that vocabulary into one of THREE destinations: a section on
@@ -42,7 +42,7 @@ function navFor(
  * A fake browser, because the account-hub branch below opens a MODAL rather
  * than navigating: the hub has no route, so its destination is `?accountId=`
  * written onto the current page with `history.pushState`
- * (`stores/account-panel-store.ts`). `pushed` therefore stays empty for those
+ * (`packages/ui/src/internal/stores/account-panel-store.ts`). `pushed` therefore stays empty for those
  * ids, and `hubUrl()` is what proves the click went somewhere.
  */
 const originalWindow = (globalThis as { window?: unknown }).window;

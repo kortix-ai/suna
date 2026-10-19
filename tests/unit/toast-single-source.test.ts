@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // apps/web has one toast surface: @kortix/ui's toast
-// (packages/ui/src/primitives/toast.tsx; apps/web/src/components/ui/toast.tsx
+// (packages/ui/src/primitives/toast.tsx; packages/ui/src/primitives/toast.tsx
 // re-exports it). A second
 // wrapper (`src/lib/toast.ts`) re-exported sonner's stock `toast.success/error`,
 // so every caller of it rendered the old, unbranded toast. Only the surface

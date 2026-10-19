@@ -43,7 +43,7 @@
  *
  * The production host renders this INSIDE a Radix dialog, and a `fixed`
  * element does not reliably escape one. `ModalContent`
- * (`components/ui/modal.tsx:124-125`) is `fixed ... overflow-y-auto` and, from
+ * (`packages/ui/src/primitives/modal.tsx:124-125`) is `fixed ... overflow-y-auto` and, from
  * the `lg` breakpoint up, `-translate-x-1/2 -translate-y-1/2`. A transform
  * makes an element the containing block for every fixed descendant, so above
  * `lg` an inline canvas is pinned to the modal panel and cropped by its
@@ -52,7 +52,7 @@
  *
  * `z-50` does not survive the trip either: `modal.tsx:278` sets the content's
  * z-index from `dialogContentZ(depth)`, which is 9999 at depth 1
- * (`lib/z-stack.tsx:25`). `floatingZ(useDialogDepth())` is the value that layer
+ * (`packages/ui/src/lib/z-stack.tsx:25`). `floatingZ(useDialogDepth())` is the value that layer
  * already reserves for things drawn ABOVE a dialog, and it accounts for nested
  * dialogs — the wizard opens `DemoQualifierModal` over itself.
  */

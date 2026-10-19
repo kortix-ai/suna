@@ -3,7 +3,7 @@
 import { useTranslations } from '../../i18n';
 // PrincipalPicker — THE "who is this for?" control.
 //
-// Evolved from `features/workspace/shared/sharing-picker.tsx`'s
+// Evolved from `packages/ui/src/access/sharing-picker.tsx`'s
 // `SubjectPicker` (project + account modes, `allowInvite`, `kinds`,
 // `excludeUserIds`) with the one capability that forced a second component
 // to exist: `selection: 'single'`, i.e. radio semantics plus the collapsed

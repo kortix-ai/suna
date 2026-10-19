@@ -397,7 +397,7 @@ export function legacySectionRedirect(
   // `Object.hasOwn`.
   if (accountId && isAccountGraduatedSection(rawSection)) {
     // The destination is the account hub, which has no route: it is a modal
-    // over a page (`stores/account-panel-store.ts`). So the redirect lands on
+    // over a page (`packages/ui/src/internal/stores/account-panel-store.ts`). So the redirect lands on
     // the PROJECT the bookmark came from, with the hub's params on it — which
     // is strictly better than the `/accounts/<id>` page this used to produce,
     // because closing the hub leaves the person on their project instead of on

@@ -18,7 +18,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * The two kinds are not two implementations of one thing; they answer to
  * different people. A personal key acts as YOU, dies when your membership
  * does, and is nobody else's business — it belongs on your own settings page
- * (`features/workspace/settings/tabs/tokens-tab.tsx`, `/settings/tokens`). A
+ * (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`, `/settings/tokens`). A
  * service account token acts as ITSELF, keeps working when its author leaves,
  * and is account configuration — it belongs here, beside the key rules that
  * govern it. So this file lists exactly one kind now, and the create form has

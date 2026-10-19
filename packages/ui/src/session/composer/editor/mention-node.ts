@@ -10,7 +10,7 @@ export interface MentionAttrs {
 }
 
 // `chipPrefix` / `chipText` / `chipClass` / `chipAriaLabel` used to live here.
-// They moved to `features/session/mention-chip.tsx` so the SENT message can
+// They moved to `packages/ui/src/session/thread/mention-chip.tsx` so the SENT message can
 // draw the identical chip — see that module's header for what was broken
 // while this file was their only home. Re-exported because this node is the
 // composer's canonical entry point for them.

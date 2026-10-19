@@ -18,7 +18,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui/session` | The session thread: `SessionThread`, its building blocks, `ModelPicker` and `AgentPicker`. It needs `@kortix/sdk` and its React peers. |
 | `@kortix/ui/<module>` | One curated entry per module: `composer`, `session-panel`, `workspace`, `files`, `file-viewer`, `markdown`, `genui`, `diff`, `changes`, `terminal`, `browser`, `apps`, `access`, `customize`, `icons`, `i18n`. See [Modules](#modules). |
 | `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
-| `@kortix/ui/lib/<name>`, `/hooks/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
+| `@kortix/ui` (helpers) | The helpers the components use come from the root too: `cn`, `useIsMobile`, `useDebounce`, `lazyClient`, `setUiTelemetry`, `setUiHostEnv`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
 `react` and `react-dom` 18 or later are peer dependencies. Install the rest by what you use:
@@ -258,7 +258,7 @@ Every part of a Kortix session is a module with one entry. Each entry is a curat
 | `@kortix/ui/apps` | `AppPreview`, the frame pool, the App view model | none |
 | `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles (`AccessDialog`, `RoleSelect`, `PrincipalPicker`); the project configuration pages (`ConnectorsPage`, `AgentsPage`, `TriggersPage`, `SecretsPage`, `ModelsPage`, `SkillsPage`, `ProjectSettingsPage`) | `projectId` |
 
-The full name list of every entry is in the package skill, `skills/kortix-ui/references/modules.md`. A deep path such as `@kortix/ui/session/thread/session-chat` resolves, but it has no semver: the Kortix web app reads deep paths while it moves to the entries. Import the entry.
+The full name list of every entry is in the package skill, `skills/kortix-ui/references/modules.md`. A few deep paths such as `@kortix/ui/session/thread/session-chat` resolve, but they have no semver: they exist for the Kortix web app until each one moves to an entry. Import the entry.
 
 ## Add a chat
 

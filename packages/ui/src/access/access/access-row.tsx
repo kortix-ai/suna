@@ -93,7 +93,7 @@ export interface AccessRowProps {
    * Row destination, when it is known at render. The row gets a stretched
    * `<Link>` overlay instead of a click handler, so the payload prefetches and
    * the click never runs a cold RSC fetch. Same pattern as a clickable `Card`
-   * (`components/ui/card.tsx`).
+   * (`packages/ui/src/primitives/card.tsx`).
    */
   href?: string;
   selectable?: AccessRowSelectable;

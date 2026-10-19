@@ -9,7 +9,7 @@ import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-ske
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalog. See
- * `features/workspace/capabilities/connectors/connectors-page.tsx` for the
+ * `packages/ui/src/customize/connectors/connectors-page.tsx` for the
  * page body.
  *
  * The `Suspense` boundary is required, not decorative: `ConnectorsPage` reads

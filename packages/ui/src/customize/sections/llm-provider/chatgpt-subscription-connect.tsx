@@ -47,7 +47,7 @@ const providerLoginsKey = (projectId: string) => ['project-provider-oauth', proj
 
 /**
  * The sign-in state machine behind every subscription surface: the card below
- * and the provider sheet (`features/providers/provider-sheet.tsx`). One copy,
+ * and the provider sheet (`packages/ui/src/customize/providers/provider-sheet.tsx`). One copy,
  * so a device-grant fix lands in both.
  */
 export function useSubscriptionSignIn({

@@ -6,7 +6,7 @@ import { AgentsPage } from '@kortix/ui/customize';
 
 /**
  * /projects/[id]/agent — the standalone Agents catalog. See
- * `features/workspace/capabilities/agents/agents-page.tsx` for the page body.
+ * `packages/ui/src/customize/agents/agents-page.tsx` for the page body.
  */
 export default function ProjectAgentPage() {
   const { id: projectId } = useParams<{ id: string }>();

@@ -42,7 +42,7 @@ import { SessionOverridesControl, type SessionOverrideRow } from './session-over
 import { useProviderPoolEditingState } from './provider-pool-draft-context';
 import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
 
-// The pooled-key editors read the full LLM provider catalog (`lib/llm-providers`
+// The pooled-key editors read the full LLM provider catalog (`packages/ui/src/internal/lib/llm-providers`
 // → the bundled models.dev snapshot). They render only when the user opens the
 // "Provider keys" row, so they load then — not with every composer.
 const ProviderSecretPoolEditor = lazyClient(() =>

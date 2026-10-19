@@ -27,7 +27,7 @@ interface GatewayModel {
   // the single synthetic `kortix` opencode provider (see the sandbox agent
   // server's `buildKortixProvider`) — this is the one field a client can
   // group/brand by without parsing `<provider>/<model>` out of the wire id.
-  // See apps/web/src/features/session/model-selector.tsx's `pickerGroupId`.
+  // See packages/ui/src/session/models/model-selector.tsx's `pickerGroupId`.
   provider?: string;
   // The provider's display name from models.dev ("OpenCode Go"). Clients label
   // a BYOK group with it instead of the synthetic `kortix` provider's name.

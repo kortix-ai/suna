@@ -325,7 +325,7 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  */
 const PANEL_SECTIONS_OWN_CONTAINER = [
   'customize/migrate-to-v2/upgrade-view.tsx',
-  // `components/projects/schedule-view.tsx` was here until Schedules and
+  // `packages/ui/src/workspace/projects/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
   // not govern it — the capability page that mounts it does.

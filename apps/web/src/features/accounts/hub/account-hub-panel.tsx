@@ -14,7 +14,7 @@
  * **There is no `/accounts` route.** This modal is the hub, the only one.
  * Opening adds `?accountId=<id>` to the page you are on; the path never moves.
  * Reload the URL, paste it to someone, and the modal comes back over the same
- * page. See `stores/account-panel-store.ts`.
+ * page. See `packages/ui/src/internal/stores/account-panel-store.ts`.
  *
  * **Open is derived from that param, not stored.** So Back, Forward, a reload
  * and a pasted link all work with no listener at all: Next keeps

@@ -19,7 +19,7 @@ import {
 } from './sharing-intent';
 
 // The member/group picker itself now lives in
-// `features/workspace/shared/access/principal-picker.tsx` as
+// `packages/ui/src/access/access/principal-picker.tsx` as
 // `PrincipalPicker` — one component for every access surface. This module
 // keeps the project-sharing radio (`SharingPicker`) and a thin
 // `SubjectPicker` adapter so the one remaining non-access caller

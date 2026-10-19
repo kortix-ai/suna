@@ -42,7 +42,7 @@ function absolute(node: string): string {
  * statements in between. That silently SHRINKS the graph this file walks,
  * which for a security ban means it stops seeing the modules it is meant to
  * police. It happened: a doc comment mentioning an npm subpath wildcard
- * truncated the sign-out graph before `stores/current-account-store.ts`, and
+ * truncated the sign-out graph before `packages/ui/src/internal/stores/current-account-store.ts`, and
  * only the "the walk has to reach past the entry points" assertions below
  * caught it. Removing line comments first makes that unrepresentable.
  */

@@ -192,7 +192,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     // the component every `/projects/*` page mounts. Next patches
     // `replaceState` and updates its own canonical URL, so `useSearchParams`
     // still reports the stripped URL. Same mechanism as `openTabAndNavigate` in
-    // `stores/tab-store.ts`.
+    // `packages/ui/src/internal/stores/tab-store.ts`.
     //
     // The path comes from `window.location.pathname`, never a hardcoded
     // `/projects/<id>`. This shell is mounted by

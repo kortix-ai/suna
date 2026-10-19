@@ -1771,8 +1771,8 @@ test('getSessionOpenBundle throws when the response is unsuccessful', async () =
 // deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
 // in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
 // `Record<string, unknown>`, so every host re-derived the same `typeof … ===
-// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
-// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// 'string'` cast: packages/ui/src/session/actions/session-label.ts:61,
+// packages/ui/src/session/actions/project-session-list-helpers.ts:359,
 // apps/tui/src/lib/session-groups.ts:145.
 
 const child = (metadata: Record<string, unknown>, sessionId = 'child') =>

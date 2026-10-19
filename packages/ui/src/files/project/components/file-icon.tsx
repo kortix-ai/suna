@@ -102,7 +102,7 @@ function getMonochromeIcon(fileName: string, ic: string, isDirectory?: boolean, 
   }
 
   // Everything that is decided purely by extension is decided in ONE place —
-  // `fileIconFor` in lib/utils/file-utils. This function used to carry ~150
+  // `fileIconFor` in packages/ui/src/internal/lib/utils/file-utils. This function used to carry ~150
   // lines of its own if-chain, which had drifted: `.pdf`, `.docx` and `.pptx`
   // all resolved to the plain text glyph here while the chip on a tool row drew
   // something else for the same file. Phosphor ships a specific icon for each of
