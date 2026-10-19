@@ -130,6 +130,8 @@ jobs:
             AZURE_SIGNING_ACCOUNT?
             AZURE_SIGNING_PROFILE?
             KORTIX_DESKTOP_SENTRY_DSN?
+            # The dev site's HTTP Basic password, for the Windows chrome screenshot below.
+            WEB_PROTECTION_PASSWORD=kortix-dev-use2-web-env:WEB_PROTECTION_PASSWORD?
 
       # Decide whether this platform can SIGN. We never hard-fail on missing
       # certs — a build should always produce an installer. If the platform's
@@ -230,6 +232,49 @@ jobs:
             "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
             if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
           }
+      # Visual check of the Windows window chrome on a real Windows desktop:
+      # start the unpacked build against dev, screenshot the screen, press a
+      # lone Alt (opens the Kortix application menu), screenshot again. The
+      # PNGs are a run artifact (`screenshot-windows-chrome`, outside the
+      # `desktop-*` pattern the publish job releases). Never fails the build.
+      - name: Screenshot the Windows window chrome
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          KORTIX_DESKTOP_URL: ${{ env.DESKTOP_URL }}
+          KORTIX_DESKTOP_BASIC_PASSWORD: ${{ env.WEB_PROTECTION_PASSWORD }}
+        run: |
+          $env:KORTIX_DESKTOP_USER_DATA = Join-Path $env:RUNNER_TEMP 'kortix-chrome-smoke'
+          $out = Join-Path $env:RUNNER_TEMP 'window-chrome'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $exe = Get-ChildItem apps/desktop-electron/dist/win-unpacked/*.exe | Where-Object { $_.Name -notmatch 'Uninstall' } | Select-Object -First 1
+          $app = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 40
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type -Namespace Win32 -Name Keys -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra);'
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save((Join-Path $out "$name.png"))
+          }
+          Shot '1-window'
+          [Win32.Keys]::keybd_event(0x12, 0, 0, [System.UIntPtr]::Zero)
+          [Win32.Keys]::keybd_event(0x12, 0, 2, [System.UIntPtr]::Zero)
+          Start-Sleep -Seconds 2
+          Shot '2-alt-menu'
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Get-ChildItem $out
+      - name: Upload the window-chrome screenshots
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshot-windows-chrome
+          path: ${{ runner.temp }}/window-chrome
+          if-no-files-found: warn
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

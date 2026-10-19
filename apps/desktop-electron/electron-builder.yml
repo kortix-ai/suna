@@ -104,12 +104,19 @@ dmg:
       path: /Applications
 
 win:
+  # The symbol on the light rounded tile, 16 to 256 px. Generated from
+  # apps/web/public/favicon.svg by scripts/build-win-icon.py; do not hand-edit.
   icon: build/icon.ico
   target:
     - nsis
   artifactName: ${productName}-Setup-${version}.${ext}
 
 nsis:
+  # The installer, the uninstaller and the assisted-installer header carry the
+  # same tile icon as the app (build/icon.ico, scripts/build-win-icon.py).
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
