@@ -52,6 +52,8 @@ export interface EventSourceProvider {
   configured(): boolean;
   ingressConfigured(): boolean;
   listEventTypes(app: string): Promise<EventTypeInfo[]>;
+  /** Types that depend on the connector, such as one per tool it offers. Omitted: `listEventTypes(app)`. */
+  listConnectorEventTypes?(input: { connectorId: string; app: string }): Promise<EventTypeInfo[]>;
   /** Apps that have at least one event type. */
   listApps(): Promise<EventApp[]>;
   /** True once the shared connection has the provider-side credential `subscribe` needs. Omitted: any active connection counts. */

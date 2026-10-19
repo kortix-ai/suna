@@ -458,7 +458,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_v2',
     name: 'Connectors v2',
     description:
-      'Telegram as a channel connector: connect a bot with its token, chat with your agents in Telegram, and let them reply through the kortix_telegram connector. Inbound events go through one durable inbox. New connector accounts are no longer created for the whole project by default.',
+      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with App event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -468,7 +468,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(projects/routes/channel-telegram.ts). BEHAVIORAL: the Telegram webhook keeps its legacy ' +
       'one-session-per-message path when off (channels/telegram-webhook.ts); the kortix_telegram ' +
       'connector is materialized only while on (connectors/channel-materialize.ts); sync seeds no ' +
-      'empty project-owned account while on (connectors/sync.ts).',
+      'empty project-owned account while on (connectors/sync.ts). Discover serves the Kortix MCP ' +
+      'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
+      'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
+      'and drops their poll streams (feature-flags/toggle-effects.ts).',
   },
 ];
 

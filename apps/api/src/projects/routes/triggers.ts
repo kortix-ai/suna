@@ -212,6 +212,7 @@ export function registerTriggersRoutes(): void {
               logo: z.string().nullable(),
               event_count: z.number(),
               new_connector_slug: z.string(),
+              mcp_url: z.string().nullable().openapi({ description: 'Source `mcp`: the MCP server to install for this app (Customize → Connectors). Null for other sources and for a project MCP server outside the catalog.' }),
               connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
               connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
               connectors: z.array(z.object({
@@ -254,6 +255,7 @@ export function registerTriggersRoutes(): void {
           logo: a.logo,
           event_count: a.eventCount,
           new_connector_slug: a.newConnectorSlug,
+          mcp_url: a.mcpUrl,
           connector: a.connector,
           connected: a.connected,
           connectors: a.connectors.map((k) => ({
@@ -323,9 +325,12 @@ export function registerTriggersRoutes(): void {
       const app = c.req.query('app')?.trim();
       if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
       const source = c.req.query('source')?.trim() || 'composio';
-      const unknownSource = app ? unknownSourceMessage(source) : null;
+      const metadata = loaded.row.metadata;
+      const unknownSource = app ? unknownSourceMessage(source, metadata) : null;
       if (unknownSource) return c.json({ error: unknownSource }, 400);
-      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
+      const catalog = app
+        ? await listAppEventTypes(source, app, { projectId, metadata })
+        : await listConnectorEventTypes(projectId, slug as string, null, metadata);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
       if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);

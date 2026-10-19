@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
 import { connectionIdentity } from '../trigger-events/subscriptions';
+import { connectorEventApp } from '../trigger-events/mcp-source';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
@@ -151,12 +152,7 @@ async function loadEventConnectorInfo(
     .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), inArray(connectors.slug, slugs)));
-  return new Map(
-    rows.map((row) => {
-      const app = (row.config as Record<string, unknown> | null)?.app;
-      return [row.slug, { provider: row.provider, app: typeof app === 'string' ? app : null }];
-    }),
-  );
+  return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row) }]));
 }
 
 /** Subscription state of one event trigger for the list response; `pending` = no subscription row yet. */
