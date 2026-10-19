@@ -70,9 +70,20 @@ account, else the API answers `400` `capture_enrollment_invalid`.
 
 ## 2. Install on each Windows computer
 
-Run as an administrator:
+On one computer, open **Command Prompt as administrator** and paste the line
+from **Capture → Devices → Install on company computers**. It downloads the
+installer, installs it silently, waits, and prints whether it worked:
 
-```powershell
+```bat
+curl.exe -fsSL -o "%TEMP%\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi && start /wait msiexec /i "%TEMP%\KortixCapture-x64.msi" /qn /l*v "%TEMP%\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_... && echo Kortix Capture installed. || echo Install failed. Log: "%TEMP%\KortixCapture-install.log"
+```
+
+`msiexec` on its own returns at once and installs in the background, and with
+`/qn` it shows no error, also when the MSI path is wrong. `start /wait` and the
+log make the result visible. With the MSI next to the command (Intune, a
+script), the short form is:
+
+```bat
 msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_...
 ```
 

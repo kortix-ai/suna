@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix muestra este token una sola vez. Quien lo tenga puede inscribir equipos en esta organización hasta que lo revoques.",
       "installTitle": "Instalar en cada equipo",
       "installBody": {
-        "windows": "Ejecútalo como administrador o distribúyelo con Intune o directiva de grupo. El equipo empieza a grabar en el próximo inicio de sesión.",
+        "windows": "Pégalo en el Símbolo del sistema abierto como administrador. Descarga el instalador, lo instala y avisa cuando termina. El equipo graba desde el siguiente inicio de sesión de Windows. Para Intune o directiva de grupo, consulta la guía de TI.",
         "macos": "Ejecútalo en Terminal o distribuye el paquete con tu MDM. La persona permite la grabación de pantalla una vez, salvo que un perfil PPPC la conceda.",
         "linux": "Ejecútalo en un escritorio con X11. El equipo empieza a grabar en el próximo inicio de sesión. Wayland aún no es compatible."
       },

@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix n’affiche ce jeton qu’une fois. Quiconque le possède peut inscrire des ordinateurs dans cette organisation jusqu’à ce que vous le révoquiez.",
       "installTitle": "Installer sur chaque ordinateur",
       "installBody": {
-        "windows": "Exécutez-le en administrateur, ou déployez-le avec Intune ou une stratégie de groupe. L’ordinateur commence à enregistrer à la prochaine connexion.",
+        "windows": "Collez dans l’invite de commandes ouverte en administrateur. Elle télécharge le programme d’installation, l’installe et indique quand c’est fini. L’ordinateur enregistre dès la prochaine connexion Windows. Pour Intune ou une stratégie de groupe, voir le guide IT.",
         "macos": "Exécutez-le dans le Terminal, ou déployez le paquet avec votre MDM. La personne autorise l’enregistrement de l’écran une fois, sauf si un profil PPPC l’accorde.",
         "linux": "Exécutez-le sur un bureau X11. L’ordinateur commence à enregistrer à la prochaine connexion. Wayland n’est pas encore pris en charge."
       },

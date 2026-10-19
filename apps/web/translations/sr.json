@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix приказује овај токен само једном. Свако ко га има може да региструје рачунаре у ову организацију док га не опозовеш.",
       "installTitle": "Инсталирај на сваком рачунару",
       "installBody": {
-        "windows": "Pokreni kao administrator ili rasporedi preko Intune ili grupnih smernica. Računar počinje snimanje pri sledećoj prijavi.",
+        "windows": "Nalepite u Komandnu liniju otvorenu kao administrator. Preuzima instalacioni program, instalira ga i javlja kada je gotovo. Računar snima od sledeće prijave na Windows. Za Intune ili smernice grupe pogledajte IT vodič.",
         "macos": "Pokreni u Terminalu ili rasporedi paket preko MDM-a. Osoba jednom dozvoljava snimanje ekrana, osim ako ga PPPC profil ne dodeli.",
         "linux": "Pokreni na desktopu sa X11. Računar počinje snimanje pri sledećoj prijavi. Wayland još nije podržan."
       },

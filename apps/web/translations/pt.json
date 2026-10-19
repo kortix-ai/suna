@@ -21857,7 +21857,7 @@
       "createdBody": "O Kortix mostra este token uma única vez. Quem o tiver pode registrar computadores nesta organização até você revogá-lo.",
       "installTitle": "Instalar em cada computador",
       "installBody": {
-        "windows": "Execute como administrador ou distribua com Intune ou Política de Grupo. O computador começa a gravar no próximo login.",
+        "windows": "Cole no Prompt de Comando aberto como administrador. Ele baixa o instalador, instala e avisa quando termina. O computador grava a partir do próximo login no Windows. Para Intune ou Política de Grupo, veja o guia de TI.",
         "macos": "Execute no Terminal ou distribua o pacote com seu MDM. A pessoa permite a gravação de tela uma vez, a menos que um perfil PPPC a conceda.",
         "linux": "Execute em um desktop com X11. O computador começa a gravar no próximo login. O Wayland ainda não é compatível."
       },

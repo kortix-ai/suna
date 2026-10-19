@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix mostra questo token una sola volta. Chi lo possiede può registrare computer in questa organizzazione finché non lo revochi.",
       "installTitle": "Installa su ogni computer",
       "installBody": {
-        "windows": "Eseguilo come amministratore o distribuiscilo con Intune o Criteri di gruppo. Il computer inizia a registrare al prossimo accesso.",
+        "windows": "Incolla nel Prompt dei comandi aperto come amministratore. Scarica il programma di installazione, lo installa e dice quando ha finito. Il computer registra dal prossimo accesso a Windows. Per Intune o Criteri di gruppo, vedi la guida IT.",
         "macos": "Eseguilo nel Terminale o distribuisci il pacchetto con il tuo MDM. La persona consente la registrazione dello schermo una volta, salvo che un profilo PPPC la conceda.",
         "linux": "Eseguilo su un desktop X11. Il computer inizia a registrare al prossimo accesso. Wayland non è ancora supportato."
       },
