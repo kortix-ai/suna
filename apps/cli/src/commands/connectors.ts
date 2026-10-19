@@ -2212,7 +2212,8 @@ function movesTable(moves: ConnectorMove[]): string {
   if (moves.length === 0) {
     return `  ${C.dim}No Pipedream or Composio connectors. Nothing to move.${C.reset}\n`;
   }
-  const rows = moves.map((m) => [m.slug, m.provider, m.app ?? '—', m.to?.name ?? '—', moveState(m), String(m.accounts)]);
+  // An API from before Composio moves sends no provider: those moves were all Pipedream.
+  const rows = moves.map((m) => [m.slug, m.provider ?? 'pipedream', m.app ?? '—', m.to?.name ?? '—', moveState(m), String(m.accounts)]);
   const head = ['SLUG', 'PROVIDER', 'APP', 'MOVES TO', 'STATE', 'ACCOUNTS'];
   const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
   const line = (cells: string[]) => `  ${cells.map((c, i) => pad(c, widths[i]!)).join('   ').trimEnd()}\n`;

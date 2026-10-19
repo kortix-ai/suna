@@ -48,26 +48,31 @@ describe('moveTargetApp', () => {
 });
 
 describe('kortixEventForComposioTrigger', () => {
-  test('new Gmail message → gmail.message.received with the query; interval rounds up to a preset', () => {
+  test('new Gmail message → gmail.message.received, inbox-only query; interval rounds up to a preset', () => {
     expect(kortixEventForComposioTrigger('GMAIL_NEW_GMAIL_MESSAGE', { query: 'from:billing', interval: 3, labelIds: 'INBOX' })).toEqual({
       type: 'gmail.message.received',
-      config: { query: 'from:billing', interval: 5 },
+      config: { query: 'in:inbox (from:billing)', interval: 5 },
     });
+  });
+
+  test('an unset interval keeps Composio\'s one-minute checks', () => {
+    expect(kortixEventForComposioTrigger('GMAIL_NEW_GMAIL_MESSAGE', {})).toEqual({ type: 'gmail.message.received', config: { interval: 1 } });
   });
 
   test('Gmail labels other than the inbox have no Kortix equivalent', () => {
     expect(kortixEventForComposioTrigger('GMAIL_NEW_GMAIL_MESSAGE', { labelIds: ['Label_12'] })).toBeNull();
   });
 
-  test('calendar and drive map their keys; an unknown type maps to nothing', () => {
+  test('calendar looks a year ahead; drive keeps a valid folder and refuses another; an unknown type maps to nothing', () => {
     expect(kortixEventForComposioTrigger('GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER', { calendarId: 'primary', showDeleted: false })).toEqual({
       type: 'google_calendar.event.created',
-      config: { calendar_id: 'primary' },
+      config: { calendar_id: 'primary', lookahead_days: 365, interval: 1 },
     });
-    expect(kortixEventForComposioTrigger('GOOGLEDRIVE_FILE_CREATED_TRIGGER', { folder_id: 'f1', max_results: 10, interval: 2000 })).toEqual({
+    expect(kortixEventForComposioTrigger('GOOGLEDRIVE_FILE_CREATED_TRIGGER', { folder_id: '1AbcDEFghij_k', max_results: 10, interval: 2000 })).toEqual({
       type: 'google_drive.file.created',
-      config: { folder_id: 'f1', interval: 1440 },
+      config: { folder_id: '1AbcDEFghij_k', interval: 1440 },
     });
+    expect(kortixEventForComposioTrigger('GOOGLEDRIVE_FILE_CREATED_TRIGGER', { folder_id: 'root' })).toBeNull();
     expect(kortixEventForComposioTrigger('GITHUB_PULL_REQUEST_EVENT', {})).toBeNull();
   });
 });
@@ -83,15 +88,21 @@ describe('rewriteComposioTriggers', () => {
     ];
     const refs = [{ slug: 'mail', type: 'GMAIL_NEW_GMAIL_MESSAGE', config: {} }];
     expect(rewriteComposioTriggers(manifest(entries), 'gmail', refs)).toBeNull();
-    expect(entries[0]).toEqual({ slug: 'mail', type: 'event', connector: 'gmail', event: 'gmail.message.received', config: { query: 'is:unread', interval: 1 } });
+    expect(entries[0]).toEqual({ slug: 'mail', type: 'event', connector: 'gmail', event: 'gmail.message.received', config: { query: 'in:inbox (is:unread)', interval: 1 } });
     expect(entries[2]!.event).toBe('GITHUB_PULL_REQUEST_EVENT');
   });
 
   test('a trigger with no Kortix event, or one declared outside kortix.yaml, refuses the write', () => {
     const unmapped = [{ slug: 'sent', type: 'event', connector: 'gmail', event: 'GMAIL_EMAIL_SENT_TRIGGER' }];
     expect(rewriteComposioTriggers(manifest(unmapped), 'gmail', [])).toContain('sent: GMAIL_EMAIL_SENT_TRIGGER');
-    const imported = [{ slug: 'imported', type: 'GMAIL_NEW_GMAIL_MESSAGE', config: {} }];
-    expect(rewriteComposioTriggers(manifest([]), 'gmail', imported)).toContain('declared outside kortix.yaml (imported)');
+    const missing = [{ slug: 'gone', type: 'GMAIL_NEW_GMAIL_MESSAGE', config: {} }];
+    expect(rewriteComposioTriggers(manifest([]), 'gmail', missing)).toContain('could not find in kortix.yaml (gone)');
+  });
+
+  test('a trigger already on a Kortix event is accepted, so a stopped switch can finish', () => {
+    const done = [{ slug: 'mail', type: ' event ', connector: 'gmail ', event: 'gmail.message.received', config: { interval: 5 } }];
+    expect(rewriteComposioTriggers(manifest(done), 'gmail', [{ slug: 'mail', type: 'gmail.message.received', config: {} }])).toBeNull();
+    expect(done[0]!.event).toBe('gmail.message.received');
   });
 });
 

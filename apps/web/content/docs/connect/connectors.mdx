@@ -137,11 +137,11 @@ Composio event triggers that move:
 
 | Composio event | Kortix event | Config |
 | --- | --- | --- |
-| `GMAIL_NEW_GMAIL_MESSAGE` | `gmail.message.received` | `query` stays. `labelIds` must be empty or `INBOX`. |
-| `GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER` | `google_calendar.event.created` | `calendarId` becomes `calendar_id`. `showDeleted` is dropped. |
-| `GOOGLEDRIVE_FILE_CREATED_TRIGGER` | `google_drive.file.created` | `folder_id` and `query` stay. `max_results` is dropped. |
+| `GMAIL_NEW_GMAIL_MESSAGE` | `gmail.message.received` | `query` becomes `in:inbox (<query>)`, so the trigger stays inbox-only. `labelIds` must be empty or `INBOX`. |
+| `GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER` | `google_calendar.event.created` | `calendarId` becomes `calendar_id`. `lookahead_days` is `365`, so an event created far ahead still fires. `showDeleted` is dropped. |
+| `GOOGLEDRIVE_FILE_CREATED_TRIGGER` | `google_drive.file.created` | `folder_id` and `query` stay; a `folder_id` that is not a Drive folder id blocks the move. `max_results` is dropped. |
 
-`interval` (minutes) rounds up to the next Kortix value: 1, 5, 15, 30, 60, 360 or 1440, so a trigger never checks more often than before. A connector with any other Composio event trigger, or one declared outside `kortix.yaml`, does not move until you delete or change that trigger.
+`interval` (minutes; Composio checks every minute when it is unset) rounds up to the next Kortix value: 1, 5, 15, 30, 60, 360 or 1440. A trigger in an imported file is rewritten in that file. A connector with any other Composio event trigger does not move until you delete or change that trigger.
 
 Which apps move:
 

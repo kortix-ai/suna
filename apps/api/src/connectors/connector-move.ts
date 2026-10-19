@@ -170,17 +170,27 @@ export function moveTargetApp(providerType: string, config: Record<string, unkno
 /** Kortix's own `interval` presets, in minutes (trigger-events/mcp-events.ts). */
 const INTERVAL_PRESETS = [1, 5, 15, 30, 60, 360, 1440] as const;
 
-function intervalPreset(value: unknown): number | null {
-  const minutes = Number(value);
-  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+/** Composio checks every minute when a trigger names no interval. */
+const COMPOSIO_DEFAULT_INTERVAL = 1;
+
+function intervalPreset(value: unknown): number {
+  const minutes = value === undefined || value === null || value === '' ? COMPOSIO_DEFAULT_INTERVAL : Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return COMPOSIO_DEFAULT_INTERVAL;
   return INTERVAL_PRESETS.find((preset) => preset >= minutes) ?? 1440;
 }
+
+/** Kortix's Drive folder id rule (trigger-events/mcp-events.ts `DRIVE_FOLDER_ID`). */
+const DRIVE_FOLDER_ID = /^[A-Za-z0-9_-]{10,}$/;
+
+/** A Kortix event type (`gmail.message.received`, `new_item.<tool>`), not a Composio one. */
+const KORTIX_EVENT_TYPE = /^[a-z][a-z0-9_]*\.[a-z0-9_.]+$/;
 
 /**
  * The Kortix event that replaces a Composio trigger type, with its config.
  * Null: no Kortix event replaces it yet, or its config has no Kortix equivalent
- * (Gmail labels other than the inbox). Composio `interval` is minutes; it rounds
- * up to the next Kortix preset, so a trigger never checks more often than before.
+ * (Gmail labels other than the inbox, a Drive folder id Kortix refuses).
+ * Composio `interval` is minutes (1 when unset); it rounds up to the next Kortix
+ * preset, and down to 1440 above that.
  */
 export function kortixEventForComposioTrigger(
   type: string,
@@ -188,11 +198,11 @@ export function kortixEventForComposioTrigger(
 ): { type: string; config: Record<string, unknown> } | null {
   const interval = intervalPreset(config.interval);
   const text = (key: string) => (typeof config[key] === 'string' && (config[key] as string).trim() ? (config[key] as string).trim() : null);
-  const out = (eventType: string, fields: Record<string, string | null>) => ({
+  const out = (eventType: string, fields: Record<string, string | number | null>) => ({
     type: eventType,
     config: {
-      ...Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string] => entry[1] !== null)),
-      ...(interval ? { interval } : {}),
+      ...Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string | number] => entry[1] !== null)),
+      interval,
     },
   });
   switch (type) {
@@ -203,12 +213,18 @@ export function kortixEventForComposioTrigger(
         labels === null ||
         labels === 'INBOX' ||
         (Array.isArray(labels) && labels.length === 1 && labels[0] === 'INBOX');
-      return inboxOnly ? out('gmail.message.received', { query: text('query') }) : null;
+      // Kortix searches the inbox only when the query is empty: keep it inbox-only.
+      const query = text('query');
+      return inboxOnly ? out('gmail.message.received', { query: query ? `in:inbox (${query})` : null }) : null;
     }
     case 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER':
-      return out('google_calendar.event.created', { calendar_id: text('calendarId') });
-    case 'GOOGLEDRIVE_FILE_CREATED_TRIGGER':
-      return out('google_drive.file.created', { folder_id: text('folder_id'), query: text('query') });
+      // Composio has no window; Kortix sees events starting within lookahead_days.
+      return out('google_calendar.event.created', { calendar_id: text('calendarId'), lookahead_days: 365 });
+    case 'GOOGLEDRIVE_FILE_CREATED_TRIGGER': {
+      const folder = text('folder_id');
+      if (folder && !DRIVE_FOLDER_ID.test(folder)) return null;
+      return out('google_drive.file.created', { folder_id: folder, query: text('query') });
+    }
     default:
       return null;
   }
@@ -327,7 +343,9 @@ async function connectorEventTriggers(projectId: string, connectorSlug: string):
 
 /** Composio triggers no Kortix event replaces: they would stop firing after a move. */
 function unmappedTriggers(triggers: EventTriggerRef[]): EventTriggerRef[] {
-  return triggers.filter((trigger) => !kortixEventForComposioTrigger(trigger.type, trigger.config));
+  return triggers.filter(
+    (trigger) => !KORTIX_EVENT_TYPE.test(trigger.type) && !kortixEventForComposioTrigger(trigger.type, trigger.config),
+  );
 }
 
 function triggersRefusal(slug: string, triggers: EventTriggerRef[]): string {
@@ -346,20 +364,27 @@ export function rewriteComposioTriggers(
 ): string | null {
   const entries = Array.isArray(manifest.raw.triggers) ? (manifest.raw.triggers as Record<string, unknown>[]) : [];
   const rewritten = new Set<string>();
+  const trim = (value: unknown) => (typeof value === 'string' ? value.trim() : value);
   for (const entry of entries) {
-    if (entry?.type !== 'event' || entry.connector !== connectorSlug || typeof entry.event !== 'string') continue;
+    if (trim(entry?.type) !== 'event' || trim(entry.connector) !== connectorSlug || typeof entry.event !== 'string') continue;
+    const type = entry.event.trim();
+    // Already a Kortix event (a switch that is being finished again): nothing to rewrite.
+    if (KORTIX_EVENT_TYPE.test(type)) {
+      rewritten.add(String(entry.slug));
+      continue;
+    }
     const config = entry.config && typeof entry.config === 'object' ? (entry.config as Record<string, unknown>) : {};
-    const replacement = kortixEventForComposioTrigger(entry.event, config);
-    if (!replacement) return triggersRefusal(connectorSlug, [{ slug: String(entry.slug), type: entry.event, config }]);
+    const replacement = kortixEventForComposioTrigger(type, config);
+    if (!replacement) return triggersRefusal(connectorSlug, [{ slug: String(entry.slug), type, config }]);
     entry.event = replacement.type;
     if (Object.keys(replacement.config).length > 0) entry.config = replacement.config;
     else delete entry.config;
     delete entry.source;
     rewritten.add(String(entry.slug));
   }
-  const elsewhere = expected.filter((trigger) => !rewritten.has(trigger.slug));
-  return elsewhere.length > 0
-    ? `${connectorSlug} has event triggers declared outside kortix.yaml (${elsewhere.map((t) => t.slug).join(', ')}). Move them into kortix.yaml or delete them, then move.`
+  const missing = expected.filter((trigger) => !rewritten.has(trigger.slug));
+  return missing.length > 0
+    ? `${connectorSlug} has event triggers the move could not find in kortix.yaml (${missing.map((t) => t.slug).join(', ')}). Run kortix triggers ls, then move again.`
     : null;
 }
 
@@ -463,7 +488,11 @@ export async function moveConnector(input: {
   if (!connector) return { ok: false, status: 404, error: 'Connector not found' };
   // Moved already (the sign-in switched it): a client that finishes with a second call reads `moved`.
   const url = (connector.config as { url?: unknown } | null)?.url;
-  if (connector.providerType === 'mcp' && typeof url === 'string' && mcpAppForUrl(url)) return { ok: true, status: 'moved' };
+  if (connector.providerType === 'mcp' && typeof url === 'string' && mcpAppForUrl(url)) {
+    // A switch that stopped after its kortix.yaml commit left old bindings behind: clear them now.
+    await clearOldProviderBindings(connector.connectorId, { leftoversOnly: true });
+    return { ok: true, status: 'moved' };
+  }
   if (!isMovableProvider(connector.providerType)) {
     return {
       ok: false,
@@ -529,8 +558,34 @@ export async function moveConnector(input: {
  * reads "not signed in" (`connectionSignedIn` reads `connected_account_id`).
  */
 const OLD_PROVIDER_METADATA = sql.raw(
-  `ARRAY['provider','toolkit','stable_user_id','session_id','auth_request_id','connected_account_id','is_no_auth','connected_as','move_to']::text[]`,
+  `ARRAY['provider','toolkit','stable_user_id','session_id','auth_request_id','connected_account_id','is_no_auth','connected_as','requesting_session_id','move_to']::text[]`,
 );
+
+/**
+ * The other accounts hold the old provider's binding (a Pipedream account id, a
+ * Composio account), which no MCP server accepts: without it they read "not
+ * signed in" and their owners sign in again. Idempotent. `leftoversOnly` touches
+ * only rows that still carry an old binding, so a native MCP connector's own
+ * metadata is never stripped.
+ */
+async function clearOldProviderBindings(connectorId: string, options: { leftoversOnly: boolean }): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(connectionCredentials)
+      .where(and(eq(connectionCredentials.connectorId, connectorId), eq(connectionCredentials.kind, 'connection')));
+    await tx
+      .update(connectorConnections)
+      .set({ metadata: sql`${connectorConnections.metadata} - ${OLD_PROVIDER_METADATA}`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connectorId),
+          options.leftoversOnly
+            ? sql`(${connectorConnections.metadata}->>'connected_account_id' is not null or ${connectorConnections.metadata}->>'provider' = 'composio')`
+            : undefined,
+        ),
+      );
+  });
+}
 
 /**
  * Switch a connector to its Kortix app once its marked connection holds a
@@ -557,20 +612,7 @@ export async function finishMarkedMove(connectionId: string): Promise<CrudResult
     { slug: row.slug, name: row.name, provider: 'mcp', url: app.url, transport: 'http' },
     {
       alsoMutate: (manifest) => (triggers.length > 0 ? rewriteComposioTriggers(manifest, row.slug, triggers) : null),
-      beforeSync: async () => {
-        // The other accounts hold the old provider's binding (a Pipedream account
-        // id, a Composio account), which no MCP server accepts: without it they
-        // read "not signed in" and their owners sign in again.
-        await db.transaction(async (tx) => {
-          await tx
-            .delete(connectionCredentials)
-            .where(and(eq(connectionCredentials.connectorId, row.connectorId), eq(connectionCredentials.kind, 'connection')));
-          await tx
-            .update(connectorConnections)
-            .set({ metadata: sql`${connectorConnections.metadata} - ${OLD_PROVIDER_METADATA}`, updatedAt: new Date() })
-            .where(eq(connectorConnections.connectorId, row.connectorId));
-        });
-      },
+      beforeSync: () => clearOldProviderBindings(row.connectorId, { leftoversOnly: false }),
     },
   );
   if (!result.ok) {

@@ -727,7 +727,7 @@ flow(
 // Kortix app for the same service. The sign-in itself needs the vendor's OAuth
 // server, so this flow covers the listing, the start (the marked account), the
 // refusals and the flag gate; the switch after a sign-in was proven on a local
-// stack and `pipedream-move.test.ts` pins the target URL rule.
+// stack and `apps/api/src/connectors/connector-move.test.ts` pins the target URL rule.
 flow(
   'CONN-37',
   {
