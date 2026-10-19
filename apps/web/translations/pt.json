@@ -20863,6 +20863,7 @@
     "noticeSignInAction": "Entrar",
     "connectAccount": "Conectar",
     "notSignedIn": "Sem login",
+    "credentialRejected": "Credencial rejeitada: substitua-a",
     "infoRunsOver": "Executa sobre",
     "waysToConnect": "Formas de conectar",
     "recommended": "Recomendado",

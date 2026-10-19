@@ -20863,6 +20863,7 @@
     "noticeSignInAction": "サインイン",
     "connectAccount": "接続",
     "notSignedIn": "未サインイン",
+    "credentialRejected": "認証情報が拒否されました: 置き換えてください",
     "infoRunsOver": "接続方式",
     "waysToConnect": "接続方法",
     "recommended": "おすすめ",

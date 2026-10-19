@@ -20863,6 +20863,7 @@
     "noticeSignInAction": "Anmelden",
     "connectAccount": "Verbinden",
     "notSignedIn": "Nicht angemeldet",
+    "credentialRejected": "Zugangsdaten abgelehnt: ersetzen",
     "infoRunsOver": "Läuft über",
     "waysToConnect": "Verbindungsarten",
     "recommended": "Empfohlen",

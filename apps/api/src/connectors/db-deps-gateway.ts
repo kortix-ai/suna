@@ -494,6 +494,16 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Every connector request resolves and checks its target, on each
     // redirect hop too. See egress.ts.
     fetchImpl: connectorEgressFetch,
+    markCredentialRejected: async (connectionId, rejected) => {
+      await db
+        .update(connectorConnections)
+        .set({
+          metadata: rejected
+            ? sql`${connectorConnections.metadata} || jsonb_build_object('credential_rejected_at', now())`
+            : sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+        })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    },
     enforcePolicies: true,
   };
 }

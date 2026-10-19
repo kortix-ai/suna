@@ -245,6 +245,46 @@ describe('handleCall — upstream + errors', () => {
     });
   });
 
+  test('upstream 401 on a stored credential → credential_rejected, names the account and the fix, marks the connection', async () => {
+    const { deps, records } = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Stripe API' },
+      fetchStatus: 401,
+      fetchBody: '{"error":{"code":"api_key_expired","message":"Expired API Key provided"}}',
+    });
+    const marks: Array<[string, boolean]> = [];
+    deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({ status: 'error', upstreamStatus: 401 });
+    const reason = (res as { reason: string }).reason;
+    expect(reason.startsWith('credential_rejected: ')).toBe(true);
+    expect(reason).toContain('"Stripe API"');
+    expect(reason).toContain('kortix connectors connections credential cx-1');
+    expect(reason).toContain('api_key_expired');
+    expect(records.at(-1)!.resultSummary).toMatchObject({ http_status: 401, error_code: 'credential_rejected' });
+    expect(marks).toEqual([['cx-1', true]]);
+  });
+
+  test('a later ok call on a marked connection clears the mark; an unmarked one writes nothing', async () => {
+    const marked = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } },
+    });
+    const marks: Array<[string, boolean]> = [];
+    marked.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    expect(await handleCall(marked.deps, baseInput)).toMatchObject({ status: 'ok' });
+    expect(marks).toEqual([['cx-1', false]]);
+
+    const clean = makeDeps({ connector: { ...STRIPE, connectionId: 'cx-2', connectionMetadata: {} } });
+    clean.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    await handleCall(clean.deps, baseInput);
+    expect(marks).toHaveLength(1);
+  });
+
   test('thrown execution error is caught + audited', async () => {
     const { deps, records } = makeDeps();
     deps.fetchImpl = async () => {

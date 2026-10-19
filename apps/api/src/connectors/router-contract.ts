@@ -346,6 +346,9 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
       is_default: boolean;
       /** Who the account was authorized as. `null` when unknown. */
       connected_as?: string | null;
+      /** When the upstream last answered 401 to this account's stored
+       *  credential; cleared by a new credential or an ok call. */
+      credential_rejected_at?: string | null;
     }>
   >;
   /**
