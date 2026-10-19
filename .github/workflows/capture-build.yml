@@ -45,7 +45,6 @@ env:
 
 jobs:
   test:
-    if: ${{ false }} # DIAG
     name: Cargo tests (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -127,14 +126,11 @@ jobs:
     name: Windows MSI (build and verify)
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
       matrix:
         include:
           - os: windows
             # GitHub's runner has an interactive desktop (session 2); Blacksmith's has none.
             runner: windows-latest
-          - os: windows-2022
-            runner: windows-2022
     timeout-minutes: 75
     defaults:
       run:
@@ -261,7 +257,6 @@ jobs:
           "test manifest URL in the release binary: $([bool]$hit)" | Tee-Object "$env:EV\no_test_hook.txt"
           if ($hit) { throw "the release binary contains the updater's test manifest URL" }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: matrix.os == 'windows'
         with:
           name: capture-installer-windows
           path: ${{ runner.temp }}\msi\KortixCapture-${{ inputs.tag }}-x64.msi
@@ -415,51 +410,6 @@ jobs:
             still_open_after_second_click = [bool]($w2 -and -not $w2.HasExited)
           } | ConvertTo-Json | Tee-Object "$env:EV\start_menu_window.json"
           if ($w2) { $null = $w2.CloseMainWindow() }
-      - name: DIAG frame content (temporary)
-        continue-on-error: true
-        run: |
-          $lib = "$env:APPDATA\ai.kortix.capture"
-          $d = "$env:EV\diag"; New-Item -ItemType Directory -Force $d | Out-Null
-          Get-ChildItem $lib -Recurse -Depth 1 | Select-Object FullName, Length | Out-File "$d\library.txt"
-          Get-ChildItem "$lib\frames" -Filter *.jpg -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 3 | ForEach-Object { Copy-Item $_.FullName $d }
-          $t0 = Get-Date
-          while (-not (Get-ChildItem "$lib\videos" -Recurse -Filter *.mp4 -ErrorAction SilentlyContinue) -and ((Get-Date) - $t0).TotalSeconds -lt 360) { Start-Sleep 10 }
-          $mp4 = Get-ChildItem "$lib\videos" -Recurse -Filter *.mp4 -ErrorAction SilentlyContinue | Select-Object -First 1
-          "mp4: $($mp4.FullName) $($mp4.Length)" | Tee-Object "$d\mp4.txt"
-          if ($mp4) {
-            Copy-Item $mp4.FullName "$d\chunk.mp4"
-            $eng = "${env:ProgramFiles}\Kortix\Capture\kortix-capture-engine.exe"
-            ('{"cmd":"extract","video":"' + ($mp4.FullName -replace '\\','\\') + '","index":0,"out":"' + ("$d\extract0.png" -replace '\\','\\') + '"}') | & $eng | Tee-Object -Append "$d\mp4.txt"
-          }
-          & "${env:ProgramFiles}\Kortix\Capture\kortix-capture.exe" query image --help 2>&1 | Out-File "$d\query-image-help.txt"
-          python -m pip install --quiet pillow imageio-ffmpeg 2>&1 | Out-Null
-          @'
-          import sys, pathlib, json, subprocess
-          from PIL import Image, ImageStat
-          d = pathlib.Path(sys.argv[1]); out = {}
-          try:
-              import imageio_ffmpeg
-              ff = imageio_ffmpeg.get_ffmpeg_exe()
-              if (d / "chunk.mp4").exists():
-                  r = subprocess.run([ff, "-hide_banner", "-i", str(d / "chunk.mp4")], capture_output=True, text=True)
-                  out["ffprobe"] = r.stderr[-1500:]
-                  subprocess.run([ff, "-y", "-i", str(d / "chunk.mp4"), "-frames:v", "1", str(d / "ffmpeg0.png")], capture_output=True)
-          except Exception as e:
-              out["ffmpeg_error"] = repr(e)
-          for p in sorted(d.glob("*.jpg")) + sorted(d.glob("*.png")):
-              im = Image.open(p).convert("L"); s = ImageStat.Stat(im)
-              out[p.name] = {"size": im.size, "mean": round(s.mean[0], 2), "stddev": round(s.stddev[0], 2)}
-          data = (d / "chunk.mp4").read_bytes() if (d / "chunk.mp4").exists() else b""
-          i = 0; atoms = []
-          while i + 8 <= len(data):
-              n = int.from_bytes(data[i:i+4], "big"); t = data[i+4:i+8].decode("latin1"); atoms.append((t, n))
-              if n < 8: break
-              i += n
-          out["atoms"] = atoms
-          print(json.dumps(out, indent=1))
-          (d / "stats.json").write_text(json.dumps(out, indent=1))
-          '@ | Set-Content "$env:RUNNER_TEMP\diag.py"
-          python "$env:RUNNER_TEMP\diag.py" $d
       - name: Uploads reach the bucket under the device's folder
         run: |
           $prefix = "orgs/00000000-0000-4000-8000-00000000c1c1/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b/"
@@ -650,13 +600,12 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: capture-evidence-${{ matrix.os }}
+          name: capture-evidence-windows
           path: evidence
           retention-days: 14
           if-no-files-found: ignore
 
   macos-pkg:
-    if: ${{ false }} # DIAG
     name: macOS pkg (build, sign, notarize and verify)
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -1139,7 +1088,6 @@ jobs:
           if-no-files-found: ignore
 
   linux-deb:
-    if: ${{ false }} # DIAG
     name: Linux deb (build and verify)
     # A real VM: the job installs systemd units and a login session. Sandbox runners
     # (CI_RUNNER_M_2204) have no systemd ("not booted with systemd as init system").
@@ -1455,7 +1403,6 @@ jobs:
           if-no-files-found: ignore
 
   macos-personal:
-    if: ${{ false }} # DIAG
     name: macOS pkg, personal install (onboarding, background-always, no Dock)
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -1953,7 +1900,6 @@ jobs:
           if-no-files-found: ignore
 
   windows-personal:
-    if: ${{ false }} # DIAG
     name: Windows, personal install (onboarding, background-always, no taskbar button)
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -2130,7 +2076,6 @@ jobs:
           if-no-files-found: ignore
 
   collect:
-    if: ${{ false }} # DIAG
     name: Collect the installers
     needs: [test, windows-msi, macos-pkg, linux-deb, macos-personal, windows-personal]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
