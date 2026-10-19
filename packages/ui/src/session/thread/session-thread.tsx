@@ -18,7 +18,7 @@
 import type { UseSessionResult } from '@kortix/sdk/react';
 
 import { cn } from '../../lib/utils';
-import { SessionIdsProvider } from '../../providers/session-ids';
+import { ProjectScope } from '../../internal/project-scope';
 import { ProviderPoolDraftBoundary } from '../overrides/provider-pool-draft-context';
 import { SessionPanelFallback } from '../panel/panel-fallback';
 import { SessionChat } from './session-chat';
@@ -38,7 +38,7 @@ export interface SessionThreadProps {
 export function SessionThread({ session, hideHeader = false, readOnly = false, className }: SessionThreadProps) {
   const { projectId, sessionId, runtimeSessionId } = session;
   return (
-    <SessionIdsProvider projectId={projectId} sessionId={sessionId}>
+    <ProjectScope projectId={projectId} sessionId={sessionId}>
       <ProviderPoolDraftBoundary identity={`${projectId}/${sessionId}`}>
         <div data-slot="session-thread" className={cn('relative flex h-full min-h-0 flex-col', className)}>
           {runtimeSessionId ? (
@@ -65,6 +65,6 @@ export function SessionThread({ session, hideHeader = false, readOnly = false, c
           />
         </div>
       </ProviderPoolDraftBoundary>
-    </SessionIdsProvider>
+    </ProjectScope>
   );
 }

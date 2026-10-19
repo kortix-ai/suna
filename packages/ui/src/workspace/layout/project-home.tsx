@@ -15,7 +15,7 @@ import { useIsMobile } from '../../internal/hooks';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { isFirstChatRequested, useFirstChatPending } from '../../internal/stores/first-chat-store';
-import { SessionIdsProvider } from '../../providers/session-ids';
+import { ProjectScope } from '../../internal/project-scope';
 import { useUiComponents, useUiSearchParams } from '../../providers/ui-provider';
 import {
   getProjectDetail,
@@ -81,9 +81,9 @@ export type ProjectHomeProps = {
  */
 export function ProjectHome(props: ProjectHomeProps) {
   return (
-    <SessionIdsProvider projectId={props.projectId}>
+    <ProjectScope projectId={props.projectId}>
       <ProjectHomeView {...props} />
-    </SessionIdsProvider>
+    </ProjectScope>
   );
 }
 

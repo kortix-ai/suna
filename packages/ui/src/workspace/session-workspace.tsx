@@ -28,7 +28,7 @@ import {
 } from '../internal/stores/session-browser-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import type { UseSessionResult } from '@kortix/sdk/react';
-import { SessionIdsProvider } from '../providers/session-ids';
+import { ProjectScope } from '../internal/project-scope';
 import { SessionThread } from '../session/thread/session-thread';
 import type React from 'react';
 import { memo, useCallback, useEffect, useState } from 'react';
@@ -551,7 +551,7 @@ export function SessionWorkspace({
     <SessionThread session={session} hideHeader={hideHeader} readOnly={readOnly} />
   );
   return (
-    <SessionIdsProvider projectId={projectId} sessionId={sessionId}>
+    <ProjectScope projectId={projectId} sessionId={sessionId}>
       <div
         data-slot="session-workspace"
         className={cn('relative flex h-full min-h-0 w-full flex-col', className)}
@@ -569,6 +569,6 @@ export function SessionWorkspace({
           thread
         )}
       </div>
-    </SessionIdsProvider>
+    </ProjectScope>
   );
 }

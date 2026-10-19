@@ -1,6 +1,5 @@
 'use client';
 
-import { KortixProjectProvider } from '@kortix/sdk/react';
 import * as React from 'react';
 
 /**
@@ -10,9 +9,9 @@ import * as React from 'react';
  * route params in KortixUiProvider). Without a provider both ids are undefined,
  * and the components that need them render nothing or skip their query.
  *
- * With a `projectId` it also scopes the SDK's project hooks
- * (`KortixProjectProvider`: the model catalog, runtime providers), so one
- * provider is all a host mounts for a project view.
+ * It imports nothing from `@kortix/sdk`: the root entry loads without that
+ * optional peer. `SessionThread`, `SessionWorkspace` and `ProjectHome` also
+ * scope the SDK's project hooks themselves (`internal/project-scope.tsx`).
  */
 export interface UiSessionIds {
   projectId?: string;
@@ -28,8 +27,7 @@ export function SessionIdsProvider({
   children,
 }: UiSessionIds & { children: React.ReactNode }) {
   const value = React.useMemo(() => ({ projectId, sessionId }), [projectId, sessionId]);
-  const scoped = <SessionIdsContext.Provider value={value}>{children}</SessionIdsContext.Provider>;
-  return projectId ? <KortixProjectProvider projectId={projectId}>{scoped}</KortixProjectProvider> : scoped;
+  return <SessionIdsContext.Provider value={value}>{children}</SessionIdsContext.Provider>;
 }
 
 /** The nearest SessionIdsProvider's ids. `T` narrows them, as `useUiParams<T>()` does. */
