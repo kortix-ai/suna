@@ -102,8 +102,8 @@ export function DriveExplorer({
    */
   leading?: ReactNode;
   /**
-   * Host actions for the END of the action row. When set, New, the view menu
-   * and these sit in one secondary button group, `trailing` last.
+   * Host actions for the END of the action row, after New and the view menu
+   * in their one secondary button group.
    */
   trailing?: ReactNode;
   /** Glyph before the first crumb. */
@@ -789,7 +789,7 @@ export function DriveExplorer({
           );
           const viewMenu = (
             <DriveViewMenu
-              variant={trailing ? 'secondary' : 'ghost'}
+              variant="secondary"
               showSearch={capabilities.search}
               showHiddenToggle={capabilities.hiddenToggle}
               onRefresh={() => refetchFiles()}
@@ -805,17 +805,13 @@ export function DriveExplorer({
               sortDisabled={partial}
             />
           );
-          return trailing ? (
+          // One secondary group whether or not the host adds actions.
+          return (
             <ButtonGroup className="ml-auto shrink-0">
               {newMenu}
               {viewMenu}
               {trailing}
             </ButtonGroup>
-          ) : (
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {newMenu}
-              {viewMenu}
-            </div>
           );
         })()}
       </div>

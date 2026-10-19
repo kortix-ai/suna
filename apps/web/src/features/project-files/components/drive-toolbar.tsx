@@ -247,11 +247,11 @@ export function DrivePathBar({ rootLabel, rootIcon, as = 'inline', className }: 
               return (
                 <div key={pathKey} className="flex shrink-0 items-center gap-0.5">
                   {isAbsoluteAnchor ? (
-                    <span className="text-muted-foreground/40 shrink-0 px-1 text-sm select-none">
+                    <span className="text-muted-foreground shrink-0 px-1 text-sm select-none">
                       ·
                     </span>
                   ) : (
-                    <ChevronRight className="text-muted-foreground/50 size-3.5 shrink-0" />
+                    <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
                   )}
                   <Button
                     onClick={() => handleSegmentClick(index)}
@@ -366,7 +366,7 @@ export function DriveViewMenu({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <span className="min-w-0 flex-1">{tI18nComplete.raw('textdcc839a4015c')}</span>
-            <span className="text-muted-foreground/70">{VIEW_LABEL[viewMode]}</span>
+            <span className="text-muted-foreground">{VIEW_LABEL[viewMode]}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-40">
             <DropdownMenuRadioGroup
@@ -388,7 +388,7 @@ export function DriveViewMenu({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger disabled={sortDisabled}>
             <span className="min-w-0 flex-1">{tI18nComplete.raw('textc9129025bd3f')}</span>
-            <span className="text-muted-foreground/70">{SORT_LABEL[sortBy]}</span>
+            <span className="text-muted-foreground">{SORT_LABEL[sortBy]}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-44">
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
@@ -531,7 +531,7 @@ export function DriveNewMenu({ onUpload, onNewFile, onNewFolder, compact }: Driv
         {compact ? (
           <Button
             variant="secondary"
-            size="icon-sm"
+            size="icon-base"
             aria-label={tI18nComplete.raw('text18fdd549b2ed')}
             className="active:scale-[0.96]"
           >
