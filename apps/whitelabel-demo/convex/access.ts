@@ -3,28 +3,29 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { authComponent } from "./auth";
 
-/** The signed-in Better Auth user, or throw 401. */
-export async function requireUser(ctx: QueryCtx) {
+/** Only the Next.js server knows LUMEN_PROXY_SECRET, so only it passes this check. */
+export function requireProxy(proxySecret: string) {
+  const expected = process.env.LUMEN_PROXY_SECRET;
+  if (!expected || proxySecret !== expected) throw new Error("403: proxy only");
+}
+
+/** The caller's role in the org, or null when not signed in or not a member. */
+async function roleIn(ctx: QueryCtx, orgId: string) {
   const user = await authComponent.safeGetAuthUser(ctx);
-  if (!user) throw new Error("401: not signed in");
-  return user;
+  if (!user) return { user: null, role: null };
+  const role = await ctx.runQuery(components.betterAuth.membership.role, { organizationId: orgId, userId: user._id });
+  return { user, role };
 }
 
 /** True when the signed-in caller is a member of the org. Never throws. */
 export async function isMember(ctx: QueryCtx, orgId: string) {
-  const user = await authComponent.safeGetAuthUser(ctx);
-  if (!user) return false;
-  const role = await ctx.runQuery(components.betterAuth.membership.role, { organizationId: orgId, userId: user._id });
-  return role !== null;
+  return (await roleIn(ctx, orgId)).role !== null;
 }
 
-/** Throw 403 unless the caller is a member of the org. Returns the user id and role. */
+/** Throw 401/403 unless the caller is a member of the org. Returns the user id and role. */
 export async function requireMember(ctx: QueryCtx, orgId: string) {
-  const user = await requireUser(ctx);
-  const role = await ctx.runQuery(components.betterAuth.membership.role, {
-    organizationId: orgId,
-    userId: user._id,
-  });
+  const { user, role } = await roleIn(ctx, orgId);
+  if (!user) throw new Error("401: not signed in");
   if (!role) throw new Error("403: not a member of this organization");
   return { userId: user._id as string, role };
 }

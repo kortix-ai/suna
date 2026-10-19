@@ -19,6 +19,9 @@ const SESSION = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** A new session: the proxy tags it and records it as a Lumen thread. */
 export const SESSION_CREATE = new RegExp(`^projects/${PROJECT}/sessions$`);
 
+/** One session (PATCH renames it, relabels it, merges metadata): the proxy keeps Lumen's tags on it. */
+export const SESSION_ONE = new RegExp(`^projects/(${PROJECT})/sessions/(${SESSION})$`);
+
 /** Calls the session UI makes either way: one session, its uploads, approvals and turns, and the runtime. */
 const SESSION_SURFACE = [
   new RegExp(`^projects/${PROJECT}/sessions/${SESSION}(?:/.*)?$`),

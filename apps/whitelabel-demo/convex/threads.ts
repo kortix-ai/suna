@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { type MutationCtx, internalMutation, mutation, query } from "./_generated/server";
-import { isMember, requireWorkspace } from "./access";
+import { isMember, requireProxy, requireWorkspace } from "./access";
 
 const thread = v.object({
   _id: v.id("threads"),
@@ -58,7 +58,7 @@ export const recordFromProxy = mutation({
   args: { workspaceId: v.id("workspaces"), kortixSessionId: v.string(), title: v.string(), proxySecret: v.string() },
   returns: v.id("threads"),
   handler: async (ctx, a): Promise<Id<"threads">> => {
-    if (!process.env.LUMEN_PROXY_SECRET || a.proxySecret !== process.env.LUMEN_PROXY_SECRET) throw new Error("403: proxy only");
+    requireProxy(a.proxySecret);
     const { ws, userId } = await requireWorkspace(ctx, a.workspaceId);
     return insertThread(ctx, {
       workspaceId: a.workspaceId,

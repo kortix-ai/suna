@@ -10,6 +10,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { type ActionCtx, action, internalAction } from "./_generated/server";
+import { requireProxy } from "./access";
 import { lumenSessionTags } from "./tags";
 
 const MEMBER_TOKEN_TTL_MS = 60 * 60_000;
@@ -20,12 +21,6 @@ function operator() {
   if (!backendUrl || !token) throw new Error("500: KORTIX_UPSTREAM / KORTIX_OPERATOR_TOKEN unset");
   const config = { backendUrl, getToken: async () => token };
   return { config, kortix: createScopedKortix(config) };
-}
-
-/** Only the Next.js server knows LUMEN_PROXY_SECRET, so only it can obtain a member token. */
-function requireProxy(proxySecret: string) {
-  const expected = process.env.LUMEN_PROXY_SECRET;
-  if (!expected || proxySecret !== expected) throw new Error("403: proxy only");
 }
 
 /** Mint a project-scoped token that expires, and revoke it at expiry so it never piles up as "active". */
@@ -107,13 +102,19 @@ export const createThread = action({
       agent_name: a.templateSlug,
       ...lumenSessionTags(a, workspaceId),
     });
-    const threadId = await ctx.runMutation(internal.threads.record, {
-      workspaceId,
-      orgId: a.orgId,
-      userId: a.userId,
-      kortixSessionId: session.session_id,
-      title: clean,
-    });
+    // The session exists now: retry the record (idempotent per session) so a
+    // Convex hiccup does not leave a tagged session with no thread row.
+    const recordArgs = { workspaceId, orgId: a.orgId, userId: a.userId, kortixSessionId: session.session_id, title: clean };
+    let threadId: Id<"threads">;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        threadId = await ctx.runMutation(internal.threads.record, recordArgs);
+        break;
+      } catch (err) {
+        if (attempt === 3) throw err;
+        await new Promise((r) => setTimeout(r, 300 * attempt));
+      }
+    }
     return { threadId, kortixProjectId: a.kortixProjectId, kortixSessionId: session.session_id };
   },
 });
