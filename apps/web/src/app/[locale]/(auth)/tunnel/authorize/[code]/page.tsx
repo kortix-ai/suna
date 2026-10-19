@@ -59,7 +59,7 @@ function DeviceAuthorize() {
 
   // `null` until the user types or picks: a machine already paired to the
   // caller keeps its name and access, a new one starts from its hostname and
-  // with nothing selected.
+  // with every access selected.
   const [typedName, setName] = useState<string | null>(null);
   const [pickedCaps, setSelectedCaps] = useState<Set<string> | null>(null);
   const [share, setShare] = useState<Share>('me');
@@ -91,7 +91,8 @@ function DeviceAuthorize() {
   // uses. That suffix is noise in a name people pick their computer by.
   const name =
     typedName ?? registered?.name ?? (info?.machineHostname ?? '').replace(/ \(\d+\)$/, '');
-  const selectedCaps = pickedCaps ?? new Set(registered?.capabilities ?? []);
+  const selectedCaps =
+    pickedCaps ?? new Set(registered?.capabilities ?? capabilities.map((cap) => cap.key));
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
