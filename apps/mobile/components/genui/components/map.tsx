@@ -34,7 +34,8 @@ function places(markers: GenuiNode[]): MapPlace[] {
  * Web parity: the map itself in the transcript, with web's pins (the figure in a bubble, the name under
  * it) and no rows or buttons. Inline it is a still picture, so it never fights the transcript scroll; a
  * tap opens the interactive map full screen, where a pin's popup is the place card. With the map off
- * (`EXPO_PUBLIC_GENUI_MAP_STYLE_URL=off`) the places are rows with Directions, Website, and Call.
+ * (`EXPO_PUBLIC_GENUI_MAP_STYLE_URL=off`), or when the basemap fails to draw, the places are rows with
+ * Directions, Website, and Call.
  *
  * STREAMING: with a map, the block holds the pending box (`MAP_HEIGHT`) until its fence closes. The model
  * writes `Map([a, b])` before its markers, so a streamed map has 0, then 1, then n markers: waiting keeps
@@ -50,6 +51,7 @@ export function GenuiMap({ node, props, streaming, styleUrl }: GenuiComponentPro
 function SettledMap({ markers: nodes, route, zoom, style }: { markers: unknown; route: unknown; zoom: unknown; style: string | null }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
   const markers = useMemo(() => places(kids(nodes)), [nodes]);
   const data = useMemo<MapSheetData>(
     () => ({
@@ -62,7 +64,8 @@ function SettledMap({ markers: nodes, route, zoom, style }: { markers: unknown; 
   );
   const title = markers.length === 1 ? markers[0]!.label : t('genui.map', 'Map');
 
-  if (!style || !markers.length) return <GenuiPlaceList places={markers} />;
+  // The map off, no place on the globe, or a basemap that failed: the places as rows (web's `fallback`).
+  if (!style || !markers.length || failed) return <GenuiPlaceList places={markers} />;
   return (
     <>
       <Pressable
@@ -74,7 +77,7 @@ function SettledMap({ markers: nodes, route, zoom, style }: { markers: unknown; 
       >
         {/* The still map takes no touches: the tap is the Pressable's, the scroll the transcript's. */}
         <View pointerEvents="none" className="flex-1">
-          <MapWebView data={data} interactive={false} />
+          <MapWebView data={data} interactive={false} onFail={() => setFailed(true)} />
         </View>
       </Pressable>
       {open ? <MapSheet title={title} data={data} onClose={() => setOpen(false)} /> : null}

@@ -21,7 +21,7 @@ const flat = (el: El): string[] =>
 type Camera = Record<string, unknown> & { bounds?: { points: number[][] } };
 
 /** Runs the page's own script against a recording stand-in for maplibregl, the way the WebView would. */
-function runPage(input: Partial<MapDocumentInput>) {
+function runPage(input: Partial<MapDocumentInput>, events: string[] = ['load']) {
   const html = mapDocument({ script: '', css: '', styleUrl: 's', markers: [], background: 'white', routeColor: 'black', pin: PIN, labels: LABELS, ...input });
   const page = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
   const seen = {
@@ -34,7 +34,7 @@ function runPage(input: Partial<MapDocumentInput>) {
     pins: [] as string[][],
     controls: 0,
   };
-  let onLoad = () => {};
+  const handlers: Record<string, () => void> = {};
   const element = (tag: string): El => {
     const el: El = { tag, className: '', textContent: '', children: [], appendChild: (child) => el.children.push(child) };
     if (tag === 'button') seen.buttons.push(el);
@@ -49,13 +49,14 @@ function runPage(input: Partial<MapDocumentInput>) {
     },
     Map: class {
       constructor(camera: Camera) {
+        if (camera.style === 'throw') throw new Error('Failed to initialize WebGL');
         seen.camera = camera;
       }
       addControl() {
         seen.controls++;
       }
-      on(_event: string, handler: () => void) {
-        onLoad = handler;
+      on(event: string, handler: () => void) {
+        handlers[event] = handler;
       }
       addSource() {}
       addLayer(layer: unknown) {
@@ -88,7 +89,7 @@ function runPage(input: Partial<MapDocumentInput>) {
   };
   const window = { ReactNativeWebView: { postMessage: (message: string) => seen.posted.push(JSON.parse(message)) } };
   new Function('maplibregl', 'document', 'window', page)(maplibregl, { createElement: element }, window);
-  onLoad();
+  for (const event of events) handlers[event]?.();
   return seen;
 }
 
@@ -235,6 +236,7 @@ describe('map document', () => {
         { lat: 2, lng: 2, label: 'B', href: 'https://b.example.com/', phone: '+1 555 0100' },
       ],
     });
+    seen.posted.length = 0;
     for (const button of seen.buttons) button.onclick!();
     expect(seen.posted).toEqual([
       { type: 'place', index: 0, action: 'directions' },
@@ -264,5 +266,15 @@ describe('map document', () => {
     expect(html).not.toContain('javascript:alert');
     const seen = runPage({ markers: [{ lat: 1, lng: 1, label: evil, image: 'javascript:alert(1)' }] });
     expect(seen.popups).toEqual([[evil, '[Directions]']]);
+  });
+
+  test("the page reports its basemap to native: load once it draws, error when the style fails before it loads", () => {
+    expect(runPage({}, ['style.load', 'load']).posted).toEqual([{ type: 'map', state: 'load' }]);
+    // The style (or its worker) failed: MapLibre never fires load.
+    expect(runPage({}, ['error']).posted).toEqual([{ type: 'map', state: 'error' }]);
+    // A tile error after the style loaded still ends in load (web `watchMapLoad`): not a failure.
+    expect(runPage({}, ['style.load', 'error', 'load']).posted).toEqual([{ type: 'map', state: 'load' }]);
+    // No WebGL: MapLibre throws in its constructor, before any event.
+    expect(runPage({ styleUrl: 'throw' }, []).posted).toEqual([{ type: 'map', state: 'error' }]);
   });
 });

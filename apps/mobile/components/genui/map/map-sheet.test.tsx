@@ -2,7 +2,7 @@
  * The full-screen map: it reads the bundled MapLibre assets, then loads one inline document into a
  * locked-down WebView. Native modules are host stubs. Run with `bun test --isolate`.
  */
-import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, jest, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -15,6 +15,7 @@ const opened: string[] = [];
 mock.module('react-native', () => ({
   View: host('view'),
   Text: host('rntext'),
+  ScrollView: host('scroll'),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 mock.module('react-native-webview', () => ({ WebView: host('webview') }));
@@ -45,6 +46,7 @@ mock.module('@/components/ui/dialog', () => ({
 mock.module('@/components/ui/button', () => ({ Button: host('button') }));
 mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
+mock.module('@/components/ui/separator', () => ({ Separator: host('separator') }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
 mock.module('@/lib/icons', () => ({ XIcon: 'x' }));
 mock.module('@/lib/utils/open-link', () => ({
@@ -68,13 +70,14 @@ afterEach(() => {
   files.fail = false;
   files.reads.length = 0;
   opened.length = 0;
+  jest.useRealTimers();
 });
 
 const DATA = {
   styleUrl: 'https://tiles.example.com/style.json',
   markers: [
-    { lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' },
-    { lat: 19.04, lng: 72.82, label: 'Taj', href: 'https://taj.example.com/', phone: '+91 22 6668-1234' },
+    { id: 'a', lat: 48.85, lng: 2.35, label: 'Louvre', description: 'Museum' },
+    { id: 'b', lat: 19.04, lng: 72.82, label: 'Taj', href: 'https://taj.example.com/', phone: '+91 22 6668-1234' },
   ],
   route: [
     [48.85, 2.35],
@@ -90,13 +93,18 @@ async function open(Sheet: typeof MapSheet = MapSheet) {
   return tree!.root;
 }
 const all = (root: ReactTestInstance, type: string) => root.findAll((n) => n.type === (type as never));
+const texts = (root: ReactTestInstance) => all(root, 'text').flatMap((n) => n.children.filter((c) => typeof c === 'string'));
+/** The place rows: what a failed basemap shows in its place, with every button. */
+const ROWS = ['Louvre', 'Museum', 'Directions', 'Taj', 'Directions', 'Website', 'Call'];
+const send = (root: ReactTestInstance, data: unknown) =>
+  act(() => (all(root, 'webview')[0]!.props.onMessage as (event: { nativeEvent: { data: string } }) => void)({ nativeEvent: { data: JSON.stringify(data) } }));
 
 describe('MapSheet', () => {
-  test('a failed asset read says the map is unavailable, and the next open reads again', async () => {
+  test('a failed asset read shows the place rows, and the next open reads again', async () => {
     files.fail = true;
     const root = await open();
     expect(all(root, 'webview')).toHaveLength(0);
-    expect(all(root, 'text').map((n) => n.children[0])).toEqual(['Map unavailable']);
+    expect(texts(root)).toEqual(ROWS);
     act(() => tree!.unmount());
     files.fail = false;
     files.reads.length = 0;
@@ -174,5 +182,50 @@ describe('MapSheet', () => {
       'https://taj.example.com/',
       'tel:+912266681234',
     ]);
+  });
+
+  test('a basemap that fails in the page swaps the map for the place rows, with their buttons', async () => {
+    const root = await open();
+    // Unknown states and types change nothing.
+    send(root, { type: 'map', state: 'broken' });
+    send(root, { type: 'mapx', state: 'error' });
+    expect(all(root, 'webview')).toHaveLength(1);
+    send(root, { type: 'map', state: 'error' });
+    expect(all(root, 'webview')).toHaveLength(0);
+    expect(texts(root)).toEqual(ROWS);
+    // The rows' buttons work.
+    const directions = all(root, 'button').find((b) => b.props.accessibilityLabel === 'Directions: Louvre')!;
+    act(() => (directions.props.onPress as () => void)());
+    expect(opened).toEqual(['https://www.google.com/maps/dir/?api=1&destination=48.85,2.35']);
+  });
+
+  for (const handler of ['onError', 'onHttpError'] as const) {
+    test(`a WebView ${handler} swaps the map for the place rows`, async () => {
+      const root = await open();
+      act(() => (all(root, 'webview')[0]!.props[handler] as (event: unknown) => void)({ nativeEvent: {} }));
+      expect(all(root, 'webview')).toHaveLength(0);
+      expect(texts(root)).toEqual(ROWS);
+    });
+  }
+
+  test('no load within 10 s counts as a failure; a map that loads in time stays', async () => {
+    jest.useFakeTimers();
+    let root = await open();
+    act(() => {
+      jest.advanceTimersByTime(9_999);
+    });
+    expect(all(root, 'webview')).toHaveLength(1);
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(all(root, 'webview')).toHaveLength(0);
+    expect(texts(root)).toEqual(ROWS);
+    act(() => tree!.unmount());
+    root = await open();
+    send(root, { type: 'map', state: 'load' });
+    act(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(all(root, 'webview')).toHaveLength(1);
   });
 });

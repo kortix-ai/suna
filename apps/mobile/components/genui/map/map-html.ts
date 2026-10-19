@@ -98,11 +98,26 @@ html,body,#map{margin:0;height:100%;background:${input.background}}
   camera.style = d.styleUrl;
   camera.attributionControl = { compact: true };
   camera.interactive = d.interactive;
-  var map = new maplibregl.Map(camera);
-  if (d.interactive) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-  function post(index, action) {
-    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'place', index: index, action: action }));
+  function send(message) {
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message));
   }
+  function post(index, action) {
+    send({ type: 'place', index: index, action: action });
+  }
+  // The basemap's state for native (web \`watchMapLoad\`): load once it draws; error when the style (or the
+  // worker) fails before style.load, since load then never comes. A tile error after the style loaded still
+  // ends in load, so it is ignored. Native also treats no load within 10 s as a failure.
+  var map;
+  try {
+    map = new maplibregl.Map(camera);
+  } catch (e) {
+    send({ type: 'map', state: 'error' });
+    return;
+  }
+  var styled = false;
+  map.on('style.load', function () { styled = true; });
+  map.on('error', function () { if (!styled) send({ type: 'map', state: 'error' }); });
+  if (d.interactive) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -155,6 +170,7 @@ html,body,#map{margin:0;height:100%;background:${input.background}}
     marker.addTo(map);
   });
   map.on('load', function () {
+    send({ type: 'map', state: 'load' });
     if (d.route.length < 2) return;
     map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: d.route } } });
     map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 3, 'line-color': d.routeColor } });

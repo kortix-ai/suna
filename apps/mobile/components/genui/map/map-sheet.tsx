@@ -5,9 +5,9 @@
  */
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest, WebViewMessageEvent, WebViewOpenWindowEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
@@ -25,6 +25,7 @@ import type { MapPlace, PlaceAction } from '@/lib/genui/map-geo';
 
 import { openGenuiLink, openPlaceAction } from '../components/open-link';
 import { mapDocument, type MapDocumentInput } from './map-html';
+import { GenuiPlaceList } from './place-list';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const SCRIPT = require('@/assets/maplibre/maplibre-gl.webjs');
@@ -48,15 +49,23 @@ const openWindow = (event: WebViewOpenWindowEvent) => openGenuiLink(event.native
 
 const ACTIONS: readonly PlaceAction[] = ['directions', 'website', 'call'];
 
+/** No `load` from the page within this long counts as a failed basemap. */
+export const MAP_LOAD_TIMEOUT_MS = 10_000;
+
 /**
- * A popup button's message: `{ type: 'place', index, action }`. The page holds no link, so native looks the
- * place up and opens its own link; any other message opens nothing.
+ * The page's messages, validated: a popup button's `{ type: 'place', index, action }` (the page holds no link,
+ * so native looks the place up and opens its own link), and the basemap's `{ type: 'map', state }`
+ * (`load` or `error`). Any other message does nothing.
  */
-function placeMessage(markers: readonly Omit<MapPlace, 'id'>[], raw: string): void {
-  let message: { type?: unknown; index?: unknown; action?: unknown };
+function pageMessage(markers: readonly MapPlace[], raw: string, onState: (state: 'load' | 'error') => void): void {
+  let message: { type?: unknown; index?: unknown; action?: unknown; state?: unknown };
   try {
     message = JSON.parse(raw);
   } catch {
+    return;
+  }
+  if (message?.type === 'map') {
+    if (message.state === 'load' || message.state === 'error') onState(message.state);
     return;
   }
   if (message?.type !== 'place' || !Number.isInteger(message.index)) return;
@@ -82,13 +91,20 @@ function loadBundle() {
   return bundle;
 }
 
-export type MapSheetData = Omit<MapDocumentInput, 'script' | 'css' | 'background' | 'routeColor' | 'pin' | 'labels' | 'interactive'>;
+export type MapSheetData = Omit<MapDocumentInput, 'markers' | 'script' | 'css' | 'background' | 'routeColor' | 'pin' | 'labels' | 'interactive'> & {
+  markers: MapPlace[];
+};
 
 /** The route line: the charts' first series colour (`charts.tsx` series 0 is `--chart-3`), as web's `routeRgb`. */
 const ROUTE_COLOR = withAlpha(THEME.chart[2], 1);
 
-/** The map page in a WebView, in theme colors. Still (`interactive={false}`): no pan, zoom, or popups. */
-export function MapWebView({ data, interactive = true }: { data: MapSheetData; interactive?: boolean }) {
+/**
+ * The map page in a WebView, in theme colors. Still (`interactive={false}`): no pan, zoom, or popups.
+ * `onFail` fires once when the basemap cannot draw (web `map.tsx` `fallback`): the bundled assets fail to read,
+ * the page reports a style error, the WebView reports a load or HTTP error, or no `load` comes within
+ * `MAP_LOAD_TIMEOUT_MS`. The parent then shows the place rows in its place.
+ */
+export function MapWebView({ data, interactive = true, onFail }: { data: MapSheetData; interactive?: boolean; onFail?: () => void }) {
   const { t } = useTranslation();
   const { colorScheme } = useColorScheme();
   const theme = colorScheme === 'dark' ? THEME.dark : THEME.light;
@@ -97,6 +113,16 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
   const directions = t('genui.directions', 'Directions');
   const website = t('genui.website', 'Website');
   const call = t('genui.call', 'Call');
+  const [loaded, setLoaded] = useState(false);
+  const onFailRef = useRef(onFail);
+  onFailRef.current = onFail;
+  const reported = useRef(false);
+  const fail = () => {
+    setFailed(true);
+    if (reported.current) return;
+    reported.current = true;
+    onFailRef.current?.();
+  };
 
   useEffect(() => {
     let alive = true;
@@ -122,14 +148,21 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
           }),
         );
       },
-      () => alive && setFailed(true),
+      () => alive && fail(),
     );
     return () => {
       alive = false;
     };
   }, [data, theme, interactive, directions, website, call]);
 
-  if (!html) {
+  // The load timeout runs from the moment the page mounts until it reports load.
+  useEffect(() => {
+    if (!html || loaded || failed) return;
+    const timer = setTimeout(fail, MAP_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [html, loaded, failed]);
+
+  if (!html || failed) {
     return (
       <View className="flex-1 items-center justify-center">
         {failed ? <Text variant="muted">{t('genui.mapUnavailable', 'Map unavailable')}</Text> : <KortixLoader />}
@@ -142,7 +175,11 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
       originWhitelist={ORIGIN_WHITELIST}
       onShouldStartLoadWithRequest={guardNavigation}
       onOpenWindow={openWindow}
-      onMessage={(event: WebViewMessageEvent) => placeMessage(data.markers, event.nativeEvent.data)}
+      onMessage={(event: WebViewMessageEvent) =>
+        pageMessage(data.markers, event.nativeEvent.data, (state) => (state === 'load' ? setLoaded(true) : fail()))
+      }
+      onError={fail}
+      onHttpError={fail}
       javaScriptEnabled
       cacheEnabled={false}
       incognito
@@ -160,6 +197,7 @@ export function MapWebView({ data, interactive = true }: { data: MapSheetData; i
 export function MapSheet({ title, data, onClose }: { title: string; data: MapSheetData; onClose: () => void }) {
   const { t } = useTranslation();
   const { width, height } = useWindowDimensions();
+  const [failed, setFailed] = useState(false);
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
       {/* MermaidBlock's fullscreen geometry: the window less a 16pt edge, 90% tall. */}
@@ -174,7 +212,16 @@ export function MapSheet({ title, data, onClose }: { title: string; data: MapShe
             </Button>
           </DialogClose>
         </View>
-        <MapWebView data={data} />
+        {failed ? (
+          // A failed basemap: the place rows, as inline and with the map off.
+          <ScrollView>
+            <View className="p-4">
+              <GenuiPlaceList places={data.markers} />
+            </View>
+          </ScrollView>
+        ) : (
+          <MapWebView data={data} onFail={() => setFailed(true)} />
+        )}
       </DialogContent>
     </Dialog>
   );

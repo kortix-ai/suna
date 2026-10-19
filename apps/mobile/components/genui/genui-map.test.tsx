@@ -319,4 +319,35 @@ a = Marker(48.85, 2.35, "Louvre")`,
     press(inlineMap(root)[0]!);
     expect(all(root, 'map-sheet')[0]!.props.title).toBe('Louvre');
   });
+
+  test('a basemap that fails swaps the inline map for the place rows, with their buttons, as with the map off', () => {
+    const root = renderMap(TWO_PLACES, STYLE_URL);
+    act(() => (all(root, 'map-webview')[0]!.props.onFail as () => void)());
+    expect(inlineMap(root)).toHaveLength(0);
+    expect(all(root, 'map-webview')).toHaveLength(0);
+    expect(texts(root)).toEqual(['Louvre', 'Museum', 'Directions', 'Opera', 'Directions']);
+    press(all(root, 'button')[1]!);
+    expect(opened).toEqual(['https://www.google.com/maps/dir/?api=1&destination=48.86,2.36']);
+  });
+
+  test('a row offers Website only for an http(s) link, as the popup does', () => {
+    const root = renderNodes(
+      [
+        { lat: 48.85, lng: 2.35, label: 'Louvre', href: 'javascript:alert(1)' },
+        { lat: 48.86, lng: 2.36, label: 'Opera', href: 'https://opera.example.com/' },
+      ],
+      'off',
+    );
+    expect(all(root, 'button').map((b) => texts(b))).toEqual([['Directions'], ['Directions'], ['Website']]);
+  });
+
+  test('a map whose every marker is dropped keeps a block that says the map is unavailable, map on or off', () => {
+    for (const styleUrl of [STYLE_URL, 'off']) {
+      const root = renderNodes([{ lat: 91, lng: 2.35, label: 'North of north' }], styleUrl);
+      expect(all(root, 'map-webview')).toHaveLength(0);
+      expect(texts(root)).toEqual(['Map unavailable']);
+      act(() => tree?.unmount());
+      tree = undefined;
+    }
+  });
 });

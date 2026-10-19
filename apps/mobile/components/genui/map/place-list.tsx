@@ -3,6 +3,7 @@
  * name, its note, and the place card's actions (web `PlaceCard`): Directions, then Website and Call when the
  * place has them.
  */
+import { safeUrl } from '@kortix/sdk/genui';
 import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -35,7 +36,7 @@ function PlaceRow({ place }: { place: MapPlace }) {
       </View>
       <View className="flex-row gap-2">
         {action('directions', t('genui.directions', 'Directions'))}
-        {place.href ? action('website', t('genui.website', 'Website')) : null}
+        {safeUrl(place.href) ? action('website', t('genui.website', 'Website')) : null}
         {telLink(place.phone) ? action('call', t('genui.call', 'Call')) : null}
       </View>
     </View>
@@ -43,7 +44,16 @@ function PlaceRow({ place }: { place: MapPlace }) {
 }
 
 export function GenuiPlaceList({ places }: { places: MapPlace[] }) {
-  if (!places.length) return null;
+  const { t } = useTranslation();
+  // Every marker dropped (off the globe): web keeps the empty card; here the card says so instead of
+  // collapsing the block the pending box held.
+  if (!places.length) {
+    return (
+      <View className="rounded-2xl bg-card px-4 py-3">
+        <Text variant="muted">{t('genui.mapUnavailable', 'Map unavailable')}</Text>
+      </View>
+    );
+  }
   return (
     <View className="rounded-2xl bg-card">
       {places.map((place, i) => (
