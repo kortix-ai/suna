@@ -182,7 +182,15 @@ downgrade N+1.
   with its private key: `openssl pkcs12 -export -legacy -inkey installer.key -in
   installer.pem -out installer.p12`, then store the base64 of the .p12 and its
   password in `kortix-ci-env`.
-- Windows: unsigned. No Windows code-signing certificate exists in `kortix-ci-env`.
+- Windows: Authenticode through Microsoft Artifact Signing (Trusted Signing). The
+  `windows-msi` job signs `target/release/*.exe|*.dll` before packing and both MSIs
+  after, then asserts `Get-AuthenticodeSignature` is `Valid`. It reads
+  `AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID`, `AZURE_SIGNING_CLIENT_SECRET`,
+  `AZURE_SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`),
+  `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE` from `kortix-ci-env`. Without
+  them it builds unsigned with a warning, and SmartScreen warns whoever runs a
+  downloaded MSI ("unrecognized app"). An MSI pushed by IT (Intune, GPO) installs
+  silently either way.
 - Linux: the .deb is unsigned (no apt repository).
 
 ## Human steps
@@ -190,8 +198,10 @@ downgrade N+1.
 1. Create the Developer ID Installer certificate and store it as
    `APPLE_INSTALLER_CERTIFICATE` + `APPLE_INSTALLER_CERTIFICATE_PASSWORD` (section
    "Signing"). Until then no stable release can attach Capture installers.
-2. Add a Windows code-signing certificate and a signing step to `windows-msi`
-   to remove the SmartScreen warning.
+2. Windows signing: an Azure subscription, an Artifact Signing account, a validated
+   Public Trust identity for Kortix AI Corp, a certificate profile, and an app
+   registration with the "Artifact Signing Certificate Profile Signer" role; store
+   the six `AZURE_SIGNING_*` values in `kortix-ci-env` (section "Signing").
 3. Create the update signing key: `apps/capture/scripts/create_update_key.sh`, then commit
    `apps/capture/update-public-key.txt` (section "Updater").
 4. Remove the old `CAPTURE_RELEASES_TOKEN` secret from `kortix-ci-env`; nothing reads it.

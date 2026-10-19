@@ -163,7 +163,38 @@ jobs:
             sessions = (query user 2>&1 | Out-String)
           } | ConvertTo-Json | Tee-Object "$env:EV\env.json"
           exit 0  # `query user` exits 1 by design
-      - name: Build the binaries, the release MSI and the next-version MSI (for the upgrade)
+      - name: Check out the aws-env action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      # Authenticode via Microsoft Artifact Signing (Trusted Signing). Every key is optional:
+      # without them the binaries and the MSI are unsigned and Windows SmartScreen warns
+      # whoever runs a downloaded installer ("unrecognized app").
+      - name: Read Windows signing credentials from AWS Secrets Manager
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            AZURE_SIGNING_TENANT_ID?
+            AZURE_SIGNING_CLIENT_ID?
+            AZURE_SIGNING_CLIENT_SECRET?
+            AZURE_SIGNING_ENDPOINT?
+            AZURE_SIGNING_ACCOUNT?
+            AZURE_SIGNING_PROFILE?
+      - name: Windows signing on or off
+        id: winsign
+        shell: bash
+        run: |
+          if [ -n "${AZURE_SIGNING_CLIENT_SECRET:-}" ] && [ -n "${AZURE_SIGNING_ENDPOINT:-}" ] && [ -n "${AZURE_SIGNING_PROFILE:-}" ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"; echo "Windows signing: Artifact Signing ($AZURE_SIGNING_ACCOUNT/$AZURE_SIGNING_PROFILE)"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Windows installers are unsigned: no AZURE_SIGNING_* in kortix-ci-env. SmartScreen warns on a downloaded MSI."
+          fi
+      - name: Build the binaries
         env:
           KORTIX_RELEASE_TAG: ${{ inputs.tag }}
           KORTIX_DEFAULT_ISSUER_URL: ${{ inputs.issuer_url }}
@@ -174,12 +205,52 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
           python scripts/install_privacy_runtime.py --platform windows-x86_64 --destination target/release
           if ($LASTEXITCODE -ne 0) { throw "install_privacy_runtime failed" }
+      - name: Sign the binaries (Authenticode)
+        if: steps.winsign.outputs.on == 'true'
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ env.AZURE_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ env.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\capture\target\release
+          files-folder-filter: exe,dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Build the release MSI and the next-version MSI (for the upgrade)
+        run: |
           ./installer/windows/build-msi.ps1 -Stage target/release -Version $env:TAG -Out "$env:RUNNER_TEMP\msi\KortixCapture-$($env:TAG)-x64.msi"
           # The upgrade check installs the next patch version over the release one.
           $v = ($env:TAG -replace '^v', '' -replace '[-+].*$', '').Split('.')
           $next = "$($v[0]).$($v[1]).$([int]$v[2] + 1)"
           "NEXT_VERSION=$next" | Add-Content $env:GITHUB_ENV
           ./installer/windows/build-msi.ps1 -Stage target/release -Version "v$next" -Out "$env:RUNNER_TEMP\msi\KortixCapture-next.msi"
+      - name: Sign the MSIs (Authenticode)
+        if: steps.winsign.outputs.on == 'true'
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ env.AZURE_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ env.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ runner.temp }}\msi
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: The signatures are valid
+        if: steps.winsign.outputs.on == 'true'
+        run: |
+          foreach ($f in (Get-ChildItem target/release/*.exe) + (Get-ChildItem "$env:RUNNER_TEMP\msi\*.msi")) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)" | Tee-Object -Append "$env:EV\authenticode.txt"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
+          }
       - name: The release binaries carry no update test hook
         run: |
           $hit = Select-String -Path target/release/kortix-capture.exe -Pattern "127.0.0.1:8899" -SimpleMatch -Quiet
