@@ -67,6 +67,8 @@ pub struct Settings {
     pub airgap: bool,
     /// Start Kortix Capture at login and restart it after a crash (on by
     /// default). The tray installs or removes the OS login entry when it changes.
+    /// Not read: Kortix Capture always starts at login (the pkg's and deb's login agent,
+    /// the per-user service, the Windows logon task). Kept so older settings files load.
     pub launch_at_login: bool,
     pub shortcuts: ShortcutSettings,
     pub experimental: ExperimentalSettings,
