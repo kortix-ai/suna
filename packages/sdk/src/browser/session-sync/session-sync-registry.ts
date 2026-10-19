@@ -11,6 +11,9 @@ import {
 } from '../../core/session-sync/session-sync-controller';
 import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
+import { getSessionLogPage } from '../../core/rest/projects-client/sessions';
+import { applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
+import { sessionLogRowsFor, sessionLogThreadIdOf } from '../../core/session-log/v1-view';
 import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
 
 interface MessagesResponse {
@@ -432,18 +435,50 @@ export function loadSessionTranscriptMessages(
   );
 }
 
+/** The largest page the log route serves. */
+const SESSION_LOG_EXPORT_PAGE_LIMIT = 500;
+
 /**
- * Every message of a session for an export, oldest first. While the computer
- * runs: the runtime's whole history. When the runtime cannot answer (asleep,
- * stopped, failed) or answers empty, the saved copy, every window of it: the
- * conversation the page shows meanwhile. `kortixSessionScope`
- * (`projectId/sessionId`) names that copy; without it a runtime failure throws.
+ * Every message of runtime session `runtimeSessionId`'s thread of a v2 session, oldest first,
+ * as v1 rows (`toV1`): the messages `state` holds (a page, the streamed turn), then every older
+ * page of `GET …/log?thread=&before_seq=`. Read into a copy: the store's window is not widened.
+ * Throws when the log names no such thread or a page fails.
+ */
+async function loadSessionLogExportRows(
+  projectId: string,
+  sessionId: string,
+  runtimeSessionId: string,
+  state: SessionLogState,
+): Promise<SessionSyncPage['messages']> {
+  const thread = sessionLogThreadIdOf(state, runtimeSessionId);
+  if (!thread) throw new Error(`The session log has no thread ${runtimeSessionId}`);
+  while (state.older[thread] !== false) {
+    const first = state.messages[thread]?.[0]?.seq;
+    const page = await getSessionLogPage(projectId, sessionId, { thread, before_seq: first, limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page?.thread_id !== thread) throw new Error(`The session log has no page of thread ${thread}`);
+    state = applySessionLogPage(state, page, first);
+    // A page that reaches no further back ends the walk.
+    const reached = state.messages[thread]?.[0]?.seq;
+    if (reached === undefined || (first !== undefined && reached >= first)) break;
+  }
+  return sessionLogRowsFor({ [sessionId]: state }, runtimeSessionId, []);
+}
+
+/**
+ * Every message of a session for an export, oldest first. A session that reads its session log
+ * (v2: the store holds the log of `kortixSessionScope`) exports the log's thread of `sessionId`,
+ * every page of it, and reads nothing else. Otherwise, while the computer runs: the runtime's whole history. When the runtime
+ * cannot answer (asleep, stopped, failed) or answers empty, the saved copy, every window of it:
+ * the conversation the page shows meanwhile. `kortixSessionScope` (`projectId/sessionId`)
+ * names the session; without it a runtime failure throws.
  */
 export async function loadSessionExportMessages(
   sessionId: string,
   kortixSessionScope?: string,
 ): Promise<SessionSyncPage['messages']> {
   const saved = parseKortixSessionScope(kortixSessionScope);
+  const log = saved ? useSyncStore.getState().sessionLogs[saved.sessionId] : undefined;
+  if (saved && log) return loadSessionLogExportRows(saved.projectId, saved.sessionId, sessionId, log);
   let live: SessionSyncPage['messages'] = [];
   try {
     live = await loadSessionTranscriptMessages(sessionId);

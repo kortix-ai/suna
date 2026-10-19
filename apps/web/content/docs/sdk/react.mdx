@@ -95,7 +95,7 @@ To show a session's saved copy before `useSession` binds it, for example on a co
 
 The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the snapshot asks for no window (`?transcript=0`), and the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
 
-To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it.
+To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it. When the parent session reads its session log (v2), pass `sessionLog: true` as well: the hook then reads no saved copy, and the thread comes from `useSessionLogThread(parentSession, childRuntimeSessionId)`.
 
 ### Returns
 
@@ -313,6 +313,8 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 ```
 
 On v2, `useSessionLogThread` adds the v1 rows the log does not hold yet, converted with `fromV1` and placed by time as `useSessionMessages` places them (an older page `loadOlder` read goes before the thread's messages, an optimistic send after them), until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
+
+On v2, `useSessionLogThread(session, threadId)` reads a sub-agent thread's newest page the first time a row asks for it. `useSessionLogOlder(session, threadId?)` pages one thread back: it returns `{ hasOlder, isLoadingOlder, loadOlder }`, and `loadOlder()` reads `GET …/log?thread=&before_seq=` before the thread's first `seq`. `threadId` omitted is the root thread, which `useSession().loadOlder` already pages. It returns `hasOlder: false` while the session reads v1. A sub-agent's chat (a view with no `useSession` of its own) reads its thread and its older pages with these two hooks, passing the parent session as `session`.
 
 A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
