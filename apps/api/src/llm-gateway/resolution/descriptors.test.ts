@@ -346,12 +346,12 @@ describe('managed OpenCode Zen route', () => {
     expect(candidates[1].failover).toBe(true);
   });
 
-  test('Morph direct comes first, then Zen, then the OpenRouter pool', () => {
+  test('Zen comes first, then Morph direct, then the OpenRouter pool', () => {
     const saved = { models: config.MORPH_MANAGED_MODELS, key: config.MORPH_API_KEY };
     config.MORPH_MANAGED_MODELS = ['glm-5.3-flash'];
     config.MORPH_API_KEY = 'morph-test-key';
     try {
-      expect(managedCandidates(glm).map((candidate) => candidate.provider)).toEqual(['morph', 'opencode', 'openrouter']);
+      expect(managedCandidates(glm).map((candidate) => candidate.provider)).toEqual(['opencode', 'morph', 'openrouter']);
     } finally {
       config.MORPH_MANAGED_MODELS = saved.models;
       config.MORPH_API_KEY = saved.key;
