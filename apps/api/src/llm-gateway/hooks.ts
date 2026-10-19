@@ -300,8 +300,15 @@ export async function assertLlmBillingActive(
   accountId: string,
   opts?: { creditsRequest?: boolean },
 ): Promise<{ holdUsd?: number } | void> {
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    if (!(await accountMayUseManagedModels(accountId)) && !opts?.creditsRequest) return;
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(accountId))) {
+    // The second managed-models gate, independent of model resolution: a
+    // Kortix-billed request (only managed models bill credits) from an
+    // account without the entitlement is refused here even if resolution let
+    // it through.
+    if (opts?.creditsRequest) {
+      throw new BillingGateError('plan_upgrade_required', 0, 'Kortix-managed models require a paid plan.', accountId);
+    }
+    return;
   }
   return assertBillingActive(accountId);
 }

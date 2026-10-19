@@ -1267,6 +1267,16 @@ adminApp.openapi(
       } = await import('../billing/services/entitlement-overrides');
       const validated = validateOverridePatch(raw);
       if (!validated.ok) return c.json({ error: validated.error }, 400);
+      if (validated.patch.managedModels?.value === true) {
+        // The resolver ignores this grant on Free and No Plan; refuse it here
+        // so the operator sees why instead of a switch that does nothing.
+        const { resolveAccountBilling } = await import('../billing/services/billing-cache');
+        const { paysForManagedModels } = await import('../billing/services/resolve-billing');
+        const billing = await resolveAccountBilling(accountId, { fresh: true });
+        if (!paysForManagedModels(billing.plan, billing.enterprise)) {
+          return c.json({ error: 'Managed models need a paid plan or a licensed Enterprise contract; Free and No Plan never get them.' }, 400);
+        }
+      }
 
       const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
       const { applyAdminOverride } = await import('../billing/services/account-write-owner');
