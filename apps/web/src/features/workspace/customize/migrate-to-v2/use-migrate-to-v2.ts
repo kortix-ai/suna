@@ -1,0 +1,3 @@
+'use client';
+
+export * from '@kortix/ui/customize/migrate-to-v2/use-migrate-to-v2';
