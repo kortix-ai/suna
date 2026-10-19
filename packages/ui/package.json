@@ -261,7 +261,6 @@
     "./session/composer-reset": "./src/session/composer-reset.ts",
     "./session/composer/ComposerAboveCard": "./src/session/composer/ComposerAboveCard.tsx",
     "./session/composer/ComposerCard": "./src/session/composer/ComposerCard.tsx",
-    "./session/composer/__harness__/entry": "./src/session/composer/__harness__/entry.tsx",
     "./session/composer/agent-selector": "./src/session/composer/agent-selector.tsx",
     "./session/composer/animated-placeholder": "./src/session/composer/animated-placeholder.tsx",
     "./session/composer/attachment-submission": "./src/session/composer/attachment-submission.ts",
@@ -1876,10 +1875,6 @@
       "./session/composer/ComposerCard": {
         "types": "./dist/session/composer/ComposerCard.d.ts",
         "import": "./dist/session/composer/ComposerCard.js"
-      },
-      "./session/composer/__harness__/entry": {
-        "types": "./dist/session/composer/__harness__/entry.d.ts",
-        "import": "./dist/session/composer/__harness__/entry.js"
       },
       "./session/composer/agent-selector": {
         "types": "./dist/session/composer/agent-selector.d.ts",

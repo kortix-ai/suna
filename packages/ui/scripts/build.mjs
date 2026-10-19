@@ -54,6 +54,12 @@ mkdirSync(join(DIST, 'styles'), { recursive: true });
 for (const css of readdirSync(join(SRC, 'styles')).filter((n) => n.endsWith('.css'))) {
   copyFileSync(join(SRC, 'styles', css), join(DIST, 'styles', css));
 }
+// A component's own stylesheet (`import './x.css'`) ships next to its .js.
+for (const css of walk(SRC).filter((p) => p.endsWith('.css') && !p.startsWith(join(SRC, 'styles') + sep))) {
+  const out = join(DIST, relative(SRC, css));
+  mkdirSync(dirname(out), { recursive: true });
+  copyFileSync(css, out);
+}
 
 // 4. Inline @kortix/shared. The names dist/**/*.js imports from its root or a subpath
 // go into one vendor entry, which tsup bundles (tree-shaken) into
