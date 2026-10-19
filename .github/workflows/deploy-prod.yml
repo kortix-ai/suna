@@ -469,12 +469,14 @@ jobs:
           if-no-files-found: error
 
   # ── Publish the public npm packages ─────────────────────────────────────────
-  # Three packages ship to npm on every version release, in lockstep with the
+  # Four packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
+  #   @kortix/ui            — the React component library and session UI; peers
+  #                           on @kortix/sdk@<version>
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
   # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
