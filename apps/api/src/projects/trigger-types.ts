@@ -62,6 +62,14 @@ export interface GitTriggerSpec {
    */
   maxLatenessSeconds?: number;
   /**
+   * Any trigger type (`max_runs_per_hour`, KRTX-1721): runs started in any 60
+   * minutes. A fire past it is recorded as a throttled, skipped run. Omitted
+   * when unset: the platform default (60) applies.
+   */
+  maxRunsPerHour?: number;
+  /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
+  maxRunsPerDay?: number;
+  /**
    * For type=webhook only — the project_secrets key that holds the HMAC
    * signing secret. The actual secret value is never inline.
    */
