@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -9,13 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useSheetOpenMove } from '@/components/kortix/sheet';
 import { useLanguage } from '@/contexts';
 import { useAccountState } from '@/lib/billing/hooks';
 import { canManageBilling } from '@/lib/billing/plan-action';
 import { haptics } from '@/lib/haptics';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
-import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 
@@ -37,12 +36,12 @@ import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 export function GlobalUpgradeSheet() {
   const { t } = useLanguage();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const wasPresentedRef = useRef(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { isOpen, accountId, message, closeUpgradeSheet } = useUpgradeSheetStore();
+  const { markDismissed } = useSheetOpenMove(sheetRef, isOpen);
   const { data: accountState } = useAccountState({
     accountId: accountId ?? undefined,
     enabled: isOpen,
@@ -51,23 +50,10 @@ export function GlobalUpgradeSheet() {
   const canPurchase = canShowExternalPurchase(Platform.OS);
   const included = getUpgradeSheetIncludedItems();
 
-  useEffect(() => {
-    const transition = sheetOpenMove(isOpen, wasPresentedRef.current);
-    if (transition === 'present') {
-      wasPresentedRef.current = true;
-      const frame = requestAnimationFrame(() => sheetRef.current?.present());
-      return () => cancelAnimationFrame(frame);
-    }
-    if (transition === 'dismiss') {
-      wasPresentedRef.current = false;
-      sheetRef.current?.dismiss();
-    }
-  }, [isOpen]);
-
   const handleDismiss = useCallback(() => {
-    wasPresentedRef.current = false;
+    markDismissed();
     closeUpgradeSheet();
-  }, [closeUpgradeSheet]);
+  }, [markDismissed, closeUpgradeSheet]);
 
   const handleViewPlans = useCallback(() => {
     haptics.medium();

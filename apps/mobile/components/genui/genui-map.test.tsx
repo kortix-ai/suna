@@ -13,6 +13,12 @@ type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const host = (name: string) => ({ children, ...props }: HostProps) => React.createElement(name, props, children);
 
 const opened: unknown[] = [];
+// `openGenuiLink` opens through the app's link helper — stub it so the real
+// `expo-web-browser` (and its native modules) never loads in this host-stub run.
+mock.module('@/lib/utils/open-link', () => ({
+  openExternalLink: (href: string) => opened.push(href),
+  openLink: async () => {},
+}));
 
 mock.module('react-native', () => ({
   StyleSheet: { flatten: (s: unknown) => s, create: (s: unknown) => s },

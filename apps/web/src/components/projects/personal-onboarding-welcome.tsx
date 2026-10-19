@@ -132,7 +132,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
                   size="icon"
                   onClick={dismiss}
                   aria-label={t('dismiss')}
-                  className="text-muted-foreground hover:text-foreground hit-area-1 active:scale-[0.96]"
+                  className="text-muted-foreground hover:text-foreground hit-area-3 active:scale-[0.96]"
                 >
                   <XIcon className="size-4" />
                 </Button>

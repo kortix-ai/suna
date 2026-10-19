@@ -84,6 +84,11 @@ export function SidebarToggle({
         onPointerLeave={collapsed ? sidebar.peekLeave : undefined}
         className={cn(
           'hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]',
+          // A `size-7` ghost box (≈26px) is far below the 44px mobile tap
+          // floor (KRTX-2004); the shared hit-area pseudo-element lifts the
+          // pointer target to ≈48px without changing the box in the header
+          // rows this control renders into.
+          'hit-area-3',
           placement === 'floating' && 'absolute top-2 left-2 z-20',
           className,
         )}

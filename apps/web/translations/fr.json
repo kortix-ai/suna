@@ -20772,6 +20772,7 @@
     "notFoundDescription": "Il a été supprimé ou le lien est incorrect.",
     "backToConnectors": "Retour aux connecteurs",
     "installed": "{name} est installé",
+    "yourConnectors": "Vos connecteurs",
     "installedSyncFailed": "{name} est installé. Kortix n’a pas pu charger ses outils : {error}",
     "newSession": "Nouvelle session",
     "sections": "Sections de {name}",

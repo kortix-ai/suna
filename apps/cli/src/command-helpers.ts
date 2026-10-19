@@ -698,6 +698,13 @@ export function surfaceApiError(err: unknown): number {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
+      // A remediation-bearing body (the webhook-secret 409s, e.g.) names the
+      // fix — print it, or the status line is all the reader gets and the
+      // actual command hides in `--help` prose.
+      const remediation = (err.body as { remediation?: unknown } | null)?.remediation;
+      if (typeof remediation === 'string' && remediation) {
+        process.stderr.write(`  ${C.dim}${remediation}${C.reset}\n`);
+      }
     }
     return 1;
   }

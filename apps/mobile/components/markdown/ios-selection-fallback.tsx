@@ -62,10 +62,8 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
   }, []);
 
   const colors = {
-    bg: isDark ? THEME.dark.background : THEME.light.background,
     text: isDark ? THEME.dark.foreground : THEME.light.foreground,
     muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
-    card: isDark ? THEME.dark.card : THEME.light.card,
   };
 
 
@@ -194,12 +192,10 @@ function noop() {}
 export function IOSSelectableMarkdown({
   text,
   isDark,
-  isStreaming,
   children,
 }: {
   text: string;
   isDark: boolean;
-  isStreaming?: boolean;
   /** The rendered markdown blocks: the Pressable's content, passed in so this
    * module never imports the main renderer. */
   children: React.ReactNode;

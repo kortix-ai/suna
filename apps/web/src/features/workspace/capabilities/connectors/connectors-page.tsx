@@ -406,7 +406,36 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [connectors, query, describeConnector],
   );
 
+  // The All tab shows the project's own connectors too (KRTX-2531): a
+  // connector added minutes ago must be findable on the default tab — and
+  // searchable by its exact slug — instead of living one tab away on
+  // Connected. Computers stay out: the catalogue's native Computers card
+  // already carries them (and a machineless one is not in `connectors`).
+  const ownMatches = useMemo(
+    () => filtered.filter((connector) => connector.provider !== 'computer'),
+    [filtered],
+  );
+
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
+
+  // One card shape for the project's own connectors: the Connected tab's grid
+  // and the All tab's "Your connectors" section (KRTX-2531) render it alike.
+  const ownConnectorCard = (connector: (typeof connectors)[number]) => (
+    <CatalogCard
+      key={connector.slug}
+      variant="plain"
+      leading={<ConnectorAppIcon connector={connector} size="lg" />}
+      title={connectorDisplayName(connector)}
+      subtitle={
+        <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>
+      }
+      badges={<ConnectorStatusBadge connector={connector} />}
+      trailing={
+        connectorSetupStatus(connector) === 'connected' ? <ConnectorConnectedMark /> : undefined
+      }
+      href={connectorHref(projectId, connector.slug)}
+    />
+  );
 
   // The Computer card opens the existing computer connector once there is
   // one: adding a computer is adding an account to it.
@@ -548,15 +577,31 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
-            <ConnectorBrowse
-              state={catalog}
-              connectedKeys={connectedKeys}
-              hrefFor={catalogHref}
-              onOpen={openComputer}
-              install={catalogInstall}
-              emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-              emptyDescription={tI18nComplete.raw('textf652a621153e')}
-            />
+            <>
+              {ownMatches.length > 0 ? (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                  {/* Rendered only once the page has settled (ownMatches is
+                  non-empty), so the grid needs no loading/error/empty state:
+                  the page-level ones cover it. */}
+                  <CatalogGrid dense isLoading={false} isError={false} onRetry={retry} isEmpty={false} empty={null}>
+                    {ownMatches.map(ownConnectorCard)}
+                  </CatalogGrid>
+                </div>
+              ) : null}
+              <ConnectorBrowse
+                state={catalog}
+                connectedKeys={connectedKeys}
+                hrefFor={catalogHref}
+                onOpen={openComputer}
+                install={catalogInstall}
+                emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+                emptyDescription={tI18nComplete.raw('textf652a621153e')}
+                // A slug search that only the project's own connector answers
+                // must not ALSO read "No matches" under its card (KRTX-2531).
+                suppressNoMatch={ownMatches.length > 0}
+              />
+            </>
           ) : (
             <CatalogGrid
               dense
@@ -590,27 +635,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 )
               }
             >
-              {filtered.map((connector) => (
-                <CatalogCard
-                  key={connector.slug}
-                  // The All tab's card: logo and title on the page, one quiet line.
-                  variant="plain"
-                  leading={<ConnectorAppIcon connector={connector} size="lg" />}
-                  title={connectorDisplayName(connector)}
-                  subtitle={
-                    <span className="text-muted-foreground text-xs">
-                      {describeConnector(connector)}
-                    </span>
-                  }
-                  badges={<ConnectorStatusBadge connector={connector} />}
-                  trailing={
-                    connectorSetupStatus(connector) === 'connected' ? (
-                      <ConnectorConnectedMark />
-                    ) : undefined
-                  }
-                  href={connectorHref(projectId, connector.slug)}
-                />
-              ))}
+              {filtered.map(ownConnectorCard)}
             </CatalogGrid>
           )}
 

@@ -146,6 +146,9 @@ export interface ProjectPoliciesViewResponse {
   policies: ProjectPolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /** Per-connector rule counts from the same manifest — the parent `policy ls`
+   *  view must reflect a rule `policy <slug> set` just wrote (KRTX-2527). */
+  connectorRules?: Array<{ slug: string; count: number }>;
 }
 
 export interface ListCatalogOptions {

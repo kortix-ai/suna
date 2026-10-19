@@ -93,9 +93,6 @@ interface SchedulesPageProps {
   /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const MONO = MONO_FONT_FAMILY;
@@ -470,9 +467,6 @@ export function SchedulesPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: SchedulesPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -511,9 +505,6 @@ export function SchedulesPage({
         title={page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         onAdd={controls.canCreate ? () => { haptics.tap(); addSheetRef.current?.present(); } : undefined}
         addLabel="New schedule"
       />
