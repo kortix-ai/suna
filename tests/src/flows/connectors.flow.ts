@@ -1062,7 +1062,7 @@ flow(
         connect
           .status(400)
           .body()
-          .matches('$.error', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
+          .matches('$.message', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
 
         const finalize = await ctx.client
           .as(ctx.P.OWNER)
