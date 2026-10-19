@@ -21963,5 +21963,24 @@
       "showRevoked": "显示已撤销（{count}）",
       "hideRevoked": "隐藏已撤销"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "自动化",
+    "groupDescription": "此账户每个项目中的计划、提醒、Webhook、应用事件和监控。",
+    "label": "暂停所有自动化",
+    "description": "任何项目都不会自动运行：没有计划、提醒、Webhook、应用事件或监控。手动运行触发器仍然可用。",
+    "readOnlyDescription": "只有所有者或管理员可以暂停或恢复自动化。",
+    "pausedSince": "自 {date} 起已暂停。",
+    "pauseTitle": "暂停所有自动化？",
+    "pauseDescription": "在你恢复之前，此账户的每个项目都不会自动启动会话。Webhook 会被确认并跳过。",
+    "pauseConfirm": "全部暂停",
+    "resumeTitle": "恢复所有自动化？",
+    "resumeDescription": "触发器会重新自动运行。暂停期间错过的计划会运行一次。",
+    "resumeConfirm": "全部恢复",
+    "pausedToast": "已暂停所有自动化",
+    "resumedToast": "已恢复所有自动化",
+    "failedToast": "无法更改自动化。请重试。",
+    "bannerTitle": "此账户的所有自动化已暂停",
+    "bannerDescription": "在所有者或管理员于账户设置中恢复之前，这里不会自动运行任何内容。手动运行触发器仍然可用。"
   }
 }

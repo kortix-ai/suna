@@ -21963,5 +21963,24 @@
       "showRevoked": "Mostra revocati ({count})",
       "hideRevoked": "Nascondi revocati"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automazioni",
+    "groupDescription": "Pianificazioni, promemoria, webhook, eventi delle app e monitor in ogni progetto di questo account.",
+    "label": "Metti in pausa tutte le automazioni",
+    "description": "Nulla si avvia da solo in nessun progetto: né pianificazioni, promemoria, webhook, eventi delle app o monitor. Eseguire un trigger a mano funziona ancora.",
+    "readOnlyDescription": "Solo un proprietario o un amministratore può mettere in pausa o riprendere le automazioni.",
+    "pausedSince": "In pausa dal {date}.",
+    "pauseTitle": "Mettere in pausa tutte le automazioni?",
+    "pauseDescription": "Nessun progetto di questo account avvia sessioni da solo finché non riprendi. I webhook vengono confermati e saltati.",
+    "pauseConfirm": "Metti tutto in pausa",
+    "resumeTitle": "Riprendere tutte le automazioni?",
+    "resumeDescription": "I trigger tornano ad avviarsi da soli. Una pianificazione persa durante la pausa viene eseguita una volta.",
+    "resumeConfirm": "Riprendi tutto",
+    "pausedToast": "Tutte le automazioni in pausa",
+    "resumedToast": "Tutte le automazioni riprese",
+    "failedToast": "Impossibile modificare le automazioni. Riprova.",
+    "bannerTitle": "Tutte le automazioni di questo account sono in pausa",
+    "bannerDescription": "Qui nulla si avvia da solo finché un proprietario o un amministratore non le riprende nelle impostazioni dell'account. Eseguire un trigger a mano funziona ancora."
   }
 }

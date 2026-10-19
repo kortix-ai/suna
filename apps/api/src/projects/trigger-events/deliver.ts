@@ -9,7 +9,7 @@ import {
   markGitTriggerFired,
   renderPromptTemplate,
   triggerFilterMatches,
-  triggersPausedForProject,
+  automaticFirePauseReason,
 } from '../lib/triggers';
 import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
@@ -126,7 +126,8 @@ async function deliverToRow(
   if (row.status !== 'active') return 'skipped';
   const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
-  if (triggersPausedForProject(project.metadata)) return 'skipped';
+  // The project's pause, or the account's Pause all automations (KRTX-1721).
+  if (await automaticFirePauseReason(project)) return 'skipped';
   // Defense in depth: turning the flag off releases the subscriptions, so this is normally unreachable.
   if (!eventTriggersEnabled(project.metadata) || !eventSourceAvailable(provider, project.metadata)) {
     logger.info('[trigger-events] delivery skipped: a flag is off', { projectId: row.projectId, slug: row.slug, provider });

@@ -96,13 +96,13 @@ describe('a paused account', () => {
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: true, userId: PERSON });
 
     const claimed = await claimDueScheduleSlots({ now: new Date(), limit: 50 });
-    const mine = claimed.map((slot) => `${slot.projectId}:${slot.slug}`);
+    const mine = claimed.map(({ execution }) => `${execution.projectId}:${execution.slug}`);
     expect(mine).toContain(`${running.project_id}:running-nightly`);
     expect(mine).not.toContain(`${paused.project_id}:paused-nightly`);
 
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: false, userId: PERSON });
-    const after = (await claimDueScheduleSlots({ now: new Date(), limit: 50 })).filter((slot) => slot.projectId === paused.project_id);
-    expect(after.map((slot) => slot.slug)).toEqual(['paused-nightly']);
+    const after = (await claimDueScheduleSlots({ now: new Date(), limit: 50 })).filter(({ execution }) => execution.projectId === paused.project_id);
+    expect(after.map(({ execution }) => execution.slug)).toEqual(['paused-nightly']);
   });
 
   test('a slot already queued when the account pauses is skipped by the drain with the reason, and starts nothing', async () => {

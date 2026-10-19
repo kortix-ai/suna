@@ -331,6 +331,8 @@ export interface ProjectTriggersResponse {
   // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
   // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
   triggers_paused?: boolean;
+  // The account's Pause all automations: stops every project's triggers. Toggle with `triggers pause --account`.
+  account_automations_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
 

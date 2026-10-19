@@ -53,6 +53,7 @@ import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SessionOversightCard } from '@/components/iam/session-oversight-card';
+import { AutomationsPauseCard } from '@/components/iam/automations-pause-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
@@ -172,6 +173,7 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAutomations = useTranslations('automationsPause');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -602,6 +604,15 @@ export function AccountHubContent() {
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
+              </SettingsGroup>
+
+              {/* Pause all automations (KRTX-1721): one switch for every
+                  project's schedules, reminders, webhooks, app events and
+                  monitors. See `automations-pause-card.tsx`. */}
+              <SettingsGroup title={tAutomations('groupTitle')} description={tAutomations('groupDescription')}>
+                <SettingsRowGroup>
+                  <AutomationsPauseCard accountId={account.account_id} />
+                </SettingsRowGroup>
               </SettingsGroup>
 
               {canDeleteAccount ? (

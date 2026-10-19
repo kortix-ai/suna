@@ -21963,5 +21963,24 @@
       "showRevoked": "Afficher les révoqués ({count})",
       "hideRevoked": "Masquer les révoqués"
     }
+  },
+  "automationsPause": {
+    "groupTitle": "Automatisations",
+    "groupDescription": "Planifications, rappels, webhooks, événements d'apps et moniteurs dans chaque projet de ce compte.",
+    "label": "Mettre en pause toutes les automatisations",
+    "description": "Rien ne s'exécute seul dans aucun projet : ni planification, ni rappel, ni webhook, ni événement d'app, ni moniteur. Lancer un déclencheur à la main fonctionne toujours.",
+    "readOnlyDescription": "Seul un propriétaire ou un administrateur peut mettre en pause ou reprendre les automatisations.",
+    "pausedSince": "En pause depuis {date}.",
+    "pauseTitle": "Mettre en pause toutes les automatisations ?",
+    "pauseDescription": "Aucun projet de ce compte ne démarre de session tout seul jusqu'à la reprise. Les webhooks sont acquittés et ignorés.",
+    "pauseConfirm": "Tout mettre en pause",
+    "resumeTitle": "Reprendre toutes les automatisations ?",
+    "resumeDescription": "Les déclencheurs s'exécutent de nouveau seuls. Une planification manquée pendant la pause s'exécute une fois.",
+    "resumeConfirm": "Tout reprendre",
+    "pausedToast": "Toutes les automatisations sont en pause",
+    "resumedToast": "Toutes les automatisations ont repris",
+    "failedToast": "Impossible de modifier les automatisations. Réessayez.",
+    "bannerTitle": "Toutes les automatisations de ce compte sont en pause",
+    "bannerDescription": "Rien ne s'exécute seul ici tant qu'un propriétaire ou un administrateur ne les reprend pas dans les paramètres du compte. Lancer un déclencheur à la main fonctionne toujours."
   }
 }
