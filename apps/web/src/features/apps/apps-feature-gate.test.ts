@@ -40,14 +40,12 @@ mock.module('next/link', () => ({
     React.createElement('a', { href, ...props }, children),
 }));
 mock.module('@/hooks/utils', () => ({ useIsMobile: () => false }));
-const uiSidebarMock = () => ({
+mock.module('@/components/ui/sidebar', () => ({
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
   SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
-});
-mock.module('@/components/ui/sidebar', uiSidebarMock);
-mock.module('@kortix/ui/sidebar', uiSidebarMock);
+}));
 mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
 mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
 
@@ -309,6 +307,39 @@ test('the App detail header is a title bar, not a debug readout', () => {
   // as sr-only when running and as the visible label when it is not.
   expect(header).toContain('<span className="sr-only">{status.label}</span>');
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
+});
+
+test("the header separates the App's actions from the window's Close", () => {
+  const view = appsSource();
+  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
+
+  // The bar is Refresh, Open, Settings, Close (#10245). Close is window
+  // chrome, not an App action: a divider sets it apart, and it is ghost.
+  const settingsAt = header.indexOf('data-testid="app-settings"');
+  const dividerAt = header.indexOf('<span aria-hidden className="bg-border mx-1.5 h-4 w-px" />');
+  const closeAt = header.indexOf("raw('text7d9eb7acb13e')");
+  expect(settingsAt).toBeGreaterThan(-1);
+  expect(dividerAt).toBeGreaterThan(settingsAt);
+  expect(closeAt).toBeGreaterThan(dividerAt);
+  expect(header.slice(dividerAt)).toContain('variant="ghost"');
+});
+
+test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {
+  const view = appsSource();
+  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
+
+  // Delete is configuration, not navigation: the bar over the App never
+  // carries it (#10245).
+  expect(header).not.toContain("raw('textd1b0a6e3985a')");
+  expect(header).not.toContain('variant="destructive"');
+
+  // The settings modal lists it as its own destructive row…
+  const settings = view.slice(view.indexOf("open={overlay === 'settings'}"), view.indexOf('</Modal>'));
+  expect(settings).toContain("raw('textd1b0a6e3985a')");
+  expect(settings).toContain('variant="destructive" onClick={() => setOverlay(\'delete\')}');
+  // …and it still goes through the confirm step.
+  expect(view).toContain("open={overlay === 'delete'}");
+  expect(view).toContain('confirmVariant="destructive"');
 });
 
 test('internal infrastructure names are not shown to App owners', () => {
