@@ -413,7 +413,10 @@ Windows installers are Authenticode-signed through Microsoft Artifact Signing
 `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE`
 (the same values Kortix Capture uses). `desktop.yml` and `deploy-prod.yml` then
 fail the build unless every `dist/*.exe` is `Valid`. Without them the installer
-is unsigned and SmartScreen shows "Unknown publisher" on download.
+is unsigned and SmartScreen shows "Unknown publisher" on download. The Azure
+account, certificate profile, CI identity and renewal steps are in the
+kortix-capture skill: `.agents/skills/kortix-capture/references/release-runbook.md`,
+section "Windows signing setup".
 
 ## Auto-update
 
