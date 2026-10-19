@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix shows this token once. Anyone who has it can enroll computers into this organization until you revoke it.",
       "installTitle": "Install on each computer",
       "installBody": {
-        "windows": "Run as administrator, or deploy with Intune or Group Policy. The computer starts recording at the next sign-in.",
+        "windows": "Paste into Command Prompt opened as administrator. It downloads the installer, installs it and says when it is done. The computer records from the next Windows sign-in. For Intune or Group Policy, see the IT setup guide.",
         "macos": "Run in Terminal, or deploy the package with your MDM. The person allows Screen Recording once, unless a PPPC profile grants it.",
         "linux": "Run on a desktop with X11. The computer starts recording at the next sign-in. Wayland is not supported yet."
       },

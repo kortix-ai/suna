@@ -633,19 +633,30 @@ export async function searchCapture(accountId: string, query: CaptureSearchQuery
 // ── Media ─────────────────────────────────────────────────────────────────────
 
 /** One frame with its full on-screen text and a signed URL of its video chunk. */
-export async function getCaptureFrame(accountId: string, frameId: string, opts: { userId?: string } = {}) {
+export async function getCaptureFrame(
+  accountId: string,
+  frameId: string,
+  opts: { userId?: string; deviceId?: string } = {},
+) {
   return unwrap(
     await backendApi.get<CaptureFrameDetail>(
-      `${base(accountId)}/frames/${frameId}${captureQuery({ user_id: opts.userId })}`,
+      `${base(accountId)}/frames/${frameId}${captureQuery({ user_id: opts.userId, device_id: opts.deviceId })}`,
     ),
   );
 }
 
-/** Signed URLs of an indexed item's video or audio. */
-export async function getCaptureChunkMedia(accountId: string, chunkId: string, opts: { userId?: string } = {}) {
+/**
+ * Signed URLs of an indexed item's video or audio. `deviceId` reads a computer
+ * linked to no one as itself (`capture.read_all`), like the timeline does.
+ */
+export async function getCaptureChunkMedia(
+  accountId: string,
+  chunkId: string,
+  opts: { userId?: string; deviceId?: string } = {},
+) {
   return unwrap(
     await backendApi.get<CaptureChunkMedia>(
-      `${base(accountId)}/chunks/${chunkId}/media${captureQuery({ user_id: opts.userId })}`,
+      `${base(accountId)}/chunks/${chunkId}/media${captureQuery({ user_id: opts.userId, device_id: opts.deviceId })}`,
     ),
   );
 }

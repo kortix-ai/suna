@@ -21857,7 +21857,7 @@
       "createdBody": "Kortix zeigt dieses Token nur einmal. Wer es hat, kann Computer in diese Organisation registrieren, bis du es widerrufst.",
       "installTitle": "Auf jedem Computer installieren",
       "installBody": {
-        "windows": "Als Administrator ausführen oder mit Intune oder Gruppenrichtlinien verteilen. Der Computer startet die Aufnahme bei der nächsten Anmeldung.",
+        "windows": "In die Eingabeaufforderung einfügen, die als Administrator geöffnet ist. Sie lädt das Installationsprogramm, installiert es und meldet, wenn es fertig ist. Der Computer nimmt ab der nächsten Windows-Anmeldung auf. Für Intune oder Gruppenrichtlinien siehe die IT-Anleitung.",
         "macos": "Im Terminal ausführen oder das Paket per MDM verteilen. Die Person erlaubt die Bildschirmaufnahme einmal, außer ein PPPC-Profil erteilt sie.",
         "linux": "Auf einem Desktop mit X11 ausführen. Der Computer startet die Aufnahme bei der nächsten Anmeldung. Wayland wird noch nicht unterstützt."
       },

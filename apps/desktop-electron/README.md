@@ -44,7 +44,8 @@ pnpm --filter @kortix/desktop-electron dev:prod-env   # https://kortix.com
 KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-electron dev
 ```
 
-At runtime you can also switch via the native menu. A **dev build**
+At runtime you can also switch via the native menu (the **Kortix** menu: the
+macOS app menu, the first menu on Windows and Linux). A **dev build**
 (`kortixUpdateChannel: "dev"`, product "Kortix Dev") keeps the full
 **Kortix → Frontend URL** switcher (Production / Dev / Local / Custom… /
 Reset). A **production build** hides the developer presets and shows one
@@ -65,6 +66,40 @@ saved URL with any other path loads as saved.
 session URL inside a session — so it can be pasted and shared. It is enabled
 only on app pages (the same in-app routes the navigation gate allows); on a
 blank, error, or external page it is disabled.
+
+### The application menu and the title bar on each OS
+
+`src/app-menu.js` builds the menu as a pure function of the platform
+(`app-menu.test.js`). Every OS has the same app-level actions:
+
+| Menu | macOS | Windows, Linux |
+| --- | --- | --- |
+| **Kortix** | About Kortix, Settings… (⌘,), Check for Updates…, Change Kortix Instance…, Services, Hide, Hide Others, Show All, Quit | About Kortix, Settings… (Ctrl+,), Check for Updates…, Change Kortix Instance…, Quit Kortix (Ctrl+Q) |
+| File, Edit, View, Go, Window | same on every OS | same on every OS |
+
+A dev build shows **Frontend URL** (the preset switcher) in place of Change
+Kortix Instance….
+
+Title bar:
+
+- **macOS.** `titleBarStyle: 'hidden'`; the traffic lights share the 40 px band
+  with the page's first row (`MAC_TITLEBAR` in `src/window-chrome.js`).
+- **Windows.** `titleBarStyle: 'hidden'` + `titleBarOverlay`: no Win32 title
+  bar and no menu-bar strip. Windows draws minimize, maximize and close over
+  the top-right corner of the page (138 × 40 window px, transparent, glyphs in
+  the theme's foreground). The page's first row shares that band, and the web
+  app draws a menu button (☰) in its left slot. The button and a lone **Alt**
+  press open the Kortix application menu. Keyboard accelerators work without
+  a menu bar. The geometry is `WIN_TITLEBAR` in `src/window-chrome.js`,
+  mirrored by `html[data-desktop-titlebar='overlay']` in
+  `apps/web/src/app/globals.css`; the preload's `kortixDesktop.titlebar`
+  sets that marker, so a web app with a native-frame shell never gets it.
+- **Linux.** The native frame. The menu bar hides until Alt.
+
+The Windows app icon (`build/icon.ico`, 16 to 256 px) is the symbol on the
+light rounded tile from `apps/web/public/favicon.svg`. Regenerate it with
+`python3 scripts/build-win-icon.py` (needs `rsvg-convert` and Pillow); never
+hand-edit it. The installer and uninstaller use the same file.
 
 ### First launch: choose a Kortix instance
 
@@ -371,6 +406,14 @@ pnpm build:mac | build:win | build:linux
 Icons live in `build/` (`icon.icns` / `icon.ico` / `icon.png`). Code signing /
 notarization are env-driven (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY*`,
 `WIN_CSC_LINK`, …); unsigned local builds are fine for testing.
+
+Windows installers are Authenticode-signed through Microsoft Artifact Signing
+(`win.azureSignOptions`, publisher "Kortix AI Corp") when `kortix-ci-env` holds
+`AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID`, `AZURE_SIGNING_CLIENT_SECRET`,
+`AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE`
+(the same values Kortix Capture uses). `desktop.yml` and `deploy-prod.yml` then
+fail the build unless every `dist/*.exe` is `Valid`. Without them the installer
+is unsigned and SmartScreen shows "Unknown publisher" on download.
 
 ## Auto-update
 
