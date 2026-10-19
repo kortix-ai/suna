@@ -1,0 +1,33 @@
+{
+  "name": "@kortix/internal-app-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal-tool reference: a Vite SPA that wraps Kortix directly. Kortix is the identity and the data. Deploys as a static Kortix App with viewer scope api.",
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm lint:sdk-boundary && tsgo --noEmit && vite build",
+    "preview": "vite preview",
+    "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
+    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit",
+    "deploy": "pnpm build && kortix apps deploy dist --slug team-console --type static --spa --access project"
+  },
+  "dependencies": {
+    "@kortix/sdk": "workspace:*",
+    "@kortix/ui": "workspace:*",
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-query": "^5.75.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/node": "^20",
+    "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "8.3.4"
+  }
+}
