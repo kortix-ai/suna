@@ -21251,6 +21251,7 @@
     "uploadRetry": "重试",
     "uploadFolder": "上传文件夹",
     "uploadingFile": "正在上传 {name}",
+    "openFolder": "打开文件夹",
     "renamed": "已重命名",
     "renameFailed": "无法重命名",
     "deleted": "已删除",

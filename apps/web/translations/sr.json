@@ -21251,6 +21251,7 @@
     "uploadRetry": "Покушај поново",
     "uploadFolder": "Отпреми фасциклу",
     "uploadingFile": "Отпремање: {name}",
+    "openFolder": "Отвори фасциклу",
     "renamed": "Преименовано",
     "renameFailed": "Преименовање није успело",
     "deleted": "Обрисано",

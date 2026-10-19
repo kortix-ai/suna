@@ -11,7 +11,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
-import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
+import {
+  createFilesStore,
+  useFilesStore,
+  useFilesStoreApi,
+} from '@/features/file-browser/store/files-store';
 import { Home } from '@/features/icon/icons/home';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
@@ -135,6 +139,16 @@ function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string })
  */
 function DrivePathInUrl({ personal }: { personal: string | null }) {
   const currentPath = useFilesStore((s) => s.currentPath);
+  const navigateToPath = useFilesStore((s) => s.navigateToPath);
+  const store = useFilesStoreApi();
+  // And the other way: a link to `?path=` while Drive is open (the upload
+  // toast's "Open folder") moves the view. Our own writes land here too and
+  // match the store, so they do nothing.
+  const param = useSearchParams().get('path');
+  useEffect(() => {
+    const want = drivePathFromParam(param, personal);
+    if (want !== store.getState().currentPath) navigateToPath(want);
+  }, [param, personal, store, navigateToPath]);
   const { debouncedValue } = useDebounce(currentPath, 300);
   useEffect(() => {
     const next = driveUrlWithPath(window.location.href, drivePathToParam(debouncedValue, personal));
@@ -145,6 +159,7 @@ function DrivePathInUrl({ personal }: { personal: string | null }) {
 }
 
 function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }) {
+  const router = useRouter();
   const t = useTranslations('drives');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -221,6 +236,14 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
           rootLabel={t('driveLabel')}
           rootIcon={<HardDriveIcon className="text-muted-foreground" />}
           location={location}
+          onOpenFolder={(p) =>
+            router.push(
+              driveUrlWithPath(
+                `${window.location.origin}/projects/${projectId}/drive`,
+                drivePathToParam(p, drive.personalFolder),
+              ),
+            )
+          }
         />
         <DriveConflictsBar driveId={drive.driveId} onOpenFolder={open} />
       </div>

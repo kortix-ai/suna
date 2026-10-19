@@ -21251,6 +21251,7 @@
     "uploadRetry": "Tentar de novo",
     "uploadFolder": "Enviar pasta",
     "uploadingFile": "Enviando {name}",
+    "openFolder": "Abrir pasta",
     "renamed": "Renomeado",
     "renameFailed": "Não foi possível renomear",
     "deleted": "Excluído",

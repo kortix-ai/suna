@@ -326,11 +326,24 @@ export const driveExplorerSource: FileExplorerSource = {
       (driveId, { filePath }) => deleteDriveFile(driveId, toDrivePath(filePath), { recursive: true }),
       ({ filePath }) => [parentOf(toDrivePath(filePath))],
     ),
-  useFileMkdir: () =>
-    useDriveMutation<{ dirPath: string }>(
-      (driveId, { dirPath }) => makeDriveFolder(driveId, toDrivePath(dirPath)),
+  useFileMkdir: () => {
+    const queryClient = useQueryClient();
+    return useDriveMutation<{ dirPath: string }>(
+      (driveId, { dirPath }) => {
+        const path = toDrivePath(dirPath);
+        // A new folder is empty: its card reads 0 at once and never lists a
+        // folder the server has not made yet. Access is its parent's, which
+        // it inherits.
+        const key = qk.drives.files(driveId, path);
+        if (!queryClient.getQueryData(key)) {
+          const parent = queryClient.getQueryData<FolderListing>(qk.drives.files(driveId, parentOf(path)));
+          queryClient.setQueryData<FolderListing>(key, { entries: [], access: parent?.access ?? 'write' });
+        }
+        return makeDriveFolder(driveId, path);
+      },
       ({ dirPath }) => [parentOf(toDrivePath(dirPath))],
-    ),
+    );
+  },
   useFileRename: () =>
     useDriveMutation<{ from: string; to: string }>(
       (driveId, { from, to }) => moveDriveFile(driveId, toDrivePath(from), toDrivePath(to)),

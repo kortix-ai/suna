@@ -21251,6 +21251,7 @@
     "uploadRetry": "Retry",
     "uploadFolder": "Upload folder",
     "uploadingFile": "Uploading {name}",
+    "openFolder": "Open folder",
     "renamed": "Renamed",
     "renameFailed": "Couldn't rename",
     "deleted": "Deleted",

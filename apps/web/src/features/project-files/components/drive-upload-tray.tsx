@@ -7,21 +7,13 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@kortix/shared/constants';
 import { CaretDownIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { type DriveUpload, useDriveUploads } from '../store/upload-store';
 import { uploadedFraction } from '../upload-batch';
 import { getFileIcon } from './file-icon';
 
-export interface DriveUpload {
-  id: string;
-  file: File;
-  /** Folder it lands in; `undefined` is the source's root. */
-  targetPath?: string;
-  status: 'queued' | 'uploading' | 'done' | 'error';
-  /** Bytes sent so far. */
-  sent?: number;
-  error?: string;
-}
+export type { DriveUpload };
 
 /**
  * A gauge: a round-capped arc for the share done, a clear gap at each end,
@@ -77,21 +69,24 @@ function UploadGauge({ value, className }: { value: number; className?: string }
 }
 
 /**
- * Every upload of this explorer, one row per file, docked bottom-right over
- * the listing — the listing stays usable while files go up. The header counts
+ * Every upload of the open project, one row per file, docked bottom-right of
+ * the window. It lives in the project shell, not in a folder view, so a batch
+ * keeps reporting when the user leaves the folder or Drive. The header counts
  * files and fills by bytes; a failed row keeps its reason and a Retry.
  */
-export function DriveUploadTray({
-  uploads,
-  onRetry,
-  onDismiss,
-}: {
-  uploads: DriveUpload[];
-  onRetry: (id: string) => void;
-  onDismiss: () => void;
-}) {
+export function DriveUploadTray() {
   const t = useTranslations('drives');
+  const uploads = useDriveUploads((s) => s.uploads);
+  const clear = useDriveUploads((s) => s.clear);
   const [collapsed, setCollapsed] = useState(false);
+
+  // A clean run leaves the tray for 4 s; one with a failure stays until closed.
+  useEffect(() => {
+    if (uploads.length === 0 || uploads.some((u) => u.status !== 'done')) return;
+    const timer = window.setTimeout(clear, 4_000);
+    return () => window.clearTimeout(timer);
+  }, [uploads, clear]);
+
   if (uploads.length === 0) return null;
 
   const total = uploads.length;
@@ -111,7 +106,7 @@ export function DriveUploadTray({
   return (
     <section
       aria-label={title}
-      className="bg-popover border-border animate-in fade-in-0 slide-in-from-bottom-2 absolute right-3 bottom-3 z-40 w-80 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-md border shadow-lg duration-(--duration-moderate) motion-reduce:animate-none"
+      className="bg-popover border-border animate-in fade-in-0 slide-in-from-bottom-2 fixed right-4 bottom-4 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border shadow-lg duration-(--duration-moderate) motion-reduce:animate-none"
     >
       <div className="flex h-10 items-center gap-2 pr-1.5 pl-3">
         {active > 0 ? (
@@ -149,7 +144,7 @@ export function DriveUploadTray({
             variant="ghost"
             size="icon-xs"
             aria-label={t('uploadsDismiss')}
-            onClick={onDismiss}
+            onClick={clear}
             className="text-muted-foreground hover:text-foreground"
           >
             <XIcon className="size-3.5" />
@@ -171,7 +166,7 @@ export function DriveUploadTray({
               >
                 {u.file.name}
               </span>
-              <UploadStatus upload={u} onRetry={() => onRetry(u.id)} />
+              <UploadStatus upload={u} onRetry={() => u.retry?.()} />
             </li>
           ))}
         </ul>

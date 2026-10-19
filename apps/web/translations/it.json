@@ -21251,6 +21251,7 @@
     "uploadRetry": "Riprova",
     "uploadFolder": "Carica cartella",
     "uploadingFile": "Caricamento di {name}",
+    "openFolder": "Apri cartella",
     "renamed": "Rinominato",
     "renameFailed": "Impossibile rinominare",
     "deleted": "Eliminato",

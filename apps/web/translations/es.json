@@ -21251,6 +21251,7 @@
     "uploadRetry": "Reintentar",
     "uploadFolder": "Subir carpeta",
     "uploadingFile": "Subiendo {name}",
+    "openFolder": "Abrir carpeta",
     "renamed": "Renombrado",
     "renameFailed": "No se pudo renombrar",
     "deleted": "Eliminado",

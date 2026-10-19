@@ -21251,6 +21251,7 @@
     "uploadRetry": "Réessayer",
     "uploadFolder": "Importer un dossier",
     "uploadingFile": "Envoi de {name}",
+    "openFolder": "Ouvrir le dossier",
     "renamed": "Renommé",
     "renameFailed": "Impossible de renommer",
     "deleted": "Supprimé",

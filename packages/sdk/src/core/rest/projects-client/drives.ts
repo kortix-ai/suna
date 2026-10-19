@@ -192,10 +192,18 @@ export async function listDriveFiles(driveId: string, path = '/'): Promise<Drive
   return (await listDriveFolder(driveId, path)).entries;
 }
 
-/** One folder's entries and the caller's access to the folder itself. */
+/**
+ * One folder's entries and the caller's access to the folder itself. A failure
+ * is the caller's to show (an error state, or a step up when the folder is
+ * gone), so it raises no app-wide error: a folder listed a moment before it
+ * exists answers 404 and is no user-facing error.
+ */
 export async function listDriveFolder(driveId: string, path = '/'): Promise<{ entries: DriveEntry[]; access: FolderAccess }> {
   return unwrap(
-    await backendApi.get<{ entries: DriveEntry[]; access: FolderAccess }>(`${drivePath(driveId)}/files?${new URLSearchParams({ path })}`),
+    await backendApi.get<{ entries: DriveEntry[]; access: FolderAccess }>(
+      `${drivePath(driveId)}/files?${new URLSearchParams({ path })}`,
+      { showErrors: false },
+    ),
     'Failed to load files',
   );
 }

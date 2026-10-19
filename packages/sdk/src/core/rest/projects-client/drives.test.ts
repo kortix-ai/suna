@@ -228,3 +228,20 @@ test('without XMLHttpRequest, onProgress falls back to fetch and reports complet
   expect(last().method).toBe('PUT');
   expect(progress).toEqual([[1, 1]]);
 });
+
+// A folder listing is rendered by its caller (an error state, or a step up to
+// the parent when the folder is gone), so a failed one raises no app-wide
+// error. A new folder's card listed it before the server had made it, and the
+// 404 surfaced as a "File or folder not found" toast.
+test('a failed folder listing does not reach the app-wide error handler', async () => {
+  const seen: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: (e) => void seen.push(e) });
+  try {
+    respond(404, { message: 'File or folder not found' });
+    const error = await listDriveFiles(D, '/new').catch((e: unknown) => e);
+    expect((error as ApiError).status).toBe(404);
+    expect(seen).toHaveLength(0);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
+  }
+});

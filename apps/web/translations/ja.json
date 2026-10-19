@@ -21251,6 +21251,7 @@
     "uploadRetry": "再試行",
     "uploadFolder": "フォルダをアップロード",
     "uploadingFile": "{name} をアップロード中",
+    "openFolder": "フォルダを開く",
     "renamed": "名前を変更しました",
     "renameFailed": "名前を変更できませんでした",
     "deleted": "削除しました",

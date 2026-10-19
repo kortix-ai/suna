@@ -21251,6 +21251,7 @@
     "uploadRetry": "Wiederholen",
     "uploadFolder": "Ordner hochladen",
     "uploadingFile": "{name} wird hochgeladen",
+    "openFolder": "Ordner öffnen",
     "renamed": "Umbenannt",
     "renameFailed": "Umbenennen fehlgeschlagen",
     "deleted": "Gelöscht",

@@ -56,7 +56,7 @@ import {
 import { DriveCreateDialog, type DriveCreateKind, type DriveLocation } from './drive-create-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import { type DriveUpload, DriveUploadTray } from './drive-upload-tray';
+import { type DriveUpload, useDriveUploads } from '../store/upload-store';
 import {
   DRIVE_ACTION_ROW_CLASS,
   DriveNewMenu,
@@ -103,6 +103,7 @@ export function DriveExplorer({
   rootLabel,
   rootIcon,
   location,
+  onOpenFolder,
   listingAs,
   panels,
   children,
@@ -129,6 +130,11 @@ export function DriveExplorer({
    * and the path below it.
    */
   location?: DriveLocation;
+  /**
+   * Open a folder from outside this view (the upload toast's "Open folder",
+   * once the user has left). Absent: the button only works while mounted.
+   */
+  onOpenFolder?: (path: string) => void;
   /**
    * Element type for the listing region.
    *
@@ -232,7 +238,9 @@ export function DriveExplorer({
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isDragOverPage, setIsDragOverPage] = useState(false);
-  const [uploads, setUploads] = useState<DriveUpload[]>([]);
+  // Project-wide, so a batch keeps going (and its tray keeps reporting) after
+  // this folder view unmounts. The tray itself is in the project shell.
+  const uploads = useDriveUploads((s) => s.uploads);
   // Cards and rows still on their way up show a spinner until the server has them.
   const uploadingPaths = useMemo(
     () =>
@@ -534,8 +542,7 @@ export function DriveExplorer({
   const uploadAsync = uploadMutation.mutateAsync;
   const runUpload = useCallback(
     async (upload: DriveUpload, shownIn: string | null) => {
-      const patch = (next: Partial<DriveUpload>) =>
-        setUploads((prev) => prev.map((u) => (u.id === upload.id ? { ...u, ...next } : u)));
+      const patch = (next: Partial<DriveUpload>) => useDriveUploads.getState().patch(upload.id, next);
       patch({ status: 'uploading', sent: 0, error: undefined });
       let ok = false;
       try {
@@ -556,26 +563,54 @@ export function DriveExplorer({
     [uploadAsync, settlePending],
   );
 
-  /** Put files in the tray with their previews, then send them, 4 at a time. */
+  // Still showing? Then "Open folder" navigates here; otherwise the host opens it.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const openFolder = useCallback(
+    (path: string) => {
+      if (mountedRef.current) navigateToPath(path);
+      else onOpenFolder?.(path);
+    },
+    [navigateToPath, onOpenFolder],
+  );
+
+  /**
+   * Put files in the tray with their previews, then send them, 4 at a time.
+   * `landedIn` is the folder the batch lands in, for the toast's "Open folder".
+   */
   const startBatch = useCallback(
-    async (items: { file: File; targetPath?: string }[], shownIn: string | null) => {
-      const batch: DriveUpload[] = items.map(({ file, targetPath }) => ({
-        id: crypto.randomUUID(),
-        file,
-        targetPath,
-        status: 'queued',
-      }));
-      // A finished earlier batch makes way; one still running keeps its rows.
-      setUploads((prev) => (prev.every((u) => u.status === 'done') ? batch : [...prev, ...batch]));
+    async (
+      items: { file: File; targetPath?: string }[],
+      shownIn: string | null,
+      landedIn: string,
+    ) => {
+      const batch: DriveUpload[] = items.map(({ file, targetPath }) => {
+        const upload: DriveUpload = { id: crypto.randomUUID(), file, targetPath, status: 'queued' };
+        upload.retry = () => {
+          previewUpload?.(file, targetPath);
+          void runUpload(upload, null);
+        };
+        return upload;
+      });
+      useDriveUploads.getState().add(batch);
       for (const u of batch) previewUpload?.(u.file, u.targetPath);
       let failed = 0;
       await forEachLimit(batch, UPLOAD_CONCURRENCY, async (u) => {
         if (!(await runUpload(u, shownIn))) failed++;
       });
       // One toast for the whole batch; a failure stays in the tray with Retry.
-      if (failed === 0) successToast(tDrives('uploaded', { count: batch.length }));
+      if (failed === 0) {
+        successToast(tDrives('uploaded', { count: batch.length }), {
+          actions: [{ label: tDrives('openFolder'), onClick: () => openFolder(landedIn) }],
+        });
+      }
     },
-    [previewUpload, runUpload, tDrives],
+    [previewUpload, runUpload, tDrives, openFolder],
   );
 
   /**
@@ -610,6 +645,7 @@ export function DriveExplorer({
       await startBatch(
         accepted.map((file) => ({ file, targetPath })),
         shownIn,
+        targetDirPath ?? currentPath,
       );
     },
     [currentPath, isRootPath, pendingNode, startBatch],
@@ -666,27 +702,11 @@ export function DriveExplorer({
       await startBatch(
         accepted.map((file) => ({ file, targetPath: here(dirOf(file).join('/')) })),
         null,
+        here(top),
       );
     },
     [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi],
   );
-
-  const handleRetryUpload = useCallback(
-    (id: string) => {
-      const upload = uploads.find((u) => u.id === id);
-      if (!upload) return;
-      previewUpload?.(upload.file, upload.targetPath);
-      void runUpload(upload, null);
-    },
-    [uploads, previewUpload, runUpload],
-  );
-
-  // A clean run leaves the tray for 4 s; one with a failure stays until closed.
-  useEffect(() => {
-    if (uploads.length === 0 || uploads.some((u) => u.status !== 'done')) return;
-    const timer = window.setTimeout(() => setUploads([]), 4_000);
-    return () => window.clearTimeout(timer);
-  }, [uploads]);
 
   /**
    * External files dropped onto a folder row upload INTO that folder.
@@ -1241,14 +1261,6 @@ export function DriveExplorer({
           </div>
         </div>
       )}
-
-      {canWrite ? (
-        <DriveUploadTray
-          uploads={uploads}
-          onRetry={handleRetryUpload}
-          onDismiss={() => setUploads([])}
-        />
-      ) : null}
 
       <DriveCreateDialog
         kind={canWrite ? createKind : null}
