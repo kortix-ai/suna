@@ -24,7 +24,9 @@ describe('the code palette', () => {
   });
 });
 
-const WEB_ROOT = join(import.meta.dir, '../..');
+const PKG_ROOT = join(import.meta.dir, '../../..');
+const REPO_ROOT = join(PKG_ROOT, '../..');
+const WEB_ROOT = join(REPO_ROOT, 'apps/web');
 
 // `red` is both a bundled Shiki theme id and a CSS colour name. Quoted 'red'
 // appears in emoji tinting, chart palettes and demo output, so matching it
@@ -51,7 +53,7 @@ const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // describe block. 'github-dark' stays forbidden everywhere else, including
   // source.config.ts, which is exactly where it drifted in before Task 1.
   [
-    join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts'),
+    join(PKG_ROOT, 'src/markdown/code/shiki-highlighter.test.ts'),
     new Set(['github-dark']),
   ],
   // This file quotes 'pierre-dark' / 'pierre-light' as literals while building
@@ -91,7 +93,9 @@ describe('no second palette', () => {
     // Both root configs are scanned on top of `src/`: `source.config.ts` and
     // `next.config.ts` configure MDX/Shiki from outside `src/`, which is
     // exactly where the original drift lived, so they need the same guard.
+    // The package source holds the markdown and diff renderers.
     const files = [
+      ...sourceFiles(join(PKG_ROOT, 'src')),
       ...sourceFiles(join(WEB_ROOT, 'src')),
       join(WEB_ROOT, 'source.config.ts'),
       join(WEB_ROOT, 'next.config.ts'),
@@ -107,7 +111,7 @@ describe('no second palette', () => {
         // That is deliberate: a comment naming a dead theme is the exact rot that
         // let source.config.ts drift while claiming to mirror the constants.
         if (new RegExp(`['"\`]${escapeRegExp(id)}['"\`]`).test(source)) {
-          hits.push(`${file.slice(WEB_ROOT.length + 1)} -> ${id}`);
+          hits.push(`${file.slice(REPO_ROOT.length + 1)} -> ${id}`);
         }
       }
     }

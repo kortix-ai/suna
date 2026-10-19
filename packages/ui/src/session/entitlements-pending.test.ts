@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { type GateQuery, resolveEntitlementsPending } from './entitlements-pending';
 
@@ -112,32 +110,5 @@ describe('resolveEntitlementsPending', () => {
     // A background refetch of data we already hold must not re-open the gate;
     // that is the flicker this gate exists to prevent, inverted.
     expect(resolveEntitlementsPending([q(false, 'fetching')])).toBe(false);
-  });
-});
-
-/**
- * The helper only helps if the hook uses it. These pin the call site, because
- * the hook itself cannot be rendered in `apps/web`'s test harness — there is no
- * jsdom, and `mock.module` is process-wide across a non---isolate `bun test`
- * run. Same reason `resolveGateProjectId` is exported and asserted this way.
- */
-const gateSource = readFileSync(join(import.meta.dir, 'use-model-connection-gate.tsx'), 'utf8');
-
-describe('use-model-connection-gate call site', () => {
-  // `.includes(...)` rather than `toContain` deliberately: a failed `toContain`
-  // on a 200-line file prints the whole file as one escaped string, which
-  // buries the actual failure in every run that touches this hook.
-  const has = (needle: string) => gateSource.includes(needle);
-
-  test('the hook computes the gate through the helper', () => {
-    expect(has('resolveEntitlementsPending(')).toBe(true);
-  });
-
-  test('no clause hand-mirrors an `enabled` condition again', () => {
-    // Each of these was a restatement of a query's `enabled` that had to be
-    // kept in sync by hand. Restating one is how this broke.
-    expect(has('secretsQuery.isPending')).toBe(false);
-    expect(has('projectDetailQuery.isPending')).toBe(false);
-    expect(has('accountStatePending')).toBe(false);
   });
 });

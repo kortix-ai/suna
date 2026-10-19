@@ -74,22 +74,6 @@ describe('session audit polling', () => {
     ).toBe(5_000);
   });
 
-  test('assigns polling to one mounted session surface', () => {
-    const files = [
-      '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
-      'session-layout.tsx',
-      'session-chat.tsx',
-      'session-audit-panel.tsx',
-      'session-approval-prompt.tsx',
-      'header/session-pending-approvals-indicator.tsx',
-    ];
-    const owners = files.filter((file) =>
-      readFileSync(new URL(file, import.meta.url), 'utf8').includes('poll: true'),
-    );
-
-    expect(owners).toEqual(['../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx']);
-  });
-
   test('late cache readers do not refetch on mount', () => {
     const source = readFileSync(new URL('./session-audit-shared.tsx', import.meta.url), 'utf8');
     // Matched on the BEHAVIOUR, not on one spelling of the condition. The

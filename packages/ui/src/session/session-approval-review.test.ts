@@ -1,5 +1,5 @@
 import { approvalReviewable } from '../shared/components/approvals/approval-request';
-import { testUiTranslator } from '@/i18n/test-translator';
+import { testUiTranslator } from '../test-utils/intl';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {

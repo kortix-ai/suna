@@ -1,17 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionModelUsage } from '@kortix/sdk';
 
-import messages from '../../../../translations/en.json';
+import { defaultUiMessages as messages } from '../../i18n';
 import { TurnFallbackRows } from './fallback-row';
 import { turnServedModel, type TurnServedModel } from './served-model';
 
 function render(working: boolean, events: TurnServedModel['fallbacks']): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" timeZone="UTC" messages={messages}>
+    <IntlTestProvider locale="en" timeZone="UTC" messages={messages}>
       <TurnFallbackRows working={working} events={events} />
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 }
 const event = { requested: 'Sol', served: 'Flash', reason: 'rate_limit_exceeded' };

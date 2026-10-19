@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -69,9 +69,9 @@ const messages = {
 
 function withTranslations(children: React.ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
+    <IntlTestProvider locale="en" messages={messages} onError={() => {}}>
       {children}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

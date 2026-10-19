@@ -1,4 +1,4 @@
-import { testUiTranslator } from '@/i18n/test-translator';
+import { testUiTranslator } from '../../test-utils/intl';
 import { describe, expect, test } from 'bun:test';
 import { commandBlocker, runtimePermissionLocksComposer, sendBlocker, sendBlockerMessage } from './send-blockers';
 

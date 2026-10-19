@@ -1,5 +1,5 @@
-import { TooltipProvider } from '../../../components/ui/tooltip';
-import { NextIntlClientProvider } from '../../../i18n';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import type { ReactNode } from 'react';

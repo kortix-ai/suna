@@ -28,7 +28,7 @@ describe('thread metrics (the SDK\'s, for a thread the store may not hold)', () 
 
 // ─── the section renders whole-tree totals, whatever is expanded ─────────────
 
-import { NextIntlClientProvider } from '../i18n';
+import { IntlTestProvider } from '../test-utils/intl';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import type { Session } from '@kortix/sdk';
 import { act, create } from 'react-test-renderer';
@@ -63,7 +63,7 @@ describe('SubSessionSection totals', () => {
     let renderer: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider>
           <SubSessionSection
             source={{ projectId: '', sessionId: '', runtimeSessionId: ROOT }}
             session={sessions[0]}
@@ -71,7 +71,7 @@ describe('SubSessionSection totals', () => {
             pricingLookup={() => null}
             fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
           />
-        </NextIntlClientProvider>,
+        </IntlTestProvider>,
       );
     });
     const text = JSON.stringify(renderer!.toJSON());
@@ -129,7 +129,7 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
       return { title: String(spans.find((c) => c?.type === 'span')?.props.children ?? '') };
     };
     const tree = (
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider>
         <SubSessionSection
           source={{ projectId: 'p_lazy', sessionId: 's_lazy', runtimeSessionId: ROOT }}
           session={sessions[0]}
@@ -137,7 +137,7 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
           pricingLookup={() => null}
           fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
         />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     );
     let renderer: ReturnType<typeof create>;
     try {
@@ -203,7 +203,7 @@ describe('SubSessionSection with more sub-agents than the row memo holds', () =>
     let renderer: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider>
           <RootReader />
           <SubSessionSection
             source={{ projectId: '', sessionId: '', runtimeSessionId: ROOT }}
@@ -212,7 +212,7 @@ describe('SubSessionSection with more sub-agents than the row memo holds', () =>
             pricingLookup={() => null}
             fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
           />
-        </NextIntlClientProvider>,
+        </IntlTestProvider>,
       );
     });
     await act(async () => { useSessionStateStore.getState().hydrate(ids[0]!, [reply(ids[0]!, 'm_a'), reply(ids[0]!, 'm_b')] as never); });
@@ -261,7 +261,7 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
     let renderer: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <IntlTestProvider>
           <SubSessionSection
             source={{ projectId: 'p_all', sessionId: 's_all', runtimeSessionId: ROOT }}
             session={sessions[0]}
@@ -269,7 +269,7 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
             pricingLookup={() => null}
             fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
           />
-        </NextIntlClientProvider>,
+        </IntlTestProvider>,
         { createNodeMock: () => ({}) },
       );
     });
@@ -377,7 +377,7 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
     try {
       await act(async () => {
         renderer = create(
-          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <IntlTestProvider>
             <SubSessionSection
               source={{ projectId: 'p_unsaved', sessionId: 's_unsaved', runtimeSessionId: ROOT }}
               session={sessions[0]}
@@ -385,7 +385,7 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
               pricingLookup={() => null}
               fmt={{ number: (v) => (v == null ? '—' : String(v)) }}
             />
-          </NextIntlClientProvider>,
+          </IntlTestProvider>,
           { createNodeMock: () => ({}) },
         );
       });

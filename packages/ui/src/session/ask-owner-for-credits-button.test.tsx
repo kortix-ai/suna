@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '@kortix/sdk';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../test-utils/intl';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { AskOwnerForCreditsButton } from './ask-owner-for-credits-button';
@@ -31,9 +31,9 @@ afterEach(() => {
 function mount() {
   act(() => {
     renderer = create(
-      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+      <IntlTestProvider>
         <AskOwnerForCreditsButton accountId="acc_1" />
-      </NextIntlClientProvider>,
+      </IntlTestProvider>,
     );
   });
   return renderer!.root.findByType('button');

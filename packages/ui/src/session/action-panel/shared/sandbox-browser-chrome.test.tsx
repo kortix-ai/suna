@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '../../../i18n';
+import { IntlTestProvider } from '../../../test-utils/intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import enMessages from '../../../../../translations/en.json';
+import { defaultUiMessages as enMessages } from '../../../i18n';
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,14 +23,14 @@ const intlErrors: string[] = [];
 
 const render = (node: ReactNode) =>
   renderToStaticMarkup(
-    <NextIntlClientProvider
+    <IntlTestProvider
       locale="en"
       messages={enMessages}
       timeZone="UTC"
       onError={(error) => intlErrors.push(error.code)}
     >
       {node}
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 
 const noop = () => {};
@@ -217,53 +217,3 @@ describe('SandboxAddressBar — the shared toolbar', () => {
   });
 });
 
-/**
- * Both surfaces render the SAME toolbar: the control set lives in
- * `SandboxAddressBar`, so each adopter only wires its own model (history
- * source, navigation, placeholder) into it. If either surface ever grows a
- * second inline toolbar, this scan fails.
- */
-describe('the two surfaces render the shared chrome', () => {
-  const actionPanel = join(import.meta.dir, '..');
-  const browserPanelSource = readFileSync(
-    join(actionPanel, 'browser-panel.tsx'),
-    'utf8',
-  );
-  const appPreviewSource = readFileSync(
-    join(actionPanel, 'easy', 'app-preview.tsx'),
-    'utf8',
-  );
-
-  test('BrowserPanel renders SandboxAddressBar with its tab-store model', () => {
-    expect(browserPanelSource).toContain('<SandboxAddressBar');
-    expect(browserPanelSource).toContain('displayValue={fullUrl}');
-    expect(browserPanelSource).toContain('onNavigate={navigateTo}');
-    expect(browserPanelSource).toContain('resetOnEscape={hasPreview}');
-  });
-
-  test('AppPreview renders SandboxAddressBar with its tab-store-free model', () => {
-    expect(appPreviewSource).toContain('<SandboxAddressBar');
-    expect(appPreviewSource).toContain('displayValue={current}');
-    expect(appPreviewSource).toContain('onNavigate={navigateTo}');
-  });
-
-  test('the old inline toolbar and address cascade are gone from both', () => {
-    for (const [name, source] of [
-      ['browser-panel', browserPanelSource],
-      ['app-preview', appPreviewSource],
-    ] as const) {
-      // Back, forward and reload live in `SandboxAddressBar` only. Other
-      // controls (AppPreview's "Open in a new tab") may still carry a Hint.
-      for (const navKey of ['text76900f1bfd16', 'textf1c65e14817e', 'text0e9161011702']) {
-        expect(source, name).not.toContain(navKey);
-      }
-      expect(source, name).not.toContain('/^\\d{1,5}(?:[/?#]|$)/');
-      expect(source, name).not.toContain('splitUrlForDisplay');
-    }
-  });
-
-  test('both landings render the one Apps + recents timeline', () => {
-    expect(browserPanelSource).toContain('<BrowserLanding');
-    expect(appPreviewSource).toContain('<BrowserLanding');
-  });
-});

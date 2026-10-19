@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { testUiTranslator } from '@/i18n/test-translator';
+import { testUiTranslator } from '../../../test-utils/intl';
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
   isLegacyMigratedSession,

@@ -2637,6 +2637,7 @@
     "@types/bun": "^1.3.12",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/react-test-renderer": "^19.3.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "happy-dom": "^20.14.5",
     "react": "^19.3.0",

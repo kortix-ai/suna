@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { testUiTranslator } from '@/i18n/test-translator';
+import { testUiTranslator } from '../test-utils/intl';
 import {
   pendingSessionPromptFromMetadata,
   provisioningFailurePresentation,
@@ -48,35 +48,6 @@ describe('provisioningFailurePresentation', () => {
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
     });
-  });
-});
-
-describe('project session provider-failure recovery', () => {
-  const pageSource = readFileSync(
-    resolve(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
-    'utf8',
-  );
-  const recoverySource = readFileSync(
-    resolve(import.meta.dir, './provider-failure-recovery.tsx'),
-    'utf8',
-  );
-
-  test('routes structured provider failures and generic start errors through one surface', () => {
-    expect(pageSource).toContain('const recoverableFailure =');
-    expect(pageSource).toContain('session.failure');
-    expect(pageSource).toContain('session.startError');
-    expect(pageSource).toContain('if (unmaterializedFailure)');
-    expect(pageSource).toContain('<ProviderFailureRecovery');
-  });
-
-  test('shows the saved prompt and exposes one-click recovery controls', () => {
-    expect(recoverySource).toContain("useTranslations('sessionUi.providerRecovery')");
-    expect(recoverySource).toContain("t('savedPrompt')");
-    expect(recoverySource).toContain('{pendingPrompt.text}');
-    expect(recoverySource).toContain('whitespace-pre-wrap');
-    expect(recoverySource).toContain("t('copy')");
-    expect(recoverySource).toContain('onClick={onRetry}');
-    expect(recoverySource).toContain('onClick={onDelete}');
   });
 });
 

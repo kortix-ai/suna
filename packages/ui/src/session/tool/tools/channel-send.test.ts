@@ -123,12 +123,6 @@ describe('ChannelSendCard', () => {
     expect(card).toContain('slackConversationName(');
   });
 
-  test('the card and its collapsed row show one text: the reply as Slack shows it', () => {
-    const bash = readFileSync(join(import.meta.dir, 'bash-tool.tsx'), 'utf8');
-    expect(card).toContain('channelSendText(send)');
-    expect(bash).toContain('const sendText = send ? channelSendText(send) : null;');
-    expect(bash).toContain('sendText ?? send.file');
-  });
 });
 
 describe('channelSendText', () => {

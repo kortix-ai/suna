@@ -1,8 +1,8 @@
-import type { ToolPart } from '../../../shared/ui';
+import type { ToolPart } from '@/ui';
 import { toolCallBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { collectAllToolCalls } from './collect-tool-parts';
-import { groupSteps } from '@kortix/sdk';
+import { groupSteps } from './group-steps';
 import { latestRunMessages } from './latest-run';
 import { deriveRunOutcome } from './run-outcome';
 

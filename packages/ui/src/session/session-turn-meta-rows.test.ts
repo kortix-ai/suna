@@ -1,4 +1,4 @@
-import { testUiTranslator } from '@/i18n/test-translator';
+import { testUiTranslator } from '../test-utils/intl';
 import type { TurnCostInfo } from '../shared/ui';
 import type { SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';

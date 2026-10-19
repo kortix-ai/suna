@@ -125,11 +125,22 @@ export function scannedFiles() {
 const at = (tree, path) =>
   path.split('.').reduce((node, key) => (node && typeof node === 'object' ? node[key] : undefined), tree);
 
+/** Sets `path`; a subtree merges into the keys already picked under it. */
 function put(out, path, value) {
   const keys = path.split('.');
   let node = out;
   for (const key of keys.slice(0, -1)) node = node[key] ??= {};
-  node[keys.at(-1)] = value;
+  const last = keys.at(-1);
+  const prev = node[last];
+  const isTree = (v) => typeof v === 'object' && v !== null;
+  node[last] = isTree(prev) && isTree(value) ? merge(structuredClone(value), prev) : value;
+}
+
+function merge(into, from) {
+  for (const [key, value] of Object.entries(from)) {
+    into[key] = typeof value === 'object' && value !== null && typeof into[key] === 'object' ? merge(into[key], value) : value;
+  }
+  return into;
 }
 
 /** Keeps the source catalog's key order. */
@@ -188,7 +199,8 @@ export function buildCatalog() {
       const path = candidate ? `${candidate}.${key}` : key;
       const value = at(source, path);
       if (value === undefined || (messageOnly && typeof value !== 'string')) continue;
-      if (at(out, path) === undefined) put(out, path, value);
+      const have = at(out, path);
+      if (have === undefined || (typeof have === 'object' && typeof value === 'object')) put(out, path, value);
     }
   }
   const body = JSON.stringify(ordered(source, out), null, 2);

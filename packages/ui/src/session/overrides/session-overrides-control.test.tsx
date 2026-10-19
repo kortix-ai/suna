@@ -1,6 +1,6 @@
 import { KeyIcon, RobotIcon } from '@phosphor-icons/react';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -32,13 +32,11 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
   },
 ];
 
-const messages = { threads: { sessionOverrides: 'Session overrides' }, pooledSecrets: { saveChanges: 'Save changes', saving: 'Saving…' } };
-
 function withMessages(children: React.ReactNode) {
   return (
-    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+    <IntlTestProvider timeZone="UTC">
       {children}
-    </NextIntlClientProvider>
+    </IntlTestProvider>
   );
 }
 

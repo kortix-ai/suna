@@ -1,11 +1,11 @@
 import type { SessionParticipants } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '../../test-utils/intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '../../components/ui/tooltip';
 
-import enMessages from '../../../../translations/en.json';
+import { defaultUiMessages as enMessages } from '../../i18n';
 import {
   hiddenParticipantCount,
   MessageSenderAbove,
@@ -34,9 +34,9 @@ const view = (overrides: Partial<SessionParticipants> = {}): SessionParticipants
 
 const render = (node: React.ReactNode) =>
   renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+    <IntlTestProvider locale="en" timeZone="UTC" messages={enMessages}>
       <TooltipProvider>{node}</TooltipProvider>
-    </NextIntlClientProvider>,
+    </IntlTestProvider>,
   );
 
 describe('participantLabel', () => {

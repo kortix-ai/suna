@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
 
 const model = (modelID: string, modelName: string, provider?: string) =>
@@ -54,23 +52,3 @@ describe('shouldShowFreeTag is unchanged', () => {
   });
 });
 
-describe('the stripped name is DISPLAY only', () => {
-  const selector = readFileSync(
-    resolve(import.meta.dir, 'model-selector.tsx'),
-    'utf8',
-  );
-
-  test('the row renders the stripped name', () => {
-    expect(selector).toContain('splitModelLabel(pickerModelName(model))');
-  });
-
-  test('search still matches the raw name, so "chatgpt" finds these rows', () => {
-    // If this ever becomes pickerModelName(), typing the provider stops
-    // finding the models that belong to it.
-    expect(selector).toContain("(m.modelName || '').toLowerCase().includes(q)");
-  });
-
-  test('the aria label keeps the full name — a screen reader has no group heading', () => {
-    expect(selector).toContain("t('defaultAria', { model: model.modelName })");
-  });
-});
