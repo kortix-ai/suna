@@ -378,7 +378,7 @@ kortix triggers add checkout-errors --type monitor \
 
 A reminder sends a prompt into one existing session at a time you set: "in 24 hours, check whether the vendor replied". It fires once, or it repeats until someone removes it. A reminder lives in the database, not in `kortix.yaml`. It makes no commit, and a fire never starts a new session.
 
-Reminders need the project flag `reminders`, off by default. Turn it on in **Customize → Settings → Feature flags → Reminders**, or run `kortix projects features enable reminders`. While it is off, reminder routes answer `403` with `code: feature_disabled` and no reminder fires.
+Reminders need the project flag `reminders`, on by default. Turn it off or back on in **Customize → Settings → Feature flags → Reminders**, or run `kortix projects features enable reminders`. While it is off, reminder routes answer `403` with `code: feature_disabled` and no reminder fires.
 
 ```sh
 kortix remind "Check whether the vendor replied to the contract email." --in 24h

@@ -236,8 +236,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
     stability: 'beta',
     available: () => true,
-    // Per-project opt-in while the surface settles.
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
+    platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
@@ -388,7 +388,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals keep their state in Files (kortix-goals).
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
@@ -404,7 +405,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // store files in.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Follows the project's `volumes` flag; not a toggle of its own.
-    platformDefault: () => false,
+    platformDefault: () => true,
     derivedFrom: 'volumes',
     catalogHidden: true,
     enforcement: 'routes',

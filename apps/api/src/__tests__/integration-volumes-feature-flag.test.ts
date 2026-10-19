@@ -67,18 +67,18 @@ async function setFlag(feature: string, enabled: boolean | null) {
 const row = (body: any, key: string) => body.experimental_features.find((f: { key: string }) => f.key === key);
 
 describe('Volumes is a project flag', () => {
-  test('a project admin (not a platform operator) turns it on and off; drives follows', async () => {
-    const off = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
-    expect(off.status).toBe(200);
-    const offBody = (await off.json()) as any;
-    expect(offBody.experimental).toMatchObject({ volumes: false, drives: false });
-    expect(row(offBody, 'volumes')).toMatchObject({ enabled: false, overridden: false, operator_only: false, scope: 'project' });
+  test('on by default; a project admin (not a platform operator) turns it off and on; drives follows', async () => {
+    const def = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
+    expect(def.status).toBe(200);
+    const defBody = (await def.json()) as any;
+    expect(defBody.experimental).toMatchObject({ volumes: true, drives: true });
+    expect(row(defBody, 'volumes')).toMatchObject({ enabled: true, overridden: false, operator_only: false, scope: 'project' });
 
-    const on = await setFlag('volumes', true);
-    expect(on.status).toBe(200);
-    expect(on.body.experimental).toMatchObject({ volumes: true, drives: true });
-    expect(row(on.body, 'volumes')).toMatchObject({ enabled: true, overridden: true, operator_only: false, scope: 'project' });
-    expect(await storedFlags()).toEqual({ volumes: true });
+    const off = await setFlag('volumes', false);
+    expect(off.status).toBe(200);
+    expect(off.body.experimental).toMatchObject({ volumes: false, drives: false });
+    expect(row(off.body, 'volumes')).toMatchObject({ enabled: false, overridden: true, operator_only: false, scope: 'project' });
+    expect(await storedFlags()).toEqual({ volumes: false });
 
     expect((await setFlag('volumes', null)).status).toBe(200);
     expect(await storedFlags()).toBeUndefined();
