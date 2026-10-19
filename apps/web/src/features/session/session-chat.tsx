@@ -675,6 +675,8 @@ export function SessionChat({
   // delta does not re-render the chat through it. The view settings are per session.
   const historyKey = projectSessionId || sessionId;
   const sessionRecord = useSessionLogRecord(sessionState ?? DETACHED_SESSION_MESSAGES);
+  // The transcript reads the session log (v2): the session's own, or the parent's for a sub-agent chat.
+  const transcriptOnLog = sessionState ? sessionRecord !== null : onParentLog;
   const restoreNotice = useMemo(() => sessionLogRestoreNotice(sessionRecord), [sessionRecord]);
   const restoreDismissed = useSessionHistoryViewStore(
     (s) => !!restoreNotice && s.dismissedRestore[historyKey] === restoreNotice.generation,
@@ -1619,11 +1621,11 @@ export function SessionChat({
     const observer = new IntersectionObserver(
       ([entry]) => {
         const isIntersecting = !!entry?.isIntersecting;
-        // A transcript shorter than its viewport cannot be scrolled: a first page often folds
-        // to a few rows (a turn is one row), and the reader has no other way to reach older
-        // history. Pull until it fills the viewport, within the auto-load page budget.
+        // On the session log a transcript shorter than its viewport cannot be scrolled: a 40-message
+        // first page often folds to a few rows (a turn is one row), and the reader has no other way
+        // to reach older history. Pull until it fills the viewport, within the auto-load page budget.
         const root = scrollRef.current;
-        const cannotScroll = !!root && root.scrollHeight <= root.clientHeight;
+        const cannotScroll = transcriptOnLog && !!root && root.scrollHeight <= root.clientHeight;
         const didPull = shouldLoadOlderHistory({
           isIntersecting,
           hasOlder,
@@ -1658,6 +1660,7 @@ export function SessionChat({
     handleLoadOlder,
     scrollRef,
     sessionId,
+    transcriptOnLog,
   ]);
 
   // Scroll to the bottom on initial load / session change.

@@ -817,4 +817,28 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
       consoleWarn.mockRestore();
     }
   });
+
+  test('a log write that stores nothing (too large) is a failed capture: null, so a wake retries it', async () => {
+    const session = await pinned();
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 200;
+    try {
+      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps, { scope: 'tail' })).toBeNull();
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
+    expect(await liveRows(session)).toEqual([]);
+    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
+  });
+
+  test('with session-log ingest off, the flag-on capture keeps the history in the mirror as before', async () => {
+    const session = await pinned();
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps)).not.toBeNull();
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+    }
+    expect(await mirrorCount(session)).toEqual({ mirrors: 1, messages: 6 });
+  });
 });

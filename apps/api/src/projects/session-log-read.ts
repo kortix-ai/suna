@@ -6,9 +6,11 @@
  * `readStoredTranscriptWindow` is the stored transcript every v1 read serves (`transcript?shape=sync`,
  * the `shape=compact` fallback, the open bundle, the public share, and MCP `read_session` through
  * the transcript route). With the project flag `session_log` on it serves `toV1` of the log in the
- * mirror's window shape (`MirrorSnapshot`) and never reads the mirror (P8): a session with no stored
- * log, or no stored message in the read thread, answers null ("nothing saved"). With the flag off
- * it serves the mirror. Both kinds of thread answer: a `fromV1` one (OpenCode) and a native one
+ * mirror's window shape (`MirrorSnapshot`) and never reads the mirror for a session that has a
+ * log (P8): no stored message in the read thread answers null ("nothing saved"). A session with no
+ * log at all is history from before the journal that the backfill has not converted yet: the
+ * mirror answers it, so turning the flag on hides no saved transcript. With the flag off it serves
+ * the mirror. Both kinds of thread answer: a `fromV1` one (OpenCode) and a native one
  * (pi, no `kortix.transcript.v1` ext), whose v1 rows are the ones the SDK renders through `toV1`.
  *
  * The v1 window over a `fromV1` thread equals the mirror's window (deep equality), with these named differences:
@@ -146,7 +148,7 @@ export async function readStoredTranscriptWindow(input: {
   opencodeSessionId?: string | null;
 }): Promise<MirrorSnapshot | null> {
   const window = await readLogTranscriptWindow(input);
-  return window === 'flag_off' ? readSessionTranscriptMirror(input) : window;
+  return window === 'mirror' ? readSessionTranscriptMirror(input) : window;
 }
 
 /** The project flag `session_log` of the session's project. False for an unknown session. */
@@ -170,13 +172,13 @@ const keyCompare = (a: { at: number; id: string }, b: { at: number; id: string }
   a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const keyOf = (r: V1Row) => ({ at: created(r), id: idOf(r) });
 
-/** The window over the log; null when the log has nothing to serve, `'flag_off'` without the flag (see the module header). */
+/** The window over the log; null when the log has nothing to serve, `'mirror'` without the flag or without a log (see the module header). */
 async function readLogTranscriptWindow(input: {
   sessionId: string;
   limit: number;
   before?: string | null;
   opencodeSessionId?: string | null;
-}): Promise<MirrorSnapshot | null | 'flag_off'> {
+}): Promise<MirrorSnapshot | null | 'mirror'> {
   // One round trip for the flag, the session record and the threads: the mirror read's state query costs one too.
   const [row] = await db
     .select({
@@ -191,8 +193,9 @@ async function readLogTranscriptWindow(input: {
     .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!row || !resolveFeatureFlag(row.metadata, 'session_log')) return 'flag_off';
-  if (row.record === null || row.updatedAt === null || row.projectId === null) return null;
+  if (!row || !resolveFeatureFlag(row.metadata, 'session_log')) return 'mirror';
+  // No log yet: pre-journal history the backfill has not converted (until P8.2 drops the mirror).
+  if (row.record === null || row.updatedAt === null || row.projectId === null) return 'mirror';
   const log = { record: row.record, updatedAt: row.updatedAt, projectId: row.projectId };
   const threads = row.threads ?? [];
   const root = rootOf(threads);

@@ -68,6 +68,7 @@ import { projects, projectSessions, sessionTranscriptMessages, sessionTranscript
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { isRecord } from '@kortix/shared/guards';
@@ -769,7 +770,7 @@ export async function setTranscriptRewindMarker(
     .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  if (resolveFeatureFlag(session?.metadata, 'session_log')) return;
+  if (resolveFeatureFlag(session?.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) return;
   await db
     .update(sessionTranscriptMirrors)
     .set({ rewindMessageId: messageId })

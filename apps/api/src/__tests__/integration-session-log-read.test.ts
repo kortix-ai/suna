@@ -10,7 +10,7 @@
  * with the project flag `session_log` off (the mirror) and on (the log). The one
  * field that differs is `captured_at`. With the flag on no read touches the mirror (P8): the
  * reads pass with both mirror tables renamed away, a native (pi) thread is served through `toV1`,
- * and a session with no stored log answers "nothing saved". One tool output is 150,000 three-byte
+ * and a session with no stored log (pre-journal history) answers from the mirror. One tool output is 150,000 three-byte
  * characters (450 kB): the mirror keeps it (under 200,000 characters), the log
  * stores it by reference (F3, P2.3), and the v1 reads put it back. The Storage
  * bucket is `helpers/fake-session-storage.ts`.
@@ -228,7 +228,7 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
     expect(child.messages.every((m) => m.info.sessionID === CHILD)).toBe(true);
   });
 
-  test('with the flag on, a session with no stored log answers "nothing saved", even with a mirror', async () => {
+  test('with the flag on, a session with no stored log (pre-journal history, not backfilled) answers from the mirror', async () => {
     const mirrorOnly = await seedSession(project, OWNER);
     const { root } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 2 });
     await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, mirrorOnly));
@@ -243,12 +243,14 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
       await db.execute(sql`delete from ${sql.raw(`kortix.${table}`)} where session_id = ${mirrorOnly}`);
     }
     expect(await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, mirrorOnly))).toHaveLength(0);
+    // Turning the flag on hides no saved transcript: the mirror answers until the backfill converts it.
     const sync = (await (await get(`${base(mirrorOnly)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
-    expect(sync).toMatchObject({ available: false, source: 'none', message_count: 0, total: 0, messages: [] });
+    expect(sync).toMatchObject({ available: true, source: 'mirror' });
+    expect((sync.messages as unknown[]).length).toBe(root.length);
     const compact = (await (await get(`${base(mirrorOnly)}/transcript`)).json()) as Record<string, unknown>;
-    expect(compact).toMatchObject({ available: false, source: 'none', message_count: 0 });
+    expect(compact).toMatchObject({ available: true });
     const bundle = (await (await get(`${base(mirrorOnly)}/open-bundle`)).json()) as Record<string, Record<string, unknown>>;
-    expect(bundle.transcript).toMatchObject({ known: true, requested: true, available: false, source: 'none' });
+    expect(bundle.transcript).toMatchObject({ known: true, requested: true, available: true, source: 'mirror' });
     expect(bundle.log).toEqual({ known: true, page: null });
     // The flag off: the mirror answers, unchanged.
     await setFlag(false);

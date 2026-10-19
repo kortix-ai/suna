@@ -321,10 +321,11 @@ async function captureSessionTranscript(
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!session) return null;
-    if (resolveFeatureFlag(session.metadata, 'session_log')) {
-      // P8: the session log is the store. A journal keeps it; without one (`journal_seen_at` null)
-      // the box's messages go straight into it. No v1 row is read or written.
-      if (session.journalSeenAt || !config.SESSION_LOG_INGEST_ENABLED) return null;
+    // P8: the session log is the store. A journal keeps it; without one (`journal_seen_at` null)
+    // the box's messages go straight into it. No v1 row is read or written. With ingest off the
+    // log takes no write, so the mirror keeps the history as before.
+    if (resolveFeatureFlag(session.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) {
+      if (session.journalSeenAt) return null;
       return await captureIntoSessionLog(sessionId, deps, options, session.projectId, chainStartedAt);
     }
 
@@ -510,6 +511,9 @@ async function captureIntoSessionLog(
       rows: [...asRows(read.opencodeSessionId, rows), ...children.flatMap((child) => asRows(child.opencodeSessionId, mirrorRowsFromOpencodePayload(child.payload)))],
       before,
     });
+    // Nothing stored (a failed, invalid or too-large write): a failure, so it is retried and a
+    // wake does not mark the session captured.
+    if (outcome.outcome !== 'written' && outcome.outcome !== 'skipped') return null;
     // Progress, as the mirror path counts it: a sub-agent the log did not hold before was written.
     const held = new Set(before.rows.map((row) => row.runtime_session_id));
     moreChildren = read.moreChildren === true && outcome.outcome === 'written' && children.some((child) => !held.has(child.opencodeSessionId));
@@ -765,7 +769,7 @@ export function backfillSessionTranscriptMirrorOnWake(
       // No such session. Nothing will ever change that.
       if (!session) return settle();
       // P8: the session log is the store. A journal keeps it; without one the capture reads the box into it.
-      if (resolveFeatureFlag(session.metadata, 'session_log')) {
+      if (resolveFeatureFlag(session.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) {
         if (session.journalSeenAt || (await captureSessionTranscriptMirror(sessionId, deps))) settle();
         return;
       }
