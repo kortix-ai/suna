@@ -133,7 +133,12 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'rooms',
             args: '<subcommand>',
-            blurb: 'Rooms where sessions and people message each other (join, send, next)',
+            blurb: 'Conversations between sessions and people: rooms and direct messages',
+          },
+          {
+            name: 'dm',
+            args: '<who> ["<text>"]',
+            blurb: 'Direct message a session or a person (kortix rooms dm)',
           },
           {
             name: 'tui',

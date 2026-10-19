@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 866,
+  "count": 871,
   "routes": [
     {
       "method": "GET",
@@ -2552,11 +2552,19 @@
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/:sessionId"
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
     },
     {
       "method": "PUT",
-      "path": "/v1/projects/:projectId/rooms/:roomId/members/:sessionId"
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
     },
     {
       "method": "GET",
@@ -2565,6 +2573,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/read"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/direct"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/people"
     },
     {
       "method": "GET",
