@@ -723,6 +723,82 @@ flow(
   },
 );
 
+// connectors_v2 retires Pipedream: a Pipedream connector moves in place to the
+// Kortix app for the same service. The sign-in itself needs the vendor's OAuth
+// server, so this flow covers the listing, the start (the marked account), the
+// refusals and the flag gate; the switch after a sign-in was proven on a local
+// stack and `pipedream-move.test.ts` pins the target URL rule.
+flow(
+  'CONN-37',
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/projects/:projectId/connector-moves',
+      'POST /v1/projects/:projectId/connectors/:slug/move',
+      'POST /v1/connectors/projects/:projectId/connectors',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
+    const off = await ctx.fixtures.project();
+    type Move = { slug: string; app: string | null; to: { slug: string } | null; connection_id: string | null; signed_in: boolean; accounts: number };
+    const moves = async () =>
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(200).json<{ moves: Move[] }>().moves;
+    const create = async (body: Record<string, unknown>) =>
+      (await owner.post('/v1/connectors/projects/:projectId/connectors', { ...body, create_only: true }, { params: { projectId: on.id }, timeoutMs: 60_000 })).status([200, 409]);
+
+    await ctx.step('setup: a Pipedream Linear connector, a Pipedream app with no Kortix app, and an MCP server', async () => {
+      await create({ slug: 'issues', name: 'Issues', provider: 'pipedream', app: 'linear_app', allow_legacy_pipedream: true });
+      await create({ slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'pipedrive', allow_legacy_pipedream: true });
+      await create({ slug: 'desk', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } });
+    });
+
+    await ctx.step('the listing names each Pipedream connector and the Kortix app it moves to; an MCP server is not listed', async () => {
+      const list = await moves();
+      const issues = list.find((m) => m.slug === 'issues');
+      const crm = list.find((m) => m.slug === 'crm');
+      if (issues?.app !== 'linear_app' || issues.to?.slug !== 'linear' || issues.connection_id !== null || issues.signed_in) {
+        throw new Error(`issues entry is wrong: ${JSON.stringify(issues)}`);
+      }
+      if (crm?.to !== null) throw new Error(`a Pipedream app with no Kortix app must list to: null: ${JSON.stringify(crm)}`);
+      if (list.some((m) => m.slug === 'desk')) throw new Error('an mcp connector is not a move');
+    });
+
+    await ctx.step('a move starts: it marks an account and names the catalogue MCP server to sign in to', async () => {
+      const r = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'issues' } });
+      r.status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'linear').has('$.to.url', 'https://mcp.linear.app/mcp');
+      const connectionId = r.json<{ connection_id: string }>().connection_id;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== connectionId || issues.signed_in) throw new Error(`the started move is not listed: ${JSON.stringify(issues)}`);
+      // Pipedream still serves the connector until the sign-in completes.
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'issues' } }))
+        .status(200).body().has('$.provider', 'pipedream');
+    });
+
+    await ctx.step('refusals: no Kortix app → 409, not a Pipedream connector → 409, a foreign account → 400, no connector → 404', async () => {
+      const move = (slug: string, body: Record<string, unknown> = {}) =>
+        owner.post('/v1/projects/:projectId/connectors/:slug/move', body, { params: { projectId: on.id, slug } });
+      const noApp = await move('crm');
+      noApp.status(409);
+      if (!noApp.text().includes('keeps working through Pipedream')) throw new Error(`unexpected refusal: ${noApp.text()}`);
+      const notPipedream = await move('desk');
+      notPipedream.status(409);
+      if (!notPipedream.text().includes('Only a Pipedream connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
+      (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(400);
+      (await move('no-such-connector')).status(404);
+    });
+
+    await ctx.step('without connectors_v2 both routes answer 403 feature_disabled; a non-member gets 403', async () => {
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: off.id } }))
+        .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'connectors_v2');
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: off.id, slug: 'issues' } }))
+        .status(403).body().has('$.code', 'feature_disabled');
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(403);
+    });
+  },
+);
+
 // Pairs with CONN-7 (PUT .../credential) — disconnect (delete) a connector's
 // stored credential. Unknown connector → 404 (deleteConnectorCredential looks
 // the connector up before touching the credential store).
