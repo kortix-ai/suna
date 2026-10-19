@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import type { GenuiNode } from '@kortix/sdk/genui';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { mapStyleUrl } from '@/lib/genui/map-style';
 
 /*
  * Final heights of the components that would otherwise jump when they finish streaming, in pt
@@ -40,6 +41,8 @@ const RESERVED: Record<string, number> = {
 
 /** A node the model has not finished: heavy nodes hold their space with the Kortix loader; text nodes wait invisibly. */
 export function GenuiPending(node: GenuiNode): ReactNode {
+  // With the map off the settled Map is a list of places, text that grows like prose: nothing to reserve (web parity).
+  if (node.type === 'Map' && !mapStyleUrl(false)) return null;
   const height = RESERVED[node.type];
   if (!height) return null;
   return (

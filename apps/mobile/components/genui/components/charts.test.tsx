@@ -193,7 +193,7 @@ b = Series("Mobile", [2, 1])`);
     const four = render(pie(null));
     // donut: the total in the center, a row per slice with its value and share.
     expect(texts(four)).toEqual(expect.arrayContaining(['7,200', 'Compute', '4,200', '58%']));
-    expect(all(four, 'svg').map((n) => n.props.height)).toEqual([128]);
+    expect(all(four, 'svg').map((n) => n.props.height)).toEqual([100]);
   });
 
   test('focus paints the first slice in the brand accent and states its share', () => {
@@ -420,5 +420,49 @@ s = Series("Visits", [1200, 1500, 1100])`);
     tap(plot(root), 150);
     expect(texts(root)).toEqual(expect.arrayContaining(['Feb', '—']));
     expect(all(root, 'svg-path').filter((n) => n.props.d?.includes(' a4,4 '))).toHaveLength(0);
+  });
+
+  test('donut and ring keep a 100pt disc and gap-3, so a label column fits beside it on a phone', () => {
+    for (const variant of ['donut', 'ring']) {
+      const root = render(pie(variant));
+      const block = all(root, 'view').find((n) => n.props.testID === 'pie-block')!;
+      expect([variant, String(block.props.className).split(' ').includes('gap-3'), all(root, 'svg').map((n) => n.props.width)]).toEqual([variant, true, [100]]);
+      act(() => tree!.unmount());
+      tree = undefined;
+    }
+  });
+
+  test('ring rows match web: no dot, no share column, a rule between rows, rows after the first muted; a donut has no rules', () => {
+    const ring = render(pie('ring'));
+    const rows = all(ring, 'pressable').filter((n) => String(n.props.accessibilityLabel ?? '').includes(': '));
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(all(row, 'view').filter((n) => String(n.props.className ?? '').includes('size-2.5'))).toHaveLength(0);
+      expect(texts(row).some((text) => text.endsWith('%'))).toBe(false);
+    }
+    const tone = (row: ReactTestInstance) => all(row, 'text').map((n) => String(n.props.className ?? '').includes('text-muted-foreground'));
+    expect(tone(rows[0]!)).toEqual([false, false]);
+    expect(tone(rows[1]!)).toEqual([true, true]);
+    expect(all(ring, 'separator')).toHaveLength(3);
+    act(() => tree!.unmount());
+    const donut = render(pie('donut'));
+    expect(all(donut, 'separator')).toHaveLength(0);
+  });
+
+  test('Map pending reserves its 320pt canvas only when the map is on; with the map off it is a list, so nothing', () => {
+    const before = process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL;
+    const node = { id: 'm', type: 'Map', props: {}, partial: true } as never;
+    try {
+      process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL = 'off';
+      expect(GenuiPending(node)).toBeNull();
+      delete process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL;
+      act(() => {
+        tree = create(<>{GenuiPending(node)}</>);
+      });
+      expect(flatten(all(tree!.root, 'view')[0]!.props.style).height).toBe(320);
+    } finally {
+      if (before === undefined) delete process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL;
+      else process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL = before;
+    }
   });
 });

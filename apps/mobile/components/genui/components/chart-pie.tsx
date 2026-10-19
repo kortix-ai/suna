@@ -26,8 +26,13 @@ import { GenuiPending, PIE_BLOCK, PIE_CARD_HEIGHT } from './pending';
 const PIE_RAMP = [1, 0.7, 0.5, 0.34, 0.22, 0.12];
 /** A treemap block under this share of its column is too small for text: a tap shows its data. */
 const TREEMAP_TEXT_SHARE = 0.12;
-/** The disc of the focus, donut and ring layouts: beside its text or list, inside PIE_BLOCK. */
+/** The focus layout's disc, beside its text. */
 const DISC = 128;
+/**
+ * The donut and ring disc, beside the slice list (gap-3). On a 375pt phone the card's content is ~311pt, so
+ * the list is ~199pt and a donut label keeps ~81pt after the dot, value and share columns.
+ */
+const SMALL_DISC = 100;
 
 /** The pie card: one of six layouts, values in the Show-data sheet. */
 export function PieChartCard({ node, props }: { node: GenuiNode; props: Record<string, any> }) {
@@ -272,10 +277,10 @@ function PieFigure({
   // A tap on a slice or its row reads that slice in the center and dims the others.
   const ring = variant === 'ring';
   return (
-    <View testID="pie-block" style={{ height: PIE_BLOCK }} className="flex-row items-center gap-5">
-      <View accessible accessibilityRole="image" accessibilityLabel={a11y} style={{ width: DISC, height: DISC }}>
-        {disc(DISC, ring ? DISC * 0.46 : DISC * 0.34)}
-        <View pointerEvents="none" className="absolute inset-0 items-center justify-center px-5">
+    <View testID="pie-block" style={{ height: PIE_BLOCK }} className="flex-row items-center gap-3">
+      <View accessible accessibilityRole="image" accessibilityLabel={a11y} style={{ width: SMALL_DISC, height: SMALL_DISC }}>
+        {disc(SMALL_DISC, ring ? SMALL_DISC * 0.46 : SMALL_DISC * 0.34)}
+        <View pointerEvents="none" className="absolute inset-0 items-center justify-center px-3">
           <Text variant="h4" className="tabular-nums">
             {shown ? `${shown.percent}%` : ring ? `${lead?.percent ?? 0}%` : format(total)}
           </Text>
@@ -294,22 +299,26 @@ function PieFigure({
           ) : null}
         </View>
       </View>
+      {/* Web's ring list: no dot, no share column, a rule between rows, rows after the first muted. */}
       <View className="flex-1">
-        {slices.map((slice, i) => (
-          <View key={slice.key}>
-            {i > 0 ? <Separator /> : null}
-            <LegendItem focus={focus} index={i} label={`${slice.label}: ${withUnit(slice.value)} (${slice.percent}%)`} className="gap-2 px-1.5 py-1.5">
-              {swatch(slice.fill)}
-              <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
-                {slice.label}
-              </Text>
-              <Text variant="muted" className="font-mono text-xs tabular-nums">
-                {format(slice.value)}
-              </Text>
-              <Text variant="muted" className="w-9 text-right font-mono text-xs tabular-nums">{`${slice.percent}%`}</Text>
-            </LegendItem>
-          </View>
-        ))}
+        {slices.map((slice, i) => {
+          const quiet = ring && i > 0;
+          return (
+            <View key={slice.key}>
+              {ring && i > 0 ? <Separator /> : null}
+              <LegendItem focus={focus} index={i} label={`${slice.label}: ${withUnit(slice.value)} (${slice.percent}%)`} className="gap-2 px-1.5 py-1.5">
+                {ring ? null : swatch(slice.fill)}
+                <Text variant="small" numberOfLines={1} className={`flex-1 leading-5 ${quiet ? 'text-muted-foreground' : ''}`}>
+                  {slice.label}
+                </Text>
+                <Text variant="muted" className={`font-mono text-xs tabular-nums ${ring ? (quiet ? 'text-muted-foreground' : 'text-foreground') : ''}`}>
+                  {format(slice.value)}
+                </Text>
+                {ring ? null : <Text variant="muted" className="w-9 text-right font-mono text-xs tabular-nums">{`${slice.percent}%`}</Text>}
+              </LegendItem>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
