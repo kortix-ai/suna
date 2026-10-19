@@ -436,13 +436,27 @@ For this to work the release must carry the electron-updater **metadata** —
 `latest*.yml`, the `*.blockmap`s, and (macOS only) the update **`.zip`** that
 Squirrel.Mac installs from. The dmg/exe/AppImage is the first-install download;
 the zip + yml are what the updater consumes. CI (`deploy-prod.yml` for prod,
-`desktop.yml` for dev) builds the mac zip target and uploads all of these to the
-release.
+`desktop.yml` for dev and staging) builds the mac zip target and uploads all of
+these to the release.
+
+Each deployment's `/download` hands out the build that opens it. The web app keys
+the channel on its backend host (`deploymentChannel()` in
+`apps/web/src/features/marketing/download/releases.ts`):
+
+| Deployment | Release served | Product | Built by |
+|---|---|---|---|
+| `kortix.com`, self-hosted, local | newest `vX.Y.Z` | Kortix | `deploy-prod.yml` |
+| `dev.kortix.com` | `desktop-dev-latest` | Kortix Dev | `gh workflow run desktop.yml -f channel=dev` |
+| `staging.kortix.com` | `desktop-staging-latest` | Kortix Staging | `gh workflow run desktop.yml -f channel=staging` |
+
+A channel prerelease keeps every build it ever published; `/download` serves the
+newest version in it. When the channel has no installer, `/download/<platform>`
+sends the visitor to that prerelease, never to the production installer.
 
 Scope: auto-update runs only for **packaged, stable-channel** builds. Unpackaged
-`electron .` dev runs can't self-update; the **`dev`** channel (the mutable
-`desktop-dev-latest` prerelease) opts out so a dev build never cross-updates to a
-prod installer. macOS additionally requires the build to be **signed +
+`electron .` dev runs can't self-update; the **`dev`** and **`staging`**
+channels (the mutable `desktop-<channel>-latest` prereleases) opt out so they
+never cross-update to a prod installer. macOS additionally requires the build to be **signed +
 notarized** — CI signs when the cert secrets are present.
 
 > End-to-end note: a true download→install→relaunch can only be exercised
