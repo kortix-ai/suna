@@ -42,9 +42,8 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { ChartCard, useSeriesFocus, type Cell } from './chart-card';
 import { PieChartCard } from './chart-pie';
 import { kids } from './layout';
+import { CHART_CARD_HEIGHT, CHART_PLOT as PLOT } from './pending';
 
-/** Plot height in pt. */
-const PLOT = 160;
 /** Keeps a 2pt stroke at the plot's edge whole. */
 const INSET = 1;
 /** Room above and below the plot for half a tick label, so the top and bottom ticks are not cut. */
@@ -98,7 +97,7 @@ function BarLineChart({ node, props }: { node: GenuiNode; props: Record<string, 
   // The picked point of a line: a guide at its x and a ringed dot per series.
   const step = labels.length > 1 ? plotWidth / (labels.length - 1) : 0;
   const px = picked === null ? 0 : labels.length > 1 ? picked * step : plotWidth / 2;
-  const py = (value: number | undefined) => tickY(Number(value) || 0);
+  const py = (value: number) => tickY(value);
   const dot = (x: number, y: number, r: number) => `M${x - r},${y} a${r},${r} 0 1,0 ${2 * r},0 a${r},${r} 0 1,0 ${-2 * r},0`;
   const marks = line ? (
     <>
@@ -118,10 +117,10 @@ function BarLineChart({ node, props }: { node: GenuiNode; props: Record<string, 
         <>
           <Path d={`M${px},0 V${plotHeight}`} stroke={ink(0.25)} strokeWidth={1} />
           {values.map((v, k) =>
-            typeof v[picked] === 'number' ? (
+            Number.isFinite(v[picked]) ? (
               <Path
                 key={`dot-${k}`}
-                d={dot(px, py(v[picked]), 4)}
+                d={dot(px, py(v[picked]!), 4)}
                 fill={palette[k]}
                 fillOpacity={focus.opacity(k)}
                 stroke={withAlpha(theme.card, 1)}
@@ -144,7 +143,7 @@ function BarLineChart({ node, props }: { node: GenuiNode; props: Record<string, 
   );
 
   return (
-    <ChartCard title={title} legend={legend} palette={palette} focus={focus} head={head} rows={rows} format={format}>
+    <ChartCard title={title} legend={legend} palette={palette} focus={focus} minHeight={CHART_CARD_HEIGHT} head={head} rows={rows} format={format}>
       {picked !== null && picked < labels.length ? (
         // The tapped category: its label, then each series' value with its swatch.
         <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">

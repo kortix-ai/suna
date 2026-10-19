@@ -32,6 +32,7 @@ mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/separator', () => ({ Separator: host('separator') }));
 // `layout.tsx` pulls in gesture handler and the markdown stack; the chart needs only its `kids`.
 mock.module('./layout', () => ({ kids: (value: unknown) => (Array.isArray(value) ? value : []) }));
+mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetScrollView: host('sheet-scroll') }));
 /** The sheet renders its content only once presented, as gorhom's modal does. */
 mock.module('@/components/kortix/sheet', () => ({
@@ -43,11 +44,13 @@ mock.module('@/components/kortix/sheet', () => ({
 }));
 
 let GenuiChart: typeof import('./charts').GenuiChart;
+let GenuiPending: typeof import('./pending').GenuiPending;
 let parseGenui: typeof import('@kortix/sdk/genui').parseGenui;
 
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   ({ GenuiChart } = await import('./charts'));
+  ({ GenuiPending } = await import('./pending'));
   ({ parseGenui } = await import('@kortix/sdk/genui'));
 });
 
@@ -61,6 +64,15 @@ function render(code: string) {
   const node = (parseGenui(code).root!.props.children as { props: Record<string, unknown> }[])[0]!;
   act(() => {
     tree = create(<GenuiChart node={node as never} props={node.props as never} renderChild={() => null} streaming={false} />);
+  });
+  return tree!.root;
+}
+
+/** A node built by hand, for shapes the SDK parser does not produce (no slices yet, a missing value). */
+function renderNode(type: string, props: Record<string, unknown>) {
+  const node = { id: 'n', type, props };
+  act(() => {
+    tree = create(<GenuiChart node={node as never} props={props as never} renderChild={() => null} streaming={false} />);
   });
   return tree!.root;
 }
@@ -181,7 +193,7 @@ b = Series("Mobile", [2, 1])`);
     const four = render(pie(null));
     // donut: the total in the center, a row per slice with its value and share.
     expect(texts(four)).toEqual(expect.arrayContaining(['7,200', 'Compute', '4,200', '58%']));
-    expect(all(four, 'svg').map((n) => n.props.height)).toEqual([168]);
+    expect(all(four, 'svg').map((n) => n.props.height)).toEqual([128]);
   });
 
   test('focus paints the first slice in the brand accent and states its share', () => {
@@ -307,7 +319,7 @@ s = Series("Visits", [1200, 1500, 1100])`);
     expect(all(root, 'svg-path').filter((n) => n.props.d?.includes(' a4,4 '))).toHaveLength(1);
   });
 
-  test('a donut stacks its legend under the disc; a tap on a slice or its row reads it in the center and dims the rest', () => {
+  test('a donut lists its slices beside the disc; a tap on a slice or its row reads it in the center and dims the rest', () => {
     const root = render(pie('donut'));
     const rows = all(root, 'pressable').filter((n) => String(n.props.accessibilityLabel ?? '').startsWith('Storage'));
     expect(rows).toHaveLength(1);
@@ -315,8 +327,98 @@ s = Series("Visits", [1200, 1500, 1100])`);
     expect(texts(root)).toEqual(expect.arrayContaining(['25%', 'Storage']));
     expect(texts(root)).not.toContain('7,200');
     const arcs = all(root, 'svg-path');
-    expect(arcs.map((n) => n.props.fillOpacity)).toEqual([0.3, 1, 0.3, 0.3]);
+    expect(arcs.map((n) => n.props.fillOpacity)).toEqual([0.15, 1, 0.15, 0.15]);
     press(arcs[1]!);
     expect(texts(root)).toContain('7,200');
+  });
+
+  test('a pie with no slices yet shows the pending block in every layout, not an empty 0 disc', () => {
+    for (const variant of [undefined, 'donut', 'ring', 'treemap', 'gauge', 'stack', 'focus']) {
+      const root = renderNode('PieChart', { source: 'cost report', unit: 'USD', variant, slices: [] });
+      expect([variant, all(root, 'loader').length, all(root, 'svg').length, texts(root)]).toEqual([variant, 1, 0, []]);
+      expect(flatten(all(root, 'view')[0]!.props.style).height).toBe(264);
+      act(() => tree!.unmount());
+      tree = undefined;
+    }
+  });
+
+  test('legend tap focuses a slice in the gauge, stack and focus layouts; others dim to 0.15; a second tap clears it', () => {
+    const button = (root: ReactTestInstance, text: string) =>
+      all(root, 'pressable').find((n) => n.props.accessibilityRole === 'button' && texts(n).join('') === text)!;
+    const arcs = (root: ReactTestInstance) => all(root, 'svg-path').map((n) => n.props.fillOpacity);
+
+    const gauge = render(pie('gauge', [['Used', 68], ['Left', 32]]));
+    press(button(gauge, 'Left 32%'));
+    expect(button(gauge, 'Left 32%').props.accessibilityState).toEqual({ selected: true });
+    expect(button(gauge, 'Left 32%').props.className).toContain('bg-secondary');
+    expect(arcs(gauge)).toEqual([0.15, 1]);
+    press(button(gauge, 'Left 32%'));
+    expect(button(gauge, 'Left 32%').props.accessibilityState).toEqual({ selected: false });
+    expect(arcs(gauge)).toEqual([1, 1]);
+    act(() => tree!.unmount());
+
+    const stack = render(pie('stack'));
+    const segments = () => all(stack, 'view').filter((n) => String(n.props.className ?? '').includes('w-11')).map((n) => flatten(n.props.style).opacity);
+    press(all(stack, 'pressable').find((n) => texts(n).includes('Storage'))!);
+    expect(segments()).toEqual([0.15, 1, 0.15, 0.15]);
+    press(all(stack, 'pressable').find((n) => texts(n).includes('Storage'))!);
+    expect(segments()).toEqual([1, 1, 1, 1]);
+    act(() => tree!.unmount());
+
+    const focus = render(pie('focus'));
+    press(button(focus, 'Network 900'));
+    expect(arcs(focus)).toEqual([0.15, 0.15, 1, 0.15]);
+    press(button(focus, 'Network 900'));
+    expect(arcs(focus)).toEqual([1, 1, 1, 1]);
+  });
+
+  test('every pie layout, donut and ring included, sits in one fixed 200pt block', () => {
+    for (const variant of ['donut', 'ring', 'treemap', 'gauge', 'stack', 'focus']) {
+      const root = render(pie(variant));
+      const blocks = all(root, 'view').filter((n) => n.props.testID === 'pie-block');
+      expect([variant, blocks.map((n) => flatten(n.props.style).height)]).toEqual([variant, [200]]);
+      act(() => tree!.unmount());
+      tree = undefined;
+    }
+  });
+
+  test('the pending blocks reserve the settled heights, and the settled cards hold them as a minimum', () => {
+    const reserved = (type: string) => {
+      act(() => {
+        tree = create(<>{GenuiPending({ id: 'x', type, props: {}, partial: true } as never)}</>);
+      });
+      const height = flatten(all(tree!.root, 'view')[0]!.props.style).height;
+      act(() => tree!.unmount());
+      return height;
+    };
+    // Each number is the arithmetic in pending.tsx; the asserts below pin the classes it sums.
+    expect(['Table', 'BarChart', 'LineChart', 'PieChart', 'Map'].map(reserved)).toEqual([144, 284, 284, 264, 320]);
+
+    const bars = render(BARS);
+    expect(flatten(all(bars, 'view')[0]!.props.style).minHeight).toBe(284);
+    // Header row: Show data is py-0.5 around a 20pt line (24); the legend pill is the same 24; the plot is 160.
+    expect(showData(bars).props.className).toContain('py-0.5');
+    const pill = all(bars, 'pressable').find((n) => texts(n).includes('Revenue'))!;
+    expect(String(pill.props.className).split(' ')).toEqual(expect.arrayContaining(['rounded-sm', 'py-0.5']));
+    expect(flatten(plot(bars).props.style).height).toBe(160);
+    act(() => tree!.unmount());
+
+    const donut = render(pie('donut'));
+    expect(flatten(all(donut, 'view')[0]!.props.style).minHeight).toBe(264);
+  });
+
+  test('a missing line value is a gap: the line breaks there and the tap draws no dot for it', () => {
+    const root = renderNode('LineChart', {
+      source: 'analytics',
+      x: ['Jan', 'Feb', 'Mar'],
+      series: [{ id: 's', type: 'Series', props: { name: 'Visits', values: [-5, null, 5] } }],
+    });
+    layOut(root, 302);
+    const line = all(root, 'svg-path').find((n) => n.props.fill === 'none')!;
+    expect(line.props.d.match(/M/g)).toHaveLength(2);
+    expect(line.props.d).not.toContain('L');
+    tap(plot(root), 150);
+    expect(texts(root)).toEqual(expect.arrayContaining(['Feb', '—']));
+    expect(all(root, 'svg-path').filter((n) => n.props.d?.includes(' a4,4 '))).toHaveLength(0);
   });
 });

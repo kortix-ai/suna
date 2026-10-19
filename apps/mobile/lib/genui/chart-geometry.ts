@@ -114,6 +114,7 @@ export function barPath({ x, y, width, height, negative }: BarRect, radius: numb
 /**
  * SVG path through `values` on `count` evenly spaced x slots across `width`
  * (one slot per x label, so a series shorter than the labels does not stretch).
+ * A missing (non-finite) value is a gap, as on web: the path breaks there and the next point starts a new segment.
  */
 export function linePath(
   values: number[],
@@ -122,15 +123,22 @@ export function linePath(
   { min, max }: Pick<ValueScale, 'min' | 'max'>,
   count = values.length,
 ): string {
-  if (values.length === 0) return '';
   const step = count > 1 ? width / (count - 1) : 0;
-  return values
-    .map((value, i) => {
-      const x = count > 1 ? i * step : width / 2;
-      const y = ((max - finite(value)) / (max - min)) * height;
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
+  const parts: string[] = [];
+  let open = false;
+  // A plain loop: forEach skips the holes of a sparse array, which would join across a gap.
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      open = false;
+      continue;
+    }
+    const x = count > 1 ? i * step : width / 2;
+    const y = ((max - value) / (max - min)) * height;
+    parts.push(`${open ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`);
+    open = true;
+  }
+  return parts.join(' ');
 }
 
 /**

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { barPath, barRects, compactNumber, zeroY, linePath, pieArcs, pieVariant, pickIndex, valueScale } from './chart-geometry';
 
 describe('chart geometry', () => {
-  test('the value scale spans 0 and every value on 4-5 nice ticks', () => {
+  test('the value scale spans 0 and every value on nice 1, 2, 2.5 or 5 steps, 0 always a tick', () => {
     expect(valueScale([[1200, 900], [400, 500]])).toEqual({ min: 0, max: 1500, ticks: [0, 500, 1000, 1500] });
     expect(valueScale([[1, 5], [3]])).toEqual({ min: 0, max: 6, ticks: [0, 2, 4, 6] });
     // Negative values pull the domain below 0; 0 stays a tick, so the zero line is a grid line.
@@ -22,7 +22,7 @@ describe('chart geometry', () => {
     expect(compactNumber(0.25, 'en')).toBe('0.25');
   });
 
-  test('bars are bottom-aligned, scaled to the max, grouped per category', () => {
+  test('positive bars stand on the zero line, scaled to the domain, one group per category', () => {
     const rects = barRects([[10, 5]], 2, 200, 100, { min: 0, max: 10 }, 4);
     expect(rects).toHaveLength(2);
     expect(rects[0]).toMatchObject({ y: 0, height: 100, index: 0, series: 0 });
@@ -80,6 +80,13 @@ describe('chart geometry', () => {
   test('line path spans the width', () => {
     expect(linePath([0, 10], 100, 50, { min: 0, max: 10 })).toBe('M0.00,50.00 L100.00,0.00');
     expect(linePath([], 100, 50, { min: 0, max: 10 })).toBe('');
+  });
+
+  test('a missing line value is a gap: the path breaks there, never drops to 0', () => {
+    const gap = [1, 2, undefined, 3, Number.NaN, 4] as unknown as number[];
+    expect(linePath(gap, 100, 40, { min: 0, max: 4 })).toBe('M0.00,30.00 L20.00,20.00 M60.00,10.00 M100.00,0.00');
+    // On a negative domain a 0 would land mid-plot; the gap stays a gap.
+    expect(linePath([-4, undefined, 4] as unknown as number[], 100, 40, { min: -4, max: 4 })).toBe('M0.00,40.00 M100.00,0.00');
   });
 
   test('a line plots a negative value below the zero line', () => {

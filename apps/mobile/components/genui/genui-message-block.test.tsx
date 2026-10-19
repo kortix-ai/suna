@@ -782,7 +782,7 @@ list = Checklist("Bring", ["Passport", "Visa"])`;
       tree = create(<>{GenuiPending({ id: 't', type: 'Table', props: {}, partial: true })}</>);
     });
     const box = all(tree!.root, 'view')[0]!;
-    expect(flatten(box.props.style).height).toBe(160);
+    expect(flatten(box.props.style).height).toBe(144);
     expect(all(tree!.root, 'loader')).toHaveLength(1);
     expect(GenuiPending({ id: 's', type: 'Stat', props: {}, partial: true })).toBeNull();
   });

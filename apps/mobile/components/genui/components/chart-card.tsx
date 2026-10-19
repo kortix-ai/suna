@@ -34,6 +34,40 @@ export function useSeriesFocus() {
 }
 export type SeriesFocus = ReturnType<typeof useSeriesFocus>;
 
+/**
+ * A legend item (web's `legendTarget`): a tap focuses its series or slice, a second tap clears it. The
+ * focused item keeps the hover fill (rounded-sm) and turns ink. Without `focus` it is inert.
+ */
+export function LegendItem({
+  focus,
+  index,
+  label,
+  className = '',
+  children,
+}: {
+  focus: SeriesFocus | undefined;
+  index: number;
+  /** The screen-reader text, when the visible text does not carry the whole value. */
+  label?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const selected = focus?.focused === index;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      disabled={!focus}
+      hitSlop={4}
+      onPress={() => focus?.toggle(index)}
+      className={`flex-row items-center rounded-sm ${selected ? 'bg-secondary' : ''} ${className}`}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 /** The card every genui chart renders through: the title + Show-data header
  * row, the series legend, the figure, and the values sheet. */
 export function ChartCard({
@@ -41,6 +75,7 @@ export function ChartCard({
   legend,
   palette = [],
   focus,
+  minHeight,
   head,
   rows,
   format,
@@ -52,6 +87,8 @@ export function ChartCard({
   palette?: string[];
   /** When set, a tap on a legend item focuses its series (`useSeriesFocus`). */
   focus?: SeriesFocus;
+  /** The settled height the pending block reserved (`pending.tsx`): the card never settles shorter. */
+  minHeight: number;
   head: string[];
   rows: Cell[][];
   format: (value: Cell) => string;
@@ -60,7 +97,7 @@ export function ChartCard({
   const { t } = useTranslation();
   const sheet = useRef<BottomSheetModal>(null);
   return (
-    <View className="gap-2 rounded-2xl bg-card p-4">
+    <View style={{ minHeight }} className="gap-2 rounded-2xl bg-card p-4">
       {/* Header row: the source as the title on the left, Show data on the right. */}
       <View className="flex-row items-center gap-3">
         <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
@@ -78,25 +115,14 @@ export function ChartCard({
       {legend.length > 0 ? (
         // Web's legend pill: the focused item keeps the hover fill and turns ink.
         <View className="-mx-1.5 flex-row flex-wrap gap-x-1 gap-y-1">
-          {legend.map((name, i) => {
-            const selected = focus?.focused === i;
-            return (
-              <Pressable
-                key={i}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                disabled={!focus}
-                hitSlop={4}
-                onPress={() => focus?.toggle(i)}
-                className={`flex-row items-center gap-1.5 rounded-md px-1.5 py-0.5 ${selected ? 'bg-secondary' : ''}`}
-              >
-                <View style={{ backgroundColor: palette[i] }} className="size-2.5 rounded-sm" />
-                <Text variant="muted" className={selected ? 'text-foreground' : undefined}>
-                  {name}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {legend.map((name, i) => (
+            <LegendItem key={i} focus={focus} index={i} className="gap-1.5 px-1.5 py-0.5">
+              <View style={{ backgroundColor: palette[i] }} className="size-2.5 rounded-sm" />
+              <Text variant="muted" className={focus?.focused === i ? 'text-foreground' : undefined}>
+                {name}
+              </Text>
+            </LegendItem>
+          ))}
         </View>
       ) : null}
       {children}
