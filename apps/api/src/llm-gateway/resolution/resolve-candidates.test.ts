@@ -592,12 +592,13 @@ describe('resolveCandidates — managed model tier gating', () => {
   });
 
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
-  // branch on the code. The copy differs: a free plan is told to upgrade, a
-  // paid plan without managed models is told to bring a key, never to upgrade.
+  // branch on the code. The copy differs: an account with no plan is told to
+  // upgrade, a paid plan without managed models is told to bring a key, never
+  // to upgrade. Free has managed models since #10147, so it is never refused.
   test.each([
     [
-      'a free account is told to upgrade',
-      'free',
+      'an account with no plan is told to upgrade',
+      'none',
       '"glm-5.3-flash" requires a paid plan.',
       'Upgrade your plan to use this model, or choose a model available on your current plan.',
     ],
@@ -619,10 +620,10 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  test('paid-tier account gets the managed candidates', async () => {
+  test.each(['pro', 'free'])('a %s account gets the managed candidates', async (tier) => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
-    tierByAccount[p.accountId] = 'pro';
+    tierByAccount[p.accountId] = tier;
 
     const candidates = await resolveCandidates(p, 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);

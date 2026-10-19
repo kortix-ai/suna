@@ -97,7 +97,7 @@ describe('middleware leaves session refresh to the browser', () => {
       if (clearsCookie) {
         const cleared = response.cookies.get(KORTIX_SUPABASE_AUTH_COOKIE);
         expect(cleared?.value).toBe('');
-        expect(cleared?.expires?.getTime()).toBe(0);
+        expect(Number(cleared?.expires)).toBe(0); // ResponseCookie.expires is number | Date
       } else {
         expectRetained(request, value, response);
       }
