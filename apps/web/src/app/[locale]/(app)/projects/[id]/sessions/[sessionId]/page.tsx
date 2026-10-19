@@ -30,7 +30,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import {
   InstantSessionShell,
   SavedSessionSkeleton,
-  SessionWorkspace as SessionLayout,
+  SessionLayout,
   SidebarToggle,
 } from '@kortix/ui/workspace';
 import { resolvePinnedRootSessionId } from '@kortix/ui/session/thread/pinned-root-session';

@@ -9,6 +9,10 @@
  * It is the same `SessionChat` apps/web renders: the transcript, tool rows,
  * prompts, the composer and its pickers. The parent sets the height; the
  * thread fills it. Every tool renderer is registered on import.
+ *
+ * Alone, it has no side panel: its "open in the panel" actions (Preview, file
+ * chips, Terminal, Browser) open an overlay (`SessionPanelFallback`). Inside
+ * `SessionWorkspace` they open in the side panel.
  */
 
 import type { UseSessionResult } from '@kortix/sdk/react';
@@ -16,6 +20,7 @@ import type { UseSessionResult } from '@kortix/sdk/react';
 import { cn } from '../../lib/utils';
 import { SessionIdsProvider } from '../../providers/session-ids';
 import { ProviderPoolDraftBoundary } from '../overrides/provider-pool-draft-context';
+import { SessionPanelFallback } from '../panel/panel-fallback';
 import { SessionChat } from './session-chat';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import '../tool/tools/register';
@@ -53,6 +58,11 @@ export function SessionThread({ session, hideHeader = false, readOnly = false, c
               sessionId={sessionId}
             />
           )}
+          <SessionPanelFallback
+            projectId={projectId}
+            projectSessionId={sessionId}
+            runtimeSessionId={runtimeSessionId}
+          />
         </div>
       </ProviderPoolDraftBoundary>
     </SessionIdsProvider>

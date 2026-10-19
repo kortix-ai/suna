@@ -10,9 +10,9 @@
  * not split these: every client reference still shipped in the layout entry.
  */
 
-// Not dynamic itself: one store subscription that loads the heavy modal body
-// on the first open (see app-file-preview-host.tsx).
-import { AppFilePreviewHost } from '@/components/app-file-preview-host';
+// Not dynamic itself: one store subscription that loads the heavy dialog body
+// on the first open. A deep import, so the root chunk does not pull the files barrel.
+import { FilePreviewHost } from '@kortix/ui/files/file-preview-host';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';
@@ -98,7 +98,7 @@ export function RootQueryHosts() {
       <MaintenanceBannerHost />
       {/* Fallback file-preview modal for surfaces with no session side panel
           (dashboard, project pages). */}
-      <AppFilePreviewHost />
+      <FilePreviewHost />
       {/* Act-as banner. Mounted at the ROOT, not under (app): a platform admin
           acting as a customer carries the grant on every request from this
           tab, including the admin console and account settings, so the

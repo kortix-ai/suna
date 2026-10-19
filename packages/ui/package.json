@@ -187,6 +187,7 @@
     "./file-tree": "./src/primitives/file-tree.tsx",
     "./file-viewer": "./src/files/viewer/index.ts",
     "./files": "./src/files/index.ts",
+    "./files/file-preview-host": "./src/files/file-preview-host.tsx",
     "./files/project/components/change-request-detail-dialog": "./src/files/project/components/change-request-detail-dialog.tsx",
     "./files/project/components/file-content-renderer": "./src/files/project/components/file-content-renderer.tsx",
     "./files/project/components/file-thumbnail": "./src/files/project/components/file-thumbnail.tsx",
@@ -333,7 +334,6 @@
     "./internal/stores/connector-gate-store": "./src/internal/stores/connector-gate-store.ts",
     "./internal/stores/current-account-store": "./src/internal/stores/current-account-store.ts",
     "./internal/stores/diagnostics-store": "./src/internal/stores/diagnostics-store.ts",
-    "./internal/stores/file-preview-store": "./src/internal/stores/file-preview-store.ts",
     "./internal/stores/files-store": "./src/internal/stores/files-store.ts",
     "./internal/stores/first-chat-store": "./src/internal/stores/first-chat-store.ts",
     "./internal/stores/kortix-computer-store": "./src/internal/stores/kortix-computer-store.ts",
@@ -1199,6 +1199,10 @@
         "types": "./dist/files/index.d.ts",
         "import": "./dist/files/index.js"
       },
+      "./files/file-preview-host": {
+        "types": "./dist/files/file-preview-host.d.ts",
+        "import": "./dist/files/file-preview-host.js"
+      },
       "./files/project/components/change-request-detail-dialog": {
         "types": "./dist/files/project/components/change-request-detail-dialog.d.ts",
         "import": "./dist/files/project/components/change-request-detail-dialog.js"
@@ -1779,10 +1783,6 @@
       "./internal/stores/diagnostics-store": {
         "types": "./dist/internal/stores/diagnostics-store.d.ts",
         "import": "./dist/internal/stores/diagnostics-store.js"
-      },
-      "./internal/stores/file-preview-store": {
-        "types": "./dist/internal/stores/file-preview-store.d.ts",
-        "import": "./dist/internal/stores/file-preview-store.js"
       },
       "./internal/stores/files-store": {
         "types": "./dist/internal/stores/files-store.d.ts",

@@ -17,7 +17,9 @@ import {
 import Hint from '../../primitives/hint';
 import Loading from '../../primitives/loading';
 import { Skeleton } from '../../primitives/skeleton';
-import { useSidebar } from '../../primitives/sidebar';
+import { useOptionalSidebar } from '../../primitives/sidebar';
+import { useIsMobile } from '../../hooks/use-mobile';
+import { useSessionIds } from '../../providers/session-ids';
 import { errorToast, successToast } from '../../primitives/toast';
 import { copyToClipboard } from '../../internal/lib/utils/clipboard';
 import { CompactModal } from './compact-modal';
@@ -136,7 +138,11 @@ export function SessionSiteHeader({
   // the shell's one "Open sidebar" toggle both live in that band. The row
   // indents past them and drops onto their centre line; `.kx-titlebar-row`
   // carries both offsets so no window px are hard-coded here.
-  const { state: sidebarState, isMobile: isMobileViewport } = useSidebar();
+  // Optional: a host without a project sidebar (SessionThread alone) has no provider.
+  const sidebar = useOptionalSidebar();
+  const viewportIsMobile = useIsMobile();
+  const sidebarState = sidebar?.state ?? 'expanded';
+  const isMobileViewport = sidebar?.isMobile ?? viewportIsMobile;
   const desktopShell = useDesktopShell();
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
 
@@ -156,10 +162,13 @@ export function SessionSiteHeader({
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
-  // session, which is only addressable on the `/projects/:id/sessions/:id` route.
+  // session.
+  // The ids come from the session view (`SessionIdsProvider`); a host whose
+  // URL has another shape still gets them. apps/web's route is the fallback.
+  const sessionIds = useSessionIds();
   const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-  const projectId = projectRoute?.[1];
-  const projectSessionId = projectRoute?.[2];
+  const projectId = sessionIds.projectId ?? projectRoute?.[1];
+  const projectSessionId = sessionIds.sessionId ?? projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
 
   // The header needs ONE session — the one in the URL. It used to fetch the

@@ -14,6 +14,7 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { enrichPreviewMetadata, getActiveSessionContext } from '../../../internal/lib/utils/session-context';
 import { getActivePanelSessionId, sessionPreviewTabId } from '../../../internal/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '../../../internal/stores/tab-store';
+import { openPanelFallbackView, panelFallbackActive } from '../../../internal/stores/panel-fallback-store';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   PREVIEW_BUILDING_STATES,
@@ -44,6 +45,16 @@ export function useToolNavigation() {
   const openTab = useCallback(
     (tab: Parameters<typeof openTabAndNavigate>[0]) => {
       if (!enabled) return;
+      // A preview tab is a route of apps/web's tab shell. A host without a
+      // side panel shows the page in the thread's fallback overlay instead.
+      if (tab.type === 'preview' && panelFallbackActive()) {
+        const originalUrl = tab.metadata?.originalUrl;
+        openPanelFallbackView('browser', {
+          url: typeof originalUrl === 'string' ? originalUrl : undefined,
+          title: tab.title,
+        });
+        return;
+      }
       openTabAndNavigate(tab);
     },
     [enabled],

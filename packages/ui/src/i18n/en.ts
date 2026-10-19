@@ -4896,6 +4896,7 @@ const catalog = {
       "texte51ebf3dc9f6": "Create a workspace…",
       "texte5455bdd5b85": "Grant to",
       "texte5776302ca62": "Saved — permissions are always allowed in this project now",
+      "texte5789ce1b021": "Version history isn't available here.",
       "texte58282fd73fb": "Update failed",
       "texte595f45dc6c9": "Europe",
       "texte5974d3936df": "Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.",
