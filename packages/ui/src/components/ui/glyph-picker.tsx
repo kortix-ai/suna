@@ -102,7 +102,7 @@ function resolveGlyphColor(color: string): ProjectGlyphColor {
 const GLYPH_BUTTON = cn(
   'flex size-8 items-center justify-center rounded-md',
   'cursor-pointer select-none',
-  'transition-[background-color,box-shadow,scale] duration-100 active:scale-[0.96]',
+  'transition-[background-color,box-shadow,scale] duration-fast active:scale-[0.96]',
   'hover:inset-ring-1',
 );
 
@@ -187,7 +187,7 @@ export function GlyphPicker({
               onClick={() => onColorChange(paletteColor)}
               className={cn(
                 'flex size-7 shrink-0 items-center justify-center rounded-full',
-                'cursor-pointer transition-[scale] duration-100 active:scale-[0.96]',
+                'cursor-pointer transition-[scale] duration-fast active:scale-[0.96]',
                 glyphTint(paletteColor),
               )}
             >

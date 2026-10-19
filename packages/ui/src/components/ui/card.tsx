@@ -526,7 +526,7 @@ const CardTitle = forwardRef<HTMLSpanElement, HTMLAttributes<HTMLSpanElement>>(
       <span
         ref={ref}
         data-slot="card-title"
-        className={cn('inline-grid text-[14px] leading-snug', className)}
+        className={cn('inline-grid text-[length:var(--text-sm,0.875rem)] leading-snug', className)}
         {...props}
       >
         <span
@@ -563,7 +563,7 @@ const CardDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLPara
     <p
       ref={ref}
       data-slot="card-description"
-      className={cn('text-muted-foreground text-[14px] leading-normal', className)}
+      className={cn('text-muted-foreground text-[length:var(--text-sm,0.875rem)] leading-normal', className)}
       {...props}
     />
   ),
@@ -775,7 +775,7 @@ function CardFeature({ icon: Icon, title, description }: CardFeatureProps) {
       )}
       <div className="flex min-w-0 flex-col gap-0.5">
         <span
-          className="text-foreground text-[13px] [text-box:trim-both_cap_alphabetic]"
+          className="text-foreground text-[length:var(--text-xs,0.8125rem)] [text-box:trim-both_cap_alphabetic]"
           style={{ fontVariationSettings: fontWeights.medium }}
         >
           {title}

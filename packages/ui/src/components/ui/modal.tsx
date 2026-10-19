@@ -93,7 +93,7 @@ const ModalPortal = withPortalContainer(DialogPrimitive.Portal);
 
 const overlayAnimationClasses = {
   default:
-    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-moderate',
   none: '',
 } as const;
 
@@ -142,7 +142,7 @@ const ModalVariants = cva(
       },
       animation: {
         default: cn(
-          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-moderate',
           'lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95',
         ),
         none: '',

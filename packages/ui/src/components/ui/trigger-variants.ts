@@ -23,7 +23,7 @@ export const triggerVariants = cva(
     'group/ui-trigger flex w-fit shrink-0 cursor-pointer items-center justify-between gap-2 rounded-md border border-transparent font-normal outline-none',
     'text-foreground data-placeholder:text-muted-foreground',
     // Never `transition-all`: only the properties that actually change on hover/press.
-    'transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out',
+    'transition-[background-color,border-color,color,box-shadow,transform] duration-normal ease-out',
     'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none data-[state=open]:ring-0',
     'disabled:cursor-not-allowed disabled:opacity-50',
     // One line, ellipsised. `truncate`, not `line-clamp-1`: line-clamp sets
@@ -71,6 +71,6 @@ export const TRIGGER_ICON_SIZE = {
 /** The caret classes: muted, shrink-proof, and flipped while the overlay is open. */
 export const TRIGGER_CARET_CLASS = [
   'text-muted-foreground shrink-0',
-  'motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out',
+  'motion-safe:transition-transform motion-safe:duration-moderate motion-safe:ease-out',
   'group-data-[state=open]/ui-trigger:rotate-180',
 ].join(' ');

@@ -258,7 +258,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
           </span>
           <IconChevronDown
             className={cn(
-              'size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out',
+              'size-3 shrink-0 opacity-50 transition-transform duration-moderate ease-out',
               open && 'rotate-180',
             )}
           />

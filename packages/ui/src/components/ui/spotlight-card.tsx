@@ -49,7 +49,7 @@ export function SpotlightCard({ children, className, spotlightColor }: Spotlight
       {isHovered && (
         <div
           className={cn(
-            'pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300',
+            'pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-slow',
             !spotlightColor &&
               'bg-[radial-gradient(600px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(0,0,0,0.06),transparent_40%)] dark:bg-[radial-gradient(600px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(255,255,255,0.1),transparent_40%)]',
           )}
@@ -64,7 +64,7 @@ export function SpotlightCard({ children, className, spotlightColor }: Spotlight
       {isHovered && (
         <div
           className={cn(
-            'pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300',
+            'pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-slow',
             !spotlightColor &&
               'bg-[radial-gradient(400px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(0,0,0,0.1),transparent_40%)] dark:bg-[radial-gradient(400px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(255,255,255,0.2),transparent_40%)]',
           )}

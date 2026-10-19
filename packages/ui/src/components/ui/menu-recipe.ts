@@ -70,7 +70,7 @@ export const MENU_INSET_END = 'pr-8';
  * inside 14px boxes.
  */
 const MENU_ROW_BASE =
-  "relative flex w-full items-center gap-2 rounded-sm px-2 text-sm font-medium outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+  "relative flex w-full items-center gap-2 rounded-sm px-2 text-sm font-medium outline-none select-none transition-colors duration-normal ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
 /**
  * Keyboard focus and pointer hover resolve to the same treatment on purpose —

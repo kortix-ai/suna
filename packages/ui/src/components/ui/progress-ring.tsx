@@ -34,7 +34,7 @@ export function ProgressRing({
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
-        className={cn('transition-[stroke-dashoffset] duration-500', progressClassName)}
+        className={cn('transition-[stroke-dashoffset] duration-slower', progressClassName)}
         strokeDasharray={CIRCUMFERENCE}
         strokeDashoffset={offset}
       />

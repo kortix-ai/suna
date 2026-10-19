@@ -82,7 +82,7 @@ const sheetVariants = cva(
           'inset-x-0 bottom-0 border-t-[1.5px] border-border/40 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
         left: 'inset-y-0 left-0 h-full w-full md:w-3/4 border-r-[1.5px] border-border/40 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
         right:
-          'inset-y-0 right-0 h-full md:h-[calc(100vh-1.4rem)] w-full md:w-3/4 border-[1.5px] md:rounded-lg border-border/40 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm md:m-[0.7rem]',
+          'inset-y-0 right-0 h-full md:h-[calc(100vh-1.4rem)] w-full md:w-3/4 border-[length:calc(var(--border-width,1px)*1.5)] md:rounded-lg border-border/40 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm md:m-[0.7rem]',
       },
     },
     defaultVariants: {

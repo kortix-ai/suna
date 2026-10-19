@@ -202,6 +202,11 @@ function webRootAndDark(): string {
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) lines.push(decl(`duration-${k}`, `${v.ms}ms`));
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
     lines.push(decl(`ease-${k}`, `cubic-bezier(${v.bezier.join(', ')})`));
+  // The type scale on :root: theme.css keeps it out of Tailwind's own :root
+  // output (a re-themable step reads var(--text-sm, …)), and bare
+  // var(--text-sm) readers (print.css, /design-system) need it declared.
+  for (const [k, v] of Object.entries<any>(vs.typography.scale))
+    lines.push(decl(`text-${k}`, v.size), decl(`text-${k}--line-height`, v.line_height));
   const g = vs.effects['liquid-glass'];
   lines.push(decl('liquid-glass-bg', g.bg[0]));
   lines.push(decl('liquid-glass-bg-hover', g['bg-hover'][0]));
@@ -255,9 +260,6 @@ function uiTokens(): string {
     `  --font-sans-system: ${systemStack(vs.typography.stacks.sans)};`,
     `  --font-mono-system: ${systemStack(vs.typography.stacks.mono)};`,
   ];
-  for (const [k, v] of Object.entries<any>(vs.typography.scale)) {
-    extra.push(`  --text-${k}: ${v.size};`, `  --text-${k}--line-height: ${v.line_height};`);
-  }
   const lines = webRootAndDark().split('\n');
   const rootEnd = lines.indexOf('}');
   lines.splice(rootEnd, 0, ...extra);

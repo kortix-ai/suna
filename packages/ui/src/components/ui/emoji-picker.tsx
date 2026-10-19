@@ -71,7 +71,7 @@ const EMOJI_BUTTON = cn(
   // `scale` not `transform`: Tailwind v4's scale-* utility sets the standalone
   // `scale` property, which `transition-property: transform` does not cover.
   // box-shadow is in the list because Tailwind draws inset-ring-* with it.
-  'transition-[background-color,box-shadow,scale] duration-100 active:scale-[0.96]',
+  'transition-[background-color,box-shadow,scale] duration-fast active:scale-[0.96]',
 
   // Ring geometry, declared once. Only the colour varies per slot below.
   'data-[active]:inset-ring-1',
@@ -265,7 +265,7 @@ export function EmojiPicker({
           }
         </Frimousse.ActiveEmoji>
         <Hint label="Change skin tone" side="top">
-          <Frimousse.SkinToneSelector className="hover:bg-muted ml-auto flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-base transition-[background-color,scale] duration-100 active:scale-[0.96]" />
+          <Frimousse.SkinToneSelector className="hover:bg-muted ml-auto flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-base transition-[background-color,scale] duration-fast active:scale-[0.96]" />
         </Hint>
       </div>
     </Frimousse.Root>

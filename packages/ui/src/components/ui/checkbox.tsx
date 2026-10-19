@@ -15,7 +15,7 @@ type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> & {
 
 // One size everywhere: an 18px box, 6px corners, a round-capped check.
 const checkboxControlClassName = cn(
-  'peer flex size-[18px] shrink-0 items-center justify-center rounded-sm border-[1.5px] border-muted-foreground/60 bg-transparent text-background',
+  'peer flex size-[18px] shrink-0 items-center justify-center rounded-sm border-[length:calc(var(--border-width,1px)*1.5)] border-muted-foreground/60 bg-transparent text-background',
   'transition-[border-color,background-color]',
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
   'disabled:cursor-default disabled:opacity-50', // cursor-default: disabled keeps the default cursor (AGENTS.md → States)

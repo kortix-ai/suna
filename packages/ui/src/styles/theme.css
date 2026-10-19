@@ -172,6 +172,10 @@
 @theme inline reference {
   /* Bare `rounded` (4px at the default --radius). */
   --radius: calc(var(--radius) - 6px);
+  /* Line width of `border`, `border-t|x|…` and `divide-*` with no value
+     (1px unless a host sets --border-width). Heavier strokes in the components
+     are multiples of it: border-[length:calc(var(--border-width,1px)*1.5)]. */
+  --default-border-width: var(--border-width, 1px);
   /* Elevation. Tailwind's default shadow values, read through a variable so a
      host can flatten or deepen every shadow-* step. The fallback keeps
      --tw-shadow-color, so shadow-black/20 still tints the default. */
@@ -262,7 +266,6 @@
   --radius-xl: calc(var(--radius) + 4px);
   /* Standard radius for all main form elements and UI components */
   --radius-2xl: calc(var(--radius) + 6px);
-  --border-width: 1.5px;
   --spacing-sidebar: 1.5rem;
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;

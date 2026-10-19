@@ -27,7 +27,7 @@ const TooltipContent = React.forwardRef<
       // panels: the tooltip paints on the frame it mounts and unmounts on the
       // frame it closes. The hover delay lives on `TooltipProvider`, not here.
       className={cn(
-        'bg-foreground text-background ring-foreground/5 z-[9999] overflow-hidden rounded-sm p-1 px-2 text-[13px] ring-[1px]',
+        'bg-foreground text-background ring-foreground/5 z-[9999] overflow-hidden rounded-sm p-1 px-2 text-[length:var(--text-xs,0.8125rem)] ring-[1px]',
         className,
       )}
       {...props}

@@ -105,7 +105,7 @@ function RadioGroupItem({
         {description != null && (
           <span
             data-slot="radio-group-item-description"
-            className="text-muted-foreground block text-[13px]"
+            className="text-muted-foreground block text-[length:var(--text-xs,0.8125rem)]"
           >
             {description}
           </span>

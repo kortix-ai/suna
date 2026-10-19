@@ -117,7 +117,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 ## Theming
 
-Every visual value a component reads is a CSS variable: colors in light and dark, the radius scale, fonts, the type scale, spacing density, shadows and motion. `@kortix/ui/theme` turns a typed theme object into those variables. Every field is optional. An unset field keeps the Kortix default, and a `dark` color falls back to the Kortix dark default, never to your `light` value.
+Every value a host is expected to vary is a CSS variable: colors in light and dark, the radius scale, border width, fonts, the type scale, spacing density, shadows and motion. Limits lists the few values that stay fixed. `@kortix/ui/theme` turns a typed theme object into those variables. Every field is optional. An unset field keeps the Kortix default, and a `dark` color falls back to the Kortix dark default, never to your `light` value.
 
 ### Bring your company brand in 10 lines
 
@@ -140,10 +140,10 @@ const brand: KortixTheme = {
 
 | Export | Signature | Use |
 | --- | --- | --- |
-| `KortixTheme` | `{ light?, dark?, radius?, spacing?, fonts?, text?, lineHeights?, shadows?, durations?, easing?, vars? }` | The theme. `light` and `dark` take the color keys below plus any `--custom` variable. `vars` sets any other variable in both modes. Unknown keys are type errors. |
-| `themeToCss` | `(theme: KortixTheme, selector = ':root') => string` | A stylesheet: light outside `.dark`, dark on or inside `.dark`. Pass a selector to theme one element. |
+| `KortixTheme` | `{ light?, dark?, radius?, spacing?, borderWidth?, fonts?, text?, lineHeights?, shadows?, durations?, easing?, vars? }` | The theme. `light` and `dark` take the color keys below plus any `--custom` variable. `vars` sets any other variable in both modes. An unknown field, color or step is a type error and throws at runtime. |
+| `themeToCss` | `(theme: KortixTheme, selector = ':root') => string` | A stylesheet: light outside `.dark`, dark on or inside `.dark`. Pass a selector to theme one element. It throws on a value that contains `;`, `{`, `}`, `<`, `>`, `\` or a comment, and on a variable name other than `--[A-Za-z0-9_-]+`, so a theme built from tenant data cannot add CSS rules. |
 | `themeToCssVars` | `(theme: KortixTheme) => { light: Record<string, string>; dark: Record<string, string> }` | The same variables as data, for a host that writes its own CSS or sets them from JavaScript. Mode-independent values appear in both. |
-| `ThemeScope` | `<ThemeScope theme={…} className? {...divProps}>` | Themes one subtree: an embedded widget, a customer preview, a settings pane. Dialogs, popovers, menus, tooltips, selects, sheets and drawers opened inside it portal into the scope, so they wear its theme too. |
+| `ThemeScope` | `<ThemeScope theme={…} className? {...divProps}>` | Themes one subtree: an embedded widget, a customer preview, a settings pane. Dialogs, popovers, menus, tooltips, selects, sheets and drawers opened inside it portal into a host at the end of `<body>` that carries the scope's theme, so they wear it too. |
 
 ```tsx title="A themed subtree"
 import { ThemeScope } from '@kortix/ui/theme';
@@ -153,7 +153,9 @@ import { ThemeScope } from '@kortix/ui/theme';
 </ThemeScope>
 ```
 
-`ThemeScope` sets `font-family` and `color` on its element, because both inherit as computed values and would otherwise ignore the override. It paints no background; add `bg-background` when it should. Put `className="dark"` on it to force dark for the subtree. A scope with `position` and `z-index` of its own creates a stacking context: its overlays then stack inside it.
+`ThemeScope` sets `font-family` and `color` on its element, because both inherit as computed values and would otherwise ignore the override. It paints no background; add `bg-background` when it should. Put `className="dark"` on it to force dark for the subtree. The scope element holds only your children: its `<style>` renders as the sibling just before it, and the overlay host lives in `<body>`. So `flex gap-*`, `grid`, `space-y-*` and `first:` / `last:` on its children behave as they would without the scope. Overlays are not clipped or offset by a `transform`, `filter`, `backdrop-filter`, `contain` or `overflow: hidden` ancestor of the scope, and a nested scope's overlays carry both themes.
+
+Toasts do not portal: `<Toaster>` renders where it is mounted. To theme toasts, mount `<Toaster />` inside the `ThemeScope`, at its top level, not inside a transformed panel.
 
 ### Tokens
 
@@ -166,7 +168,7 @@ Colors take any CSS color. Defaults are the Kortix values (light / dark).
 | `foreground` | `--foreground` | Text, the default `Button` fill | `#1f1f1f` / `#ffffff` |
 | `foregroundStrong`, `foregroundWeak` | `--foreground-strong`, `--foreground-weak` | Emphasised and quiet text | follow `foreground` / `mutedForeground` |
 | `card`, `cardForeground` | `--card`, `--card-foreground` | `Card`, chat tool cards and questions | `#f4f4f4` / `#141414`, ink |
-| `popover`, `popoverForeground` | `--popover`, `--popover-foreground` | Menus, popovers, dialogs, inputs | `#ffffff` / `#141414`, ink |
+| `popover`, `popoverForeground` | `--popover`, `--popover-foreground` | Menus, popovers, inputs | `#ffffff` / `#141414`, ink |
 | `primary`, `primaryForeground` | `--primary`, `--primary-foreground` | `Progress`, `Slider`, `Calendar` selection, menu highlight, default selection | `#1f1f1f` / `#ffffff`, inverse |
 | `secondary`, `secondaryForeground` | `--secondary`, `--secondary-foreground` | Secondary buttons, liquid glass | `#ededed` / `#1c1c1c`, ink |
 | `muted`, `mutedForeground` | `--muted`, `--muted-foreground` | Quiet fills, the chat user bubble, code blocks, captions | `#ededed` / `#1c1c1c`, `#666666` / `#999999` |
@@ -178,7 +180,7 @@ Colors take any CSS color. Defaults are the Kortix values (light / dark).
 | `focusRing` | `--focus-ring` | Card focus ring | follows `ring` |
 | `hover`, `active` | `--hover`, `--active` | Translucent hover and pressed tints | ink 4.5% / 7.5%, white 6% / 10% |
 | `selection`, `selectionForeground` | `--selection`, `--selection-foreground` | Text selection | `primary` at 72%, `primaryForeground` |
-| `sidebar…` (`sidebar`, `sidebarForeground`, `sidebarPrimary`, `sidebarPrimaryForeground`, `sidebarAccent`, `sidebarAccentForeground`, `sidebarRow`, `sidebarRowControl`, `sidebarBorder`, `sidebarRing`) | `--sidebar-*` | The sidebar | surface-1, ink, `ring` |
+| `sidebar…` (`sidebar`, `sidebarForeground`, `sidebarPrimary`, `sidebarPrimaryForeground`, `sidebarAccent`, `sidebarAccentForeground`, `sidebarRow`, `sidebarRowControl`, `sidebarBorder`, `sidebarRing`) | `--sidebar-*` | The sidebar; `sidebar` also fills `Dialog`, `AlertDialog`, `Modal` and `Sheet` | surface-1, ink, `ring` |
 | `blue` | `--kortix-blue` | The accent: a checked `Switch` / `Checkbox` / `RadioGroup`, `brand` and `blue` `Button` variants, info `Badge`, `InfoBanner`, info status | `#2b91f7` |
 | `green`, `orange`, `yellow`, `red`, `purple` | `--kortix-*` | Status tones. Keep their meaning. | `#199338`, `#d18b19`, `#cca300`, `#f14b4c`, `#ab80d6` |
 | `brand` | `--kortix-base` | Kortix base accent | follows `ring` |
@@ -189,6 +191,7 @@ Shared values apply in both modes:
 
 | Key | Variable | Controls | Default |
 | --- | --- | --- | --- |
+| `borderWidth` | `--border-width` | Every `border`, `border-t` / `-x` / `-y` / … and `divide-*` line with no explicit width. The heavier 1.5× strokes (`Checkbox`, `Sheet`, the dashed chart legend) scale with it | `1px` |
 | `radius` | `--radius` | Every corner. `rounded` = −6px, `-sm` −4px, `-md` −2px, `-lg` =, `-xl` +4px, `-2xl` +6px | `0.625rem` (10px) |
 | `spacing` | `--spacing` | Density: every `p-*`, `m-*`, `gap-*`, `size-*` is a multiple | `0.23rem` |
 | `fonts.sans` | `--font-family-sans` | Body text, headings, every `font-sans` (there is no separate heading face) | system stack (Roobert on Kortix surfaces) |
@@ -202,7 +205,10 @@ Shared values apply in both modes:
 
 ### Limits
 
-- Border width is not a token. `border` is 1px, as in Tailwind.
+- An explicit width class (`border-2`, `border-[3px]`) stays fixed. Only bare `border*` and `divide-*` follow `borderWidth`.
+- Font sizes with no step stay fixed: 10px, 11px and 12px captions (the card meta line, the attachment tile, code-block chrome) and the `0.8rem` inline code chip.
+- Durations with no step stay fixed: `duration-80`, `duration-0`, the sidebar slide (`200` / `240` / `260ms` on `cubic-bezier(0.32, 0.72, 0, 1)`), the command palette (`140` / `180ms`) and the enter / exit keyframes (`200` / `250ms`). Every `duration-100` / `150` / `200` / `300` / `500` reads `duration-fast` … `duration-slower`.
+- A `ThemeScope` can force dark inside a light page, not light inside a dark one: no `.light` reset exists, so `.dark` on `<html>` reaches the scope.
 - Chat surfaces read the semantic tokens above: `muted` for the user bubble and code blocks, `card` and `border` for tool cards and questions, `mutedForeground` for captions. They have no tokens of their own.
 - A few decorative values stay fixed: the dialog scrims (black at 20–85%), the `inverse` `Button` variant, the `Tag` status palette, the loader and dot-matrix gradients, and chart legend swatches.
 
@@ -211,7 +217,7 @@ Shared values apply in both modes:
 - Theme through tokens. Never fork or restyle a component: a forked copy stops receiving fixes.
 - Pass your logo through `UiProvider useBrand`, so `KortixLogo` renders your marks.
 - Do not load `fonts.css`: Roobert is for Kortix surfaces. Set `fonts.sans`.
-- Plain CSS works too: override the variables above in your own `:root` and `.dark` after the `@kortix/ui` import.
+- Plain CSS works too, after the `@kortix/ui` import. Put light values in `:root:not(.dark)` and dark values in `.dark`. A bare `:root` rule also matches `<html class="dark">` and, coming later than `tokens.css`, overrides the dark value. `themeToCss` writes these selectors for you.
 
 ## Components
 

@@ -52,7 +52,45 @@ test('unknown keys are rejected by the types and at runtime', () => {
   // @ts-expect-error `primry` is not a theme color.
   expect(() => themeToCss({ light: { primry: 'red' } })).toThrow('unknown color "primry"');
   // @ts-expect-error `radii` is not a theme field.
-  themeToCssVars({ radii: '0' });
+  expect(() => themeToCssVars({ radii: '0' })).toThrow('unknown field "radii"');
   // @ts-expect-error a custom variable must start with --.
-  themeToCssVars({ vars: { radius: '0' } });
+  expect(() => themeToCssVars({ vars: { radius: '0' } })).toThrow('invalid variable name "radius"');
+  // @ts-expect-error `huge` is not a text step.
+  expect(() => themeToCss({ text: { huge: '9px' } })).toThrow('unknown text step "huge"');
+  // @ts-expect-error `bogus` is not an easing.
+  expect(() => themeToCss({ easing: { bogus: 'linear' } })).toThrow('unknown easing step "bogus"');
+  // @ts-expect-error `xxl` is not a shadow step.
+  expect(() => themeToCss({ shadows: { xxl: 'none' } })).toThrow('unknown shadows step "xxl"');
+  // @ts-expect-error `instant` is not a duration step.
+  expect(() => themeToCss({ durations: { instant: '0ms' } })).toThrow('unknown durations step "instant"');
+  // @ts-expect-error `huge` is not a text step.
+  expect(() => themeToCss({ lineHeights: { huge: '1' } })).toThrow('unknown lineHeights step "huge"');
+});
+
+test('a value or name that could end the declaration is rejected, so tenant data cannot add CSS rules', () => {
+  for (const bad of ['red} body{display:none} x{', 'red; --x: 1', 'red /* x', 'url(x)</style>', 'a\\7d']) {
+    expect(() => themeToCss({ light: { primary: bad } })).toThrow('invalid value for light.primary');
+    expect(() => themeToCss({ vars: { '--x': bad } })).toThrow('invalid value for --x');
+  }
+  expect(() => themeToCss({ radius: 'calc(1px}' })).toThrow('invalid value for radius');
+  expect(() => themeToCss({ dark: { '--a}b': 'red' } })).toThrow('invalid variable name "--a}b"');
+  expect(() => themeToCss({ vars: { '--a b': 'red' } })).toThrow('invalid variable name "--a b"');
+  expect(themeToCss({ fonts: { sans: '"Avenir Next", sans-serif' }, light: { primary: 'oklch(0.5 0.2 270 / 50%)' } })).toContain(
+    '--primary: oklch(0.5 0.2 270 / 50%);',
+  );
+});
+
+test('a scoped secondary re-derives liquid glass per mode unless the theme sets it', () => {
+  const { light, dark } = themeToCssVars({ light: { secondary: 'red' }, dark: { secondary: 'blue' } });
+  expect(light['--liquid-glass-bg']).toBe('color-mix(in oklch, var(--secondary) 45%, transparent)');
+  expect(light['--liquid-glass-bg-hover']).toBe('color-mix(in oklch, var(--secondary) 62%, transparent)');
+  expect(dark['--liquid-glass-bg']).toBe('color-mix(in oklch, var(--secondary) 38%, transparent)');
+  expect(dark['--liquid-glass-bg-hover']).toBe('color-mix(in oklch, var(--secondary) 52%, transparent)');
+  const own = themeToCssVars({ light: { secondary: 'red', '--liquid-glass-bg': 'pink' }, vars: { '--liquid-glass-bg-hover': 'teal' } });
+  expect(own.light['--liquid-glass-bg']).toBe('pink');
+  expect(own.light['--liquid-glass-bg-hover']).toBe('teal');
+});
+
+test('borderWidth sets --border-width in both modes', () => {
+  expect(themeToCssVars({ borderWidth: '2px' })).toEqual({ light: { '--border-width': '2px' }, dark: { '--border-width': '2px' } });
 });

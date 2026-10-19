@@ -373,12 +373,12 @@ function TabsTriggerCompact({
         // Segmented (the default) — see TabsTrigger: the sliding chip paints the
         // active state, or the trigger paints it when there is no slide.
         isSegmented &&
-          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-sm bg-transparent transition-colors duration-150',
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-sm bg-transparent transition-colors duration-normal',
         isSegmented &&
           !useSlidingIndicator &&
           'data-[state=active]:bg-popover data-[state=active]:ring-border data-[state=active]:shadow-xs data-[state=active]:ring-1',
         isOutline &&
-          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground data-[state=active]:border-border rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-150 data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground data-[state=active]:border-border rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-normal data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         'disabled:pointer-events-none disabled:opacity-50',
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -411,7 +411,7 @@ function FilterBarItem({ className, ...props }: React.ComponentProps<'button'>) 
       role="tab"
       type="button"
       className={cn(
-        'inline-flex h-[calc(100%-4px)] flex-1 cursor-pointer items-center justify-center gap-1.5 border border-transparent px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-150',
+        'inline-flex h-[calc(100%-4px)] flex-1 cursor-pointer items-center justify-center gap-1.5 border border-transparent px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-normal',
         'text-muted-foreground/60 hover:text-foreground/80',
         'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:ring-foreground/6 data-[state=active]:shadow-sm data-[state=active]:ring-1',
         'disabled:pointer-events-none disabled:opacity-50',
