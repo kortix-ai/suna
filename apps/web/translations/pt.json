@@ -20585,7 +20585,12 @@
     "mcpEventsOnConnect": "Eventos após conectar",
     "mcpCheckedAt": "Verificado {when}",
     "mcpNextCheck": "Próxima verificação {when}",
-    "mcpNotChecked": "Ainda não verificado"
+    "mcpNotChecked": "Ainda não verificado",
+    "runLimits": "Limites de execução",
+    "runLimitsHint": "Um disparo acima de um limite não inicia nada e aparece como uma execução ignorada. Executar manualmente nunca é retido, mas conta.",
+    "perHour": "Por hora",
+    "perDay": "Por dia",
+    "noLimit": "Sem limite"
   },
   "gatewayAccess": {
     "heroTitle": "Use os modelos deste projeto em qualquer lugar",

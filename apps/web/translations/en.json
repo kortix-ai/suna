@@ -20596,7 +20596,12 @@
     "mcpEventsOnConnect": "Events after you connect it",
     "mcpCheckedAt": "Checked {when}",
     "mcpNextCheck": "Next check {when}",
-    "mcpNotChecked": "Not checked yet"
+    "mcpNotChecked": "Not checked yet",
+    "runLimits": "Run limits",
+    "runLimitsHint": "A fire past a limit starts nothing and shows as a skipped run. Running it by hand is never held, but it counts.",
+    "perHour": "Per hour",
+    "perDay": "Per day",
+    "noLimit": "No limit"
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",

@@ -20585,7 +20585,12 @@
     "mcpEventsOnConnect": "连接后显示事件",
     "mcpCheckedAt": "{when}已检查",
     "mcpNextCheck": "下次检查：{when}",
-    "mcpNotChecked": "尚未检查"
+    "mcpNotChecked": "尚未检查",
+    "runLimits": "运行上限",
+    "runLimitsHint": "超过上限的触发不会启动任何内容，并显示为已跳过的运行。手动运行从不被拦截，但会计入次数。",
+    "perHour": "每小时",
+    "perDay": "每天",
+    "noLimit": "不限"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",

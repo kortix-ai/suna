@@ -1513,6 +1513,13 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the default,
+   * 60, applies. A fire past it is a skipped run with reason `throttled: …`.
+   */
+  max_runs_per_hour: z.number().int().nullable().optional(),
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day: z.number().int().nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
