@@ -20193,6 +20193,7 @@
       "agentsListSubagentsHint": "D'autres agents les appellent pendant une session. Personne ne démarre de chat avec eux.",
       "agentsListAlsoSubagent": "Aussi sous-agent",
       "servedModelTurnRow": "{requested} a échoué ({reason}) — passage à {served}.",
+      "servedModelTurnRowRepeated": "{requested} a échoué ({reason}) sur {count, number} requêtes — passage à {served}.",
       "text51e6bc656528": "Discutez avec votre agent depuis un bot Telegram.",
       "text00c7991f0490": "Connecter Telegram",
       "texta832efd235a7": "Créez un bot avec @BotFather dans Telegram, puis collez son jeton ici. Kortix enregistre le webhook et garde le jeton sur le serveur.",

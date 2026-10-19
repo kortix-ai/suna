@@ -20193,6 +20193,7 @@
       "agentsListSubagentsHint": "Други агенти их позивају током сесије. Нико не започиње ћаскање са њима.",
       "agentsListAlsoSubagent": "Такође подагент",
       "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}.",
+      "servedModelTurnRowRepeated": "{requested} није успео ({reason}) у {count, number} захтева — пребачено на {served}.",
       "text51e6bc656528": "Разговарајте са својим агентом преко Telegram бота.",
       "text00c7991f0490": "Повежите Telegram",
       "texta832efd235a7": "Направите бота помоћу @BotFather у Telegram-у, па овде налепите његов токен. Kortix региструје webhook и чува токен на серверу.",

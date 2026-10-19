@@ -20193,6 +20193,7 @@
       "agentsListSubagentsHint": "セッション中に他のエージェントが呼び出します。直接チャットを開始することはありません。",
       "agentsListAlsoSubagent": "サブエージェントとしても使用",
       "servedModelTurnRow": "{requested} が失敗しました（{reason}）— {served} に切り替えました。",
+      "servedModelTurnRowRepeated": "{requested} が {count, number} 件のリクエストで失敗しました（{reason}）— {served} に切り替えました。",
       "text51e6bc656528": "Telegram ボットからエージェントとチャットできます。",
       "text00c7991f0490": "Telegram を接続",
       "texta832efd235a7": "Telegram の @BotFather でボットを作成し、そのトークンをここに貼り付けてください。Kortix が Webhook を登録し、トークンはサーバーに保管されます。",
