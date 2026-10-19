@@ -57,28 +57,3 @@ export function collidingIdentifiers(
   const group = keyCollisionGroups(items).get(normalizeSecretKey(row.name)) ?? [];
   return group.filter((id) => id !== identifier);
 }
-
-/**
- * The identifiers a not-yet-saved secret would collide with. Checked while the
- * form is being filled in, so the warning lands before the write rather than at
- * the session create three screens later.
- *
- * An identifier that already exists is a ROTATE of that same row, not a second
- * claimant, so it is excluded.
- */
-export function pendingKeyCollision(
-  items: ProjectSecret[] | undefined,
-  draft: { identifier: string; name: string },
-): string[] {
-  const key = normalizeSecretKey(draft.name);
-  if (!key) return [];
-  return (items ?? [])
-    .filter(
-      (secret) =>
-        isAllowlistable(secret) &&
-        secret.identifier !== draft.identifier.trim() &&
-        normalizeSecretKey(secret.name) === key,
-    )
-    .map((secret) => secret.identifier)
-    .sort();
-}

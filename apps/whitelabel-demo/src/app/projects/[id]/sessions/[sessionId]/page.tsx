@@ -31,8 +31,9 @@ function Workbench() {
     <>
       <SessionHeader projectId={projectId} sessionId={sessionId} runtimeReady={session.phase === 'ready'} />
       {/* Who this browser is acting as, above the conversation rather than in a
-          settings page: in wrapper mode it is the ONLY thing separating this
-          session from another signed-in person's. */}
+          settings page: every Lumen member calls Kortix as the same operator
+          user, so this is the only thing separating this session from
+          another signed-in person's. */}
       <ApplicationUserBadge projectId={projectId} />
       {/* A `require_approval` gate ends the agent's turn and nothing says so in
           the transcript — the session just goes quiet. Poll for it here, where

@@ -71,14 +71,6 @@ const FAILURE_COPY: Record<string, FailureCopy> = {
     detail:
       'The connection you picked is revoked or disabled. A teammate needs to reconnect it before a session can use it.',
   },
-  // Direct mode: `secrets` is a backend-origin field, so a browser PAT is
-  // refused. Developer-facing upstream copy would be meaningless here.
-  origin_override_forbidden: {
-    title: 'Secret narrowing needs wrapper mode',
-    detail:
-      'This deployment is talking to Kortix directly, where the per-session secret allowlist is not available.',
-    fixedDetail: true,
-  },
   INVALID_SESSION_MODEL: {
     title: 'That model is unavailable',
     detail: 'Pick a different model and try again.',

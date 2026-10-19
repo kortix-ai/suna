@@ -3,8 +3,9 @@
 Lumen is the reference for an **outward-facing app**: a product with its own
 users, its own organizations and its own database, that uses Kortix as the
 backend for off-the-shelf agents. Lumen sells three specialists (Finance
-analyst, Legal reviewer, Research). Its customers never see Kortix, never get a
-Kortix account and never hold a Kortix credential.
+analyst, Legal reviewer, Research). Its customers never get a Kortix account
+and never hold a Kortix credential. What of Kortix a customer can still see is
+listed under "What a customer can see".
 
 - Stack: Next.js 16, Convex (database + server functions), Better Auth on
   Convex (email + password, organizations).
@@ -33,6 +34,18 @@ Kortix account and never hold a Kortix credential.
 Kortix sees one account: Lumen's operator account. It knows nothing about
 Lumen's users or organizations except the generic labels and metadata Lumen
 writes on each session (below). No Kortix API has a Lumen concept in it.
+
+### What a customer can see
+
+- The transcript names the prompt author as the operator account ("Sent by
+  …", "Stopped by …"), because every member token belongs to the operator
+  user. Use an operator account named after your product.
+- `GET /api/kortix/projects/<id>` returns the operator's `account_id` and the
+  project's repository fields. They are opaque ids, not credentials.
+- The agent knows what it runs on. Each template prompt tells it never to name
+  the platform, provider or model (`AS_LUMEN` in `convex/templates.ts`). A
+  workspace keeps the prompt it was provisioned with; re-run
+  `templates:seed` and create a new workspace to pick up a change.
 
 ## Id mapping
 
@@ -74,16 +87,33 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    re-checks each (user, workspace) pair at least once a minute.
 4. The member token is project-scoped. Kortix refuses it on every other
    project (`403 Project-scoped token cannot access a different project`), on
-   `GET /projects` and on account routes. Tenant isolation is Kortix's, not a
-   filter in Lumen.
+   `GET /projects` and on most account routes. It does NOT refuse
+   `GET /accounts/me` (the operator's user id, email and accounts) or the
+   project's member and access lists.
 5. A project-scoped token carries its minter's role on that project (owner).
-   `src/server/proxy-policy.ts` narrows it: reads are open except the routes
-   that issue credentials; writes are allowed only on the session surface
-   (sessions, attachments, approvals, the runtime). Agent config, secrets,
-   members, triggers, connectors, tokens and project deletion return `403`.
-6. Every token Lumen mints is revoked at its expiry by a scheduled Convex
-   action (`kortix.revokeToken`). A preview iframe gets its own 15-minute
-   token, because that URL reaches the browser.
+   `src/server/proxy-policy.ts` therefore allowlists, for reads and writes,
+   the session surface: the project and its sessions, attachments, approvals,
+   turns, change requests, model picker, connection and secret names, and the
+   runtime. Everything else returns `403`: agent config, secret writes,
+   members, access, triggers, tokens, credentials, project deletion, warm
+   sessions, billing and every account route.
+6. Two account reads the session UI makes are answered by Lumen itself
+   (`localAnswer`): `GET accounts/me` returns the Lumen user id with no email
+   and no accounts, and the permission probes (`…/iam/members/…/effective`
+   and `effective:batch`) deny every configuration action. The UI hides those
+   controls. `GET billing/account-state` is refused (`403`); the session UI
+   reads it for credit warnings and works without it.
+7. A new session gets Lumen's labels first; a client label in the `lumen-`
+   namespace is dropped (`tagSessionCreate`, `convex/tags.ts`).
+8. Every token Lumen mints is revoked at its expiry by a scheduled Convex
+   action (`kortix.revokeToken`). No token reaches the browser. A preview
+   iframe gets a Kortix public preview share instead (`/api/preview-url`): it
+   opens one port of one session's sandbox, expires after 15 minutes and
+   grants nothing on the Kortix API. Kortix refuses shares of the runtime
+   ports (8000 and the harness ports).
+9. A member removed from an organization is refused within 60 s (the proxy's
+   membership cache). Their stored member token stays valid until its expiry
+   (at most 1 h), but it never left the server.
 
 ## Setup
 
@@ -131,12 +161,16 @@ not matter here: the browser only calls Lumen's own origin.
 |---|---|
 | `/` | Sign in / sign up; then the active organization's workspaces, "New workspace" (template cards) |
 | header | Organization switcher, "New organization", Members (list + invite link), sign out |
-| `/invite/<id>` | Accept an invitation (sign in with the invited email) |
+| `/invite/<id>` | Accept an invitation (sign in with the invited email, verify it, accept) |
 | `/w/<workspaceId>` | Workspace: setup status, ask the agent (starts a thread), thread list |
 | `/projects/<projectId>/sessions/<sessionId>` | The thread: the shared session workbench. `src/app/projects/[id]/layout.tsx` maps the project to its workspace and checks membership first |
 
 There is no email provider in this example. An invitation is a link the
-inviter copies from the Members dialog. Production adds email verification and
+inviter copies from the Members dialog. The invitee must verify the invited
+email before the invitation opens, so someone who registers that address
+first cannot join with the link. The verification link goes to the Convex log
+(`npx convex logs`, line `[lumen] verify <email>: <url>`). Production sends it
+from `emailVerification.sendVerificationEmail` and adds
 `organization({ sendInvitationEmail })` in `convex/auth.ts`.
 
 ## Code map
@@ -145,37 +179,51 @@ inviter copies from the Members dialog. Production adds email verification and
 |---|---|
 | `convex/schema.ts` | `agentTemplates`, `workspaces`, `threads`, `memberTokens`, `auditEvents` |
 | `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, with the organization plugin |
-| `convex/kortix.ts` | Every operator call to Kortix (`"use node"` actions): provision, create thread, member and preview tokens, revoke |
+| `convex/kortix.ts` | Every operator call to Kortix (`"use node"` actions): provision, create thread, member token, revoke |
+| `convex/tags.ts` | Lumen's ids as session labels and metadata (`tagSessionCreate`) |
 | `convex/workspaces.ts`, `convex/threads.ts`, `convex/templates.ts` | Queries and mutations; reads return null or empty for a non-member |
 | `src/server/member.ts` | Bearer + cookie → member token (Convex), cached per minute |
-| `src/server/proxy-policy.ts` | What a member token may do through the proxy |
+| `src/server/proxy-policy.ts` | What a member token may do through the proxy, and the account reads Lumen answers itself |
 | `src/app/api/kortix/[...path]/route.ts` | The same-origin proxy; tags and records sessions created from the session UI |
-| `src/app/api/preview-url`, `session-model`, `connections` | Server routes on the member token |
+| `src/app/api/preview-url` | A public preview share for one sandbox port, never a token |
+| `src/app/api/session-model`, `connections` | Server routes on the member token |
 | `src/lib/kortix.ts` | The one browser SDK client (`backendUrl: '/api/kortix'`) |
 | `src/lib/session.ts` | The active workspace bearer |
 
 ## Client boundary
 
 Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`,
-`@kortix/ui/<entry>` and `@phosphor-icons/react`. It never sends raw requests
-to the Kortix backend; its own `fetch` calls go to `/api/auth`,
-`/api/connections`, `/api/preview-url` and `/api/session-model` only. Convex
-files import `@kortix/sdk` only in `"use node"` files and never call `fetch`.
-`scripts/sdk-boundary.mjs` enforces all of this and runs before `build`,
-`test` and `typecheck`.
+`@kortix/ui`, `@kortix/ui/<entry>` and `@phosphor-icons/react`. It never
+imports `@kortix/sdk/server` and never opens its own transport (`EventSource`,
+`XMLHttpRequest`, `WebSocket`, an aliased `fetch`). Its own `fetch` calls go
+to `/api/auth`, `/api/connections`, `/api/preview-url` and
+`/api/session-model` only. Convex files import `@kortix/sdk` (statically,
+with `import()` or with `require()`) only in `"use node"` files and never call
+`fetch`. `scripts/sdk-boundary.mjs` enforces these rules and runs before
+`build`, `test` and `typecheck`. A rule is a source scan: it catches the
+patterns above, not every way to write them.
 
 ## Verify
 
 ```bash
 pnpm --filter @kortix/whitelabel-demo typecheck   # boundary + tsgo (app) + tsgo -p convex
 pnpm --filter @kortix/whitelabel-demo build
-cd apps/whitelabel-demo && bun test tests/e2e/proxy-policy.test.ts   # one file; the full app suite takes ~1 s
+cd apps/whitelabel-demo && bun test tests/e2e/proxy-policy.test.ts   # one file
+cd apps/whitelabel-demo && pnpm test:convex                          # the Convex backend, in memory
 ```
 
-The unit tests cover the proxy policy, upstream path validation, the SDK
-boundary and the session UI helpers. The end-to-end flow (sign up, org,
-workspace, thread, cross-org denial, invitation) needs Convex and a Kortix
-stack; run it by hand with the steps in Setup.
+- `tests/e2e/*.test.ts` (bun): the proxy policy and local answers, session
+  tagging, the preview request, the member cache and its in-flight sharing,
+  upstream path validation, the SDK boundary and the session UI helpers.
+- `tests/convex/*.test.ts` (vitest + `convex-test`, with the Better Auth
+  component): member token mint, reuse inside the 5-minute margin, re-mint
+  outside it, the scheduled revoke, refusals (non-member, provisioning,
+  unknown workspace, wrong proxy secret, removed member), thread idempotency
+  per Kortix session, and provisioning failures. The Kortix SDK is replaced at
+  the module edge there.
+- The end-to-end flow (sign up, org, workspace, thread, cross-org denial,
+  invitation, preview) needs Convex and a Kortix stack; run it with the steps
+  in Setup.
 
 ## UI and rebrand
 

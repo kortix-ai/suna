@@ -15,7 +15,7 @@ import Loading from '@kortix/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle, ModalTrigger } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import { BuildingsIcon, PlusIcon } from '@phosphor-icons/react';
 import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';

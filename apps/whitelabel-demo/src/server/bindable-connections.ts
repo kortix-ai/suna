@@ -1,14 +1,13 @@
 import type { Connection } from '@kortix/sdk';
 
 /**
- * Which connections a WRAPPER may bind to a session it starts.
+ * Which connections a Lumen member may bind to a session they start.
  *
- * A wrapper acts under one credential for many end-users, so it has no personal
- * identity upstream. It can therefore bind only project-owned
- * connections — never a member's private one, and never another wrapper's
- * `external` one. A `member`-owned account is reachable only by its own human
- * owner (`owner_id === caller.userId`), never by a service account, so a
- * wrapper could never use one even if the picker offered it.
+ * Every Lumen member calls Kortix with a token of the same operator user, so
+ * Kortix cannot tell one Lumen member from another. Lumen therefore binds only
+ * project-owned connections — never a Kortix member's private one, and never
+ * an `external` one. A private connection belongs to one Kortix user, and
+ * offering the operator's own would hand it to every Lumen member.
  *
  * `require_connectors` is gone as a live concept (session create/scope now
  * accept and ignore it on the wire); the credential a call
@@ -31,9 +30,9 @@ export interface BindableConnection {
 /**
  * Why an alias the project HAS connections for still has nothing to bind.
  *
- * Both answers are "ask a teammate", never "connect it yourself": a wrapper
- * credential has no personal upstream identity, so it can never complete an
- * interactive connect flow on an end-user's behalf.
+ * Both answers are "ask the operator", never "connect it yourself": a Lumen
+ * member has no Kortix identity of their own, so Lumen cannot run an
+ * interactive connect flow on their behalf.
  */
 export type ConnectorBindingUnavailable =
   'private_only' | 'project_connection_inactive';
@@ -81,7 +80,7 @@ export function selectBindableConnections(
  * The empty ones matter most. An alias whose only connections are members'
  * PRIVATE ones looks connected from the inside (a teammate connected it, in
  * their own account) and is unbindable from here, which is the single most
- * confusing thing about connectors in wrapper mode. Grouping is done over ALL
+ * confusing thing about connectors in Lumen. Grouping is done over ALL
  * connections, not just the bindable ones, precisely so that case can be named
  * rather than silently disappearing from the picker.
  */

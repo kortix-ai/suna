@@ -1,8 +1,7 @@
 'use client';
 
 /**
- * The one session-create mutation, used by the new-session dialog, the project
- * home, and the scope bar.
+ * The one session-create mutation, used by the scope bar.
  *
  * Each KaaB refusal has a distinct code and a different person who can fix it —
  * collapsing them into one string throws that away, so every failure goes

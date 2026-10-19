@@ -19,7 +19,7 @@ import { isRuntimeReady } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { ArrowClockwiseIcon, DotsThreeVerticalIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
 

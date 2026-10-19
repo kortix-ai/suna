@@ -10,17 +10,10 @@
  *
  *     projects/<mine>/../<victim>/secrets
  *
- * which `evaluatePolicy` happily matches as "a route under project <mine>" — the
- * caller owns that one, so the ownership gate passes — and which the upstream
- * then NORMALISES into `projects/<victim>/secrets`. The policy and the request
- * disagreed about which project was being addressed, and the gap is another
- * tenant's secrets.
- *
- * This was a live, confirmed hole: an authenticated user could read another
- * user's project secrets, reach `/v1/accounts/me` (which the policy blocks
- * outright), list the victim's sessions, and create a session in the victim's
- * project — the last two also skipping the server-side `end_user_ref` stamping,
- * because those code paths key on the *unnormalised* path.
+ * which `blockedReason` matches as "a session route under project <mine>",
+ * while the upstream NORMALISES it into `projects/<mine>/secrets` or another
+ * route the proxy refuses. The policy and the request would disagree about
+ * which route is addressed, and the allowlist would mean nothing.
  *
  * Note `..` with REAL slashes was already safe: the browser and Next normalise
  * it before routing, so it 403s. Only the percent-encoded form survived to here.

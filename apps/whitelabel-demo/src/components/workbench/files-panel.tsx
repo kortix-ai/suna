@@ -29,7 +29,7 @@ import { FileViewer } from '@/components/workbench/files/file-viewer';
 import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
 import { kortix } from '@/lib/kortix';
 import { fmtDate } from '@/lib/utils';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';

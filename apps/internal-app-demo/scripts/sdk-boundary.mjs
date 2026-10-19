@@ -7,9 +7,8 @@ import { scanSource as scanWhiteLabelSource } from '../../whitelabel-demo/script
 /**
  * The internal app's boundary: the white-label rules (no OpenCode SDK, no
  * runtime internals, no hand-built runtime URLs, controls from @kortix/ui, no
- * second UI kit, ...) plus two stricter ones. This app has no backend, so it
- * has no fetch at all, and it imports only the curated one-segment
- * @kortix/ui entries, never a deep path.
+ * second UI kit, curated @kortix/ui entries only, no raw transport, ...) plus
+ * one stricter rule: this app has no backend, so it has no fetch at all.
  */
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(APP_ROOT, 'src');
@@ -19,11 +18,6 @@ const RULES = [
     rule: 'any-fetch',
     pattern: /\bfetch\s*\(/g,
     message: 'No fetch: every Kortix call goes through the @kortix/sdk client in src/kortix.ts.',
-  },
-  {
-    rule: 'deep-ui-entry',
-    pattern: /['"]@kortix\/ui\/[^'"/]+\/[^'"]+['"]/g,
-    message: 'Import a curated @kortix/ui/<module> entry, never a deep path.',
   },
 ];
 

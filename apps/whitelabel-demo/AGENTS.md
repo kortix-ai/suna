@@ -31,19 +31,8 @@ Do not add:
 `scripts/sdk-boundary.mjs` enforces the client, server, and application-test
 rules. Update its tests when a new same-origin application route is intentional.
 
-Application tests use `createTestKortix()` for Kortix product flows. Raw HTTP
-is limited to application-owned routes such as auth, preview, and session model.
-
-## Project experiments
-
-The settings page must:
-
-- Read `project.experimental_features`.
-- Render only entries with `available === true`.
-- Use each entry's server-provided label and description.
-- Call `updateExperimentalFeature(feature.key, enabled)`.
-
-Do not hard-code project experiment keys in client code.
+Browser code never imports `@kortix/sdk/server` and never opens its own
+transport (`EventSource`, `XMLHttpRequest`, `WebSocket`, an aliased `fetch`).
 
 ## Server boundary
 
@@ -56,8 +45,12 @@ Do not hard-code project experiment keys in client code.
   key to a credential.
 - The operator credential lives only in Convex env (`KORTIX_OPERATOR_TOKEN`).
   Next.js never reads it. Member tokens never reach a response body.
-- A new proxy write route is an explicit entry in `src/server/proxy-policy.ts`
-  with a test in `tests/e2e/proxy-policy.test.ts`.
+- The proxy allowlists reads and writes. A new proxied route is an explicit
+  entry in `src/server/proxy-policy.ts` with a test in
+  `tests/e2e/proxy-policy.test.ts`. Never allow an account route, a credential
+  route or a member list: the member token is the operator's user.
+- Never return a Kortix token to the browser, a preview URL included. A
+  preview is a public preview share (`/api/preview-url`).
 
 ## Convex boundary
 
@@ -66,8 +59,9 @@ Do not hard-code project experiment keys in client code.
 - Public queries return null or `[]` for a non-member; mutations and actions
   throw `"403: …"`. The status prefix is what the proxy maps to HTTP.
 - Store each Kortix id next to the Lumen id that owns it. Tag sessions with
-  `lumenSessionTags` (`convex/tags.ts`); never add a Lumen concept to a Kortix
-  API.
+  `lumenSessionTags`, and a client-built session body with `tagSessionCreate`
+  (`convex/tags.ts`); never add a Lumen concept to a Kortix API.
+- Raw errors stay in `auditEvents`. A field a member reads holds generic text.
 - `convex/_generated/` and `convex/betterAuth/generatedSchema.ts` are
   generated. Regenerate with `npx convex dev` and the Better Auth CLI command
   in that file's header.
@@ -75,8 +69,9 @@ Do not hard-code project experiment keys in client code.
 - Validate identifiers before interpolating them into SDK calls.
 
 `POST /api/preview-url` owns session readiness and preview URL resolution. The
-client receives one final URL. Do not return a standalone preview token,
-upstream base URL, or runtime coordinates.
+client receives one final URL: a Kortix public preview share that expires
+after 15 minutes. Do not return a token, an upstream base URL, or runtime
+coordinates.
 
 The `/api/kortix` route calls `forwardKortixRequest()` from
 `@kortix/sdk/server`. The SDK owns upstream authentication, request buffering,
@@ -90,12 +85,12 @@ not come back.
 - Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
   `textarea`, `select`, `switch`, `dialog`, `card`, `badge`, `tabs`, …).
 - The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
-  thread apps/web renders. Lumen adds only its scope bar under it. The
-  new-session form reuses `ModelPicker` and `AgentPicker` from
-  `@kortix/ui/session`; never re-implement the transcript, composer or prompts.
+  thread apps/web renders. Lumen adds only its scope bar under it. Never
+  re-implement the transcript, composer or prompts.
 - Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
   `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
-- `cn` comes from `@kortix/ui/lib/utils`.
+- `cn` comes from `@kortix/ui` (the root entry). Never import a deep
+  `@kortix/ui/<module>/<path>`.
 - Icons: `@phosphor-icons/react` (`<Name>Icon`), the set @kortix/ui renders.
 - Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
   page-level loading.
@@ -111,7 +106,8 @@ switches, checkboxes, radios, the brand Button and Badge variants and info
 alerts), `--ring`, `--sidebar-primary`, `--sidebar-ring` and `--selection`
 point at it. Never fork
 or wrap a component to change a color, radius or font. Never import
-`@kortix/ui/fonts.css`: white-label surfaces use the system font stack.
+`@kortix/ui/fonts.css`: Lumen's fonts are its own, loaded with `next/font` in
+`src/app/layout.tsx` (stacks in `src/config/theme.ts`).
 
 A missing primitive or chat slot is added to `packages/ui`, not to this app.
 
@@ -132,7 +128,8 @@ feature-level spinners.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.
 - `convex/**`: Lumen's backend (schema, auth, workspaces, threads, Kortix actions).
-- `tests/e2e/**`: Production-server black-box tests.
+- `tests/e2e/**`: Unit tests under bun (proxy policy, tagging, member cache, boundary, UI helpers).
+- `tests/convex/**`: Convex backend tests under vitest + `convex-test`.
 
 ## Required checks
 
@@ -141,7 +138,7 @@ Run these commands before each commit:
 ```bash
 pnpm --filter @kortix/whitelabel-demo typecheck
 pnpm --filter @kortix/whitelabel-demo build
-pnpm --filter @kortix/whitelabel-demo test
+cd apps/whitelabel-demo && bun test tests/e2e/<the files you touched> && pnpm test:convex
 ```
 
 All three commands must exit `0`. The SDK boundary must report `0 violations`.

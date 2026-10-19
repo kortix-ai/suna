@@ -10,7 +10,7 @@ import { threadPath, useWorkspace } from '@/components/workspace-access';
 import { relativeTime } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import { Button } from '@kortix/ui/button';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import { ScrollArea } from '@kortix/ui/scroll-area';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { ArrowLeftIcon, PlusIcon } from '@phosphor-icons/react';

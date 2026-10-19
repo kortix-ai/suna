@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
   const apiUrl = new URL(env.KORTIX_API_URL || 'http://localhost:8008/v1');
   const apiKey = env.KORTIX_API_KEY;
   const apiPath = apiUrl.pathname.replace(/\/$/, '');
-  const port = Number(env.PORT || 3030);
+  const port = Number(env.PORT || 3032);
   const proxy = apiKey
     ? {
         '/_kortix/api/v1': {

@@ -18,7 +18,7 @@ login, and every call runs as them.
 | You have | Run |
 |---|---|
 | A Kortix project and the CLI | `pnpm --filter @kortix/internal-app-demo build`, then `kortix apps deploy apps/internal-app-demo/dist --slug team-console --type static --spa --access project` and `kortix apps access team-console --viewer api` |
-| A Kortix API key, local dev | `KORTIX_API_URL=https://api.kortix.com/v1 KORTIX_API_KEY=<key> pnpm --filter @kortix/internal-app-demo dev`, then open `http://localhost:3030` |
+| A Kortix API key, local dev | `KORTIX_API_URL=https://api.kortix.com/v1 KORTIX_API_KEY=<key> pnpm --filter @kortix/internal-app-demo dev`, then open `http://localhost:3032` |
 
 <p align="center"><img src="public/screenshots/tour.gif" width="900" alt="Open a project, start a session, the agent runs a shell command, the dashboard lists the session" /></p>
 

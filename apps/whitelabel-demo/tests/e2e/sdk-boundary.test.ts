@@ -102,6 +102,40 @@ describe('white-label SDK boundary', () => {
     expect(scanConvexBoundary()).toEqual([]);
   });
 
+  test('browser code cannot reach a credential-bearing SDK entry or open its own transport', () => {
+    const fixture = `
+      'use client';
+      import { createScopedKortix, forwardKortixRequest } from '@kortix/sdk/server';
+      const es = new EventSource('/api/kortix/projects/p/sessions/s/events');
+      const xhr = new XMLHttpRequest();
+      const ws = new WebSocket('wss://api.kortix.com/v1/p/x');
+      const f = globalThis['fetch'];
+      window.fetch('/api/kortix/projects');
+      import { cn } from '@kortix/ui/lib/utils';
+    `;
+    expect(scanSource(fixture).map((v) => v.rule)).toEqual([
+      'client-server-sdk',
+      'raw-transport',
+      'raw-transport',
+      'raw-transport',
+      'raw-transport',
+      'raw-transport',
+      'raw-kortix-fetch',
+      'deep-ui-entry',
+    ]);
+    // The server routes are where @kortix/sdk/server belongs.
+    expect(scanSource(`import { forwardKortixRequest } from '@kortix/sdk/server';`, { client: false })).toEqual([]);
+    expect(scanSource(`import { cn } from '@kortix/ui';`)).toEqual([]);
+  });
+
+  test('Convex catches a dynamic import or require of the SDK outside "use node"', () => {
+    const fixture = `const m = await import('@kortix/sdk/server');\nconst r = require("@kortix/sdk");`;
+    expect(scanConvexSource(fixture).map((v) => v.rule)).toEqual([
+      'convex-sdk-outside-node',
+      'convex-sdk-outside-node',
+    ]);
+  });
+
   test('detects provider names embedded inside legacy identifiers', () => {
     const fixture = `useCanonicalOpenCodeSession(projectId);`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(

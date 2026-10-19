@@ -61,19 +61,6 @@ describe('sessionCreateFailure', () => {
     );
   });
 
-  test('secret narrowing behind a browser PAT says wrapper mode is required', () => {
-    const failure = sessionCreateFailure(apiError('origin_override_forbidden'));
-    expect(failure.title).toBe('Secret narrowing needs wrapper mode');
-    expect(failure.retryable).toBe(false);
-    // Developer-facing upstream copy would be meaningless here: the detail is
-    // this app's own, never the server text.
-    expect(
-      sessionCreateFailure(apiError('origin_override_forbidden', 'upstream says no')).detail,
-    ).toBe(
-      'This deployment is talking to Kortix directly, where the per-session secret allowlist is not available.',
-    );
-  });
-
   test('an unavailable model is a pick-again, not a retry', () => {
     const failure = sessionCreateFailure(apiError('INVALID_SESSION_MODEL'));
     expect(failure.title).toBe('That model is unavailable');

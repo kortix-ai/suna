@@ -10,8 +10,7 @@
  *
  * The alias was hardcoded to one connector when this route only served the
  * first-session screen. It is a request parameter now, and optional: a caller
- * that doesn't know which connectors a project has (the new-session dialog)
- * asks for all of them.
+ * that doesn't know which connectors a project has asks for all of them.
  */
 import { selectConnectorBindingChoices } from '@/server/bindable-connections';
 import { memberKortix, resolveMemberFor } from '@/server/member';

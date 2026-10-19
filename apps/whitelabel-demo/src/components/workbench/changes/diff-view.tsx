@@ -6,7 +6,7 @@
  * summary chips (`DiffStat`).
  */
 
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Render a unified-diff patch as a colored monospace block. */
 export function DiffView({ patch }: { patch?: string | null }) {

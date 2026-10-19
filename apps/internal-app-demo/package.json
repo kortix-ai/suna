@@ -9,6 +9,7 @@
     "build": "pnpm lint:sdk-boundary && tsgo --noEmit && vite build",
     "preview": "vite preview",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
+    "test": "node ../../scripts/test-guard.mjs \"bun test tests\"",
     "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit",
     "deploy": "pnpm build && kortix apps deploy dist --slug team-console --type static --spa --access project"
   },

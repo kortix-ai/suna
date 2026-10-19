@@ -47,6 +47,25 @@ const RULES = [
     message: 'Client code must use @kortix/sdk and @kortix/sdk/react only.',
   },
   {
+    scope: 'client',
+    rule: 'client-server-sdk',
+    pattern: /['"]@kortix\/sdk\/server['"]/g,
+    message: 'Browser code must not import @kortix/sdk/server: it carries Kortix credentials. Use it in src/server or src/app/api.',
+  },
+  {
+    scope: 'client',
+    rule: 'raw-transport',
+    pattern:
+      /\bnew\s+(?:EventSource|XMLHttpRequest|WebSocket)\b|\b(?:globalThis|window|self)\s*(?:\.\s*fetch\b|\[\s*['"`]fetch['"`]\s*\])/g,
+    message: 'Client code must not open its own transport: streams and requests go through @kortix/sdk.',
+  },
+  {
+    scope: 'client',
+    rule: 'deep-ui-entry',
+    pattern: /['"]@kortix\/ui\/[^'"/]+\/[^'"]+['"]/g,
+    message: 'Import a curated @kortix/ui/<module> entry (cn from @kortix/ui), never a deep path.',
+  },
+  {
     scope: 'all',
     rule: 'runtime-proxy-url',
     pattern: /\/p\/(?:\$\{[^}]+\}|[^/'"`\s]+)\/8000(?:\/|['"`])/gi,
@@ -181,7 +200,10 @@ export function isLocalUiFile(path) {
 export function scanConvexSource(source) {
   const violations = rawFetchViolations(source, false);
   if (!/^\s*["']use node["'];/.test(source)) {
-    for (const match of source.matchAll(/from\s+['"]@kortix\/sdk(?:\/[^'"]*)?['"]/g)) {
+    // Static `from`, dynamic `import()` and `require()` alike.
+    for (const match of source.matchAll(
+      /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)['"`]@kortix\/sdk(?:\/[^'"`]*)?['"`]/g,
+    )) {
       violations.push({
         rule: 'convex-sdk-outside-node',
         index: match.index,
