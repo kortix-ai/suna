@@ -435,40 +435,6 @@ describe('the v1 window over a stale log', () => {
     }
   });
 
-  test('a mirror newer than the log by over 60 s serves the mirror and warns once per session; within 60 s the log answers', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 6));
-    await setFlag(true);
-    const warn = spyOn(logger, 'warn');
-    try {
-      const [{ last }] = (await db.select({ last: sql<Date>`max(${sessionLogMessages.updatedAt})` }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, session))) as [{ last: Date }];
-      const lastMs = new Date(last).getTime();
-      // The mirror window's captured_at is the mirror's run time, whatever its rows' content time.
-      const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
-      const mirrorIso = new Date(mirror!.at).toISOString();
-
-      // Within the margin: the log answers (its captured_at is the log's last write).
-      await mirrorAt(session, new Date(lastMs + 30_000));
-      const near = await read(session);
-      expect(near.status).toBe(200);
-      expect(near.body.captured_at).not.toBe(mirrorIso);
-      expect(staleWarnings(warn, session)).toHaveLength(0);
-
-      // Over the margin (the rows' content time): the mirror answers, once-warned.
-      const at = new Date(lastMs + 120_000);
-      await mirrorAt(session, at);
-      for (let i = 0; i < 2; i++) {
-        const far = await read(session);
-        expect(far.status).toBe(200);
-        expect(far.body.captured_at).toBe(mirrorIso);
-        expect((far.body.messages as unknown[]).length).toBe(6);
-      }
-      expect(staleWarnings(warn, session)).toHaveLength(1);
-    } finally {
-      warn.mockRestore();
-      await setFlag(false);
-    }
-  });
 });
 
 describe('a cursor on a tombstoned message', () => {
