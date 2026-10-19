@@ -44,6 +44,4 @@ export interface RailItem {
 export interface RailGroup {
   label: string;
   items: readonly RailItem[];
-  /** Drawn at the foot of the rail as one joined block, not as a list. */
-  footer?: boolean;
 }

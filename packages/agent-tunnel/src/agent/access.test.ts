@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import {
   ACCESS_HOLD_MS,
+  accessAfterPairing,
   accessCommand,
   accessFilePath,
   accessView,
@@ -249,5 +250,25 @@ describe('the access rules (one copy: the CLI, the agent, and the desktop app al
     writeAccessRequest({ capability: 'shell', method: 'shell.exec' }, home);
     expect(applyAccess({ deny: true }, home)).toMatchObject({ pendingRequest: null, grantedUntil: null });
     expect(readAccess(home).deniedUntil).not.toBeNull();
+  });
+});
+
+describe('access after pairing', () => {
+  test('a re-pair keeps the owner mode and keep awake, and drops the old grant or denial', () => {
+    const home = tempHome();
+    writeFileSync(
+      accessFilePath(home),
+      JSON.stringify({ mode: 'always', grantedUntil: null, deniedUntil: '2099-01-01T00:00:00.000Z', keepAwake: true }),
+    );
+    expect(accessAfterPairing(home, true)).toEqual({ mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: true });
+    writeFileSync(accessFilePath(home), JSON.stringify({ mode: 'off', grantedUntil: null, deniedUntil: null, keepAwake: false }));
+    expect(accessAfterPairing(home, false).mode).toBe('off');
+    writeFileSync(accessFilePath(home), JSON.stringify({ mode: 'ask', grantedUntil: '2099-01-01T00:00:00.000Z', deniedUntil: null, keepAwake: false }));
+    expect(accessAfterPairing(home, false)).toEqual({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false });
+  });
+
+  test('a first pairing asks when the desktop app can answer, else always', () => {
+    expect(accessAfterPairing(tempHome(), true).mode).toBe('ask');
+    expect(accessAfterPairing(tempHome(), false).mode).toBe('always');
   });
 });

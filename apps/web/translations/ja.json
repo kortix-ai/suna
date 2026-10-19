@@ -546,7 +546,7 @@
           "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。"
         },
         "computer": {
-          "label": "コンピューター",
+          "label": "マイコンピューター",
           "description": "Kortix のエージェントが、あなたのコンピューターのファイル、ターミナル、アプリを使えるようにします。"
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "デスクトップアプリはワンクリックでこのコンピューターを接続します。",
       "desktopLabel": "デスクトップアプリ",
       "download": "ダウンロード",
-      "cliLabel": "コマンドライン"
+      "cliLabel": "コマンドライン",
+      "otherComputerHint": "もう一台のコンピューターに Kortix デスクトップアプリをインストールしてサインインしてください。ワンクリックで接続します。"
     }
   },
   "triggers": {
@@ -21115,7 +21116,7 @@
     "lastSeen": "最終接続 {time}",
     "scopeLine": "あなたのプライベートセッションから、すべてのプロジェクトで、あなただけが使えます。",
     "capabilitiesTitle": "Kortix が使えるもの",
-    "capabilitiesHint": "このコンピューターを接続したときに選んだ内容です。変更するにはもう一度接続してください。",
+    "capabilitiesHint": "いつでもオンまたはオフにできます。次のリクエストから反映されます。",
     "capability": {
       "filesystem": "ファイル",
       "filesystemDescription": "ホームフォルダー",
@@ -21125,7 +21126,8 @@
       "desktopDescription": "アプリを見て操作",
       "allowed": "許可",
       "notAllowed": "許可なし",
-      "needsSetup": "設定が必要"
+      "needsSetup": "設定が必要",
+      "notAvailable": "このコンピューターでは現在利用できません"
     },
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
@@ -21136,10 +21138,10 @@
     "connectAnother": "別のコンピューターを接続",
     "approvingAs": "{email} として承認します。コンピューターはこのアカウントに紐づきます。",
     "alreadyConnected": "{name} はすでにあなたのアカウントに接続されています",
-    "alreadyConnectedHint": "承認すると、新しいキーと選択したアクセスで再接続します。プロジェクトと共有はそのまま残ります。",
+    "alreadyConnectedHint": "承認すると新しいキーで再接続します。プロジェクトと共有はそのまま残ります。",
     "alreadyConnectedLive": "現在オンラインです。承認するとこのリクエストに移行し、現在の接続は停止します。プロジェクトと共有はそのまま残ります。",
     "reconnect": "再接続",
-    "accessHint": "選択したアクセス権は、取り消すまで有効です。",
+    "accessHint": "Kortix エージェントは 3 つすべてを使えます。後から 設定 › マイコンピューター でいつでもオフにできます。",
     "setup": {
       "title": "コンピューターの設定を完了",
       "hint": "macOS が下の各権限を一度だけ確認します。権限は Kortix に付与されるため、エージェントの作業中に再び確認されることはありません。",
@@ -21164,7 +21166,8 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
-    }
+    },
+    "capabilitiesSaved": "アクセスを更新しました"
   },
   "messageFrom": {
     "from": "送信元",

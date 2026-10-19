@@ -546,7 +546,7 @@
           "description": "在 Claude、Claude Code、Cursor、Codex 或任何 MCP 客户端中使用 Kortix。只需登录一次，无需安装。"
         },
         "computer": {
-          "label": "电脑",
+          "label": "我的电脑",
           "description": "让 Kortix 智能体使用你电脑上的文件、终端和应用。"
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "桌面应用一键连接这台电脑。",
       "desktopLabel": "桌面应用",
       "download": "下载",
-      "cliLabel": "命令行"
+      "cliLabel": "命令行",
+      "otherComputerHint": "在另一台电脑上安装 Kortix 桌面应用并登录。一键即可连接。"
     }
   },
   "triggers": {
@@ -21115,7 +21116,7 @@
     "lastSeen": "最后在线 {time}",
     "scopeLine": "只有你能使用它：在你的私人会话中，在每个项目里。",
     "capabilitiesTitle": "Kortix 可以使用的内容",
-    "capabilitiesHint": "在连接这台电脑时选定。要更改，请重新连接。",
+    "capabilitiesHint": "随时开启或关闭任意一项。下一个请求即按此执行。",
     "capability": {
       "filesystem": "文件",
       "filesystemDescription": "你的主文件夹",
@@ -21125,7 +21126,8 @@
       "desktopDescription": "查看并使用你的应用",
       "allowed": "已允许",
       "notAllowed": "未允许",
-      "needsSetup": "需要设置"
+      "needsSetup": "需要设置",
+      "notAvailable": "此电脑当前不可用"
     },
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
@@ -21136,10 +21138,10 @@
     "connectAnother": "连接另一台电脑",
     "approvingAs": "你将以 {email} 的身份批准。这台电脑将归属此账户。",
     "alreadyConnected": "{name} 已连接到你的账户",
-    "alreadyConnectedHint": "批准后将使用新密钥和你选择的权限重新连接。其项目和共享保持不变。",
+    "alreadyConnectedHint": "批准后将使用新密钥重新连接。它的项目和共享保持不变。",
     "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
     "reconnect": "重新连接",
-    "accessHint": "选定的访问权限会一直有效，直到你撤销。",
+    "accessHint": "Kortix 代理获得全部三项权限。之后可在 设置 › 我的电脑 中关闭任意一项。",
     "setup": {
       "title": "完成电脑设置",
       "hint": "macOS 会对下面每项权限询问一次。权限授予 Kortix，因此代理工作时不会再询问。",
@@ -21164,7 +21166,8 @@
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
-    }
+    },
+    "capabilitiesSaved": "访问权限已更新"
   },
   "messageFrom": {
     "from": "来自",

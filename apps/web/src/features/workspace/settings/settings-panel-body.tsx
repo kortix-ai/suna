@@ -351,10 +351,7 @@ export function SettingsPanelShell({
   // dialog's own title already says Settings. It comes back the moment a
   // second group does — or the Organizations block, which is a second list
   // under the same rail — which is the only case where the label does work.
-  // The footer group (Connect) is a block at the foot of the rail, not a
-  // second list, so it does not count.
-  const showGroupLabels =
-    groups.filter((group) => !group.footer).length > 1 || organizations.length > 0;
+  const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
   // Mobile only: the list screen, or the pane screen. A caller that opened
   // settings on a named tab lands on that pane.

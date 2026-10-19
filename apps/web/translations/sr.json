@@ -399,7 +399,7 @@
           "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate."
         },
         "computer": {
-          "label": "Рачунар",
+          "label": "Moj računar",
           "description": "Дозволите Kortix агентима да раде са датотекама, терминалом и апликацијама на вашем рачунару."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "Десктоп апликација повезује овај рачунар једним кликом.",
       "desktopLabel": "Десктоп апликација",
       "download": "Преузми",
-      "cliLabel": "Командна линија"
+      "cliLabel": "Командна линија",
+      "otherComputerHint": "Instaliraj Kortix desktop aplikaciju na drugom računaru i prijavi se. Povezuje se jednim klikom."
     }
   },
   "triggers": {
@@ -21115,7 +21116,7 @@
     "lastSeen": "последњи пут виђен {time}",
     "scopeLine": "Само ви можете да га користите, из својих приватних сесија, у сваком пројекту.",
     "capabilitiesTitle": "Шта Kortix може да користи",
-    "capabilitiesHint": "Изабрано када сте повезали овај рачунар. Повежите га поново да бисте то променили.",
+    "capabilitiesHint": "Uključi ili isključi bilo koji u svakom trenutku. Sledeći zahtev to poštuje.",
     "capability": {
       "filesystem": "Датотеке",
       "filesystemDescription": "Ваша почетна фасцикла",
@@ -21125,7 +21126,8 @@
       "desktopDescription": "Преглед и коришћење апликација",
       "allowed": "Дозвољено",
       "notAllowed": "Није дозвољено",
-      "needsSetup": "Потребно подешавање"
+      "needsSetup": "Потребно подешавање",
+      "notAvailable": "Trenutno nije dostupno na ovom računaru"
     },
     "runInBackground": "Ради у позадини",
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
@@ -21136,10 +21138,10 @@
     "connectAnother": "Повежи други рачунар",
     "approvingAs": "Одобраваш као {email}. Рачунар се везује за овај налог.",
     "alreadyConnected": "{name} је већ повезан са твојим налогом",
-    "alreadyConnectedHint": "Одобри да га поново повежеш са новим кључем и приступом који изабереш. Пројекти и дељења остају.",
+    "alreadyConnectedHint": "Odobri da ga ponovo povežeš novim ključem. Njegovi projekti i deljenja ostaju.",
     "alreadyConnectedLive": "Тренутно је на мрежи. Одобри да га пребациш на овај захтев: тренутна веза се прекида. Пројекти и дељења остају.",
     "reconnect": "Повежи поново",
-    "accessHint": "Изабрани приступ остаје активан док га не опозовете.",
+    "accessHint": "Kortix agenti dobijaju sva tri. Isključi bilo koji kasnije u Podešavanja › Moj računar.",
     "setup": {
       "title": "Заврши подешавање рачунара",
       "hint": "macOS једном тражи сваку дозволу испод. Иду Kortix-у, па ништа више не пита док агент ради.",
@@ -21164,7 +21166,8 @@
       "removeAll": "Уклони све",
       "confirmTitle": "Уклонити све старије везе?",
       "confirmDescription": "Kortix их уклања заједно са налозима из свих пројеката. Рачунар који још користи неку може поново да се повеже."
-    }
+    },
+    "capabilitiesSaved": "Pristup ažuriran"
   },
   "messageFrom": {
     "from": "Od",

@@ -546,7 +546,7 @@
           "description": "Usa Kortix desde Claude, Claude Code, Cursor, Codex o cualquier cliente MCP. Inicias sesión una vez. Sin instalar nada."
         },
         "computer": {
-          "label": "Ordenador",
+          "label": "Mi ordenador",
           "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las aplicaciones de tu ordenador."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "La aplicación de escritorio conecta este ordenador con un clic.",
       "desktopLabel": "Aplicación de escritorio",
       "download": "Descargar",
-      "cliLabel": "Línea de comandos"
+      "cliLabel": "Línea de comandos",
+      "otherComputerHint": "Instala la app de escritorio de Kortix en el otro ordenador e inicia sesión. Se conecta con un clic."
     }
   },
   "triggers": {
@@ -21115,7 +21116,7 @@
     "lastSeen": "visto por última vez {time}",
     "scopeLine": "Solo tú puedes usarlo, desde tus sesiones privadas, en todos los proyectos.",
     "capabilitiesTitle": "Qué puede usar Kortix",
-    "capabilitiesHint": "Se eligió al conectar este ordenador. Vuelve a conectarlo para cambiarlo.",
+    "capabilitiesHint": "Activa o desactiva cualquiera en cualquier momento. La siguiente solicitud lo respeta.",
     "capability": {
       "filesystem": "Archivos",
       "filesystemDescription": "Tu carpeta personal",
@@ -21125,7 +21126,8 @@
       "desktopDescription": "Ver y usar tus apps",
       "allowed": "Permitido",
       "notAllowed": "No permitido",
-      "needsSetup": "Requiere configuración"
+      "needsSetup": "Requiere configuración",
+      "notAvailable": "No disponible en este ordenador ahora mismo"
     },
     "runInBackground": "Ejecutar en segundo plano",
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
@@ -21136,10 +21138,10 @@
     "connectAnother": "Conectar otra computadora",
     "approvingAs": "Apruebas como {email}. La computadora se vincula a esta cuenta.",
     "alreadyConnected": "{name} ya está conectada a tu cuenta",
-    "alreadyConnectedHint": "Aprueba para reconectarla con una clave nueva y el acceso que elijas. Sus proyectos y permisos compartidos se mantienen.",
+    "alreadyConnectedHint": "Aprueba para volver a conectarlo con una clave nueva. Sus proyectos y accesos compartidos se mantienen.",
     "alreadyConnectedLive": "Está en línea ahora. Aprueba para pasarla a esta solicitud: la conexión actual se detiene. Sus proyectos y permisos compartidos se mantienen.",
     "reconnect": "Reconectar",
-    "accessHint": "El acceso seleccionado seguirá activo hasta que lo revoques.",
+    "accessHint": "Los agentes de Kortix obtienen los tres. Desactiva cualquiera más tarde en Configuración › Mi ordenador.",
     "setup": {
       "title": "Termina de configurar tu computadora",
       "hint": "macOS pide una vez cada permiso de abajo. Van a Kortix, así nada vuelve a preguntar mientras trabaja un agente.",
@@ -21164,7 +21166,8 @@
       "removeAll": "Quitar todas",
       "confirmTitle": "¿Quitar todas las conexiones antiguas?",
       "confirmDescription": "Kortix las quita junto con sus cuentas de todos los proyectos. Una computadora que aún use una puede volver a conectarse."
-    }
+    },
+    "capabilitiesSaved": "Acceso actualizado"
   },
   "messageFrom": {
     "from": "De",

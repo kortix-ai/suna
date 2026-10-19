@@ -104,6 +104,12 @@ dmg:
       path: /Applications
 
 win:
+  # Computer Use: the agent runs this driver embedded (scripts/fetch-cua-driver.js).
+  extraResources:
+    - from: vendor/cua-driver
+      to: cua-driver
+      filter:
+        - "*.exe"
   # The symbol on the light rounded tile, 16 to 256 px. Generated from
   # apps/web/public/favicon.svg by scripts/build-win-icon.py; do not hand-edit.
   icon: build/icon.ico

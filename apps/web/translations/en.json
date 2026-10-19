@@ -399,7 +399,7 @@
           "description": "Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install."
         },
         "computer": {
-          "label": "Computer",
+          "label": "My computer",
           "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
         }
       }
@@ -1412,7 +1412,8 @@
       "oneClickDescription": "The desktop app connects this computer in one click.",
       "desktopLabel": "Desktop app",
       "download": "Download",
-      "cliLabel": "Command line"
+      "cliLabel": "Command line",
+      "otherComputerHint": "Install the Kortix desktop app on the other computer and sign in. It connects in one click."
     }
   },
   "triggers": {
@@ -21115,7 +21116,7 @@
     "lastSeen": "last seen {time}",
     "scopeLine": "Only you can use it, from your private sessions, in every project.",
     "capabilitiesTitle": "What Kortix can use",
-    "capabilitiesHint": "Chosen when you connected this computer. Connect it again to change it.",
+    "capabilitiesHint": "Turn any of these on or off at any time. The next request follows it.",
     "capability": {
       "filesystem": "Files",
       "filesystemDescription": "Your home folder",
@@ -21125,7 +21126,8 @@
       "desktopDescription": "See and use your apps",
       "allowed": "Allowed",
       "notAllowed": "Not allowed",
-      "needsSetup": "Needs setup"
+      "needsSetup": "Needs setup",
+      "notAvailable": "Not available on this computer right now"
     },
     "runInBackground": "Run in the background",
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
@@ -21136,10 +21138,10 @@
     "connectAnother": "Connect another computer",
     "approvingAs": "You approve as {email}. The computer joins this account.",
     "alreadyConnected": "{name} is already connected to your account",
-    "alreadyConnectedHint": "Approve to reconnect it with a new key and the access you select. Its projects and shares stay.",
+    "alreadyConnectedHint": "Approve to reconnect it with a new key. Its projects and shares stay.",
     "alreadyConnectedLive": "It is online now. Approve to move it to this request: the current connection stops. Its projects and shares stay.",
     "reconnect": "Reconnect",
-    "accessHint": "Selected access stays active until you revoke it.",
+    "accessHint": "Kortix agents get all three. Turn any of them off later in Settings › My computer.",
     "setup": {
       "title": "Finish setting up your computer",
       "hint": "macOS asks once for each permission below. They go to Kortix, so nothing asks again while an agent works.",
@@ -21164,7 +21166,8 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
-    }
+    },
+    "capabilitiesSaved": "Access updated"
   },
   "messageFrom": {
     "from": "From",
