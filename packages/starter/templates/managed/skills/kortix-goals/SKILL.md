@@ -60,6 +60,7 @@ means Files is off for the project: tell the user that a goal needs it.
   ],
   "sessions": [{ "id": "<session_id>", "role": "coordinator", "since": "2026-10-19T19:00:00Z" }],
   "reminder_id": "reminder.3f9a1c2e7b04",
+  "verified_by": null,
   "next_wake_at": "2026-10-20T09:00:00Z",
   "updated_at": "2026-10-19T19:30:00Z"
 }
@@ -111,9 +112,12 @@ reply, an upload, a worker that finished):
    kortix remind "Goal wake: <goal folder>. Load the kortix-goals skill and run one wake." --at <next_wake_at> --every 1d --name "goal <slug>"
    ```
 
-   Store its id in `reminder_id`. When `next_wake_at` changes, remove the old
-   reminder (`kortix reminders rm <id>`) and create the new one. Wake at the
-   earliest of: the next `due`, the next nag, or 24 hours.
+   Store the id it prints in `reminder_id`. When `next_wake_at` changes,
+   remove the old reminder (`kortix reminders rm <id>`) and create the new
+   one. Wake at the earliest of: the next `due`, the next nag, or 24 hours.
+   After any change, run `kortix reminders ls` and confirm that exactly one
+   active reminder is left and that its id is `reminder_id`. Never write that
+   you created or removed a reminder before `ls` shows it.
 
 Never end a turn on an open goal without a reminder armed. If `kortix remind`
 answers `feature_disabled`, run `kortix projects features enable reminders`;
@@ -123,6 +127,12 @@ if that is refused, tell the user that the goal cannot wake on its own.
 <chase>
 You depend on people. Act like a colleague who needs the thing to do the job:
 specific, polite, persistent.
+
+**Never ask with the question tool (or any tool that waits for an answer).**
+It holds the turn open: the user's reply, an email answer and your own
+heartbeat all queue behind it until someone opens this session. Write the
+question in plain text, send it on a channel, save the `ask`, and end the
+turn. The answer arrives as a new message and wakes you.
 
 - Ask once, precisely: what you need, why it unblocks the goal, how to send
   it ("reply with the PDF", "drop it in `<goal folder>/docs/`").
@@ -163,7 +173,11 @@ line in `log.md`.
 
 <done>
 A goal is done when every success criterion is met with proof in
-`evidence/`, not when the work feels finished.
+`evidence/`, not when the work feels finished. You may not judge your own
+work: only a verifier session that did none of it decides. Do not set
+`status` to `done` until `evidence/verification.md` exists, was written by
+that verifier, and says PASS for every criterion. This holds for small goals
+too.
 
 1. Start a fresh verifier session:
 
@@ -171,8 +185,12 @@ A goal is done when every success criterion is met with proof in
    kortix sessions new --prompt "Verify the goal in <goal folder>. Load the kortix-goals skill. You did none of the work. For each success criterion in goal.json, check its evidence yourself. Answer PASS or FAIL per criterion with the reason, and write the verdict to evidence/verification.md." --json
    ```
 
-2. All PASS: set `status` to `done`, remove the heartbeat reminder, and send
-   the user one message: the outcome, and where the proof is.
+   Record it in `sessions` with role `verifier`. On the next wake, read its
+   verdict (`kortix sessions wait-for <id> --timeout 5`, then the file).
+2. All PASS: set `status` to `done` and `verified_by` to the verifier's
+   session id, remove the heartbeat reminder and confirm with
+   `kortix reminders ls`, then send the user one message: the outcome, and
+   where the proof is.
 3. Any FAIL: add items for the gaps and continue.
 
 A goal also ends when the user says stop (`abandoned`). It never ends
