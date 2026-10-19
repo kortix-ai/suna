@@ -173,11 +173,14 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = true;
   });
 
-  test('allows managed candidates for free accounts', async () => {
+  test('blocks every managed model for free accounts, the platform default included', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(principal('free-managed'), 'glm-5.3-flash');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.billingMode).toBe('credits');
+    for (const model of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kortix/deepseek-v4.1-flash']) {
+      await expect(resolveCandidates(principal('free-managed'), model)).rejects.toMatchObject({
+        name: 'GatewayResolutionError',
+        code: 'plan_upgrade_required',
+      });
+    }
   });
 
   test('blocks managed premium candidates for accounts with no plan', async () => {
@@ -189,24 +192,6 @@ describe('resolveCandidates free-tier premium gate', () => {
       code: 'plan_upgrade_required',
     });
     expect(accountTierCalls).toBe(1);
-  });
-
-  test('a plan-gated model serves as the platform default\'s own fallback, and only as that', async () => {
-    accountTier = 'none';
-    const fallback = await resolveCandidates(principal('none-fallback'), 'glm-5.3-flash', { fallbackFor: 'codex/gpt-5.6-sol' });
-    expect(fallback).toHaveLength(1);
-    expect(fallback[0]?.billingMode).toBe('credits');
-    const prefixed = await resolveCandidates(principal('none-fallback'), 'glm-5.3-flash', { fallbackFor: 'kortix/codex/gpt-5.6-sol' });
-    expect(prefixed).toHaveLength(1);
-    // Picked directly, or as a fallback of a model the platform policy does not name: still gated.
-    for (const fallbackFor of [undefined, 'kimi-k3']) {
-      await expect(
-        resolveCandidates(principal('none-fallback'), 'glm-5.3-flash', fallbackFor ? { fallbackFor } : undefined),
-      ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
-    }
-    await expect(
-      resolveCandidates({ ...principal('free-only'), freeModelsOnly: true }, 'kimi-k3', { fallbackFor: 'codex/gpt-5.6-sol' }),
-    ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
   });
 
   test('allows managed premium candidates for Team accounts', async () => {

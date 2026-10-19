@@ -2477,21 +2477,21 @@
           "name": "Free",
           "note": "Comece com créditos reais de sandbox.",
           "f1": "500 créditos / mês, sem cartão",
-          "f2": "Modelos gerenciados: Kimi, DeepSeek, GLM. Retenção zero de dados, inferência nos EUA",
-          "f3": "1 projeto",
-          "f4": "Use sua própria chave de API para qualquer modelo premium",
-          "f5": "Conecte sua assinatura do ChatGPT"
+          "f2": "1 projeto",
+          "f3": "Use sua própria chave de API para qualquer modelo premium",
+          "f4": "Conecte sua assinatura do ChatGPT"
         },
         "credits": {
           "name": "Créditos",
           "note": "A partir de US$ 50 por mês. Escolha os créditos de que sua equipe precisa.",
           "unit": "/ mês ou mais",
           "f1": "Tudo do Free",
-          "f2": "Membros ilimitados, um único pool de créditos compartilhado",
-          "f3": "Créditos não usados são transferidos por um mês",
-          "f4": "Recarregue quando quiser. Recargas nunca expiram",
-          "f5": "Até 200 projetos e limites de taxa de modelos mais altos",
-          "f6": "Suporte por e-mail"
+          "f2": "Modelos gerenciados: DeepSeek, GLM. Retenção zero de dados",
+          "f3": "Membros ilimitados, um único pool de créditos compartilhado",
+          "f4": "Créditos não usados são transferidos por um mês",
+          "f5": "Recarregue quando quiser. Recargas nunca expiram",
+          "f6": "Até 200 projetos e limites de taxa de modelos mais altos",
+          "f7": "Suporte por e-mail"
         },
         "enterprise": {
           "name": "Enterprise",
@@ -20038,7 +20038,7 @@
       "text146aaf3c71fa": "Mantém SSO, SCIM, RBAC e auditoria habilitados para uma conta Enterprise contratada que também é cobrada por um plano pago, para que a reconciliação do Stripe não os remova.",
       "text517105fd13ce": "Os créditos financiam a computação em sandbox — até um teste BYOK precisa de saldo na carteira para executar sessões. O crédito de boas-vindas gratuito é de US$ 2.",
       "text2f1d17f50af8": "O Enterprise libera SAML SSO, sincronização de diretório SCIM, RBAC e acesso à auditoria para esta conta. O plano cobrado não muda.",
-      "text12836c0e435d": "O Free custa US$ 0 — um projeto, 500 créditos por mês, modelos gerenciados e todos os recursos, com sua própria chave para qualquer outro modelo. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre a conta inteira. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
+      "text79c0703d2226": "O Free custa US$ 0 — um projeto, 500 créditos por mês e todos os recursos, com sua própria chave ou assinatura do ChatGPT para os modelos. Os modelos gerenciados pela Kortix exigem um plano pago. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre a conta inteira. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
       "text5dffd4db88c5": "Seu plano, seus créditos e o faturamento desta conta.",
       "text49fd64c206dd": "Seu plano está ativo. Os créditos estão prontos.",
       "textad828837ddd8": "membros membro acesso ao espaço de trabalho colaboradores pessoas colegas lista quem pode ver permissões conceder compartilhar",

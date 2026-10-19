@@ -292,13 +292,9 @@ export async function authorizeRequest(
  * An account without the managed-models entitlement (BYOK-only, whether by
  * tier, trial, or operator override) settles its own keys and ChatGPT
  * subscription at billingMode 'none' — nothing for this gate to fund — so the
- * legacy non-deferred auth call (no model resolved yet) skips it. The one
- * exception is the platform default: the ONE managed model every tier may use
- * (KRTX-1067), which settles as credits. The deferred gateway path calls this
- * only for a Kortix-billed request it already resolved (`creditsRequest`), so
- * the floor applies there for every account — without it a drained free
- * wallet ran platform-default turns with no admission hold and the settle
- * (which never enforces a floor) drove the balance negative.
+ * legacy non-deferred auth call (no model resolved yet) skips it. The deferred
+ * gateway path calls this only for a Kortix-billed request it already resolved
+ * (`creditsRequest`), so the floor applies there for every account.
  */
 export async function assertLlmBillingActive(
   accountId: string,

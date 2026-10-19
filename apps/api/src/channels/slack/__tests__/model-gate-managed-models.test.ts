@@ -80,8 +80,8 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     invalidateAccountBilling();
   });
 
-  test('free plan, no override → managed models offered', async () => {
-    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(false);
+  test('free plan, no override → no managed models', async () => {
+    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(true);
   });
 
   test('paid plan, no override → managed models offered (unchanged)', async () => {
