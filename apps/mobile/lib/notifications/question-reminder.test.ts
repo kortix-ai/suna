@@ -54,14 +54,14 @@ describe('planQuestionReminders', () => {
     expect(plan(tracker, { pendingIds: ['q1'], enabled: false })).toEqual({ schedule: [], cancel: ['q1'] });
   });
 
-  test('leaving the session (another session or none bound) cancels its reminders', () => {
+  test('leaving the session (project home, another session) keeps its reminder', async () => {
+    // Project home unbinds the session (`clearSandbox`): the user left the
+    // question there, which is the case the reminder is for.
     const tracker = createReminderTracker();
     plan(tracker, { pendingIds: ['q1'] });
-    expect(plan(tracker, { pendingIds: ['q1'], bound: S2 })).toEqual({ schedule: [], cancel: ['q1'] });
-
-    const other = createReminderTracker();
-    plan(other, { pendingIds: ['q1'] });
-    expect(plan(other, { pendingIds: ['q1'], bound: null })).toEqual({ schedule: [], cancel: ['q1'] });
+    expect(plan(tracker, { pendingIds: ['q1'], bound: null })).toEqual({ schedule: [], cancel: [] });
+    expect(plan(tracker, { pendingIds: ['q1'], bound: S2 })).toEqual({ schedule: [], cancel: [] });
+    expect(plan(tracker, { pendingIds: [], bound: S2 })).toEqual({ schedule: [], cancel: ['q1'] });
   });
 
   test('sign-out (store cleared, no session bound) cancels every reminder', () => {

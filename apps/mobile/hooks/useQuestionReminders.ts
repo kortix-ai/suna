@@ -24,6 +24,7 @@ import {
 import { getNotifications } from '@/lib/notifications/registration';
 import { useNotificationStore } from '@/stores/notification-store';
 
+// Expo Go on Android cannot load expo-notifications (SDK 53+): `getNotifications()` is null there.
 const supported = Platform.OS === 'ios' || Platform.OS === 'android';
 
 /** One queue: a cancel never overtakes the schedule of the same reminder. */
@@ -104,7 +105,7 @@ export function useQuestionReminders(session: BoundSession | null, signedIn: boo
     };
   }, []);
 
-  // Another session bound, or none: its reminders are cancelled.
+  // A newly bound session: its hydrated questions schedule.
   const projectId = session?.projectId ?? null;
   const sessionId = session?.sessionId ?? null;
   useEffect(() => {

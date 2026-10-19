@@ -9,9 +9,12 @@
  * Rules:
  * - One reminder per question request id. An id is never scheduled twice, also
  *   after a stale hydrate re-adds it.
- * - Only for the session bound to the live stream (`SandboxContext`): every
- *   question the stream adds belongs to it. Another bound session, or none,
- *   cancels its reminders: no stream sees the answer any more.
+ * - Scheduled only while a session is bound to the live stream
+ *   (`SandboxContext`): every question the stream adds belongs to it.
+ *   Leaving that session (project home unbinds it, another session binds)
+ *   keeps the reminder: the user left the question, the case it is for. No
+ *   stream then sees an answer from another surface, so the reminder can
+ *   fire for a question answered there; the tap shows it answered.
  * - A question that leaves the SDK's pending store (answered or dismissed on
  *   any surface, the turn stopped, sign-out) cancels its reminder.
  * - The `enabled` and `onQuestion` switches off: nothing is scheduled, and
@@ -62,10 +65,6 @@ export function isReminderIdentifier(identifier: string): boolean {
   return identifier.startsWith(IDENTIFIER_PREFIX);
 }
 
-function sameSession(a: ReminderSession | null, b: ReminderSession): boolean {
-  return !!a && a.projectId === b.projectId && a.sessionId === b.sessionId;
-}
-
 function remember(tracker: ReminderTracker, requestId: string): void {
   tracker.seen.add(requestId);
   if (tracker.seen.size > MAX_REMEMBERED_QUESTIONS) {
@@ -87,7 +86,7 @@ export function planQuestionReminders(
   const plan: ReminderPlan = { schedule: [], cancel: [] };
 
   for (const [requestId, session] of tracker.scheduled) {
-    if (pending.has(requestId) && input.enabled && sameSession(input.bound, session)) continue;
+    if (pending.has(requestId) && input.enabled) continue;
     tracker.scheduled.delete(requestId);
     plan.cancel.push(requestId);
   }
