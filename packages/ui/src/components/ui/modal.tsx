@@ -1,0 +1,388 @@
+'use client';
+
+/**
+ * @example
+ * ```tsx
+ * import {
+ *   Modal,
+ *   ModalBody,
+ *   ModalContent,
+ *   ModalDescription,
+ *   ModalFooter,
+ *   ModalHeader,
+ *   ModalTitle,
+ *   ModalTrigger,
+ * } from './modal';
+ * import { Button } from './button';
+ *
+ * <Modal>
+ *   <ModalTrigger asChild>
+ *     <Button>Open</Button>
+ *   </ModalTrigger>
+ *   <ModalContent className="lg:max-w-md">
+ *     <ModalHeader>
+ *       <ModalTitle>Title</ModalTitle>
+ *       <ModalDescription>Description</ModalDescription>
+ *     </ModalHeader>
+ *     <ModalBody>{children}</ModalBody>
+ *     <ModalFooter>
+ *       <Button variant="outline-ghost">Cancel</Button>
+ *       <Button>Confirm</Button>
+ *     </ModalFooter>
+ *   </ModalContent>
+ * </Modal>
+ * ```
+ *
+ * Controlled:
+ * ```tsx
+ * <Modal open={open} onOpenChange={setOpen}>
+ *   <ModalContent>...</ModalContent>
+ * </Modal>
+ * ```
+ */
+
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { cva, type VariantProps } from 'class-variance-authority';
+import * as React from 'react';
+
+import { Close } from '../../icons/close';
+import { cn } from '../../lib/utils';
+import {
+  DialogDepthProvider,
+  dialogContentZ,
+  dialogOverlayZ,
+  hasOpenFloatingLayer,
+  isFloatingLayerTarget,
+  useDialogDepth,
+  useDialogRootLayer,
+} from '../../lib/z-stack';
+import { Button } from './button';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
+
+// Stacks by open order, not only by JSX nesting: a Modal opened while another
+// is open sits above it even when the two share no React ancestor.
+const Modal = ({ open, defaultOpen, onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
+  const layer = useDialogRootLayer({ open, defaultOpen, onOpenChange });
+
+  return (
+    <DialogDepthProvider depth={layer.depth}>
+      <DialogPrimitive.Root {...props} open={layer.open} onOpenChange={layer.onOpenChange} />
+    </DialogDepthProvider>
+  );
+};
+
+const ModalTrigger = ({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Trigger>, 'size'> & TriggerVariantProps) => (
+  <DialogPrimitive.Trigger
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
+);
+
+const ModalClose = DialogPrimitive.Close;
+
+const ModalPortal = DialogPrimitive.Portal;
+
+const overlayAnimationClasses = {
+  default:
+    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+  none: '',
+} as const;
+
+const ModalOverlay = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Overlay>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay> & {
+    animation?: keyof typeof overlayAnimationClasses;
+  }
+>(({ className, style, animation = 'default', ...props }, ref) => {
+  const depth = useDialogDepth();
+
+  return (
+    <DialogPrimitive.Overlay
+      className={cn(
+        'fixed inset-0 bg-black/65 backdrop-blur-xs',
+        overlayAnimationClasses[animation],
+        className,
+      )}
+      style={{ zIndex: dialogOverlayZ(depth), ...style }}
+      {...props}
+      ref={ref}
+    />
+  );
+});
+ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
+
+const ModalVariants = cva(
+  cn(
+    'fixed gap-0 border p-0 shadow-lg overflow-y-auto',
+    'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl',
+    'lg:flex lg:h-full lg:flex-col space-y-4',
+  ),
+  {
+    variants: {
+      variant: {
+        default: 'bg-sidebar border-muted/60',
+        base: 'bg-background border-muted/60',
+        transparent: 'bg-transparent border-none p-0',
+      },
+      side: {
+        top: 'inset-x-0 top-0 border-b rounded-b-xl max-h-[90%] lg:h-fit',
+        bottom: 'inset-x-0 bottom-0 lg:bottom-auto border-t lg:h-auto max-h-[90%] rounded-t-xl',
+        left: 'inset-y-0 left-0 h-full lg:h-fit w-3/4 border-r rounded-r-xl sm:max-w-sm',
+        right: 'inset-y-0 right-0 h-full lg:h-fit w-3/4 border-l rounded-l-xl sm:max-w-sm',
+        fullscreen: 'inset-0 bg-black/60 dark:bg-black/85',
+      },
+      animation: {
+        default: cn(
+          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+          'lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95',
+        ),
+        none: '',
+      },
+    },
+    compoundVariants: [
+      {
+        animation: 'default',
+        side: 'top',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-top max-lg:data-[state=open]:slide-in-from-top',
+      },
+      {
+        animation: 'default',
+        side: 'bottom',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-bottom max-lg:data-[state=open]:slide-in-from-bottom',
+      },
+      {
+        animation: 'default',
+        side: 'left',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-left max-lg:data-[state=open]:slide-in-from-left',
+      },
+      {
+        animation: 'default',
+        side: 'right',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-right max-lg:data-[state=open]:slide-in-from-right',
+      },
+    ],
+    defaultVariants: {
+      side: 'bottom',
+      variant: 'default',
+      animation: 'default',
+    },
+  },
+);
+
+interface ModalContentProps
+  extends
+    React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>,
+    VariantProps<typeof ModalVariants> {
+  closeClassName?: string;
+  closeLabel?: string;
+  modalClassName?: string;
+  showCloseButton?: boolean;
+  closeButtonChildren?: React.ReactNode;
+  closeOnOutsideClick?: boolean;
+  overlayClassName?: string;
+}
+
+/**
+ * Should an "outside" interaction actually dismiss the modal?
+ *
+ * Two cases both look like backdrop clicks to Radix and must NOT dismiss:
+ *
+ * 1. The click lands on a portaled Select / DropdownMenu / tooltip panel.
+ *    Those portal to `document.body`, outside the modal's DOM subtree, so
+ *    containment says "outside". `isFloatingLayerTarget` catches that.
+ *
+ * 2. A *modal* DropdownMenu is open and the click lands anywhere else —
+ *    including visually on the modal body, or on the dark overlay. While the
+ *    menu is open Radix sets `pointer-events: none` on everything under it, so
+ *    the event target is `body` / the overlay, not the menu. Checking the
+ *    target alone fails; Escape already uses `hasOpenFloatingLayer()` for the
+ *    same reason. The gesture owns the floating layer: dismiss that first, and
+ *    require a second click to close the modal.
+ */
+export function modalDismissesOnOutsideInteraction(
+  target: EventTarget | null,
+  closeOnOutsideClick: boolean,
+): boolean {
+  if (!closeOnOutsideClick) return false;
+  if (hasOpenFloatingLayer()) return false;
+  return !isFloatingLayerTarget(target);
+}
+
+const ModalContentInner = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  ModalContentProps
+>(
+  (
+    {
+      side = 'bottom',
+      animation = 'default',
+      className,
+      modalClassName,
+      closeClassName,
+      closeLabel = 'Close',
+      children,
+      variant = 'default',
+      showCloseButton = true,
+      closeButtonChildren,
+      closeOnOutsideClick = true,
+      overlayClassName,
+      style,
+      ...props
+    },
+    ref,
+  ) => {
+    const depth = useDialogDepth();
+
+    const handleInteractOutside = (
+      event: Parameters<
+        NonNullable<
+          React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>['onInteractOutside']
+        >
+      >[0],
+    ) => {
+      if (
+        !modalDismissesOnOutsideInteraction(event.detail.originalEvent.target, closeOnOutsideClick)
+      ) {
+        event.preventDefault();
+      }
+    };
+
+    // Same asymmetry for the keyboard: Escape aimed at an open select or menu must
+    // dismiss that panel, not the modal underneath it.
+    //
+    // Deliberately NOT guarded on `hasOpenNestedDialog()`. Radix runs this handler
+    // on the top-most layer only, so a nested modal would see its own parent in
+    // that count, prevent its own dismissal, and leave Escape dead. Callers that
+    // need the nested-dialog guard pass their own `onEscapeKeyDown` — it lands in
+    // `...props` below and replaces this one (see the legacy Customize panel).
+    const handleEscapeKeyDown = (event: KeyboardEvent) => {
+      if (hasOpenFloatingLayer()) {
+        event.preventDefault();
+      }
+    };
+
+    return (
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          ModalVariants({ side, animation, className: modalClassName, variant }),
+          className,
+          'rounded-xl rounded-b-none lg:rounded-b-xl',
+        )}
+        style={{ zIndex: dialogContentZ(depth), ...style }}
+        onInteractOutside={handleInteractOutside}
+        onEscapeKeyDown={handleEscapeKeyDown}
+        {...props}
+      >
+        {children}
+
+        <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
+          {closeButtonChildren}
+          {showCloseButton && (
+            <ModalClose asChild>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'size-8 p-0 text-xs font-semibold focus:outline-none',
+                  closeClassName,
+                )}
+              >
+                <Close className="text-primary size-4 stroke-1" />
+                <span className="sr-only">{closeLabel}</span>
+              </Button>
+            </ModalClose>
+          )}
+        </div>
+      </DialogPrimitive.Content>
+    );
+  },
+);
+ModalContentInner.displayName = 'ModalContentInner';
+
+const ModalContent = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  ModalContentProps
+>(({ animation = 'default', overlayClassName, ...props }, ref) => {
+  const resolvedAnimation = animation ?? 'default';
+
+  return (
+    <ModalPortal>
+      <ModalOverlay animation={resolvedAnimation} className={overlayClassName} />
+      <ModalContentInner animation={resolvedAnimation} {...props} ref={ref} />
+    </ModalPortal>
+  );
+});
+ModalContent.displayName = DialogPrimitive.Content.displayName;
+
+const ModalHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('flex flex-col space-y-0 text-left', 'px-5 pt-5', className)} {...props} />
+);
+ModalHeader.displayName = 'ModalHeader';
+
+const ModalFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      'flex flex-col-reverse items-center justify-end gap-y-2 rounded-b-none px-5 sm:flex-row sm:justify-end sm:space-x-2 sm:gap-y-0 md:rounded-b-xl md:px-5 lg:rounded-b-xl',
+
+      className,
+    )}
+    {...props}
+  />
+);
+ModalFooter.displayName = 'ModalFooter';
+
+const ModalTitle = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Title>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Title
+    ref={ref}
+    className={cn('text-foreground text-base font-semibold', className)}
+    {...props}
+  />
+));
+ModalTitle.displayName = DialogPrimitive.Title.displayName;
+
+const ModalDescription = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Description>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Description
+    ref={ref}
+    className={cn('text-muted-foreground text-sm', className)}
+    {...props}
+  />
+));
+ModalDescription.displayName = DialogPrimitive.Description.displayName;
+
+const ModalBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('flex-1 space-y-4 p-5 pt-0', className)} {...props} />
+);
+ModalBody.displayName = 'ModalBody';
+
+export {
+  Modal,
+  ModalBody,
+  ModalClose,
+  ModalContent,
+  ModalContentInner,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  ModalPortal,
+  ModalTitle,
+  ModalTrigger,
+};
