@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-19
 
+### K7 `kit.css` adds the field
+- **Date:** 2026-10-19
+- **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.
+- **Why:** the sales App has forms, and an App without the field primitive writes its own field CSS.
+- **Where:** `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App refactor in `kortix-ai/company`.
+
 ### K6 `kit.css`: the UI primitives as portable CSS classes
 - **Date:** 2026-10-19
 - **Decision:** `visual/kit.css` carries the `@/components/ui` primitives (Card, Button, Badge, status dot, banner, segmented control, table, list, stat, meter, popover, empty state) as `k-*` classes that read only `tokens.css` variables. HTML outside `apps/web` loads `fonts.css`, `tokens.css` and `kit.css` in that order and composes these classes before it writes its own CSS.

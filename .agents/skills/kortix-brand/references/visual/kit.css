@@ -69,6 +69,23 @@ a { color: inherit; }
 .k-button[data-variant="secondary"]:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
 .k-button[data-size="sm"] { height: calc(var(--spacing) * 7.5); padding: 0 calc(var(--spacing) * 2.5); font-size: var(--text-xs); }
 
+/* ── Field (input.tsx: bg-popover, hairline, rounded-md; focus = ring border + 3px /15 halo) ── */
+.k-input {
+  display: block; width: 100%; min-width: 0; height: calc(var(--spacing) * 10); padding: 0 calc(var(--spacing) * 3);
+  font: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--foreground);
+  background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+textarea.k-input { height: auto; min-height: calc(var(--spacing) * 20); padding-block: calc(var(--spacing) * 2); resize: vertical; line-height: var(--text-sm-line-height); }
+.k-input::placeholder { color: var(--muted-foreground); }
+.k-input:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 15%, transparent); }
+.k-input[aria-invalid="true"] { border-color: var(--destructive); box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 15%, transparent); }
+.k-input:disabled { opacity: .5; pointer-events: none; }
+.k-field { display: grid; gap: calc(var(--spacing) * 1.5); }
+.k-field > span:first-child { font-size: var(--text-sm); font-weight: 500; }
+.k-check { display: flex; align-items: center; gap: calc(var(--spacing) * 2); font-size: var(--text-sm); cursor: pointer; }
+.k-check > input { width: calc(var(--spacing) * 4); height: calc(var(--spacing) * 4); margin: 0; accent-color: var(--foreground); }
+
 /* ── Segmented control (tabs.tsx: muted track, raised chip) ── */
 .k-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--muted); border-radius: var(--radius-md); }
 .k-segmented > button {
