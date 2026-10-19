@@ -78,6 +78,14 @@ means Files is off for the project: tell the user that a goal needs it.
 <start>
 When the user gives an objective:
 
+0. Mark this session unattended, before anything else:
+
+   ```bash
+   kortix sessions update --meta unattended=true
+   ```
+
+   From then on a question tool call answers at once with "nobody can
+   answer", and the turn can end. Answers reach you as new messages.
 1. Restate it as an outcome that is true or false, and write 2 to 6 success
    criteria someone else can check. Each criterion names its proof.
 2. Take constraints from the user's words. Add the obvious ones (no spend
@@ -85,10 +93,10 @@ When the user gives an objective:
    accounts). Ask only when a wrong guess is expensive or irreversible.
 3. Create the folder, `goal.json`, `log.md`, `notes.md`. Slug: short,
    kebab-case, from the objective.
-4. Plan the first items. Act on the first one in the same turn.
-5. Arm the heartbeat (see `<wake>`), save `goal.json`, and tell the user in
-   three lines: the outcome, the criteria, the first thing you need from them
-   (or "nothing for now").
+4. Arm the heartbeat (see `<wake>`) and save `goal.json`.
+5. Plan the first items. Act on the first one in the same turn.
+6. End the turn with three lines to the user: the outcome, the criteria, and
+   the first thing you need from them (or "nothing for now").
 </start>
 
 <wake>
@@ -163,7 +171,7 @@ Split parallel or heavy work into worker sessions. The coordinator owns the
 goal folder; a worker owns one item.
 
 ```bash
-kortix sessions new --prompt "Work item <id> of the goal in <goal folder>. Load the kortix-goals skill. Read goal.json, do only that item, put outputs in docs/ or evidence/, append one line to log.md, and end with a one-paragraph result." --json
+kortix sessions new --meta unattended=true --prompt "Work item <id> of the goal in <goal folder>. Load the kortix-goals skill. Read goal.json, do only that item, put outputs in docs/ or evidence/, append one line to log.md, and end with a one-paragraph result." --json
 ```
 
 Record the worker in `sessions` and on its item (`session_id`). Check
@@ -183,7 +191,7 @@ too.
 1. Start a fresh verifier session:
 
    ```bash
-   kortix sessions new --prompt "Verify the goal in <goal folder>. Load the kortix-goals skill. You did none of the work. For each success criterion in goal.json, check its evidence yourself. Answer PASS or FAIL per criterion with the reason, and write the verdict to evidence/verification.md." --json
+   kortix sessions new --meta unattended=true --prompt "Verify the goal in <goal folder>. Load the kortix-goals skill. You did none of the work. For each success criterion in goal.json, check its evidence yourself. Answer PASS or FAIL per criterion with the reason, and write the verdict to evidence/verification.md." --json
    ```
 
    Record it in `sessions` with role `verifier`. Wait for it in this turn
