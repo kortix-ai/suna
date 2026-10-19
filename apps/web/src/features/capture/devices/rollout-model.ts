@@ -24,11 +24,14 @@ export function msiCommand(url: string, token: string): string {
   return `msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`;
 }
 
-/** Where a computer downloads the Windows installer: the dev build for the dev API, else the latest release. */
-export function windowsInstallerUrl(url: string): string {
+/** Where a computer downloads an installer: the dev build for the dev API, else the latest release. */
+export function installerUrl(url: string, file: string): string {
   const tag = /\/\/dev-api\./.test(url) ? 'download/capture-dev-latest' : 'latest/download';
-  return `https://github.com/kortix-ai/suna/releases/${tag}/KortixCapture-x64.msi`;
+  return `https://github.com/kortix-ai/suna/releases/${tag}/${file}`;
 }
+
+/** The Windows installer's download address. */
+export const windowsInstallerUrl = (url: string) => installerUrl(url, 'KortixCapture-x64.msi');
 
 /**
  * One Command Prompt line (as administrator) that downloads the installer, installs it
@@ -62,14 +65,14 @@ export function installCommand(os: RolloutOs, url: string, token: string): strin
       `sudo mkdir -p "${dir}"`,
       `echo '${configJson(url, token)}' | sudo tee "${dir}/config.json" >/dev/null`,
       `sudo chmod 600 "${dir}/config.json"`,
-      'sudo installer -pkg KortixCapture-universal.pkg -target /',
+      `curl -fsSL -o /tmp/KortixCapture-universal.pkg ${installerUrl(url, 'KortixCapture-universal.pkg')} && sudo installer -pkg /tmp/KortixCapture-universal.pkg -target / && echo "Kortix Capture installed."`,
     ].join('\n');
   }
   return [
     'sudo install -d -m 755 /etc/kortix',
     `echo '${configJson(url, token)}' | sudo tee /etc/kortix/capture.json >/dev/null`,
     'sudo chmod 600 /etc/kortix/capture.json',
-    'sudo apt install ./kortix-capture_amd64.deb',
+    `curl -fsSL -o /tmp/kortix-capture_amd64.deb ${installerUrl(url, 'kortix-capture_amd64.deb')} && sudo apt-get install -y /tmp/kortix-capture_amd64.deb && echo "Kortix Capture installed."`,
   ].join('\n');
 }
 

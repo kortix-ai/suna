@@ -74,12 +74,17 @@ describe('IT rollout model', () => {
       'sudo chmod 600 "/Library/Application Support/Kortix/Capture/config.json"',
     );
     expect(mac.split('\n').at(-1)).toBe(
-      'sudo installer -pkg KortixCapture-universal.pkg -target /',
+      'curl -fsSL -o /tmp/KortixCapture-universal.pkg https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-universal.pkg && sudo installer -pkg /tmp/KortixCapture-universal.pkg -target / && echo "Kortix Capture installed."',
     );
     const linux = installCommand('linux', 'https://api.kortix.com', 'kortix_enr_x');
     expect(linux).toContain('sudo tee /etc/kortix/capture.json');
     expect(linux).toContain('sudo chmod 600 /etc/kortix/capture.json');
-    expect(linux.split('\n').at(-1)).toBe('sudo apt install ./kortix-capture_amd64.deb');
+    expect(linux.split('\n').at(-1)).toBe(
+      'curl -fsSL -o /tmp/kortix-capture_amd64.deb https://github.com/kortix-ai/suna/releases/latest/download/kortix-capture_amd64.deb && sudo apt-get install -y /tmp/kortix-capture_amd64.deb && echo "Kortix Capture installed."',
+    );
+    expect(installCommand('macos', 'https://dev-api.kortix.com', 'kortix_enr_x')).toContain(
+      'releases/download/capture-dev-latest/KortixCapture-universal.pkg',
+    );
     expect(installCommand('windows', 'https://api.kortix.com', 'kortix_enr_x')).toBe(
       windowsCmd('https://api.kortix.com', 'kortix_enr_x'),
     );

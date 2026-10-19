@@ -141,10 +141,14 @@ export function useCaptureSearch(accountId: AccountId, query: CaptureSearchQuery
 export function useCaptureChunkMedia(
   accountId: AccountId,
   chunkId: string | null | undefined,
-  opts: { userId?: string } = {},
+  opts: { userId?: string; deviceId?: string } = {},
 ) {
   return useQuery({
-    queryKey: qk.capture.timelineRead(accountId ?? '', 'media', { chunkId, userId: opts.userId ?? null }),
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'media', {
+      chunkId,
+      userId: opts.userId ?? null,
+      deviceId: opts.deviceId ?? null,
+    }),
     queryFn: () => getCaptureChunkMedia(accountId as string, chunkId as string, opts),
     enabled: !!accountId && !!chunkId,
     ...contract(FRESHNESS.captureTimeline),
