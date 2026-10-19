@@ -256,7 +256,7 @@ triggers:
 | --- | --- | --- |
 | `active` | `live` | Subscribed. The next event fires the trigger. On source `mcp`, Kortix checks the app every `interval` minutes. |
 | `pending` | `pending` | Kortix is subscribing. Check again with `kortix triggers info <slug>`. |
-| `needs_connection` | `needs connection` | The connector has no usable shared account. Run `kortix connectors connect <slug> --owner project` and have a person open the link. On an `mcp` connector, sign in the shared account on the connector page instead. The trigger goes live when they finish. |
+| `needs_connection` | `needs connection` | The connector has no usable shared account. Run `kortix connectors connect <slug> --owner project` and have a person open the link. This works on a `composio` connector and on an `mcp` connector with one-click sign-in. On another `mcp` connector, sign in the shared account on the connector page instead. The trigger goes live when they finish. |
 | `error` | `error` | The subscription failed, the app disabled it, or checks of source `mcp` failed. The error text names the cause. Fix it, then save the trigger again. After failed checks, the next good check sets `active` again without a save. |
 
 - Only an account shared with the whole project feeds a trigger. A private account, or one shared with named people only, never does.

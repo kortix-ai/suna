@@ -157,6 +157,8 @@ export function mergeConnectorDraftEntry(
     entry.authorization_strategy = previous.authorization_strategy;
   }
   if (previous.enabled !== undefined) entry.enabled = previous.enabled;
+  // Owned by the sensitive toggle: an edit (or a Pipedream move) keeps the read approval gate.
+  if (previous.sensitive !== undefined) entry.sensitive = previous.sensitive;
   if (entry.name === undefined && previous.name !== undefined) entry.name = previous.name;
   return entry;
 }

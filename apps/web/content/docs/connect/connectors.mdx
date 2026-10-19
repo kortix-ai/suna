@@ -32,7 +32,7 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
 | `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
 
-`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`.
+`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream connector to Kortix](#move-a-pipedream-connector-to-kortix).
 
 A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Kortix MCP server](/docs/connect/mcp) is the other direction: your MCP client calls Kortix.
 
@@ -89,7 +89,7 @@ Apps sign in one of three ways:
 | Sign-in | Apps | Setup |
 | --- | --- | --- |
 | The vendor registers Kortix on the fly | Linear, Notion, Atlassian, Figma, Stripe, Sentry, Airtable, Dropbox, Canva, Miro, monday.com, ClickUp, Intercom, PostHog, Supabase, Vercel, Cloudflare and more | None |
-| Kortix's own OAuth client | Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana, Box | The operator configures the client (`KORTIX_OAUTH_CLIENTS`, see [Self-host](/docs/host#integrations)). Until then the app is not listed. |
+| Kortix's own OAuth client | Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana, Box | The operator configures the client (`KORTIX_OAUTH_CLIENTS`, see [Kortix OAuth clients](/docs/host#kortix-oauth-clients)). Until then the app is not listed. |
 | None | DeepWiki, Context7 | None. The app is ready when it is installed. |
 
 - Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
@@ -97,6 +97,156 @@ Apps sign in one of three ways:
 - Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
 
 Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+
+#### Move a Pipedream connector to Kortix
+
+Kortix retires Pipedream. With `connectors_v2` on, a Pipedream connector moves to the catalog app for the same service and keeps its slug. A Pipedream sign-in belongs to Pipedream's OAuth client, so it does not carry over: one person signs in to the app once, and the connector switches.
+
+What stays:
+
+- The slug. Agent grants (`agents.<name>.connectors`), triggers, session bindings and every other reference to the slug keep working.
+- The display name and the entry's `policies` and `sensitive` flag.
+- Every account row, with its name, owner and audience.
+- Pipedream serves the connector until the sign-in completes.
+
+What changes:
+
+- Kortix rewrites the `kortix.yaml` entry to `provider: mcp` with the app's `url`, commits it to the default branch and syncs the connector.
+- The tools now come from the vendor's own MCP server, so the tool names differ. Check the connector rules and agent prompts that name a Pipedream action.
+- The account that signed in holds the new sign-in. Every other account on the connector loses its Pipedream sign-in. It reads not signed in until its owner signs in again.
+
+```yaml
+# Before
+connectors:
+  - slug: issues
+    name: Issues
+    provider: pipedream
+    app: linear_app
+
+# After
+connectors:
+  - slug: issues
+    name: Issues
+    provider: mcp
+    url: https://mcp.linear.app/mcp
+    transport: http
+```
+
+Which apps move:
+
+- Each Pipedream app in the table below moves to its catalog app.
+- Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana and Box move only when the deployment has a Kortix OAuth client for the vendor. See [Kortix OAuth clients](/docs/host#kortix-oauth-clients).
+- Any other app has no Kortix equivalent yet, for example `jira_data_center`, `slack_bot` or `neon_postgres`. The connector keeps working through Pipedream.
+
+| Kortix app | Pipedream `app` |
+| --- | --- |
+| Airtable | `airtable_oauth` |
+| Asana | `asana` |
+| Atlassian | `jira`, `confluence` |
+| Attio | `attio` |
+| Box | `box` |
+| Canva | `canva` |
+| ClickUp | `clickup` |
+| Close | `close` |
+| Cloudflare | `cloudflare_api_key` |
+| Dropbox | `dropbox` |
+| Figma | `figma` |
+| GitHub | `github` |
+| Gmail | `gmail` |
+| Google Calendar | `google_calendar` |
+| Google Docs | `google_docs` |
+| Google Drive | `google_drive` |
+| Google Sheets | `google_sheets` |
+| Granola | `granola` |
+| HubSpot | `hubspot` |
+| Intercom | `intercom` |
+| Jotform | `jotform` |
+| Linear | `linear`, `linear_app` |
+| Miro | `miro_custom_app` |
+| monday.com | `monday` |
+| Neon | `neon_api_keys` |
+| Notion | `notion`, `notion_api_key` |
+| PayPal | `paypal` |
+| PostHog | `posthog` |
+| Sentry | `sentry` |
+| Slack | `slack`, `slack_v2` |
+| Stripe | `stripe` |
+| Supabase | `supabase`, `supabase_management_api` |
+| Vercel | `vercel_token_auth` |
+| Webflow | `webflow` |
+| Wix | `wix_api_key` |
+
+A move needs permission to change the project's connectors.
+
+**In the web app**, open the Pipedream connector in **Customize → Connectors**. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
+
+**From the CLI:**
+
+```bash
+kortix connectors moves                  # each Pipedream connector and its Kortix app
+kortix connectors move issues            # sign in once; the connector switches
+kortix connectors move issues --connection <connection-id> --no-open
+```
+
+- `moves` prints `SLUG`, `APP` (the Pipedream app), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
+- `move` opens the app's sign-in in your browser and waits up to 10 minutes for it. `--no-open` prints the URL only. `--device` uses the device flow on a server that offers it.
+- `--connection` signs in on that account. Without it, `move` uses the connector's shared project account.
+- Without `connectors_v2`, both commands exit `1` and print `kortix projects features enable connectors_v2`.
+
+**Through the API:**
+
+```http
+GET /v1/projects/{projectId}/connector-moves
+```
+
+```json
+{
+  "moves": [
+    {
+      "slug": "issues",
+      "name": "Issues",
+      "app": "linear_app",
+      "to": { "slug": "linear", "name": "Linear", "icon": "/connector-icons/linear.svg" },
+      "connection_id": null,
+      "signed_in": false,
+      "accounts": 2
+    }
+  ]
+}
+```
+
+`to` is `null` when the app has no Kortix equivalent on the deployment. `connection_id` is the account a started move signs in on. `signed_in` is `true` when that sign-in completed and only the switch is left.
+
+```http
+POST /v1/projects/{projectId}/connectors/{slug}/move
+Content-Type: application/json
+
+{ "connection_id": "11111111-1111-4111-8111-111111111111" }
+```
+
+`connection_id` is optional. A connector that already moved answers `{ "status": "moved" }`. Otherwise the answer is the next step:
+
+```json
+{
+  "status": "sign_in",
+  "connection_id": "11111111-1111-4111-8111-111111111111",
+  "to": { "slug": "linear", "name": "Linear", "url": "https://mcp.linear.app/mcp" }
+}
+```
+
+1. Sign in on `connection_id` with the OAuth routes: `POST /v1/projects/{projectId}/connections/{connection_id}/oauth2/discover-resource`, then `/oauth2/register`, then `/oauth2/authorize`. Open `authorization_url`. When discovery returns `kortix_client: true`, send `register` without `registration_endpoint`: Kortix signs in with its own OAuth client.
+2. Poll `GET /v1/projects/{projectId}/connections/{connection_id}/oauth2/status` until `status` is `active`. Kortix switches the connector when the sign-in stores its token.
+3. Wait for the switch: the connector leaves `GET /v1/projects/{projectId}/connector-moves`. If it is still listed with `signed_in: true` after 30 seconds, call `move` again. That call finishes a switch that failed and answers `{ "status": "moved" }`.
+
+| Status | Meaning |
+| --- | --- |
+| `400` | `connection_id` is not an account of this connector. |
+| `403` | `feature_disabled` without `connectors_v2`, or no permission to change the project's connectors. |
+| `404` | No connector with this slug. |
+| `409` | The connector is not a Pipedream connector, or its app has no Kortix equivalent on this deployment. |
+| `502` | The `kortix.yaml` write failed. Call `move` again. |
+
+The SDK has the same two calls: `p.connectors.listMoves()` and `p.connectors.move(slug, { connectionId })`. See the [SDK reference](/docs/sdk/reference#connectors-and-policies).
 
 ### From the CLI
 
@@ -195,7 +345,7 @@ When you have no account of your own on a connector, the **Sign in**, **Set cred
 | Managed OAuth (`composio`) | **Add account**, then sign in. | `kortix connectors connect <slug>` |
 | API key or token | **Add account**, then enter the key. | `kortix connectors credential <slug> [value]`. Without a value it prompts. `-` reads stdin. |
 | Project secret | — | `kortix connectors secret <slug> <identifier>`. `--clear` removes the binding. |
-| OAuth 2.1 (`mcp`) or OAuth2 (direct APIs) | **Add account**, then sign in. | `kortix connectors authorize <slug>`. See [OAuth for MCP servers and direct APIs](#oauth-for-mcp-servers-and-direct-apis). |
+| OAuth 2.1 (`mcp`) or OAuth2 (direct APIs) | **Add account**, then sign in. | `kortix connectors connect <slug>` on an MCP server with one-click sign-in. Otherwise `kortix connectors authorize <slug>`. See [OAuth for MCP servers and direct APIs](#oauth-for-mcp-servers-and-direct-apis). |
 
 ```bash
 kortix connectors connect gmail                          # a private account (--owner me, the default)
@@ -205,6 +355,7 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 ```
 
 - `connect` prints a link. Open it and approve the app. `connect-finalize` exits `1` while authorization is incomplete.
+- `connect`, `--label` and agent connect links work on `composio` connectors and on `mcp` connectors with one-click sign-in. One-click sign-in means the server publishes OAuth metadata and supports dynamic client registration, or it is a catalog app on a Kortix OAuth client. For such an `mcp` connector, the link is the app's own consent page: Kortix runs discovery, client registration and PKCE on the server. A legacy `pipedream` connector gets a link for its shared account only.
 - `--owner project` needs permission to change the project's connectors.
 - `--label` names a new account. The person who opens the link confirms the name and who can use it.
 - A project secret works as the credential when it is an active project secret, not a personal one, stored with `--scope connector`: `kortix secrets set BILLING_KEY=- --scope connector`. A binding answers `409` when the connector needs no credential, is a channel, or already has a stored credential, or when the secret is missing, inactive or not connector-scoped. A secret narrowed to some people works only in their private sessions (`credential_not_shared`). See [Secrets](/docs/project/secrets).
@@ -212,7 +363,7 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 
 ### Connect links inside a session
 
-A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.
+A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. This works on `composio` connectors and on `mcp` connectors with one-click sign-in. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.
 
 ### OAuth for MCP servers and direct APIs
 

@@ -24,7 +24,7 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { ensureDefaultConnection } from './credentials';
 import { type CrudResult, upsertConnectorInManifest } from './manifest-crud';
-import { MCP_APPS, type McpApp, mcpAppAvailable, mcpAppIcon } from './mcp-apps';
+import { MCP_APPS, type McpApp, mcpAppAvailable, mcpAppForUrl, mcpAppIcon } from './mcp-apps';
 
 /**
  * Pipedream app slug → Kortix catalogue app. Slugs read from Pipedream's live
@@ -170,6 +170,9 @@ export async function moveConnector(input: {
     .where(and(eq(connectors.projectId, input.projectId), eq(connectors.slug, input.slug)))
     .limit(1);
   if (!connector) return { ok: false, status: 404, error: 'Connector not found' };
+  // Moved already (the sign-in switched it): a client that finishes with a second call reads `moved`.
+  const url = (connector.config as { url?: unknown } | null)?.url;
+  if (connector.providerType === 'mcp' && typeof url === 'string' && mcpAppForUrl(url)) return { ok: true, status: 'moved' };
   if (connector.providerType !== 'pipedream') {
     return { ok: false, status: 409, error: `Only a Pipedream connector moves. ${input.slug} uses ${connector.providerType}.` };
   }

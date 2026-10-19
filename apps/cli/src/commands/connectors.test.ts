@@ -149,6 +149,35 @@ describe('oauth2AuthorizeSteps', () => {
     });
   });
 
+  test('a catalogue app on a Kortix OAuth client registers with no endpoint', () => {
+    const steps = oauth2AuthorizeSteps(
+      {
+        resource_url: 'https://mcp.example.test/mcp',
+        requires_authorization: true,
+        resource: 'https://mcp.example.test/mcp',
+        authorization_server: 'https://accounts.example.test',
+        metadata: {
+          authorization_url: 'https://accounts.example.test/authorize',
+          token_url: 'https://accounts.example.test/token',
+        },
+        kortix_client: true,
+        scopes: ['mail.read'],
+        warnings: [],
+      },
+      {},
+    );
+    expect(steps).toEqual({
+      register: {
+        issuer: 'https://accounts.example.test',
+        authorization_url: 'https://accounts.example.test/authorize',
+        token_url: 'https://accounts.example.test/token',
+        scopes: ['mail.read'],
+        resource: 'https://mcp.example.test/mcp',
+      },
+      scopes: ['mail.read'],
+    });
+  });
+
   test('a server that needs no authorization says so instead of registering', () => {
     expect(
       oauth2AuthorizeSteps(
