@@ -20502,7 +20502,10 @@
     "mcpEventsAfterConnect": "Ereignisse erscheinen hier, sobald {name} verbunden ist: eines für jedes Tool, das auflistet oder sucht.",
     "mcpConnectAsk": "Alle, die dieses Projekt verwalten, können {name} verbinden.",
     "mcpSignInUnavailable": "Die Anmeldung bei {name} konnte nicht gestartet werden. Hinterlege die Zugangsdaten auf der Connector-Seite.",
-    "mcpEventsOnConnect": "Ereignisse nach dem Verbinden"
+    "mcpEventsOnConnect": "Ereignisse nach dem Verbinden",
+    "mcpCheckedAt": "Geprüft {when}",
+    "mcpNextCheck": "Nächste Prüfung {when}",
+    "mcpNotChecked": "Noch nicht geprüft"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",

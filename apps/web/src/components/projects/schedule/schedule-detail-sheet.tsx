@@ -81,6 +81,7 @@ import {
 import { describeLastRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
+import { EventCheckTimes } from './event-check-times';
 import { TriggerCallouts } from './trigger-callouts';
 import {
   type ComposerBlock,
@@ -468,7 +469,8 @@ function SheetPanel({
             />
           )}
         </TabsContent>
-        <TabsContent value="runs" className="pb-8">
+        <TabsContent value="runs" className="space-y-3 pb-8">
+          <EventCheckTimes trigger={trigger} />
           <TriggerRunsPanel
             projectId={projectId}
             trigger={trigger}
@@ -648,6 +650,7 @@ function SheetForm({
         apps={appIndex}
         onEditEvent={editEvent}
       />
+      <EventCheckTimes trigger={trigger} />
 
       {canWrite ? (
         <>

@@ -445,6 +445,28 @@ test('createProjectTrigger sends an event trigger body and the listing reads eve
   expect(listing.triggers[0]!.event?.status).toBe('needs_connection');
 });
 
+test('the listing reads when a Kortix-polled trigger checked its app and checks next', async () => {
+  const event: NonNullable<ProjectTrigger['event']> = {
+    connector: 'inbox',
+    type: 'new_item.list_items',
+    config: { interval: 5 },
+    source: 'mcp',
+    provider: 'mcp',
+    app: 'inbox',
+    status: 'active',
+    error: null,
+    last_event_at: null,
+    checked_at: '2026-10-19T04:00:00.000Z',
+    next_check_at: '2026-10-19T04:05:00.000Z',
+  };
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] } };
+
+  const listing = await listProjectTriggers('P1');
+
+  expect(listing.triggers[0]!.event?.checked_at).toBe('2026-10-19T04:00:00.000Z');
+  expect(listing.triggers[0]!.event?.next_check_at).toBe('2026-10-19T04:05:00.000Z');
+});
+
 test('updateProjectTrigger accepts event_config', async () => {
   const input: UpdateProjectTriggerInput = { event_config: { repo: 'acme/other' } };
   await updateProjectTrigger('P1', 's', input);

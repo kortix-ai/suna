@@ -1494,6 +1494,10 @@ export const TriggerSchema = z.object({
       status: z.enum(['active', 'needs_connection', 'error', 'pending']),
       error: z.string().nullable(),
       last_event_at: z.string().nullable(),
+      /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+      checked_at: z.string().nullable().optional(),
+      /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+      next_check_at: z.string().nullable().optional(),
     })
     .nullable(),
   prompt_template: z.string(),

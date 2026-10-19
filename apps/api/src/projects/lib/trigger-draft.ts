@@ -8,6 +8,7 @@ import * as store from '../trigger-events/store';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
 import { connectionIdentity } from '../trigger-events/subscriptions';
 import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
+import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
@@ -72,6 +73,10 @@ export async function loadTriggersForResponse(
   );
   const eventsOff = eventTriggersOffForProject(project.metadata);
   const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
+  // Kortix-polled triggers (source `mcp`) say when their app was checked and is checked next.
+  const schedules = await streamSchedules(
+    [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
+  );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
@@ -106,6 +111,7 @@ export async function loadTriggersForResponse(
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
             ...eventStatusFor(subscriptionBySlug.get(spec.slug), eventsOff),
+            ...checkTimesFor(subscriptionBySlug.get(spec.slug), schedules, eventsOff),
           }
         : null,
       prompt_template: spec.promptTemplate,
@@ -156,6 +162,19 @@ async function loadEventConnectorInfo(
     .where(and(eq(connectors.projectId, projectId), inArray(connectors.slug, slugs)));
   const mcpAvailable = eventSourceAvailable(MCP_SOURCE_ID, projectMetadata);
   return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row, mcpAvailable) }]));
+}
+
+/** When a Kortix-polled trigger's app was checked and is checked next. Both null unless it is subscribed and live. */
+function checkTimesFor(
+  row: store.EventSubscriptionRow | undefined,
+  schedules: Map<string, { checkedAt: Date | null; nextCheckAt: Date | null }>,
+  flagOff: boolean,
+): { checked_at: string | null; next_check_at: string | null } {
+  const schedule = !flagOff && row?.externalId ? schedules.get(row.externalId) : undefined;
+  return {
+    checked_at: schedule?.checkedAt?.toISOString() ?? null,
+    next_check_at: row?.status === 'active' || row?.status === 'error' ? (schedule?.nextCheckAt?.toISOString() ?? null) : null,
+  };
 }
 
 /** Subscription state of one event trigger for the list response; `pending` = no subscription row yet. */

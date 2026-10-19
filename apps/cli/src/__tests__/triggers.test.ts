@@ -876,6 +876,26 @@ describe('kortix triggers info — webhook signing', () => {
     expect(result.stdout).toContain('$SECRET is the signing key you saved for this webhook');
   });
 
+  test('info on a Kortix-polled trigger prints when the app was checked and is checked next', async () => {
+    const polled = {
+      ...EVENT_TRIGGER,
+      slug: 'inbox-watch',
+      event: {
+        ...EVENT_TRIGGER.event,
+        connector: 'inbox', type: 'new_item.list_items', config: { interval: 5 }, source: 'mcp', provider: 'mcp', app: 'inbox',
+        status: 'active', error: null, checked_at: '2026-10-19T04:00:00.000Z', next_check_at: '2026-10-19T04:05:00.000Z',
+      },
+    };
+    const cfg = writeConfig(startServer([polled, EVENT_TRIGGER]));
+    const result = await runCli(['triggers', 'info', 'inbox-watch', '--project', PROJECT], cfg);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/checked\s+2026-10-19T04:00:00.000Z/);
+    expect(result.stdout).toMatch(/next_check\s+2026-10-19T04:05:00.000Z/);
+    // A Composio trigger is checked by nobody: no such rows.
+    const composio = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(composio.stdout).not.toContain('next_check');
+  });
+
   test('info --json carries the signing scheme a caller can act on', async () => {
     const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
     const result = await runCli(

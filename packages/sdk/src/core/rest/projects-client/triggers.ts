@@ -64,6 +64,10 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+  next_check_at?: string | null;
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */

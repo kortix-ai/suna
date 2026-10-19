@@ -20502,7 +20502,10 @@
     "mcpEventsAfterConnect": "Los eventos aparecen aquí cuando {name} esté conectado: uno por cada herramienta que lista o busca.",
     "mcpConnectAsk": "Cualquier persona que gestione este proyecto puede conectar {name}.",
     "mcpSignInUnavailable": "No se pudo iniciar el inicio de sesión en {name}. Añade su credencial en la página del conector.",
-    "mcpEventsOnConnect": "Eventos después de conectarla"
+    "mcpEventsOnConnect": "Eventos después de conectarla",
+    "mcpCheckedAt": "Comprobado {when}",
+    "mcpNextCheck": "Próxima comprobación {when}",
+    "mcpNotChecked": "Aún sin comprobar"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",

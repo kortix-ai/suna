@@ -83,6 +83,18 @@ export async function upsertStream(input: {
     });
 }
 
+/** When each stream last checked with success and checks next, by external id. One query. */
+export async function streamSchedules(
+  externalIds: readonly string[],
+): Promise<Map<string, { checkedAt: Date | null; nextCheckAt: Date | null }>> {
+  if (externalIds.length === 0) return new Map();
+  const rows = await db
+    .select({ externalId: polls.externalId, lastSuccessAt: polls.lastSuccessAt, nextPollAt: polls.nextPollAt })
+    .from(polls)
+    .where(inArray(polls.externalId, [...externalIds]));
+  return new Map(rows.map((r) => [r.externalId, { checkedAt: r.lastSuccessAt, nextCheckAt: r.nextPollAt }]));
+}
+
 /** Idempotent. */
 export async function deleteStream(externalId: string): Promise<void> {
   await db.delete(polls).where(eq(polls.externalId, externalId));

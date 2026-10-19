@@ -213,6 +213,10 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. */
+  next_check_at?: string | null;
 }
 
 /** One event type from `GET /projects/:id/triggers/event-types`. */
