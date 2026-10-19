@@ -337,11 +337,46 @@ describe('ApiClient.admit', () => {
     const api = createApiClient({
       baseUrl: 'https://api.test',
       token: 'secret',
-      timeoutMs: 20,
+      admitTimeoutMs: 20,
       fetchImpl: async () => { calls += 1; return new Promise<Response>(() => {}); },
     });
     expect(await api.admit('tok', input)).toBeNull();
     expect(calls).toBe(1);
+  });
+
+  // /admit debits the hold before it answers. A reset connection or an edge
+  // 502/504 can arrive after that debit, so no failure of /admit is repeated:
+  // it answers null once, and the handler uses the separate calls.
+  test('a reset connection on /admit is not repeated and answers null', async () => {
+    let calls = 0;
+    const api = client(async () => { calls += 1; throw new TypeError('socket hang up'); });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  for (const status of [500, 502, 503, 504]) {
+    test(`a ${status} on /admit is not repeated and answers null`, async () => {
+      let calls = 0;
+      const api = client(async () => { calls += 1; return jsonResponse({ error: 'upstream' }, status); });
+      expect(await api.admit('tok', input)).toBeNull();
+      expect(calls).toBe(1);
+    });
+  }
+
+  // /admit does four steps in one call, so it gets its own budget, not the
+  // per-step budget of the separate calls.
+  test('/admit waits for its own timeout, longer than the per-call one', async () => {
+    const api = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      timeoutMs: 20,
+      admitTimeoutMs: 500,
+      fetchImpl: async () => {
+        await Bun.sleep(60);
+        return jsonResponse({ admission: { ok: true, principal } });
+      },
+    });
+    expect(await api.admit('tok', input)).toEqual({ admission: { ok: true, principal } });
   });
 
   test('a 404 on any other internal call is still retried', async () => {

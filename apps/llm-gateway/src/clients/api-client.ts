@@ -23,6 +23,8 @@ export interface ApiClientOptions {
   edgeKey?: string;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
+  /** One /admit attempt: it runs four steps, so it gets more than `timeoutMs`. */
+  admitTimeoutMs?: number;
 }
 
 export class ApiUnavailableError extends Error {
@@ -99,6 +101,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
   const fetchImpl: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const timeoutMs = opts.timeoutMs ?? 5_000;
+  const admitTimeoutMs = opts.admitTimeoutMs ?? 10_000;
 
   /**
    * One control-plane call, with bounded retries.
@@ -119,11 +122,12 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
    *   A timed-out attempt that the API actually committed would be charged
    *   twice by a repeat, so they keep the narrow policy: retry a refused or
    *   5xx-answered attempt, never a silent one.
+   * - `/admit` is never repeated (`once`): see `admit` below.
    */
   const post = async <T>(
     path: string,
     payload: unknown,
-    { retryOnTimeout = false, retryNotFound = true }: { retryOnTimeout?: boolean; retryNotFound?: boolean } = {},
+    { retryOnTimeout = false, once = false }: { retryOnTimeout?: boolean; once?: boolean } = {},
   ): Promise<T> => {
     return withRetry(
       async (signal) => {
@@ -149,10 +153,10 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         return (await response.json()) as T;
       },
       {
-        maxAttempts: 3,
+        maxAttempts: once ? 1 : 3,
         baseDelayMs: 100,
         maxDelayMs: 1_000,
-        timeoutMs,
+        timeoutMs: once ? admitTimeoutMs : timeoutMs,
         // `timeoutMs` is a PER-ATTEMPT budget, and withRetry settles an attempt
         // that overruns it with a `TimeoutError` — not with whatever `fn` would
         // eventually have thrown once the abort landed. Accepting only
@@ -171,7 +175,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         // Worst case stays bounded by `maxAttempts`: 3 x 5 s plus ~0.3 s of
         // backoff before the caller is told the API is unreachable.
         isRetryable: (err) =>
-          (err instanceof ApiUnavailableError && (retryNotFound || err.status !== 404)) ||
+          err instanceof ApiUnavailableError ||
           (retryOnTimeout && err instanceof TimeoutError),
       },
     );
@@ -203,17 +207,19 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         resolutionError?: ResolutionErrorBody;
         billing?: BillingBody;
       };
-      // No retry on a timeout: /admit debits the admission hold as its last
-      // step, so a repeat after a silent attempt would debit again and only
-      // the last hold would reach the gateway. The separate calls take over.
-      // No retry on a 404 either: an API without /admit answers the same.
+      // One attempt, never repeated: /admit debits the admission hold as its
+      // last step, and a timeout, a reset connection or an edge 502/504 can
+      // arrive after that debit. A repeat would debit again and only the last
+      // hold would reach the gateway. Any of these answers null, and the
+      // handler uses the separate calls; the worst case orphans one hold.
+      // An API without /admit answers 404 and is not asked for a minute.
       try {
-        wire = await post('/internal/gateway/admit', { token, input }, { retryNotFound: false });
+        wire = await post('/internal/gateway/admit', { token, input }, { once: true });
       } catch (error) {
         if (error instanceof TimeoutError) return null;
-        if (error instanceof ApiUnavailableError && error.status === 404) {
-          admitMissingUntil = Date.now() + ADMIT_MISSING_MS;
-          return null;
+        if (error instanceof ApiUnavailableError) {
+          if (error.status === 404) admitMissingUntil = Date.now() + ADMIT_MISSING_MS;
+          if (error.status === undefined || error.status === 404 || error.status >= 500) return null;
         }
         throw error;
       }

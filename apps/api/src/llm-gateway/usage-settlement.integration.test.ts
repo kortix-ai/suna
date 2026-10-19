@@ -243,6 +243,65 @@ withDb('gateway usage settlement is idempotent per request', () => {
     expect(await ledger()).toEqual([]);
   });
 
+  // A Kortix hold taken at admission (/admit, or the legacy billing gate) can
+  // end on a customer's own key: a held route-memory fallback, or a dispatch
+  // fallback. What it owes then is the BYOK fee, not finalCost (0). The hold
+  // reconciles against the fee, so the wallet moves by the fee once and the
+  // usage row says the same.
+  async function pastAllowance(): Promise<void> {
+    await db.insert(gatewayRequestLogs).values({
+      requestId: requestId('history-held'),
+      accountId,
+      requestedModel: 'anthropic/claude',
+      resolvedModel: 'claude',
+      provider: 'anthropic',
+      status: 200,
+      ok: true,
+      billingMode: 'none',
+      upstreamCost: '1500',
+    });
+  }
+  const ownKeyHeld = (id: string, upstreamCost: number) =>
+    event(id, { billingMode: 'none', provider: 'anthropic', upstreamCost, finalCost: 0, billingHoldUsd: 0.01 });
+  async function rowCost(id: string): Promise<number> {
+    const [row] = await db.select({ cost: usageEvents.costUsd }).from(usageEvents).where(eq(usageEvents.requestId, id));
+    return Number(row!.cost);
+  }
+
+  test('an own-key request under a hold pays a fee above the hold once: hold + difference', async () => {
+    await pastAllowance();
+    const id = requestId('held-byok-fee');
+    await recordGatewayUsage(ownKeyHeld(id, 2));
+    await recordGatewayUsage(ownKeyHeld(id, 2));
+
+    // fee 0.1 = hold 0.01 (already debited at admission) + 0.09 here.
+    expect((await ledger()).map((row) => [row.type, row.amount, row.description])).toEqual([
+      ['usage', -0.09, 'BYOK fee · anthropic/kortix/test'],
+    ]);
+    expect(await rowCost(id)).toBe(0.1);
+  });
+
+  test('an own-key request under a hold pays a fee below the hold: the rest is refunded once', async () => {
+    await pastAllowance();
+    const id = requestId('held-byok-small');
+    await recordGatewayUsage(ownKeyHeld(id, 0.1));
+    await recordGatewayUsage(ownKeyHeld(id, 0.1));
+
+    // fee 0.005 = hold 0.01 - refund 0.005.
+    expect((await ledger()).map((row) => [row.type, row.amount, row.idempotencyKey])).toEqual([
+      ['llm_reservation_refund', 0.005, `llm-hold-refund:${id}`],
+    ]);
+    expect(await rowCost(id)).toBe(0.005);
+  });
+
+  test('an own-key request under a hold with no fee returns the whole hold', async () => {
+    const id = requestId('held-byok-free');
+    await recordGatewayUsage(ownKeyHeld(id, 2));
+
+    expect((await ledger()).map((row) => [row.type, row.amount])).toEqual([['llm_reservation_refund', 0.01]]);
+    expect(await rowCost(id)).toBe(0);
+  });
+
   test('distinct requests each write their own row', async () => {
     const a = requestId('a');
     const b = requestId('b');

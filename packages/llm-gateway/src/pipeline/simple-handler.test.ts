@@ -1951,19 +1951,32 @@ describe('one-call admission (hooks.admit)', () => {
       },
       routeMemory,
       logger,
-      fetchImpl: async (url) => { dispatched.push(String(url)); return ok(); },
+      // Usage, so the settlement event carries the upstream cost a fee is on.
+      fetchImpl: async (url) => {
+        dispatched.push(String(url));
+        return new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1_000, completion_tokens: 500 } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      },
     }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [] }) });
     await Bun.sleep(0);
     return { response, usage, billingCalls, dispatched };
   };
 
-  test('a held route that serves an own-key fallback returns the hold the admit call took', async () => {
+  // The API settles this one event (apps/api hooks.ts recordGatewayUsage):
+  // it reconciles the hold against the BYOK fee on `upstreamCost`, so the fee
+  // is charged once and the rest of the hold comes back
+  // (usage-settlement.integration.test.ts proves the wallet side).
+  test('a held route that serves an own-key fallback settles the admit hold against the BYOK fee', async () => {
     const own: UpstreamDescriptor = { ...primary, provider: 'own', baseUrl: 'https://own.example/v1', billingMode: 'none', markup: 0 };
     const { response, usage, billingCalls, dispatched } = await heldRun(own);
     expect(response.status).toBe(200);
     expect(dispatched).toEqual(['https://own.example/v1/chat/completions']);
     expect(billingCalls).toEqual([]);
-    expect(usage.filter((event) => event.billingHoldUsd === 0.01)).toHaveLength(1);
+    const held = usage.filter((event) => event.billingHoldUsd === 0.01);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ billingMode: 'none', provider: 'own', finalCost: 0 });
+    expect(held[0]!.upstreamCost).toBeGreaterThan(0);
   });
 
   test('a held route that serves a Kortix-billed fallback reuses the admit hold once', async () => {

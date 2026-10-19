@@ -319,12 +319,11 @@ export async function assertLlmBillingActive(
  *
  * When `event.billingHoldUsd` is set, an atomic admission hold was already
  * taken at the pre-dispatch billing gate (see billing-gate.ts checkBillingActive)
- * — this reconciles it to the real `finalCost` instead of a flat deduct: tops
- * up the remainder if the real cost exceeds the hold, refunds the unused
- * portion otherwise (always the case for a pure hold-refund, where finalCost
- * is 0). Otherwise (no hold — billing disabled or self-host) falls back to the
- * original flat deduct, skipped entirely when the route isn't billable
- * (billingMode === 'none').
+ * — this reconciles it to what the request owes (finalCost, or the BYOK fee
+ * when billingMode is 'none') instead of a flat deduct: tops up the remainder
+ * if that exceeds the hold, refunds the unused portion otherwise (always the
+ * case for a pure hold-refund, which owes 0). Without a hold it debits what is
+ * owed. Either way the wallet moves by the amount the usage row records.
  */
 /**
  * One deadline write per minute per session for LLM activity. A single turn can
@@ -440,12 +439,20 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
 
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
 
+  // What this request owes Kortix: the BYOK fee on the customer's own key,
+  // the real cost otherwise. A hold taken at admission can end on an own key
+  // (a held route-memory fallback, a dispatch fallback), so the hold
+  // reconciles against what is owed, never against finalCost alone.
+  const ownKey = event.billingMode === 'none';
+  const owed = ownKey ? byokFee : event.finalCost;
+  const label = ownKey ? 'BYOK fee' : 'LLM';
+
   if (event.billingHoldUsd != null) {
-    const { toDeduct, toRefund } = reconcileBillingHold(event.finalCost, event.billingHoldUsd);
+    const { toDeduct, toRefund } = reconcileBillingHold(owed, event.billingHoldUsd);
     if (toDeduct > 0) {
-      // The real cost exceeded the (small, fixed) admission hold — collect
+      // What is owed exceeded the (small, fixed) admission hold — collect
       // the difference as a settlement of work already done.
-      await settleLlmUsage(event, toDeduct, usageEventId);
+      await settleLlmUsage(event, toDeduct, usageEventId, label);
     } else if (toRefund > 0) {
       await wallet.grant({
         accountId: event.accountId,
@@ -460,11 +467,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     return;
   }
 
-  if (event.billingMode === 'none') {
-    if (byokFee > 0) await settleLlmUsage(event, byokFee, usageEventId, 'BYOK fee');
-    return;
-  }
-  await settleLlmUsage(event, event.finalCost, usageEventId);
+  await settleLlmUsage(event, owed, usageEventId, label);
 }
 
 /**
