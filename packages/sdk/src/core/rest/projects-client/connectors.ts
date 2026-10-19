@@ -1554,11 +1554,13 @@ export async function checkMcpServerSignIn(projectId: string, url: string) {
   );
 }
 
-/** A Pipedream connector, and the Kortix app it moves to (`connectors_v2`). */
+/** A Pipedream or Composio connector, and the Kortix app it moves to (`connectors_v2`). */
 export interface ConnectorMove {
   slug: string;
   name: string;
-  /** The connector's Pipedream app. */
+  /** The retired provider the connector runs on. */
+  provider: 'pipedream' | 'composio';
+  /** The connector's app on that provider. */
   app: string | null;
   /** The Kortix app it moves to. `null`: no Kortix connection for this app on this deployment yet. */
   to: { slug: string; name: string; icon: string | null } | null;
@@ -1578,13 +1580,13 @@ export interface ConnectorMoveResult {
   to?: { slug: string; name: string; url: string };
 }
 
-/** The project's Pipedream connectors and the Kortix app each moves to. */
+/** The project's Pipedream and Composio connectors and the Kortix app each moves to. */
 export async function listConnectorMoves(projectId: string): Promise<ConnectorMove[]> {
   return unwrap(await backendApi.get<{ moves: ConnectorMove[] }>(`/projects/${projectId}/connector-moves`)).moves;
 }
 
 /**
- * Move a Pipedream connector to its Kortix app. The connector keeps its slug.
+ * Move a Pipedream or Composio connector to its Kortix app. The connector keeps its slug.
  * The first call marks an account and answers `sign_in`; after the sign-in the
  * connector switches by itself, and a second call finishes a switch that failed.
  */

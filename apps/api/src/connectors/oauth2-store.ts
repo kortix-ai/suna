@@ -108,9 +108,9 @@ async function rematerializeAfterOAuthCompletion(connectionId: string): Promise<
       .where(eq(connectorConnections.connectionId, connectionId))
       .limit(1);
     if (!row) return;
-    // A sign-in on a Pipedream connector is a move to Kortix: switch it now.
-    if (row.providerType === 'pipedream') {
-      const { finishMarkedMove } = await import('./pipedream-move');
+    // A sign-in on a Pipedream or Composio connector is a move to Kortix: switch it now.
+    if (row.providerType === 'pipedream' || row.providerType === 'composio') {
+      const { finishMarkedMove } = await import('./connector-move');
       await finishMarkedMove(connectionId);
       return;
     }
@@ -280,11 +280,11 @@ export async function discoverConnectionOAuth2Resource(
   );
 }
 
-/** A connection that moves its Pipedream connector to Kortix signs in to the
- *  catalogue app's MCP server (connectors/pipedream-move.ts). */
+/** A connection that moves its Pipedream or Composio connector to Kortix signs
+ *  in to the catalogue app's MCP server (connectors/connector-move.ts). */
 async function connectionMoveTargetUrl(row: { providerType: string; connectionId: string }): Promise<string | null> {
-  if (row.providerType !== 'pipedream') return null;
-  const { moveTargetUrlForConnection } = await import('./pipedream-move');
+  if (row.providerType !== 'pipedream' && row.providerType !== 'composio') return null;
+  const { moveTargetUrlForConnection } = await import('./connector-move');
   return moveTargetUrlForConnection(row.connectionId);
 }
 

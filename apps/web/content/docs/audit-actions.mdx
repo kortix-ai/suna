@@ -329,8 +329,8 @@ One table per domain. The route column shows the method and route template. `any
 | `connector.easy_connect_status.read` | Viewed easy-connect status | `GET /v1/connectors/connect-status` |
 | `connector.list` | Listed connectors | `GET /v1/connectors/projects/:projectId/connectors` |
 | `connector.mcp_sign_in.check` | Checked MCP server sign-in | `POST /v1/connectors/projects/:projectId/connectors/mcp-sign-in-check` |
-| `connector.move` | Moved connector off Pipedream | `POST /v1/projects/:projectId/connectors/:slug/move` |
-| `connector.move.list` | Listed Pipedream connector moves | `GET /v1/projects/:projectId/connector-moves` |
+| `connector.move` | Moved connector to its Kortix app | `POST /v1/projects/:projectId/connectors/:slug/move` |
+| `connector.move.list` | Listed connector moves | `GET /v1/projects/:projectId/connector-moves` |
 | `connector.name.update` | Renamed connector | `PUT /v1/connectors/projects/:projectId/connectors/:slug/name` |
 | `connector.oauth2.complete` | Completed connector OAuth authorization | `GET /v1/connectors/oauth2/callback` |
 | `connector.pipedream.app.list` | Browsed Pipedream apps | `GET /v1/connectors/projects/:projectId/pipedream/apps` |

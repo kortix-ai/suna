@@ -1592,6 +1592,7 @@ test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each m
   const move = {
     slug: 'gmail',
     name: 'Gmail',
+    provider: 'composio' as const,
     app: 'gmail',
     to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
     connection_id: null,
@@ -1601,6 +1602,8 @@ test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each m
   nextResponse = { status: 200, body: { moves: [move] } };
   const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
   expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
   expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
 });
 

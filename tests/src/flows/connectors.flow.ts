@@ -803,6 +803,20 @@ flow(
         .status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'clickup');
     });
 
+    await ctx.step('a Composio connector lists with its provider and moves too; Composio Slack does not move', async () => {
+      await create({ slug: 'tasks', name: 'Tasks', provider: 'composio', app: 'clickup' });
+      await create({ slug: 'chat-legacy', name: 'Chat', provider: 'composio', app: 'slack' });
+      const list = await moves();
+      const tasks = list.find((m) => m.slug === 'tasks') as (Move & { provider?: string }) | undefined;
+      if (tasks?.provider !== 'composio' || tasks.to?.slug !== 'clickup') throw new Error(`tasks entry is wrong: ${JSON.stringify(tasks)}`);
+      const chat = list.find((m) => m.slug === 'chat-legacy');
+      if (chat && chat.to !== null) throw new Error(`Slack must not move: ${JSON.stringify(chat)}`);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.url', 'https://mcp.clickup.com/mcp');
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.provider', 'composio');
+    });
+
     await ctx.step('a move starts: it marks an account and names the catalogue MCP server to sign in to', async () => {
       const r = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'issues' } });
       r.status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'linear').has('$.to.url', 'https://mcp.linear.app/mcp');
@@ -822,7 +836,7 @@ flow(
       if (!noApp.text().includes('keeps working through Pipedream')) throw new Error(`unexpected refusal: ${noApp.text()}`);
       const notPipedream = await move('desk');
       notPipedream.status(409);
-      if (!notPipedream.text().includes('Only a Pipedream connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
+      if (!notPipedream.text().includes('Only a Pipedream or Composio connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
       (await move('board', { connection_id: forgedConnectionId })).status(400);
       (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(404);
       (await move('no-such-connector')).status(404);

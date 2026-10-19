@@ -291,14 +291,15 @@ Subcommands:
   authorize <slug> --device         Same, on a server that supports the OAuth
                                     2.0 device flow: prints a code + URL and
                                     polls until it is approved.
-  moves [--json]                    List the Pipedream connectors and the
-                                    Kortix app each one moves to. Needs the
-                                    \`connectors_v2\` flag.
-  move <slug>                       Move a Pipedream connector to its Kortix
-       [--connection <id>]          app: sign in once, and the connector uses
-       [--no-open] [--device]       provider mcp. It keeps its slug, agent
-                                    grants and triggers. Other accounts on it
-                                    sign in again. --connection: the account
+  moves [--json]                    List the Pipedream and Composio connectors
+                                    and the Kortix app each one moves to. Needs
+                                    the \`connectors_v2\` flag.
+  move <slug>                       Move a Pipedream or Composio connector to
+       [--connection <id>]          its Kortix app: sign in once, and the
+       [--no-open] [--device]       connector uses provider mcp. It keeps its
+                                    slug and agent grants; Composio triggers
+                                    move to Kortix events. Other accounts on
+                                    it sign in again. --connection: the account
                                     to sign in on (default: the project's).
                                     --no-open: print the URL only.
 
@@ -2209,16 +2210,16 @@ function moveState(move: ConnectorMove): string {
 
 function movesTable(moves: ConnectorMove[]): string {
   if (moves.length === 0) {
-    return `  ${C.dim}No Pipedream connectors. Nothing to move.${C.reset}\n`;
+    return `  ${C.dim}No Pipedream or Composio connectors. Nothing to move.${C.reset}\n`;
   }
-  const rows = moves.map((m) => [m.slug, m.app ?? '—', m.to?.name ?? '—', moveState(m), String(m.accounts)]);
-  const head = ['SLUG', 'APP', 'MOVES TO', 'STATE', 'ACCOUNTS'];
+  const rows = moves.map((m) => [m.slug, m.provider, m.app ?? '—', m.to?.name ?? '—', moveState(m), String(m.accounts)]);
+  const head = ['SLUG', 'PROVIDER', 'APP', 'MOVES TO', 'STATE', 'ACCOUNTS'];
   const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
   const line = (cells: string[]) => `  ${cells.map((c, i) => pad(c, widths[i]!)).join('   ').trimEnd()}\n`;
   return (
     `\n  ${C.dim}${line(head).trim()}${C.reset}\n` +
     rows.map(line).join('') +
-    `\n  ${C.dim}${moves.length} Pipedream connector${moves.length === 1 ? '' : 's'}. Move one: ${C.reset}${C.cyan}kortix connectors move <slug>${C.reset}\n\n`
+    `\n  ${C.dim}${moves.length} connector${moves.length === 1 ? '' : 's'} on a retired provider. Move one: ${C.reset}${C.cyan}kortix connectors move <slug>${C.reset}\n\n`
   );
 }
 
@@ -2226,13 +2227,13 @@ const SIGN_IN_POLL_MS = 2_000;
 const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
 
 /**
- * Move a Pipedream connector to its Kortix app (`connectors_v2`).
+ * Move a Pipedream or Composio connector to its Kortix app (`connectors_v2`).
  *
  * The first `move` call marks an account and answers `sign_in`. The person
  * signs in on that account with the same OAuth 2.1 flow as `authorize`. The
  * server switches the connector to `provider: mcp` when the sign-in stores
  * its token; the second `move` call reads `moved` (or finishes a switch that
- * failed). Service: apps/api/src/connectors/pipedream-move.ts.
+ * failed). Service: apps/api/src/connectors/connector-move.ts.
  */
 async function moveToKortix(
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,

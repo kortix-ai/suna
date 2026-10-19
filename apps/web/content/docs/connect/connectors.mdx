@@ -32,7 +32,7 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
 | `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
 
-`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream connector to Kortix](#move-a-pipedream-connector-to-kortix).
+`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
 
 A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Kortix MCP server](/docs/connect/mcp) is the other direction: your MCP client calls Kortix.
 
@@ -98,30 +98,31 @@ Apps sign in one of three ways:
 
 Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
-#### Move a Pipedream connector to Kortix
+#### Move a Pipedream or Composio connector to Kortix
 
-Kortix retires Pipedream. With `connectors_v2` on, a Pipedream connector moves to the catalog app for the same service and keeps its slug. A Pipedream sign-in belongs to Pipedream's OAuth client, so it does not carry over: one person signs in to the app once, and the connector switches.
+Kortix retires Pipedream and Composio. With `connectors_v2` on, a Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
 
 What stays:
 
-- The slug. Agent grants (`agents.<name>.connectors`), triggers, session bindings and every other reference to the slug keep working.
-- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `slack-delete-*`) names a Pipedream tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
+- The slug. Agent grants (`agents.<name>.connectors`), session bindings and every other reference to the slug keep working.
+- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `send_email` on the connector, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
 - Every account row, with its name, owner and audience.
-- Pipedream serves the connector until the sign-in completes.
+- The old provider serves the connector until the sign-in completes.
 
 What changes:
 
 - Kortix rewrites the `kortix.yaml` entry to `provider: mcp` with the app's `url`, commits it to the default branch and syncs the connector.
-- The tools now come from the vendor's own MCP server, so the tool names differ. Check the connector rules and agent prompts that name a Pipedream action.
-- The account that signed in holds the new sign-in. Every other account on the connector loses its Pipedream sign-in. It reads not signed in until its owner signs in again.
+- The tools now come from the vendor's own MCP server, so the tool names differ. Check the agent prompts that name an old tool.
+- The account that signed in holds the new sign-in. Every other account on the connector loses its old sign-in. It reads not signed in until its owner signs in again.
+- A Composio [event trigger](/docs/connect/triggers#app-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
 
 ```yaml
 # Before
 connectors:
   - slug: issues
     name: Issues
-    provider: pipedream
-    app: linear_app
+    provider: composio
+    app: linear
 
 # After
 connectors:
@@ -132,63 +133,73 @@ connectors:
     transport: http
 ```
 
+Composio event triggers that move:
+
+| Composio event | Kortix event | Config |
+| --- | --- | --- |
+| `GMAIL_NEW_GMAIL_MESSAGE` | `gmail.message.received` | `query` stays. `labelIds` must be empty or `INBOX`. |
+| `GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER` | `google_calendar.event.created` | `calendarId` becomes `calendar_id`. `showDeleted` is dropped. |
+| `GOOGLEDRIVE_FILE_CREATED_TRIGGER` | `google_drive.file.created` | `folder_id` and `query` stay. `max_results` is dropped. |
+
+`interval` (minutes) rounds up to the next Kortix value: 1, 5, 15, 30, 60, 360 or 1440, so a trigger never checks more often than before. A connector with any other Composio event trigger, or one declared outside `kortix.yaml`, does not move until you delete or change that trigger.
+
 Which apps move:
 
-- Each Pipedream app in the table below moves to its catalog app.
-- Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana and Box move only when the deployment has a Kortix OAuth client for the vendor. See [Kortix OAuth clients](/docs/host#kortix-oauth-clients).
-- Any other app has no Kortix equivalent yet, for example `jira_data_center`, `slack_bot` or `neon_postgres`. The connector keeps working through Pipedream.
+- Each app in the table below moves to its catalog app.
+- Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, HubSpot, Asana and Box move only when the deployment has a Kortix OAuth client for the vendor. See [Kortix OAuth clients](/docs/host#kortix-oauth-clients).
+- Slack does not move: connect the [Slack channel](/docs/connect/channels) instead, which replaces a Slack connector.
+- Any other app has no Kortix equivalent yet, for example `jira_data_center`, `slack_bot`, `neon_postgres`, `googlesuper` or `supabase_read_mcp`. The connector keeps working through its provider.
 
-| Kortix app | Pipedream `app` |
-| --- | --- |
-| Airtable | `airtable_oauth` |
-| Asana | `asana` |
-| Atlassian | `jira`, `confluence` |
-| Attio | `attio` |
-| Box | `box` |
-| Canva | `canva` |
-| ClickUp | `clickup` |
-| Close | `close` |
-| Cloudflare | `cloudflare_api_key` |
-| Dropbox | `dropbox` |
-| Figma | `figma` |
-| GitHub | `github` |
-| Gmail | `gmail` |
-| Google Calendar | `google_calendar` |
-| Google Docs | `google_docs` |
-| Google Drive | `google_drive` |
-| Google Sheets | `google_sheets` |
-| Granola | `granola` |
-| HubSpot | `hubspot` |
-| Intercom | `intercom` |
-| Jotform | `jotform` |
-| Linear | `linear`, `linear_app` |
-| Miro | `miro_custom_app` |
-| monday.com | `monday` |
-| Neon | `neon_api_keys` |
-| Notion | `notion`, `notion_api_key` |
-| PayPal | `paypal` |
-| PostHog | `posthog` |
-| Sentry | `sentry` |
-| Slack | `slack`, `slack_v2` |
-| Stripe | `stripe` |
-| Supabase | `supabase`, `supabase_management_api` |
-| Vercel | `vercel_token_auth` |
-| Webflow | `webflow` |
-| Wix | `wix_api_key` |
+| Kortix app | Pipedream `app` | Composio `app` |
+| --- | --- | --- |
+| Airtable | `airtable_oauth` | `airtable` |
+| Asana | `asana` | `asana` |
+| Atlassian | `jira`, `confluence` | `jira`, `confluence`, `atlassian_mcp` |
+| Attio | `attio` | `attio` |
+| Box | `box` | `box`, `box_mcp` |
+| Canva | `canva` | `canva`, `canva_mcp` |
+| ClickUp | `clickup` | `clickup`, `clickup_mcp` |
+| Close | `close` | `close`, `close_mcp` |
+| Cloudflare | `cloudflare_api_key` | `cloudflare`, `cloudflare_api_key`, `cloudflare_mcp` |
+| Dropbox | `dropbox` | `dropbox` |
+| Figma | `figma` | `figma` |
+| GitHub | `github` | `github`, `github_mcp` |
+| Gmail | `gmail` | `gmail` |
+| Google Calendar | `google_calendar` | `googlecalendar` |
+| Google Docs | `google_docs` | `googledocs` |
+| Google Drive | `google_drive` | `googledrive` |
+| Google Sheets | `google_sheets` | `googlesheets` |
+| Granola | `granola` | `granola_mcp` |
+| HubSpot | `hubspot` | `hubspot` |
+| Intercom | `intercom` | `intercom`, `intercom_mcp` |
+| Jotform | `jotform` | `jotform` |
+| Linear | `linear`, `linear_app` | `linear`, `linear_mcp` |
+| Miro | `miro_custom_app` | `miro` |
+| monday.com | `monday` | `monday`, `monday_mcp` |
+| Neon | `neon_api_keys` | `neon`, `neon_mcp` |
+| Notion | `notion`, `notion_api_key` | `notion`, `notion_mcp` |
+| PayPal | `paypal` | `paypal` |
+| PostHog | `posthog` | `posthog`, `posthog_mcp` |
+| Sentry | `sentry` | `sentry`, `sentry_mcp` |
+| Stripe | `stripe` | `stripe`, `stripe_mcp` |
+| Supabase | `supabase`, `supabase_management_api` | `supabase`, `supabase_mcp` |
+| Vercel | `vercel_token_auth` | `vercel`, `vercel_mcp` |
+| Webflow | `webflow` | `webflow` |
+| Wix | `wix_api_key` | `wix`, `wix_mcp` |
 
 A move needs permission to change the project's connectors.
 
-**In the web app**, open the Pipedream connector in **Customize → Connectors**. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
+**In the web app**, open the connector in **Customize → Connectors**. The Connected tab names the connectors that can move. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
 
 **From the CLI:**
 
 ```bash
-kortix connectors moves                  # each Pipedream connector and its Kortix app
+kortix connectors moves                  # each Pipedream and Composio connector and its Kortix app
 kortix connectors move issues            # sign in once; the connector switches
 kortix connectors move issues --connection <connection-id> --no-open
 ```
 
-- `moves` prints `SLUG`, `APP` (the Pipedream app), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
+- `moves` prints `SLUG`, `PROVIDER`, `APP` (the app on that provider), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
 - `move` opens the app's sign-in in your browser and waits up to 10 minutes for it. `--no-open` prints the URL only. `--device` uses the device flow on a server that offers it.
 - `--connection` signs in on that account. Without it, `move` uses the connector's shared project account.
 - Without `connectors_v2`, both commands exit `1` and print `kortix projects features enable connectors_v2`.
@@ -205,7 +216,8 @@ GET /v1/projects/{projectId}/connector-moves
     {
       "slug": "issues",
       "name": "Issues",
-      "app": "linear_app",
+      "provider": "composio",
+      "app": "linear",
       "to": { "slug": "linear", "name": "Linear", "icon": "/connector-icons/linear.svg" },
       "connection_id": null,
       "signed_in": false,
