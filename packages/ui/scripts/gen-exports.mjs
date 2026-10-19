@@ -40,6 +40,8 @@ export const INTERNAL = new Set([
   // Reached through the './theme' barrel only.
   'theme/theme.ts',
   'theme/theme-scope.tsx',
+  // A component stylesheet: pptx-renderer.tsx imports it, scripts/build.mjs ships it.
+  'shared/features/file-renderers/pptx-viewer.css',
   // UiProvider's LazyMotion chunk.
   'providers/motion-features.ts',
   // Published as './session', not './session/index'.
