@@ -43,7 +43,7 @@ export type AccountStateLike = Pick<
 > & {
   credits?: { can_run?: boolean | null; total?: number | null } | null;
   subscription?: { subscription_id?: string | null; status?: string | null } | null;
-  tier?: { can_purchase_credits?: boolean | null } | null;
+  tier?: { can_purchase_credits?: boolean | null; monthly_credits?: number | null } | null;
 };
 
 function isBillingState(value: unknown): value is BillingState {
@@ -131,7 +131,13 @@ export function walletSeverity(state: AccountStateLike | null | undefined): Wall
   if (!billingStateAllowsRun(billingState)) return null; // `no_subscription` / `no_account` own their own CTA.
   const balance = state.credits?.total;
   if (typeof balance !== 'number') return null;
-  return balance < LOW_BALANCE_USD ? 'low' : null;
+  // The API's monthly_credits is the recurring grant in USD, like credits.total.
+  // Cap the warning at 10% of that grant so a fresh $5 grant is not "low".
+  const grant = state.tier?.monthly_credits;
+  const threshold = typeof grant === 'number' && grant > 0
+    ? Math.min(LOW_BALANCE_USD, grant * 0.1)
+    : LOW_BALANCE_USD;
+  return balance < threshold ? 'low' : null;
 }
 
 /**

@@ -42,6 +42,14 @@ resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
 
+## Wallet warning
+
+The sidebar warns while an account can run when its USD wallet falls below
+the smaller of $5 and 10% of its positive recurring monthly grant. The
+account-state API exposes that grant in USD as `tier.monthly_credits`.
+Responses without a positive grant retain the $5 threshold. Blocked wallets
+continue to use `billing_state`, independently of this soft warning.
+
 ## Enterprise
 
 | State | Stored as | How it starts | Features | Limits | BYOK fee |
