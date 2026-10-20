@@ -63,6 +63,7 @@ import {
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { readRuntimeControlState } from '../lib/session-control-readers';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -100,14 +101,16 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates] = await Promise.all([
+  const [owners, userStates, runtime] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
+    readRuntimeControlState(sessionId),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json(serializeSession(visible.row, {
+    runtimeStatus: runtime.sandbox_status,
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
