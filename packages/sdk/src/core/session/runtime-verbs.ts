@@ -149,6 +149,14 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
      * `MODEL_REQUIRED` when neither names one. Resolves with the model it used.
      */
     compact: async (model?: { providerID: string; modelID: string }): Promise<{ providerID: string; modelID: string }> => {
+      const statuses = unwrap(await client.session.status(), 'Reading the session status failed');
+      const state = statuses?.[input.rootId]?.type;
+      if (state === 'busy' || state === 'retry') {
+        throw new ApiError('This session is busy. Wait for the current turn to finish, then compact again.', {
+          code: 'SESSION_BUSY',
+          status: 409,
+        });
+      }
       let chosen = model;
       if (!chosen) {
         // An unreadable config names no model: never guess one.
@@ -160,10 +168,16 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
         }
       }
       if (!chosen) throw new ApiError('Cannot compact: no model is set for this session', { code: 'MODEL_REQUIRED' });
-      unwrap(
-        await client.session.summarize({ sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID }),
-        'Compacting the session failed',
-      );
+      const result = await client.session.summarize({
+        sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID,
+      });
+      if (result.error && typeof result.error === 'object' && 'code' in result.error
+        && result.error.code === 'LONG_TURN_PROXY_TIMEOUT') {
+        throw new ApiError('Compaction has not finished. Check the session status before trying again.', {
+          code: 'LONG_TURN_PROXY_TIMEOUT', status: result.response?.status,
+        });
+      }
+      unwrap(result, 'Compacting the session failed');
       return chosen;
     },
   };

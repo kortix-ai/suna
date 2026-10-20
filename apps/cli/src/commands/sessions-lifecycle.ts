@@ -509,6 +509,7 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   // same split the prompt path uses. Without one, the runtime's configured
   // default applies; with neither, `compact` refuses instead of guessing.
   let model: { providerID: string; modelID: string };
+  process.stderr.write('Checking session and compacting conversation…\n');
   try {
     model = await withKortixScope(resolved.auth, () =>
       resolved.handle.compact(sessionPromptDefaults(resolved.session).model),

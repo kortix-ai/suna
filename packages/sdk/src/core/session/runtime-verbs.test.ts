@@ -126,8 +126,36 @@ describe('session runtime verbs', () => {
     await expect(verbs.answerPermission('per_x', 'once')).rejects.toThrow('no such request');
   });
 
+  test.each(['busy', 'retry'])('compact() rejects a %s root before submitting a summary', async (type) => {
+    const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: { ses_root: { type } } },
+      'POST /session/ses_root/summarize': { body: true },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    await expect(verbs.compact({ providerID: 'kortix', modelID: 'model' })).rejects.toThrow(
+      'This session is busy. Wait for the current turn to finish, then compact again.',
+    );
+    expect(requests.map((r) => r.path)).toEqual(['/session/status']);
+  });
+
+  test('compact() translates a raced turn timeout without replaying the summary', async () => {
+    const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: {} },
+      'POST /session/ses_root/summarize': {
+        status: 504,
+        body: { code: 'LONG_TURN_PROXY_TIMEOUT', error: 'internal ALB prompt_async SSE diagnostic' },
+      },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    await expect(verbs.compact({ providerID: 'kortix', modelID: 'model' })).rejects.toThrow(
+      'Compaction has not finished. Check the session status before trying again.',
+    );
+    expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+  });
+
   test('compact() summarizes the root with the given model, else the runtime default model', async () => {
     const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: { ses_root: { type: 'idle' } } },
       'POST /session/ses_root/summarize': { body: true },
       'GET /global/config': { body: { model: 'kortix/claude-sonnet' } },
     });
@@ -135,7 +163,9 @@ describe('session runtime verbs', () => {
     expect(await verbs.compact({ providerID: 'anthropic', modelID: 'claude' })).toEqual({ providerID: 'anthropic', modelID: 'claude' });
     expect(await verbs.compact()).toEqual({ providerID: 'kortix', modelID: 'claude-sonnet' });
     expect(requests.map((r) => [r.method, r.path, r.body])).toEqual([
+      ['GET', '/session/status', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'anthropic', modelID: 'claude' }],
+      ['GET', '/session/status', null],
       ['GET', '/global/config', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'kortix', modelID: 'claude-sonnet' }],
     ]);
@@ -143,7 +173,7 @@ describe('session runtime verbs', () => {
 
   test('compact() without a model anywhere throws MODEL_REQUIRED instead of guessing', async () => {
     for (const config of [{ body: {} }, { status: 404, body: { error: 'not found' } }]) {
-      const { fetch, requests } = fakeRuntime({ 'GET /global/config': config });
+      const { fetch, requests } = fakeRuntime({ 'GET /session/status': { body: {} }, 'GET /global/config': config });
       const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
       const error = await verbs.compact().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ApiError);
