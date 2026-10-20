@@ -11,7 +11,9 @@
     "e2e/specs/49-connector-connect-landing.spec.ts": 73.1,
     "e2e/specs/55-session-own-model.spec.ts": 60,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 8.4,
-    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0
+    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0,
+    "e2e/specs/56-deleted-project-gone.spec.ts": 78,
+    "e2e/specs/docs-home-link.spec.ts": 0
   },
   "deployed": {
     "e2e/specs/01-account-auth.spec.ts": 17,
@@ -25,6 +27,8 @@
     "e2e/specs/49-connector-connect-landing.spec.ts": 65,
     "e2e/specs/55-session-own-model.spec.ts": 60,
     "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9,
-    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0
+    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0,
+    "e2e/specs/56-deleted-project-gone.spec.ts": 0,
+    "e2e/specs/docs-home-link.spec.ts": 0
   }
 }

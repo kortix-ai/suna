@@ -19,8 +19,9 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
-    // Baked by the release build (`--define`); unset in a local `bun run`.
-    clientVersion: process.env.KORTIX_CLI_VERSION ? `cli/${process.env.KORTIX_CLI_VERSION}` : undefined,
+    // Baked by the release build (`--define`); `dev` in a local `bun run`. The
+    // API names a CLI-created session's source from it (KRTX-2914).
+    clientVersion: `cli/${process.env.KORTIX_CLI_VERSION ?? 'dev'}`,
   };
 }
 

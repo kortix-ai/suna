@@ -5,20 +5,20 @@ import { useRevokeCaptureDevice } from '@kortix/sdk/react';
 import { DotsThreeIcon, LinkIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/dropdown-menu';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
-import { StatusDot as DsStatusDot } from '@/components/ui/status';
-import { relativeTime } from '@/lib/relative-time';
+import { StatusDot as DsStatusDot } from '@kortix/ui/status';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 
 import { clockTime } from '../capture-time';
 import type { DeviceStatusView, HealthLine } from './device-status';

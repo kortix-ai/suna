@@ -5,7 +5,7 @@ import {
   normalizeLightTheme,
   syncInterfaceThemes,
 } from '@/lib/interface-themes';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';

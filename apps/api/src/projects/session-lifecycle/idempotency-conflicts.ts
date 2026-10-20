@@ -17,3 +17,8 @@ export function runtimeContextConflicts(existing: unknown, requested: unknown): 
 export function providerPoolConflicts(existing: unknown, requested: unknown): boolean {
   return JSON.stringify(existing ?? null) !== JSON.stringify(requested ?? null);
 }
+
+/** A retry cannot change which conversation it copies, or turn a create into a fork. */
+export function forkSourceConflicts(existing: unknown, requested: unknown): boolean {
+  return (existing ?? null) !== (requested ?? null);
+}

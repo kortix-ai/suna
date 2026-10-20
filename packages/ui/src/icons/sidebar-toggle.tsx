@@ -2,7 +2,7 @@
 
 import { cn } from '../lib/utils';
 
-type SidebarToggleProps = React.SVGProps<SVGSVGElement> & {
+type SidebarGlyphProps = React.SVGProps<SVGSVGElement> & {
   /** Flip horizontally so the filled column sits on the right (right-side panels). */
   mirrored?: boolean;
 };
@@ -14,7 +14,7 @@ type SidebarToggleProps = React.SVGProps<SVGSVGElement> & {
  * the Phosphor icons around it. The frame spans 21 × 19 of the 24 box (was
  * 20 × 17.7), so the glyph fills its square like its neighbours do.
  */
-export const SidebarToggle = ({ className, mirrored, ...props }: SidebarToggleProps) => {
+export const SidebarGlyph = ({ className, mirrored, ...props }: SidebarGlyphProps) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

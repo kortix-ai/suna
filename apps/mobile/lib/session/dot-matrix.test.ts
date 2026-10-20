@@ -17,8 +17,7 @@ import {
   type DotMatrixVariant,
 } from './dot-matrix';
 
-// Web's `components/ui/dot-matrix/session-dot-matrix.tsx` re-exports this
-// file from @kortix/ui since #10257.
+// Web renders the catalog from @kortix/ui (`primitives/dot-matrix/` since #10480).
 const WEB_CATALOG = join(
   import.meta.dir,
   '..',
@@ -28,8 +27,7 @@ const WEB_CATALOG = join(
   'packages',
   'ui',
   'src',
-  'components',
-  'ui',
+  'primitives',
   'dot-matrix',
   'session-dot-matrix.tsx',
 );

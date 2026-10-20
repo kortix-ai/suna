@@ -1,0 +1,64 @@
+'use client';
+
+import type { FileContent } from '../../../internal/files/types';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import { fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { readRuntimeFileWithRetry } from '../../../internal/files/runtime-file-read';
+import { readFile } from '../../../internal/files/runtime-files';
+import { sandboxWakingRefetchInterval } from '../../../internal/files/file-read-retry';
+import { useServerHealth } from './use-server-health';
+import { isSystemDirectoryPath } from './system-dir';
+
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
+export { fileContentKeys };
+
+/**
+ * Fetch the content of a single file from the active OpenCode server.
+ *
+ * Uses GET /file/content?path=<path> which returns FileContent.
+ * Text files return plain content; images/binaries return base64-encoded content.
+ */
+export function useFileContent(
+  filePath: string | null,
+  options?: { enabled?: boolean; staleTime?: number },
+) {
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // Asleep, not booting — the re-read below takes the slow lane.
+  const { parked } = useServerHealth();
+
+  return useQuery<FileContent>({
+    queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
+    queryFn: ({ signal }) =>
+      readRuntimeFileWithRetry(filePath!, () => readFile(filePath!), undefined, signal),
+    enabled: !!filePath && !isSystemDirectoryPath(filePath) && options?.enabled !== false,
+    staleTime: options?.staleTime ?? 10_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    // A readiness 503 is a pending state, not a failure. A booting box earns the
+    // fast cadence; a parked one is watched slowly. See the helper.
+    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
+  });
+}
+
+/**
+ * Utility to imperatively invalidate file content queries.
+ */
+export function useInvalidateFileContent() {
+  const queryClient = useQueryClient();
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+
+  return (filePath?: string) => {
+    if (filePath) {
+      queryClient.invalidateQueries({
+        queryKey: fileContentKeys.file(serverUrl, filePath),
+      });
+    } else {
+      queryClient.invalidateQueries({
+        queryKey: fileContentKeys.all,
+      });
+    }
+  };
+}

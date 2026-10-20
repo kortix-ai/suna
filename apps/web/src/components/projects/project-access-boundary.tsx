@@ -7,26 +7,24 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Textarea } from '@/components/ui/textarea';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { Textarea } from '@kortix/ui/textarea';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { DetailPanel, DetailRow } from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
-import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { forgetLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
+import { focusWithoutScroll } from '@kortix/ui/internal/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess } from '@kortix/sdk';
-import { prefetchSessionOpen, useAdminImpersonate } from '@kortix/sdk/react';
-import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { prefetchSessionOpen, qk, useAdminImpersonate } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@kortix/ui/session/status/session-route-prefetch';
 import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
-
-const QUERY_KEY = 'project-access-boundary';
 
 /** How often the waiting screen re-checks whether a manager approved the request. */
 const APPROVAL_POLL_MS = 15_000;
@@ -210,6 +208,20 @@ export function routeSessionIdFromParams(params: Record<string, unknown> | null 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * The gate's read. It uses the shell's canonical `getProject` slot, so the
+ * shell, ⌘K and settings read this answer instead of asking again (2 GETs per
+ * load before). A user switch empties the cache before the new user is
+ * published (`resetClientState`).
+ */
+export function projectGateQuery(projectId: string) {
+  return {
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId, { showErrors: false }),
+    retry: false,
+  } as const;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -232,10 +244,8 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
 
   const query = useQuery({
-    queryKey: [QUERY_KEY, projectId, user?.id],
-    queryFn: () => getProject(projectId, { showErrors: false }),
+    ...projectGateQuery(projectId),
     enabled: authReady && !!projectId,
-    retry: false,
   });
 
   // A session route's open read needs only the two route ids, so it starts
@@ -416,7 +426,7 @@ function AccessGateScreen({
         return;
       }
       // already_has_access — the project is readable now, so show the project.
-      void queryClient.invalidateQueries({ queryKey: [QUERY_KEY, projectId] });
+      void queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
     },
     onError: (error: Error) =>
       setInlineError(error.message || t.raw('projectAccessBoundary.requestFailed')),

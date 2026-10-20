@@ -11,7 +11,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
+import { cachedManagedPricingRoutes, withManagedPricing } from '../../llm-gateway/models/managed-pricing-routes';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -205,6 +205,7 @@ export function registerModelsRoutes(): void {
       );
       return c.json({
         ...catalog,
+        models: withManagedPricing(catalog.models, quotes),
         managedPricingRoutes: Object.fromEntries(
           Object.entries(quotes).filter(([id]) => id in catalog.models),
         ),

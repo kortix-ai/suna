@@ -200,7 +200,7 @@ describe('getPublicSessionMessages', () => {
     expect(Object.keys(msg).sort()).toEqual(PUBLIC_MESSAGE_KEYS);
     expect(msg.role).toBe('assistant');
     expect(msg.created).toBe('1970-01-01T00:00:01.000Z');
-    expect(msg.text).toBe('first line\nsecond line');
+    expect(msg.text).toBe('first line\nsecond line\n\nThe assistant could not complete this response.');
     expect(msg.tools).toEqual([{ tool: 'bash', status: 'completed' }]);
     expect(msg.files).toEqual([{ filename: 'report.pdf', mime: 'application/pdf' }]);
     expect(msg.reasoning_omitted).toBe(true);
@@ -208,6 +208,30 @@ describe('getPublicSessionMessages', () => {
     for (const secret of ['secret output', 'rm -rf', 'base64-data-should-be-dropped', 'msg_secret_id', 'sk-live-123', 'internal thoughts']) {
       expect(wire).not.toContain(secret);
     }
+  });
+
+  test.each(['live', 'mirror'])('%s reads show failed assistant outcomes without exposing provider errors', async (source) => {
+    const messages = [
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [] },
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Partial answer' }] },
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Complete answer' }] },
+      { info: { role: 'user', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Question' }] },
+    ];
+    messagesResult = { ok: true, messages };
+    const result = await getPublicSessionMessages(
+      { ...activeShare, sandboxStatus: source === 'mirror' ? 'stopped' : 'active' },
+      { readMirror: async () => ({ opencode_session_id: 'oc-root-1', captured_at: '2026-01-01T00:00:00.000Z', total: messages.length, head_complete: true, next_cursor: null, messages }) },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.source).toBe(source);
+    expect(result.transcript.messages.map((message) => message.text)).toEqual([
+      'The assistant could not complete this response.',
+      'Partial answer\n\nThe assistant could not complete this response.',
+      'Complete answer',
+      'Question',
+    ]);
+    expect(JSON.stringify(result.transcript)).not.toContain('private provider detail');
   });
 
   test('keeps markdown intact: line breaks and code fences survive, so the page renders them as in the session', async () => {

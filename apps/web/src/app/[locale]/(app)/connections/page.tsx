@@ -4,12 +4,12 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { OutcomeTitle } from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { OutcomeTitle } from '@kortix/ui/internal/auth/auth-consent';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { isConnectorsEnabled } from '@/lib/config';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 
 /**
  * `/connections` is the post-OAuth landing for Pipedream connector setup. The connect
