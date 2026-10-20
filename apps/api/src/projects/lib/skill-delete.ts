@@ -1,4 +1,4 @@
-import { skillDirs } from '@kortix/manifest-schema';
+import { agentFileCandidates, legacyConfigDir, skillDirs } from '@kortix/manifest-schema';
 import type { ParsedManifest } from '../triggers';
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -47,15 +47,22 @@ export function prepareSkillDeletion(
     .map(source => source.replace(/^\.\//, '').replace(/\/$/, ''));
   if (moduleSources.some(source => inside(source) || folder.startsWith(`${source}/`))) return conflict;
   const protectedPaths = [manifest.path, ...(manifest.candidatePaths ?? []),
-    ...Object.values(record(manifest.raw.agents)).flatMap(value => {
+    ...Object.entries(record(manifest.raw.agents)).flatMap(([name, value]) => {
       const agent = record(value);
-      return [agent.file, agent.prompt_file].filter((path): path is string => typeof path === 'string');
+      return [...agentFileCandidates(manifest.raw, name), agent.prompt_file].filter((path): path is string => typeof path === 'string');
     }),
     ...Object.values(record(manifest.raw.commands)).flatMap(value => {
       const path = record(value).prompt_file;
       return typeof path === 'string' ? [path] : [];
     }),
   ];
+  if (manifest.schemaVersion < 3) {
+    const configDir = legacyConfigDir(manifest.raw);
+    const agentDirs = ['agents', `${configDir}/agent`, `${configDir}/agents`];
+    protectedPaths.push(...files.filter(file => agentDirs.some(dir =>
+      file.path.startsWith(`${dir}/`) && /^[^/]+\.md$/.test(file.path.slice(dir.length + 1))))
+      .map(file => file.path));
+  }
   // Imports may contain additional configuration paths. Refuse this uncommon
   // layout until all imported resource references can be proven disjoint.
   if (manifest.imports || protectedPaths.some(inside)) return conflict;

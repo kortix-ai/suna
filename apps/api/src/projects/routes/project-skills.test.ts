@@ -174,3 +174,17 @@ test('legacy deletion preserves a different skill whose slug matches the deleted
   expect(writtenManifest().agents.worker.skills).toEqual(['keep']);
   expect(firstWrite().deletes).not.toContain('skills/keep/SKILL.md');
 });
+for (const file of ['skills/research/agents/worker.md', 'skills/research/agents/other.md', 'skills/research/agent/other.md']) {
+  test(`refuses deletion of a legacy skill containing implicit agent prompt ${file}`, async () => {
+    raw = { kortix_version: 2, opencode: { config_dir: 'skills/research' }, agents: { worker: {} } };
+    paths.push(file);
+    expect((await remove()).status).toBe(409);
+    expect(writes).toHaveLength(0);
+  });
+}
+test('an explicit agent file outside the skill replaces its unused conventional candidate', async () => {
+  raw.agents = { worker: { file: 'agents/worker.md' } };
+  raw.opencode = { config_dir: 'skills/research' };
+  expect((await remove()).status).toBe(200);
+  expect(writes).toHaveLength(1);
+});
