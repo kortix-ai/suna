@@ -1168,6 +1168,7 @@ const catalog = {
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
+      "singleModelDescription": "Only 1 model is available in this project. Model availability depends on your plan and connected providers.",
       "description": "Nothing matches “{search}”. Try a different search.",
       "clear": "Clear search"
     },
@@ -5457,6 +5458,7 @@ const catalog = {
       "text73112526c03a": "Agent turn failed. No reason was reported.",
       "text0e5f7f6732e0": "Fork conversation",
       "text32ad3abe4479": "Failed to fork conversation",
+      "text95de71e25038": "Conversation forked",
       "text85b7a59cdbd5": "Platform agent",
       "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
       "textd919fde889e9": "Needs connection",
@@ -5485,6 +5487,7 @@ const catalog = {
       "text4c012b6f97ca": "Connect {app}",
       "text84e071180ac2": "Edit settings",
       "text5441e7146193": "App event",
+      "text1c41abcc2fff": "Contact Kortix to enable it.",
       "textce0eabb01151": "{value0} vCPU · {value1} GB · {value2} GB",
       "text0d04bfeb7d64": "App",
       "text840993da3129": "App event created",
@@ -6617,7 +6620,7 @@ const catalog = {
     "audienceQuestion": "Who can open it?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
+    "privateNote": "Only you can open My files, not even admins. Share a folder to give someone access.",
     "noTeamFolders": "No team folders yet.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Folders it can open",
@@ -6699,6 +6702,10 @@ const catalog = {
     "exists": "exists",
     "missing": "does not exist",
     "listPlaceholder": "value 1, value 2"
+  },
+  "featureGate": {
+    "enable": "Enable {name}",
+    "enabling": "Enabling…"
   }
 };
 

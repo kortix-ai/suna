@@ -34,7 +34,7 @@ import {
 } from '@kortix/sdk';
 import { toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
 
-interface OutputItemBase {
+export interface OutputItemBase {
   callID: string;
   name: string;
   /** Human title from the show payload (W3). Display rule: `title ?? name`. */

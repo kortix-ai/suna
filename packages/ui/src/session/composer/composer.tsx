@@ -1053,7 +1053,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     NO_COMMAND_CHIP,
   );
 
-  // One predicate for both switch affordances — the picker's cycle shortcut
+  // One predicate for both switch affordances — the editor's cycle shortcut
   // and the /switch-agent slash row: with zero or one selectable agent there
   // is nothing to switch to, and a slash row that highlights, offers "Use",
   // and does nothing is worse than no row (the `set-scope` lesson).
@@ -1434,6 +1434,7 @@ function ComposerImpl(props: SessionChatInputProps) {
    * and reasoning effort are now two distinct dropdowns, so a single flag
    * would open both or neither.
    */
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false);
 
@@ -1516,6 +1517,10 @@ function ComposerImpl(props: SessionChatInputProps) {
       // Which control a row opens lives in `controlToOpenFor`
       // (menus/slash-actions.ts) so it can be tested; this file cannot be.
       const control = controlToOpenFor(action.id);
+      if (control === 'agent') {
+        setAgentMenuOpen(true);
+        return;
+      }
       if (control === 'model') {
         setModelMenuOpen(true);
         return;
@@ -1526,9 +1531,6 @@ function ComposerImpl(props: SessionChatInputProps) {
       }
 
       switch (action.id) {
-        case 'switch-agent':
-          cycleAgent();
-          return;
         case 'attach-file':
           fileInputRef.current?.click();
           return;
@@ -1540,7 +1542,7 @@ function ComposerImpl(props: SessionChatInputProps) {
           return;
       }
     },
-    [cycleAgent, onCompactClick, onContextClick],
+    [onCompactClick, onContextClick],
   );
 
   const submitPlacementRef = useRef<'transcript' | 'composer'>('transcript');
@@ -2001,6 +2003,8 @@ function ComposerImpl(props: SessionChatInputProps) {
     handleAttachClick,
     primaryAgents,
     availableSelectedModel,
+    agentMenuOpen,
+    setAgentMenuOpen,
     modelMenuOpen,
     setModelMenuOpen,
     reasoningMenuOpen,

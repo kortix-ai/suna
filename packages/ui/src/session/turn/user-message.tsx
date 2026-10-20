@@ -1,5 +1,8 @@
 'use client';
 
+import { attachmentMime } from '../../internal/lib/attachment-mime';
+import { AttachmentPreview } from './attachment-preview';
+import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
@@ -718,13 +721,29 @@ export interface AttachmentUploadStatus {
 
 function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const category = getFileCategory(file.filename, attachmentMime(file.mime === 'application/octet-stream' ? undefined : file.mime, file.filename));
+  const canPreview = ['text', 'code', 'html', 'csv', 'pdf'].includes(category);
+  const load = useMemo(
+    () => async () => {
+      if (isSessionAttachmentRef(file.src)) return fetchSessionAttachment(file.src!);
+      const url = sentAttachmentPreview(file.id);
+      if (!url) throw new Error('Attachment is unavailable');
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Could not load attachment');
+      return response.blob();
+    },
+    [file.src, file.id],
+  );
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
     if (downloading) return;
     setDownloading(true);
     try {
       const stored = isSessionAttachmentRef(file.src);
-      const url = stored ? URL.createObjectURL(await fetchSessionAttachment(file.src!)) : sentAttachmentPreview(file.id);
+      const url = stored
+        ? URL.createObjectURL(await fetchSessionAttachment(file.src!))
+        : sentAttachmentPreview(file.id);
       if (!url) return;
       const link = document.createElement('a');
       link.href = url;
@@ -745,8 +764,16 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
         filename={file.filename}
         mime={file.mime}
         className={downloading ? 'cursor-wait' : undefined}
-        onOpen={() => void download()}
+        onOpen={() => (canPreview ? setPreviewOpen(true) : void download())}
       />
+      {previewOpen && (
+        <AttachmentPreview
+          name={file.filename}
+          mime={file.mime ?? ''}
+          load={load}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }

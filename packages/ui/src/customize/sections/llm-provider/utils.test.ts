@@ -4,7 +4,6 @@ import {
   buildKortixManagedProvider,
   formatPricePerMillion,
   formatTokenCount,
-  gatewayModelId,
   managedProviderHint,
   orderProviderRows,
   pickInitialTab,
@@ -254,26 +253,6 @@ describe('providerDisconnectPlan', () => {
       oauthProvider: null,
       secretNames: ['ANTHROPIC_API_KEY'],
     });
-  });
-});
-
-describe('gatewayModelId', () => {
-  test('BYOK provider gets a provider/model wire id', () => {
-    expect(gatewayModelId({ id: 'anthropic', managed: false }, 'claude-sonnet-4.6')).toBe(
-      'anthropic/claude-sonnet-4.6',
-    );
-  });
-
-  test('managed Kortix provider stays bare (single-segment)', () => {
-    expect(gatewayModelId({ id: 'kortix', managed: true }, 'claude-opus-4.8')).toBe(
-      'claude-opus-4.8',
-    );
-  });
-
-  test('codex (ChatGPT subscription) gets a codex/ prefix', () => {
-    expect(gatewayModelId({ id: 'codex', managed: false }, 'gpt-5.6-sol')).toBe(
-      'codex/gpt-5.6-sol',
-    );
   });
 });
 

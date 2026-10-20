@@ -624,3 +624,58 @@ flow(
     }
   },
 );
+
+flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/projects/:projectId/access',
+] }, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project();
+  const member = await team.addMember('member');
+  const sandbox = await authenticatedCli(ctx, 'role-change');
+  if (!member.userId) throw new Error('fixture member has no user identity');
+  const userId = member.userId;
+  try {
+    for (const role of ['manager', 'member']) {
+      await ctx.step(`grant --user ${role} replaces the previous project role`, async () => {
+        requireExit(await sandbox.run(['access', 'grant', '--user', userId,
+          '--role', role, '--project', project.id, '--json']), 0, 'access grant');
+        const listing = parseJson<{ members: Array<{ user_id: string; effective_project_role: string }> }>(
+          await sandbox.run(['access', 'ls', '--project', project.id, '--json']), 'access ls');
+        if (listing.members.find((item) => item.user_id === member.userId)?.effective_project_role !== role) {
+          throw new Error('effective project role did not match the successful grant');
+        }
+      });
+    }
+  } finally { sandbox.dispose(); }
+});
+
+flow('CLI-MODEL-CATALOG', {
+  domain: 'cli',
+  routes: ['GET /v1/projects/:projectId/model-picker'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const sandbox = await authenticatedCli(ctx, 'model-catalog');
+  try {
+    await ctx.step('a fresh project discovers unavailable ids through JSON and terminal output', async () => {
+      const args = ['models', 'ls', '--project', project.id];
+      const payload = parseJson<{
+        models: Record<string, unknown>;
+        catalog: Record<string, { availability: string }>;
+      }>(await sandbox.run([...args, '--json']), 'models ls --json');
+      const entries = Object.entries(payload.catalog);
+      if (!entries.length) throw new Error('fresh project has no discoverable catalog ids');
+      const output = await sandbox.run(args);
+      requireExit(output, 0, 'models ls');
+      for (const [id, metadata] of entries) {
+        if (id in payload.models) throw new Error('unavailable id leaked into runnable picker');
+        if (!['plan', 'login', 'provider'].includes(metadata.availability)) {
+          throw new Error(`missing availability for ${id}`);
+        }
+        if (!output.stdout.includes(id)) throw new Error(`terminal omitted catalog id ${id}`);
+      }
+      if (!output.stdout.includes('Unavailable catalog ids')) throw new Error('availability section missing');
+    });
+  } finally {
+    sandbox.dispose();
+  }
+});

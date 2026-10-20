@@ -132,6 +132,7 @@ export function DriveExplorer({
   rootLabel,
   rootIcon,
   location,
+  pathBase,
   onOpenFolder,
   onTeamFolderCreated,
   listingAs,
@@ -160,6 +161,8 @@ export function DriveExplorer({
    * and the path below it.
    */
   location?: DriveLocation;
+  /** A folder whose crumb stands in for the chain above it (see `DrivePathBar`). */
+  pathBase?: { path: string; label: string; icon?: ReactNode };
   /**
    * Open a folder from outside this view (the upload toast's "Open folder",
    * once the user has left). Absent: the button only works while mounted.
@@ -1359,7 +1362,7 @@ export function DriveExplorer({
         })()}
       </div>
 
-      <DrivePathBar as="row" rootLabel={rootLabel} rootIcon={rootIcon} />
+      <DrivePathBar as="row" rootLabel={rootLabel} rootIcon={rootIcon} base={pathBase} />
 
       {/* Search overlay */}
       {capabilities.search && isSearchOpen && <FileSearch />}
@@ -1548,6 +1551,7 @@ export function DriveExplorer({
                       clipboardOperation={clipboard?.operation}
                       isDirDownloading={isDirDownloading}
                       readOnly={!canWrite}
+                      isFixed={capabilities.fixedAt}
                       uploadingPaths={uploadingPaths}
                     />
                   ) : (
@@ -1573,6 +1577,7 @@ export function DriveExplorer({
                       clipboardOperation={clipboard?.operation}
                       isDirDownloading={isDirDownloading}
                       readOnly={!canWrite}
+                      isFixed={capabilities.fixedAt}
                       uploadingPaths={uploadingPaths}
                     />
                   )}

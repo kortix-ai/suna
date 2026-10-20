@@ -7,7 +7,7 @@ import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '../i18n/ui-catalog/product-cat
 import type { UiTranslator } from '../i18n';
 
 import { cn } from '../lib/utils';
-import { type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
+import { stripTrailingSlashes, type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
 
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
@@ -80,7 +80,7 @@ export function appCommand(app: App): string {
  * which is exactly what `apps/web` can assert without a DOM.
  */
 export function appHost(url: string): string {
-  return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return stripTrailingSlashes(url.replace(/^https?:\/\//, ''));
 }
 
 /**

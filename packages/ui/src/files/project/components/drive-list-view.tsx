@@ -354,6 +354,8 @@ interface DriveListViewProps {
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
   readOnly?: boolean;
+  /** Folders that cannot be renamed, cut or deleted (see `ExplorerCapabilities.fixedAt`). */
+  isFixed?: (path: string) => boolean;
   /** Paths still uploading. */
   uploadingPaths?: ReadonlySet<string>;
   /**
@@ -384,6 +386,7 @@ export function DriveListView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  isFixed,
   uploadingPaths,
   sortDisabled = false,
 }: DriveListViewProps) {
@@ -461,10 +464,10 @@ export function DriveListView({
               onClick={() => onNavigateToDir(node)}
               onDownload={onDownloadDir}
               isDownloadingItem={isDirDownloading(node.path)}
-              onRename={onRename}
-              onDelete={onDelete}
+              onRename={isFixed?.(node.path) ? undefined : onRename}
+              onDelete={isFixed?.(node.path) ? undefined : onDelete}
               onCopy={onCopy}
-              onCut={onCut}
+              onCut={isFixed?.(node.path) ? undefined : onCut}
               onDropMove={onDropMove}
               onDropUpload={onDropUpload}
               isCut={clipboardOperation === 'cut' && clipboardPath === node.path}

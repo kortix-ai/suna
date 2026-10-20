@@ -251,6 +251,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
           },
           {
+            name: 'goals',
+            args: '<subcommand>',
+            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+          },
+          {
             name: 'capture',
             args: '<subcommand>',
             blurb: 'Search the Capture timeline of the person you act for (search, timeline, frame)',

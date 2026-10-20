@@ -53,6 +53,8 @@ export type TextLinkPart =
  */
 const TEXT_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<>]+/g;
 
+const MAX_LINKED_TEXT = 2_000;
+
 /** Prose punctuation that ends a sentence after a bare URL but is not part of it. */
 const URL_TRAILING_PUNCTUATION = /[.,;:!?'")\]]+$/;
 
@@ -61,6 +63,11 @@ const URL_TRAILING_PUNCTUATION = /[.,;:!?'")\]]+$/;
  * link parts, so the form renders the URL as a real link instead of dead text.
  */
 export function splitTextLinks(text: string): TextLinkPart[] {
+  // ponytail: TEXT_LINK_PATTERN and URL_TRAILING_PUNCTUATION backtrack
+  // quadratically on a long run of `[` or `!` (CodeQL js/polynomial-redos). A
+  // hint is one or two sentences; past MAX_LINKED_TEXT it renders as plain
+  // text. Replace the regexes with a scanner if hints ever need to be longer.
+  if (text.length > MAX_LINKED_TEXT) return [{ type: 'text', value: text }];
   const parts: TextLinkPart[] = [];
   let cursor = 0;
   for (const match of text.matchAll(TEXT_LINK_PATTERN)) {

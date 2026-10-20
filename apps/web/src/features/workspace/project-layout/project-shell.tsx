@@ -1,5 +1,6 @@
 'use client';
 
+import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
@@ -34,12 +35,7 @@ import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
-import {
-  clearLastProjectId,
-  readLastProjectId,
-  writeLastProjectId,
-} from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { cn } from '@kortix/ui';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
@@ -136,26 +132,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // detail read the server confirmed: recording a project the user cannot
   // actually read would send them into a 404 bounce loop on their next visit.
   // A copy restored from this device's cache is stale until it refetches, and
-  // it outlives a deleted project: remembering it would let the self-heal below
-  // leave the "This project is gone." screen for another project.
+  // it outlives a deleted project: never remember that stale copy again.
+  // ProjectAccessBoundary owns terminal errors and forgetting unreadable projects.
   useEffect(() => {
     if (!projectDetail || projectDetailError || projectDetailStale) return;
     writeLastProjectId(user?.id, projectId);
   }, [projectDetail, projectDetailError, projectDetailStale, projectId, user?.id]);
-
-  // Self-heal a stale remembered project. The cookie outlives the project it
-  // names (deleted project, signed into a different account on the same
-  // browser), and it drives the `/` and post-auth redirects — so left alone it
-  // would send the user to an unreadable project on every single visit. Drop it
-  // and re-resolve through the landing door.
-  useEffect(() => {
-    if (!projectDetailError) return;
-    const status = (projectDetailError as { status?: number }).status;
-    if (status !== 403 && status !== 404) return;
-    if (readLastProjectId(user?.id) !== projectId) return;
-    clearLastProjectId();
-    router.replace(PROJECT_LANDING_PATH);
-  }, [projectDetailError, projectId, router, user?.id]);
 
   // The project's owning account, falling back to the app-wide selected one
   // — the same resolution every account-scoped surface uses. Feeds the
@@ -280,9 +262,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         }
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Suspense fallback={null}>
+          <CommandPaletteBoundary>
             <CommandPalette />
-          </Suspense>
+          </CommandPaletteBoundary>
 
           <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>

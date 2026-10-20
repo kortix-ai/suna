@@ -19774,6 +19774,7 @@
       "text73112526c03a": "Корак агента није успео. Разлог није пријављен.",
       "text0e5f7f6732e0": "Разграни разговор",
       "text32ad3abe4479": "Разгранање разговора није успело",
+      "text95de71e25038": "Разговор је разгранат",
       "text85b7a59cdbd5": "Agent platforme",
       "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti.",
       "text6c4af31cd4ab": "Odjavljeni ste na ovom uređaju, ali server nije potvrdio odjavu.",
@@ -21483,14 +21484,14 @@
     "teamFolders": "Team folders",
     "adminSection": "Admin",
     "newTeamFolder": "New team folder",
-    "audienceQuestion": "Who can open it?",
+    "audienceQuestion": "Ко може да је отвори?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
-    "noTeamFolders": "No team folders yet.",
+    "privateNote": "Само ти можеш да отвориш Моје датотеке, чак ни администратори не могу. Подели фасциклу да би некоме дао приступ.",
+    "noTeamFolders": "Још нема фасцикли тима.",
     "sessionFilesName": "Files",
-    "sessionFilesHint": "Folders it can open",
-    "sessionFilesDescription": "The Drive folders this session mounts, and where the agent sees them. Share a folder in Drive to add it; stop sharing to take it away.",
+    "sessionFilesHint": "Фасцикле које може да отвори",
+    "sessionFilesDescription": "Фасцикле са Диска које ова сесија монтира и где их агент види. Подели фасциклу на Диску да је додаш; престани да је делиш да је уклониш.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
     "driveLabel": "Drive"
@@ -22033,5 +22034,9 @@
   "triggerAutoPause": {
     "title": "Сам се паузирао на ограничењу покретања",
     "description": "Радио је на свом ограничењу покретања по сату 2 сата заредом, па више не покреће извршавања. Пронађи шта га стално покреће, па га настави."
+  },
+  "featureGate": {
+    "enable": "Омогући {name}",
+    "enabling": "Омогућавање…"
   }
 }
