@@ -103,23 +103,33 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    project's member and access lists.
 5. A project-scoped token carries its minter's role on that project (owner).
    `src/server/proxy-policy.ts` therefore names each route the session UI
-   calls, by method: the project and its sessions, session start/stop/restart,
-   prompts, attachments, approvals, turns, change requests, model picker,
-   connection and secret names. On the session runtime (port 8000 of the
-   sandbox) it allows the transcript, events, status, permission and question
-   replies, prompts and aborts, and file reads inside `/workspace`. Everything
-   else returns `403`: agent config, secret writes, members, access, triggers,
-   tokens, credentials, project deletion, warm sessions, billing, every account
-   route, public shares and session visibility (`public-shares`, `sharing`,
-   `p/share`), reminders, provider credential pools, the runtime's shell,
-   command, terminal (`pty`), git, environment, tool, drive-sync and file-write
-   routes, the runtime config, and every other sandbox port.
-6. Two account reads the session UI makes are answered by Lumen itself
+   calls, by method, measured from the customer journey: the project card,
+   model picker, connection and secret names, change requests; the project
+   repository read only (Files and Changes tabs); session start and restart,
+   rename and delete, the session's live stream, transcript, turn, prompt
+   queue, attachments, scope and previews. On the session runtime (port 8000
+   of the sandbox) it allows status and health reads, the transcript, the
+   command list, pending permissions and questions and their replies, abort,
+   edit-and-rewind, and the composer's file search inside `/workspace`.
+   Everything else returns `403`: agent config, secret writes, members,
+   access, triggers, tokens, credentials, project deletion, the project's
+   session list, warm sessions, billing, every account route, public shares
+   and session visibility (`public-shares`, `sharing`, `p/share`), reminders,
+   drives and drive sync, the session log and config, provider credential
+   pools, the runtime's shell, command, terminal (`pty`), git, environment,
+   tool and file routes outside the search, the runtime config, and every
+   other sandbox port. The proxy refuses a path segment that decodes to
+   `/`, `\`, `.`, `..`, `?`, `#`, `%` or a control character
+   (`src/server/upstream-path.ts`), so the path the policy checks is the path
+   Kortix receives.
+6. Some reads the session UI makes are answered by Lumen itself
    (`localAnswer`): `GET accounts/me` returns the Lumen user id with no email
-   and no accounts, and the permission probes (`…/iam/members/…/effective`
-   and `effective:batch`) deny every configuration action. The UI hides those
-   controls. `GET billing/account-state` is refused (`403`); the session UI
-   reads it for credit warnings and works without it.
+   and no accounts, the permission probes (`…/iam/members/…/effective`
+   and `effective:batch`) deny every configuration action (the UI hides
+   those controls), and a session's `audit` and `participants` are empty
+   (Kortix would list the operator). Two reads the session UI makes stay
+   refused (`403`) and the UI works without them: `GET billing/account-state`
+   (the operator's credits) and the runtime's `GET global/config`.
 7. A new session gets Lumen's labels first; a client label in the `lumen-`
    namespace is dropped (`tagSessionCreate`, `convex/tags.ts`).
 8. Every token Lumen mints is revoked at its expiry by a scheduled Convex

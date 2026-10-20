@@ -4,10 +4,11 @@
  * and the minter's identity (the Lumen operator's Kortix user), so the proxy
  * narrows it to the calls the session UI makes: each allowed route is named,
  * by method. Everything else is refused. Project configuration (agents,
- * secrets, members, triggers, connectors, tokens, deletion), public links and
- * the sandbox's process, terminal, git and environment routes belong to
- * Lumen's operator. The operator's Kortix identity (accounts, members, access
- * lists) is not the member's to read.
+ * secrets, members, triggers, connectors, tokens, deletion), public links,
+ * reminders, drives, the session log and config, and the sandbox's process,
+ * terminal, git, file and environment routes belong to Lumen's operator. The
+ * operator's Kortix identity (accounts, members, access lists, session
+ * audit and participants) is not the member's to read.
  *
  * ponytail: a route allowlist here; Kortix narrowing a token's permissions
  * (contract proposal G2) would make it unnecessary.
@@ -35,29 +36,32 @@ const S = `projects/${PROJECT}/sessions/${SESSION}`;
 /** The session runtime: the daemon on port 8000 of the session's sandbox. */
 const RT = `p/${SEG}/8000`;
 
+// Each rule is a request the session UI makes, measured from the customer journey
+// (sign up, a workspace per template, thread, streamed prompt, question, stop,
+// edit and rewind, attachment, @-mention, every tab, rename, restart, delete,
+// reload mid-stream). A route the UI never calls is refused.
 const RULES: readonly Rule[] = [
-  rule('GET', `projects/${PROJECT}(?:/(?:detail|sessions|change-requests|model-picker|connections|secrets|agents))?`),
+  // The project: its card, agents and models, connection and secret names, change requests.
+  rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|connections|secrets))?`),
+  // The Files and Changes tabs: the project repository, read only.
+  rule('GET', `projects/${PROJECT}/(?:files|files/content|files/search|files/history|branches|commits|version-diff)`),
   rule('POST', `projects/${PROJECT}/sessions`),
-  // One session: every read except its public links and provider credential pools.
-  rule('GET', `${S}(?:/(?!public-shares|provider-secret-pools)[^/].*)?`),
+  rule('POST', `projects/${PROJECT}/attachments(?:/${SEG}/complete)?`),
+  // One session: the session, its live stream, transcript, turn, queue, authors, model usage, scope, previews.
+  rule('GET', `${S}(?:/(?:events|snapshot|transcript|turn|prompts|message-authors|model-usage|scope|previews))?`),
   rule('PATCH DELETE', S),
-  rule('POST', `${S}/(?:start|stop|restart|recover|reload|reload-stream|prompts|prompts/hold|prompts/${SEG}/retry|attachments|question)`),
+  rule('POST', `${S}/(?:start|restart|prompts|prompts/hold)`),
+  // A queued prompt's edit and removal (the composer's queue; not seen live: prompts steered).
   rule('PATCH DELETE', `${S}/prompts/${SEG}`),
-  rule('PUT', `${S}/(?:model|presence|watch|pin|archive)`),
-  rule('GET POST', `projects/${PROJECT}/(?:attachments|approvals)(?:/.*)?`),
-  rule('GET POST', `projects/${PROJECT}/(?:turn-permission|turn-question|turn-stream)`),
   // How this deployment addresses previews.
   rule('GET', 'p/config'),
-  // Runtime reads: the transcript, events, status, the agent and command lists, workspace files.
-  rule('GET', `${RT}/kortix/(?:runtime(?:/.*)?|health)`),
-  rule('GET', `${RT}/(?:global/health|global/event|event|session|session/status|permission|question|provider|agent|skill|command|path|project/current|vcs/diff|lsp/diagnostics)`),
-  rule('GET', `${RT}/session/${SEG}(?:/(?:message|message/${SEG}|diff|todo|children))?`),
-  rule('GET', `${RT}/(?:file|file/content|file/status|find|find/file|find/symbol)`),
-  // Runtime writes: a turn, its abort and steer, permission and question replies.
-  rule('POST', `${RT}/kortix/runtime/.+`),
-  rule('DELETE', `${RT}/kortix/runtime/messages/${SEG}/${SEG}`),
-  rule('POST', `${RT}/kortix/abort(?:/after-tool)?`),
-  rule('POST', `${RT}/session/${SEG}/(?:message|prompt_async|abort|revert|unrevert|summarize)`),
+  // Runtime reads: health, status, the transcript, the command list, pending permissions and questions.
+  rule('GET', `${RT}/(?:kortix/health|session|session/status|permission|question|provider|command|path|project/current|lsp/diagnostics)`),
+  rule('GET', `${RT}/session/${SEG}(?:/(?:message|todo))?`),
+  // Workspace files: the composer's @-mention search.
+  rule('GET', `${RT}/(?:file|find/file)`),
+  // Runtime writes: abort, edit-and-rewind, permission and question replies.
+  rule('POST', `${RT}/session/${SEG}/(?:abort|revert)`),
   rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
 ];
 
@@ -85,6 +89,9 @@ export function blockedReason(method: string, path: string, query?: URLSearchPar
 }
 
 const PERMISSION_PROBE = /^accounts\/[^/]+\/iam\/members\/[^/]+\/effective(:batch)?$/;
+// The session audit log and participant list name the operator's Kortix user.
+const SESSION_AUDIT = new RegExp(`^projects/${PROJECT}/sessions/(${SESSION})/audit$`);
+const SESSION_PARTICIPANTS = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/participants$`);
 const DENIED = 'Managed by the Lumen operator';
 
 interface Probe {
@@ -104,14 +111,16 @@ function probeResult(p: Probe) {
 }
 
 /**
- * Account-level reads the session UI makes, answered by Lumen instead of
- * Kortix, or null to apply `blockedReason`. Kortix would answer them with
- * the operator's identity (`accounts/me`) or the operator's permissions
- * (`…/effective`), neither of which is the member's.
+ * Reads the session UI makes that Lumen answers instead of Kortix, or null
+ * to apply `blockedReason`. Kortix would answer them with the operator's
+ * identity (`accounts/me`, audit, participants) or the operator's
+ * permissions (`…/effective`), neither of which is the member's.
  *
  * - `GET accounts/me`: the Lumen user id, no email, no accounts.
  * - `…/effective` and `…/effective:batch`: every configuration action is
  *   denied, which is what a Lumen member may do. The UI hides those controls.
+ * - A session's `audit` and `participants`: empty. The UI polls both; Kortix
+ *   would list the operator's user, the only identity behind member tokens.
  */
 export function localAnswer(
   method: string,
@@ -122,6 +131,13 @@ export function localAnswer(
 ): Response | null {
   if (method === 'GET' && path === 'accounts/me') {
     return Response.json({ user_id: member.userId, email: '', accounts: [] });
+  }
+  if (method === 'GET') {
+    const audit = SESSION_AUDIT.exec(path);
+    if (audit) {
+      return Response.json({ session_id: audit[1], audit_access: false, count: 0, events: [], next_cursor: null, actions: [] });
+    }
+    if (SESSION_PARTICIPANTS.test(path)) return Response.json({ participants: [], total: 0, multi_user: false });
   }
   const probe = PERMISSION_PROBE.exec(path);
   if (!probe) return null;

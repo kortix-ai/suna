@@ -6,50 +6,109 @@ const S = `${P}/sessions/7a1b2c3d-1111-4222-8333-944455556666`;
 const member = { userId: 'lumen_user_1' };
 
 describe('proxy policy: what a member token may do', () => {
-  test('session writes and runtime calls pass', () => {
-    for (const [method, path] of [
-      ['POST', `${S}/start`],
-      ['POST', `${S}/prompts`],
-      ['PATCH', S],
-      ['POST', `${P}/attachments`],
-      ['POST', `${P}/turn-permission`],
-      ['POST', 'p/sbx-1/8000/kortix/runtime/sessions/ses_1/prompt'],
-      ['POST', 'p/sbx-1/8000/kortix/runtime/sessions/ses_1/abort'],
-      ['POST', 'p/sbx-1/8000/session/ses_1/prompt_async'],
-      ['POST', 'p/sbx-1/8000/permission/per_1/reply'],
-      ['POST', 'p/sbx-1/8000/question/que_1/reply'],
-      ['POST', `${S}/restart`],
-      ['PUT', `${S}/archive`],
-      ['DELETE', `${S}/prompts/pr_1`],
-    ]) {
-      expect([method, path, blockedReason(method, path)]).toEqual([method, path, null]);
-    }
+  const RT = 'p/sbx_1/8000';
+  // Every request the customer journey made through the proxy (sign up,
+  // workspace per template, thread, streamed prompt, question, stop, edit and
+  // rewind, attachment, @-mention, Files, Changes, Preview, Scope, rename,
+  // restart, delete, reload mid-stream). Ids are synthetic.
+  const OBSERVED: ReadonlyArray<readonly [string, string]> = [
+    ['GET', P],
+    ['GET', `${P}/detail`],
+    ['GET', `${P}/change-requests`],
+    ['GET', `${P}/model-picker`],
+    ['GET', `${P}/connections`],
+    ['GET', `${P}/secrets`],
+    ['GET', `${P}/files`],
+    ['GET', `${P}/files/content`],
+    ['GET', `${P}/files/search`],
+    ['GET', `${P}/files/history`],
+    ['GET', `${P}/branches`],
+    ['GET', `${P}/commits`],
+    ['GET', `${P}/version-diff`],
+    ['POST', `${P}/sessions`],
+    ['POST', `${P}/attachments`],
+    ['POST', `${P}/attachments/9c0d1e2f-1111-4222-8333-944455556666/complete`],
+    ['GET', S],
+    ['PATCH', S],
+    ['DELETE', S],
+    ['GET', `${S}/events`],
+    ['GET', `${S}/snapshot`],
+    ['GET', `${S}/transcript`],
+    ['GET', `${S}/turn`],
+    ['GET', `${S}/prompts`],
+    ['GET', `${S}/message-authors`],
+    ['GET', `${S}/model-usage`],
+    ['GET', `${S}/scope`],
+    ['GET', `${S}/previews`],
+    ['POST', `${S}/start`],
+    ['POST', `${S}/restart`],
+    ['POST', `${S}/prompts`],
+    ['POST', `${S}/prompts/hold`],
+    ['PATCH', `${S}/prompts/pr_1`],
+    ['DELETE', `${S}/prompts/pr_1`],
+    ['GET', 'p/config'],
+    ['GET', `${RT}/kortix/health`],
+    ['GET', `${RT}/session`],
+    ['GET', `${RT}/session/status`],
+    ['GET', `${RT}/session/ses_1`],
+    ['GET', `${RT}/session/ses_1/message`],
+    ['GET', `${RT}/session/ses_1/todo`],
+    ['GET', `${RT}/permission`],
+    ['GET', `${RT}/question`],
+    ['GET', `${RT}/provider`],
+    ['GET', `${RT}/command`],
+    ['GET', `${RT}/path`],
+    ['GET', `${RT}/project/current`],
+    ['GET', `${RT}/lsp/diagnostics`],
+    ['GET', `${RT}/file`],
+    ['GET', `${RT}/find/file`],
+    ['POST', `${RT}/session/ses_1/abort`],
+    ['POST', `${RT}/session/ses_1/revert`],
+    ['POST', `${RT}/question/que_1/reply`],
+    ['POST', `${RT}/permission/per_1/reply`],
+  ];
+
+  test.each(OBSERVED)('%s %s passes', (method, path) => {
+    expect(blockedReason(method, path)).toBeNull();
   });
 
-  test('the reads the session UI makes pass', () => {
-    for (const path of [
-      P,
-      `${P}/detail`,
-      `${P}/sessions`,
-      `${S}/prompts`,
-      `${S}/audit`,
-      `${P}/change-requests`,
-      `${P}/model-picker`,
-      `${P}/connections`,
-      `${P}/secrets`,
-      'p/sbx-1/8000/kortix/health',
-      'p/sbx-1/8000/kortix/runtime/messages/ses_1',
-      'p/sbx-1/8000/global/event',
-      'p/sbx-1/8000/lsp/diagnostics',
-      'p/sbx-1/8000/session/ses_1/message',
-      'p/sbx-1/8000/file/content',
-      'p/config',
-      `${S}`,
-      `${S}/transcript`,
-      `${S}/previews`,
-    ]) {
-      expect([path, blockedReason('GET', path)]).toEqual([path, null]);
-    }
+  // Routes the UI never called. Operator surfaces, and broad rules that used to let them through.
+  const REFUSED: ReadonlyArray<readonly [string, string]> = [
+    ['GET', `${S}/drive-sync/d1/files`],
+    ['GET', `${S}/drive-sync/d1/files/content`],
+    ['GET', `${S}/drives`],
+    ['GET', `${S}/audit`],
+    ['GET', `${S}/log`],
+    ['GET', `${S}/log/entries`],
+    ['GET', `${S}/config`],
+    ['GET', `${S}/participants`],
+    ['GET', `${S}/reminders`],
+    ['GET', `${S}/public-shares`],
+    ['GET', `${S}/connect-requests`],
+    ['GET', `${S}/provider-secret-pools`],
+    ['GET', `${P}/sessions`],
+    ['GET', `${P}/agents`],
+    ['GET', `${P}/files/archive`],
+    ['GET', `${P}/files/raw`],
+    ['POST', `${RT}/kortix/runtime/sessions/ses_1/prompt`],
+    ['POST', `${RT}/kortix/runtime/anything`],
+    ['POST', `${RT}/kortix/abort`],
+    ['POST', `${RT}/session/ses_1/prompt_async`],
+    ['POST', `${RT}/session/ses_1/message`],
+    ['GET', `${RT}/global/event`],
+    ['GET', `${RT}/find/symbol`],
+    ['GET', `${RT}/file/content`],
+    ['POST', `${P}/turn-permission`],
+    // Encoded `..` and a double slash, as the policy would see them if one reached it.
+    ['GET', `${P}/%2e%2e/secrets`],
+    ['GET', `projects/%2e%2e/accounts`],
+    ['GET', `${P}//secrets`],
+    ['GET', `${S}//prompts`],
+    ['GET', `${S}/`],
+  ];
+
+  test.each(REFUSED)('%s %s is refused', (method, path) => {
+    expect(blockedReason(method, path)).not.toBeNull();
   });
 
   test("credentials, the operator's identity and other surfaces are refused on read", () => {
@@ -122,10 +181,10 @@ describe('proxy policy: what a member token may do', () => {
   test('runtime file reads stay inside the workspace', () => {
     const q = (path: string) => new URLSearchParams({ path });
     const RT = 'p/sbx_1/8000';
-    expect(blockedReason('GET', `${RT}/file/content`, q('src/app.ts'))).toBeNull();
-    expect(blockedReason('GET', `${RT}/file/content`, q('/workspace/src/app.ts'))).toBeNull();
+    expect(blockedReason('GET', `${RT}/file`, q('src/app.ts'))).toBeNull();
+    expect(blockedReason('GET', `${RT}/file`, q('/workspace/src/app.ts'))).toBeNull();
     for (const path of ['/tmp/.t', '/home/kortix/.bashrc', '/dev/shm/kortix/agent-env.sh', '../etc/passwd', '/workspace/../tmp/x', '~/.ssh/id']) {
-      expect([path, blockedReason('GET', `${RT}/file/content`, q(path))]).not.toEqual([path, null]);
+      expect([path, blockedReason('GET', `${RT}/file`, q(path))]).not.toEqual([path, null]);
     }
   });
 
@@ -138,6 +197,8 @@ describe('proxy policy: what a member token may do', () => {
       ['POST', `${S}/reminders`],
       ['PATCH', `${S}/reminders/rem_1`],
       ['PUT', `${S}/scope`],
+      ['PUT', `${S}/archive`],
+      ['POST', `${S}/prompts/pr_1/retry`],
       ['GET', `${S}/provider-secret-pools`],
       ['PUT', `${S}/provider-secret-pools/openai`],
       ['POST', `${S}/commit-push`],
@@ -207,6 +268,21 @@ describe('proxy policy: account reads Lumen answers itself', () => {
       ['project.write', false],
       ['member.read', false],
     ]);
+  });
+
+  test("a session's audit log and participants are empty, without calling Kortix", async () => {
+    const audit = localAnswer('GET', `${S}/audit`, none, null, member);
+    expect(await audit?.json()).toEqual({
+      session_id: '7a1b2c3d-1111-4222-8333-944455556666',
+      audit_access: false,
+      count: 0,
+      events: [],
+      next_cursor: null,
+      actions: [],
+    });
+    const people = localAnswer('GET', `${S}/participants`, none, null, member);
+    expect(await people?.json()).toEqual({ participants: [], total: 0, multi_user: false });
+    expect(localAnswer('POST', `${S}/audit`, none, null, member)).toBeNull();
   });
 
   test('every other path is left to blockedReason', () => {

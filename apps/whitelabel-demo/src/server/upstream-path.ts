@@ -43,6 +43,10 @@ function segmentProblem(segment: string): string | null {
     return 'encoded slash in a path segment';
   }
   if (segment === '.' || segment === '..') return 'path traversal segment';
+  // The upstream URL is this string, unencoded. A decoded `?` or `#` would end
+  // the path there, and a decoded `%` lets `%2e%2e` reach the URL parser, which
+  // resolves it as `..`. Either way the upstream path differs from the policy's.
+  if (/[?#%]/.test(segment)) return 'reserved character in a path segment';
   // A NUL or control byte can truncate or confuse a downstream parser; no Kortix
   // route contains one.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: that is the point

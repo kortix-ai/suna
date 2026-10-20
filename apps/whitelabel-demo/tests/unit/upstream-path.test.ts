@@ -51,6 +51,15 @@ describe('buildUpstreamPath', () => {
 `, 'secrets']).ok).toBe(false);
   });
 
+  test('a decoded ? # or % is refused: the upstream URL would end or re-decode there', () => {
+    // `%3F` decodes to `?`: the policy sees `p/share?/8000/kortix/health`, the upstream `p/share`.
+    expect(buildUpstreamPath(['p', 'share?', '8000', 'kortix', 'health']).ok).toBe(false);
+    expect(buildUpstreamPath(['p', 'config#', '8000', 'kortix', 'health']).ok).toBe(false);
+    // `%252e%252e` decodes to `%2e%2e`, which the URL parser resolves as `..`.
+    expect(buildUpstreamPath(['projects', '%2e%2e', 'secrets']).ok).toBe(false);
+    expect(buildUpstreamPath(['projects', OWN, '.%2e', 'secrets']).ok).toBe(false);
+  });
+
   test('legitimate paths with dots, dashes and spaces still work', () => {
     // A guard that also breaks ordinary traffic is a worse bug than the hole.
     expect(buildUpstreamPath(['projects', OWN, 'files', 'src', 'index.test.ts']).ok).toBe(true);
