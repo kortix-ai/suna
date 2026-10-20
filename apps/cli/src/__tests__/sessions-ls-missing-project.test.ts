@@ -17,7 +17,7 @@ for (const json of [false, true]) {
     const result = await run(404, json);
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(`Project "${projectId}" was not found`);
+    expect(result.stderr).toContain(`Default project "${projectId}" was not found`);
     expect(result.stderr).toContain('kortix projects use <id>');
     expect(result.stderr).toContain('kortix projects ls');
   });
