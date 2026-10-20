@@ -64,9 +64,15 @@ export async function createProjectSpace(projectId: string, input: CreateProject
   );
 }
 
-/** Rename, describe, archive or unarchive a channel. A renamed slug that is taken rejects with 409 `slug_taken`. */
+/**
+ * Rename, describe, archive or unarchive a channel. A rename whose slug is
+ * taken rejects with 409 `slug_taken` (fields as in `createProjectSpace`). The
+ * caller shows the error, so it never reaches the host error handler.
+ */
 export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
-  return unwrap(await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input));
+  return unwrap(
+    await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+  );
 }
 
 /** The caller's DM with `agentName`, created on the first call. An agent the project does not declare rejects with 404. */

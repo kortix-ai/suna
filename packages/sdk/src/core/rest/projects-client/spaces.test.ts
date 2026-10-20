@@ -86,6 +86,20 @@ test('updateProjectSpace PATCHes the space by id', async () => {
   expect(space.archived_at).toBe('2026-10-20T01:00:00.000Z');
 });
 
+test('updateProjectSpace rejects a taken slug with slug_taken and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = {
+    status: 409,
+    body: { error: 'A channel with this name exists', code: 'slug_taken', space_id: general.space_id, archived: false },
+  };
+  const error = await updateProjectSpace('P1', 'S2', { name: 'general' }).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 409, code: 'slug_taken', data: { space_id: general.space_id, archived: false } });
+  expect(errors).toEqual([]);
+});
+
 test('getOrCreateProjectDm POSTs the agent name to the DM route', async () => {
   nextResponse = {
     status: 200,
