@@ -1,4 +1,4 @@
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 const CANONICAL_HOSTS = new Set(['kortix.com', 'www.kortix.com']);
 

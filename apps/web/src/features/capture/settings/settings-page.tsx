@@ -2,12 +2,12 @@
 
 import { notFound } from 'next/navigation';
 
-import { SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsRowGroup } from '@kortix/ui/settings-row';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { CaptureAccountCard } from '../area/capture-account-card';
 import { CapturePage } from '../area/capture-area-shell';
-import { useCaptureArea } from '../area/use-capture-area';
+import { useCaptureArea } from '@kortix/ui/internal/capture/use-capture-area';
 import { CaptureSettingsPane } from './settings-view';
 
 /**

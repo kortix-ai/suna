@@ -100,6 +100,20 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
+  test('warm sessions require explicit opt-in before spending idle compute', () => {
+    for (const metadata of [undefined, null, {}, { experimental: {} }, { experimental: { warm_sessions: 'true' } }]) {
+      expect(resolveFeatureFlag(metadata, 'warm_sessions')).toBe(false);
+    }
+    expect(resolveFeatureFlags({}).warm_sessions).toBe(false);
+    expect(findCatalogFlag('warm_sessions')).toMatchObject({
+      available: true,
+      enabled: false,
+      overridden: false,
+    });
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: true } }, 'warm_sessions')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
+  });
+
   test('agentmail_email is explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
     expect(

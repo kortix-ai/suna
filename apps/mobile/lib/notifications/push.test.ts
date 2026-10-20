@@ -8,6 +8,7 @@ import {
   legacyKindPatch,
   notificationOpenMove,
   parsePushData,
+  pushFromOtherBackend,
   serverPreferences,
   shouldPresentInForeground,
 } from './push';
@@ -142,6 +143,21 @@ describe('parsePushData', () => {
     expect(parsePushData({ ...DATA, type: 'constructor' })).toBeNull();
     expect(parsePushData({ ...DATA, projectId: '' })).toBeNull();
     expect(parsePushData({ ...ALERT_DATA, projectId: null })).toBeNull();
+  });
+});
+
+describe('pushFromOtherBackend', () => {
+  const API = 'https://api.example.test/v1';
+  test('no origin (a server before KRTX-2938) → this backend', () => {
+    expect(pushFromOtherBackend(DATA, API)).toBe(false);
+    expect(pushFromOtherBackend(null, API)).toBe(false);
+  });
+  test('same host → this backend; another host → ignored', () => {
+    expect(pushFromOtherBackend({ ...DATA, origin: 'https://api.example.test' }, API)).toBe(false);
+    expect(pushFromOtherBackend({ ...DATA, origin: 'https://local-tunnel.example.test' }, API)).toBe(true);
+  });
+  test('an origin that is not a URL → this backend', () => {
+    expect(pushFromOtherBackend({ ...DATA, origin: 'not a url' }, API)).toBe(false);
   });
 });
 

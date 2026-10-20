@@ -34,9 +34,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogOfV1Rows, sessionLogTurns, type SessionLogMessage } from '@kortix/sdk';
-import { deriveTurnErrorAbortState, deriveTurnErrorPresentation } from './session-chat';
-import { strandedPromptIds } from './session-chat/transcript';
-import { TurnErrorDisplay } from './session-error-banner';
+import { deriveTurnErrorAbortState, deriveTurnErrorPresentation } from '@kortix/ui/session/thread/session-chat';
+import { strandedPromptIds } from '@kortix/ui/session/thread/transcript';
+import { TurnErrorDisplay } from '@kortix/ui/session';
 
 // This file is `.ts`, not `.tsx` (filename is pinned — see T17), so
 // JSX syntax is unavailable; `createElement` renders the exact same tree.

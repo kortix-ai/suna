@@ -28,7 +28,7 @@ import { NotFoundTitleSync } from './not-found-title-sync';
  * title. The sync writes the title the boundary's metadata produces — and
  * stays quiet whenever that title (or a composition of it) is already in
  * place, so it never fights the metadata owner
- * (cf. features/session/session-tab-title-sync.tsx).
+ * (cf. packages/ui/src/session/status/session-tab-title-sync.tsx).
  */
 describe('NotFoundTitleSync', () => {
   const HEADING = '404 Page not found';

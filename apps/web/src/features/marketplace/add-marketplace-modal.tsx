@@ -4,16 +4,16 @@ import { useTranslations } from '@/i18n/use-translations';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldDescription, FieldLabel } from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/input-group';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -22,10 +22,10 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useAddMarketplaceSource, useFeaturedMarketplaces } from '@/hooks/marketplace';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';

@@ -1,14 +1,14 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CopyButton } from '@/components/markdown/copy-button';
-import Hint from '@/components/ui/hint';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CopyButton } from '@kortix/ui/markdown';
+import Hint from '@kortix/ui/hint';
 
-import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
 import {
   SplitSheet,
   SplitSheetBody,
@@ -18,30 +18,40 @@ import {
   SplitSheetHeader,
   SplitSheetMain,
   SplitSheetTitle,
-} from '@/components/ui/split-sheet';
-import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '@/components/ui/tabs';
+} from '@kortix/ui/split-sheet';
+import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '@kortix/ui/tabs';
 
-import { Switch } from '@/components/ui/switch';
-import { successToast } from '@/components/ui/toast';
+import { Switch } from '@kortix/ui/switch';
+import { successToast } from '@kortix/ui/toast';
 
 
 import { useTranslations } from '@/i18n/use-translations';
 
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GearSixIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useCallback, useState } from 'react';
 
-import { AppPreview } from './app-preview';
-import { frameKey, reloadFrame } from './app-preview-pool';
+import {
+  AppPreview,
+  frameKey,
+  reloadFrame,
+  localizedAppCopy,
+  appCan,
+  appCommand,
+  appHost,
+  appStatus,
+  appTabLabel,
+  childApps,
+  deployNotice,
+} from '@kortix/ui/apps';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppReleasesPanel } from './app-releases';
 import { AppMachinesPanel, AppVolumesPanel } from './app-fleet';
-import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
