@@ -9,7 +9,7 @@ entries, the primitives, and a short list of deep paths (below).
 **Built with @kortix/ui:** [Lumen](../../apps/white-label/lumen), a complete white-label agent
 product in its own brand. Every screen is a module of this package.
 
-<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/white-label/lumen/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
+<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/white-label/lumen/public/screenshots/assistant-source.png" width="720" alt="Lumen: the @kortix/ui session thread in Lumen's brand, with a cited answer and its source" /></p>
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.

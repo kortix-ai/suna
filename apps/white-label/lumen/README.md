@@ -5,124 +5,152 @@
 <h1 align="center">Lumen</h1>
 
 <p align="center">
-  <b>AI for legal teams. A complete SaaS, with Kortix as the agent backend.</b><br/>
-  The reference for wrapping Kortix in a product you sell: your customers, accounts, firms,
-  plans, seats and data; Kortix runs the agents behind it.
+  <b>AI for legal teams. Review a data room in an afternoon. Every answer cites the clause.</b><br/>
+  A complete SaaS a partner sells to law firms, with its own customers, accounts, database,
+  agents and orchestration. Kortix is the agent backend behind it, and the firms never see it.
 </p>
 
 <p align="center">
+  <a href="#try-it">Try it</a> ·
+  <a href="#the-product">The product</a> ·
+  <a href="#for-developers">For developers</a> ·
   <a href="#run-it">Run it</a> ·
-  <a href="#what-it-does">What it does</a> ·
-  <a href="#who-owns-what">Architecture</a> ·
   <a href="#billing">Billing</a> ·
   <a href="../README.md">Both white-label patterns</a>
 </p>
 
-Lumen is a fictional product a partner sells to law firms. A firm signs up on Lumen's own site,
-names itself, invites its lawyers, opens matters and asks questions about them. The firm never
-gets a Kortix account and never holds a Kortix credential: Lumen's server talks to Kortix, and
-Lumen's proxy decides which Kortix calls a member may make.
+<p align="center">
+  <img src="public/screenshots/tour.gif" width="900" alt="Lumen in 15 seconds: open a matter, search the vault, open a cited answer, inspect a review cell, read a contract review" />
+</p>
 
-- Stack: Next.js 16, Convex (database + server functions), Better Auth on Convex (email +
-  password, organizations = firms).
-- UI: `@kortix/ui`, re-themed by one typed theme (`src/config/theme.ts`). A thread is the same
-  `useSession` + `SessionThread` every Kortix host renders.
-- Kortix access: `@kortix/sdk` only. Server-side calls use `@kortix/sdk/server`; the browser uses
-  the one `createKortix` client, pointed at Lumen's own origin.
-- Data: everything in this repo is synthetic. Parties are invented ("Brightwater Example
-  Holdings", "Quillon Analytics Inc."), emails use `@example.com`.
+Lumen is a fictional legal-AI product, built as the reference for one question: what does it take
+to sell your own product on top of Kortix? Lumen owns everything a customer touches: the site,
+sign-up, firms and seats, matters, documents, review tables, playbooks, billing and the audit log,
+in its own Next.js + Convex + Better Auth stack. It also owns its legal agents, skills and tools,
+and the engine that fans work out over Kortix sessions and checks every citation before a lawyer
+sees it. Kortix runs those agents in isolated sandboxes. No line of legal code is in the Kortix
+platform.
 
-## What it does
+Everything in this folder is synthetic: invented parties ("Brightwater Example Holdings",
+"Quillon Analytics Inc."), `@example.com` emails, and ten generated contracts.
 
-**Public site.** `/` (product), `/pricing` (Solo, Team, Firm; prices read from Stripe at request
-time, none in the source), `/security` (Lumen's posture in plain words, with its limits).
+## Try it
 
-**Sign-up and onboarding.** Better Auth email + password. Onboarding has three steps: name the
-firm (practice focus, size), invite colleagues (skippable), add a fictional sample matter. The
-firm's workspace is set up in the background; matters work at once, and the Assistant starts when
-setup finishes.
+| You have | Do this |
+|---|---|
+| 5 minutes and this repo | Follow [Run it](#run-it) (local Convex, no Convex account), sign up, pick **Add the sample matter** in onboarding. The matter arrives with six synthetic agreements, ready to search and ask about. |
+| A Kortix operator token | Set `KORTIX_UPSTREAM` and `KORTIX_OPERATOR_TOKEN` in Convex. Every firm that signs up gets its own Kortix project and Lumen's agent kit, installed through `@kortix/sdk`. |
+| Stripe test keys | Set the five `STRIPE_*` values (see [Billing](#billing)). Upgrade, seats and the customer portal turn on. Without them Lumen runs on trial seats. |
+| Ten contracts to measure on | `pnpm --filter @kortix/white-label-lumen eval` runs the real engine on the synthetic dataset and scores it against an answer key ([Quality, measured](#quality-measured)). |
 
-**Roles.** Owner, Admin and Lawyer (Better Auth `owner`, `admin`, `member`). Owners and admins
-manage members, roles, billing, usage, the audit log and firm settings. Lawyers see Firm and
-Billing read-only.
+## The product
 
-**Matters.** Name, number, client, parties with roles, practice area, status (Open, On hold,
-Closed) and visibility. A *restricted* matter is visible to its listed lawyers, its creator and
-firm admins only; every matter query and mutation goes through `requireMatterAccess`
-(`convex/access.ts`). A lawyer who opens a restricted matter by URL sees "You don't have access to
-this matter".
+### Matters and the vault
 
-**Assistant.** Each question in a matter starts a thread: one Kortix session on Lumen's
-`lumen-counsel` agent, in its own sandbox. URLs carry Lumen ids only
-(`/app/matters/<matterId>/assistant/<threadId>`).
+A firm works in matters. Each matter has parties, a client, a status and a visibility (the whole
+firm, or a named list of lawyers). Drop PDF, DOCX or TXT into its vault: Lumen extracts the text,
+splits it into pages and anchored paragraphs, and makes every page searchable at once. A search hit
+opens the document beside the list, scrolled to the first marked term; **Original** shows the real
+PDF or Word file.
 
-**Firm admin.** `/app/settings/firm` (name, logo, jurisdiction, practice focus),
-`/members` (invite with the seat check, change role, remove, copy/renew/revoke invitations),
-`/billing`, `/usage` (conversations per member and matter, CSV), `/audit` (every change, filter by
-action, person and matter, CSV; no delete path).
+<p align="center"><img src="public/screenshots/vault-preview.png" width="860" alt="The vault: a search for liability across six agreements, the MSA open on the right with clause 11.1 marked" /></p>
 
-**Your brand, not a recolor.** Lagoon teal on warm sand, deep teal ink in dark mode, softer
-corners (0.875rem), stock Tailwind density, warm shadows, Instrument Sans and Instrument Serif
-headings, and Lumen's aperture mark wherever `@kortix/ui` would draw the Kortix symbol. Light, dark
-or system, applied before the first paint.
+### Assistant with checked citations
+
+Ask a question about the matter. The answer comes from Lumen's `lumen-counsel` agent, which reads
+the vault with Lumen's own tools and cites every claim as document, page, paragraph and quote.
+Lumen checks each quote against the paragraph it cites before it draws the chip. A click opens the
+Source panel with the quote marked. A quote the document does not contain shows as **Not found in
+source**, never as support. The agent's work shows as plain steps ("Searching the vault for
+'liability'"), not shell commands.
+
+<p align="center"><img src="public/screenshots/assistant-source.png" width="860" alt="An answer on uncapped liability; citation 1 open in the Source panel, verified, with the quoted words marked" /></p>
+
+### Reviews: the vault as a table
+
+One row per document, one column per question: parties, term, renewal, termination for
+convenience, liability cap, governing law, assignment, change of control, or your own. Lumen splits
+the documents into batches of four, runs one agent session per batch in parallel, and fills cells
+as each document's row passes validation. Open a cell for the value, how it was read and each
+citation. **Verify**, **Flag** or **Edit** it (keys `V`, `F`, `E`, arrows to move). A re-run never
+overwrites a verified or edited cell. **Export CSV** carries the citations.
+
+<p align="center"><img src="public/screenshots/review-grid.png" width="860" alt="A review of six agreements; the MSA liability cap cell open: Uncapped, verified, with clause 11.1 quoted" /></p>
+
+### Workflows
+
+| Workflow | What the firm gets |
+|---|---|
+| **Contract review** | The document against a firm playbook: one finding per rule (aligned, deviates, missing) with severity, the quoted clause and the smallest redline, plus clauses no rule covers. Accept or dismiss each. **Download redline (.docx)** has real tracked changes and a comment per edit. |
+| **Due diligence** | A checklist row per document, then one report: red flags with severity and quote, and cited sections a buyer's counsel reads. |
+| **Draft from template** | A firm template filled from the matter. Fields Lumen cannot source stay as `[[CONFIRM: field]]`. Download as .docx. |
+| **Ask across the vault** | One cited answer over every document, or "The documents in this matter do not address this." |
+
+<p align="center"><img src="public/screenshots/contract-review.png" width="860" alt="Contract review of a mutual NDA against the firm playbook: 2 High, 2 Medium; the 7-year confidentiality term with its redline and verified quote" /></p>
+
+### The firm's back office
+
+Sign-up and a three-step onboarding (name the firm, invite colleagues, add the sample matter).
+Roles: Owner, Admin, Lawyer. Seats with a server-side limit. Billing with or without Stripe. The
+Library holds the firm's playbooks and templates; a run copies the current version at its start.
+**History** lists every run and conversation the viewer may open. **Usage** counts conversations,
+workflow runs, documents read and agent time per member and matter, with CSV export. The **audit
+log** records every change and has no delete path.
 
 | | |
 | --- | --- |
-| ![Onboarding: name the firm](public/screenshots/onboarding.png) | ![Matters, light theme](public/screenshots/matters.png) |
-| ![A thread on a real Kortix session, in Lumen's brand](public/screenshots/thread.png) | ![The audit log](public/screenshots/audit.png) |
+| ![Home: the composer, open matters and recent work](public/screenshots/home.png) | ![Usage: conversations, runs, documents read, agent time](public/screenshots/usage.png) |
 
-**Vault.** Upload PDF, DOCX or TXT to a matter. Lumen extracts the text, splits it into pages and
-anchored paragraphs, and copies the original plus the anchored text into the firm's Kortix Drive,
-where its agents read them.
-Search covers every page of the vault (a Convex search index). A click on a document or a hit
-opens it on the right: the original through `@kortix/ui`'s file viewer (PDF and DOCX renderers,
-bytes from the access-checked `documents.bytes` action) and the extracted text, scrolled to the
-page with the terms marked. Delete removes the rows, the blob and the Drive copies.
+### Its own brand, on phones too
 
-**Assistant.** Each conversation is one Kortix session on `lumen-counsel`, scoped to the matter.
-The agent cites every claim as a link `/cite?d=<docId>&a=p3.12&q=<quote>`. Lumen draws each link
-as a numbered chip, checks the quote against the cited paragraph (`citations.resolve`, the same
-rule as the run engine), and opens a Source panel on click: the paragraph with the quote marked,
-and the document beside it. A quote the source does not contain shows as a struck, grey chip and
-"Not found in source", never as a fact.
+Lagoon teal on warm sand, Instrument Sans and Instrument Serif, a softer radius, Lumen's aperture
+mark wherever `@kortix/ui` would draw the Kortix symbol. Light, dark or system, applied before the
+first paint. Below 768 px the sidebar becomes a sheet, and the document preview and Source panel
+open full screen.
+
+<p align="center"><img src="public/screenshots/phones.png" width="860" alt="Lumen at 390 px: the menu sheet, a cited answer, the due-diligence red flags" /></p>
+
+<details>
+<summary><b>Every screen</b> (light and dark)</summary>
 
 | | |
 | --- | --- |
-| ![The Vault: search, then the original PDF beside the list](public/screenshots/vault-preview.png) | ![An answer's citation opened: the quoted paragraph, verified](public/screenshots/assistant-source.png) |
-| ![A citation whose quote is not in the source](public/screenshots/assistant-not-found.png) | |
+| ![The public home page](public/screenshots/marketing.png) | ![The public home page, dark](public/screenshots/marketing-dark.png) |
+| ![Pricing: Solo, Team, Firm; prices come from Stripe](public/screenshots/pricing.png) | ![Onboarding: name the firm](public/screenshots/onboarding.png) |
+| ![Matters](public/screenshots/matters.png) | ![Matter history: every run and conversation](public/screenshots/history.png) |
+| ![The review grid, dark](public/screenshots/review-grid-dark.png) | ![Contract review, dark](public/screenshots/contract-review-dark.png) |
+| ![Due diligence: red flags with quotes, the cited report](public/screenshots/diligence-report.png) | ![The workflow catalog](public/screenshots/workflows.png) |
+| ![A citation whose quote is not in the source](public/screenshots/assistant-not-found.png) | ![The audit log](public/screenshots/audit.png) |
 
-**Reviews.** A review turns the vault into a table: one row per document, one column per question.
-Start from the "Commercial contract basics" preset (parties, term, auto-renewal, termination for
-convenience, liability cap, governing law, assignment, change of control) or write your own
-columns (label, question, format: text, yes/no, date, money, tag, verbatim). Cells fill as each
-document's row lands. A click opens the cell: the value, how it was read, and each citation with
-the quoted paragraph. A lawyer can **Verify**, **Flag** or **Edit** a cell; each is audited. Add
-columns later (only the new columns run, on the existing rows) or re-run one column from its
-header menu. No run overwrites a verified or edited cell: the newer AI answer waits beside it
-("Newer AI answer", one click to adopt it). **Export CSV** writes every row, the effective value
-(edited ?? AI), each cell's review state and a citations column.
+</details>
 
-**Workflows** (`/app/matters/<id>/workflows`):
+# For developers
 
-| Workflow | Agent and batches | Result |
+## How Lumen sits on Kortix
+
+```
+                 Lumen (the partner's stack)                                   Kortix (the agent backend)
+ ┌──────────────────────────────────────────────────────────────┐          ┌──────────────────────────────────┐
+ │ Next.js   site · app · /api/kortix proxy (member tokens)     │──SDK───▶ │ project per firm                 │
+ │ Convex    firms · matters · documents · reviews · runs ·     │          │   Drive  /Company/Lumen/...      │
+ │           audit · billing · the run engine · the agent kit   │──SDK───▶ │   agents lumen-* · skills · CLI  │
+ │ Better Auth  users · organizations (firms) · roles · invites │          │   sessions, one sandbox each     │
+ └──────────────────────────────────────────────────────────────┘          └──────────────────────────────────┘
+         Lumen ids in URLs; Kortix ids only as foreign keys on Lumen rows and as session labels
+```
+
+| Lumen | Kortix | Stored in |
 |---|---|---|
-| Contract review | `lumen-reviewer`, 1 session | One issue per playbook rule (aligned, deviates, missing) with severity, finding, citations and the smallest redline, plus clauses no rule covers. Accept or Dismiss each (audited). **Download redline (.docx)**: tracked changes and one comment per edit, by "Lumen". |
-| Due-diligence summary | `lumen-extractor` × ⌈N/4⌉ (the checklist, a review) then 1 `lumen-counsel` report batch | A red-flag table (severity, quote, document, page) and a cited report in the skill's sections; citation chips open the Source panel. The checklist is a normal review: verify, flag, edit, export. |
-| Draft from template | `lumen-drafter`, 1 session | The filled template (reading view and a Word preview), the fields left to confirm (`[[CONFIRM: field]]`), **Download (.docx)**. Parties and the date come from the matter. |
-| Ask across the vault | `lumen-counsel`, 1 session | One cited answer, or "The documents in this matter do not address this." |
+| firm (Better Auth organization) | project | `firms.kortixProjectId` |
+| firm | project Drive | `firms.kortixDriveId` |
+| matter | Drive folder `/Company/Lumen/Matters/<matterId>/` | `matters.driveFolder` |
+| document | Drive file `…/Docs/<docId>-<name>` + anchored text `…/Text/<docId>.md` | `documents.driveFile` |
+| thread | session on agent `lumen-counsel` | `threads.kortixSessionId` |
+| run | 1..N sessions, one per batch, and `/Company/Lumen/Runs/<runId>/<batchId>/` | `runBatches.kortixSessionId` |
+| agent kit version | commits on the project's default branch | `firms.kitVersion`, `kitInstalls` |
+| member | a 1 h project-scoped token, server-held | `memberTokens` |
 
-**Library** (`/app/library`). The firm's playbooks and templates in Markdown: the "Lumen standard
-NDA playbook" (12 rules) and two templates on day one. Owners and admins edit them; a run copies
-the version current at its start into its run folder, so an edit changes the next run and never a
-running one.
-
-**History** (`/app/matters/<id>/history`). Every run and conversation on the matter, newest first,
-with its status and duration. A run opens its result screen, with the batches and the activity log.
-
-| | |
-| --- | --- |
-| ![A review: verified, flagged and edited cells, the cell panel](public/screenshots/review-grid.png) | ![Contract review: issues by severity, a redline, the quoted clause](public/screenshots/contract-review.png) |
-| ![Due diligence: red flags with their quotes, then the cited report](public/screenshots/diligence-report.png) | ![The workflow catalog](public/screenshots/workflows.png) |
+The full tables (who writes each id, the session labels and metadata) are in [Id mapping](#id-mapping).
 
 ## The agent kit and the run engine
 
@@ -469,7 +497,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `/sign-in`, `/sign-up` | Better Auth email + password |
 | `/onboarding` | Name the firm → invite colleagues → sample matter |
 | `/invite/<id>` | Accept an invitation (sign in with the invited email, verify it, accept) |
-| `/app` | Home: ask about a matter (matter picker), open matters |
+| `/app` | Home: ask about a matter (matter picker), open matters, recent work |
 | `/app/matters`, `/app/matters/new` | Matters: search, status filter, new matter |
 | `/app/matters/<id>` | Overview: recent activity, details, parties, who can see it |
 | `/app/matters/<id>/vault` | Upload, search, preview, delete |
@@ -478,8 +506,10 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `/app/matters/<id>/workflows` | Contract review, due diligence, draft from template, ask |
 | `/app/matters/<id>/history`, `/runs/<runId>` | Every run and conversation; one run's result, batches and activity |
 | `/app/library` | Playbooks and templates |
+| `/app/history` | Every run and conversation the viewer may open, across matters |
 | `/app/settings/{firm,members,billing,usage,audit}` | Firm admin |
 | `⌘K` | Command palette: matters and actions |
+| Review grid keys | Arrows move, `V` verify, `F` flag, `E` edit, `Esc` close; `Esc` also closes the document preview and the Source panel |
 
 `/w/*` and `/projects/*` (the previous version's routes) redirect to `/app`.
 
@@ -499,7 +529,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `convex/lib/segment.ts`, `convex/lib/cite.ts` | The one segmenter (anchors `p<page>.<n>`) and the citation check |
 | `convex/citations.ts`, `src/components/chat/citation-layer.tsx` | Citation links in Assistant answers: checked, drawn as chips, opened in the Source panel |
 | `src/components/vault/` | The document panel (original + anchored text) and its read-only `FileSource` |
-| `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/` before `dev` and `build` |
+| `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/`, and the sample matter's documents into `public/sample/`, before `dev` and `build` |
 | `agent-kit/`, `convex/kit.ts`, `convex/kitInstall.ts` | The agent kit and its versioned install per firm |
 | `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, map + reduce, polling, repair, result files, citation checks |
 | `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add columns, re-run a column, verify / flag / edit; the column presets |
@@ -515,7 +545,10 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `src/server/proxy-policy.ts` | What a member token may do through the proxy, the reads Lumen answers itself, and the redaction |
 | `src/app/api/kortix/[...path]/route.ts` | The same-origin proxy; matter check, session tagging and thread records |
 | `src/components/access.tsx` | Signed-in, firm and matter gates |
-| `src/components/app-shell.tsx` | Sidebar, firm switcher, command palette, setup banner |
+| `src/components/app-shell.tsx` | Sidebar (a sheet below 768 px), firm switcher, command palette, setup banner |
+| `src/components/runs/history-list.tsx` | One history list for Home, the matter and the firm (`workflows.history`, `workflows.firmHistory`) |
+| `src/components/chat/lumen-tool-row.tsx`, `src/lib/lumen-step.ts` | `lumen …` commands drawn as plain steps; every other command keeps the stock row |
+| `src/components/matters/sample-matter.ts` | The sample matter: created, then its six documents uploaded through `documents.upload` |
 | `src/lib/kortix.ts` | The one browser SDK client (`backendUrl: '/api/kortix'`) |
 | `src/lib/session.ts` | The active matter bearer |
 
@@ -527,8 +560,8 @@ imports `@kortix/sdk/server` or any other `@kortix/sdk/<subpath>` (they are
 deprecated or internal) and never opens its own transport (`EventSource`,
 `XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`, `const f = fetch`,
 `fetch.call(...)`, a raw HTTP client import such as `axios` or `node:https`). Its own `fetch` calls go
-to `/api/auth`, `/api/connections`, `/api/preview-url` and
-`/api/session-model` only. Convex files import `@kortix/sdk` (statically,
+to `/api/auth`, `/api/connections`, `/api/preview-url`,
+`/api/session-model` and the static `/sample/` files only. Convex files import `@kortix/sdk` (statically,
 with `import()` or with `require()`) only in `"use node"` files, never call
 or alias `fetch` and never import a raw HTTP client. `scripts/sdk-boundary.mjs` enforces these rules and runs before
 `build`, `test` and `typecheck`. A rule is a source scan: it catches the

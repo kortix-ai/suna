@@ -9,7 +9,7 @@
 Kortix is the identity and the data. Your team opens the App with their Kortix
 login, and every call runs as them.
 
-[Kortix Apps docs](https://kortix.com/docs/apps) · [SDK](../../../packages/sdk/README.md) · [@kortix/ui](../../../packages/ui/README.md) · [Lumen, the customer-facing example](../lumen/README.md)
+[Both white-label patterns](../README.md) · [Lumen, the customer-facing example](../lumen/README.md) · [Kortix Apps docs](https://kortix.com/docs/apps) · [SDK](../../../packages/sdk/README.md) · [@kortix/ui](../../../packages/ui/README.md)
 
 </div>
 
@@ -34,6 +34,8 @@ login, and every call runs as them.
    over two SDK calls. This is the reason to build your own tool.
 
 ## When to pick this pattern
+
+The [white-label home](../README.md) compares both patterns in full.
 
 | | Team Console (this app) | [Lumen](../lumen/README.md) |
 |---|---|---|
