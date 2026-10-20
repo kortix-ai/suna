@@ -193,6 +193,14 @@ for (const file of emitted) {
   writeFileSync(file, text.replace(SHARED, (_, q, spec) => `${q}${to(spec)}${q}`));
 }
 
+// 4b. Every dist/internal/**/*.d.ts says it is private, so an editor's hover and
+// autocomplete show it next to the name (README "Modules": internal/* has no semver).
+const INTERNAL_BANNER = '/** @internal Kortix apps only. No semver: it may change in any release. */\n';
+for (const dts of walk(join(DIST, 'internal')).filter((p) => p.endsWith('.d.ts'))) {
+  const text = readFileSync(dts, 'utf8');
+  if (!text.startsWith(INTERNAL_BANNER)) writeFileSync(dts, INTERNAL_BANNER + text);
+}
+
 // 5. Guards.
 const leftover = walk(DIST)
   .filter((p) => /\.(js|d\.ts)$/.test(p))
