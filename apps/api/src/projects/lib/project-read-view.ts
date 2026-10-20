@@ -121,8 +121,14 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
     // session of the project, ~600 ms on a 15k-session project for 4 pending
     // calls. EXISTS lets the planner probe the session by primary key per row,
     // and it still picks the hashed form when the outer side is large.
-    where: (sessionColumn, createdByColumn) =>
-      or(
+    // The inner query reads `project_sessions` unaliased: passed its own
+    // `session_id`, the EXISTS would compare the column to itself and admit
+    // every row. Refuse that instead of leaking.
+    where: (sessionColumn, createdByColumn) => {
+      if (sessionColumn === projectSessions.sessionId) {
+        throw new Error('projectReadView.where needs the outer table\'s session column, not project_sessions.session_id');
+      }
+      return or(
         exists(
           db
             .select({ one: sql`1` })
@@ -130,7 +136,8 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
             .where(and(eq(projectSessions.sessionId, sessionColumn), visibleSql)),
         ),
         createdByColumn ? eq(createdByColumn, loaded.userId) : undefined,
-      ),
+      );
+    },
     allows: async (row) => {
       if (row.createdBy && row.createdBy === loaded.userId) return true;
       if (!row.sessionId) return false;
