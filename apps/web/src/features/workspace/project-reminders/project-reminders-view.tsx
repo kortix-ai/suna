@@ -145,7 +145,7 @@ function RemindersPage({ projectId }: { projectId: string }) {
   if (gate.isLoading) {
     body = <Skeleton className="m-4 h-14 rounded-md" />;
   } else if (!gate.enabled) {
-    body = <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />;
+    body = <FeatureGateScreen featureKey="reminders" featureName={t('title')} description={t('gateDescription')} />;
   } else if (loaded && all.length === 0 && !url.session) {
     body = <RemindersEmpty />;
   } else {

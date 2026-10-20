@@ -29,6 +29,7 @@
  */
 import { isTurnStartRequest } from '../projects/turn-start-request';
 import { classifyRuntimeRequest } from './runtime-request';
+import { previewCorsHeaders } from './preview-hosts';
 import type { ProviderName } from '../platform/providers';
 import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
@@ -50,11 +51,12 @@ export function jsonProxyError(
   status: number,
   origin?: string,
 ): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
+  // The preview allowlist, as every proxy response: the preview cookie is
+  // ambient on cross-site requests, so an arbitrary origin gets nothing.
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    ...previewCorsHeaders(origin ?? ''),
+  });
   return new Response(JSON.stringify(body), {
     status,
     headers,

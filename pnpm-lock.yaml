@@ -1573,6 +1573,9 @@ importers:
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../shared
       ai:
         specifier: 7.0.31
         version: 7.0.31(zod@3.25.76)

@@ -3,16 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import { isProviderStateLoading } from './provider-loading-state';
 
 describe('isProviderStateLoading', () => {
-  test('waits for project detail and project secrets', () => {
+  test('waits for project secrets', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: true,
-        secretsLoading: false,
-      }),
-    ).toBe(true);
-    expect(
-      isProviderStateLoading({
-        projectDetailLoading: false,
         secretsLoading: true,
       }),
     ).toBe(true);
@@ -21,7 +14,6 @@ describe('isProviderStateLoading', () => {
   test('does not wait for runtime providers after BYOK state resolves', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: false,
         secretsLoading: false,
       }),
     ).toBe(false);
@@ -35,7 +27,6 @@ describe('isProviderStateLoading', () => {
   test('a refetch after the first answer never replaces the provider list with a spinner', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: false,
         secretsLoading: true,
         secretsSettledOnce: true,
       }),
@@ -45,7 +36,6 @@ describe('isProviderStateLoading', () => {
   test('the first secrets read still waits', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: false,
         secretsLoading: true,
         secretsSettledOnce: false,
       }),

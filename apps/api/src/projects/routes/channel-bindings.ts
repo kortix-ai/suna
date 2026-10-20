@@ -29,10 +29,8 @@ import { withTimeout } from "../../shared/with-timeout";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
-import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { resolveFeatureFlag } from "../../feature-flags/registry";
 import { usableProviderKeys } from "../../secrets/provider-key-selection";
-import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
 import {
   type ModelSource,
   chooseEffectiveAgent,
@@ -63,10 +61,6 @@ interface ModelResolutionCtx {
   projectId: string;
   modelDefaults: AccountModelDefaults;
   freeModelsOnly: boolean;
-  /** The project's `llm_gateway` flag. Off ⇒ native OpenCode owns model
-   *  resolution: an explicit pin reports verbatim and the gateway default
-   *  chain is not consulted. */
-  llmGatewayEnabled: boolean;
   /** The project's `pooled_provider_secrets` flag. */
   pooledEnabled: boolean;
 }
@@ -144,13 +138,6 @@ async function resolveBindingEffectiveModel(
   ctx: ModelResolutionCtx,
   oneToOne = false,
 ): Promise<{ model: string | null; source: ModelSource }> {
-  if (!ctx.llmGatewayEnabled) {
-    // Native mode: the pin is a native `provider/model` ref OpenCode resolves
-    // in the box; the gateway's servability probe and wire-model defaults do
-    // not apply. No pin ⇒ OpenCode's own default (reported as platform/null).
-    if (explicitModel) return { model: explicitModel, source: "explicit" };
-    return { model: null, source: "platform" };
-  }
   if (explicitModel) {
     const servable = await conversationCanRun({
       userId: ctx.userId,
@@ -326,7 +313,6 @@ export function registerChannelBindingsRoutes(): void {
         projectId,
         modelDefaults,
         freeModelsOnly: !mayUseManagedModels,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
       };
       return c.json({
@@ -448,17 +434,8 @@ export function registerChannelBindingsRoutes(): void {
               400,
             );
           }
-          // Same two-path gate as session create (lib/sessions.ts): gateway ON
-          // validates via the gateway resolver and stores the wire id;
-          // gateway OFF (native OpenCode) enforces the native `provider/model`
-          // shape and stores the ref verbatim.
-          if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-            const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
-            if (nativeShapeError) {
-              return c.json({ error: nativeShapeError.message, code: "invalid_model" }, 400);
-            }
-            stored = trimmed;
-          } else {
+          // Same gate as session create (lib/sessions.ts): validate via the
+          // gateway resolver and store the wire id.
           const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
           const servable = await conversationCanRun({
             userId: loaded.userId,
@@ -476,7 +453,6 @@ export function registerChannelBindingsRoutes(): void {
               },
               409,
             );
-          }
           stored = toWireModel(trimmed);
           }
         }
@@ -498,7 +474,6 @@ export function registerChannelBindingsRoutes(): void {
         projectId,
         modelDefaults: await getAccountModelDefaults(accountId, projectId),
         freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
       };
       return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));

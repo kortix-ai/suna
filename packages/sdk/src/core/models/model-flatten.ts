@@ -103,7 +103,7 @@ export interface FlatModel {
 
 /**
  * One entry of the model picker: a `FlatModel` plus `id`, the ref a pick
- * stores and sends (the gateway wire id, or the native `provider/model`).
+ * stores and sends (the gateway wire id).
  */
 export interface ModelOption extends FlatModel {
   id: string;
@@ -143,30 +143,23 @@ type WithGatewayFields = {
 
 export function flattenModels(
   providers: ProviderListResponse | undefined,
-  opts?: {
+  _opts?: {
     /**
-     * Which provider universe this list belongs to (modelProviderMode).
-     *
-     *  • 'gateway' (default) — the synthetic `kortix` provider is the ONLY
-     *    renderable provider; a native provider that slips into the response
-     *    is a bypass and is dropped (defense in depth on top of source
-     *    filtering).
-     *  • 'native' (project `llm_gateway` flag OFF) — OpenCode's own connected
-     *    providers (`anthropic`, `openrouter`, `opencode`, …) ARE the catalog;
-     *    only a stale `kortix` entry (a box mid-toggle) is dropped.
+     * @deprecated Ignored. The synthetic `kortix` provider is the ONLY
+     * renderable provider: the LLM gateway is the only model path, and a
+     * native provider that slips into a response is a bypass and is dropped.
+     * Removed in the next major.
      */
     providerMode?: 'gateway' | 'native';
   },
 ): ModelOption[] {
   if (!providers) return [];
-  const providerMode = opts?.providerMode ?? 'gateway';
   const all = Array.isArray(providers.all) ? providers.all : [];
   const connected = Array.isArray(providers.connected) ? providers.connected : [];
   const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    if (providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id))
-      continue;
+    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       // Old sandboxes can carry a baked catalog from before the synthetic model
       // was removed. Never expose or send those stale entries.

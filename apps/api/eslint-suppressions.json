@@ -1696,7 +1696,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/lib/legacy-runtime-bootstrap-wiring.ts": {
@@ -3040,11 +3040,6 @@
   "src/shared/instance.ts": {
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/shared/jwt-liveness.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
     }
   },
   "src/shared/jwt-verify.ts": {

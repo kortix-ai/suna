@@ -22,6 +22,7 @@ import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
 import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
+import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
@@ -40,6 +41,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { SidebarGlyph as PanelLeft } from '../../icons/sidebar-toggle';
+import { Close } from '../../icons/close';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -64,6 +66,7 @@ export function ProjectSidebar({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
+  const tCommon = useTranslations('common');
   const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
@@ -216,10 +219,19 @@ export function ProjectSidebar({
               </Button>
             </Hint>
             )}
-            {/* Desktop only. On mobile the panel is a Sheet — it has no docked
-                state to collapse (`state` there still reads the desktop cookie),
-                and it already dismisses by backdrop/swipe. Clicking while the
-                panel is a hover flyout docks it open, hence the "Pin" label. */}
+            {isMobile && (
+              <Button
+                type="button"
+                aria-label={tCommon('close')}
+                variant="ghost"
+                size="icon"
+                onClick={() => setOpenMobile(false)}
+                className="shrink-0 hit-area-y-3"
+              >
+                <Close />
+              </Button>
+            )}
+            {/* A desktop hover flyout pins instead of collapsing. */}
             {!isMobile && !peek && (
               <Hint
                 side="bottom"
@@ -297,6 +309,7 @@ export function ProjectSidebar({
               {/* Status only, then the two connect rows (Jay, 2026-10-12).
                   Navigation lives in the top group. The ChatGPT connect row
                   left the sidebar: it stays in Settings → Connected. */}
+              <ProjectRepositoryDisconnectedAlert projectId={projectId} />
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />

@@ -1,37 +1,26 @@
 'use client';
 
-import { useTranslations as useI18nTranslations } from '../../i18n';
+import { useTranslations } from '../../i18n';
 import { UiLink, useUiParams } from '../../providers/ui-provider';
 
 import { Button } from '../../primitives/button';
 import { projectSettingsSectionHref } from '../project-settings/project-settings-sections';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectCan } from '../../internal/lib/use-project-can';
+import { updateFeatureFlag, type FeatureFlagKey, type ProjectDetail } from '@kortix/sdk';
+import { invalidateProject, qk } from '@kortix/sdk/react';
 import { FlagIcon } from '@phosphor-icons/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 
-/**
- * The one screen a flag-gated surface shows when its feature is OFF.
- *
- * It never offers to enable the feature. Activation happens in exactly one
- * place — Customize → Settings → Feature flags — so there is a single
- * control, a single permission leaf (`project.settings.write`), and no
- * per-feature switch to hunt for. The button here just takes you there.
- *
- * The destination has moved twice and the content never has: the legacy
- * Customize overlay's `feature-flags` section, then `/projects/<id>/config
- * ?section=feature-flags`, and — since that page was retired on 2026-09-02 —
- * the Customize bar's Settings tab, `/customize/settings?section=feature-flags`
- * (built by `projectSettingsSectionHref`, never spelled here).
- * A real `<Link>`, because it is still a route — middle-click and copy-link
- * both work, and the page prefetches.
- *
- * Only reachable surfaces render this. A gated NAV entry, palette action, or
- * rail item must be absent entirely when its flag is off; this is for the case
- * a user still lands on the page (a bookmark, a shared link, a deep link).
- */
+/** A disabled surface keeps its enable action and settings link in place. */
 export function FeatureGateScreen({
+  featureKey,
   featureName,
   description,
   internalOnly = false,
 }: {
+  featureKey: FeatureFlagKey;
   /** The feature's name, exactly as the Feature flags section lists it. */
   featureName: string;
   /** One sentence: what turning it on would give this project. */
@@ -39,9 +28,32 @@ export function FeatureGateScreen({
   /** The flag is not offered in Settings (`catalogHidden`): no button, ask Kortix instead. */
   internalOnly?: boolean;
 }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('featureGate');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const params = useUiParams();
   const projectId = typeof params.id === 'string' ? params.id : undefined;
+
+  const queryClient = useQueryClient();
+  const permission = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+  const [error, setError] = useState('');
+  const enable = useMutation({
+    mutationFn: () => {
+      if (!projectId || internalOnly || permission.isLoading || permission.allowed !== true) {
+        throw new Error('Feature activation is not permitted');
+      }
+      return updateFeatureFlag(projectId, featureKey, true);
+    },
+    onSuccess: (updated) => {
+      if (!projectId) return;
+      queryClient.setQueryData(qk.project.summary(projectId), updated);
+      queryClient.setQueryData<ProjectDetail>(qk.project.detail(projectId), (current) =>
+        current ? { ...current, project: updated } : current,
+      );
+      void invalidateProject(queryClient, projectId);
+      void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+    },
+    onError: (cause: Error) => setError(cause.message),
+  });
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
@@ -56,16 +68,35 @@ export function FeatureGateScreen({
             </p>
             <p className="text-muted-foreground max-w-xl text-xs text-pretty">{description}</p>
             {internalOnly ? (
-              <p className="text-muted-foreground max-w-xl text-xs text-pretty">{tI18nComplete.raw('text1c41abcc2fff')}</p>
+              <p className="text-muted-foreground max-w-xl text-xs text-pretty">
+                {tI18nComplete.raw('text1c41abcc2fff')}
+              </p>
             ) : null}
           </div>
         </div>
+        {error ? (
+          <p role="alert" className="text-destructive text-xs">
+            {error}
+          </p>
+        ) : null}
         {projectId && !internalOnly ? (
-          <Button asChild size="sm" variant="secondary" className="shrink-0">
-            <UiLink href={projectSettingsSectionHref(projectId, 'feature-flags')}>
-              {tI18nComplete.raw('text20a2e59ba129')}
-            </UiLink>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              disabled={permission.isLoading || permission.allowed !== true || enable.isPending}
+              onClick={() => {
+                setError('');
+                enable.mutate();
+              }}
+            >
+              {enable.isPending ? t('enabling') : t('enable', { name: featureName })}
+            </Button>
+            <Button asChild size="sm" variant="secondary" className="shrink-0">
+              <UiLink href={projectSettingsSectionHref(projectId, 'feature-flags')}>
+                {tI18nComplete.raw('text20a2e59ba129')}
+              </UiLink>
+            </Button>
+          </div>
         ) : null}
       </div>
     </div>

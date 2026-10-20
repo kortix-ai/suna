@@ -93,6 +93,7 @@ test('insert stores the exact create-time metadata fields and override order', a
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toEqual({
     arbitrary: 7, custom_name: 'Chosen name', source: 'trigger',
+    opencode_model: 'kortix/glm-5.3-flash', opencode_model_source: 'platform',
     repository_access: false, repository_generation: null, workspace_mode: 'runtime',
     sandbox_slug: 'default',
     audit_v2: {
@@ -133,7 +134,6 @@ test('an oversized initial_context is refused and inserts nothing', async () => 
 // default: it runs its own connected model, or none.
 test('a fresh free-tier account never boots pinned to a managed model', async () => {
   mayUseManagedModels = false;
-  config.LLM_GATEWAY_ENABLED = true;
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
   expect(result.error).toBeUndefined();
   expect((inserted?.metadata as Record<string, unknown> | undefined)?.opencode_model).toBeUndefined();
@@ -141,7 +141,6 @@ test('a fresh free-tier account never boots pinned to a managed model', async ()
 
 test('a paid account keeps the raw operator config as its boot fallback', async () => {
   mayUseManagedModels = true;
-  config.LLM_GATEWAY_ENABLED = true;
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toMatchObject({

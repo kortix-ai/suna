@@ -31,6 +31,7 @@ import { startCaptureHealthWorker, stopCaptureHealthWorker } from './workers/cap
 import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
@@ -268,6 +269,8 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
   startSessionLogBackfillWorker();
+  // Closed pending days of the gateway spend running total, recomputed from the log rows.
+  startGatewaySpendBackfillWorker();
 }
 // Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
 // await left its worker "started" across that await; a re-acquire then started nothing, and the
@@ -295,6 +298,7 @@ async function stopSingletonWorkers() {
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
   stopSessionLogBackfillWorker();
+  stopGatewaySpendBackfillWorker();
   await Promise.all(drains);
 }
 

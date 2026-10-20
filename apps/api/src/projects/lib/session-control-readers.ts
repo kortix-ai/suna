@@ -8,7 +8,7 @@ import { sessionLogEnabled } from '../session-log-read';
 export interface RuntimeControlState {
   known: true;
   /** The sandbox row's status, or null when the session has no sandbox row. */
-  sandbox_status: string | null;
+  sandbox_status: typeof sessionSandboxes.$inferSelect.status | null;
   external_id: string | null;
   provider: string | null;
   /** A wake is DRIVING this box right now (the fence's own verdict). */
