@@ -10,7 +10,6 @@ import {
   describeShareError,
   savedCopyTimestamp,
   toShareLoadError,
-  transcriptToolSteps,
   visibleTranscriptMessages,
 } from './public-transcript';
 
@@ -18,14 +17,13 @@ function message(
   role: string,
   text: string,
   created: string | null = null,
-  tools: PublicSessionTranscriptMessage['tools'] = [],
 ): PublicSessionTranscriptMessage {
   return {
     role,
     created,
     completed: null,
     text,
-    tools,
+    tools: [],
     files: [],
     reasoning_omitted: false,
   };
@@ -110,42 +108,12 @@ describe('visibleTranscriptMessages', () => {
     expect(result.map((m) => m.text)).toEqual(['first', 'second', 'third']);
   });
 
-  test('keeps a tool-only assistant step (KRTX-2940)', () => {
-    const result = visibleTranscriptMessages(
-      transcript({
-        messages: [
-          message('user', 'find it'),
-          message('assistant', '', null, [{ tool: 'grep', status: 'completed' }]),
-          message('assistant', 'found it'),
-        ],
-      }),
-    );
-    expect(result.map((m) => m.tools.length)).toEqual([0, 1, 0]);
-  });
-
   test('returns nothing when the transcript is unavailable', () => {
     expect(
       visibleTranscriptMessages(
         transcript({ available: false, messages: [message('user', 'stale')] }),
       ),
     ).toEqual([]);
-  });
-});
-
-describe('transcriptToolSteps', () => {
-  test('labels each tool call with the session verb', () => {
-    const steps = transcriptToolSteps(
-      message('assistant', '', null, [
-        { tool: 'bash', status: 'completed' },
-        { tool: 'web_search', status: 'running' },
-        { tool: 'custom_tool', status: null },
-      ]),
-    );
-    expect(steps.map((s) => [s.verb, s.object ?? null])).toEqual([
-      ['Ran', null],
-      ['Searched', null],
-      ['Used', 'custom_tool'],
-    ]);
   });
 });
 
