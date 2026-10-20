@@ -46,6 +46,7 @@ import { AppAccessDeniedError, appStatus, openApp } from '@/lib/projects/apps';
 import { projectKeys } from '@/lib/projects/hooks';
 import { openLink } from '@/lib/utils/open-link';
 import { THEME } from '@/lib/utils/theme';
+import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 
 interface PageTabLike {
   id: string;
@@ -290,7 +291,13 @@ function AppPreviewFrame({ url, onFail }: { url: string; onFail: () => void }) {
         allowsLinkPreview={false}
         textInteractionEnabled={false}
         geolocationEnabled={false}
+        // `*`: every navigation reaches the guard below. With the library's
+        // default http(s)-only whitelist, a `tel:` / `mailto:` / deep-link
+        // URL goes straight to `Linking.openURL` and the guard never runs
+        // (Strix CWE-749). The guard then allows only http(s), first load only.
+        originWhitelist={['*']}
         onShouldStartLoadWithRequest={(request) =>
+          decidePreviewNavigation(request.url, { mode: 'browser' }) === 'allow' &&
           allowPreviewNavigation(loadedRef.current, request.isTopFrame)
         }
         onLoad={() => {
