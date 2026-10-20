@@ -149,3 +149,10 @@ trial: null; // deprecated: trials are removed
 ```
 
 Every timestamp is ISO 8601. `plan` is the billing plan.
+
+## Subscription reconciliation
+
+`POST /v1/billing/sync-subscription` returns 404 when the stored subscription
+is absent from the current Stripe account. It leaves the local plan, credits,
+and subscription mapping unchanged. A missing remote object does not prove
+that the account lost its paid entitlement. Transient Stripe failures propagate.
