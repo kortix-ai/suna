@@ -76,17 +76,7 @@ mock.module('@kortix/sdk/react', () => ({
     serverOpenTurnToken: null,
   }),
 }));
-// Converted code reads the viewer and the route from @kortix/ui (TestUiHost);
-// these mocks serve the components that still read useAuth / next/navigation.
-mock.module('@/features/providers/auth-provider', () => ({
-  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
-}));
-mock.module('next/navigation', () => ({
-  useParams: () => ROUTE,
-  usePathname: () => '/',
-  useRouter: () => ({ push: () => {} }),
-  useSearchParams: () => new URLSearchParams(),
-}));
+// The viewer and the route come from TestUiHost.
 mock.module('../header/session-site-header', () => ({
   SessionSiteHeader: () => null,
 }));
