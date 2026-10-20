@@ -819,7 +819,17 @@
       "email": "E-Mail",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Deine Benachrichtigungseinstellungen konnten nicht geladen werden",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "recovery": {
+        "instructions": "Browser-Benachrichtigungen entsperren",
+        "chrome": "Chrome: Öffne die Website-Steuerung neben der Adresse → Website-Einstellungen → Benachrichtigungen → Zulassen.",
+        "edge": "Edge: Öffne die Website-Steuerung neben der Adresse → Berechtigungen für diese Website → Benachrichtigungen → Zulassen.",
+        "firefox": "Firefox: Öffne das Berechtigungssymbol neben der Adresse und entferne die blockierte Benachrichtigungsberechtigung. Aktiviere hier Benachrichtigungen, um die Berechtigung erneut anzufordern.",
+        "safari": "Safari auf dem Mac: Öffne Safari → Einstellungen → Websites → Mitteilungen und wähle für diese Website „Erlauben“. Füge Kortix auf dem iPhone oder iPad zum Home-Bildschirm hinzu und aktiviere Mitteilungen in dieser App.",
+        "afterChange": "Lade diese Seite nach dem Ändern der Browser-Berechtigungen neu und aktiviere dann Benachrichtigungen. Auch die Mitteilungseinstellungen des Systems müssen deinen Browser zulassen.",
+        "fallback": "Solange ein Kortix-Tab geöffnet ist, können dich Abschlusstöne auch ohne Berechtigung für Browser-Benachrichtigungen benachrichtigen. Schalte den Tab und das Gerät nicht stumm. Mit dieser Option aktivierst du Benachrichtigungstöne und hörst eine Vorschau des Abschlusstons.",
+        "enableSound": "Abschlusston aktivieren"
+      }
     },
     "git": {
       "updateFailed": "Repository konnte nicht aktualisiert werden",
