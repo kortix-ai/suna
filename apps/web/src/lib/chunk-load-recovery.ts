@@ -21,7 +21,7 @@
  */
 
 /** How long one reload mark suppresses further automatic reloads. */
-export const CHUNK_RELOAD_WINDOW_MS = 10_000;
+export const CHUNK_RELOAD_WINDOW_MS = 45_000;
 
 const CHUNK_RELOAD_MARK = 'kortix:chunk-reload-at';
 
@@ -82,7 +82,11 @@ function browserSessionStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
  * returns false.
  */
 export function reloadForChunkLoadError(error: unknown, deps: ChunkReloadDeps = {}): boolean {
-  if (!isChunkLoadError(error)) return false;
+  return isChunkLoadError(error) && reloadForStaleChunk(deps);
+}
+
+/** Shared tab budget for bootstrap, lazy imports and React boundaries. */
+export function reloadForStaleChunk(deps: ChunkReloadDeps = {}): boolean {
   const now = deps.now ?? (() => Date.now());
   const storage = deps.storage !== undefined ? deps.storage : browserSessionStorage();
   if (!storage) return false;

@@ -16,6 +16,7 @@ import { BrandingProvider } from '@/features/branding/branding-provider';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
+import { CHUNK_BOOT_RECOVERY_SCRIPT } from '@/lib/chunk-boot-recovery';
 import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
 import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
@@ -246,6 +247,7 @@ export default async function RootLayout({
       className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: CHUNK_BOOT_RECOVERY_SCRIPT }} />
         {/* Runtime config. Standalone/Docker: evaluated per request via
             connection() above, so images pick up container env vars.
             Vercel: baked at build from the same environment. */}
