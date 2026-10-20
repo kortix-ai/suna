@@ -13,6 +13,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let appsEnabled = true;
+let appOverrides: Record<string, unknown> = {};
 let rollbackBody: unknown = null;
 
 function writeConfig(apiBase: string): string {
@@ -85,7 +86,7 @@ function startServer(): string {
         });
       }
       if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
-        return Response.json({ apps: [app()] });
+        return Response.json({ apps: [app(appOverrides)] });
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
         const patch = body as Record<string, unknown>;
@@ -169,6 +170,7 @@ describe('kortix apps set', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     appsEnabled = true;
+    appOverrides = {};
   });
 
   afterEach(() => {
@@ -198,6 +200,42 @@ describe('kortix apps set', () => {
     ]) {
       expect(r.stdout).toContain(existing);
     }
+  });
+
+  test.each(['private', 'project', 'restricted', 'password'])('show explains how to open a %s App without minting a credential', async (mode) => {
+    appOverrides = { access_mode: mode };
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`access        ${mode}`);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT}`);
+    expect(calls.every((call) => call.method === 'GET')).toBe(true);
+  });
+
+  test.each([
+    { access_mode: 'public' },
+    { access_mode: 'private', external_url: 'https://external.example.test' },
+  ])('show does not suggest a Kortix access link for $access_mode / $external_url', async (overrides) => {
+    appOverrides = overrides;
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain('kortix apps access-link');
+  });
+
+  test('show keeps an explicitly selected host in the access-link command', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT, '--host', 'test'], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT} --host test`);
+  });
+
+  test('show --json remains a credential-free read', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(Object.keys(JSON.parse(r.stdout)).sort()).toEqual(['app', 'deployments']);
+    expect(calls.every((call) => call.method === 'GET')).toBe(true);
   });
 
   test('show prints no budget and no price: an on-demand App runs on demand, an always-on App runs 24/7', async () => {

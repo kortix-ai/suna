@@ -169,6 +169,7 @@ flow(
     serial: true,
     routes: [
       'POST /v1/projects/:projectId/skills',
+      'POST /v1/projects/:projectId/skills/remove',
       'GET /v1/projects/:projectId/detail',
       'GET /v1/projects/:projectId/files/content',
     ],
@@ -257,5 +258,19 @@ flow(
         .post('/v1/projects/:projectId/skills', { name: '   ' }, { params: { projectId: p.id } });
       r.status(400);
     });
+    await ctx.step('removal requires confirmation and rejects a non-member', async () => {
+      const route = '/v1/projects/:projectId/skills/remove';
+      (await ctx.client.as(ctx.P.OWNER).post(route, { folder: `skills/${slug}` }, { params: { projectId: p.id } })).status(400);
+      (await ctx.client.as(ctx.P.NONMEMBER).post(route, { folder: `skills/${slug}`, confirm: true }, { params: { projectId: p.id } })).status([403, 404]);
+    });
+    await ctx.step('confirmed removal deletes the skill, not the project', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/skills/remove', { folder: `skills/${slug}`, confirm: true }, { params: { projectId: p.id } });
+      r.status(200).body().has('$.ok', true);
+      const removed = r.json<{ removed: string[] }>().removed;
+      if (!removed.includes(`skills/${slug}/SKILL.md`)) throw new Error('selected skill was not removed');
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', { params: { projectId: p.id }, query: { path: `skills/${slug}/SKILL.md` } })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', { params: { projectId: p.id } })).status(200);
+    });
+
   },
 );

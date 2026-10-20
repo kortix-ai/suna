@@ -1,14 +1,15 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CopyButton } from '@/components/markdown/copy-button';
-import Hint from '@/components/ui/hint';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CopyButton } from '@kortix/ui/markdown';
+import Hint from '@kortix/ui/hint';
 
-import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
 import {
   SplitSheet,
   SplitSheetBody,
@@ -18,30 +19,40 @@ import {
   SplitSheetHeader,
   SplitSheetMain,
   SplitSheetTitle,
-} from '@/components/ui/split-sheet';
-import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '@/components/ui/tabs';
+} from '@kortix/ui/split-sheet';
+import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '@kortix/ui/tabs';
 
-import { Switch } from '@/components/ui/switch';
-import { successToast } from '@/components/ui/toast';
+import { Switch } from '@kortix/ui/switch';
+import { successToast } from '@kortix/ui/toast';
 
 
 import { useTranslations } from '@/i18n/use-translations';
 
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GearSixIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useCallback, useState } from 'react';
 
-import { AppPreview } from './app-preview';
-import { frameKey, reloadFrame } from './app-preview-pool';
+import {
+  AppPreview,
+  frameKey,
+  reloadFrame,
+  localizedAppCopy,
+  appCan,
+  appCommand,
+  appHost,
+  appStatus,
+  appTabLabel,
+  childApps,
+  deployNotice,
+} from '@kortix/ui/apps';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppReleasesPanel } from './app-releases';
 import { AppMachinesPanel, AppVolumesPanel } from './app-fleet';
-import { localizedAppCopy, appCan, appCommand, appHost, appStatus, appTabLabel, childApps, deployNotice } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -245,62 +256,68 @@ export function AppDetailModal({
                 Settings, Close. Sleep, versions, access, Connect and Delete
                 are configuration, not navigation, so they live in the
                 settings modal instead of crowding the bar over the App. */}
-            <div className="flex shrink-0 items-center gap-0.5">
-              {appCan(viewed, 'preview') && (viewed.active_deployment_id || viewed.external_url) ? (
-                <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled={refreshing}
-                    aria-label={tI18nComplete.raw('text5b529abadacc')}
-                    onClick={() => void refresh()}
-                    data-testid="app-preview-refresh"
-                  >
-                    {refreshing ? <Loading className="size-4 shrink-0" /> : <ArrowClockwiseIcon className="size-4 shrink-0" />}
-                  </Button>
-                </Hint>
-              ) : null}
-              {appCan(viewed, 'preview') || viewed.external_url ? (
-                <Hint
-                  label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
-                  side="bottom"
-                >
-                  <Button asChild size="icon" variant="ghost">
-                    <a
-                      href={viewedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <ButtonGroup>
+                {appCan(viewed, 'preview') && (viewed.active_deployment_id || viewed.external_url) ? (
+                  <Hint label={tI18nComplete.raw('text5b529abadacc')} side="bottom">
+                    <Button
+                      size="icon-base"
+                      variant="secondary"
+                      className="active:scale-[0.96]"
+                      disabled={refreshing}
+                      aria-label={tI18nComplete.raw('text5b529abadacc')}
+                      onClick={() => void refresh()}
+                      data-testid="app-preview-refresh"
                     >
-                      <ArrowSquareOutIcon className="size-4 shrink-0" />
-                    </a>
-                  </Button>
-                </Hint>
-              ) : null}
-              {hasSettings ? (
-                <Hint label={tI18nComplete.raw('text74a883a037bc')} side="bottom">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={tI18nComplete.raw('text74a883a037bc')}
-                    onClick={() => setOverlay('settings')}
-                    data-testid="app-settings"
+                      {refreshing ? <Loading className="size-4 shrink-0" /> : <ArrowClockwiseIcon className="size-4 shrink-0" />}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {appCan(viewed, 'preview') || viewed.external_url ? (
+                  <Hint
+                    label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
+                    side="bottom"
                   >
-                    <GearSixIcon className="size-4 shrink-0" />
+                    <Button asChild size="icon-base" variant="secondary" className="active:scale-[0.96]">
+                      <a
+                        href={viewedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+                      >
+                        <ArrowSquareOutIcon className="size-4 shrink-0" />
+                      </a>
+                    </Button>
+                  </Hint>
+                ) : null}
+                {hasSettings ? (
+                  <Hint label={tI18nComplete.raw('text74a883a037bc')} side="bottom">
+                    <Button
+                      size="icon-base"
+                      variant="secondary"
+                      className="active:scale-[0.96]"
+                      aria-label={tI18nComplete.raw('text74a883a037bc')}
+                      onClick={() => setOverlay('settings')}
+                      data-testid="app-settings"
+                    >
+                      <GearSixIcon className="size-4 shrink-0" />
+                    </Button>
+                  </Hint>
+                ) : null}
+              </ButtonGroup>
+              <ButtonGroup>
+                <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom">
+                  <Button
+                    size="icon-base"
+                    variant="secondary"
+                    className="active:scale-[0.96]"
+                    aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <XIcon className="size-4 shrink-0" />
                   </Button>
                 </Hint>
-              ) : null}
-              <span aria-hidden className="bg-border mx-1.5 h-4 w-px" />
-              <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
-                  onClick={() => onOpenChange(false)}
-                >
-                  <XIcon className="size-4 shrink-0" />
-                </Button>
-              </Hint>
+              </ButtonGroup>
             </div>
           </header>
 

@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -1107,7 +1107,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
       });
       const path = `ke2e-run10-${Date.now()}.txt`;
@@ -1154,36 +1154,6 @@ harnessFlow(
     } finally {
       await world.close();
     }
-  },
-);
-
-flow(
-  'RUN-11',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'sandbox'],
-    timeoutMs: 900_000,
-    routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step('the project asks for pi and turns the LLM gateway off', async () => {
-      for (const [feature, enabled] of [['pi_harness', true], ['llm_gateway', false]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch('/v1/projects/:projectId/features', { feature, enabled }, { params: { projectId: project.id } });
-        r.status(200).body().has(`$.experimental.${feature}`, enabled);
-      }
-    });
-    // pi has no model path without the gateway: the session boots OpenCode,
-    // and bootSession proves it from the daemon's health.
-    await bootSession(ctx, 'opencode', { project });
   },
 );
 
@@ -1406,7 +1376,7 @@ harnessFlow(
       ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
     try {
       await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
       });
 
@@ -1505,7 +1475,7 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
       });
 
@@ -1670,7 +1640,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
@@ -1787,7 +1757,7 @@ harnessFlow(
     const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
@@ -1897,7 +1867,7 @@ harnessFlow(
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });

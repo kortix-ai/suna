@@ -17,6 +17,10 @@ spins up a throwaway session, sends a message, and asserts the agent
 replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
 
+By default, doctor attempts to delete only its diagnostic session.
+With --keep-session, it leaves that session in place. UI-prepared warm
+sessions are left unchanged and may remain billed.
+
 Options:
   --no-session         Stop after auth + project checks. Don't create
                        a sandbox. Fast and cheap.
@@ -87,6 +91,10 @@ export async function runDoctor(argv: string[]): Promise<number> {
     process.stdout.write(`\n${status.ok('all checks passed (no-session)')}\n\n`);
     return 0;
   }
+
+  process.stdout.write(
+    `  ${C.dim}UI-prepared warm sessions are left unchanged and may remain billed.${C.reset}\n`,
+  );
 
   // ── 4. Spin up a session ────────────────────────────────────────────────
   const t0 = Date.now();
@@ -183,7 +191,7 @@ export function doctorReplyVerdict(
   const error = extractMessageError(reply);
   if (error) return { ok: false, reason: `reply failed — ${error}` };
   const text = reply.parts
-    .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
+    .map((p) => (p.type === 'text' ? p.text : ''))
     .join(' ')
     .trim();
   return text ? { ok: true, text } : { ok: false, reason: 'reply had no text content' };

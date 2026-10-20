@@ -2,7 +2,7 @@
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
 import type { RoleArtifact, RoleContent } from './types';

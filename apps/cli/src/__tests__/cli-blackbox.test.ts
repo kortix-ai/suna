@@ -564,6 +564,17 @@ describe('kortix CLI black-box behavior', () => {
   });
 
 
+  test.each(['root', 'hosts', 'accounts'])(
+    'help documents sandbox credential precedence: %j',
+    async (command) => {
+      const result = await runCli(command === 'root' ? ['--help'] : [command, '--help']);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('delegated session identity');
+      expect(result.stdout).toContain('KORTIX_DISABLE_SANDBOX_ENV_FILE=1');
+      expect(result.stdout).toContain('exported KORTIX_TOKEN');
+    },
+  );
+
   test('top-level help is grouped into tiers and labeled sections', async () => {
     const result = await runCli(['--help']);
 
@@ -1008,6 +1019,7 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/projects?account_id=account_1', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
+      ['GET', '/v1/projects/proj_e2e/git/connection', null],
       ['GET', '/v1/marketplace/items?query=agent-browser&source=kortix', null],
       ['GET', '/v1/marketplace/items/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e', null],

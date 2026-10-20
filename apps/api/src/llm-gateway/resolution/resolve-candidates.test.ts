@@ -175,7 +175,6 @@ beforeEach(() => {
   modelAccess = { disabledProviders: [], disabledModels: [] };
   for (const key of Object.keys(config)) delete config[key];
   Object.assign(config, {
-    LLM_GATEWAY_ENABLED: true,
     KORTIX_MANAGED_PROVIDER_ENABLED: true,
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     LLM_GATEWAY_BYOK_FALLBACK_MODEL: 'anthropic/claude-sonnet-4.6',
@@ -716,7 +715,8 @@ describe('resolveCandidates — codex + unknown provider', () => {
     pooledEnabled = true;
     pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 414_374, secrets: [] };
     const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
-    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined });
+    // No client retry hint, but the rest itself travels on for the gateway's route hold.
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined, restSeconds: 414_374 });
     // 414374 s is 4.8 days: rounded, not floored.
     expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 5 days.');
     expect(refusal.suggestion).toBe('Choose another model, or connect another ChatGPT account.');
@@ -766,6 +766,32 @@ describe('resolveCandidates — codex + unknown provider', () => {
     const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
     expect(candidates.map((candidate) => [candidate.credentialRef, candidate.apiKey])).toEqual([['mine', 'mine-token']]);
     expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  // The personal default skipped the rest a 429 recorded: every request went
+  // to ChatGPT again and was refused (dev, 2026-10-20).
+  test('a resting personal ChatGPT account is unavailable, with its rest, when nothing shared can serve', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }), restingSeconds: 180 } as PooledSecret;
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal).toBeInstanceOf(GatewayResolutionError);
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined, restSeconds: 180 });
+    expect(refusal.message).toBe('Your ChatGPT connections reached their usage limit. The first resets in 3 minutes.');
+  });
+
+  test('a resting personal ChatGPT account yields to a ready shared account', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }), restingSeconds: 180 } as PooledSecret;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team', label: 'Team', value: JSON.stringify({ openai: { access: 'team-token' } }) }] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
+    expect(candidates.map((candidate) => [candidate.credentialRef, candidate.apiKey])).toEqual([['team', 'team-token']]);
+  });
+
+  test('the personal ChatGPT account is a pool account, so a 429 records its rest', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    const [candidate] = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
+    expect(candidate).toMatchObject({ credentialRef: 'mine', poolSecretId: 'mine' });
   });
 
   test('a selected ChatGPT pool uses separate OAuth accounts and never the project login', async () => {

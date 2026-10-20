@@ -18,6 +18,11 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface ApiClientOptions {
   baseUrl: string;
+  /**
+   * The API inside the VPC (KORTIX_API_INTERNAL_URL), tried before `baseUrl`.
+   * A call it does not answer marks it down for a minute; `baseUrl` serves.
+   */
+  internalBaseUrl?: string;
   token: string;
   /** Proof for `/internal/*` at the public API edge (KORTIX_INTERNAL_EDGE_KEY). */
   edgeKey?: string;
@@ -69,11 +74,18 @@ const RETRY_SLOW = { retryOnTimeout: true } as const;
 /** How long an API that answered 404 for `/admit` is not asked again. */
 const ADMIT_MISSING_MS = 60_000;
 
+/** How long a private URL that did not answer is skipped for the public one. */
+const INTERNAL_DOWN_MS = 60_000;
+
+/** The ping's private attempt: a VPC hop that has not answered /health in 1 s is down. */
+const PRIVATE_PING_MS = 1_000;
+
 interface ResolutionErrorBody {
   code: NoUpstreamReasonCode;
   message: string;
   suggestion: string;
   retryAfterSeconds?: number;
+  restSeconds?: number;
 }
 
 interface BillingBody {
@@ -83,8 +95,8 @@ interface BillingBody {
   holdUsd?: number;
 }
 
-function resolutionError({ code, message, suggestion, retryAfterSeconds }: ResolutionErrorBody) {
-  return new GatewayResolutionError(code, message, suggestion, retryAfterSeconds);
+function resolutionError({ code, message, suggestion, retryAfterSeconds, restSeconds }: ResolutionErrorBody) {
+  return new GatewayResolutionError(code, message, suggestion, retryAfterSeconds, restSeconds);
 }
 
 /** `/billing`'s answer as `assertBillingActive` returns or throws it. */
@@ -99,7 +111,23 @@ function billingResult(result: BillingBody): { holdUsd?: number } | Error {
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
-  const fetchImpl: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  const internalBaseUrl = opts.internalBaseUrl?.replace(/\/+$/, '') || undefined;
+  const rawFetch: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  // ponytail: one per-process switch; a broken private path costs one failed attempt per minute.
+  let internalDownUntil = 0;
+  const privateUp = () => !!internalBaseUrl && Date.now() >= internalDownUntil;
+  // A thrown fetch (refused, reset, DNS, timeout) on the private URL sends the
+  // next minute of calls to the public one. A response, even a 5xx, is the
+  // API answering, so it keeps the private URL.
+  const fetchImpl = async (path: string, init: RequestInit): Promise<Response> => {
+    if (!internalBaseUrl || !privateUp()) return rawFetch(`${baseUrl}${path}`, init);
+    try {
+      return await rawFetch(`${internalBaseUrl}${path}`, init);
+    } catch (err) {
+      internalDownUntil = Date.now() + INTERNAL_DOWN_MS;
+      throw err;
+    }
+  };
   const timeoutMs = opts.timeoutMs ?? 5_000;
   const admitTimeoutMs = opts.admitTimeoutMs ?? 10_000;
 
@@ -133,7 +161,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       async (signal) => {
         let response: Response;
         try {
-          response = await fetchImpl(`${baseUrl}${path}`, {
+          response = await fetchImpl(path, {
             method: 'POST',
             headers: {
               'content-type': 'application/json',
@@ -303,13 +331,22 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       );
       return result.models ?? {};
     },
+    // The ping owns both attempts, each on its own signal: a private path that
+    // hangs costs PRIVATE_PING_MS, trips the switch, and the public URL answers.
     ping: async () => {
       const started = Date.now();
+      const health = (base: string, ms: number) =>
+        rawFetch(`${base}/health`, { method: 'GET', signal: AbortSignal.timeout(ms) });
       try {
-        const res = await fetchImpl(`${baseUrl}/health`, {
-          method: 'GET',
-          signal: AbortSignal.timeout(3_000),
-        });
+        let res: Response | undefined;
+        if (internalBaseUrl && privateUp()) {
+          try {
+            res = await health(internalBaseUrl, PRIVATE_PING_MS);
+          } catch {
+            internalDownUntil = Date.now() + INTERNAL_DOWN_MS;
+          }
+        }
+        res ??= await health(baseUrl, 3_000);
         return { ok: res.ok, latencyMs: Date.now() - started, status: res.status };
       } catch (err) {
         return {

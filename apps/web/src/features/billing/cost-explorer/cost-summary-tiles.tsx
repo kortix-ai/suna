@@ -1,10 +1,10 @@
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { CostSummary } from '@kortix/sdk';
 
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from '@kortix/ui/skeleton';
 
-import { cn } from '@/lib/utils';
-import { formatSessionCostCredits } from '../session-cost-format';
+import { cn } from '@kortix/ui';
+import { formatSessionCostCredits } from '@kortix/ui/internal/billing/session-cost-format';
 import { CostSparkline } from './cost-sparkline';
 
 export interface CostSummaryTile {

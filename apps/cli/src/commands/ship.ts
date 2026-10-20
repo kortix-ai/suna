@@ -427,7 +427,7 @@ async function shipFirstTime(
           name,
           account_id: accountId,
         })).catch(explainCreationRefusal);
-    bindShippedFolder(project, hostName, auth);
+    await bindShippedFolder(client, project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
     gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
     // Only touch the remote when the user named one explicitly — an existing
@@ -462,7 +462,7 @@ async function shipFirstTime(
     // this, a failure after provision left an unlinked cloud project behind and
     // the retry provisioned a SECOND one, silently burning the account's
     // project quota until creation started 403ing on the limit.
-    bindShippedFolder(project, hostName, auth);
+    await bindShippedFolder(client, project, hostName, auth);
     gitTarget = resolveProjectGitTarget(prov);
     cred = await resolvePushCredential(client, auth, project.project_id, gitTarget, prov);
     setOrigin(gitTarget.repoUrl);
@@ -572,11 +572,12 @@ async function finishShip(
 /** Write `.kortix/link.json` so this folder is bound to the cloud project.
  *  Called the moment the project exists — see the note at its first-ship call
  *  site for why ordering matters. */
-function bindShippedFolder(
+async function bindShippedFolder(
+  client: ApiClient,
   project: ProjectSummary,
   hostName: string | undefined,
   auth: Auth,
-): void {
+): Promise<void> {
   saveLink({
     project_id: project.project_id,
     account_id: project.account_id,
@@ -584,6 +585,12 @@ function bindShippedFolder(
     host_url: auth.api_base,
     linked_at: new Date().toISOString(),
   });
+  // CLI creation is an implicit skip of the web project wizard.
+  try {
+    await client.patch(`/projects/${project.project_id}/onboarding`, { completed: true });
+  } catch {
+    process.stderr.write('Could not dismiss project onboarding; skip it on your first web visit.\n');
+  }
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {

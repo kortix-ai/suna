@@ -131,10 +131,16 @@ export async function getProjectDrive(projectId: string): Promise<Drive> {
   return drives[0];
 }
 
-/** Who has access to a folder: its own grants and the ones it inherits. */
+/**
+ * Who has access to a folder: its own grants and the ones it inherits. A
+ * refusal is the caller's to show (a badge simply stays empty), so it raises
+ * no app-wide error.
+ */
 export async function getFolderAccess(driveId: string, path: string): Promise<FolderAccessView> {
   return unwrap(
-    await backendApi.get<FolderAccessView>(`${drivePath(driveId)}/access?${new URLSearchParams({ path })}`),
+    await backendApi.get<FolderAccessView>(`${drivePath(driveId)}/access?${new URLSearchParams({ path })}`, {
+      showErrors: false,
+    }),
     'Failed to load sharing',
   );
 }
@@ -347,9 +353,13 @@ async function uploadWithProgress(
   });
 }
 
+/*
+ * Folder writes (mkdir, move, delete) raise no app-wide error: every caller
+ * shows its own outcome, and the app-wide toast would say it a second time.
+ */
 export async function makeDriveFolder(driveId: string, path: string): Promise<{ path: string }> {
   return unwrap(
-    await backendApi.post<{ path: string }>(`${drivePath(driveId)}/files/mkdir`, { path }),
+    await backendApi.post<{ path: string }>(`${drivePath(driveId)}/files/mkdir`, { path }, { showErrors: false }),
     'Failed to create folder',
   );
 }
@@ -357,7 +367,7 @@ export async function makeDriveFolder(driveId: string, path: string): Promise<{ 
 /** Move or rename. An existing destination is refused (409). */
 export async function moveDriveFile(driveId: string, from: string, to: string): Promise<{ from: string; to: string }> {
   return unwrap(
-    await backendApi.post<{ from: string; to: string }>(`${drivePath(driveId)}/files/move`, { from, to }),
+    await backendApi.post<{ from: string; to: string }>(`${drivePath(driveId)}/files/move`, { from, to }, { showErrors: false }),
     'Failed to move',
   );
 }
@@ -365,7 +375,10 @@ export async function moveDriveFile(driveId: string, from: string, to: string): 
 export async function deleteDriveFile(driveId: string, path: string, options?: { recursive?: boolean }): Promise<void> {
   const query: Record<string, string> = { path };
   if (options?.recursive) query.recursive = 'true';
-  unwrap(await backendApi.delete(`${drivePath(driveId)}/files?${new URLSearchParams(query)}`), 'Failed to delete');
+  unwrap(
+    await backendApi.delete(`${drivePath(driveId)}/files?${new URLSearchParams(query)}`, { showErrors: false }),
+    'Failed to delete',
+  );
 }
 
 /** Newest first. */

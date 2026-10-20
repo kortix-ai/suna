@@ -123,7 +123,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `hasPending` | `boolean` | At least one question or permission is open. |
 | `diffs`, `todos` | arrays | Live file diffs and the todo list. |
 | `rewindMessageId`, `rewindPending`, `rewindError` | `string \| null`, `boolean`, `KortixSendError \| null` | The staged rewind, a rewind or restore in flight, and its last failure. |
-| `models` | `FlatModel[]` | Selectable models. Empty when the project's `llm_gateway` flag is off. |
+| `models` | `FlatModel[]` | Selectable models. |
 | `agents`, `defaultAgent`, `commands` | arrays, `string \| null`, array | Selectable agents, the default agent and slash commands. Available before the sandbox starts. |
 | `agentName` | `string \| null` | The agent the session was created with, from the first `/start` answer. `null` when none was bound. |
 | `picks` | `SessionPicks` | This session's chosen `model`, `agent` and `variant`, with `setModel`, `setAgent` and `setVariant`. `send` uses them. |
@@ -233,11 +233,11 @@ While the view is mounted, its event stream raises these. When the view unmounts
 
 ## Build a chat UI
 
-Start with `SessionThread` from [`@kortix/ui/chat`](/docs/sdk/ui#add-a-chat). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
+Start with `SessionThread` from [`@kortix/ui/session`](/docs/sdk/ui#the-thread-alone). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
+import { SessionThread } from '@kortix/ui/session';
 
 function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId);
@@ -249,7 +249,7 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 }
 ```
 
-Its `renderTool` and `renderers` props replace one tool card or one part kind, and its parts (`MessageList`, `MessageView`, `Composer`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+It is the thread the Kortix web app renders. `ToolRegistry.register(name, Row)` replaces one tool row, and its building blocks (`UserMessage`, `ToolPartRenderer`, `SessionChatInput`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
 
 ### Render the parts yourself
 
@@ -342,8 +342,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | `useProjects(accountId?, options?)` | The projects in one account. |
 | `useProjectSessions(projectId, { scope, parent, startedBy, q, labels, limit })` | One project's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. `parent: 'root'` returns top-level sessions with `child_count`. `startedBy` is `'me'`, `'others'` or `'automated'`. `q` searches every session the caller can open. `scope: 'project'` is the manager inventory. |
 | `useSessionChildren(projectId, parentSessionId, { q, limit, enabled })` | The sessions one parent started, paged. Keep `enabled: false` until the parent row opens. |
-| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty when the project's `llm_gateway` flag is off. |
-| `useProjectModelPickerCatalog(projectId)` | The full model-picker record per model (`reasoning_options`, `temperature`, `limit`). `undefined` unless the project's `llm_gateway` flag is on. |
+| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty while the list loads. |
+| `useProjectModelPickerCatalog(projectId)` | The full model-picker record per model (`reasoning_options`, `temperature`, `limit`). `undefined` while it loads. |
 | `useModelAccess(projectId)` | The project's disabled providers and models, and `setEnabled({ target, id, enabled })` with `target` `'provider'` or `'model'`. |
 | `useProjectConfig(projectId)` | The project's config summary (default agent and slash commands) as `ProjectConfigSummary`, or `undefined` while it loads. |
 | `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |

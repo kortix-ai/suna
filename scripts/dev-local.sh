@@ -83,7 +83,6 @@ load_local_env() {
   # standalone gateway owns /v1/chat/completions. Exported AFTER the .env
   # decrypt so they override whatever the committed apps/api/.env carries.
   if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
-    export LLM_GATEWAY_ENABLED=true
     export LLM_GATEWAY_BASE_URL=""
     export LLM_GATEWAY_PROXY_PORT="$GATEWAY_PORT"
     export GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN"
@@ -674,7 +673,7 @@ EOF
     # values); the sandbox `.env.local` is already exported above (relative
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
-    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --webpack --port "${WEB_PORT:-3000}") &
   fi
 
   echo "[dev] Starting API (dev) on :8008"

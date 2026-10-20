@@ -69,7 +69,8 @@ export default defineConfig({
       // correct. Keep both slots symbol-only.
       light: '/kortix-symbol.svg',
       dark: '/kortix-symbol-white.svg',
-      alt: 'Kortix',
+      // The adjacent site title names the link; the symbol is decorative.
+      alt: '',
     },
   },
 

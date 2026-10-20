@@ -63,6 +63,7 @@ const sheet = {
 
 mock.module('react-native', () => ({
   Keyboard: { dismiss: () => {} },
+  Platform: { OS: 'ios' },
   StyleSheet: { absoluteFill: { position: 'absolute' } },
   View: host('view'),
   useWindowDimensions: () => ({ width: 400, height: 800 }),

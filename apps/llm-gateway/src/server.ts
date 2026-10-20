@@ -96,7 +96,12 @@ export function messagesAuthorization(
 
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
-  const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken, edgeKey: config.internalEdgeKey });
+  const api = createApiClient({
+    baseUrl: config.apiUrl,
+    internalBaseUrl: config.apiInternalUrl,
+    token: config.apiToken,
+    edgeKey: config.internalEdgeKey,
+  });
 
   const logger = createGatewayLogger();
 

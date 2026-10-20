@@ -1,11 +1,11 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { CodeInput, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { CodeInput, FieldError, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import type { EmailFlowMode } from '@/lib/auth/unified-auth-flow';
 import { m, useReducedMotion } from 'motion/react';
+import { useEffect, useRef } from 'react';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
@@ -50,6 +50,10 @@ export function EmailLinkStep({
   // message. Unknown mode keeps the generic link copy.
   const confirmed = mode === 'signup';
   const prefersReducedMotion = useReducedMotion();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (errorMessage && detailsRef.current) detailsRef.current.open = true;
+  }, [errorMessage]);
   const rise = (delay = 0) => ({
     initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
     animate: { opacity: 1, y: 0 },
@@ -71,10 +75,10 @@ export function EmailLinkStep({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
-        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {onCodeChange && onVerify && (
-          <details>
+          // An error opens the code panel so its message is visible under the input.
+          <details ref={detailsRef}>
             <summary className="text-muted-foreground cursor-pointer text-sm">
               {tAuth('enterCode')}
             </summary>
@@ -91,6 +95,7 @@ export function EmailLinkStep({
                 disabled={pending}
                 invalid={!!errorMessage}
               />
+              {errorMessage && <FieldError id="code-error" message={errorMessage} />}
               <Button
                 type="submit"
                 size="lg"
@@ -101,6 +106,9 @@ export function EmailLinkStep({
               </Button>
             </form>
           </details>
+        )}
+        {errorMessage && !(onCodeChange && onVerify) && (
+          <FieldError id="code-error" message={errorMessage} />
         )}
 
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">
@@ -113,7 +121,7 @@ export function EmailLinkStep({
                 type="button"
                 onClick={onResend}
                 disabled={pending}
-                className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+                className="text-foreground disabled:opacity-50"
               >
                 {pendingAction === 'resend' ? t('sending') : t('link.resend')}
               </button>
@@ -124,7 +132,7 @@ export function EmailLinkStep({
               type="button"
               onClick={onChangeEmail}
               disabled={pending}
-              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 py-2 transition-colors"
             >
               {t('useDifferentEmail')}
             </button>
@@ -137,7 +145,7 @@ export function EmailLinkStep({
                   type="button"
                   onClick={onPassword}
                   disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
                 </button>

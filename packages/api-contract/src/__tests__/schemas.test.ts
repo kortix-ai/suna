@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -135,7 +136,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      llm_gateway: true,
       meta_agent: false,
       monitors: false,
       reminders: false,
@@ -152,6 +152,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       session_log: false,
       session_log_restore: false,
       connectors_v2: false,
+      agent_rooms: false,
+      goals: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -326,11 +328,18 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { llm_gateway: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('experimental carries the graduated llm_gateway key only as a constant true', () => {
+    // Wire compat: the API still sends `llm_gateway: true` for older SDK and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: true } })).experimental.llm_gateway).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -363,6 +372,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -786,7 +804,6 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'llm_gateway',
       'meta_agent',
       'monitors',
       'reminders',
@@ -803,6 +820,8 @@ describe('envelopes', () => {
       'session_log',
       'session_log_restore',
       'connectors_v2',
+      'agent_rooms',
+      'goals',
     ]);
   });
 

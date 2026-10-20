@@ -5,7 +5,7 @@
  */
 import { expect, test } from 'bun:test';
 
-import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
+import { connectorHeadline, useConnectorLinkInfo } from '@kortix/ui/markdown/setup-links/connector-link-info';
 import { nextConnectorPollDelay } from './connector-poll';
 import { resolveConnectorStart } from './connector-start';
 import { useConnectorIntake } from './connector-intake';

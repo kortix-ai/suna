@@ -120,7 +120,8 @@ type ApprovalSpec = {
 };
 
 /**
- * Approvals keep a 24h window: an approval is a time-sensitive decision about
+ * The fallback for an approval row with no `expires_at` (written before expiry
+ * shipped); every newer link expires with its approval. Approvals keep a 24h window: an approval is a time-sensitive decision about
  * one gated call, not an async credential hand-off, so a week-old approval
  * link answering a stale question helps nobody. The token is not a capability
  * — the decision is still gated on a signed-in, authorised account — and the
@@ -132,11 +133,11 @@ const APPROVAL_TTL_MINUTES = 24 * 60;
 export function mintSetupLink(
   projectId: string,
   spec: SecretSpec | ConnectorSpec | ApprovalSpec,
-  opts?: { expiresInMinutes?: number | null },
+  opts?: { expiresInMinutes?: number | null; /** Exact expiry (epoch ms); wins over minutes. */ expiresAt?: number | null },
 ): { token: string; expiresAt: number } {
   const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
   const iat = Date.now();
-  const exp = iat + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
+  const exp = opts?.expiresAt ?? iat + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
   const base: BasePayload = { exp, iat, nonce, pid: projectId, uid: spec.uid ?? null };
 
@@ -174,9 +175,16 @@ export function approvalPageUrl(
   executionId: string,
   sessionId: string | null,
   frontendUrl?: string | null,
+  /** The approval's own `expires_at`: the link dies with it. Null (a row from
+   *  before expiry shipped) keeps the 24 h link. */
+  approvalExpiresAt?: Date | null,
 ): string | null {
   try {
-    const { token } = mintSetupLink(projectId, { kind: 'approval', executionId, sessionId });
+    const { token } = mintSetupLink(
+      projectId,
+      { kind: 'approval', executionId, sessionId },
+      { expiresAt: approvalExpiresAt?.getTime() ?? null },
+    );
     const base = (frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000').replace(
       /\/+$/,
       '',
