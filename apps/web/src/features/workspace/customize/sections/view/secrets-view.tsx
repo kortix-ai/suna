@@ -209,6 +209,7 @@ export interface SecretRow {
   /** 'no_agent_grant' only when the API is certain. Null covers "unknown" too. */
   deliveryBlockedReason: SecretDeliveryBlockedReason | null;
   /** Who can use the shared value. Empty = everyone in the project. */
+  agents?: string[] | 'all' | null;
   sharedWith: ConnectionShare[];
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
@@ -689,6 +690,7 @@ export function buildRows(
     requiresRotation: Boolean(item.requires_rotation),
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
     sharedWith: item.shared_with ?? [],
+    agents: item.agents,
     usable: item.usable ?? true,
     undecryptable: item.status === 'undecryptable',
     mineUndecryptable: Boolean(item.mine?.active && item.mine.status === 'undecryptable'),
@@ -880,6 +882,12 @@ function SecretTableRow({
               visibility={audienceVisibility(row.sharedWith, viewerId)}
               labels={row.sharedWith.map((share) => share.label)}
             />
+            {row.agents != null && (
+              <span className="text-muted-foreground text-xs">
+                {tSecrets('agentAccess', { agents: row.agents === 'all'
+                  ? tSecrets('allAgents') : row.agents.join(', ') || tSecrets('noAgents') })}
+              </span>
+            )}
             {row.usable ? null : (
               <span className="text-muted-foreground text-xs">{tSharing('notSharedWithYou')}</span>
             )}

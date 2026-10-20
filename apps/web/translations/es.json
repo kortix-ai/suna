@@ -160,7 +160,10 @@
       "deleteMine": "Eliminar mi valor",
       "mineDeleted": "Valor eliminado",
       "mineDeleteError": "No se pudo eliminar tu valor. Inténtalo de nuevo."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos los agentes",
+    "noAgents": "Ningún agente"
   },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"

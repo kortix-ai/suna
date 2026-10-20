@@ -160,7 +160,10 @@
       "deleteMine": "Обриши моју вредност",
       "mineDeleted": "Вредност је обрисана",
       "mineDeleteError": "Није могуће обрисати вашу вредност. Покушајте поново."
-    }
+    },
+    "agentAccess": "Agenti: {agents}",
+    "allAgents": "Svi agenti",
+    "noAgents": "Nema agenata"
   },
   "useCases": {
     "headline": "Циклуси који покрећу компанију"

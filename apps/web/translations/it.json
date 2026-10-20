@@ -160,7 +160,10 @@
       "deleteMine": "Elimina il mio valore",
       "mineDeleted": "Valore eliminato",
       "mineDeleteError": "Impossibile eliminare il tuo valore. Riprova."
-    }
+    },
+    "agentAccess": "Agenti: {agents}",
+    "allAgents": "Tutti gli agenti",
+    "noAgents": "Nessun agente"
   },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"

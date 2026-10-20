@@ -77,6 +77,7 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  agents?: string[] | 'all' | null;
   /** Who can use the shared value; empty = everyone in the project. */
   shared_with?: Array<{
     grant_id: string;
