@@ -472,6 +472,12 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 /** Agents mark the suggested option by suffixing its label with
  *  "(Recommended)". Show that as a quiet tag; the reply keeps the raw label. */
 function splitRecommended(label: string): { title: string; recommended: string | null } {
-  const match = /^(.*?)\s*\((Recommended)\)\s*$/i.exec(label);
-  return match ? { title: match[1], recommended: match[2] } : { title: label, recommended: null };
+  // Same result as `/^(.*?)\s*\((Recommended)\)\s*$/i`, whose `.*?` and `\s*`
+  // backtrack quadratically on a long space run (CodeQL js/polynomial-redos):
+  // the title is the text before the tag, trimmed, on one line.
+  const match = /\((Recommended)\)\s*$/i.exec(label);
+  const title = match ? label.slice(0, match.index).trimEnd() : '';
+  return match && !/[\n\r\u2028\u2029]/.test(title)
+    ? { title, recommended: match[1] }
+    : { title: label, recommended: null };
 }

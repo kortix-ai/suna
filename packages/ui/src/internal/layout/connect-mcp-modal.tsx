@@ -12,7 +12,7 @@
  */
 
 import { ArrowUpRightIcon, LinkSimpleIcon } from '@phosphor-icons/react';
-import { platformConfig } from '@kortix/sdk';
+import { platformConfig, stripTrailingSlashes } from '@kortix/sdk';
 import { UiLink as Link } from '../../providers/ui-provider';
 import type { ComponentType } from 'react';
 
@@ -30,7 +30,7 @@ import { cn } from '../lib/utils';
 
 /** The MCP endpoint: `<api origin>/v1/mcp`. */
 export function mcpUrl(backendUrl: string | undefined): string {
-  const base = (backendUrl || 'https://api.kortix.com/v1').replace(/\/+$/, '');
+  const base = stripTrailingSlashes(backendUrl || 'https://api.kortix.com/v1');
   return `${base.endsWith('/v1') ? base : `${base}/v1`}/mcp`;
 }
 

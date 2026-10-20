@@ -59,11 +59,13 @@ import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
+  OWNER_MANAGED_SESSION_METADATA_KEYS,
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
@@ -104,16 +106,18 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates, conversationModels, working] = await Promise.all([
+  const [owners, userStates, conversationModels, working, runtime] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
     readSessionConversationModels([sessionId]),
     readSessionsWorking([sessionId]),
+    readRuntimeControlState(sessionId),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json({ ...serializeSession(visible.row, {
+    runtimeStatus: runtime.sandbox_status,
     grants: visible.grants,
     conversationModel: conversationModels.get(sessionId),
     viewerId: loaded.userId,
@@ -797,7 +801,7 @@ export function registerProjectSessionsRoutes(): void {
         },
       responses: {
           200: json(SessionSchema, 'The updated session'),
-          ...errors(400, 404),
+          ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -871,6 +875,13 @@ export function registerProjectSessionsRoutes(): void {
 
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // Seeing a session is not owning it: an owner-managed key changes what the
+    // server decides for this session, so only its creator or its own token may set it.
+    const ownerKey = metadata && OWNER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key));
+    if (ownerKey && loaded.userId !== visible.row.createdBy && callerKortixSessionId(c) !== sessionId) {
+      return c.json({ error: `metadata key ${ownerKey} can be set only by the session's owner or the session itself` }, 403);
+    }
 
     const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 

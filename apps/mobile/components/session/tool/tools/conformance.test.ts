@@ -2,7 +2,8 @@
  * Registry conformance: every tool name apps/web registers a renderer for has
  * a registered renderer on mobile.
  *
- * 1. Web side (static): read apps/web `tool/tools/register.ts`, follow each
+ * 1. Web side (static): read `@kortix/ui/session/tool/tools/register.ts` (the
+ *    registry apps/web imports since #10480), follow each
  *    import to its tool file, and collect every `ToolRegistry.register('name', …)`
  *    literal plus the string arrays registered through
  *    `[…].forEach((n) => ToolRegistry.register(n, …))`. Comments are stripped
@@ -27,7 +28,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 const MOBILE_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const REPO_ROOT = join(MOBILE_ROOT, '..', '..');
-const WEB_TOOLS_DIR = join(REPO_ROOT, 'apps/web/src/features/session/tool/tools');
+const WEB_TOOLS_DIR = join(REPO_ROOT, 'packages/ui/src/session/tool/tools');
 const MOBILE_REGISTER = join(import.meta.dir, 'register.ts');
 const PROBE_ENV = 'TOOL_REGISTRY_PROBE';
 /** The child writes its result here. Bun 1.3 drops a subprocess's piped stdout when `bun test` runs in filter or whole-suite mode. */

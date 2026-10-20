@@ -733,9 +733,14 @@ export function SessionChat({
   // prompt: every author shows, the viewer included. Same cache as the header.
   const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId);
   const groupChat = transcriptAuthors.multiAuthor || !!sessionParticipants?.multi_user;
-  // Project sessions use the server-side project agent roster. Non-project
-  // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
+  // Project sessions use the server-side project agent roster. A sub-agent's
+  // chat has no projectId, but runs inside the parent scope's project: its
+  // roster is that project's. Only a chat with neither falls back to the
+  // runtime's own agent list, which a pi box does not serve (KRTX-2887).
+  const { data: agents } = useRuntimeAgents({
+    directory: session?.directory,
+    projectId: projectId ?? (scopeProjectId || undefined),
+  });
   const { data: commands } = useRuntimeCommands();
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: allSessions } = useRuntimeSessions();
