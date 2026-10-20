@@ -60,3 +60,23 @@ test('a session read joining an invalidated refresh observes the newly merged ag
     touch.mockRestore();
   }
 });
+
+test('continuous invalidation fails a fresh read instead of fetching indefinitely', async () => {
+  root = await fs.mkdtemp(join(tmpdir(), 'kortix-mirror-churn-'));
+  process.env.KORTIX_GIT_CACHE_DIR = join(root, 'cache');
+  const remote = join(root, 'remote.git');
+  await exec('git', ['init', '--bare', '--initial-branch=main', remote]);
+  const project = { projectId: crypto.randomUUID(), repoUrl: remote, defaultBranch: 'main', manifestPath: 'kortix.yaml', gitAuthToken: 'synthetic' };
+  const original = fs.utimes;
+  let moves = 0;
+  const touch = spyOn(fs, 'utimes').mockImplementation(async (...args) => {
+    if (moves++ < 12) invalidateProjectMirror(project.projectId);
+    return original(...args);
+  });
+  try {
+    await expect(refreshMirror(project, true)).rejects.toThrow('changed repeatedly');
+    expect(moves).toBeLessThan(12);
+  } finally {
+    touch.mockRestore();
+  }
+});

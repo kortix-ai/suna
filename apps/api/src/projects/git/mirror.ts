@@ -842,6 +842,7 @@ export async function refreshMirror(
      *  nothing at a commit can change. */
     freshRef?: string;
   },
+  epochRetries = 0,
 ) {
   if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
     const held = await mirrorHoldingCommit(project, opts.freshRef);
@@ -862,12 +863,13 @@ export async function refreshMirror(
     }
   }
   const epoch = invalidations.get(project.projectId) ?? 0;
-  const repoPath = await lockedRefreshMirror(project, force, opts);
+  const repoPath = await lockedRefreshMirror(project, force, opts, epochRetries);
   // A base move can land while a fetch (including one shared with another
   // reader) is finishing. Dropping its proof is not enough: this reader must
   // not ground a new session on the checkout that the move invalidated.
   if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
-    return refreshMirror(project, force, opts);
+    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new Error('Project mirror changed repeatedly during refresh');
+    return refreshMirror(project, force, opts, epochRetries + 1);
   }
   return repoPath;
 }
@@ -887,6 +889,7 @@ async function lockedRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh,
   opts?: { freshRef?: string },
+  epochRetries = 0,
 ): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
@@ -896,9 +899,9 @@ async function lockedRefreshMirror(
   if (current) {
     if (!force || current.forced) {
       const repoPath = await current.promise;
-      return current.epoch === (invalidations.get(project.projectId) ?? 0)
-        ? repoPath
-        : refreshMirror(project, force, opts);
+      if (current.epoch === (invalidations.get(project.projectId) ?? 0)) return repoPath;
+      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new Error('Project mirror changed repeatedly during refresh');
+      return refreshMirror(project, force, opts, epochRetries + 1);
     }
     // The in-flight refresh belongs to another caller, often with another
     // credential: create-repo's template prebuild clones with the token it
@@ -906,7 +909,7 @@ async function lockedRefreshMirror(
     // this caller's own forced refresh — rethrowing it failed the first
     // session on a new project with 503 git_mirror_unavailable.
     await current.promise.catch(() => {});
-    return refreshMirror(project, force, opts);
+    return refreshMirror(project, force, opts, epochRetries);
   }
   const epoch = invalidations.get(project.projectId) ?? 0;
   const next = doRefreshMirror(project, force, opts?.freshRef)
