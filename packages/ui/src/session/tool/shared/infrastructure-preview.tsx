@@ -14,6 +14,7 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { enrichPreviewMetadata, getActiveSessionContext } from '../../../internal/lib/utils/session-context';
 import { getActivePanelSessionId, sessionPreviewTabId } from '../../../internal/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '../../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../../providers/ui-provider';
 import { openPanelFallbackView, panelFallbackActive } from '../../../internal/stores/panel-fallback-store';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
@@ -41,6 +42,7 @@ export const ToolNavigationContext = createContext(true);
 
 export function useToolNavigation() {
   const enabled = useContext(ToolNavigationContext);
+  const shallowNavigate = useUiShallowNavigate();
 
   const openTab = useCallback(
     (tab: Parameters<typeof openTabAndNavigate>[0]) => {
@@ -55,9 +57,9 @@ export function useToolNavigation() {
         });
         return;
       }
-      openTabAndNavigate(tab);
+      openTabAndNavigate(tab, undefined, shallowNavigate);
     },
-    [enabled],
+    [enabled, shallowNavigate],
   );
 
   const openExternal = useCallback(

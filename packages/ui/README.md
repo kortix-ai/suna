@@ -84,7 +84,7 @@ any prop gets these defaults:
 | `strings` | English copy (`defaultUiStrings`) |
 | `link` | a plain `<a>`: every link is a full page load |
 | `image` | a plain `<img>` |
-| `navigation` | `defaultUiNavigation`: `push` / `replace` are full page loads, `usePathname` / `useSearchParams` read `window.location`, `useParams` returns `{}` |
+| `navigation` | `defaultUiNavigation`: `push` / `replace` are full page loads, `usePathname` / `useSearchParams` read `window.location`, `useParams` returns `{}`. `observesHistory: true` (Next.js): a session tab or query param the UI changes is written to history with no navigation; off (React Router), it goes through `useRouter` |
 | `i18n` | the bundled English catalog of `@kortix/ui/i18n` |
 | `useViewerId` | no signed-in user (`undefined`): a one-person session names no sender and no "Stopped by". A session several people write in needs it |
 | `useBrand` | the Kortix marks |
@@ -111,7 +111,7 @@ import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 
-const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams, observesHistory: true };
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 

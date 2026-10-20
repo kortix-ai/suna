@@ -159,6 +159,13 @@ export interface UiNavigation {
   useSearchParams: () => UiSearchParams;
   /** Default: no route params. A host with dynamic segments passes its own. */
   useParams: () => UiRouteParams;
+  /**
+   * The router observes `history.pushState` / `replaceState` (Next.js does,
+   * React Router does not). True: a URL for the view already on screen (a
+   * session tab, a query param) is written to history, with no navigation.
+   * False or omitted: it goes through `useRouter`. The default navigation is true.
+   */
+  observesHistory?: boolean;
 }
 
 const browserRouter: UiRouter = {
@@ -168,17 +175,24 @@ const browserRouter: UiRouter = {
   back: () => window.history.back(),
 };
 
+/** Dispatched after the UI writes history itself, so the default navigation re-reads the URL. */
+const LOCATION_EVENT = 'kortix-ui:location';
+
 function subscribeLocation(onChange: () => void): () => void {
   window.addEventListener('popstate', onChange);
-  return () => window.removeEventListener('popstate', onChange);
+  window.addEventListener(LOCATION_EVENT, onChange);
+  return () => {
+    window.removeEventListener('popstate', onChange);
+    window.removeEventListener(LOCATION_EVENT, onChange);
+  };
 }
 
 const NO_PARAMS: UiRouteParams = {};
 
 /**
  * Framework-free navigation: full page loads, `window.location` reads that
- * update on `popstate`. SSR renders an empty pathname and no search params.
- * ponytail: a direct `history.pushState` is not observed; a SPA host passes its router.
+ * update on `popstate` and on the UI's own history writes
+ * (`useUiShallowNavigate`). SSR renders an empty pathname and no search params.
  */
 export const defaultUiNavigation: UiNavigation = {
   useRouter: () => browserRouter,
@@ -193,6 +207,7 @@ export const defaultUiNavigation: UiNavigation = {
     return React.useMemo(() => new URLSearchParams(search), [search]);
   },
   useParams: () => NO_PARAMS,
+  observesHistory: true,
 };
 
 /** Values the host knows and the UI reads. Every field has a default. */
@@ -492,6 +507,33 @@ export function useUiBrand(): UiBrand | null {
 
 export function useUiRouter(): UiRouter {
   return React.useContext(UiContext).navigation.useRouter();
+}
+
+/** Moves the URL to a view the page already renders (a tab, a query param). */
+export type UiShallowNavigate = (href: string, options?: { replace?: boolean }) => void;
+
+/**
+ * The URL change for a view already on screen: `history` when the host router
+ * observes it (`UiNavigation.observesHistory`), else the host router, so a SPA
+ * router never falls out of step with the address bar.
+ */
+export function useUiShallowNavigate(): UiShallowNavigate {
+  const { navigation } = React.useContext(UiContext);
+  const router = navigation.useRouter();
+  const observesHistory = navigation.observesHistory === true;
+  return React.useCallback(
+    (href, options) => {
+      if (!observesHistory) {
+        if (options?.replace) router.replace(href, { scroll: false });
+        else router.push(href, { scroll: false });
+        return;
+      }
+      if (options?.replace) window.history.replaceState(null, '', href);
+      else window.history.pushState(null, '', href);
+      window.dispatchEvent(new window.Event(LOCATION_EVENT));
+    },
+    [observesHistory, router],
+  );
 }
 
 export function useUiPathname(): string {

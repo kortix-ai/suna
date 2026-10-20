@@ -4,6 +4,7 @@ import { errorToast, successToast } from '../../../primitives/toast';
 import { triggerRunActions, triggerToastEntity } from './trigger-toast';
 import type { UiTranslator } from '../../../i18n';
 import { useTranslations } from '../../../i18n';
+import { useUiRouter } from '../../../providers/ui-provider';
 import { deleteProjectTrigger, fireProjectTrigger, type ProjectTrigger } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 
@@ -40,6 +41,7 @@ export function useTriggerMutations({
   runFailureKey: Parameters<UiTranslator['raw']>[0];
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res, trigger) => {
@@ -53,6 +55,7 @@ export function useTriggerMutations({
                   projectId,
                   res.session_id,
                   tI18nComplete.raw('textb205bb47f81a'),
+                  router,
                 ),
               }
             : { description: tI18nComplete.raw('text747e9e0e8e92') }),

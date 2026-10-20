@@ -1,6 +1,6 @@
 import { errorToast, successToast } from '../../../primitives/toast';
 import type { UiTranslator } from '../../../i18n';
-import { softNavigate } from '../../../internal/lib/navigation/router-bridge';
+import type { UiRouter } from '../../../providers/ui-provider';
 import { projectSessionHref } from '../../../internal/lib/navigation/session-href';
 import type { FireProjectTriggerResponse, ProjectTrigger } from '@kortix/sdk';
 import { ClockIcon, LightningIcon, PulseIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
@@ -28,14 +28,16 @@ export function triggerToastEntity(
   };
 }
 
-/** The "Open session" action a started run offers, when the run has a session. */
+/** The "Open session" action a started run offers, when the run has a session.
+ *  `router`: the host router of the component that fired (`useUiRouter()`). */
 export function triggerRunActions(
   projectId: string,
   sessionId: string | null | undefined,
   label: string,
+  router: Pick<UiRouter, 'push'>,
 ) {
   return sessionId
-    ? [{ label, onClick: () => softNavigate(projectSessionHref(projectId, sessionId)) }]
+    ? [{ label, onClick: () => router.push(projectSessionHref(projectId, sessionId)) }]
     : undefined;
 }
 
@@ -45,13 +47,14 @@ export function fireResultToast(
   trigger: Pick<ProjectTrigger, 'name' | 'type'>,
   projectId: string,
   t: UiTranslator,
+  router: Pick<UiRouter, 'push'>,
 ) {
   const entity = triggerToastEntity(trigger);
   if (res.status === 'fired' || res.status === 'deduped') {
     successToast(t.raw('textecbc89cd37a0'), {
       entity,
       ...(res.session_id
-        ? { actions: triggerRunActions(projectId, res.session_id, t.raw('textb205bb47f81a')) }
+        ? { actions: triggerRunActions(projectId, res.session_id, t.raw('textb205bb47f81a'), router) }
         : { description: t.raw('text747e9e0e8e92') }),
     });
   } else if (res.status === 'queued') {

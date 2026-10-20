@@ -51,6 +51,7 @@ import {
   useUiLink,
   useUiPathname,
   useUiRouter,
+  useUiShallowNavigate,
   useUiSearchParams,
   useUiViewerId,
 } from '../../providers/ui-provider';
@@ -3515,6 +3516,7 @@ export function SessionChat({
 
   const pathname = useUiPathname();
   const router = useUiRouter();
+  const shallowNavigate = useUiShallowNavigate();
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
@@ -3555,10 +3557,10 @@ export function SessionChat({
           href: projectId
             ? projectSessionHref(projectId, parentSessionData.id)
             : `/sessions/${parentSessionData.id}`,
-        });
+        }, undefined, shallowNavigate);
       },
     };
-  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId, shallowNavigate]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't
@@ -4006,19 +4008,16 @@ export function SessionChat({
       if (id) params.set('cr', id);
       else params.delete('cr');
       const qs = params.toString();
-      // `history.replaceState`, not `router.replace`: `cr` is a param this
-      // page has already resolved client-side, so there is no server data to
-      // fetch. Changing a query param changes the router cache key, so
-      // `router.replace` would run a COLD RSC FETCH on every open/close of
-      // this dialog, on the hottest route in the app — see the same trap
-      // documented at
-      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309. Next
-      // patches `replaceState` and updates its own canonical URL, so
-      // `useSearchParams` still reports the new URL. Same mechanism as
-      // `openTabAndNavigate` in `packages/ui/src/internal/stores/tab-store.ts`.
-      window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      // A shallow replace, not `router.replace`: `cr` is a param this page has
+      // already resolved client-side, so there is no server data to fetch.
+      // Under Next.js `router.replace` would run a COLD RSC FETCH on every
+      // open/close of this dialog, on the hottest route in the app (see
+      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309); Next
+      // observes `history.replaceState`, which `useUiShallowNavigate` writes
+      // when the host router observes history and routes through it otherwise.
+      shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
     },
-    [readOnly, pathname, searchParams],
+    [readOnly, pathname, searchParams, shallowNavigate],
   );
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {

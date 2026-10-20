@@ -19,6 +19,7 @@ import {
 } from '@kortix/sdk';
 import { enrichPreviewMetadata } from '../../internal/lib/utils/session-context';
 import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../providers/ui-provider';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GlobeIcon as Globe,
@@ -233,6 +234,7 @@ function SandboxUrlChip({
   const tabHref = `/p/${detected.port}`;
   const internalUrl = toInternalUrl(detected.port, detected.path);
 
+  const shallowNavigate = useUiShallowNavigate();
   const navigateToPreviewTab = useCallback(() => {
     openTabAndNavigate({
       id: tabId,
@@ -244,8 +246,8 @@ function SandboxUrlChip({
         port: detected.port,
         originalUrl: internalUrl,
       }),
-    });
-  }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl]);
+    }, undefined, shallowNavigate);
+  }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl, shallowNavigate]);
 
   const handleCopyUrl = useCallback(() => {
     navigator.clipboard.writeText(proxyUrl).then(() => {

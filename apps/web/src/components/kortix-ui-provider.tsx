@@ -82,7 +82,14 @@ const HostLink = forwardRef<HTMLAnchorElement, Omit<UiLinkProps, 'ref'>>(functio
   return <NextLink ref={ref} {...props} />;
 });
 
-const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+// Next.js observes history.pushState/replaceState: tab and query-param URL writes stay shallow.
+const navigation: UiNavigation = {
+  useRouter,
+  usePathname,
+  useSearchParams,
+  useParams,
+  observesHistory: true,
+};
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 function useViewer(): UiViewer | undefined {

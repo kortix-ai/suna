@@ -370,7 +370,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const run = useMutation({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res, trigger) => {
-      fireResultToast(res, trigger, projectId, tI18nComplete);
+      fireResultToast(res, trigger, projectId, tI18nComplete, router);
       invalidate();
     },
     onError: (err) =>

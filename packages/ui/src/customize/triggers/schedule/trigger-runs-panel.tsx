@@ -39,7 +39,7 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { UiLink as Link } from '../../../providers/ui-provider';
+import { UiLink as Link, useUiRouter } from '../../../providers/ui-provider';
 import { useMemo, useState } from 'react';
 
 import { RunHistogram, type RunTimeRange, fmtRange } from './trigger-runs-histogram';
@@ -169,6 +169,7 @@ export function TriggerRunsPanel({
   running?: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
   const locale = useLocale();
   const poll = useRunsPoll();
   const query = useTriggerRuns(projectId, trigger.slug, {
@@ -192,7 +193,7 @@ export function TriggerRunsPanel({
       {
         onSuccess: (res) => {
           setConfirmRun(null);
-          fireResultToast(res, trigger, projectId, t);
+          fireResultToast(res, trigger, projectId, t, router);
         },
         onError: (err) => {
           // The server is the judge of "unverified": ask, then retry with the confirmation.
