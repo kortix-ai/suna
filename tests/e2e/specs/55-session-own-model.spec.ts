@@ -4,7 +4,6 @@ import { type Page, type Request, expect, test } from "@playwright/test";
 import { loadEnv } from "../../src/core/env";
 import {
   createDatabaseSession,
-  mergeDatabaseProjectMetadata,
   seedDatabaseRunningFirstPrompt,
 } from "../../src/fixtures/database-project";
 import { createApiJsonClient } from "../helpers/http";
@@ -85,7 +84,6 @@ test("55 — a session opens on its own model and its first web message keeps it
       databaseUrl: env.databaseUrl,
     });
     const projectId = project.id;
-    await mergeDatabaseProjectMetadata(env, projectId, { experimental: { llm_gateway: true } });
     const defaults = await api<{ resolvedForCaller: string | null }>(
       auth.access_token,
       "GET",

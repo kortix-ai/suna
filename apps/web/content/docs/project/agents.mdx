@@ -409,12 +409,10 @@ Kortix picks the harness when a session is created. A restart keeps the session'
 
 | Rule, in order | Harness |
 | --- | --- |
-| The project's `llm_gateway` feature flag is off | OpenCode |
 | The project's `pi_harness` feature flag is on | pi |
 | `kortix.yaml` sets `runtime: pi` (`kortix_version` 2 or 3) | pi |
 | Anything else | OpenCode |
 
-- pi calls models only through the Kortix [LLM gateway](/docs/project/models), so row 1 overrides the flag and the manifest.
 - `pi_harness` is on by default. Turn it off to start new sessions on OpenCode. See [Feature flags](/docs/project#feature-flags).
 - The session daemon's `GET /kortix/health` reports `harness.id` (`opencode` or `pi`) and the `capabilities` the session serves. From the SDK, call `kortix.session(projectId, sessionId).health()`. A client hides a control whose capability is missing: `runtimeSupports` in the SDK, `useRuntimeSupports` in React.
 

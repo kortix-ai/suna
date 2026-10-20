@@ -10,7 +10,7 @@ import { FormEvent, Suspense, useState } from 'react';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
-import { errorToast } from '@kortix/ui/toast';
+import { FieldError } from '@kortix/ui/internal/auth/auth-primitives';
 import { AuthCardShell, BackToSignIn } from '@kortix/ui/internal/auth/auth-card-shell';
 import { resetPassword } from '../actions';
 
@@ -35,11 +35,9 @@ function ResetPasswordContent() {
       }
       const msg = (result as any)?.message || t('errors.updateFailed');
       setErrorMessage(msg);
-      errorToast(msg);
     } catch (err: any) {
       const msg = err?.message || t('errors.unexpected');
       setErrorMessage(msg);
-      errorToast(msg);
     } finally {
       setPending(false);
     }
@@ -115,7 +113,9 @@ function ResetPasswordContent() {
             placeholder={t('form.confirmPasswordPlaceholder')}
             required
             autoComplete="new-password"
+            aria-describedby={errorMessage ? 'password-error' : undefined}
           />
+          {errorMessage && <FieldError id="password-error" message={errorMessage} />}
         </div>
         <Button type="submit" size="lg" disabled={pending} className="w-full">
           {pending ? t('form.updating') : t('form.submit')}

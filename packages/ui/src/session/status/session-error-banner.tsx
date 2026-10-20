@@ -3,8 +3,6 @@
 import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { useLocale, useTranslations } from '../../i18n';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
-import { isLlmGatewayEnabled } from '../../internal/lib/llm-gateway';
-import { useQuery } from '@tanstack/react-query';
 import { useSessionIds } from '../../providers/session-ids';
 import { useUiComponents, useUiViewerId } from '../../providers/ui-provider';
 import { useState, type ComponentProps, type ReactNode } from 'react';
@@ -34,14 +32,11 @@ import { useCurrentAccountStore } from '../../internal/stores/current-account-st
 import { useAccountState } from '../../internal/billing/use-account-state';
 import {
   canManageBilling,
-  getProjectDetail,
   isAbortError,
   turnRetryLabel,
   type GatewayErrorDetails,
 } from '@kortix/sdk';
 import {
-  contract,
-  qk,
   useFeatureFlag,
   useModelAccess,
   useProjectSession,
@@ -692,12 +687,7 @@ function ChatGptConnectionButton({
   const t = useTranslations('pooledSecrets');
   const viewerId = useUiViewerId();
   const pooled = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const project = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const enabled = pooled.enabled && isLlmGatewayEnabled(project.data?.project);
+  const enabled = pooled.enabled;
   const access = useModelAccess(enabled ? projectId : null);
   const session = useProjectSession(projectId, sessionId, { enabled });
   const pools = useSessionProviderSecretPools(enabled ? projectId : null, sessionId);

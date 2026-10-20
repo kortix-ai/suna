@@ -11,6 +11,7 @@ import type { ApiResponse, ErrorContext } from './api-client';
 import {
   ApiError,
   FEATURE_DISABLED_CODE,
+  REPOSITORY_DISCONNECTED_CODE,
   RequestTooLargeError,
   parseBillingError,
 } from './api/errors';
@@ -131,7 +132,9 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
     (status === 409 &&
       (data?.code === MODEL_NOT_SERVABLE_CODE ||
         data?.code === PROVISION_IN_FLIGHT_CODE ||
-        data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE)) ||
+        data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE ||
+        // A state a GitHub owner fixes, not a defect: the host shows the fix.
+        data?.code === REPOSITORY_DISCONNECTED_CODE)) ||
     (status === 503 &&
       (data?.code === ANALYTICS_UNAVAILABLE_CODE || data?.code === ACCOUNTS_LIST_UNAVAILABLE_CODE))
   );

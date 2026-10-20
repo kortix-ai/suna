@@ -44,6 +44,7 @@ export function PlatformCard({
   description,
   rows,
   filled,
+  aside,
   className,
 }: {
   image: React.ReactNode;
@@ -51,6 +52,8 @@ export function PlatformCard({
   description: string;
   rows: CardRow[];
   filled: Platform | null;
+  /** A row-shaped block above the platform rows, e.g. the mobile QR code. */
+  aside?: React.ReactNode;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -67,8 +70,10 @@ export function PlatformCard({
 
       {/* `mt-auto` bottom-aligns the row lists. The grid stretches both cards to
           equal height, so without it the two-row card's seams would float in the
-          middle of its own box instead of lining up with the three-row card. */}
-      <ul className="mt-auto">
+          middle of its own box instead of lining up with the three-row card.
+          An `aside` sits directly above the rows and takes the `mt-auto`. */}
+      {aside ? <div className="mt-auto">{aside}</div> : null}
+      <ul className={aside ? undefined : 'mt-auto'}>
         {rows.map((row) => (
           <li key={row.id} className="flex items-center gap-3 border-t px-6 py-4">
             <span className="flex size-5 shrink-0 items-center justify-center overflow-visible">
