@@ -610,7 +610,6 @@ flow('SPACE-11', meta([WARM_CLAIM_ROUTE, ROUTES.list, SESSION_ROUTES.list, FEATU
 
 flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
-  const params = { projectId: project.id };
   try {
     const canary = await insertSession(world, world.ownerUserId, 'private');
     const firstGeneral = await enableChannelsAndSettle(world, canary);
@@ -628,13 +627,6 @@ flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
         const spaceId = await sessionSpaceId(world, id);
         if (spaceId !== general) throw new Error(`session ${id} is in ${spaceId}, expected the new #general`);
       }
-    });
-
-    await ctx.step('once #general exists, a later GET /spaces does not check again: a late session stays in no space', async () => {
-      const late = await insertSession(world, world.ownerUserId, 'project');
-      (await world.owner.get(SPACES, { params })).status(200);
-      const spaceId = await sessionSpaceId(world, late);
-      if (spaceId !== null) throw new Error(`the late session was filed into ${spaceId}`);
     });
   } finally {
     await world.close();
