@@ -5,6 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 
 import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import type { CanResult } from '@/lib/use-project-can';
+import { useFeatureFlag } from '@kortix/sdk/react';
+import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { CapabilitiesSkeleton } from './capability-skeleton';
 import { activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
@@ -36,15 +39,23 @@ export function CapabilityAccessGate({
   const router = useRouter();
   const { settled, tabs } = useCapabilityAccess(projectId);
   const key = activeCapabilityTab(pathname);
+  const reminders = useFeatureFlag(projectId, 'reminders');
+  const t = useTranslations('reminders');
+  // Bookmarked flag-off Reminders links explain the gate instead of landing
+  // on an unrelated tab. Never mount the inventory while access is denied.
+  const remindersDisabled = key === 'reminders' && !reminders.isLoading && !reminders.enabled;
   const allowed = !key || tabs.includes(key);
 
   useEffect(() => {
-    if (!settled || allowed) return;
+    if (!settled || allowed || remindersDisabled) return;
     router.replace(tabs[0] ? capabilityTabHref(projectId, tabs[0]) : `/projects/${projectId}`);
-  }, [settled, allowed, tabs, projectId, router]);
+  }, [settled, allowed, remindersDisabled, tabs, projectId, router]);
 
   // `/customize` itself (no tab) is a redirect page that waits on its own.
   if (!key) return children;
+  if (settled && remindersDisabled) {
+    return <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />;
+  }
   if (settled && allowed) return children;
   return <CapabilitiesSkeleton />;
 }
