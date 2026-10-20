@@ -12,20 +12,13 @@ import {
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
 } from './composer-model';
 import type { FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
-import {
-  LLM_PROVIDER_CREDENTIALS,
-  filterToNativeProviders,
-  mergeNativeProviderLists,
-  mergeProjectSecretConnectedProviders,
-  nativeProviderListFromCatalog,
-  normalizeProviderList,
-  pickerProviderList,
-  projectLlmCatalogToProviderList,
-} from './provider-selection';
+import { pickerProviderList, projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
  * The composer's model list, framework-free. `useRuntimeProviders` (web) and
@@ -83,7 +76,7 @@ const SECRETS = new Set(['ANTHROPIC_API_KEY']);
 
 describe('pickerProviderList', () => {
   test('gateway: the /model-picker catalog is the list (auto dropped, enablement kept)', () => {
-    const list = pickerProviderList({ gatewayEnabled: true, modelPicker: MODEL_PICKER });
+    const list = pickerProviderList({ modelPicker: MODEL_PICKER });
     expect(list).toEqual(projectLlmCatalogToProviderList(MODEL_PICKER));
     expect(list?.connected).toEqual(['kortix']);
     expect(Object.keys(list?.all?.[0]?.models ?? {})).toEqual([
@@ -93,55 +86,22 @@ describe('pickerProviderList', () => {
   });
 
   test('gateway without the picker response is not loaded yet', () => {
-    expect(pickerProviderList({ gatewayEnabled: true })).toBeUndefined();
+    expect(pickerProviderList({})).toBeUndefined();
   });
 
-  test('native, pre-boot: the catalog synthesis gated on project secrets', () => {
+  test('the gateway is the only source: deprecated native inputs change nothing', () => {
     const list = pickerProviderList({
       gatewayEnabled: false,
-      llmCatalogProviders: LLM_CATALOG_PROVIDERS,
-      secretNames: SECRETS,
-    });
-    expect(list).toEqual(nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS));
-    expect(list?.connected).toEqual(['anthropic']);
-  });
-
-  test('native, booted: runtime merged over the catalog; kortix never leaks in', () => {
-    const list = pickerProviderList({
-      gatewayEnabled: false,
+      modelPicker: MODEL_PICKER,
       runtimeProviders: RUNTIME_PROVIDERS,
       llmCatalogProviders: LLM_CATALOG_PROVIDERS,
       secretNames: SECRETS,
     });
-    const runtime = filterToNativeProviders(
-      mergeProjectSecretConnectedProviders(
-        normalizeProviderList(RUNTIME_PROVIDERS),
-        SECRETS,
-        LLM_PROVIDER_CREDENTIALS,
-      ),
-    );
-    expect(list).toEqual(
-      mergeNativeProviderLists(
-        nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS),
-        runtime,
-      ),
-    );
-    expect(list?.all?.map((p) => p.id)).toEqual(['anthropic', 'opencode']);
-    expect(list?.connected).not.toContain('kortix');
-    // The runtime object wins for a shared provider.
-    expect(list?.all?.[0]?.models['claude-opus-4-8']?.name).toBe('Claude Opus 4.8 (runtime)');
-  });
-
-  test('native: a model-less runtime answer (sandbox still wiring) is ignored', () => {
-    const empty = { all: [], connected: [], default: {} } as unknown as ProviderListResponse;
+    expect(list).toEqual(projectLlmCatalogToProviderList(MODEL_PICKER));
+    expect(pickerProviderList({ modelPicker: MODEL_PICKER })).toEqual(list);
     expect(
-      pickerProviderList({
-        gatewayEnabled: false,
-        runtimeProviders: empty,
-        llmCatalogProviders: LLM_CATALOG_PROVIDERS,
-        secretNames: SECRETS,
-      }),
-    ).toEqual(nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS));
+      pickerProviderList({ runtimeProviders: RUNTIME_PROVIDERS, llmCatalogProviders: LLM_CATALOG_PROVIDERS }),
+    ).toBeUndefined();
   });
 });
 
@@ -360,19 +320,6 @@ describe('resolveComposerModel', () => {
     ).toEqual(key('anthropic', 'claude-opus-4-8'));
     expect(resolveComposerModel({ models: [] }).model).toBeUndefined();
   });
-
-  test('a bare Bedrock id heals to its inference-profile twin', () => {
-    const bedrock = [
-      flat('amazon-bedrock', 'anthropic.claude-opus-5'),
-      flat('amazon-bedrock', 'global.anthropic.claude-opus-5'),
-    ];
-    const resolved = resolveComposerModel({
-      models: bedrock,
-      picks: [key('amazon-bedrock', 'anthropic.claude-opus-5')],
-    });
-    expect(resolved.explicit).toEqual(key('amazon-bedrock', 'anthropic.claude-opus-5'));
-    expect(resolved.model).toEqual(key('amazon-bedrock', 'global.anthropic.claude-opus-5'));
-  });
 });
 
 describe('sessionModelCandidates', () => {
@@ -389,7 +336,6 @@ describe('sessionModelCandidates', () => {
       sessionModelCandidates({
         session: session('kortix/model-b', 'explicit'),
         lastPromptModel: kortix('model-c'),
-        gatewayEnabled: true,
       }),
     ).toEqual([kortix('model-b'), kortix('model-c')]);
   });
@@ -399,7 +345,6 @@ describe('sessionModelCandidates', () => {
       sessionModelCandidates({
         session: session('kortix/model-b', 'repointed'),
         lastPromptModel: kortix('model-retired'),
-        gatewayEnabled: true,
       }),
     ).toEqual([kortix('model-b'), kortix('model-retired')]);
   });
@@ -410,27 +355,94 @@ describe('sessionModelCandidates', () => {
         sessionModelCandidates({
           session: session('kortix/model-b', source),
           lastPromptModel: kortix('model-c'),
-          gatewayEnabled: true,
-        }),
+          }),
       ).toEqual([kortix('model-c'), kortix('model-b')]);
     }
   });
 
   test('a session with no pin and no prompt has no model of its own', () => {
-    expect(sessionModelCandidates({ session: session(), gatewayEnabled: true })).toEqual([]);
-    expect(sessionModelCandidates({ session: null, gatewayEnabled: true })).toEqual([]);
+    expect(sessionModelCandidates({ session: session() })).toEqual([]);
+    expect(sessionModelCandidates({ session: null })).toEqual([]);
     expect(
-      sessionModelCandidates({ lastPromptModel: kortix('model-c'), gatewayEnabled: true }),
+      sessionModelCandidates({ lastPromptModel: kortix('model-c') }),
     ).toEqual([kortix('model-c')]);
   });
 
-  test('a native pin keeps its own provider when the gateway is off', () => {
+  test('a provider/model pin is a gateway wire id; the deprecated gatewayEnabled changes nothing', () => {
+    const expected = [{ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' }];
+    expect(
+      sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit'), gatewayEnabled: false }),
+    ).toEqual(expected);
+    expect(sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit') })).toEqual(expected);
+  });
+});
+
+describe('sessionModelFallback', () => {
+  const fallbackSession = (extra: Record<string, unknown> = {}) => ({
+    metadata: {
+      opencode_model: 'kortix/deepseek-v4.1-flash',
+      opencode_model_source: 'fallback',
+      opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+      opencode_model_fallback_reason: 'provider_pool_rate_limited',
+      opencode_model_fallback_at: 1_000,
+      ...extra,
+    },
+  });
+
+  test('a session a fallback took over names the fallback, the model it stood in for, why and when', () => {
+    expect(sessionModelFallback(fallbackSession())).toEqual({
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+      from: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+      reason: 'provider_pool_rate_limited',
+      atMs: 1_000,
+    });
+  });
+
+  test('any other source, or a half-written record, is no fallback', () => {
+    expect(sessionModelFallback(fallbackSession({ opencode_model_source: 'explicit' }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_from: undefined }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_at: 'soon' }))).toBeUndefined();
+    expect(sessionModelFallback(null)).toBeUndefined();
+  });
+
+  test('a fallback pin ranks before the last prompt, like a chosen one', () => {
     expect(
       sessionModelCandidates({
-        session: session('anthropic/claude-sonnet-4-6', 'explicit'),
-        gatewayEnabled: false,
-      }),
-    ).toEqual([{ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }]);
+        session: fallbackSession(),
+        lastPromptModel: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+        gatewayEnabled: true,
+      })[0],
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
+
+  test('a pin moved back off a fallback ranks before the fallback prompts, whatever its source', () => {
+    for (const source of ['project', 'account', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: {
+            metadata: {
+              opencode_model: 'kortix/codex/gpt-6.1-sol',
+              ...(source ? { opencode_model_source: source } : {}),
+              opencode_model_restored: true,
+            },
+          },
+          lastPromptModel: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+          gatewayEnabled: true,
+        })[0],
+      ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+    }
+  });
+
+  test("this browser's pick stands only when it was made against this switch, whatever the browser clock says", () => {
+    const fallback = sessionModelFallback(fallbackSession());
+    // Made before any switch (or a seed): it records no switch, so it loses.
+    expect(sessionPickStands(undefined, fallback)).toBe(false);
+    // Made while an OLDER switch was shown: a newer switch outranks it.
+    expect(sessionPickStands(500, fallback)).toBe(false);
+    // Made while this switch was shown ('Use Sol', or any pick): it stands,
+    // even when the browser clock runs minutes behind the API's.
+    expect(sessionPickStands(1_000, fallback)).toBe(true);
+    expect(sessionPickStands(undefined, undefined)).toBe(true);
   });
 });
 

@@ -56,6 +56,7 @@ const counts = {
   markSandboxUsed: 0,
   markSandboxErrored: 0,
   resumeStopped: 0,
+  registerRuntimeFork: 0,
 };
 
 // The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
@@ -106,6 +107,13 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
+}));
+// A forwarded fork is recorded through projects/surface (#10421); the real
+// module loads the whole projects graph, so the record is counted here.
+mock.module('../../projects/surface', () => ({
+  registerRuntimeFork: async () => {
+    counts.registerRuntimeFork += 1;
+  },
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
@@ -416,6 +424,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: 'fork-1' });
     expect(fetchCalls).toBe(1);
+    expect(counts.registerRuntimeFork).toBe(1);
     expect(counts.resumeStopped).toBe(0);
   });
 

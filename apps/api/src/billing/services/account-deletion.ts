@@ -37,7 +37,6 @@ import {
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { deleteAccountSiteObjects } from '../../apps/static-site';
-import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -177,7 +176,6 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
-    forgetUserJwtLiveness(requester);
   }
 }
 

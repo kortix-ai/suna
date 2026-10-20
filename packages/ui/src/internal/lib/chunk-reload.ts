@@ -15,42 +15,15 @@
  * of spinning.
  */
 
-const RELOAD_COOLDOWN_MS = 45_000;
-const IMPORT_HANG_TIMEOUT_MS = 15_000;
-const RELOAD_GUARD_KEY = 'kortix.staleChunkReloadAt';
+import { isChunkLoadError as isChunkFailure, reloadForStaleChunk } from './chunk-load-recovery';
 
-/** A stale-deploy chunk failure: webpack's ChunkLoadError, or the browser's
- *  native message for a dynamic import it could not fetch — each engine words
- *  it differently (Chrome, Firefox, Safari), and a turbopack build has no
- *  ChunkLoadError class, so the native wording is what the rejection carries. */
+export { reloadForStaleChunk };
+
 export function isChunkLoadError(error: unknown): boolean {
-  if (error instanceof Error) {
-    if (error.name === 'ChunkLoadError') return true;
-    return (
-      /failed to fetch dynamically imported module/i.test(error.message) || // Chrome
-      /error loading dynamically imported module/i.test(error.message) || // Firefox
-      /importing a module script failed/i.test(error.message) || // Safari
-      /loading chunk \d+ failed/i.test(error.message) // webpack
-    );
-  }
-  return false;
+  return error instanceof Error && isChunkFailure(error);
 }
 
-/** Reload the tab once per 45 s: true when the navigation started, false when
- *  the guard refuses — a reload this tab already made recently (no loop), no
- *  `window` on the server, or storage unavailable (no brake, no reload). */
-export function reloadForStaleChunk(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const last = Number(window.sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0);
-    if (last && Date.now() - last < RELOAD_COOLDOWN_MS) return false;
-    window.sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
-  } catch {
-    return false;
-  }
-  window.location.reload();
-  return true;
-}
+const IMPORT_HANG_TIMEOUT_MS = 15_000;
 
 /**
  * Wrap a `next/dynamic` loader with the one-shot stale-chunk recovery.

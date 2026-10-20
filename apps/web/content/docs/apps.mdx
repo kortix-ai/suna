@@ -791,7 +791,7 @@ volume; the dashboard sleeps when idle.
 `start.js` runs Convex's dashboard on port 6792. On the App's port 6791 it
 serves `/` as a page that frames the dashboard and answers its sign-in request
 (Convex's embedding protocol) with the admin key; every other path goes to the
-dashboard. Only project admins reach the App, so the page may carry the key.
+dashboard. Only project managers reach the App, so the page may carry the key.
 
 Both backend services are `public` because Convex checks sign-in in each
 function. Keep the backend at 1 machine: a second machine gets its own empty
@@ -847,7 +847,7 @@ export const me = query({
 In React, read the member with `useQuery(api.members.me)`. Do not call
 `useConvexAuth()`: it throws under a plain `ConvexProvider`.
 
-- **Dashboard.** Open **Apps** → `backend` → **Dashboard** (project admins). It opens
+- **Dashboard.** Open **Apps** → `backend` → **Dashboard** (project managers). It opens
   signed in. `kortix apps access-link backend-dashboard` prints a 5-minute link to
   the same page.
 - **A backend launched before the Dashboard tab** shows its dashboard as its

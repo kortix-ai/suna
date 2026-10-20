@@ -42,7 +42,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 404 (loadProjectForUser denies)", async () => {
       const r = await ctx.client
@@ -72,7 +73,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -786,7 +788,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client

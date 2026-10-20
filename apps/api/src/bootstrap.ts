@@ -31,6 +31,7 @@ import { startCaptureHealthWorker, stopCaptureHealthWorker } from './workers/cap
 import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
@@ -39,6 +40,7 @@ import { startProviderTransitionWorker, stopProviderTransitionWorker } from './w
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
+import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
@@ -266,8 +268,12 @@ async function startSingletonWorkers() {
   startNotificationWorker();
   // Retention purge of session content: rows after the D6 windows, files 7 days later.
   startSessionLogPurgeWorker();
+  // Idle sessions off a fallback model once their own model serves again.
+  startSessionModelFallbackWorker();
   // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
   startSessionLogBackfillWorker();
+  // Closed pending days of the gateway spend running total, recomputed from the log rows.
+  startGatewaySpendBackfillWorker();
 }
 // Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
 // await left its worker "started" across that await; a re-acquire then started nothing, and the
@@ -294,7 +300,9 @@ async function stopSingletonWorkers() {
   drains.push(stopAccountDeletionSchedule());
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
+  stopSessionModelFallbackWorker();
   stopSessionLogBackfillWorker();
+  stopGatewaySpendBackfillWorker();
   await Promise.all(drains);
 }
 

@@ -17,7 +17,7 @@ export const TRIGGER_SESSION_ACCESS_COPY = {
   heading: 'Who can open sessions this trigger creates',
   private: {
     label: 'Trigger managers only',
-    desc: "Anyone whose project role includes the project.trigger.update permission — Project admin by default — plus account owners and admins. The trigger's own agent always can.",
+    desc: "Anyone whose project role includes the project.trigger.update permission — Project manager by default — plus account owners and admins. The trigger's own agent always can.",
   },
   members: {
     label: 'Selected teammates',

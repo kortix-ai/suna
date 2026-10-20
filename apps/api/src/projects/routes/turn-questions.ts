@@ -20,7 +20,7 @@ import {
   resolvePendingQuestion,
 } from '../lib/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
   normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
@@ -380,7 +380,9 @@ export function registerTurnQuestionsRoutes(): void {
         c.get('sessionId') ?? null,
         callerKortixSessionId(c),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      // A deleted session reads nothing (KRTX-2744): its open question is content
+      // of a session the trash model advertises as gone. Restoring brings it back.
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json({ question: await getOpenQuestion(sessionId) });
     },
   );

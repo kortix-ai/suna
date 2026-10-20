@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
+import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
@@ -513,6 +513,11 @@ export class PiRuntime {
 
   get workspace(): string {
     return this.cfg.projectTarget || this.cfg.workspace || '/workspace'
+  }
+
+  /** The project's base branch (`KORTIX_DEFAULT_BRANCH`): the Changes diff compares against it. */
+  get defaultBranch(): string {
+    return this.cfg.defaultBranch
   }
 
   get sessionId(): string {
@@ -1609,10 +1614,6 @@ export class PiRuntime {
     as: { agent: string; selected: SelectedModel } = { agent: this.agentName, selected: this.selected! },
   ): void {
     const created = this.now()
-    if (sessionID === this.rootId && this.title === 'New session') {
-      const line = input.text.trim().split('\n')[0] ?? ''
-      if (line) this.title = line.length > 80 ? `${line.slice(0, 77)}…` : line
-    }
     this.publish({
       type: 'message.updated',
       properties: {
@@ -1757,8 +1758,9 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      // The kortix-genui system skill exists only while the project's `genui` flag is on.
-      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
+      // A flagged managed skill exists only while the project's flag is on.
+      const withheld = await withheldManagedSkills(this.env)
+      return skills.filter((skill) => !withheld.includes(skill.name))
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []
@@ -2128,7 +2130,9 @@ export class PiRuntime {
         const nextSeq = Math.max(saved.nextSeq ?? 0, Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1)
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
-      this.title = dump.title
+      // The root title stays the placeholder: Kortix writes the session title
+      // (`metadata.name`). A dump an older daemon wrote carries the first prompt
+      // line here, which outranked that title in the API (KRTX-2567).
       return dump
     } catch (err) {
       logger.warn('[pi] transcript restore failed; starting empty', { err: (err as Error).message })

@@ -444,7 +444,7 @@ export function SessionSiteHeader({
                   { sessionId: projectSessionId! },
                   {
                     onSuccess: (fork) => {
-                      successToast('Conversation forked');
+                      successToast(tI18nHardcoded.raw('i18nComplete.text95de71e25038'));
                       if (projectId && projectSessionId) {
                         const href = uiRoutes().session(projectId, fork.session_id);
                         router.prefetch(href);

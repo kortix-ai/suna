@@ -18,7 +18,7 @@ import {
   toolCallRawOutput,
 } from '@kortix/sdk';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
-import { formatRelative } from '@kortix/shared';
+import { formatRelative, parseRoomDigest, parseRoomPrompt } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
@@ -36,6 +36,7 @@ import {
   resolveSessionRuntime,
   SessionRuntimeError,
   type SessionRuntime,
+  type NotRunningPolicy,
 } from '../session-runtime.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -65,7 +66,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
-  options: { requireRunning?: boolean } = {},
+  options: { onNotRunning?: NotRunningPolicy; onStarting?: (session: ProjectSession) => void } = {},
 ): Promise<ResolvedSession | null> {
   const found = await locateSessionAnywhere(
     sessionId,
@@ -92,7 +93,12 @@ export async function loadSessionForChat(
       client,
       projectId,
       session,
-      onNotRunning: options.requireRunning === false ? 'ignore' : 'fail',
+      onNotRunning: options.onNotRunning ?? (
+        cliCommand === 'sessions chat' && session.status === 'provisioning' ? 'start' : 'fail'
+      ),
+      onStarting: options.onStarting ?? (() => {
+        process.stderr.write(`${C.dim}  Starting session…${C.reset}\n`);
+      }),
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {
@@ -102,7 +108,11 @@ export async function loadSessionForChat(
       );
       return null;
     }
-    surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    if (error instanceof SessionRuntimeError && error.cause === undefined) {
+      process.stderr.write(`${status.err(error.message)}\n`);
+    } else {
+      surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    }
     return null;
   }
   return { ...runtime, ctx };
@@ -162,8 +172,35 @@ export function extractMessageText(msg: MessageWithParts): string {
   return message ? logMessageText(message) : '';
 }
 
+/**
+ * The header a delivered room message prints under instead of `user`: where it
+ * came from and who sent it (`agent session 3f2a1b9c (builder)` or a person).
+ * Null for any other message.
+ */
+export function roomMessageHeader(text: string): { header: string; body: string } | null {
+  const digest = parseRoomDigest(text);
+  if (digest) {
+    const range = digest.fromSeq === digest.toSeq ? `#${digest.toSeq}` : `#${digest.fromSeq}–#${digest.toSeq}`;
+    const lines = digest.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+    if (digest.more) lines.push(`… and ${digest.more} more`);
+    return { header: `room ${digest.room} ${range} · ${digest.count} new message${digest.count === 1 ? '' : 's'}`, body: lines.join('\n') };
+  }
+  const room = parseRoomPrompt(text);
+  if (!room) return null;
+  const who = room.senderKind === 'session' ? `agent session ${room.sender}` : room.sender;
+  const reply = room.replyTo ? ` ↳#${room.replyTo}` : '';
+  return { header: `room ${room.room} #${room.seq} · from ${who}${reply}`, body: room.text };
+}
+
 /** Print one session-log message: a role header, its blocks as text, and its error. */
 export function printLogMessage(message: SessionLogMessage): void {
+  const roomEvent = message.role === 'user' ? roomMessageHeader(logMessageText(message)) : null;
+  if (roomEvent) {
+    const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
+    process.stdout.write(`\n${C.cyan}${C.bold}${roomEvent.header}${C.reset} ${C.faded}${ts}${C.reset}\n`);
+    for (const line of roomEvent.body.split('\n')) process.stdout.write(`  ${line}\n`);
+    return;
+  }
   const role = message.kind === 'compaction' ? 'compaction' : message.role;
   const color = role === 'user' || role === 'system' ? C.green : C.cyan;
   const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';

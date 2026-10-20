@@ -15,40 +15,26 @@ import { useTranslations } from '../../../i18n';
  * A tab costs the people who need it one click and costs everyone else
  * nothing, which is the trade a tab exists to make.
  *
- * ## Why it is a LIST, not a lone form
+ * ## What a custom provider is
  *
- * The tab used to be one thing: a bordered card of six fields floating in an
- * otherwise empty pane, with no connection to the API-keys list one tab over
- * and no evidence that a custom provider you added last week exists at all.
- * Two problems, one fix — the same shape `provider-connect.tsx` uses:
+ * An endpoint and a model list stored in Kortix (`useCustomLlmProviders`,
+ * `GET/PUT/DELETE /projects/:id/custom-providers`), plus the optional project
+ * secret `CUSTOM_<ID>_API_KEY`. The gateway serves the models to every
+ * harness, so nothing is written into the repository.
  *
- *  1. *It read as a different product.* Same job (give this project a
- *     credential for a model endpoint), completely different screen. Now it is
- *     the same flat two-column row — identity left, value right, one axis down
- *     the page — so the two tabs are visibly one surface.
- *  2. *Nothing ever showed what you had already added.* A custom provider
- *     leaves exactly one trace on the server: the project secret
- *     `CUSTOM_<ID>_API_KEY` the form writes (see `custom-provider-form.tsx`).
- *     That is enough to list them, so the tab now opens on what this project
- *     already has, with the form under it.
- *
- * There is deliberately no Remove control on those rows. Deleting the secret
- * would NOT remove the provider — the provider itself lives in the repo's
- * provider configuration, which this app does not own — so a button
- * promising removal here would be lying about what it did.
- *
- * The form IS the tab (Paper board CP01: the form beside a live snippet).
- * When the project already has custom providers they list above it (board
- * CP02), and a row opens that provider in the Models page's side sheet
- * (`useModelsPageSheet`): the secret it uses, where it is declared, and a
- * Replace key control. `onDone` still returns the
- * reader to the Providers tab, because "done" means the provider now has a key
- * like any other and the list is where it shows up.
+ * The form IS the tab (Paper board CP01). Saved providers list above it
+ * (board CP02). A configured row opens the Models page's side sheet
+ * (`useModelsPageSheet`): edit the endpoint and models, replace the key, or
+ * delete the provider. A legacy row (`configured: false`: a key saved before
+ * endpoints moved into Kortix) pre-fills the form with its id instead.
  */
 
 import { type FormEvent, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
+import { ConfirmDialog } from '../../../primitives/confirm-dialog';
+import { Field, FieldLabel } from '../../../primitives/field';
+import { Input } from '../../../primitives/input';
 import { InputGroup, InputGroupInput } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
 import { Skeleton } from '../../../primitives/skeleton';
@@ -62,51 +48,33 @@ import {
 import { errorToast, successToast } from '../../../primitives/toast';
 import { ProviderLogoStatus } from '../../providers/provider-connect';
 import { cn } from '../../../internal/lib/utils';
-import { listProjectSecrets, upsertProjectSecret } from '@kortix/sdk';
-import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
-import { CaretRightIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type CustomLlmProvider, upsertProjectSecret } from '@kortix/sdk';
+import { qk, refreshProjectProviderState, useCustomLlmProviders } from '@kortix/sdk/react';
+import { CaretRightIcon, XIcon } from '@phosphor-icons/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useModelsPageSheet } from '../models-page-sheet';
-import { CustomProviderForm, customProviderSecretName } from './custom-provider-form';
+import { CustomProviderForm } from './custom-provider-form';
 
-/** The one secret name shape `CustomProviderForm` writes. */
-const CUSTOM_SECRET_PATTERN = /^CUSTOM_(.+)_API_KEY$/;
-
-/** The file a custom provider is declared in. This app does not own it. */
-const DECLARED_IN = 'provider configuration';
-
-/**
- * Provider ids that already have a key on this project, recovered from the
- * secret names. Exported for the test that pins the round trip against the
- * name the form builds.
- */
-export function customProviderIdsFromSecrets(names: string[]): string[] {
-  const ids = new Set<string>();
-  for (const name of names) {
-    const match = CUSTOM_SECRET_PATTERN.exec(name);
-    if (match?.[1]) ids.add(match[1].toLowerCase().replace(/_/g, '-'));
-  }
-  return [...ids].sort();
-}
-
-/** One added custom provider: a row that opens it in the sheet. */
+/** One saved custom provider: a configured row opens the sheet, a legacy row
+ *  pre-fills the form. */
 export function CustomProviderRow({
-  id,
+  provider,
   selected,
   onSelect,
 }: {
-  id: string;
+  provider: CustomLlmProvider;
   selected: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (provider: CustomLlmProvider) => void;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('customProvider');
+  const { id, name, configured } = provider;
   return (
     <button
       type="button"
       data-custom-provider-row={id}
       aria-current={selected || undefined}
-      onClick={() => onSelect(id)}
+      onClick={() => onSelect(provider)}
       className={cn(
         'group flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left',
         'hover:bg-muted/60 transition-[background-color] duration-(--duration-normal) ease-out',
@@ -114,13 +82,29 @@ export function CustomProviderRow({
         selected && 'bg-muted hover:bg-muted',
       )}
     >
-      <ProviderLogoStatus providerId={id} label={id} status="connected" size="medium" />
+      <ProviderLogoStatus
+        providerId={id}
+        label={name}
+        status={configured ? 'connected' : 'none'}
+        size="medium"
+      />
       <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium">{id}</span>
-        <span className="text-muted-foreground block truncate font-mono text-xs">
-          {tI18nComplete.raw('textcef709637aa5')} {DECLARED_IN}
+        <span className="text-foreground block truncate text-sm font-medium">{name}</span>
+        <span className="text-muted-foreground block truncate text-xs">
+          {configured ? (
+            <span className="font-mono">{provider.base_url}</span>
+          ) : (
+            t('needsEndpoint')
+          )}
         </span>
       </span>
+      {configured ? (
+        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+          {t('modelCount', { count: provider.models.length })}
+        </span>
+      ) : (
+        <span className="text-foreground shrink-0 text-xs font-medium">{t('addEndpoint')}</span>
+      )}
       <CaretRightIcon
         className={cn(
           'text-muted-foreground size-3.5 shrink-0 transition-[color] duration-(--duration-normal)',
@@ -133,34 +117,169 @@ export function CustomProviderRow({
 }
 
 /** One label/value line in the provider detail. */
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex min-h-10 items-center justify-between gap-4 py-2">
       <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
-      <code className="text-foreground min-w-0 truncate font-mono text-xs">{value}</code>
+      <span className={cn('text-foreground min-w-0 truncate', mono ? 'font-mono text-xs' : 'text-sm')}>
+        {value}
+      </span>
     </div>
   );
 }
 
+type ModelDraft = { id: string; name: string };
+
 /**
- * One saved custom provider. All the app knows about it is the secret name;
- * the base URL and the models live in the repo file, so the sheet says where
- * and offers what it CAN do: replace the key. There is no Remove — deleting
- * the secret would not remove the provider.
+ * The endpoint editor in the sheet. The PUT replaces the provider's whole
+ * definition, so this edits the full model list in place.
  */
-function CustomProviderDetail({ projectId, id }: { projectId: string; id: string }) {
+function EndpointEditor({
+  projectId,
+  provider,
+  onClose,
+}: {
+  projectId: string;
+  provider: CustomLlmProvider;
+  onClose: () => void;
+}) {
+  const t = useTranslations('customProvider');
+  const tSheet = useTranslations('providerSheet');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const custom = useCustomLlmProviders(projectId);
+  const [name, setName] = useState(provider.name);
+  const [baseUrl, setBaseUrl] = useState(provider.base_url ?? '');
+  const [models, setModels] = useState<ModelDraft[]>(provider.models);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const trimmed = models
+        .map((m) => ({ id: m.id.trim(), name: m.name.trim() }))
+        .filter((m) => m.id || m.name);
+      if (!name.trim() || !/^https?:\/\//.test(baseUrl.trim())) {
+        throw new Error('Name and an http:// or https:// base URL are required');
+      }
+      if (trimmed.length === 0 || trimmed.some((m) => !m.id || !m.name || /\s/.test(m.id))) {
+        throw new Error('Every model needs an ID without spaces and a name');
+      }
+      return custom.save(provider.id, { name: name.trim(), base_url: baseUrl.trim(), models: trimmed });
+    },
+    onSuccess: () => {
+      successToast(t('saved'));
+      onClose();
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : t('saveFailed')),
+  });
+
+  const setModel = (index: number, patch: Partial<ModelDraft>) =>
+    setModels((current) => current.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!save.isPending) save.mutate();
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4" data-custom-provider-edit="">
+      <Field className="gap-1.5">
+        <FieldLabel htmlFor={`custom-edit-name-${provider.id}`}>
+          {tI18nComplete.raw('text2b7f6a84de91')}
+        </FieldLabel>
+        <Input
+          id={`custom-edit-name-${provider.id}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </Field>
+      <Field className="gap-1.5">
+        <FieldLabel htmlFor={`custom-edit-url-${provider.id}`}>
+          {tI18nComplete.raw('text70589413a3c9')}
+        </FieldLabel>
+        <Input
+          id={`custom-edit-url-${provider.id}`}
+          value={baseUrl}
+          onChange={(event) => setBaseUrl(event.target.value)}
+          placeholder="https://api.example.com/v1"
+          className="font-mono"
+        />
+      </Field>
+      <div className="space-y-2">
+        <span className="text-foreground text-sm font-medium">{t('models')}</span>
+        {models.map((model, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              aria-label={tI18nComplete.raw('text089ef2b6dbb3')}
+              value={model.id}
+              onChange={(event) => setModel(index, { id: event.target.value })}
+              placeholder={tI18nComplete.raw('text34d316295094')}
+              className="min-w-0 flex-1 font-mono"
+            />
+            <Input
+              aria-label={tI18nComplete.raw('texta3c3370cc732')}
+              value={model.name}
+              onChange={(event) => setModel(index, { name: event.target.value })}
+              placeholder={tI18nComplete.raw('textb70354a1faae')}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost"
+              aria-label={t('removeModel')}
+              disabled={models.length === 1}
+              onClick={() => setModels((current) => current.filter((_, i) => i !== index))}
+            >
+              <XIcon className="size-3.5 shrink-0" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="-ml-2"
+          onClick={() => setModels((current) => [...current, { id: '', name: '' }])}
+        >
+          {t('addModel')}
+        </Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending} className="gap-1.5">
+          {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+          {t('saveProvider')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={save.isPending} onClick={onClose}>
+          {tSheet('cancel')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** One saved custom provider: its endpoint and models, its key, and Delete. */
+function CustomProviderDetail({
+  projectId,
+  provider,
+  onDeleted,
+}: {
+  projectId: string;
+  provider: CustomLlmProvider;
+  onDeleted: () => void;
+}) {
   const t = useTranslations('customProvider');
   const tSheet = useTranslations('providerSheet');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  const secretName = customProviderSecretName(id);
+  const custom = useCustomLlmProviders(projectId);
+  const [editing, setEditing] = useState(false);
   const [replacing, setReplacing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [value, setValue] = useState('');
 
   const replace = useMutation({
     mutationFn: () =>
       upsertProjectSecret(projectId, {
-        name: secretName,
+        name: provider.secret_name,
         value: value.trim(),
         strategy: 'broker',
         consumer: 'llm_gateway',
@@ -170,9 +289,21 @@ function CustomProviderDetail({ projectId, id }: { projectId: string; id: string
       setValue('');
       setReplacing(false);
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.customLlmProviders(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text2c07997249ab')),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => custom.remove(provider.id),
+    onSuccess: () => {
+      successToast(t('deleted'));
+      setConfirmDelete(false);
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+      onDeleted();
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : t('deleteFailed')),
   });
 
   const submit = (event: FormEvent) => {
@@ -184,75 +315,113 @@ function CustomProviderDetail({ projectId, id }: { projectId: string; id: string
     <>
       <SplitSheetHeader closeLabel={tSheet('close')} className="px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <ProviderLogoStatus providerId={id} label={id} status="connected" size="large" />
+          <ProviderLogoStatus providerId={provider.id} label={provider.name} status="connected" size="large" />
           <div className="min-w-0 space-y-0.5">
-            <SplitSheetTitle className="truncate text-base font-semibold">{id}</SplitSheetTitle>
-            <SplitSheetDescription className="font-mono">{id}</SplitSheetDescription>
+            <SplitSheetTitle className="truncate text-base font-semibold">{provider.name}</SplitSheetTitle>
+            <SplitSheetDescription className="font-mono">{provider.id}</SplitSheetDescription>
           </div>
         </div>
       </SplitSheetHeader>
-      <SplitSheetBody className="space-y-6">
+      <SplitSheetBody className="space-y-7">
         <section className="space-y-1">
           <h3 className="text-foreground text-sm font-medium">{t('endpoint')}</h3>
-          <div className="divide-border divide-y">
-            <DetailRow label={tI18nComplete.raw('text16f0ee47f993')} value={secretName} />
-            <DetailRow label={t('declaredIn')} value={DECLARED_IN} />
-          </div>
+          {editing ? (
+            <EndpointEditor projectId={projectId} provider={provider} onClose={() => setEditing(false)} />
+          ) : (
+            <>
+              <div className="divide-border divide-y">
+                <DetailRow label={tI18nComplete.raw('text70589413a3c9')} value={provider.base_url ?? ''} />
+                <DetailRow
+                  label={tI18nComplete.raw('text16f0ee47f993')}
+                  value={provider.has_key ? provider.secret_name : t('noKey')}
+                  mono={provider.has_key}
+                />
+              </div>
+              <h3 className="text-foreground pt-4 text-sm font-medium">{t('models')}</h3>
+              <div className="divide-border divide-y">
+                {provider.models.map((model) => (
+                  <DetailRow key={model.id} label={model.name} value={model.id} />
+                ))}
+              </div>
+              <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setEditing(true)}>
+                {t('editEndpoint')}
+              </Button>
+            </>
+          )}
         </section>
 
-        {replacing ? (
-          <form onSubmit={submit} className="space-y-3" data-custom-provider-replace="">
-            <label htmlFor={`custom-replace-${id}`} className="sr-only">
-              {tI18nComplete.raw('text16f0ee47f993')}
-            </label>
-            <InputGroup>
-              <InputGroupInput
-                id={`custom-replace-${id}`}
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                autoFocus
-                data-1p-ignore=""
-                data-lpignore="true"
-                data-form-type="other"
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                placeholder={tI18nComplete.raw('textb009c6c5299f')}
-                className="font-mono"
-              />
-            </InputGroup>
-            <div className="flex items-center gap-2">
-              <Button type="submit" size="sm" disabled={!value.trim() || replace.isPending} className="gap-1.5">
-                {replace.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                {tSheet('saveKey')}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={replace.isPending}
-                onClick={() => {
-                  setValue('');
-                  setReplacing(false);
-                }}
-              >
-                {tSheet('cancel')}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <Button type="button" size="sm" variant="secondary" onClick={() => setReplacing(true)}>
-            {tSheet('replace')}
-          </Button>
-        )}
+        <section className="space-y-1">
+          {replacing ? (
+            <form onSubmit={submit} className="space-y-3" data-custom-provider-replace="">
+              <label htmlFor={`custom-replace-${provider.id}`} className="sr-only">
+                {tI18nComplete.raw('text16f0ee47f993')}
+              </label>
+              <InputGroup>
+                <InputGroupInput
+                  id={`custom-replace-${provider.id}`}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoFocus
+                  data-1p-ignore=""
+                  data-lpignore="true"
+                  data-form-type="other"
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  placeholder={tI18nComplete.raw('textb009c6c5299f')}
+                  className="font-mono"
+                />
+              </InputGroup>
+              <div className="flex items-center gap-2">
+                <Button type="submit" size="sm" disabled={!value.trim() || replace.isPending} className="gap-1.5">
+                  {replace.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {tSheet('saveKey')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={replace.isPending}
+                  onClick={() => {
+                    setValue('');
+                    setReplacing(false);
+                  }}
+                >
+                  {tSheet('cancel')}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" onClick={() => setReplacing(true)}>
+              {provider.has_key ? t('replaceKey') : t('addKey')}
+            </Button>
+          )}
+        </section>
 
-        <p className="text-muted-foreground text-xs text-pretty">
-          {t('repoNote', { file: DECLARED_IN })}
-        </p>
+        <p className="text-muted-foreground text-xs text-pretty">{t('gatewayNote')}</p>
       </SplitSheetBody>
-      <SplitSheetFooter className="justify-end">
+      <SplitSheetFooter className="justify-between">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive -ml-2"
+          onClick={() => setConfirmDelete(true)}
+        >
+          {t('deleteProvider')}
+        </Button>
         <span className="text-muted-foreground text-xs">{tSheet('storedEncrypted')}</span>
       </SplitSheetFooter>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t('deleteTitle')}
+        description={t('deleteBody', { name: provider.name })}
+        confirmLabel={t('deleteProvider')}
+        confirmVariant="destructive"
+        isPending={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
     </>
   );
 }
@@ -260,28 +429,22 @@ function CustomProviderDetail({ projectId, id }: { projectId: string; id: string
 export function CustomProviderPanel({
   projectId,
   canWrite = false,
-  onDone,
 }: {
   projectId: string;
   canWrite?: boolean;
-  /** Called on a successful save — hosts send the reader back to the Providers
-   *  list, where the new provider now has a row. */
-  onDone?: () => void;
 }) {
   const t = useTranslations('customProvider');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [openId, setOpenId] = useState<string | null>(null);
+  // A legacy key's id, pre-filled into the form; the form remounts per value.
+  const [prefillId, setPrefillId] = useState('');
+  const [formKey, setFormKey] = useState(0);
+  const custom = useCustomLlmProviders(canWrite ? projectId : null);
+  const providers = custom.providers;
+  const open = providers.find((p) => p.id === openId && p.configured) ?? null;
   // A saved provider opens in the Models page's one side sheet, beside the
   // whole page — not a second sheet inside this tab's column.
-  const renderSheet = useModelsPageSheet(openId !== null, () => setOpenId(null));
-  // Same query key the Providers tab already fills, so this is a cache read in
-  // every path that matters — no extra round trip for a list this small.
-  const secrets = useQuery({
-    queryKey: qk.project.secrets(projectId),
-    queryFn: () => listProjectSecrets(projectId),
-    ...contract('config'),
-    enabled: canWrite,
-  });
+  const renderSheet = useModelsPageSheet(open !== null, () => setOpenId(null));
 
   if (!canWrite) {
     return (
@@ -294,32 +457,59 @@ export function CustomProviderPanel({
     );
   }
 
-  const data = secrets.data;
-  const items = Array.isArray(data) ? data : (data?.items ?? []);
-  const ids = customProviderIdsFromSecrets(items.map((item) => item.name));
+  const select = (provider: CustomLlmProvider) => {
+    if (provider.configured) {
+      setOpenId(provider.id);
+      return;
+    }
+    setOpenId(null);
+    setPrefillId(provider.id);
+    setFormKey((k) => k + 1);
+  };
 
   return (
     // `pt-2.5` + the shell's `space-y-5` = board CP01's 28px from the tab row.
     <div className="flex flex-col gap-8 pt-2.5">
       {/* Paper board CP02: what this project already has, above the form.
           Only when there is something to show — the form is the tab. */}
-      {secrets.isPending ? (
+      {custom.isLoading ? (
         <Skeleton className="h-12 rounded-md" />
-      ) : ids.length > 0 ? (
-        <section className="flex flex-col gap-0.5" aria-label={t('group', { count: ids.length })}>
+      ) : providers.length > 0 ? (
+        <section className="flex flex-col gap-0.5" aria-label={t('group', { count: providers.length })}>
           <h3 className="text-muted-foreground px-3 pb-1 text-xs font-medium tabular-nums">
-            {t('group', { count: ids.length })}
+            {t('group', { count: providers.length })}
           </h3>
-          {ids.map((id) => (
-            <CustomProviderRow key={id} id={id} selected={openId === id} onSelect={setOpenId} />
+          {providers.map((provider) => (
+            <CustomProviderRow
+              key={provider.id}
+              provider={provider}
+              selected={openId === provider.id || (!provider.configured && prefillId === provider.id)}
+              onSelect={select}
+            />
           ))}
         </section>
       ) : null}
 
-      <CustomProviderForm projectId={projectId} onDone={() => onDone?.()} />
+      <CustomProviderForm
+        key={`${prefillId}-${formKey}`}
+        projectId={projectId}
+        initialId={prefillId}
+        onSaved={(id) => {
+          setPrefillId('');
+          setFormKey((k) => k + 1);
+          setOpenId(id);
+        }}
+      />
 
       {renderSheet(
-        openId ? <CustomProviderDetail key={openId} projectId={projectId} id={openId} /> : null,
+        open ? (
+          <CustomProviderDetail
+            key={open.id}
+            projectId={projectId}
+            provider={open}
+            onDeleted={() => setOpenId(null)}
+          />
+        ) : null,
       )}
     </div>
   );

@@ -34,6 +34,7 @@ import type { InboxNotification, InboxNotificationKind } from '@kortix/sdk';
 import { useNotificationInbox } from '@kortix/sdk/react';
 import {
   BellIcon,
+  ChatCircleIcon,
   QuestionIcon,
   ShareIcon,
   ShieldWarningIcon,
@@ -72,6 +73,7 @@ const KIND_MARK: Record<InboxNotificationKind, { icon: KindIcon; className: stri
   automation_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
+  message: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
 export interface NotificationPanelProps {

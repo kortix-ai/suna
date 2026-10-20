@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
+import { pickerProviderList } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
   keepPreviousData,
@@ -58,7 +58,6 @@ import {
   getProjectSession,
   getModelDefaults,
   getProjectLlmCatalog,
-  getProjectLlmCatalogProviders,
   getProjectModelPicker,
   getProjectCommitDiff,
   getProjectFileHistory,
@@ -113,7 +112,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { shouldScanPastEmptySessionPages, useRuntimeProviders } from '@kortix/sdk/react';
+import { shouldScanPastEmptySessionPages } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -124,8 +123,6 @@ export const projectKeys = {
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
   llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
   modelPicker: (projectId: string | null | undefined) => ['project-model-picker', projectId] as const,
-  /** Native-mode picker sources: `/llm-catalog/providers` + secret names (`useComposerModels`). */
-  nativeModelCatalog: (projectId: string | null | undefined) => ['project-model-catalog-native', projectId] as const,
   modelDefaults: (projectId: string | null | undefined) => ['model-defaults', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
@@ -913,10 +910,8 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
 }
 
 /** Gateway model catalog for a trigger's "Model" override picker (web parity:
- *  useRuntimeProviders() + flattenModels() in gateway mode). Sandbox-free —
- *  reads the project's server-side catalog directly. `gatewayDisabled` is
- *  true when the project hasn't turned the LLM gateway on; treat that as "no
- *  override available" rather than an error. */
+ *  useRuntimeProviders() + flattenModels()). Sandbox-free — reads the
+ *  project's server-side catalog directly. */
 export function useProjectModelCatalogForTrigger(projectId: string | null) {
   // `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full runtime
   // projection (7134 models on 2026-09-16). The picker rendered every one of
@@ -930,111 +925,54 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
     staleTime: 60_000,
     retry: false,
   });
-  const gatewayDisabled = (query.error as { code?: string } | null)?.code === 'llm_gateway_disabled';
   const models = useMemo(() => flattenTriggerModelCatalog(query.data?.models), [query.data]);
-  return { models, isLoading: query.isLoading, gatewayDisabled };
-}
-
-/** The native-mode picker sources that need no sandbox: the runtime catalog
- *  and the project's secret NAMES. `project.secret.read` is manager-tier, so a
- *  member's read 403s: that is "no keys visible" (web: `useRuntimeProviders`). */
-async function fetchNativeModelCatalog(projectId: string) {
-  const [llmCatalogProviders, secrets] = await Promise.all([
-    getProjectLlmCatalogProviders(projectId),
-    listProjectSecrets(projectId).catch(() => ({ items: [] as Array<{ name: string }> })),
-  ]);
-  return { llmCatalogProviders, secretNames: secrets.items.map((secret) => secret.name) };
+  return { models, isLoading: query.isLoading };
 }
 
 /**
- * The composer's models (project home and thread), from the sources web's
- * `useRuntimeProviders` and `useModelDefaults` read, built by `@kortix/sdk`
- * (`pickerProviderList` → `flattenModels`):
- * - LLM gateway on (`/detail` `experimental.llm_gateway`): `/model-picker`;
- * - gateway off: `/llm-catalog/providers` and the project's secret names,
- *   merged with the bound session runtime's provider list once it answers
- *   (`useRuntimeProviders`, which reads the project from `KortixProjectProvider`).
- * `modelDefaults` (`/model-defaults`) exists only with the gateway on; the
- * route answers 404 `llm_gateway_disabled` otherwise.
- * `isLoading`: the project mode, the list, or the default is not known yet.
- * Consumers hide the chip instead of flashing a wrong list.
+ * The composer's models (project home and thread): the project's
+ * `/model-picker` catalog, built by `@kortix/sdk` (`pickerProviderList` →
+ * `flattenModels`), and its `/model-defaults` — the sources web's
+ * `useRuntimeProviders` and `useModelDefaults` read. Every model goes through
+ * the LLM gateway.
+ * `isLoading`: the list or the default is not known yet. Consumers hide the
+ * chip instead of flashing a wrong list.
  */
 export function useComposerModels(projectId: string | null) {
-  const detail = useProjectDetail(projectId);
-  const modeKnown = !projectId || detail.isSuccess;
-  const gatewayEnabled = detail.data?.project?.experimental?.llm_gateway === true;
-  const gatewayQuery = !!projectId && modeKnown && gatewayEnabled;
-  const nativeQuery = !!projectId && modeKnown && !gatewayEnabled;
-
   const picker = useQuery({
     queryKey: projectKeys.modelPicker(projectId),
     queryFn: () => getProjectModelPicker(projectId!),
-    enabled: gatewayQuery,
+    enabled: !!projectId,
     staleTime: 60_000,
     retry: false,
   });
-  const nativeCatalog = useQuery({
-    queryKey: projectKeys.nativeModelCatalog(projectId),
-    queryFn: () => fetchNativeModelCatalog(projectId!),
-    enabled: nativeQuery,
-    staleTime: 60_000,
-    retry: false,
-  });
-  // The SDK's provider list for this project. Gateway on: it reads no runtime.
-  // Gateway off: the catalog merged with the runtime's own list.
-  const runtime = useRuntimeProviders();
   const defaults = useQuery({
     queryKey: projectKeys.modelDefaults(projectId),
     queryFn: () => getModelDefaults(projectId!),
-    enabled: gatewayQuery,
+    enabled: !!projectId,
     staleTime: 30_000,
     retry: false,
   });
 
-  const nativeData = nativeCatalog.data;
-  const sources = useMemo<PickerProviderListInput>(
-    () => ({
-      gatewayEnabled,
-      modelPicker: picker.data,
-      llmCatalogProviders: nativeData?.llmCatalogProviders,
-      secretNames: new Set(nativeData?.secretNames ?? []),
-      runtimeProviders: gatewayEnabled ? undefined : runtime.data,
-    }),
-    [gatewayEnabled, picker.data, nativeData, runtime.data],
+  const providers = useMemo(
+    () => pickerProviderList({ modelPicker: picker.data }),
+    [picker.data],
   );
-  const providers = useMemo(() => pickerProviderList(sources), [sources]);
-  const models = useMemo(() => composerModelList(sources), [sources]);
+  const models = useMemo(() => composerModelList(picker.data), [picker.data]);
 
   // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
   // "Provider connected" only once the list actually turns up a model.
   const refetchModelCount = useCallback(async () => {
-    if (gatewayEnabled) {
-      const result = await picker.refetch();
-      return offeredModelCount(composerModelList({ ...sources, modelPicker: result.data }));
-    }
-    const result = await nativeCatalog.refetch();
-    return offeredModelCount(
-      composerModelList({
-        ...sources,
-        llmCatalogProviders: result.data?.llmCatalogProviders,
-        secretNames: new Set(result.data?.secretNames ?? []),
-      }),
-    );
-  }, [gatewayEnabled, picker, nativeCatalog, sources]);
-
-  const isLoading =
-    (!!projectId && detail.isPending) ||
-    (gatewayEnabled
-      ? picker.isLoading || defaults.isLoading
-      : !providers && (nativeCatalog.isLoading || runtime.isLoading));
+    const result = await picker.refetch();
+    return offeredModelCount(composerModelList(result.data));
+  }, [picker]);
 
   return {
-    gatewayEnabled,
     providers,
     /** Every model the picker can list (`enabled: false` rows included, as web). */
     models,
     modelDefaults: defaults.data,
-    isLoading,
+    isLoading: picker.isLoading || defaults.isLoading,
     refetchModelCount,
   };
 }

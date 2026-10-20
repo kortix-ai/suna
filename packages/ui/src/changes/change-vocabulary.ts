@@ -11,6 +11,7 @@
  * can actually be wrong live here where `bun test` can reach them.
  */
 
+import { stripTrailingSlashes } from '@kortix/sdk';
 import type { StatusTone } from '../primitives/status';
 import type { UiTranslator } from '../i18n';
 
@@ -116,7 +117,7 @@ export function entryFromVcsFile(file: VcsFileLike): ChangeEntry {
  * dimmed, so a list of twelve files scans as twelve names, not twelve paths.
  */
 export function splitPath(path: string): { name: string; dir: string } {
-  const clean = path.replace(/\/+$/, '');
+  const clean = stripTrailingSlashes(path);
   const cut = clean.lastIndexOf('/');
   if (cut === -1) return { name: clean, dir: '' };
   return { name: clean.slice(cut + 1), dir: clean.slice(0, cut) };
@@ -299,13 +300,31 @@ function patchChunkPath(chunk: string): string | null {
   const header = chunk.match(/^diff --git (.+)$/m)?.[1];
   if (!header) return null;
   if (header.startsWith('"')) {
-    const tokens = header.match(/"(?:[^"\\]|\\.)*"/g);
-    const second = tokens?.[1];
+    const second = quotedTokens(header)[1];
     return second ? stripBPrefixed(unquoteGitPath(second)) : null;
   }
   const rest = header.replace(/^a\//, '');
   const separator = rest.lastIndexOf(' b/');
   return separator >= 0 ? rest.slice(separator + 3) : null;
+}
+
+/**
+ * The `"…"` C-quoted tokens of a header line, as `/"(?:[^"\\]|\\.)*"/g`
+ * matches them, in linear time: that regex rescans the rest of the line from
+ * every later `"` once a quote is left open (CodeQL js/polynomial-redos). An
+ * open token ends the scan: every later `"` in it is an escape, and a scan
+ * from there runs to the same end.
+ */
+function quotedTokens(line: string): string[] {
+  const tokens: string[] = [];
+  for (let start = line.indexOf('"'); start !== -1; ) {
+    let i = start + 1;
+    while (i < line.length && line[i] !== '"') i += line[i] === '\\' ? 2 : 1;
+    if (i >= line.length) break;
+    tokens.push(line.slice(start, i + 1));
+    start = line.indexOf('"', i + 1);
+  }
+  return tokens;
 }
 
 /** `+++ b/src/x.ts` and the header's `b/` side both mark the path with git's

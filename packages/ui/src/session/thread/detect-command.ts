@@ -45,7 +45,9 @@ export function detectCommandFromText(
       // Strip trailing $ARGUMENTS (with optional surrounding whitespace/newlines).
       // Blank-line runs fold to one on both sides: the bubble's text went through
       // `stripSystemPtyText`, which folds them, and a SKILL.md body has them.
-      const tplBody = foldBlankLines(tpl.replace(/\s*\$ARGUMENTS\s*$/, '').trimEnd());
+      // No leading `\s*`: `.trimEnd()` drops it, and `\s*\$` backtracks
+      // quadratically on a long space run (CodeQL js/polynomial-redos).
+      const tplBody = foldBlankLines(tpl.replace(/\$ARGUMENTS\s*$/, '').trimEnd());
       const text = foldBlankLines(trimmedRawText);
       // Fast check: does rawText equal the template body exactly?
       if (tplBody.length > 0 && text === tplBody) {
