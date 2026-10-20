@@ -984,6 +984,8 @@ export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
+    /** Copy the authorized platform session history into a new independent session. */
+    fork_from_session_id: z.string().min(1).max(255).optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),

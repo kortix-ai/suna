@@ -1,5 +1,5 @@
 import { FaqSection } from '@/features/marketing/faq/faq-section';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { localizedDevelopersCopy } from './content';
 import { useTranslations } from '@/i18n/use-translations';
 import { SECTION_HEADING } from './shared';

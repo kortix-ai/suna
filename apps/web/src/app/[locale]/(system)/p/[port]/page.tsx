@@ -1,7 +1,7 @@
 'use client';
 
-import { useAppHome } from '@/lib/onboarding/use-app-home';
-import { useTabStore } from '@/stores/tab-store';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
 import { useRouter } from 'next/navigation';
 import { use, useEffect } from 'react';
 

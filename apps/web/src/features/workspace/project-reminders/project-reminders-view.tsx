@@ -11,11 +11,11 @@
  * session filter live in the URL.
  */
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
+import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
 import { useTranslations } from '@/i18n/use-translations';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
@@ -42,7 +42,7 @@ import {
   ReminderViewSwitch,
 } from './reminders-toolbar';
 import { CalendarStoreContext, createCalendarStore } from './use-calendar-scroll';
-import { useNow, useRefetchAfterFire } from './use-refetch-after-fire';
+import { useNow, useRefetchAfterFire } from '@kortix/ui/internal/reminders/use-refetch-after-fire';
 import { useReminderTab } from './use-reminder-tab';
 import {
   createRemindersUrlStore,

@@ -76,10 +76,10 @@ suite('gateway_request_logs project aggregates are index-only', () => {
        on conflict (project_id) do nothing`,
       [projectId, accountId],
     );
-    // 40k month-to-date rows, each carrying a wide request payload like prod's
-    // (request/response jsonb bodies): enough rows and enough heap width for
-    // the planner to prefer the index path over a seq scan even in a tiny
-    // test database.
+    // 4k month-to-date rows with a request payload, so the heap is wider than
+    // the index. Size is not what the plans below rest on (`enable_seqscan =
+    // off` is): 40k rows of 2 KB timed the setup out at 30 s on a loaded CI
+    // runner.
     await client.query(
       `insert into kortix.gateway_request_logs
          (account_id, project_id, request_id, session_id, provider, resolved_model, requested_model,
@@ -93,9 +93,9 @@ suite('gateway_request_logs project aggregates are index-only', () => {
               case when i % 4 = 0 then null else 'credits' end,
               i % 17 > 0, (i % 900)::int, (i % 500)::int, (i % 900)::int,
               ((i % 50) * 0.001)::numeric, ((i % 80) * 0.001)::numeric,
-              jsonb_build_object('messages', repeat('x', 2000)),
+              jsonb_build_object('messages', repeat('x', 200)),
               date_trunc('month', now()) + ((i % 400) || ' minutes')::interval
-         from generate_series(1, 40000) as i`,
+         from generate_series(1, 4000) as i`,
       [accountId, projectId],
     );
     await superuser.query('vacuum analyze kortix.gateway_request_logs');

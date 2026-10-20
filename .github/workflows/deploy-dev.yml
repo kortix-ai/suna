@@ -830,8 +830,17 @@ jobs:
 
   deploy-gateway-ecs:
     name: Deploy gateway to dev (ECS Fargate)
-    needs: [detect-changes, build-gateway]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    needs: [detect-changes, build-gateway, terraform-dev-api]
+    # Waits for dev Terraform like deploy-api-ecs: a gateway task started before
+    # the apply lacks the security group that reaches the API's private path
+    # (#10463), so every private call from it timed out and fell back to the
+    # public URL. `always()` because terraform-dev-api is skipped when no dev
+    # Terraform changed.
+    if: >-
+      ${{ always()
+        && needs.detect-changes.outputs.gateway == 'true'
+        && needs.build-gateway.result == 'success'
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 25
     permissions:

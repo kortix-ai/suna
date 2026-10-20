@@ -31,7 +31,7 @@ export type NavLink =
   | { id: number; name: string; href: NavSubLink[] }
   | { id: number; name: string; menu: NavMenu };
 
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 export const productMenu: NavMenu = {
   columns: [

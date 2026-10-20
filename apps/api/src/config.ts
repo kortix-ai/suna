@@ -307,6 +307,10 @@ const envSchema = z.object({
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
   // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // Default of the project flag `pi_harness` for a project with no stored value. On by default
+  // (2026-10-20): new sessions boot pi. A project's stored value wins. Rollback for a whole
+  // deployment: set it to "false" in the overrides; new sessions boot OpenCode again.
+  PI_HARNESS_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -1276,6 +1280,11 @@ export const config = {
   // 'dev' above, and the router credit gate must not read that fallback as a
   // dev exemption (see router/services/credit-gate-env.ts).
   INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
+  // A local stack (the worktree launcher and scripts/dev-local.sh export it).
+  // It runs as INTERNAL_KORTIX_ENV=dev on dev's sandbox provider organisation
+  // but reads its own database, so it must never delete provider images it
+  // did not build (KRTX-2546). No deployed environment sets it.
+  KORTIX_LOCAL_DEV: process.env.KORTIX_LOCAL_DEV === '1',
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1303,6 +1312,7 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  PI_HARNESS_DEFAULT_ENABLED: env.PI_HARNESS_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,

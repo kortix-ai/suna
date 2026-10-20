@@ -30,13 +30,13 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 
@@ -126,7 +126,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
@@ -696,8 +696,8 @@ function AuthCardForm({
       // "does the visitor still know a password for this address" is not
       // observable server-side, and a password-first default dead-ends a
       // passwordless account on a form no password can pass. The password
-      // form stays one explicit choice away ("Use a password instead" on the
-      // link step), and the link action re-checks closed signups and SSO
+      // form stays one explicit choice away on the entry and link steps,
+      // and the link action re-checks closed signups and SSO
       // server-side. Password-only deployments go through the existence check
       // below, so the password step opens already knowing whether this is a
       // sign-in or a registration.
@@ -787,13 +787,14 @@ function AuthCardForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- replay on hydration and when the entry step appears; the submit path reads refs, not stale state
   }, [step]);
-  // Escape hatch off the link step for people who'd rather type a password.
+  // Password entry from either the entry or link step, without sending email.
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
   // Resolves existence on the way so the step opens in the right mode.
   const goToPassword = async () => {
-    const target = (email || sentEmail || '').trim();
+    if (step === 'entry' && emailRef.current && !emailRef.current.reportValidity()) return;
+    const target = (emailRef.current?.value || email || sentEmail || '').trim();
     if (!target) {
       emailRef.current?.focus();
       return;
@@ -1218,6 +1219,19 @@ function AuthCardForm({
             {t('continue')}
           </Button>
         </form>
+
+        {passwordEnabled && magicLinkEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void goToPassword()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
+            </button>
+          </p>
+        )}
 
         {/* Explicit SSO entry — the discoverable counterpart of the silent
             home-realm discovery Continue already performs. Same dialect as the

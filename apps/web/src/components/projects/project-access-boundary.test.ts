@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { contract, qk } from '@kortix/sdk/react';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import {
@@ -449,9 +449,9 @@ describe('house dialect', () => {
   // be composed from their shared vocabulary, not from a bespoke frame — that
   // is the whole reason the previous split-hero version looked foreign.
   test('is built from the shared auth consent primitives', () => {
-    expect(componentSource).toContain("from '@/features/auth/auth-card-shell'");
-    expect(componentSource).toContain("from '@/features/auth/auth-consent'");
-    expect(componentSource).toContain("from '@/features/auth/auth-primitives'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-card-shell'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-consent'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-primitives'");
     for (const primitive of [
       '<AuthFrame>',
       '<StepHeader',
@@ -499,7 +499,7 @@ describe('house dialect', () => {
 
   test('never uses an icon as a spinner', () => {
     // `Loading` is the codebase's only spinner.
-    expect(componentSource).toContain("import Loading from '@/components/ui/loading'");
+    expect(componentSource).toContain("import Loading from '@kortix/ui/loading'");
     expect(componentSource.match(/CircleNotch|SpinnerIcon|animate-spin/)?.[0] ?? null).toBeNull();
   });
 });
