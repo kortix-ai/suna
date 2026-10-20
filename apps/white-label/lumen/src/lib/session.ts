@@ -19,7 +19,7 @@ export function getSessionToken(): string | null {
   return activeMatterId ? `matter.${activeMatterId}` : null;
 }
 
-/** Authorization headers for the app's own server routes (preview, model, connections). */
+/** Authorization headers for the app's own server route (preview). */
 export function authHeaders(token?: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
