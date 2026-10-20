@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 const configState: Record<string, unknown> = {
   FRONTEND_URL: 'https://dev.kortix.com',
@@ -688,6 +688,26 @@ describe('a public share on its own origin', () => {
 });
 
 describe('preview navigation tickets', () => {
+  test('a signed cookie cannot be exchanged as a navigation ticket', async () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    try {
+      const cookie = mintCookieFor('sbx-known', 8081);
+      const value = cookie.slice(cookie.indexOf('=') + 1);
+      const path = '/?preview_ticket=' + encodeURIComponent(value);
+      const withoutCookie = await handlePreviewOriginRequest(...request(path));
+      expect(withoutCookie?.status).toBe(401);
+      expect(withoutCookie?.headers.getSetCookie()).toHaveLength(0);
+      const withCookie = await handlePreviewOriginRequest(...request(path, {
+        headers: { Cookie: cookie, 'sec-fetch-dest': 'document' },
+      }));
+      expect(withCookie?.status).toBe(302);
+      expect(withCookie?.headers.getSetCookie()).toHaveLength(0);
+      clock.mockReturnValue(1_800_003_601_000);
+      expect((await handlePreviewOriginRequest(...request('/', { headers: { Cookie: cookie } })))?.status).toBe(401);
+    } finally {
+      clock.mockRestore();
+    }
+  });
   test('a forged ticket cannot renew an existing authenticated cookie', async () => {
     const response = await handlePreviewOriginRequest(...request('/?preview_ticket=forged', {
       headers: { Cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-dest': 'document' },
@@ -706,12 +726,13 @@ describe('preview navigation tickets', () => {
     expect(minted?.status).toBe(200);
     const { ticket } = await minted!.json();
     expect(ticket).not.toContain('good');
+    expect((await handlePreviewOriginRequest(...request('/', { headers: { Cookie: `__kortix_preview=${ticket}` } })))?.status).toBe(401);
     const { verifyPreviewSession } = await import('./preview-session');
-    const grant = verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8081 });
+    const grant = verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8081 }, 'ticket');
     expect(grant?.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(grant!.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 60);
-    expect(verifyPreviewSession(ticket, { sandboxLabel: 'other', port: 8081 })).toBeNull();
-    expect(verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8082 })).toBeNull();
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'other', port: 8081 }, 'ticket')).toBeNull();
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8082 }, 'ticket')).toBeNull();
     const opened = await handlePreviewOriginRequest(...request('/?preview_ticket=' + encodeURIComponent(ticket), {
       headers: { 'sec-fetch-dest': 'document' },
     }));

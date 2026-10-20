@@ -32,5 +32,5 @@ previewTicket.openapi(createRoute({
   if ('refusal' in result) return c.json({ error: result.refusal.message }, 401);
   const { exp: _exp, ...payload } = result.session;
   c.header('Cache-Control', 'no-store');
-  return c.json({ ticket: mintPreviewSession(payload, 60) }, 200);
+  return c.json({ ticket: mintPreviewSession(payload, 60, 'ticket') }, 200);
 });
