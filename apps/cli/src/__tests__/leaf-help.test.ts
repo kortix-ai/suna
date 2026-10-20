@@ -30,6 +30,7 @@ const GROUPS = [
   'env',
   'files',
   'gateway',
+  'goals',
   'grants',
   'groups',
   'hosts',
