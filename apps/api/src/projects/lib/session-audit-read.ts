@@ -157,7 +157,9 @@ export async function readSessionAuditActions(
       // full (redacted) arguments and decides. Minted here so the in-session
       // notice can link straight to it without a second round trip. Only for
       // pending rows: a resolved row has nothing left to decide.
-      approval_url: isPending(r) ? approvalPageUrl(projectId, r.executionId, sessionId) : null,
+      approval_url: isPending(r)
+        ? approvalPageUrl(projectId, r.executionId, sessionId, undefined, r.expiresAt)
+        : null,
       // KRTX-1724: true only when THIS caller's POST would succeed, so a
       // client offers Approve / Deny to the people who can use them.
       can_resolve: isPending(r) && callerMayResolve,

@@ -470,8 +470,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
-      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // The link expires with the approval it points at (`expires_at`).
+    mintApprovalLink: async ({ projectId, executionId, sessionId }) => {
+      const [row] = await db
+        .select({ expiresAt: connectorCalls.expiresAt })
+        .from(connectorCalls)
+        .where(eq(connectorCalls.executionId, executionId))
+        .limit(1);
+      return approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL, row?.expiresAt);
+    },
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
       (await import('../channels/approval-card-relay')).postApprovalCard(input),

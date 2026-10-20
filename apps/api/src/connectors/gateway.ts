@@ -295,7 +295,7 @@ export interface GatewayDeps {
     projectId: string;
     executionId: string;
     sessionId: string | null;
-  }): string | null;
+  }): string | null | Promise<string | null>;
   /**
    * Post an approval card into the chat thread of the session that made a
    * gated call (Slack). Resolves `posted: false` for sessions with no thread.
@@ -942,10 +942,10 @@ async function enforceCallPolicies(
   // Keys are OMITTED when empty rather than set to null: the pending_approval
   // result is a wire shape other code compares against, and a key that carries
   // no information shouldn't change it.
-  const approvalExtras = (executionId: string | null | undefined) => {
+  const approvalExtras = async (executionId: string | null | undefined) => {
     const url =
       executionId && deps.mintApprovalLink
-        ? deps.mintApprovalLink({
+        ? await deps.mintApprovalLink({
             projectId: input.projectId,
             executionId,
             sessionId: input.sessionId ?? null,
@@ -1100,7 +1100,7 @@ async function enforceCallPolicies(
           },
           requestDigest,
         ));
-      const extras = approvalExtras(executionId);
+      const extras = await approvalExtras(executionId);
       const cardPosted =
         !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
           ? await postCardWithin(CARD_POST_BUDGET_MS, () =>

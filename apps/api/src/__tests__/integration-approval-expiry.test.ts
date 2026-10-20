@@ -18,6 +18,7 @@ import { extractProjectPolicies } from '../projects/policies';
 import type { ApprovalCaller } from '../projects/lib/approval-authority';
 import { getInboxItem, listInboxItems, reviewSummary } from '../projects/review-items';
 import { flushAuditEvents } from '../shared/audit';
+import { resolveSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -163,6 +164,24 @@ describe('approval expiry', () => {
     });
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ code: 'APPROVAL_EXPIRED' });
+  });
+
+  test('the approval link token expires with the approval', async () => {
+    const deps = makeDbGatewayDeps({
+      userId: humanUserId,
+      accountId: seeded.account_id,
+      projectId: seeded.project_id,
+      sessionId,
+      subject: { userId: humanUserId, groupIds: [] },
+    } as Parameters<typeof makeDbGatewayDeps>[0]);
+    const url = await deps.mintApprovalLink!({ projectId: seeded.project_id, executionId: liveId, sessionId });
+    const resolved = resolveSetupLink(url!.split('/approve/')[1]);
+    if (!resolved.ok) throw new Error(resolved.error);
+    const [row] = await db
+      .select({ expiresAt: connectorCalls.expiresAt })
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, liveId));
+    expect(resolved.payload.exp).toBe(row.expiresAt!.getTime());
   });
 
   test('a new pending row expires after the project approvals.ttl, else 24 h', async () => {

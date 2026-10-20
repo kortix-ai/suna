@@ -13,6 +13,8 @@
 //
 //   bun test tests/migration/approval-expiry.test.ts   (needs docker)
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
@@ -94,7 +96,37 @@ suite('approval expiry migrations (throwaway Postgres)', () => {
   test('both migrations record themselves in the ledger', () => {
     expect(
       psql(`select count(*) from kortix_migrations.pgmigrations
-             where name in ('20261020162514189_approval_expiry', '20261020162524287_approval_expiry_index.concurrent')`),
-    ).toBe('2');
+             where name in ('20261020162514189_approval_expiry', '20261020162524287_approval_expiry_index.concurrent',
+                            '20261020163957039_connector_call_expired_audit_outcome', '20261020163957362_approval_expiry_backfill')`),
+    ).toBe('4');
+  });
+
+  test('the backfill gives a legacy pending row a 24 h window and leaves decided rows alone', () => {
+    const ids = psql(`
+      insert into kortix.connector_calls (account_id, project_id, action_path, status)
+      values ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222201', 'seed.legacy', 'pending_approval'),
+             ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222201', 'seed.legacy', 'ok')
+      returning execution_id`).split('\n');
+    const backfill = readFileSync(
+      join(ROOT, 'packages/db/migrations/20261020163957362_approval_expiry_backfill.sql'),
+      'utf8',
+    );
+    psql(backfill);
+    expect(
+      psql(`select round(extract(epoch from expires_at - now()) / 3600)::int from kortix.connector_calls where execution_id = '${ids[0]}'`),
+    ).toBe('24');
+    expect(psql(`select expires_at is null from kortix.connector_calls where execution_id = '${ids[1]}'`)).toBe('t');
+  });
+
+  test('the audit projection labels an expired call outcome expired', () => {
+    const id = psql(`
+      insert into kortix.connector_calls (account_id, project_id, action_path, status)
+      values ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222201', 'seed.flip', 'pending_approval')
+      returning execution_id`).split('\n')[0];
+    psql(`update kortix.connector_calls set status = 'expired', resolved_at = now() where execution_id = '${id}'`);
+    expect(
+      psql(`select phase || ':' || outcome from kortix.audit_events
+             where source_ledger = 'connector_calls' and source_record_id = '${id}' order by phase`).split('\n'),
+    ).toEqual(['expired:expired', 'pending:pending']);
   });
 });
