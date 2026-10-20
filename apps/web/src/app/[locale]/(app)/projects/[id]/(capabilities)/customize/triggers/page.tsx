@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { TriggersPage } from '@kortix/ui/customize';
+import { TriggersPage } from '@kortix/ui/customize/triggers/triggers-page';
 
 /**
  * /projects/[id]/triggers — the standalone Triggers page, replacing the old

@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
 import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
-import { ConnectorsPage } from '@kortix/ui/customize';
+import { ConnectorsPage } from '@kortix/ui/customize/connectors/connectors-page';
 import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**

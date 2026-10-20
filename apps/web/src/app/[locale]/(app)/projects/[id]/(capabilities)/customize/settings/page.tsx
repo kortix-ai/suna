@@ -3,7 +3,7 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ProjectSettingsPage } from '@kortix/ui/customize';
+import { ProjectSettingsPage } from '@kortix/ui/customize/project-settings/project-settings-page';
 import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**

@@ -63,13 +63,19 @@
     "./count-badge": "./src/primitives/count-badge.tsx",
     "./customize": "./src/customize/index.ts",
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
+    "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
+    "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
     "./customize/connectors/catalog/use-catalog": "./src/customize/connectors/catalog/use-catalog.ts",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
+    "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
     "./customize/connectors/detail/app-page": "./src/customize/connectors/detail/app-page.tsx",
     "./customize/connectors/detail/connector-page": "./src/customize/connectors/detail/connector-page.tsx",
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
+    "./customize/models/models-page": "./src/customize/models/models-page.tsx",
+    "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
     "./customize/project-settings/project-settings-sections": "./src/customize/project-settings/project-settings-sections.ts",
+    "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
@@ -111,7 +117,9 @@
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
+    "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
     "./customize/triggers/schedule/schedule-copy": "./src/customize/triggers/schedule/schedule-copy.ts",
+    "./customize/triggers/triggers-page": "./src/customize/triggers/triggers-page.tsx",
     "./data-grid": "./src/primitives/data-grid.tsx",
     "./date-range-picker": "./src/primitives/date-range-picker.tsx",
     "./definition-list": "./src/primitives/definition-list.tsx",
@@ -700,6 +708,14 @@
         "types": "./dist/customize/agents/agent-detail-aside.d.ts",
         "import": "./dist/customize/agents/agent-detail-aside.js"
       },
+      "./customize/agents/agent-page": {
+        "types": "./dist/customize/agents/agent-page.d.ts",
+        "import": "./dist/customize/agents/agent-page.js"
+      },
+      "./customize/agents/agents-page": {
+        "types": "./dist/customize/agents/agents-page.d.ts",
+        "import": "./dist/customize/agents/agents-page.js"
+      },
       "./customize/connectors/catalog/use-catalog": {
         "types": "./dist/customize/connectors/catalog/use-catalog.d.ts",
         "import": "./dist/customize/connectors/catalog/use-catalog.js"
@@ -711,6 +727,10 @@
       "./customize/connectors/connectors-app-return-bar": {
         "types": "./dist/customize/connectors/connectors-app-return-bar.d.ts",
         "import": "./dist/customize/connectors/connectors-app-return-bar.js"
+      },
+      "./customize/connectors/connectors-page": {
+        "types": "./dist/customize/connectors/connectors-page.d.ts",
+        "import": "./dist/customize/connectors/connectors-page.js"
       },
       "./customize/connectors/detail/app-page": {
         "types": "./dist/customize/connectors/detail/app-page.d.ts",
@@ -724,9 +744,21 @@
         "types": "./dist/customize/migrate-to-v2/upgrade-view.d.ts",
         "import": "./dist/customize/migrate-to-v2/upgrade-view.js"
       },
+      "./customize/models/models-page": {
+        "types": "./dist/customize/models/models-page.d.ts",
+        "import": "./dist/customize/models/models-page.js"
+      },
+      "./customize/project-settings/project-settings-page": {
+        "types": "./dist/customize/project-settings/project-settings-page.d.ts",
+        "import": "./dist/customize/project-settings/project-settings-page.js"
+      },
       "./customize/project-settings/project-settings-sections": {
         "types": "./dist/customize/project-settings/project-settings-sections.d.ts",
         "import": "./dist/customize/project-settings/project-settings-sections.js"
+      },
+      "./customize/secrets/secrets-page": {
+        "types": "./dist/customize/secrets/secrets-page.d.ts",
+        "import": "./dist/customize/secrets/secrets-page.js"
       },
       "./customize/sections/add-account-fields": {
         "types": "./dist/customize/sections/add-account-fields.d.ts",
@@ -892,9 +924,17 @@
         "types": "./dist/customize/shared/with-search.d.ts",
         "import": "./dist/customize/shared/with-search.js"
       },
+      "./customize/skills/skills-page": {
+        "types": "./dist/customize/skills/skills-page.d.ts",
+        "import": "./dist/customize/skills/skills-page.js"
+      },
       "./customize/triggers/schedule/schedule-copy": {
         "types": "./dist/customize/triggers/schedule/schedule-copy.d.ts",
         "import": "./dist/customize/triggers/schedule/schedule-copy.js"
+      },
+      "./customize/triggers/triggers-page": {
+        "types": "./dist/customize/triggers/triggers-page.d.ts",
+        "import": "./dist/customize/triggers/triggers-page.js"
       },
       "./data-grid": {
         "types": "./dist/primitives/data-grid.d.ts",

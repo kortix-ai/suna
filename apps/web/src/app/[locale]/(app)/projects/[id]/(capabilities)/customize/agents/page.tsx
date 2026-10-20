@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { AgentsPage } from '@kortix/ui/customize';
+import { AgentsPage } from '@kortix/ui/customize/agents/agents-page';
 
 /**
  * /projects/[id]/agent — the standalone Agents catalog. See

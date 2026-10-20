@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { AgentPage } from '@kortix/ui/customize';
+import { AgentPage } from '@kortix/ui/customize/agents/agent-page';
 
 /**
  * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
