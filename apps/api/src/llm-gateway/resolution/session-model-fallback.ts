@@ -43,6 +43,22 @@ export const FALLBACK_KEYS = {
   until: 'opencode_model_fallback_until',
 } as const;
 
+/** When a person last picked the session's model (`PUT …/model`), epoch ms. */
+export const PICKED_AT_KEY = 'opencode_model_picked_at';
+/** The revert's marker (`projects/lib/session-model-fallback-revert.ts`). */
+export const RESTORED_KEY = 'opencode_model_restored';
+
+/**
+ * PURE. The session metadata after a person picks `model`. The pick ends any
+ * fallback: no revert may undo it, no restored marker outranks it, and a
+ * switch from a request that started before it skips the session.
+ */
+export function pickedModelMetadata(current: Record<string, unknown>, model: string, nowMs = Date.now()): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...current };
+  for (const key of [...Object.values(FALLBACK_KEYS), RESTORED_KEY]) delete next[key];
+  return { ...next, opencode_model: model, opencode_model_source: 'explicit', [PICKED_AT_KEY]: nowMs };
+}
+
 /** Failure codes that mean the model cannot serve for a while (resting pool, sign-in, retired). */
 const UNAVAILABLE_CODES = new Set([
   'provider_pool_rate_limited',
@@ -62,11 +78,13 @@ export interface FallbackSwitch {
   reason: string;
   /** How long the gateway holds the route on the fallback (pipeline/route-memory.ts). The revert waits for it. */
   holdSeconds: number;
+  /** When the failing request started, epoch ms. A pick made after it wins. */
+  startedAtMs: number;
 }
 
 /** PURE. The switch a trace asks for, or null. */
 export function fallbackSwitchOf(
-  trace: Pick<GatewayTrace, 'ok' | 'sessionId' | 'projectId' | 'accountId' | 'requestedModel' | 'servedModel' | 'fallbackFrom' | 'attemptFailures'>,
+  trace: Pick<GatewayTrace, 'ok' | 'startedAt' | 'sessionId' | 'projectId' | 'accountId' | 'requestedModel' | 'servedModel' | 'fallbackFrom' | 'attemptFailures'>,
 ): FallbackSwitch | null {
   if (!trace.ok || !trace.sessionId || !trace.projectId || !trace.servedModel || !trace.fallbackFrom) return null;
   const first = trace.attemptFailures?.[0];
@@ -75,6 +93,9 @@ export function fallbackSwitchOf(
   const from = toOpencodeModelRef(trace.requestedModel);
   const to = toOpencodeModelRef(trace.servedModel);
   if (from === to) return null;
+  // The route named another model than the request (the project's vision
+  // reroute for an image): the session's own model did not fail.
+  if (toOpencodeModelRef(trace.fallbackFrom) !== from) return null;
   return {
     sessionId: trace.sessionId,
     projectId: trace.projectId,
@@ -84,6 +105,7 @@ export function fallbackSwitchOf(
     reason: String(first.code),
     // A trace from a gateway that does not record the hold: its rule, at most.
     holdSeconds: first.holdSeconds ?? (first.code === 'provider_pool_rate_limited' ? MAX_HOLD_SECONDS : SETUP_HOLD_SECONDS),
+    startedAtMs: Date.parse(trace.startedAt) || 0,
   };
 }
 
@@ -160,6 +182,8 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
           sql`NOT ${already}`,
           // A prompt that named no model runs on the pin: switch only from it.
           promptRef === null ? sql`${metadata}->>'opencode_model' = ${change.from}::text` : undefined,
+          // A person picked a model while the failing request ran: the pick wins.
+          sql`(${metadata}->>${PICKED_AT_KEY}::text IS NULL OR (${metadata}->>${PICKED_AT_KEY}::text)::bigint < ${change.startedAtMs}::bigint)`,
         ),
       )
       .returning(notify);

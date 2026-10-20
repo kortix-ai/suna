@@ -33,6 +33,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'opencode_model_fallback_reason',
   'opencode_model_fallback_at',
   'opencode_model_fallback_until',
+  // When a person last picked the model: a fallback switch from a request
+  // that started before it skips the session.
+  'opencode_model_picked_at',
   // The revert's "no prompt ran on the restored pin yet" marker: it makes
   // prompts carry the pin (`prompt-model.ts`).
   'opencode_model_restored',

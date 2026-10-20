@@ -15,9 +15,11 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 
 let servable = false;
 const probes: Array<{ model: string; restingIsServable?: boolean }> = [];
+const probedSessions: string[] = [];
 mock.module('../llm-gateway/resolution/default-model', () => ({
-  isModelServableForAccount: async (input: { model: string; restingIsServable?: boolean }) => {
+  isModelServableForAccount: async (input: { model: string; restingIsServable?: boolean; sessionId?: string }) => {
     probes.push({ model: input.model, restingIsServable: input.restingIsServable });
+    if (input.sessionId) probedSessions.push(input.sessionId);
     return servable;
   },
   resolveEffectiveModel: async () => ({ model: null, source: 'platform' as const }),
@@ -25,7 +27,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   invalidateAccountModelDefaults: () => {},
 }));
 
-const { switchSessionToFallback } = await import('../llm-gateway/resolution/session-model-fallback');
+const { pickedModelMetadata, switchSessionToFallback } = await import('../llm-gateway/resolution/session-model-fallback');
 const { clearRestoredModelPin, revertSessionModelFallback, revertIdleSessionFallbacks } = await import('../projects/lib/session-model-fallback-revert');
 
 const SOL = 'kortix/codex/gpt-6.1-sol';
@@ -85,6 +87,7 @@ const change = (sessionId: string, from = SOL, to = DEEPSEEK, reason = 'provider
   to,
   reason,
   holdSeconds,
+  startedAtMs: 0,
 });
 
 beforeAll(async () => {
@@ -262,5 +265,49 @@ describe('session model fallback', () => {
     expect((await metadataOf(idle)).opencode_model).toBe(SOL);
     expect((await metadataOf(busy)).opencode_model).toBe(DEEPSEEK);
     expect((await metadataOf(stopped)).opencode_model).toBe(DEEPSEEK);
+  });
+
+  test('a person who picks a model while the failing request runs keeps the pick', async () => {
+    // The request started at 1_000 on Sol; the person picked GLM at 1_500,
+    // before the late trace switched the session.
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    await db.update(projectSessions)
+      .set({ metadata: pickedModelMetadata(await metadataOf(sessionId), GLM, 1_500) })
+      .where(eq(projectSessions.sessionId, sessionId));
+    expect(await switchSessionToFallback({ ...change(sessionId), startedAtMs: 1_000 }, 2_000)).toBe(false);
+    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: GLM, opencode_model_source: 'explicit' });
+
+    // A pick made before the request started does not block the switch.
+    expect(await switchSessionToFallback({ ...change(sessionId), startedAtMs: 1_600 }, 2_000)).toBe(true);
+    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: DEEPSEEK, opencode_model_fallback_from_source: 'explicit' });
+  });
+
+  test('a pick drops a fallback record and the restored marker, so no revert undoes it', async () => {
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    await switchSessionToFallback(change(sessionId), 1_000);
+    await db.update(projectSessions)
+      .set({ metadata: pickedModelMetadata(await metadataOf(sessionId), GLM, 2_000) })
+      .where(eq(projectSessions.sessionId, sessionId));
+    servable = true;
+    expect(await revertSessionModelFallback(sessionId, 10_000_000)).toBeNull();
+    const metadata = await metadataOf(sessionId);
+    expect(metadata).toMatchObject({ opencode_model: GLM, opencode_model_source: 'explicit' });
+    expect(metadata.opencode_model_fallback_from).toBeUndefined();
+    expect(metadata.opencode_model_restored).toBeUndefined();
+  });
+
+  test('the idle sweep skips a session still held and probes the latest hold to end first', async () => {
+    const now = 50_000_000;
+    const held = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    const older = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    const newer = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    await switchSessionToFallback(change(held), now - 1_000);
+    await switchSessionToFallback(change(older), now - 900_000);
+    await switchSessionToFallback(change(newer), now - 700_000);
+    servable = false;
+    probedSessions.length = 0;
+    await revertIdleSessionFallbacks(now);
+    const ours = probedSessions.filter((id) => [held, older, newer].includes(id));
+    expect(ours).toEqual([newer, older]);
   });
 });

@@ -25,6 +25,7 @@ import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush,
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { pickedModelMetadata } from '../../llm-gateway/resolution/session-model-fallback';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -467,11 +468,8 @@ export function registerSessionScopeRoutes(): void {
       await db
         .update(projectSessions)
         .set({
-          metadata: {
-            ...currentMetadata,
-            opencode_model: nextModel,
-            opencode_model_source: 'explicit',
-          },
+          // A pick ends any fallback; a late fallback trace skips it.
+          metadata: pickedModelMetadata(currentMetadata, nextModel),
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, sessionId));

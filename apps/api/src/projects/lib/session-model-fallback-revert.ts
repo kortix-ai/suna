@@ -25,15 +25,13 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { FALLBACK_KEYS } from '../../llm-gateway/resolution/session-model-fallback';
+import { FALLBACK_KEYS, RESTORED_KEY } from '../../llm-gateway/resolution/session-model-fallback';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { SESSION_CHANGED_CHANNEL } from '../../shared/pg-broadcast';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { activeTurnAuthorityPredicate } from '../reaping/box-queries';
 import { resolveSessionPersonalOwner } from './personal-resources';
-
-const RESTORED_KEY = 'opencode_model_restored';
 
 /** Never throws. Returns the restored model ref, or null when the session stays. */
 export async function revertSessionModelFallback(sessionId: string, nowMs = Date.now()): Promise<string | null> {
@@ -134,13 +132,17 @@ export async function clearRestoredModelPin(sessionId: string): Promise<void> {
 }
 
 const SWEEP_LIMIT = 200;
+const UNTIL = sql`coalesce((${projectSessions.metadata}->>${FALLBACK_KEYS.until}::text)::bigint, 0)`;
 
 /**
  * Worker tick: try the revert on every live, idle session a fallback took
  * over, so one that sits idle moves back without another turn. Scoped to live
  * sessions (the status index; ~100 rows in prod, 10 ms): a stopped session
  * becomes live again on open and the next tick takes it. A session mid-turn
- * waits for its turn end, which runs the revert itself.
+ * waits for its turn end, which runs the revert itself. A session the gateway
+ * still holds is not probed. The latest hold to end goes first: a session
+ * whose original never serves again sinks to the back and cannot starve the
+ * ones that just became free.
  */
 export async function revertIdleSessionFallbacks(nowMs = Date.now()): Promise<number> {
   const rows = await db
@@ -152,8 +154,10 @@ export async function revertIdleSessionFallbacks(nowMs = Date.now()): Promise<nu
         sql`${projectSessions.metadata}->>'opencode_model_source' = 'fallback'`,
         sql`NOT EXISTS (SELECT 1 FROM ${sessionSandboxes}
           WHERE ${qualifiedColumn(sessionSandboxes.sessionId)} = ${qualifiedColumn(projectSessions.sessionId)} AND ${activeTurnAuthorityPredicate()})`,
+        sql`${UNTIL} <= ${nowMs}::bigint`,
       ),
     )
+    .orderBy(sql`${UNTIL} DESC`)
     .limit(SWEEP_LIMIT);
   let reverted = 0;
   for (const { sessionId } of rows) {
