@@ -17811,19 +17811,13 @@
           "name": "idx_project_sessions_space",
           "columns": [
             {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
               "expression": "space_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "created_at",
+              "expression": "updated_at",
               "isExpression": false,
               "asc": false,
               "nulls": "last"

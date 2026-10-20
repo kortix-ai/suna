@@ -1247,7 +1247,7 @@ export const projectSessions = kortixSchema.table(
     // One space's threads, newest first. Partial: sessions outside a space are
     // never listed by it.
     index('idx_project_sessions_space')
-      .on(table.projectId, table.spaceId, table.createdAt.desc(), table.sessionId.desc())
+      .on(table.spaceId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.spaceId} is not null`),
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
