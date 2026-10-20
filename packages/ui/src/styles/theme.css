@@ -141,6 +141,12 @@
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
+  /* The default Button fill. Unset, it is ink on paper (foreground /
+     background), the Kortix primary action. A host recolors it with the
+     theme's `action` / `actionForeground`. The fallback resolves where the
+     class is used, so a scoped `.dark` keeps working. */
+  --color-action: var(--action, var(--foreground));
+  --color-action-foreground: var(--action-foreground, var(--background));
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);

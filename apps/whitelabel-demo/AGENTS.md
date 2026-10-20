@@ -88,8 +88,8 @@ Theming happens only in `src/app/globals.css`: it imports `tailwindcss` and
 scrollbar plugins), then overrides token variables in `:root` (light) and
 `.dark` (dark). Lumen's brand is `--brand`; `--kortix-blue` (the accent of
 switches, checkboxes, radios, the brand Button and Badge variants and info
-alerts), `--ring`, `--sidebar-primary`, `--sidebar-ring` and `--selection`
-point at it. Never fork
+alerts), `--action` (the default Button fill), `--ring`, `--sidebar-primary`,
+`--sidebar-ring` and `--selection` point at it. Never fork
 or wrap a component to change a color, radius or font. Never import
 `@kortix/ui/fonts.css`: white-label surfaces use the system font stack.
 

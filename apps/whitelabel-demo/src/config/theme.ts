@@ -25,6 +25,10 @@ const accent = {
   blue: 'var(--brand)',
   // Focus rings. focusRing, sidebarRing, sidebarPrimary and brand follow it.
   ring: 'var(--brand)',
+  // Primary actions: the default Button (New project, Save changes, Send).
+  // Kortix's are ink on paper.
+  action: 'var(--brand)',
+  actionForeground: 'var(--brand-foreground)',
   selection: 'color-mix(in oklch, var(--brand) 30%, transparent)',
   selectionForeground: 'var(--foreground)',
   sidebarPrimaryForeground: 'var(--brand-foreground)',
@@ -43,7 +47,7 @@ export const LUMEN_THEME: KortixTheme = {
     foreground: 'oklch(0.24 0.025 55)',
     cardForeground: 'oklch(0.24 0.025 55)',
     popoverForeground: 'oklch(0.24 0.025 55)',
-    // Primary actions wear the accent; Kortix's are black/white.
+    // Progress, Slider, Calendar selection and the menu highlight.
     primary: BRAND_COLOR.light,
     primaryForeground: 'oklch(0.99 0.005 85)',
     muted: 'oklch(0.955 0.012 80)',

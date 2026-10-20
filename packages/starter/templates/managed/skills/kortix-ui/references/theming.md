@@ -67,7 +67,8 @@ Colors (`light`, `dark`; any CSS color):
 
 | Key | Variable | Controls |
 | --- | --- | --- |
-| `background`, `foreground` | `--background`, `--foreground` | The page, text, the default `Button` fill |
+| `background`, `foreground` | `--background`, `--foreground` | The page, text |
+| `action`, `actionForeground` | `--action`, `--action-foreground` | The default `Button` fill and its text. Unset: `foreground` / `background` |
 | `pane`, `surface` | `--pane`, `--surface` | Base and raised panes |
 | `card`, `popover` (+ `…Foreground`) | `--card`, `--popover` | `Card`, tool cards, questions; menus, popovers, inputs |
 | `primary` (+ `primaryForeground`) | `--primary` | `Progress`, `Slider`, menu highlight, selection |
