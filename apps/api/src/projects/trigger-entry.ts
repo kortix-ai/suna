@@ -174,6 +174,18 @@ export function parseRunCaps(
   return caps;
 }
 
+/**
+ * A trigger's `overlap` (KRTX-1721): `skip` or `allow`. Absent → omitted, and
+ * the default applies (`skip` for cron, `allow` otherwise). It acts on fresh
+ * session mode only (`lib/trigger-overlap.ts`).
+ */
+export function parseOverlap(row: Record<string, unknown>): { overlap?: 'skip' | 'allow' } | { error: string } {
+  const raw = row.overlap;
+  if (raw === undefined || raw === null) return {};
+  if (raw !== 'skip' && raw !== 'allow') return { error: 'overlap must be "skip" or "allow"' };
+  return { overlap: raw };
+}
+
 function parseMonitorDuration(
   value: unknown,
   field: string,
@@ -339,6 +351,7 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // Only when set, like model: an uncapped manifest stays byte-stable.
   if (spec.maxRunsPerHour) entry.max_runs_per_hour = spec.maxRunsPerHour;
   if (spec.maxRunsPerDay) entry.max_runs_per_day = spec.maxRunsPerDay;
+  if (spec.overlap) entry.overlap = spec.overlap;
   // `keyed` is written as `session_key` alone: the key implies the mode on read
   // (see parseTriggerEntry), so emitting both would be redundant in the file a
   // human actually reads. It also keeps the manifest valid against the
@@ -441,6 +454,8 @@ function parseTriggerEntry(
   if ('error' in lateness) return err(slug, lateness.error);
   const caps = parseRunCaps(row);
   if ('error' in caps) return err(slug, caps.error);
+  const overlap = parseOverlap(row);
+  if ('error' in overlap) return err(slug, overlap.error);
   if (type !== 'event') {
     const bad = eventOnlyKeyError(row, 'config', type);
     if (bad) return err(slug, bad);
@@ -545,6 +560,7 @@ function parseTriggerEntry(
     sessionKey,
     filter,
     ...caps,
+    ...overlap,
   };
 
   if (type === 'event') {

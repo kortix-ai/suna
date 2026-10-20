@@ -62,10 +62,12 @@ export function AuthStatusScreen({
 
 /** A one-line terminal command with the canonical animated copy button. */
 export function CopyCommand({ command }: { command: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="border-border flex items-center justify-between gap-3 rounded-md border py-1.5 pr-1.5 pl-3.5">
       <code className="text-foreground truncate font-mono text-sm">{command}</code>
-      <CopyButton code={command} />
+      {/* It copies a command: "Copy command", not the shared default "Copy code" (KRTX-2911). */}
+      <CopyButton code={command} label={tI18nComplete.raw('text9a01feecae67')} />
     </div>
   );
 }

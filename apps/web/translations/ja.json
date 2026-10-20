@@ -638,6 +638,7 @@
         "userNotFound": "ユーザーが見つかりません",
         "profilePictureUpdated": "プロフィール写真を更新しました",
         "profilePictureUploadFailed": "プロフィール写真をアップロードできませんでした",
+        "avatarUploadOffline": "画像をアップロードできませんでした。接続を確認して、もう一度お試しください。",
         "profilePictureRemoved": "プロフィール写真が削除されました",
         "profilePictureRemoveFailed": "プロフィール写真を削除できませんでした",
         "chooseImageFile": "画像ファイルを選択してください",
@@ -20594,6 +20595,12 @@
     "mcpNotChecked": "まだ確認していません",
     "runLimits": "実行の上限",
     "runLimitsHint": "上限を超えた起動は何も開始せず、スキップされた実行として表示されます。手動での実行は止められませんが、回数には含まれます。",
+    "overlap": "重複",
+    "overlapHint": "前回の実行がまだ続いている場合、新しい起動は待機するか 2 つ目の実行を開始します。自分で開始した実行は常に実行されます。",
+    "overlapDefaultSkip": "既定: 前回の実行中はスキップ",
+    "overlapDefaultAllow": "既定: それでも新しい実行を開始",
+    "overlapSkip": "前回の実行中はスキップ",
+    "overlapAllow": "それでも新しい実行を開始",
     "perHour": "1時間あたり",
     "perDay": "1日あたり",
     "noLimit": "上限なし"
@@ -22000,5 +22007,9 @@
     "exists": "存在する",
     "missing": "存在しない",
     "listPlaceholder": "値 1, 値 2"
+  },
+  "triggerAutoPause": {
+    "title": "実行上限に達したため自動で一時停止しました",
+    "description": "1 時間あたりの実行上限で 2 時間連続して実行されたため、実行の開始を停止しました。何が起動し続けているかを確認してから再開してください。"
   }
 }

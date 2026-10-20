@@ -26,6 +26,10 @@ describe('nextRunLabel (C09 trailing, line one)', () => {
       'On event',
     );
     expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0), false), t, 'en', now)).toBe('Paused');
+    // An auto-paused trigger (KRTX-1721) reads Paused though its manifest says enabled.
+    const autoPaused = { auto_paused_at: '2026-10-19T08:00:00.000Z' };
+    expect(nextRunLabel({ ...cron(new Date(2026, 9, 19, 9, 0)), ...autoPaused }, t, 'en', now)).toBe('Paused');
+    expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null, ...autoPaused }, t, 'en', now)).toBe('Paused');
     expect(nextRunLabel(cron(null), t, 'en', now)).toBe('—');
   });
 });

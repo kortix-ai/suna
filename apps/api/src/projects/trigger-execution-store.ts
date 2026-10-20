@@ -76,6 +76,8 @@ export async function claimDueScheduleSlots(input: {
         // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
         // so resuming fires a missed slot once.
         accountAutomationsRunSql(projects.accountId),
+        // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.
+        isNull(projectTriggerRuntime.autoPausedAt),
         // A session reminder fires only while its project has the `reminders`
         // flag on. Off, the row stays due and unclaimed, so turning the flag
         // back on fires a missed slot once, like any downtime.
