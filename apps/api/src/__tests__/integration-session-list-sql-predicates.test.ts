@@ -24,13 +24,14 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
-import { loadSessionGrants, resolveShareSubject } from '../connectors/share';
+import { agentSessionStanding, isProjectSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../connectors/share';
 import { selectSessionRowsForViewer } from '../projects/lib/session-inventory';
 import {
   loadProjectSessionInventory,
   type SessionListFilter,
   sessionListViewerSql,
 } from '../projects/lib/session-list';
+import { isWarmProjectSession } from '../projects/lib/warm-sessions';
 import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
@@ -402,6 +403,67 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
       }
     }
     expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2);
+  });
+
+  // `projectReadView` (gateway logs and spend, change requests, the review
+  // inbox, project files) filters a non-manager with the project scope. That
+  // viewer's WHERE is `case when <access> then <tombstone> else false end`:
+  // the rows a JS rule can open, deleted ones kept, deleted warm drafts out.
+  test('the non-manager project read keeps every session the viewer can open, deleted ones included, and drops deleted warm drafts', async () => {
+    const rows = await db.select().from(projectSessions).where(eq(projectSessions.projectId, PROJECT_RULES));
+    const grantsBySession = await loadSessionGrants(rows.map((row) => row.sessionId));
+    let compared = 0;
+    for (const viewerId of viewers) {
+      const subject = await resolveShareSubject(viewerId);
+      for (const bound of [...bindings, sid('deleted-warm-project-a')]) {
+        for (const agentPrincipal of [false, true]) {
+          for (const accountSessionOversight of [false, true]) {
+            const viewer = { scope: 'project' as const, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject: false, accountSessionOversight };
+            const fromSql = await db
+              .select({ sessionId: projectSessions.sessionId })
+              .from(projectSessions)
+              .where(and(eq(projectSessions.projectId, PROJECT_RULES), sessionListViewerSql(viewer)));
+            const fromJs = rows.filter((row) => {
+              const meta = (row.metadata ?? {}) as Record<string, unknown>;
+              if (typeof meta.deletedAt === 'string' && isWarmProjectSession(row.metadata)) return false;
+              const canAccess = isProjectSessionVisibleTo(
+                row.visibility as Visibility,
+                row.createdBy,
+                grantsBySession.get(row.sessionId) ?? [],
+                subject,
+                { origin: row.origin ?? null, sessionId: row.sessionId, callerSessionId: bound, boundCredentialSessionId: bound },
+                { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject: false, accountSessionOversight },
+              );
+              return agentPrincipal ? agentSessionStanding(bound, row, canAccess).visible : canAccess;
+            });
+            const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
+            expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
+              label,
+              ids: fromJs.map((row) => short(row.sessionId)).sort(),
+            });
+            compared += 1;
+          }
+        }
+      }
+    }
+    expect(compared).toBe(3 * 4 * 2 * 2);
+    // The fixture reaches both halves of the CASE: member A opens a deleted
+    // session (kept) and a deleted warm draft (dropped).
+    // Member B reaches a restricted session through a group grant.
+    const readIds = async (viewerId: string) =>
+      (await db
+        .select({ sessionId: projectSessions.sessionId })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.projectId, PROJECT_RULES), sessionListViewerSql({
+          scope: 'project', viewerId, boundCredentialSessionId: null, agentPrincipal: false, canManageProject: false, accountSessionOversight: false,
+        })))).map((row) => short(row.sessionId));
+    const memberA = await readIds(MEMBER_A);
+    expect(memberA).toContain('deleted-project-a');
+    expect(memberA).not.toContain('deleted-warm-project-a');
+    expect(memberA).not.toContain('private-b');
+    const memberB = await readIds(MEMBER_B);
+    expect(memberB).toContain('restricted-group-b');
+    expect(memberB).not.toContain('restricted-group-empty');
   });
 
   test('Recently deleted lists what each viewer may restore: their own, or every one they can open as a manager, inside the window', async () => {

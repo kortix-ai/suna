@@ -5,7 +5,17 @@ mock.module('react-native', () => ({ AppState: { currentState: 'active' } }));
 import type { PacerClock } from './stream-pacer';
 
 // After the mock: the real react-native is Flow source bun cannot load.
-const { STREAM_COMMIT_MS, STREAM_FADE_MS, createStreamPacer, holdBackTableHeader, revealCut } = await import('./stream-pacer');
+const {
+  RESUME_MAX_BACKLOG,
+  REVEAL_MEMORY_SIZE,
+  STREAM_COMMIT_MS,
+  STREAM_FADE_MS,
+  createStreamPacer,
+  holdBackTableHeader,
+  initialReveal,
+  rememberReveal,
+  revealCut,
+} = await import('./stream-pacer');
 
 /** A manual 60 Hz frame clock, so every reveal is asserted exactly. */
 function fakeClock() {
@@ -241,6 +251,104 @@ describe('createStreamPacer', () => {
     p.pacer.push(`${words(50)} `, true);
     p.pacer.dispose();
     expect(p.pending()).toBe(0);
+  });
+});
+
+describe('mount and remount (KRTX-2933)', () => {
+  /** Every render is a growing word-boundary prefix of `full`, and the last one is `full`. */
+  function expectCleanReveal(shown: string[], full: string, from: number) {
+    let prev = from;
+    for (const s of shown) {
+      expect(full.startsWith(s)).toBe(true);
+      expect(s.length).toBeGreaterThan(prev);
+      prev = s.length;
+    }
+    expect(shown[shown.length - 1]).toBe(full);
+  }
+
+  test('a finished reply opened while the turn reads live shows in full on the first frame', () => {
+    const reply = 'Here is the short answer you asked for. ';
+    // No key seen yet: opening the session, or a part mounted mid-answer.
+    const initial = initialReveal(reply, true, 'm-open:b-open');
+    expect(initial).toBe(reply);
+    const p = setup(initial);
+    p.pacer.push(reply, true);
+    p.advance(1000);
+    p.pacer.push(reply, false);
+    p.advance(500);
+    // Nothing is typed again: the only render is the settle of the full text.
+    expect(p.shown.every((s) => s === reply)).toBe(true);
+  });
+
+  test('a long reply mounting live also shows in full, with no length cut-off', () => {
+    const reply = `${words(20)} `;
+    expect(reply.length).toBeLessThan(400);
+    expect(initialReveal(reply, true)).toBe(reply);
+    expect(initialReveal(`${words(200)} `, true)).toBe(`${words(200)} `);
+  });
+
+  test('a remount resumes from the revealed length, then streams the rest without dropped or doubled text', () => {
+    const key = 'm-resume:b-resume';
+    const full = `${words(40)} `;
+    rememberReveal(key, 30);
+    const received = full.slice(0, 60);
+    const initial = initialReveal(received, true, key);
+    expect(initial).toBe(received.slice(0, 30));
+    const p = setup(initial);
+    for (let i = 60; i <= full.length; i += 6) {
+      p.pacer.push(full.slice(0, i), true);
+      p.advance(16);
+    }
+    p.pacer.push(full, true);
+    p.advance(200);
+    p.pacer.push(full, false);
+    p.advance(600);
+    expectCleanReveal(p.shown, full, initial.length);
+  });
+
+  test('a remount of a part that is no longer live shows in full', () => {
+    const key = 'm-done:b-done';
+    rememberReveal(key, 10);
+    expect(initialReveal(`${words(30)} `, false, key)).toBe(`${words(30)} `);
+  });
+
+  test('a remount with more than RESUME_MAX_BACKLOG unrevealed chars snaps to the received text', () => {
+    const key = 'm-far:b-far';
+    const full = `${words(200)} `;
+    rememberReveal(key, 10);
+    expect(full.length - 10).toBeGreaterThan(RESUME_MAX_BACKLOG);
+    expect(initialReveal(full, true, key)).toBe(full);
+  });
+
+  test('a remembered length longer than the text (an edit, a revert) shows the text in full', () => {
+    const key = 'm-short:b-short';
+    rememberReveal(key, 500);
+    expect(initialReveal('rewritten ', true, key)).toBe('rewritten ');
+  });
+
+  test('the memory keeps the most recent REVEAL_MEMORY_SIZE parts', () => {
+    rememberReveal('lru:0', 5);
+    for (let i = 1; i <= REVEAL_MEMORY_SIZE; i++) rememberReveal(`lru:${i}`, 5);
+    // lru:0 was evicted: unknown again, so it shows in full.
+    expect(initialReveal('hello world again ', true, 'lru:0')).toBe('hello world again ');
+    expect(initialReveal('hello world again ', true, `lru:${REVEAL_MEMORY_SIZE}`)).toBe('hello');
+  });
+
+  test('a live reply that mounts empty still streams word by word to the exact end', () => {
+    const full = `${words(60)} end`;
+    const initial = initialReveal('', true, 'm-live:b-live');
+    expect(initial).toBe('');
+    const p = setup(initial);
+    for (let i = 5; i <= full.length; i += 5) {
+      p.pacer.push(full.slice(0, i), true);
+      p.advance(16);
+    }
+    p.pacer.push(full, true);
+    p.advance(100);
+    p.pacer.push(full, false);
+    p.advance(600);
+    expect(p.shown.length).toBeGreaterThan(10);
+    expectCleanReveal(p.shown, full, 0);
   });
 });
 

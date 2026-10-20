@@ -307,6 +307,10 @@ const envSchema = z.object({
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
   // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // Default of the project flag `pi_harness` for a project with no stored value. On by default
+  // (2026-10-20): new sessions boot pi. A project's stored value wins. Rollback for a whole
+  // deployment: set it to "false" in the overrides; new sessions boot OpenCode again.
+  PI_HARNESS_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -328,8 +332,12 @@ const envSchema = z.object({
   // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
   // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
   // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
+  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
+  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
+  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
   // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
   KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
@@ -912,6 +920,10 @@ const envSchema = z.object({
   // (notifications/expo-push.ts). The access token is optional: Expo accepts
   // unauthenticated sends unless the project enables enhanced push security.
   EXPO_ACCESS_TOKEN: optStr,
+  // Expo push sends (KRTX-2938). Unset: off on a local stack (the launchers
+  // set KORTIX_INSTANCE_ID), on everywhere else. A local stack holds tokens of
+  // real phones, and Expo routes them to the App Store app. `true` opts in.
+  EXPO_PUSH_ENABLED: optBoolUnset,
   // Kill switch for session push notifications. On by default; `0` or `false`
   // stops every send. Device-token registration keeps working.
   PUSH_NOTIFICATIONS_ENABLED: z
@@ -1268,6 +1280,11 @@ export const config = {
   // 'dev' above, and the router credit gate must not read that fallback as a
   // dev exemption (see router/services/credit-gate-env.ts).
   INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
+  // A local stack (the worktree launcher and scripts/dev-local.sh export it).
+  // It runs as INTERNAL_KORTIX_ENV=dev on dev's sandbox provider organisation
+  // but reads its own database, so it must never delete provider images it
+  // did not build (KRTX-2546). No deployed environment sets it.
+  KORTIX_LOCAL_DEV: process.env.KORTIX_LOCAL_DEV === '1',
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1295,10 +1312,12 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  PI_HARNESS_DEFAULT_ENABLED: env.PI_HARNESS_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
   KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
@@ -1594,6 +1613,7 @@ export const config = {
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,

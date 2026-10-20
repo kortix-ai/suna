@@ -9,7 +9,7 @@
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -1580,6 +1580,28 @@ describe('pi extensions', () => {
     expect(one).toContain('EXTENSION RULE')
     expect(two).not.toContain('TURN RULE')
     expect(two).toContain('EXTENSION RULE')
+  })
+
+  test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+    })
+    const sentBefore = gateway.sent.length
+    try {
+      // Noon UTC: the same calendar day in every time zone the box may run in.
+      setSystemTime(new Date('2026-03-09T12:00:00Z'))
+      await promptAndSettle(r, 'one')
+      setSystemTime(new Date('2026-03-10T12:00:00Z'))
+      await promptAndSettle(r, 'delegate it')
+    } finally {
+      setSystemTime()
+    }
+    const [one, two, child] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain("Today's date: Mon Mar 09 2026 (")
+    expect(two).toContain("Today's date: Tue Mar 10 2026 (")
+    expect(two).not.toContain('Mar 09 2026')
+    expect(child).toContain('Working directory:')
+    expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
   test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
@@ -4121,5 +4143,59 @@ describe('command template expansion', () => {
     ['no arguments leave a plain template alone', 'Ship it.', '', 'Ship it.'],
   ])('%s', (_name, template, args, expected) => {
     expect(expandCommandTemplate(template, args)).toBe(expected)
+  })
+})
+
+describe('pi Changes surface (/project/current vcs, /vcs/diff)', () => {
+  const sh = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { cwd, encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)
+  }
+
+  test('a non-git workspace reports no vcs and an empty diff', async () => {
+    const r = await boot({ script: [] })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.worktree).toBe(r.workspace)
+    expect(project).not.toHaveProperty('vcs')
+    expect(await r.user('/vcs/diff?mode=branch').then((res) => res.json())).toEqual([])
+  })
+
+  test('a git workspace reports vcs git and lists committed, modified, deleted and new files against the base', async () => {
+    const r = await boot({
+      script: [],
+      env: { KORTIX_DEFAULT_BRANCH: 'main' },
+      prepare: (ws) => {
+        writeFileSync(join(ws, '.gitignore'), '.state/\n.pi-agent/\n.pi-packages/\n')
+        writeFileSync(join(ws, 'kept.txt'), 'one\ntwo\n')
+        writeFileSync(join(ws, 'gone.txt'), 'bye\n')
+        sh(ws, 'init', '-q', '-b', 'main')
+        sh(ws, 'add', '.')
+        sh(ws, 'commit', '-q', '-m', 'base')
+        sh(ws, 'checkout', '-q', '-b', 'kortix/session')
+        writeFileSync(join(ws, 'committed.txt'), 'a\n')
+        sh(ws, 'add', 'committed.txt')
+        sh(ws, 'commit', '-q', '-m', 'session work')
+        writeFileSync(join(ws, 'kept.txt'), 'one\nTWO\nthree\n')
+        rmSync(join(ws, 'gone.txt'))
+        writeFileSync(join(ws, 'new file.txt'), 'x\ny\n')
+      },
+    })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.vcs).toBe('git')
+
+    const branch = (await r.user('/vcs/diff?mode=branch').then((res) => res.json())) as Array<Record<string, any>>
+    expect(branch.map(({ file, status, additions, deletions }) => ({ file, status, additions, deletions }))).toEqual([
+      { file: 'committed.txt', status: 'added', additions: 1, deletions: 0 },
+      { file: 'gone.txt', status: 'deleted', additions: 0, deletions: 1 },
+      { file: 'kept.txt', status: 'modified', additions: 2, deletions: 1 },
+      { file: 'new file.txt', status: 'added', additions: 2, deletions: 0 },
+    ])
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('diff --git a/kept.txt b/kept.txt')
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('+TWO')
+    expect(branch.find((f) => f.file === 'new file.txt')!.patch).toContain('+++ b/new file.txt')
+
+    // `git` mode is the working tree only: the committed file is not in it.
+    const working = (await r.user('/vcs/diff?mode=git').then((res) => res.json())) as Array<{ file: string }>
+    expect(working.map((f) => f.file)).toEqual(['gone.txt', 'kept.txt', 'new file.txt'])
   })
 })

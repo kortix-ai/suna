@@ -7,6 +7,7 @@ import process from 'node:process';
 const root = process.cwd();
 const targets = [
   'apps/web/src',
+  'packages/ui/src',
   'apps/mobile',
 ];
 

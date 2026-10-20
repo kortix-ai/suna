@@ -1,7 +1,7 @@
-import { localizedKindCopy } from '@/components/projects/schedule/schedule-copy';
+import { localizedKindCopy } from '@kortix/ui/customize/triggers/schedule/schedule-copy';
 import { faq } from '@/features/marketing/faq/content';
 import { openSource } from '@/features/marketing/open-source/content';
-import { localizedSlashActions } from '@/features/session/composer/menus/slash-actions';
+import { localizedSlashActions } from '@kortix/ui/session/composer/menus/slash-actions';
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
@@ -20,8 +20,8 @@ import ja from '../../translations/ja.json';
 import pt from '../../translations/pt.json';
 import sr from '../../translations/sr.json';
 import zh from '../../translations/zh.json';
-import { localizeUiCatalog } from './localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from './remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 
 const srTranslator = createTranslator({
   locale: 'sr',
@@ -76,6 +76,19 @@ function placeholders(value: string): string[] {
       .sort();
   }
 }
+
+
+// apps/web/src and packages/ui/src: the session UI renders from @kortix/ui.
+const SOURCE_ROOTS = [join(import.meta.dir, '..'), join(import.meta.dir, '../../../../packages/ui/src')];
+const sourceFiles = () =>
+  SOURCE_ROOTS.flatMap((root) =>
+    readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
+      .map((file) => join(root, file)),
+  );
+/** A one-line `export * from '@kortix/ui/…'` left at a moved module's old path. */
+const isShim = (file: string) => /^(?:'use client';\s*)?export \* from '@kortix\/ui\//.test(readFileSync(file, 'utf8').trim());
 
 describe('complete UI localization', () => {
   test('localizes nested display text, preserves React elements, and keeps unknown fallbacks', () => {
@@ -150,13 +163,12 @@ describe('complete UI localization', () => {
 
   test('keeps every generated translation-map key in the English catalog', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
-    const generatedFiles = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('-translation-keys.generated.ts'));
+    const generatedFiles = sourceFiles().filter(
+      (file) => file.endsWith('-translation-keys.generated.ts') && !isShim(file),
+    );
 
     for (const file of generatedFiles) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+      const source = readFileSync(file, 'utf8');
       const keys = [...source.matchAll(/:\s*'(text[0-9a-f]{12})'/g)]
         .map((match) => match[1])
         .filter((key) => key !== 'texte3b0c44298fc');
@@ -180,16 +192,12 @@ describe('complete UI localization', () => {
 
   test('resolves every i18nComplete key the app reads at runtime', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
     const callSite =
       /(?:tI18nHardcoded|tHardcodedUi|tI18nComplete)(?:\.raw)?\(\s*'(?:i18nComplete\.)?(text[0-9a-f]{12})'/g;
-    const sources = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'));
 
     let referenced = 0;
-    for (const file of sources) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+    for (const file of sourceFiles()) {
+      const source = readFileSync(file, 'utf8');
       for (const match of source.matchAll(callSite)) {
         referenced += 1;
         expect(english[match[1]], `${file}:${match[1]}`).toBeDefined();

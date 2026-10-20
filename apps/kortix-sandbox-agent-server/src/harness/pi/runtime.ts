@@ -106,6 +106,9 @@ export const DEFAULT_SYSTEM_PROMPT = [
   'Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.',
 ].join('\n')
 
+/** OpenCode's `Today's date` line (its prompt's env block), with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
+export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
+
 export interface PromptInput {
   messageID?: string
   text: string
@@ -510,6 +513,11 @@ export class PiRuntime {
 
   get workspace(): string {
     return this.cfg.projectTarget || this.cfg.workspace || '/workspace'
+  }
+
+  /** The project's base branch (`KORTIX_DEFAULT_BRANCH`): the Changes diff compares against it. */
+  get defaultBranch(): string {
+    return this.cfg.defaultBranch
   }
 
   get sessionId(): string {
@@ -1376,13 +1384,13 @@ export class PiRuntime {
     }
   }
 
-  /** Adds the running turn's `system` text on top of whatever the prompt is by then. */
+  /** Adds today's date and the running turn's `system` text on top of whatever the prompt is by then: per turn, so a session that crosses midnight is told the new day. */
   private turnExtension(): InlineExtension {
     return {
       name: 'kortix-turn',
       hidden: true,
       factory: (pi) => {
-        pi.on('before_agent_start', (event) => (this.turnSystem ? { systemPrompt: `${event.systemPrompt}\n\n${this.turnSystem}` } : undefined))
+        pi.on('before_agent_start', (event) => ({ systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem].filter(Boolean).join('\n\n') }))
       },
     }
   }
@@ -1774,7 +1782,8 @@ export class PiRuntime {
     // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
     if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
     // pi appends the working directory (and package skills) to the root's prompt.
-    if (child) parts.push(`Working directory: ${this.workspace}`)
+    // A subagent skips the root's `before_agent_start` (turnExtension): it is told today's date when it starts.
+    if (child) parts.push(`Working directory: ${this.workspace}`, todayLine(this.now()))
     const skills = this.skills.filter((skill) => skillGranted(child?.policy ?? this.policy, skill.name))
     if (skills.length > 0) parts.push(this.coding!.formatSkillsForPrompt(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)

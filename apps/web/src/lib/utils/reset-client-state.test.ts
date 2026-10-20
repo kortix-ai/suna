@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
 import * as deviceCaches from '@/lib/device-caches';
-import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useMobileAppPromoStore } from '@/stores/mobile-app-promo-store';
-import { useTabStore } from '@/stores/tab-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useBrowserRecentsStore } from '@kortix/ui/internal/stores/browser-recents-store';
+import { useMobileAppPromoStore } from '@kortix/ui/internal/stores/mobile-app-promo-store';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   clearImpersonationSession,
   getImpersonationSession,
@@ -78,7 +78,7 @@ mock.module('@/lib/device-caches', () => ({
  * not `mock.module` on `@/lib/utils/clear-local-storage`. `mock.module` is
  * PROCESS-WIDE in this
  * repo: it replaced `clearUserLocalStorage` for every test that shares this
- * process, so `bun test src/lib/utils` outside `--isolate` broke
+ * process, so `bun test packages/ui/src/internal/lib/utils` outside `--isolate` broke
  * `clear-local-storage.test.ts`'s own tests of the real function with an
  * error belonging to a module this file never runs. The gated CI command
  * (`bun test --isolate --parallel=4`) never saw it — one process per file —

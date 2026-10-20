@@ -3,8 +3,8 @@
   "diff_files": [
     "apps/web/scripts/audit-i18n.mjs",
     "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
-    "apps/web/src/features/workspace/new/use-create-workspace.test.ts",
-    "apps/web/src/features/workspace/new/use-create-workspace.ts",
+    "packages/ui/src/workspace/new/use-create-workspace.test.ts",
+    "packages/ui/src/workspace/new/use-create-workspace.ts",
     "packages/sdk/src/core/rest/projects-client/projects.test.ts",
     "packages/sdk/src/core/rest/projects-client/projects.ts",
     "packages/sdk/src/public-surface.snapshot.json",

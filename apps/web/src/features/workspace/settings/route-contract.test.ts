@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { VALID_TABS } from '../../accounts/hub/sections';
+import { VALID_TABS } from '@kortix/ui/internal/account-hub/sections';
 import {
   ACCOUNT_GRADUATED,
   SETTINGS_TABS,
   isAccountGraduatedSection,
   legacySectionRedirect,
   parseSettingsTab,
-} from './settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 
 describe('settings route segments', () => {
   test('every tab id is a usable URL segment', () => {
@@ -83,7 +83,7 @@ describe('the project settings [tab] route resolves legacy segments', () => {
 /**
  * The other half of the account redirect: a `?tab=` value the account hub
  * does not accept is silently swallowed. `useAccountHubSection`
- * (`features/accounts/hub/use-account-hub-access.ts`) parses
+ * (`packages/ui/src/internal/account-hub/use-account-hub-access.ts`) parses
  * `searchParams.get('tab')` through `parseAccountSection`, which checks
  * `VALID_TABS` and falls back to Members for anything else — no error, no
  * log. So a typo in `ACCOUNT_GRADUATED` would send every `/settings/audit`

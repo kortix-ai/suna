@@ -15,9 +15,10 @@
 
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { describeTurnErrorRow, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { describeTurnErrorRow } from '@kortix/ui/session/status/session-error-banner';
+import { TurnErrorDisplay } from '@kortix/ui/session';
+import { cn } from '@kortix/ui';
 import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurnError } from '@kortix/sdk';
 import { CheckCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 

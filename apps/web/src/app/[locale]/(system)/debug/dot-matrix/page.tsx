@@ -4,7 +4,7 @@ import {
   DOT_MATRIX_CATALOG,
   SESSION_DOT_MATRIX_FAMILIES,
   type DotMatrixFamily,
-} from '@/components/ui/dot-matrix/session-dot-matrix';
+} from '@kortix/ui/dot-matrix/session-dot-matrix';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**
