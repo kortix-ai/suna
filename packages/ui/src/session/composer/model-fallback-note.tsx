@@ -40,9 +40,8 @@ export function ModelFallbackNote({
       </span>
       <Button
         type="button"
-        variant="ghost"
+        variant="text"
         size="xs"
-        className="text-muted-foreground hover:text-foreground shrink-0"
         onClick={() => onUse(fallback.from)}
       >
         {t('servedModelFallbackUse', { requested })}

@@ -26,7 +26,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
 }));
 
 const { switchSessionToFallback } = await import('../llm-gateway/resolution/session-model-fallback');
-const { revertSessionModelFallback, revertIdleSessionFallbacks } = await import('../projects/lib/session-model-fallback-revert');
+const { clearRestoredModelPin, revertSessionModelFallback, revertIdleSessionFallbacks } = await import('../projects/lib/session-model-fallback-revert');
 
 const SOL = 'kortix/codex/gpt-6.1-sol';
 const DEEPSEEK = 'kortix/deepseek-v4.1-flash';
@@ -77,13 +77,14 @@ async function auditCount(sessionId: string, action: string): Promise<number> {
   return rows.length;
 }
 
-const change = (sessionId: string, from = SOL, to = DEEPSEEK, reason = 'provider_pool_rate_limited') => ({
+const change = (sessionId: string, from = SOL, to = DEEPSEEK, reason = 'provider_pool_rate_limited', holdSeconds = 600) => ({
   sessionId,
   projectId: project.project_id,
   accountId: project.account_id,
   from,
   to,
   reason,
+  holdSeconds,
 });
 
 beforeAll(async () => {
@@ -109,6 +110,7 @@ describe('session model fallback', () => {
       opencode_model_fallback_from_source: 'default',
       opencode_model_fallback_reason: 'provider_pool_rate_limited',
       opencode_model_fallback_at: 1_000,
+      opencode_model_fallback_until: 601_000,
     });
 
     // A later `resolve` failure (another gateway task's own hold): no second
@@ -119,6 +121,7 @@ describe('session model fallback', () => {
       opencode_model_fallback_from: SOL,
       opencode_model_fallback_from_source: 'default',
       opencode_model_fallback_at: 2_000,
+      opencode_model_fallback_until: 602_000,
     });
     expect(await auditCount(sessionId, 'SESSION_MODEL_FALLBACK')).toBe(1);
   });
@@ -166,7 +169,8 @@ describe('session model fallback', () => {
     const metadata = await metadataOf(sessionId);
     expect(metadata.opencode_model).toBe(SOL);
     expect(metadata.opencode_model_source).toBe('explicit');
-    for (const key of ['opencode_model_fallback_from', 'opencode_model_fallback_from_source', 'opencode_model_fallback_reason', 'opencode_model_fallback_at']) {
+    expect(metadata.opencode_model_restored).toBe(true);
+    for (const key of ['opencode_model_fallback_from', 'opencode_model_fallback_from_source', 'opencode_model_fallback_reason', 'opencode_model_fallback_at', 'opencode_model_fallback_until']) {
       expect(metadata[key]).toBeUndefined();
     }
     expect(await revertSessionModelFallback(sessionId)).toBeNull();
@@ -176,12 +180,36 @@ describe('session model fallback', () => {
     expect(await switchSessionToFallback(change(sessionId), 5_000)).toBe(true);
   });
 
-  test('a default pin moves back as explicit, so the composer ranks it above the fallback prompts', async () => {
-    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'default' }, SOL);
+  test('a default pin moves back with its own source, marked restored until the next prompt runs on it', async () => {
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'project' }, SOL);
     await switchSessionToFallback(change(sessionId), 1_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId)).toBe(SOL);
-    expect((await metadataOf(sessionId)).opencode_model_source).toBe('explicit');
+    expect(await metadataOf(sessionId)).toMatchObject({ opencode_model: SOL, opencode_model_source: 'project', opencode_model_restored: true });
+
+    // The next prompt carries the pin: the marker goes, the source stays.
+    await clearRestoredModelPin(sessionId);
+    const metadata = await metadataOf(sessionId);
+    expect(metadata.opencode_model_restored).toBeUndefined();
+    expect(metadata).toMatchObject({ opencode_model: SOL, opencode_model_source: 'project' });
+  });
+
+  test('a pin with no source moves back with no source', async () => {
+    const sessionId = await seedSession({ opencode_model: SOL });
+    await switchSessionToFallback(change(sessionId), 1_000);
+    servable = true;
+    expect(await revertSessionModelFallback(sessionId)).toBe(SOL);
+    const metadata = await metadataOf(sessionId);
+    expect(metadata.opencode_model).toBe(SOL);
+    expect(metadata.opencode_model_source).toBeUndefined();
+  });
+
+  test("a resting pool moves back when the gateway's hold ends: the pool's reset when it is shorter than 10 min", async () => {
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_pool_rate_limited', 120), 1_000_000);
+    servable = true;
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 119_000)).toBeNull();
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 120_000)).toBe(SOL);
   });
 
   test('the session stays on the fallback while the gateway still holds the route', async () => {
@@ -202,7 +230,7 @@ describe('session model fallback', () => {
 
   test('a login that needs reconnecting moves back after its 60 s hold, not the 10 min one', async () => {
     const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
-    await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_reauth_required'), 1_000_000);
+    await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_reauth_required', 60), 1_000_000);
     servable = true;
     expect(await revertSessionModelFallback(sessionId, 1_000_000 + 59_000)).toBeNull();
     expect(await revertSessionModelFallback(sessionId, 1_000_000 + 60_000)).toBe(SOL);

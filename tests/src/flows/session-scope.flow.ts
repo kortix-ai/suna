@@ -287,6 +287,8 @@ flow(
       'opencode_model_fallback_from_source',
       'opencode_model_fallback_reason',
       'opencode_model_fallback_at',
+      'opencode_model_fallback_until',
+      'opencode_model_restored',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (

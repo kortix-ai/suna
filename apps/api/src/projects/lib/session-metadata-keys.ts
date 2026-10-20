@@ -32,6 +32,10 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'opencode_model_fallback_from_source',
   'opencode_model_fallback_reason',
   'opencode_model_fallback_at',
+  'opencode_model_fallback_until',
+  // The revert's "no prompt ran on the restored pin yet" marker: it makes
+  // prompts carry the pin (`prompt-model.ts`).
+  'opencode_model_restored',
   // Invocation and trigger attribution. `on_behalf_of` minting, the audit
   // origin, and keyed-trigger routing (`trigger_session_key`) read these.
   'source',

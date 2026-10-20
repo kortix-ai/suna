@@ -79,6 +79,12 @@ describe('promptModelOverride', () => {
       promptModelOverride(null, { opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'fallback' }),
     ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
   });
+
+  test('a pin moved back off a fallback rides the next prompt, whatever its source: the box last ran the fallback', () => {
+    expect(
+      promptModelOverride(null, { opencode_model: 'kortix/codex/gpt-6.1-sol', opencode_model_source: 'project', opencode_model_restored: true }),
+    ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+  });
 });
 
 test('a browser turn carrying the project default overrides an older platform creation pin', () => {

@@ -8,18 +8,19 @@
  * original model with the fallback until the hold ends
  * (pipeline/route-memory.ts), so moving back sooner shows a model that does
  * not answer (measured: a reconnect cleared the cooldown, the next prompt
- * named Sol and DeepSeek answered it). The hold is up to MAX_HOLD_SECONDS
- * for a resting pool and SETUP_HOLD_SECONDS for every other reason, counted
- * from the latest `resolve` failure (the switch refreshes `at`).
+ * named Sol and DeepSeek answered it). The switch records the end of the
+ * gateway's hold as `until`: the pool's reset capped at MAX_HOLD_SECONDS for
+ * a resting pool, SETUP_HOLD_SECONDS for every other reason, from the latest
+ * `resolve` failure.
  *
- * The restored source is the one the pin had, except a source the composer
- * ranks below the last prompt (`project`, `account`, `platform`): that one
- * restores as `explicit`, or the composer would show the fallback the last
- * prompts ran on. No pin follows a later default change (session-create.ts
- * resolves it once), so this changes the ranking only.
+ * The pin moves back with the exact source it had (`project` stays
+ * `project`, no source stays none) and `opencode_model_restored: true`. The
+ * last prompts ran on the fallback, so until the next prompt runs on the
+ * pin, the marker makes the composer rank the pin above them
+ * (`sessionModelCandidates`) and makes a prompt that names no model carry it
+ * (`promptModelOverride`). The prompt route clears it (`clearRestoredModelPin`).
  */
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS } from '@kortix/llm-gateway';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
@@ -32,13 +33,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { activeTurnAuthorityPredicate } from '../reaping/box-queries';
 import { resolveSessionPersonalOwner } from './personal-resources';
 
-/** Sources the composer ranks above the last prompt's model; any other restores as `explicit`. */
-const RESTORABLE_SOURCES = new Set(['explicit', 'repointed']);
-
-/** How long the gateway holds the route after a `resolve` failure with this code (simple-handler.ts). */
-export function holdSecondsFor(reason: unknown): number {
-  return reason === 'provider_pool_rate_limited' ? MAX_HOLD_SECONDS : SETUP_HOLD_SECONDS;
-}
+const RESTORED_KEY = 'opencode_model_restored';
 
 /** Never throws. Returns the restored model ref, or null when the session stays. */
 export async function revertSessionModelFallback(sessionId: string, nowMs = Date.now()): Promise<string | null> {
@@ -57,8 +52,9 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
     if (!row || metadata.opencode_model_source !== 'fallback') return null;
     const from = metadata[FALLBACK_KEYS.from];
     const at = metadata[FALLBACK_KEYS.at];
+    const until = metadata[FALLBACK_KEYS.until];
     if (typeof from !== 'string' || !from) return null;
-    if (typeof at === 'number' && nowMs - at < holdSecondsFor(metadata[FALLBACK_KEYS.reason]) * 1000) return null;
+    if (typeof until === 'number' && nowMs < until) return null;
 
     const personalUserId = await resolveSessionPersonalOwner({
       projectId: row.projectId,
@@ -79,12 +75,13 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
     if (!servable) return null;
 
     const previous = metadata[FALLBACK_KEYS.fromSource];
-    const source = typeof previous === 'string' && RESTORABLE_SOURCES.has(previous) ? previous : 'explicit';
+    const source = typeof previous === 'string' ? previous : null;
     const updated = await db
       .update(projectSessions)
       .set({
-        metadata: sql`(${projectSessions.metadata} - ${FALLBACK_KEYS.from}::text - ${FALLBACK_KEYS.fromSource}::text - ${FALLBACK_KEYS.reason}::text - ${FALLBACK_KEYS.at}::text)
-          || jsonb_build_object('opencode_model', ${from}::text, 'opencode_model_source', ${source}::text)`,
+        metadata: sql`(${projectSessions.metadata} - ${FALLBACK_KEYS.from}::text - ${FALLBACK_KEYS.fromSource}::text
+            - ${FALLBACK_KEYS.reason}::text - ${FALLBACK_KEYS.at}::text - ${FALLBACK_KEYS.until}::text - 'opencode_model_source')
+          || jsonb_strip_nulls(jsonb_build_object('opencode_model', ${from}::text, 'opencode_model_source', ${source}::text, ${RESTORED_KEY}::text, true))`,
       })
       .where(
         and(
@@ -119,6 +116,21 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
     });
     return null;
   }
+}
+
+/**
+ * The prompt route calls this after it queues a prompt on a restored pin: the
+ * prompt names the pin (promptModelOverride), so the last prompt is the pin
+ * again. Never throws.
+ */
+export async function clearRestoredModelPin(sessionId: string): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({ metadata: sql`${projectSessions.metadata} - ${RESTORED_KEY}::text` })
+    .where(and(eq(projectSessions.sessionId, sessionId), sql`${projectSessions.metadata}->>${RESTORED_KEY}::text IS NOT NULL`))
+    .catch((error: Error) =>
+      logger.warn('[projects] restored model marker clear failed', { session_id: sessionId, error: error.message }),
+    );
 }
 
 const SWEEP_LIMIT = 200;

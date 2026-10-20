@@ -32,7 +32,13 @@ describe('fallbackSwitchOf', () => {
       from: 'kortix/codex/gpt-6.1-sol',
       to: 'kortix/deepseek-v4.1-flash',
       reason: 'provider_pool_rate_limited',
+      holdSeconds: 600,
     });
+  });
+
+  test("the switch carries the gateway's own hold for the failure: a pool's reset, else 60 s for a login", () => {
+    expect(fallbackSwitchOf(answered({ ...failure('resolve', 'provider_pool_rate_limited'), holdSeconds: 42 }))?.holdSeconds).toBe(42);
+    expect(fallbackSwitchOf(answered(failure('resolve', 'provider_reauth_required')))?.holdSeconds).toBe(60);
   });
 
   test('a login that needs reconnection switches too', () => {

@@ -114,6 +114,8 @@ export function sessionPickStands(
  *    they send it with every prompt.
  * 2. `lastPromptModel`: the model of the session's newest user message, which
  *    is what the session last ran on.
+ *    A pin the server moved back off a fallback (`opencode_model_restored`)
+ *    ranks here too until the next prompt runs on it, whatever its source.
  * 3. Any other pin. That is the default resolved when the session was
  *    created, which a later prompt may have replaced.
  */
@@ -127,7 +129,10 @@ export function sessionModelCandidates(input: {
 }): ModelKey[] {
   const pin = input.session ? sessionModelPin(input.session) : null;
   const pinKey = pin ? modelRefToKey(pin, input.gatewayEnabled) : undefined;
-  const chosen = CHOSEN_PIN_SOURCES.has(String(input.session?.metadata?.opencode_model_source));
+  const metadata = input.session?.metadata;
+  // `opencode_model_restored`: the server moved the pin back off a fallback
+  // and no prompt has run on it yet, so the last prompt names the fallback.
+  const chosen = CHOSEN_PIN_SOURCES.has(String(metadata?.opencode_model_source)) || metadata?.opencode_model_restored === true;
   const ordered = chosen
     ? [pinKey, input.lastPromptModel]
     : [input.lastPromptModel, pinKey];

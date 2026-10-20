@@ -421,6 +421,7 @@ export function useRuntimeLocal({
     [
       projectSession?.metadata?.opencode_model,
       projectSession?.metadata?.opencode_model_source,
+      projectSession?.metadata?.opencode_model_restored,
       lastPromptModel?.providerID,
       lastPromptModel?.modelID,
       providerMode,

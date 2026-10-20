@@ -474,6 +474,24 @@ describe('sessionModelFallback', () => {
     ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
   });
 
+  test('a pin moved back off a fallback ranks before the fallback prompts, whatever its source', () => {
+    for (const source of ['project', 'account', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: {
+            metadata: {
+              opencode_model: 'kortix/codex/gpt-6.1-sol',
+              ...(source ? { opencode_model_source: source } : {}),
+              opencode_model_restored: true,
+            },
+          },
+          lastPromptModel: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+          gatewayEnabled: true,
+        })[0],
+      ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+    }
+  });
+
   test("this browser's pick stands only when it was made against this switch, whatever the browser clock says", () => {
     const fallback = sessionModelFallback(fallbackSession(), true);
     // Made before any switch (or a seed): it records no switch, so it loses.

@@ -26,7 +26,7 @@
  * the fallback without an OpenCode restart.
  */
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import type { GatewayTrace } from '@kortix/llm-gateway';
+import { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS, type GatewayTrace } from '@kortix/llm-gateway';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { recordAuditEvent } from '../../shared/audit';
@@ -40,6 +40,7 @@ export const FALLBACK_KEYS = {
   fromSource: 'opencode_model_fallback_from_source',
   reason: 'opencode_model_fallback_reason',
   at: 'opencode_model_fallback_at',
+  until: 'opencode_model_fallback_until',
 } as const;
 
 /** Failure codes that mean the model cannot serve for a while (resting pool, sign-in, retired). */
@@ -59,6 +60,8 @@ export interface FallbackSwitch {
   from: string;
   to: string;
   reason: string;
+  /** How long the gateway holds the route on the fallback (pipeline/route-memory.ts). The revert waits for it. */
+  holdSeconds: number;
 }
 
 /** PURE. The switch a trace asks for, or null. */
@@ -79,6 +82,8 @@ export function fallbackSwitchOf(
     from,
     to,
     reason: String(first.code),
+    // A trace from a gateway that does not record the hold: its rule, at most.
+    holdSeconds: first.holdSeconds ?? (first.code === 'provider_pool_rate_limited' ? MAX_HOLD_SECONDS : SETUP_HOLD_SECONDS),
   };
 }
 
@@ -101,9 +106,9 @@ async function latestPromptModelRef(sessionId: string): Promise<string | null> {
  * session's own model switches: a request for another model (a subagent's,
  * say) is not the one the composer sends.
  *
- * A session already on this fallback gets a fresh `at` only: each gateway
- * task holds the route on its own first failure (pipeline/route-memory.ts),
- * so the revert waits for the latest hold. That write audits nothing. It runs
+ * A session already on this fallback gets a fresh `at` and a later `until`
+ * only: each gateway task holds the route on its own first failure
+ * (pipeline/route-memory.ts), so the revert waits for the latest hold. That write audits nothing. It runs
  * at most once per gateway task per session per hold, so no memo saves it.
  */
 export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Date.now()): Promise<boolean> {
@@ -115,12 +120,17 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
     // Never NULL: `NOT already` must hold for a row with no pin or no source.
     const already = sql`(${metadata}->>'opencode_model' IS NOT DISTINCT FROM ${change.to}::text AND ${metadata}->>'opencode_model_source' IS NOT DISTINCT FROM 'fallback')`;
     const session = and(eq(projectSessions.sessionId, change.sessionId), eq(projectSessions.projectId, change.projectId));
+    const until = nowMs + change.holdSeconds * 1000;
     const notify = { notified: sql`pg_notify(${SESSION_CHANGED_CHANNEL}, ${projectSessions.sessionId}::text)` };
 
     const refreshed = await db
       .update(projectSessions)
       .set({
-        metadata: sql`${metadata} || jsonb_build_object(${FALLBACK_KEYS.reason}::text, ${change.reason}::text, ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint)`,
+        metadata: sql`${metadata} || jsonb_build_object(
+          ${FALLBACK_KEYS.reason}::text, ${change.reason}::text,
+          ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint,
+          ${FALLBACK_KEYS.until}::text, GREATEST(coalesce((${metadata}->>${FALLBACK_KEYS.until}::text)::bigint, 0), ${until}::bigint)
+        )`,
       })
       .where(and(session, already))
       .returning(notify);
@@ -135,7 +145,8 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
           ${FALLBACK_KEYS.from}::text, CASE WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.from}::text ELSE to_jsonb(${change.from}::text) END,
           ${FALLBACK_KEYS.fromSource}::text, CASE WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.fromSource}::text ELSE coalesce(${metadata}->'opencode_model_source', 'null'::jsonb) END,
           ${FALLBACK_KEYS.reason}::text, ${change.reason}::text,
-          ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint
+          ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint,
+          ${FALLBACK_KEYS.until}::text, ${until}::bigint
         )`,
       })
       .where(
