@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   emitJson,
+  SESSION_UUID_RE,
   expandSessionIdPrefix,
   locateSessionAnywhere,
   resolveProjectContext,
@@ -531,7 +532,6 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   return out;
 }
 
-const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
@@ -1291,22 +1291,29 @@ async function sessionsRm(
     error?: string;
   }> = [];
   for (const sessionId of ids) {
-    const located = await locateSessionAnywhere(
-      sessionId,
-      opts,
-      (host) => `kortix sessions rm ${sessionId} --host ${host}`,
-    );
-    if (!located) {
+    // A full id and explicit project already identify the DELETE target.
+    // Do not require an independent session read before its authorization check.
+    const pinned = opts.projectArg && SESSION_UUID_RE.test(sessionId)
+      ? await resolveProjectContext(opts)
+      : undefined;
+    const located = pinned === undefined
+      ? await locateSessionAnywhere(
+        sessionId,
+        opts,
+        (host) => `kortix sessions rm ${sessionId} --host ${host}`,
+      )
+      : null;
+    const target = pinned ?? located?.located;
+    if (!target) {
       results.push({ session_id: sessionId, deleted: false, error: 'not found' });
       continue;
     }
-    const canonicalSessionId = located.located.session.session_id;
-    const { projectId } = located.located;
-    // `restore` cannot locate a deleted session (its read answers 404), so the
-    // hint names where this session was found.
-    const host = located.located.hostName ?? opts.hostArg;
+    const canonicalSessionId = located?.located.session.session_id ?? sessionId;
+    const { projectId, client } = target;
+    // `restore` cannot locate a deleted session, so name its exact scope.
+    const host = located?.located.hostName ?? opts.hostArg;
     try {
-      const deleted = await located.located.client.delete<{ ok: boolean; restore_until?: string }>(
+      const deleted = await client.delete<{ ok: boolean; restore_until?: string }>(
         `/projects/${projectId}/sessions/${canonicalSessionId}`,
       );
       // An API that predates restore answers without the window.

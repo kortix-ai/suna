@@ -58,6 +58,8 @@ interface Seen {
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let seen: Seen[] = [];
+let sessionReadStatus = 200;
+let ambiguousSessions = false;
 
 function sessionRow(sessionId = SESSION) {
   // A running row names its own box, exactly as `/start` does below.
@@ -193,7 +195,9 @@ function startServer(): string {
 
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
-        return Response.json(sessionRow());
+        return sessionReadStatus === 200
+          ? Response.json(sessionRow())
+          : Response.json({ error: 'Session read unavailable' }, { status: sessionReadStatus });
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_B}`) {
         return Response.json(sessionRow(SESSION_B));
@@ -376,7 +380,9 @@ function startServer(): string {
         return Response.json(
           url.searchParams.get('archived') === 'only'
             ? [{ ...sessionRow(SESSION_ARCHIVED), pinned_at: null, archived_at: STAMP }]
-            : [{ ...sessionRow(), pinned_at: null, archived_at: null }],
+            : ambiguousSessions
+              ? [sessionRow(), sessionRow(SESSION_B)]
+              : [{ ...sessionRow(), pinned_at: null, archived_at: null }],
         );
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_ARCHIVED}`) {
@@ -531,6 +537,8 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'kortix-sessions-parity-'));
   process.env = { ...ORIGINAL_ENV };
   seen = [];
+  sessionReadStatus = 200;
+  ambiguousSessions = false;
   auditActions = [
     auditRow({ approval_url: 'https://kortix.example.test/approve/ksl_pending' }),
     auditRow({
@@ -1203,6 +1211,45 @@ describe('kortix sessions preview — the printed URL resolves', () => {
 });
 
 describe('kortix sessions rm (multiple ids)', () => {
+  test.each([403, 404, 500])('deletes a listed full id in the pinned project without requiring a session read (%i)', async (readStatus) => {
+    sessionReadStatus = readStatus;
+    const listed = await runCli(['sessions', 'ls', '--json', ...P], config);
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toContain(SESSION);
+
+    const removed = await runCli(['sessions', 'rm', SESSION, '--json', ...P], config);
+    expect(removed.code).toBe(0);
+    expect(JSON.parse(removed.stdout)).toEqual([
+      { session_id: SESSION, project_id: PROJECT, deleted: true, restore_until: '2026-02-01T00:00:00.000Z' },
+    ]);
+    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(0);
+    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
+  });
+
+  test('a rejected DELETE stays a failure without a read or cross-project retry', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION_B, '--json', ...P], config);
+    expect(r.code).toBe(1);
+    expect(JSON.parse(r.stdout)).toMatchObject([{ session_id: SESSION_B, deleted: false }]);
+    expect(seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
+    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(0);
+  });
+
+  test('an ambiguous prefix does not delete a session', async () => {
+    ambiguousSessions = true;
+    const r = await runCli(['sessions', 'rm', '00000000', '--json', ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Several sessions match');
+    expect(seen.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+  });
+
+  test('an archived prefix still resolves to its full id', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION_ARCHIVED.slice(0, 8), '--json', ...P], config);
+    // The fixture refuses unknown DELETE targets, but discovery must preserve
+    // the archived full id rather than sending the user-supplied prefix.
+    expect(r.code).toBe(1);
+    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION_ARCHIVED}`)).toHaveLength(1);
+  });
+
   test('deletes each id and reports the failures, exiting 1', async () => {
     const r = await runCli(['sessions', 'rm', SESSION, SESSION_B, ...P], config);
     expect(r.code).toBe(1);
