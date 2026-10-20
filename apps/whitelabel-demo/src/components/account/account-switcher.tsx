@@ -1,32 +1,33 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import { kortix } from '@/lib/kortix';
 import type { KortixAccount } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { PlusIcon } from '@phosphor-icons/react';
 
 /**
  * Account switcher — a Select over `accounts.list()` plus a "New account" dialog
@@ -81,34 +82,34 @@ function NewAccountDialog({ onCreated }: { onCreated: (accountId: string) => voi
       qc.invalidateQueries({ queryKey: ['accounts'] });
       setOpen(false);
       setName('');
-      toast.success('Team account created');
+      successToast('Team account created');
       if (account.account_id) onCreated(account.account_id);
     },
-    onError: () => toast.error('Could not create the account'),
+    onError: () => errorToast('Could not create the account'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button variant="outline" size="icon" aria-label="New account">
-          <Plus className="size-4" />
+          <PlusIcon className="size-4" />
         </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New team account</DialogTitle>
-          <DialogDescription>
+      </ModalTrigger>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle>New team account</ModalTitle>
+          <ModalDescription>
             A team account groups projects and members. You can invite teammates after it&apos;s
             created.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (name.trim()) create.mutate();
           }}
         >
-          <div className="space-y-2">
+          <ModalBody className="space-y-2">
             <Label htmlFor="account-name">Account name</Label>
             <Input
               id="account-name"
@@ -117,15 +118,15 @@ function NewAccountDialog({ onCreated }: { onCreated: (accountId: string) => voi
               onChange={(e) => setName(e.target.value)}
               placeholder="Acme Inc."
             />
-          </div>
-          <DialogFooter className="mt-4">
+          </ModalBody>
+          <ModalFooter>
             <Button type="submit" disabled={!name.trim() || create.isPending}>
               {create.isPending && <Loading className="size-4" />}
               Create account
             </Button>
-          </DialogFooter>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

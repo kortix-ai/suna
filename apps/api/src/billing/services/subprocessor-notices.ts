@@ -14,7 +14,7 @@
  * gets a summary of every sweep that sent, flagged when it gave fewer than 30
  * days.
  */
-import { creditAccounts } from '@kortix/db';
+import { chatEventDedup, creditAccounts } from '@kortix/db';
 import {
   formatSubprocessorDate,
   SUBPROCESSOR_NOTICE_DAYS,
@@ -23,7 +23,7 @@ import {
   SUBPROCESSORS_OPTIONAL,
   type Subprocessor,
 } from '@kortix/shared/subprocessors';
-import { isNotNull, notInArray, and } from 'drizzle-orm';
+import { isNotNull, notInArray, and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { renderEmail, renderText, S, actionButton } from '../../lib/email/template';
 import { logger } from '../../lib/logger';
@@ -87,10 +87,15 @@ export async function runSubprocessorNoticeSweep(
   for (const notice of notices) {
     let sentThisSweep = 0;
     for (const { accountId } of paid) {
-      if (!(await claimOnce(`legal:subprocessor-notice:${notice.addedOn}:${accountId}`))) continue;
+      const claim = `legal:subprocessor-notice:${notice.addedOn}:${accountId}`;
+      if (!(await claimOnce(claim))) continue;
       try {
         const recipients = await emailBillingManagers(accountId, (accountName) => compose(notice, accountName));
-        if (recipients === 0) continue;
+        // Nobody to email yet: release the claim so a later sweep retries the account.
+        if (recipients === 0) {
+          await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, claim));
+          continue;
+        }
         sentThisSweep++;
         await recordAuditEvent({
           accountId,

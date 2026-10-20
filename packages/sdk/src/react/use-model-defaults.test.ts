@@ -29,22 +29,21 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('resolves the platform default for a free-tier caller (KRTX-1067)', () => {
-    // The gateway serves the platform default to every tier now, so a fresh
-    // free account gets a working default model instead of a dead composer.
+  test('never resolves the platform default for a free-tier caller', () => {
+    // The gateway refuses every managed model to free tier.
     expect(
       resolveModelDefault(
         {
           accountDefault: null,
           projectDefault: null,
-          platformDefault: 'kimi-k3',
+          platformDefault: 'deepseek-v4.1-flash',
           agentDefaults: {},
-          resolvedForCaller: 'kimi-k3',
+          resolvedForCaller: null,
           freeTier: true,
         },
         undefined,
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
+    ).toBeUndefined();
   });
 });
 

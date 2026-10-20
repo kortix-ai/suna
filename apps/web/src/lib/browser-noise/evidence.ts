@@ -116,10 +116,12 @@ export function sourcesOf(input: {
 
 // A de-minified first-party source frame: Sentry's sourcemap resolution
 // rewrote the raw `_next/static/chunks/…` filename back to the original
-// `apps/web/src/…` source path (with or without an `app:///` origin prefix).
-// A throw from such a frame originates in our own code, so it is actionable.
+// `apps/web/src/…` or `packages/ui/src/…` (@kortix/ui) source path (with or
+// without an `app:///` origin prefix). A throw from such a frame originates in
+// our own code, so it is actionable.
 export function isFirstPartyResolvedSource(filename: unknown): boolean {
-  return normalizeString(filename).includes('apps/web/src/');
+  const source = normalizeString(filename);
+  return source.includes('apps/web/src/') || source.includes('packages/ui/src/');
 }
 
 export function containsKnownPattern(message: string, patterns: readonly string[]): boolean {

@@ -782,7 +782,7 @@ export function registerAppsRoutes(): void {
         body: { content: { 'application/json': { schema: z.object({
           artifact_id: z.string().uuid().optional(),
           source: SourceSchema,
-          provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
+          provider: z.enum(['platinum', 'daytona']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
           config: ReleaseConfigSchema.optional(),

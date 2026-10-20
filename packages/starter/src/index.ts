@@ -66,6 +66,8 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
+  'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 export type KortixManagedSkillName = (typeof KORTIX_MANAGED_SKILL_NAMES)[number];
 

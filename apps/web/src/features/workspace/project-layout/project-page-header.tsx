@@ -4,14 +4,14 @@ import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 
 /**
- * The header of a standalone project page (Review, Files, Reminders, Apps):
+ * The header of a standalone project page (Files, Apps):
  * the sidebar toggle, then the page title as the page's `<h1>`. It uses the
  * same title-bar classes as the Customize tab bar (`CapabilityTabs`), so it
  * has the same height and clears the desktop window controls the same way.
  * A page has one view, so the title is plain text, not a one-tab underline
  * bar. `children` sit at the trailing edge (page actions, a docs link).
  *
- * The e2e journeys (`18-apps-ui`, `36-reminders-ui`) find the page by the
+ * The e2e journey `18-apps-ui` finds the page by the
  * `<h1>`.
  */
 export function ProjectPageHeader({

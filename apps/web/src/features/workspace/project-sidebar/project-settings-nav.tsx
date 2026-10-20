@@ -14,7 +14,6 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
@@ -24,7 +23,7 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Secrets / Settings). Gated, because those pages can 403.
+ * Reminders / Secrets / Settings). Gated, because those pages can 403.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -101,6 +100,17 @@ export const TAB_PREFERENCE: readonly {
       PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
     ],
   },
+  // A reminder is a trigger scoped to one session: the Triggers rule. A plain
+  // member still sees and manages their own reminders from the session header.
+  {
+    key: 'reminders',
+    action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    manage: [
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    ],
+  },
   // The Models tab is model routing.
   {
     key: 'models',
@@ -112,10 +122,9 @@ export const TAB_PREFERENCE: readonly {
     action: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     manage: [PROJECT_ACTIONS.PROJECT_SECRET_WRITE],
   },
-  // Files is the project's shared folders: content, not configuration. Anyone
-  // who can read the project may open it; what each person sees in it follows
-  // folder access, decided by the drives API per folder.
-  { key: 'files', action: PROJECT_ACTIONS.PROJECT_READ },
+  // Repo (key `files`) is the project's git repo: admins only, and only with
+  // Volumes on. The shared folders are Drive, a sidebar row of their own.
+  { key: 'files', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
   // The Review inbox is for the people who decide: approve a change request,
   // answer an agent. Reading without acting is not a reason to show it.
   {
@@ -152,21 +161,29 @@ export interface CapabilityAccess {
  *
  * A failed probe counts as settled and denied: the bar fails closed.
  *
- * `drives` is the project's `drives` flag, `undefined` while it loads. Files
- * exists only with it on, so the rule (not each surface) drops the tab.
+ * `flags` are the project's `drives` and `reminders` flags, `undefined` while
+ * they load. Repo exists only with `drives` on and Reminders only with
+ * `reminders` on, so the rule (not each surface) drops the tab.
  */
+export interface CapabilityFlags {
+  drives: boolean | undefined;
+  reminders: boolean | undefined;
+}
+
 export function capabilityAccess(
   caps: Record<string, CanResult>,
-  drives: boolean | undefined,
+  flags: CapabilityFlags,
 ): CapabilityAccess {
   const settled =
-    drives !== undefined &&
+    flags.drives !== undefined &&
+    flags.reminders !== undefined &&
     CAPABILITY_TAB_ACTIONS.every((action) => caps[action] && !caps[action].isLoading);
   if (!settled) return { settled, tabs: [] };
   const allowed = (action: string) => caps[action]?.allowed === true;
   const tabs = TAB_PREFERENCE.filter(
     (tab) =>
-      (drives || tab.key !== 'files') &&
+      (flags.drives || tab.key !== 'files') &&
+      (flags.reminders || tab.key !== 'reminders') &&
       allowed(tab.action) &&
       (!tab.manage || tab.manage.some(allowed)),
   ).map((tab) => tab.key);
@@ -176,42 +193,45 @@ export function capabilityAccess(
 export function useCapabilityAccess(projectId: string | undefined): CapabilityAccess {
   const caps = useProjectPageCans(projectId);
   const drives = useFeatureFlag(projectId, 'drives');
-  return capabilityAccess(caps, drives.isLoading ? undefined : drives.enabled);
+  const reminders = useFeatureFlag(projectId, 'reminders');
+  return capabilityAccess(caps, {
+    drives: drives.isLoading ? undefined : drives.enabled,
+    reminders: reminders.isLoading ? undefined : reminders.enabled,
+  });
 }
 
 /**
- * The two sidebar rows that can lead to Files, decided together.
+ * The sidebar's Customize and file rows, decided together.
  *
- * The Files row is the repo browser for a caller who can read the repo
- * (`project.file.read`). With `drives` on, the shared folders are also a
- * Customize tab. A caller who cannot read the repo reaches the folders from
- * the Files row (`folders`) instead, and Customize then needs a tab other
- * than Files: a plain member never gets a Customize row that holds only their
- * folders.
+ * With `drives` on, the file row is Drive (the shared folders) for everyone
+ * who can read the project: what each person sees follows folder access. The
+ * repo browser is then Customize → Repo, admins only. With `drives` off, the
+ * file row is the repo browser, for a caller who can read it
+ * (`project.file.read`).
  *
- * `customize` is the tab the Customize row lands on, `files` what the Files
+ * `customize` is the tab the Customize row lands on, `files` what the file
  * row opens; null means no row. Neither row shows before the batch and the
  * flag settle.
  */
 export interface ProjectNavRows {
   customize: CapabilityTab['key'] | null;
-  files: 'repo' | 'folders' | null;
+  files: 'repo' | 'drive' | null;
 }
 
 export function projectNavRows(
   access: CapabilityAccess,
   readRepo: CanResult | undefined,
+  drives: boolean,
 ): ProjectNavRows {
   if (!access.settled || !readRepo || readRepo.isLoading) return { customize: null, files: null };
-  const files =
-    readRepo.allowed === true ? 'repo' : access.tabs.includes('files') ? 'folders' : null;
-  const customize = access.tabs.find((tab) => files !== 'folders' || tab !== 'files') ?? null;
-  return { customize, files };
+  const files = drives ? 'drive' : readRepo.allowed === true ? 'repo' : null;
+  return { customize: access.tabs[0] ?? null, files };
 }
 
 export function useProjectNavRows(projectId: string | undefined): ProjectNavRows {
   const readRepo = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  return projectNavRows(useCapabilityAccess(projectId), readRepo);
+  const drives = useFeatureFlag(projectId, 'drives').enabled;
+  return projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
 }
 
 /**
@@ -251,21 +271,12 @@ export function ProjectCustomizeNavItem() {
   // this row: the same `needs_you` count the session row dots read.
   const needsYou = useReviewSessionSummary(projectId ?? '', { enabled: !!projectId }).totalNeedsYou;
   const reviewCount = access.tabs.includes('review') ? needsYou : 0;
-  // The shared folders' open conflict copies (in folders the caller can see)
-  // badge the row that leads to them: this one, unless the Files row does.
-  const tDrives = useTranslations('drives');
-  const foldersHere = access.tabs.includes('files') && rows.files !== 'folders';
-  const drive = useProjectDrive(projectId, foldersHere);
-  const conflicts = foldersHere ? (drive.data?.openConflicts ?? 0) : 0;
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
-  // Connectors or one agent's page, not just on the landing tab. Not on the
-  // folders when the Files row is the one that opens them.
-  const here = pathname ? activeCapabilityTab(pathname) : null;
+  // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
-    (pathname === `/projects/${projectId}/customize` ||
-      (here !== null && (here !== 'files' || rows.files !== 'folders')));
+    (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
 
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.
@@ -282,16 +293,9 @@ export function ProjectCustomizeNavItem() {
         <CustomizeGlyph />
       </span>
       {t('customize')}
-      {reviewCount > 0 || conflicts > 0 ? (
+      {reviewCount > 0 ? (
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {reviewCount > 0 ? <CountBadge count={reviewCount} tone="waiting" /> : null}
-          {conflicts > 0 ? (
-            <CountBadge
-              count={conflicts}
-              tone="conflict"
-              aria-label={tDrives('conflictCount', { count: conflicts })}
-            />
-          ) : null}
+          <CountBadge count={reviewCount} tone="waiting" />
         </span>
       ) : null}
     </ProjectNavRow>

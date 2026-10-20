@@ -52,11 +52,13 @@ let calls: { url: string; method: string; body: unknown; status: number }[] = []
 let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 let failNextPatch = false;
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   ...realToast,
   successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
   errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 // Collaborators, not the subject: the card reads `canManage` from the IAM
 // probe, the container reads the session user and the router, and the icon
 // field is a heavy picker that never opens in these tests.

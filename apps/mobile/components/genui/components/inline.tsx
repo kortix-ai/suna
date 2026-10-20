@@ -13,12 +13,13 @@ import { TYPE } from '@/lib/markdown/markdown-layout';
 
 import { openGenuiLink } from './open-link';
 
-// Web's Paper Badge 01: the tone paints the /15 tint and the label. Neutral is the secondary well in ink.
+// As web: the tone paints only the /15 tint; the label stays ink, so it passes WCAG AA on every tint.
+// Neutral is the secondary well. The dot is the single Card's badge pill.
 const BADGE_TONE = {
-  neutral: { well: 'bg-secondary', label: 'text-foreground', dot: 'bg-muted-foreground' },
-  good: { well: 'bg-kortix-green/15', label: 'text-kortix-green', dot: 'bg-kortix-green' },
-  warn: { well: 'bg-kortix-orange/15', label: 'text-kortix-orange', dot: 'bg-kortix-orange' },
-  bad: { well: 'bg-kortix-red/15', label: 'text-kortix-red', dot: 'bg-kortix-red' },
+  neutral: { well: 'bg-secondary', dot: 'bg-muted-foreground' },
+  good: { well: 'bg-kortix-green/15', dot: 'bg-kortix-green' },
+  warn: { well: 'bg-kortix-orange/15', dot: 'bg-kortix-orange' },
+  bad: { well: 'bg-kortix-red/15', dot: 'bg-kortix-red' },
 } as const;
 
 export const badgeTone = (tone: unknown) => BADGE_TONE[(tone ?? 'neutral') as keyof typeof BADGE_TONE] ?? BADGE_TONE.neutral;
@@ -34,7 +35,7 @@ export function GenuiBadge({ props }: GenuiComponentProps) {
   const tone = badgeTone(props.tone);
   return (
     <View className={`self-start rounded-md px-2 py-0.5 ${tone.well}`}>
-      <Text variant="small" className={`leading-5 ${tone.label}`}>
+      <Text variant="small" className="leading-5 text-foreground">
         {props.label}
       </Text>
     </View>

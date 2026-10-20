@@ -13,8 +13,11 @@
  * rules the writer enforces — lives in `session-transcript-mirror.ts`'s header.
  */
 
+import type { V1Row } from '@kortix/api-contract/session-log';
 import {
+  projects,
   projectSessions,
+  sessionLogs,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
@@ -35,7 +38,9 @@ import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import { logger } from '../../lib/logger';
-import { writeSessionLogFromMirror } from '../session-log-capture';
+import { config } from '../../config';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { readCapturedSessionLog, writeSessionLogFromMirror, writeSessionLogFromRead } from '../session-log-capture';
 import {
   MIRROR_CAPTURE_LIMIT,
   capturedMessageIndex,
@@ -80,6 +85,8 @@ export interface CaptureDeps {
       fullHistory: boolean;
       projectId?: string;
       actorUserId?: string;
+      /** The session log's rows (`readCapturedSessionLog`): read in place of the mirror (P8). */
+      stored?: V1Row[];
     },
   ) => Promise<{
     opencodeSessionId: string;
@@ -118,7 +125,15 @@ const liveCaptureDeps: CaptureDeps = {
     if (!resolved) return null;
     const deadline = AbortSignal.timeout(options?.fullHistory ? 60_000 : CAPTURE_TIMEOUT_MS);
     // Every stored row of this session: the root's, and each saved sub-agent's.
-    const stored = await db
+    const stored = options?.stored
+      ? options.stored.map((row) => ({
+          messageId: String(row.info?.id ?? ''),
+          parts: row.parts,
+          messageCompletedAt: timeField(row.info, 'completed'),
+          opencodeSessionId: row.runtime_session_id,
+          role: typeof row.info?.role === 'string' ? row.info.role : 'unknown',
+        }))
+      : await db
       .select({
         messageId: sessionTranscriptMessages.messageId,
         parts: sessionTranscriptMessages.parts,
@@ -196,7 +211,9 @@ const liveCaptureDeps: CaptureDeps = {
       reads past it and this capture writes it again, 1:1.
     */
     const completedById = capturedMessageIndex(previous);
-    const [mirror] = options?.fullHistory
+    // ponytail: the log records no `head_complete`, so a log-backed capture (P8) walks the whole
+    // box history every time; record it in the log when journal-less boxes with long histories matter.
+    const [mirror] = options?.fullHistory && !options.stored
       ? await db
           .select({ headComplete: sessionTranscriptMirrors.headComplete })
           .from(sessionTranscriptMirrors)
@@ -295,11 +312,22 @@ async function captureSessionTranscript(
       .select({
         projectId: projectSessions.projectId,
         accountId: projectSessions.accountId,
+        metadata: projects.metadata,
+        journalSeenAt: sessionLogs.journalSeenAt,
       })
       .from(projectSessions)
+      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!session) return null;
+    // P8: the session log is the store. A journal keeps it; without one (`journal_seen_at` null)
+    // the box's messages go straight into it. No v1 row is read or written. With ingest off the
+    // log takes no write, so the mirror keeps the history as before.
+    if (resolveFeatureFlag(session.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) {
+      if (session.journalSeenAt) return null;
+      return await captureIntoSessionLog(sessionId, deps, options, session.projectId, chainStartedAt);
+    }
 
     const fullHistory = options?.scope !== 'tail';
     let moreChildren = false;
@@ -457,6 +485,46 @@ async function captureSessionTranscript(
     }
     return null;
   }
+}
+
+/** `captureSessionTranscript` for a flag-on session without a journal (P8): the read goes into the log. */
+async function captureIntoSessionLog(
+  sessionId: string,
+  deps: CaptureDeps,
+  options: CaptureOptions | undefined,
+  projectId: string,
+  chainStartedAt: number,
+): Promise<CaptureResult | null> {
+  const fullHistory = options?.scope !== 'tail';
+  let moreChildren = false;
+  const capture = async (): Promise<CaptureResult | null> => {
+    const before = await readCapturedSessionLog(sessionId);
+    const read = await deps.readMessages(sessionId, { fullHistory, projectId, actorUserId: options?.actorUserId, stored: before.rows });
+    if (!read) return null;
+    const rows = mirrorRowsFromOpencodePayload(read.payload);
+    const completeRead = fullHistory && read.complete === true && read.headComplete === true;
+    if (rows.length === 0 && !completeRead) return null;
+    const children = (read.children ?? []).filter((child) => child.complete === true);
+    const asRows = (id: string, list: typeof rows): V1Row[] => list.map((row) => ({ runtime_session_id: id, info: row.info, parts: row.parts }) as V1Row);
+    const outcome = await writeSessionLogFromRead(sessionId, {
+      root: read.opencodeSessionId,
+      rows: [...asRows(read.opencodeSessionId, rows), ...children.flatMap((child) => asRows(child.opencodeSessionId, mirrorRowsFromOpencodePayload(child.payload)))],
+      before,
+    });
+    // Nothing stored (a failed, invalid or too-large write): a failure, so it is retried and a
+    // wake does not mark the session captured.
+    if (outcome.outcome !== 'written' && outcome.outcome !== 'skipped') return null;
+    // Progress, as the mirror path counts it: a sub-agent the log did not hold before was written.
+    const held = new Set(before.rows.map((row) => row.runtime_session_id));
+    moreChildren = read.moreChildren === true && outcome.outcome === 'written' && children.some((child) => !held.has(child.opencodeSessionId));
+    return { captured: rows.length, head_complete: completeRead };
+  };
+  const result = fullHistory ? await retryTranscriptCapture(capture) : await capture();
+  const step = options?.chain?.step ?? 0;
+  if (result && fullHistory && moreChildren && step < MAX_CAPTURE_CHAIN) {
+    void captureSessionTranscriptMirror(sessionId, deps, { ...options, chain: { step: step + 1, startedAt: chainStartedAt } });
+  }
+  return result;
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -691,6 +759,20 @@ export function backfillSessionTranscriptMirrorOnWake(
   };
   return (async () => {
     try {
+      const [session] = await db
+        .select({ metadata: projects.metadata, journalSeenAt: sessionLogs.journalSeenAt })
+        .from(projectSessions)
+        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+        .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      // No such session. Nothing will ever change that.
+      if (!session) return settle();
+      // P8: the session log is the store. A journal keeps it; without one the capture reads the box into it.
+      if (resolveFeatureFlag(session.metadata, 'session_log') && config.SESSION_LOG_INGEST_ENABLED) {
+        if (session.journalSeenAt || (await captureSessionTranscriptMirror(sessionId, deps))) settle();
+        return;
+      }
       const [row] = await db
         .select({
           root: projectSessions.runtimeSessionId,
@@ -704,7 +786,6 @@ export function backfillSessionTranscriptMirrorOnWake(
         )
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
-      // No such session. Nothing will ever change that.
       if (!row) return settle();
       // Already whole, for the root this session actually runs. Nothing a
       // backfill could add — a re-pinned root is NOT whole, whatever the row says,

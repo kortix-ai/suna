@@ -36,6 +36,7 @@ export interface CapabilityTab {
     | 'connectors'
     | 'skills'
     | 'triggers'
+    | 'reminders'
     | 'models'
     | 'secrets'
     | 'files'
@@ -79,18 +80,23 @@ export interface CapabilityTab {
  * inbox to members who can act on nothing in it. As a tab it follows the
  * Customize rule: only a caller holding `project.review.act` sees it.
  *
- * One tab is flag-gated: Files, the project's shared folders, shows only
- * when the project has the `drives` feature flag on (`capability-tabs.tsx`).
- * Every other tab is always painted.
+ * Reminders is a tab (Marko, 2026-10-19). It was a sidebar row, shown to every
+ * member while a reminder could still fire. It follows the Triggers rule: a
+ * reminder is a session-scoped trigger, so the tab shows only to a caller who
+ * can configure triggers.
+ *
+ * Two tabs are flag-gated: Repo needs the `drives` flag, Reminders the
+ * `reminders` flag (`capabilityAccess()`). Every other tab is always painted.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
+  { key: 'reminders', label: 'Reminders' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'files', label: 'Files' },
+  { key: 'files', label: 'Repo' },
   { key: 'review', label: 'Review' },
   { key: 'config', label: 'Settings' },
 ];
@@ -117,9 +123,10 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   skills: 'skills',
   connectors: 'connectors',
   triggers: 'triggers',
+  reminders: 'reminders',
   models: 'models',
   secrets: 'secrets',
-  files: 'files',
+  files: 'repo',
   review: 'review',
   config: 'settings',
 };
@@ -140,6 +147,14 @@ export function capabilityTabHref(projectId: string, key: CapabilityTab['key']):
  */
 export function reviewHref(projectId: string): string {
   return capabilityTabHref(projectId, 'review');
+}
+
+/**
+ * The Reminders page: the Customize Reminders tab. `/projects/<id>/reminders`,
+ * its address until 2026-10-19, redirects here.
+ */
+export function remindersHref(projectId: string): string {
+  return capabilityTabHref(projectId, 'reminders');
 }
 
 /**

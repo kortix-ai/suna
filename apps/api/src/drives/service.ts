@@ -967,7 +967,7 @@ export function renderDriveNotes(
   if (me) {
     lines.push(
       `${me.mountPath} is the user’s own folder (also at ~/Desktop). Save files you make for the user there.`,
-      `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/; what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`,
+      `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/ (load the kortix-user-memory skill); what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`,
       '',
     );
   }

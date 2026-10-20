@@ -1,19 +1,20 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { toast } from 'sonner';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
 import type { ImportableProject } from '@/server/project-adoption';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
 import { useState } from 'react';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { DownloadSimpleIcon } from '@phosphor-icons/react';
 
 /**
  * Import a project that already exists on the Kortix account.
@@ -55,73 +56,74 @@ export function ImportProjectsDialog() {
       return projectId;
     },
     onSuccess: () => {
-      toast.success('Project imported');
+      successToast('Project imported');
       qc.invalidateQueries({ queryKey: ['projects'] });
       qc.invalidateQueries({ queryKey: ['importable-projects'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => errorToast(err.message),
   });
 
   const rows = available.data?.projects ?? [];
   const gateMessage = available.data?.error;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5">
-          <Download className="size-4 shrink-0" /> Import
+          <DownloadSimpleIcon className="size-4 shrink-0" /> Import
         </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Import a project</DialogTitle>
-          <DialogDescription>
+      </ModalTrigger>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Import a project</ModalTitle>
+          <ModalDescription>
             This list is normally hidden. A wrapper narrows projects to what each end-user started,
             because one server-held key can reach the whole account — importing is a testing
             affordance, not something a real product would offer its users.
-          </DialogDescription>
-        </DialogHeader>
-
-        {gateMessage ? (
-          <p className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
-            {gateMessage}
-          </p>
-        ) : available.isLoading ? (
-          <p className="text-sm text-muted-foreground">Reading the account’s projects…</p>
-        ) : available.isError ? (
-          <p className="text-sm text-destructive">Could not read the account’s projects.</p>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No projects on this account.</p>
-        ) : (
-          <ul className="max-h-80 space-y-2 overflow-y-auto">
-            {rows.map((project) => (
-              <li
-                key={project.project_id}
-                className="flex items-center justify-between gap-3 rounded-md border border-border bg-popover px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{project.name || 'Untitled'}</p>
-                  <p className="truncate font-mono text-[11px] text-muted-foreground">
-                    {project.project_id}
-                  </p>
-                </div>
-                {project.imported ? (
-                  <span className="shrink-0 text-xs text-muted-foreground">Already yours</span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={importProject.isPending}
-                    onClick={() => importProject.mutate(project.project_id)}
-                  >
-                    Import
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          {gateMessage ? (
+            <p className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
+              {gateMessage}
+            </p>
+          ) : available.isLoading ? (
+            <p className="text-sm text-muted-foreground">Reading the account’s projects…</p>
+          ) : available.isError ? (
+            <p className="text-sm text-destructive">Could not read the account’s projects.</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No projects on this account.</p>
+          ) : (
+            <ul className="max-h-80 space-y-2 overflow-y-auto">
+              {rows.map((project) => (
+                <li
+                  key={project.project_id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border bg-popover px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{project.name || 'Untitled'}</p>
+                    <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      {project.project_id}
+                    </p>
+                  </div>
+                  {project.imported ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">Already yours</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={importProject.isPending}
+                      onClick={() => importProject.mutate(project.project_id)}
+                    >
+                      Import
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   );
 }

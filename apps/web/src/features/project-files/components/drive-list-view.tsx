@@ -1,6 +1,9 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import type { DroppedEntry } from '../drop-tree';
+import { useItemSelection } from './drive-selection';
+import { SelectionCheck, SelectMenuItem } from './drive-selection-ui';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -26,6 +29,7 @@ import {
 } from '@/components/ui/table';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
 import { useFilesStore, type SortField } from '@/features/file-browser/store/files-store';
+import Loading from '@/components/ui/loading';
 import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
@@ -54,7 +58,7 @@ function ChalkBadge({ label }: { label: string }) {
     <Badge
       variant="transparent"
       size="xs"
-      className="border font-semibold tracking-wider uppercase backdrop-blur-sm"
+      className="border font-semibold backdrop-blur-sm"
       style={{
         backgroundColor: chalk.background,
         color: chalk.foreground,
@@ -77,10 +81,14 @@ interface ListRowProps {
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
   /** External files dropped onto THIS folder row. Absent = read-only source. */
-  onDropUpload?: (files: File[], targetDirPath: string) => void;
+  onDropUpload?: (files: File[], targetDirPath: string, entries?: DroppedEntry[]) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
+  /** On the clipboard as a copy (a cut is `isCut`): both wear the focus ring. */
+  isCopied?: boolean;
+  /** Still on its way up: a spinner after the name until the server has it. */
+  uploading?: boolean;
 }
 
 function ListRow({
@@ -97,8 +105,11 @@ function ListRow({
   onDropUpload,
   isDownloadingItem,
   isCut,
+  isCopied,
+  uploading,
 }: ListRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDrives = useTranslations('drives');
   const isDir = node.type === 'directory';
   const {
     isDragOver, isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
@@ -145,6 +156,7 @@ function ListRow({
     copyPathLabel,
   };
 
+  const { selection, selected, selectMode, onClick: onItemClick } = useItemSelection(node, onClick);
   const fileMenuProps = {
     node,
     onClick,
@@ -170,17 +182,22 @@ function ListRow({
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={isRenaming ? undefined : ownClicks(onClick)}
+          onClick={isRenaming ? undefined : onItemClick}
+          data-drive-item={node.path}
           onDoubleClick={isRenaming ? undefined : ownClicks(onDoubleClick)}
           className={cn(
             'group cursor-pointer select-none',
-            isCut && 'opacity-40',
+            isCut && 'opacity-60',
+            // Copied, cut or selected: the focus border drawn inside the row (a
+            // table row takes no border), its soft 15% as the row's fill.
+            (isCut || isCopied || selected) && 'ring-ring bg-ring/15 ring-1 ring-inset',
             isDragging && 'opacity-30',
             isDragOver && 'bg-primary/8',
           )}
         >
           <TableCell>
             <div className="flex min-w-0 items-center gap-2.5">
+              {selectMode ? <SelectionCheck selected={selected} className="shrink-0" /> : null}
               {isDir ? (
                 <Folder className="text-muted-foreground size-4 shrink-0" />
               ) : (
@@ -217,6 +234,11 @@ function ListRow({
                   {node.name}
                 </span>
               )}
+              {uploading ? (
+                <span role="status" aria-label={tDrives('uploadingFile', { name: node.name })} className="shrink-0">
+                  <Loading variant="spokes" className="size-3.5" />
+                </span>
+              ) : null}
             </div>
           </TableCell>
           <TableCell>
@@ -264,6 +286,9 @@ function ListRow({
         </TableRow>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
+        {selection?.selectionMenu(node, ContextMenuItem, ContextMenuSeparator) ?? (
+        <>
+        <SelectMenuItem selection={selection} node={node} Item={ContextMenuItem} Separator={ContextMenuSeparator} />
         {isDir ? (
           <FolderDriveMenuItems
             Item={ContextMenuItem}
@@ -276,6 +301,8 @@ function ListRow({
             Separator={ContextMenuSeparator}
             {...fileMenuProps}
           />
+        )}
+        </>
         )}
       </ContextMenuContent>
     </ContextMenu>
@@ -321,12 +348,14 @@ interface DriveListViewProps {
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
   /** External files dropped onto a folder row upload into THAT folder. */
-  onDropUpload?: (files: File[], targetDirPath: string) => void;
+  onDropUpload?: (files: File[], targetDirPath: string, entries?: DroppedEntry[]) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
   readOnly?: boolean;
+  /** Paths still uploading. */
+  uploadingPaths?: ReadonlySet<string>;
   /**
    * The rows keep the server's name order (a partly loaded folder): the
    * column headers do not sort and show no arrow.
@@ -355,6 +384,7 @@ export function DriveListView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  uploadingPaths,
   sortDisabled = false,
 }: DriveListViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -438,6 +468,7 @@ export function DriveListView({
               onDropMove={onDropMove}
               onDropUpload={onDropUpload}
               isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+              isCopied={clipboardOperation === 'copy' && clipboardPath === node.path}
             />
           ))}
 
@@ -455,6 +486,8 @@ export function DriveListView({
               onCut={onCut}
               gitStatus={gitStatusMap.get(node.path)}
               isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+              isCopied={clipboardOperation === 'copy' && clipboardPath === node.path}
+              uploading={uploadingPaths?.has(node.path)}
             />
           ))}
         </TableBody>

@@ -47,17 +47,15 @@ describe('chooseDefaultModel — precedence (agent > project > account)', () => 
 });
 
 describe('chooseDefaultModel — free tier', () => {
-  // KRTX-1067: the platform default is the ONE managed model every tier may
-  // use, so a free account keeps it; every other managed model still drops.
-  test('keeps the platform default', () => {
+  // A free account gets no managed model, the platform default included.
+  test('drops the platform default', () => {
     expect(
       chooseDefaultModel({
         accountDefault: PLATFORM_DEFAULT_MODEL_ID,
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
-    ).toBe(PLATFORM_DEFAULT_MODEL_ID);
+    ).toBeUndefined();
   });
 
   test('drops a non-default managed default → undefined (gateway falls back to free)', () => {
@@ -66,7 +64,6 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: PAID_MANAGED,
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });
@@ -77,7 +74,6 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: `kortix/${PAID_MANAGED}`,
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });

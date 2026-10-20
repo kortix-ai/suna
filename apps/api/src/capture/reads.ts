@@ -217,6 +217,8 @@ export async function reattributeDevice(accountId: string, deviceId: string, use
 /**
  * Consecutive frames of one device with the same app and window title, no gap
  * over 2 minutes: of one display, or of the focused display at each moment.
+ * Inactive frames (no input for `inactivity_seconds`, 5 s by default) count:
+ * reading or watching is on screen, and the run names what was there.
  */
 export async function timelineRuns(accountId: string, who: Who, span: Span, deviceId?: string, displayId?: number) {
   return isoRows(
@@ -231,7 +233,7 @@ export async function timelineRuns(accountId: string, who: Who, span: Span, devi
                                   THEN 0 ELSE 1 END AS brk
                         FROM kortix.timeline_frames
                        WHERE account_id = ${accountId}::uuid AND ${whoSql(who)}
-                         AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive ${onDevice(deviceId)} ${onDisplay(displayId)}
+                         AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)} ${onDisplay(displayId)}
                       WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
        GROUP BY device_id, grp, app, title
        ORDER BY min(ts)

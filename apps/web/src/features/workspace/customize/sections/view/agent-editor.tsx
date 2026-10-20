@@ -328,6 +328,7 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'connectors', label: 'Connectors', group: 'Access' },
   { key: 'secrets', label: 'Secrets', group: 'Access' },
   { key: 'apps', label: 'Apps', group: 'Access' },
+  { key: 'drives', label: 'Drives', group: 'Access' },
   { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
   { key: 'tools', label: 'Tools', group: 'Runtime' },
@@ -426,6 +427,7 @@ export function AgentConfigSections({
   connectors,
   secrets,
   apps,
+  drives,
   authority,
 }: {
   section: AgentConfigSectionKey;
@@ -449,6 +451,8 @@ export function AgentConfigSections({
   /** Which Kortix Apps the agent may open. Page-owned only: the picker needs
    *  the project's App list, which no checklist fallback has. */
   apps?: React.ReactNode;
+  /** Which shared drives the agent mounts. Page-owned, and only with Volumes on. */
+  drives?: React.ReactNode;
   /** What the agent can do once its Kortix permissions meet its IAM ceiling —
    *  a page-owned card under the Kortix permissions checklist. */
   authority?: React.ReactNode;
@@ -487,6 +491,8 @@ export function AgentConfigSections({
         );
       case 'apps':
         return <>{apps}</>;
+      case 'drives':
+        return <>{drives}</>;
       case 'actions':
         return (
           <>

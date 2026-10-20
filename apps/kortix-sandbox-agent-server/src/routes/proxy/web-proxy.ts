@@ -71,9 +71,8 @@ const CREDENTIAL_HEADERS = new Set([
   'cookie',
   'x-kortix-user-context',
   'x-kortix-service-call',
-  // Sandbox-provider preview credentials (daytona.ts, e2b.ts).
+  // Sandbox-provider preview credentials (daytona.ts).
   'x-daytona-preview-token',
-  'e2b-traffic-access-token',
 ])
 
 /**

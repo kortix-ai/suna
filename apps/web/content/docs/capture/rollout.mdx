@@ -70,9 +70,21 @@ account, else the API answers `400` `capture_enrollment_invalid`.
 
 ## 2. Install on each Windows computer
 
-Run as an administrator:
+On one computer, open **Command Prompt as administrator** and paste the line
+from **Capture → Devices → Install on company computers**. It downloads the
+installer, installs it silently, waits, checks that the Kortix Capture service
+exists, and prints whether it worked:
 
-```powershell
+```bat
+curl.exe -fsSL -o "%TEMP%\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi && start /wait msiexec /i "%TEMP%\KortixCapture-x64.msi" /qn /l*v "%TEMP%\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_... && sc query KortixCapture >nul 2>&1 && echo Kortix Capture installed. It records from the next Windows sign-in. || echo Install failed. Log: "%TEMP%\KortixCapture-install.log"
+```
+
+`msiexec` on its own returns at once and installs in the background, and with
+`/qn` it shows no error, also when the MSI path is wrong. `start /wait` and the
+log make the result visible. With the MSI next to the command (Intune, a
+script), the short form is:
+
+```bat
 msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_...
 ```
 
@@ -91,6 +103,12 @@ without properties and write the two registry values yourself:
 
 An upgrade (`msiexec /i` with a newer MSI) keeps the registry values when you
 pass no properties.
+
+The installer never rolls back because the service did not start: it starts the
+service when it can, and Windows starts it about a minute after every boot. The
+MSI installs the Microsoft Edge WebView2 Runtime when a Windows 10 computer does
+not have it; the Kortix Capture window needs it. A person who double-clicks the
+MSI without properties gets the app opened at the end and signs in from it.
 
 ## 3. Check the rollout
 
@@ -124,7 +142,7 @@ signed-in session.
 |---|---|
 | Stop new computers from enrolling | Revoke the token in **Company install**. Enrolled computers keep recording. |
 | Stop one computer | Revoke the device in **Devices**, or deny it in **Waiting for approval**. Its device token stops working at once. The computer does not enroll again until an admin approves it. |
-| Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn`. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
+| Remove Kortix Capture | `msiexec /x KortixCapture-x64.msi /qn` (the same MSI), or **Settings → Apps → Kortix Capture → Uninstall**. The service and the program files go away. Recordings on the computer stay in each person's profile until retention deletes them. |
 
 ## What the enrollment token can and cannot do
 
@@ -170,7 +188,7 @@ each person who signs in, and an agent that records in every session.
 sudo mkdir -p "/Library/Application Support/Kortix/Capture"
 echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee "/Library/Application Support/Kortix/Capture/config.json" >/dev/null
 sudo chmod 600 "/Library/Application Support/Kortix/Capture/config.json"
-sudo installer -pkg KortixCapture-universal.pkg -target /
+curl -fsSL -o /tmp/KortixCapture-universal.pkg https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-universal.pkg && sudo installer -pkg /tmp/KortixCapture-universal.pkg -target / && echo "Kortix Capture installed."
 ```
 
 With an MDM, deploy the package and a configuration profile for the domain
@@ -190,7 +208,7 @@ standard user approve it. To remove Kortix Capture:
 sudo install -d -m 755 /etc/kortix
 echo '{"url":"https://api.kortix.com","enrollment_token":"kortix_enr_..."}' | sudo tee /etc/kortix/capture.json >/dev/null
 sudo chmod 600 /etc/kortix/capture.json
-sudo apt install ./kortix-capture_amd64.deb
+curl -fsSL -o /tmp/kortix-capture_amd64.deb https://github.com/kortix-ai/suna/releases/latest/download/kortix-capture_amd64.deb && sudo apt-get install -y /tmp/kortix-capture_amd64.deb && echo "Kortix Capture installed."
 ```
 
 The package installs a machine service (`kortix-capture-machine`) that holds

@@ -335,7 +335,7 @@ Machine size:
 
 A value out of range answers `400 app_machine_out_of_range`. Kortix never
 clamps it. The App's size is the default for every process group. On Platinum,
-a `vm` entry in the release sizes one group. On Daytona and E2B, every machine
+a `vm` entry in the release sizes one group. On legacy Daytona, every machine
 uses the App's size. A size change applies with the next release.
 
 ```bash
@@ -929,6 +929,21 @@ kortix apps access crm --mode project
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.
 
+[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs,
+but it is not on npm yet: today it installs only inside the
+[kortix-ai/suna](https://github.com/kortix-ai/suna) repository
+(`"@kortix/ui": "workspace:*"`). An App in a project repository cannot install
+it until the first npm release. Until then, style the App with plain CSS that
+reads the same variable names (`--background`, `--foreground`, `--border`,
+`--radius`), and never copy component source into the App.
+
+Inside kortix-ai/suna, a Vite App without Tailwind imports
+`@kortix/ui/styles.css` once in `src/main.tsx`. A Tailwind v4 App imports
+`@import 'tailwindcss'; @import '@kortix/ui/tailwind.css';` in its main CSS.
+Compose `Card`, `Table`, `Modal`, `Badge` and `InfoBanner` before you write a
+component, and re-theme by CSS variables, never by a copied component. A chat
+view of a session is `SessionThread` from `@kortix/ui/chat`.
+
 | What broke | Undo |
 |---|---|
 | The UI | `kortix apps rollback crm <vN>` |
@@ -1019,7 +1034,7 @@ Every route also needs the project's Apps switch on. See
 | `kortix apps list` (`ls`) | The Apps you may open: slug, state, URL |
 | `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses`. `--url <https-url>` creates an external App |
 | `kortix apps launch --template convex` | Write a template's blocks to `kortix.yaml` in the current directory and deploy them. `--name <slug>`, `--provider <name>`, `--no-deploy` |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider daytona\|platinum\|e2b`, `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider platinum\|daytona` (`daytona` is a legacy fallback), `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
 | `kortix apps set <app>` (`update`) | Change `--name`, `--url` (an external App), `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
 | `kortix apps link <app> --uses <slugs>` | Add used Apps. `unlink` removes them. |
 | `kortix apps show <app>` (`get`) | Capabilities, links, run mode and releases |

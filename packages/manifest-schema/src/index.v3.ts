@@ -25,6 +25,7 @@ import {
   PI_PACKAGE_NPM_RE,
   REGISTRY_NAME_MAX,
   REGISTRY_NAME_RE,
+  RETIRED_KORTIX_TOOLS,
   SLUG_RE,
   TOOL_NAME_RE,
 } from './constants';
@@ -554,7 +555,12 @@ function validateToolGrantV3(value: unknown, where: string, known: Set<string>, 
     issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
     return;
   }
-  const unknown = (names as string[]).filter((name) => !known.has(name.trim()) && !name.startsWith('pty_'));
+  const missing = (names as string[]).map((name) => name.trim()).filter((name) => !known.has(name) && !name.startsWith('pty_'));
+  const retired = missing.filter((name) => RETIRED_KORTIX_TOOLS.includes(name));
+  const unknown = missing.filter((name) => !RETIRED_KORTIX_TOOLS.includes(name));
+  if (retired.length > 0) {
+    issues.push({ path: where, message: `removed: ${retired.join(', ')}. Agents reach connectors with the \`kortix connectors\` CLI. Delete these names.`, severity: 'warning' });
+  }
   if (unknown.length > 0) {
     issues.push({ path: where, message: `not a harness, Kortix or registered tool: ${unknown.join(', ')}.`, severity: 'error' });
   }

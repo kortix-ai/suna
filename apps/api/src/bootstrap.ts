@@ -44,6 +44,7 @@ import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worke
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './workers/teams-turn-gc-worker';
 import { startTmpReaper, stopTmpReaper } from './workers/tmp-reaper-worker';
+import { startTriggerEventPollWorker, stopTriggerEventPollWorker } from './workers/trigger-event-poll-worker';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './workers/trigger-scheduler-worker';
 import { startTunnelService, stopTunnelService } from './workers/tunnel-worker';
 
@@ -167,6 +168,8 @@ async function startReplicaServices() {
   startSessionLifecycleWorker();
   // The durable job queue (Kortix Capture ingest): every replica runs jobs.
   startJobWorker();
+  // Kortix-polled app events: every replica checks due streams.
+  startTriggerEventPollWorker();
   // Keep the shared Teams bot token warm so the first message after a deploy
   // does not wait on login.microsoftonline.com before its live card is posted.
   startTeamsBotTokenRefresh();
@@ -403,6 +406,7 @@ async function runShutdown(signal: string): Promise<void> {
   stopAccessControlCache();
   stopTmpReaper();
   stopJobWorker();
+  stopTriggerEventPollWorker();
   await handBack;
   // A build claim this task holds would block peers until its lease lapses.
   await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');

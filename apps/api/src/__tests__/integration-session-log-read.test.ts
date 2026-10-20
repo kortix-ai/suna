@@ -8,13 +8,15 @@
  * Every v1 read (`transcript?shape=sync` paged to the end, the child read,
  * `shape=compact`, the open bundle, the public share) must answer the same body
  * with the project flag `session_log` off (the mirror) and on (the log). The one
- * field that differs is `captured_at`. One tool output is 150,000 three-byte
+ * field that differs is `captured_at`. With the flag on no read touches the mirror (P8): the
+ * reads pass with both mirror tables renamed away, a native (pi) thread is served through `toV1`,
+ * and a session with no stored log (pre-journal history) answers from the mirror. One tool output is 150,000 three-byte
  * characters (450 kB): the mirror keeps it (under 200,000 characters), the log
  * stores it by reference (F3, P2.3), and the v1 reads put it back. The Storage
  * bucket is `helpers/fake-session-storage.ts`.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
-import { fromV1, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import { fromV1, toV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import { accountMembers, projectMembers, projectSessions, projects, sessionLogs, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
@@ -201,11 +203,77 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
     expect((await get(`${base()}/transcript?shape=sync&before=msg_nope`)).status).toBe(400);
   });
 
-  test('a session whose threads fromV1 did not build (the pi adapter writes them natively) is served from the mirror', async () => {
+  test('a session whose threads fromV1 did not build (the pi adapter writes them natively) is served from the log through toV1', async () => {
+    // Setup writes the mirror too: with the flag on the capture writes no v1 row (P8).
+    await setFlag(false);
     await storeBothWays(nativeSession, 6, { nativeThreads: true });
-    const body = (await (await get(`${base(nativeSession)}/transcript?shape=sync`)).json()) as { captured_at: string };
-    const [mirror] = await db.select({ capturedAt: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, nativeSession));
-    expect(body.captured_at).toBe(new Date(mirror!.capturedAt).toISOString());
+    await setFlag(true);
+    type Window = { available: boolean; captured_at: string; total: number; message_count: number; runtime_session_id: string; messages: Array<{ info: { id: string; role: string; sessionID: string } }> };
+    const body = (await (await get(`${base(nativeSession)}/transcript?shape=sync`)).json()) as Window;
+    const [log] = await db.select({ updatedAt: sql<Date>`greatest(${sessionLogs.updatedAt}, (select max(m.updated_at) from kortix.session_log_messages m where m.session_id = ${nativeSession}))` }).from(sessionLogs).where(eq(sessionLogs.sessionId, nativeSession));
+    expect(body.available).toBe(true);
+    expect(body.captured_at).toBe(new Date(log!.updatedAt).toISOString());
+    expect(body.runtime_session_id).toBe(ROOT);
+    // The rows the SDK renders for the native root thread: `toV1` of its stored records.
+    const page = (await (await get(`${base(nativeSession)}/log?limit=500`)).json()) as { session: object; threads: Array<{ thread_id: string }>; messages: unknown[] };
+    const thread = page.threads.find((t) => t.thread_id === ROOT)!;
+    const expected = toV1({ ...page.session, session_id: nativeSession, threads: [{ ...thread, messages: page.messages }] } as unknown as SessionLog).rows;
+    expect(body.total).toBe(expected.length);
+    expect(body.messages.map((m) => [m.info.id, m.info.role, m.info.sessionID])).toEqual(
+      expected.slice(-40).map((r) => [String((r.info as { id: string }).id), String((r.info as { role: string }).role), ROOT]),
+    );
+    const child = (await (await get(`${base(nativeSession)}/transcript?shape=sync&child=${CHILD}`)).json()) as Window;
+    expect(child.available).toBe(true);
+    expect(child.message_count).toBe(2);
+    expect(child.messages.every((m) => m.info.sessionID === CHILD)).toBe(true);
+  });
+
+  test('with the flag on, a session with no stored log (pre-journal history, not backfilled) answers from the mirror', async () => {
+    const mirrorOnly = await seedSession(project, OWNER);
+    const { root } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 2 });
+    await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, mirrorOnly));
+    // A mirror from before the flag: with it on, the capture writes no v1 row (P8).
+    await setFlag(false);
+    await captureSessionTranscriptMirror(mirrorOnly, {
+      readMessages: async () => ({ opencodeSessionId: ROOT, payload: root, headComplete: true, complete: true, children: [] }),
+    });
+    await setFlag(true);
+    // The capture also writes a log from the mirror (P2.7): remove it, keep the mirror.
+    for (const table of ['session_log_messages', 'session_log_threads', 'session_logs']) {
+      await db.execute(sql`delete from ${sql.raw(`kortix.${table}`)} where session_id = ${mirrorOnly}`);
+    }
+    expect(await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, mirrorOnly))).toHaveLength(0);
+    // Turning the flag on hides no saved transcript: the mirror answers until the backfill converts it.
+    const sync = (await (await get(`${base(mirrorOnly)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
+    expect(sync).toMatchObject({ available: true, source: 'mirror' });
+    expect((sync.messages as unknown[]).length).toBe(root.length);
+    const compact = (await (await get(`${base(mirrorOnly)}/transcript`)).json()) as Record<string, unknown>;
+    expect(compact).toMatchObject({ available: true });
+    const bundle = (await (await get(`${base(mirrorOnly)}/open-bundle`)).json()) as Record<string, Record<string, unknown>>;
+    expect(bundle.transcript).toMatchObject({ known: true, requested: true, available: true, source: 'mirror' });
+    expect(bundle.log).toEqual({ known: true, page: null });
+    // The flag off: the mirror answers, unchanged.
+    await setFlag(false);
+    const mirror = (await (await get(`${base(mirrorOnly)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
+    expect(mirror).toMatchObject({ available: true, source: 'mirror' });
+    await setFlag(true);
+  });
+
+  test('with the flag on, every v1 read answers the same body with both mirror tables renamed away', async () => {
+    const visible = await v1Bodies();
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
+    try {
+      const hidden = await v1Bodies();
+      expect(hidden.pages).toEqual(visible.pages);
+      expect(hidden.child).toEqual(visible.child);
+      expect(hidden.compact).toEqual(visible.compact);
+      expect(hidden.bundle).toEqual(visible.bundle);
+      expect(hidden.share).toEqual(visible.share);
+    } finally {
+      await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
+      await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
+    }
   });
 });
 

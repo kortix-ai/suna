@@ -84,6 +84,7 @@ export type { ModelFallbackPolicyEngine } from './routing';
 export { providerKindForNpm } from './catalog';
 
 export type {
+  AdmitResult,
   AuthedPrincipal,
   AuthorizeResult,
   BillingMode,

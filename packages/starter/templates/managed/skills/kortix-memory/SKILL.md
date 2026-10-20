@@ -104,7 +104,9 @@ there's enough depth to warrant a click.
 
 ### What NOT to remember (DROP)
 
-- One user's personal preferences — those are not project memory.
+- One user's personal preferences — those are not project memory. They
+  go in that user's own memory, `/drives/me/Memory` (the
+  `kortix-user-memory` skill).
 - Facts derivable from the repo layout, file names, or `git log`.
 - One-off task state that won't matter next week.
 - Anything that's already in `kortix.yaml`, `AGENTS.md`, or a SKILL.md.

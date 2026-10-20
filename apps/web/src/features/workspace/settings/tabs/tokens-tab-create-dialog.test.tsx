@@ -54,10 +54,12 @@ mock.module('@/lib/iam-client', () => ({
   getPatPolicy: async () => null,
 }));
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 
 function Pass({ children }: { children?: ReactNode }) {
   return createElement(Fragment, null, children);
@@ -65,7 +67,7 @@ function Pass({ children }: { children?: ReactNode }) {
 
 // The real Modal and Select are Radix portals; the wiring under test is the
 // form's submit guard, which stays real. A div keeps the tree assertable.
-mock.module('@/components/ui/modal', () => {
+const uiModalMock = () => {
   const Modal = ({ open, children }: { open: boolean; children?: ReactNode }) =>
     open ? createElement('div', null, children) : null;
   return {
@@ -77,8 +79,10 @@ mock.module('@/components/ui/modal', () => {
     ModalHeader: Pass,
     ModalTitle: Pass,
   };
-});
-mock.module('@/components/ui/select', () => ({
+};
+mock.module('@/components/ui/modal', uiModalMock);
+mock.module('@kortix/ui/modal', uiModalMock);
+const uiSelectMock = () => ({
   Select: Pass,
   SelectContent: Pass,
   SelectGroup: Pass,
@@ -86,7 +90,9 @@ mock.module('@/components/ui/select', () => ({
   SelectLabel: Pass,
   SelectTrigger: Pass,
   SelectValue: () => null,
-}));
+});
+mock.module('@/components/ui/select', uiSelectMock);
+mock.module('@kortix/ui/select', uiSelectMock);
 mock.module('@/features/workspace/shared/access', () => ({ ...realAccess, CopyRow: Pass }));
 
 const translate = (key: string) => key.split('.').pop() || key;

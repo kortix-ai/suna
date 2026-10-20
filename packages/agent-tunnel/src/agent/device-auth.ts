@@ -153,7 +153,7 @@ export function machineDisplayName({
   host = hostname(),
   env = process.env,
   run = (command: string, args: string[]) =>
-    execFileSync(command, args, { encoding: 'utf8', timeout: 1_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+    execFileSync(command, args, { encoding: 'utf8', timeout: 1_000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }),
 }: {
   os?: string;
   host?: string;
@@ -180,7 +180,7 @@ export function machineDisplayName({
 export function machineId({
   os = platform(),
   run = (command: string, args: string[]) =>
-    execFileSync(command, args, { encoding: 'utf8', timeout: 2_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+    execFileSync(command, args, { encoding: 'utf8', timeout: 2_000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }),
   read = (path: string) => readFileSync(path, 'utf8'),
 }: {
   os?: string;

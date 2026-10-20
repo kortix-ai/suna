@@ -4,11 +4,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 // The app's Bun tests have no DOM; preserve the real opener/content path and
 // replace only the portal and full chat with observable server-renderable nodes.
-await mock.module('@/components/ui/modal', () => ({
+const uiModalMock = () => ({
   Modal: ({ open, children }: { open: boolean; children: React.ReactNode }) => open ? <div>{children}</div> : null,
   ModalContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
+});
+await mock.module('@/components/ui/modal', uiModalMock);
+await mock.module('@kortix/ui/modal', uiModalMock);
 await mock.module('@/features/session/session-chat', () => ({
   SessionChat: ({ sessionId, readOnly }: { sessionId: string; readOnly: boolean }) =>
     <div data-chat-session={sessionId} data-read-only={String(readOnly)} />,

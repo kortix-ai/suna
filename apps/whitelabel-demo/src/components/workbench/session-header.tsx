@@ -1,38 +1,44 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
-
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { ModelSwitcher } from '@/components/workbench/model-switcher';
+} from '@kortix/ui/dropdown-menu';
+import { Input } from '@kortix/ui/input';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
 import { isRuntimeReady } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreVertical, Pencil, RotateCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
+import { cn } from '@kortix/ui/lib/utils';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ArrowClockwiseIcon, DotsThreeVerticalIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
 
-export function SessionHeader({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionHeader({
+  projectId,
+  sessionId,
+  runtimeReady,
+}: {
+  projectId: string;
+  sessionId: string;
+  /** `useSession(...).phase === 'ready'`: the status badge refetches when the runtime comes up. */
+  runtimeReady?: boolean;
+}) {
+  const qc = useQueryClient();
+  // The row is read once while the sandbox provisions; without this the badge
+  // keeps saying "Provisioning" until a reload.
+  useEffect(() => {
+    if (runtimeReady) void qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
+  }, [runtimeReady, qc, projectId, sessionId]);
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
     queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
@@ -56,17 +62,13 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
       <span
         className={cn(
           'size-2 shrink-0 rounded-full',
-          ready ? 'bg-emerald-500' : health.data ? 'bg-amber-500' : 'bg-muted-foreground/40',
+          ready ? 'bg-kortix-green' : health.data ? 'bg-kortix-orange' : 'bg-muted-foreground/40',
         )}
         title={ready ? 'Runtime healthy' : 'Runtime warming up'}
       />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{title}</div>
       </div>
-      {/* Mid-session model change. Placed by the status badge because switching
-          restarts the runtime and ends the in-flight turn — it belongs with the
-          session's live state, not buried in settings. */}
-      <ModelSwitcher projectId={projectId} sessionId={sessionId} />
       {status && (
         <Badge variant="secondary" className="capitalize">
           {status}
@@ -102,27 +104,27 @@ function SessionActions({
       qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
       invalidateSessions(qc, projectId);
       setRenaming(false);
-      toast.success('Session renamed');
+      successToast('Session renamed');
     },
-    onError: () => toast.error('Could not rename'),
+    onError: () => errorToast('Could not rename'),
   });
   const restart = useMutation({
     mutationFn: () => kortix.session(projectId, sessionId).restart(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.sessionStart(projectId, sessionId) });
-      toast.success('Restarting the session…');
+      successToast('Restarting the session…');
     },
-    onError: () => toast.error('Could not restart'),
+    onError: () => errorToast('Could not restart'),
   });
   const remove = useMutation({
     mutationFn: () => kortix.session(projectId, sessionId).delete(),
     onSuccess: () => {
       invalidateSessions(qc, projectId);
       setConfirmingDelete(false);
-      toast.success('Session deleted');
+      successToast('Session deleted');
       router.push(`/projects/${projectId}`);
     },
-    onError: () => toast.error('Could not delete'),
+    onError: () => errorToast('Could not delete'),
   });
 
   return (
@@ -130,7 +132,7 @@ function SessionActions({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="size-8" aria-label="Session actions">
-            <MoreVertical className="size-4" />
+            <DotsThreeVerticalIcon className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -140,10 +142,10 @@ function SessionActions({
               setRenaming(true);
             }}
           >
-            <Pencil className="size-4" /> Rename
+            <PencilSimpleIcon className="size-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => restart.mutate()} disabled={restart.isPending}>
-            <RotateCw className="size-4" /> Restart
+            <ArrowClockwiseIcon className="size-4" /> Restart
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -151,58 +153,53 @@ function SessionActions({
             onClick={() => setConfirmingDelete(true)}
             disabled={remove.isPending}
           >
-            <Trash2 className="size-4" /> Delete
+            <TrashIcon className="size-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={renaming} onOpenChange={setRenaming}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename session</DialogTitle>
-          </DialogHeader>
-          <Input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && name.trim() && rename.mutate()}
-          />
-          <DialogFooter>
+      <Modal open={renaming} onOpenChange={setRenaming}>
+        <ModalContent>
+          <ModalHeader>
+            <ModalTitle>Rename session</ModalTitle>
+          </ModalHeader>
+          <ModalBody>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && name.trim() && rename.mutate()}
+            />
+          </ModalBody>
+          <ModalFooter>
             <Button disabled={!name.trim() || rename.isPending} onClick={() => rename.mutate()}>
               Save
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
-      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete this session?</DialogTitle>
-            <DialogDescription>
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete this session?"
+        description={
+          <div className="space-y-3">
+            <p>
               The session and the sandbox behind it are destroyed. Restart instead if the runtime
               is just misbehaving — that keeps the sandbox and the transcript.
-            </DialogDescription>
-          </DialogHeader>
-          {/* Both lifecycle calls, on the step where one of them is about to
-              happen: the restart this dialog is recommending, and the delete
-              the button performs. */}
-          <CallSnippet id="session.delete" context={{ projectId, sessionId }} />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate()}
-            >
-              {remove.isPending && <Loading className="size-4" />}
-              Delete session
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </p>
+            {/* Both lifecycle calls, on the step where one of them is about to
+                happen: the restart this dialog is recommending, and the delete
+                the button performs. */}
+            <CallSnippet id="session.delete" context={{ projectId, sessionId }} />
+          </div>
+        }
+        confirmLabel="Delete session"
+        confirmVariant="destructive"
+        isPending={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
     </>
   );
 }

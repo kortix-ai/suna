@@ -20,6 +20,7 @@ const OC_SESSION_ID = 'oc-fail-open-1';
 mock.module('../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 mock.module('../shared/db', () => ({

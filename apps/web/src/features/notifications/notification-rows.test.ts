@@ -11,6 +11,8 @@ import {
   pollsWhileHidden,
   rowDestination,
   sessionUnreadRowId,
+  tabRows,
+  tabUnreadCount,
   webNotificationType,
   withoutNotificationParam,
 } from './notification-rows';
@@ -199,4 +201,37 @@ test('sessionUnreadRowId is the newest unread row of that session', () => {
   expect(sessionUnreadRowId(rows, 'ses-a')).toBe(newest.id);
   expect(sessionUnreadRowId(rows, 'ses-c')).toBeNull();
   expect(sessionUnreadRowId(undefined, 'ses-a')).toBeNull();
+});
+
+describe('tabRows', () => {
+  const rows = [
+    row({ kind: 'question' }),
+    row({ kind: 'turn_done' }),
+    row({ kind: 'automation_failed', read: true }),
+    row({ kind: 'shared' }),
+  ];
+
+  test('Needs you holds what waits on the person; Done holds the rest; All holds every row', () => {
+    expect(tabRows(rows, 'needs').map((r) => r.kind)).toEqual(['question', 'automation_failed']);
+    expect(tabRows(rows, 'done').map((r) => r.kind)).toEqual(['turn_done', 'shared']);
+    expect(tabRows(rows, 'all')).toHaveLength(4);
+  });
+
+  test('unread rows come first, each group in inbox order', () => {
+    const readNew = row({ kind: 'turn_done', read: true, title: 'read new' });
+    const unreadOld = row({ kind: 'turn_done', title: 'unread old' });
+    const readOld = row({ kind: 'shared', read: true, title: 'read old' });
+    const unreadOlder = row({ kind: 'turn_done', title: 'unread older' });
+    expect(tabRows([readNew, unreadOld, readOld, unreadOlder], 'done').map((r) => r.title)).toEqual([
+      'unread old',
+      'unread older',
+      'read new',
+      'read old',
+    ]);
+  });
+
+  test('a tab counts only its unread rows', () => {
+    expect(tabUnreadCount(rows, 'needs')).toBe(1);
+    expect(tabUnreadCount(rows, 'done')).toBe(2);
+  });
 });

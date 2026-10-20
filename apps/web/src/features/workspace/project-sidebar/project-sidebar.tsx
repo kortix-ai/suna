@@ -161,6 +161,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 of the three icon buttons, so the row fits the 208px floor. */}
             <NotificationBell
               projectId={projectId}
+              surface="bg-sidebar"
               onNavigate={() => {
                 if (isMobile) setOpenMobile(false);
               }}
@@ -264,7 +265,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 )}
               </SidebarMenuItem>
 
-              {/* Customize, Apps, Review, Reminders, Files: order and
+              {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
               <ProjectNavItems projectId={projectId} />

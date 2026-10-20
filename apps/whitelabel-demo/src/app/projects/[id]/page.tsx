@@ -1,23 +1,21 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { AgentPicker } from '@/components/chat/agent-picker';
-import { ModelPicker } from '@/components/chat/model-picker';
 import {
   ConnectorBindingFields,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+} from '@kortix/ui/select';
+import { type AutosizeTextAreaRef, Textarea } from '@kortix/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { NO_OVERRIDES } from '@/lib/session-overrides';
 import { useCreateSession } from '@/lib/use-create-session';
@@ -30,9 +28,11 @@ import {
   writeStartStash,
 } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowUp, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { AgentPicker, ModelPicker } from '@kortix/ui/chat';
+import { brandProviderLabel } from '@/config/brand';
+import { ArrowUpIcon, SparkleIcon } from '@phosphor-icons/react';
 
 const STARTERS = [
   {
@@ -65,7 +65,7 @@ export default function ProjectPage() {
 function ProjectHome() {
   const projectId = String(useParams().id);
   const router = useRouter();
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<AutosizeTextAreaRef>(null);
 
   const [prompt, setPrompt] = useState('');
   // Which shared connection each connector should run as. An alias absent from
@@ -129,7 +129,7 @@ function ProjectHome() {
       <div className="w-full max-w-xl">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
-            <Sparkles className="size-5 text-brand" />
+            <SparkleIcon className="size-5 text-brand" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -150,10 +150,13 @@ function ProjectHome() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring/60">
+        <div className="rounded-lg border border-border bg-popover transition-colors focus-within:border-ring motion-reduce:transition-none">
           <Textarea
             ref={ref}
             rows={3}
+            minHeight={84}
+            maxHeight={240}
+            aria-label="What should the agent build?"
             value={prompt}
             disabled={launching}
             placeholder="e.g. Build a personal portfolio site with a projects gallery…"
@@ -164,10 +167,10 @@ function ProjectHome() {
                 submit();
               }
             }}
-            className="min-h-[84px] resize-none border-0 bg-transparent px-4 pt-3.5 text-sm leading-relaxed shadow-none focus-visible:ring-0 scrollbar-thin"
+            className="scrollbar-thin border-0 bg-transparent px-3.5 pt-3 leading-relaxed focus:ring-0"
           />
           <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5">
-            <ModelPicker models={models} value={model} onChange={setModel} />
+            <ModelPicker models={models} value={model} onChange={setModel} providerLabel={brandProviderLabel} />
             <AgentPicker
               agents={agents}
               value={agent}
@@ -193,13 +196,13 @@ function ProjectHome() {
             )}
             <div className="flex-1" />
             <Button
-              size="icon"
-              className="size-8 rounded-full"
+              size="icon-base"
+              className="rounded-full"
               disabled={!prompt.trim() || launching}
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
+              {launching ? <Loading className="size-4" /> : <ArrowUpIcon className="size-4" />}
             </Button>
           </div>
         </div>
