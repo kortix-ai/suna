@@ -1,31 +1,12 @@
 'use client';
 
 /**
- * Start the project shell's own reads BEFORE `ProjectShell` mounts — the same
- * "prefetch beside the access check" pattern `session-route-prefetch.ts` uses
- * for a session route.
+ * Warm the shell's reads after the boundary confirms project access, before
+ * lazy shell chunks finish loading. Use the consuming hooks' exact keys so
+ * they share warm or in-flight data without duplicate requests.
  *
- * THE PROBLEM. `ProjectAccessBoundary` renders NOTHING but a full-page loading
- * frame until its own `getProject` resolves (+2.1s on a cold dev load) —
- * `ProjectShell` (the sidebar, the composer, the whole `/projects/<id>` tree)
- * is one of its `children`, so nothing under it can even START a query before
- * that. Once `getProject` resolves, `ProjectShell`'s own chunk still has to
- * load and hydrate before its hooks run — another few hundred ms — and only
- * THEN does the burst of "shell" reads fire: project detail, the sessions
- * list, sandbox health, the model picker.
- *
- * None of those four needs anything `getProject` returns. They need only
- * `projectId`, exactly like `getProject` itself — the API authorizes each of
- * them independently, so starting them in parallel with the access check is
- * safe: a 403/404 on `getProject` still renders the boundary's denial screen,
- * and a request this user cannot make simply answers 403/404 too (`prefetchQuery`
- * swallows the error; nothing renders from it until a real hook mounts and
- * decides what a failure means for its own screen).
- *
- * THE FIX. Fire the same reads from here, at the SAME point `getProject`
- * fires, using the EXACT query keys and options their real consuming hooks
- * use, so the later hook mount finds warm or in-flight data instead of firing
- * a second request:
+ * Do not start these alongside the access check: a revoked member would send
+ * a denied request for each speculative read before the boundary can stop it.
  *
  *   - project detail   → `qk.project.detail(id)`      (`ProjectShell`, `useProjectCanRun`, …)
  *   - sessions list     → `qk.project.sessionsPaged(id, 'visible')` (the sidebar's `useProjectSessions`)
