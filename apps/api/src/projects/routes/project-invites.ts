@@ -1,5 +1,6 @@
 /** Project invites: invite by email and manage pending invites. */
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail, sendProjectAddedEmail } from '../../accounts/email';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
@@ -203,12 +204,14 @@ export function registerProjectInvitesRoutes(): void {
       });
     }
 
-    await sendProjectAddedEmail({
+    void sendProjectAddedEmail({
       email,
       projectId,
       projectName: loaded.row.name ?? 'Untitled project',
       inviterEmail: c.get('userEmail') ?? null,
       role: implicitAccess ? 'manager' : role,
+    }).catch(() => {
+      logger.warn('[projects/invite] project notification delivery rejected');
     });
 
     return c.json({
