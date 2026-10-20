@@ -222,7 +222,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
-| "own this outcome until it is done (days or months), chase me for what you need" | a goal: the `kortix-goals` skill · `kortix goals new "<objective>"` · `kortix goals ls|status|check` |
+| "own this outcome until it is done (days or months), chase me for what you need" | a goal: the `kortix-goals` skill · `kortix goals new "<objective>"` · `kortix goals transition <status> --reason "…"` · `kortix goals ls|status|check` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
