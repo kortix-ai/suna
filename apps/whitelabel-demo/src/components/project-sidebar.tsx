@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import Hint from '@kortix/ui/hint';
-import { SidebarToggle } from '@kortix/ui/icons';
+import { SidebarGlyph } from '@kortix/ui/icons';
 import {
   Sidebar,
   SidebarContent,
@@ -161,7 +161,7 @@ function SidebarCollapse() {
   return (
     <Hint label="Collapse sidebar" side="bottom">
       <Button type="button" variant="ghost" size="icon" aria-label="Collapse sidebar" onClick={toggleSidebar}>
-        <SidebarToggle />
+        <SidebarGlyph />
       </Button>
     </Hint>
   );

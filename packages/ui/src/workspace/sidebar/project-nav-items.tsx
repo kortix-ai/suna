@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '../../primitives/sidebar';
-import { SidebarToggle } from '../../icons/sidebar-toggle';
+import { SidebarGlyph } from '../../icons/sidebar-toggle';
 import { useNavRowMeta } from './nav-row-meta';
 import { useIsMobile } from '../../internal/hooks';
 import { useTranslations } from '../../i18n';
@@ -148,7 +148,7 @@ function MoreNavItem({
               requestAnimationFrame(openCustomizeSidebar);
             }}
           >
-            <SidebarToggle />
+            <SidebarGlyph />
             {t('customizeSidebar')}
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -3,4 +3,4 @@
  */
 export { Close } from './close';
 export { Copy } from './copy';
-export { SidebarToggle } from './sidebar-toggle';
+export { SidebarGlyph } from './sidebar-toggle';

@@ -32,7 +32,7 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
 }
 ```
 
-Names: `Close`, `Copy`, `SidebarToggle`
+Names: `Close`, `Copy`, `SidebarGlyph`
 
 ## `@kortix/ui/theme`
 

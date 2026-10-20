@@ -182,8 +182,8 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Copy,
-  SidebarToggle as PanelLeftClose,
-  SidebarToggle as PanelLeftIcon,
+  SidebarGlyph as PanelLeftClose,
+  SidebarGlyph as PanelLeftIcon,
 } from '@kortix/ui/icons';
 
 type PalettePage =

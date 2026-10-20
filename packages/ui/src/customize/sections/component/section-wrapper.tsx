@@ -8,7 +8,7 @@ import { cn } from '../../../internal/lib/utils';
 import { useTranslations } from '../../../i18n';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import type React from 'react';
-import { SidebarToggle as PanelLeft } from '../../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 
 type Props = {
   title: string;

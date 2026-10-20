@@ -7,7 +7,7 @@ import { qk } from '@/lib/query-keys';
 import { ApiError } from '@kortix/sdk';
 import { SessionIdsProvider } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
-import { SidebarToggle } from '@kortix/ui/icons';
+import { SidebarGlyph } from '@kortix/ui/icons';
 import { SidebarEdgePeek, SidebarInset, SidebarProvider, useSidebar } from '@kortix/ui/sidebar';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -73,7 +73,7 @@ function ProjectMain({ children, opener }: { children: React.ReactNode; opener: 
           onClick={() => (isMobile ? setOpenMobile(true) : toggleSidebar())}
           className="absolute top-2 left-2 z-30"
         >
-          <SidebarToggle />
+          <SidebarGlyph />
         </Button>
       )}
       <div className={hidden ? 'flex min-h-0 flex-1 flex-col pl-10' : 'flex min-h-0 flex-1 flex-col'}>

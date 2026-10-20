@@ -23,7 +23,7 @@ import { ButtonGroup } from '../../../primitives/button-group';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../../primitives/drawer';
 import Hint from '../../../primitives/hint';
 import { useOptionalSidebar } from '../../../primitives/sidebar';
-import { SidebarToggle as PanelLeft } from '../../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 import { isPlanWriteTool } from '../../turn/plan-anchor';
 import { useIsMobile } from '../../../internal/hooks';
 import { cn } from '../../../lib/utils';

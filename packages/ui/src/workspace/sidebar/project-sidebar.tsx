@@ -39,7 +39,7 @@ import { UiLink as Link } from '../../providers/ui-provider';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
-import { SidebarToggle as PanelLeft } from '../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../icons/sidebar-toggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';

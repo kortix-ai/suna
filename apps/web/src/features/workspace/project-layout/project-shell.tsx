@@ -50,7 +50,7 @@ import {
   useGatewayCatalogSync,
   useSessionsNeedingInput,
 } from '@kortix/sdk/react';
-import { SidebarToggle as PanelLeft } from '@kortix/ui/icons';
+import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({

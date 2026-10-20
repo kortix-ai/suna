@@ -19,7 +19,7 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
-import { SidebarToggle as PanelLeftClose } from '@kortix/ui/icons';
+import { SidebarGlyph as PanelLeftClose } from '@kortix/ui/icons';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
 import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
