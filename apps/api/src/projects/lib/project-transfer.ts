@@ -21,6 +21,8 @@
 import { eq, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
+  rooms,
+  sessionIdleWatches,
   accountModelPreferences,
   accountSecretResources,
   accountSecretGrants,
@@ -88,6 +90,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   projectTriggerEventSubscriptions,
   projectTriggerEventPolls,
   projectMonitorBoxes,
+  rooms,
+  sessionIdleWatches,
   sessionLifecycleCommands,
   sessionSandboxes,
   sessionTurns,

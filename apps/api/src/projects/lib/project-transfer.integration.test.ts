@@ -530,6 +530,26 @@ withDb('project transfer', () => {
     expect(poll?.seen).toEqual(['synthetic-item']);
   });
 
+  test('room ownership and idle watches follow the project', async () => {
+    const { rooms, sessionIdleWatches } = await import('@kortix/db');
+    const [room] = await db.insert(rooms).values({
+      projectId: PROJECT_ID, accountId: SOURCE_ACCOUNT, name: 'transfer-room',
+    }).returning();
+    const [watch] = await db.insert(sessionIdleWatches).values({
+      targetSessionId: SESSION_ID, roomId: room.roomId, projectId: PROJECT_ID,
+      accountId: SOURCE_ACCOUNT, watcherKind: 'person', watcherUserId: OWNER_A,
+      addedByUserId: OWNER_A, expiresAt: new Date(Date.now() + 60000),
+    }).returning();
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [movedRoom] = await db.select().from(rooms).where(eq(rooms.roomId, room.roomId));
+    const [movedWatch] = await db.select().from(sessionIdleWatches).where(eq(sessionIdleWatches.watchId, watch.watchId));
+    expect(movedRoom.accountId).toBe(TARGET_ACCOUNT);
+    expect(movedRoom.name).toBe('transfer-room');
+    expect(movedWatch.accountId).toBe(TARGET_ACCOUNT);
+    expect(movedWatch.roomId).toBe(room.roomId);
+    expect(movedWatch.targetSessionId).toBe(SESSION_ID);
+  });
+
   test('every schema table carrying both account_id and project_id is classified', async () => {
     // The anti-drift guard: a new table that copies the owning account's id
     // next to the project id must be either moved by the transfer or kept
