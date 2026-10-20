@@ -1515,6 +1515,11 @@ export async function resolveGitHubImportWithPat(input: {
   repoUrl: string;
   token: string;
   defaultBranch?: string | null;
+  /** The caller already proved write access another way. A GitHub App
+   *  installation token reads `permissions.push: false` on every repo, whatever
+   *  the installation was granted, so the App path checks the installation's
+   *  own `contents` permission instead. */
+  pushVerified?: boolean;
 }): Promise<{ repo: GitHubRepo; defaultBranch: string }> {
   const parsed = parseGitHubRepoUrl(input.repoUrl);
   if (!parsed) throw new Error('repo_url must be a GitHub repository URL');
@@ -1530,7 +1535,7 @@ export async function resolveGitHubImportWithPat(input: {
   // The API returns `permissions` when the token is authenticated against the
   // repo; a read-only token would make sessions unable to push branches.
   const perms = (repo as unknown as { permissions?: { push?: boolean } }).permissions;
-  if (perms && perms.push === false) {
+  if (!input.pushVerified && perms && perms.push === false) {
     throw new Error(
       `The GitHub token can read ${repo.full_name} but lacks write (push) access — ` +
         `grant Contents: Read and write so sessions can push branches.`,
