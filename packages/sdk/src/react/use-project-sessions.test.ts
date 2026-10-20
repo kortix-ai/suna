@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -271,11 +271,21 @@ describe('useProjectSessions pollFirstPageOnly', () => {
   afterEach(async () => {
     if (root) await act(async () => root!.unmount());
     root = undefined;
+    jest.useRealTimers();
   });
 
-  const wait = (ms: number) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+  // The fake clock moves `ms` in 5 ms steps, letting the answered fetches and React settle between steps.
+  const advance = async (ms: number) => {
+    for (let t = 0; t < ms; t += 5) {
+      await act(async () => {
+        jest.advanceTimersByTime(5);
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+    }
+  };
 
   test('a poll re-reads page one only, and a loaded older page keeps its rows', async () => {
+    jest.useFakeTimers();
     pages = [
       { ids: ['B', 'A'], next: 'C1' },
       { ids: ['Z'], next: null },
@@ -288,15 +298,17 @@ describe('useProjectSessions pollFirstPageOnly', () => {
     await act(async () => {
       root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
     });
-    await wait(20);
+    await advance(20);
     await act(async () => {
-      await list.fetchNextPage();
+      void list.fetchNextPage();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
     });
+    await advance(20);
     expect(cursors).toEqual([null, 'C1']);
 
     // A new thread arrives and pushes A off page one.
     pages[0] = { ids: ['N', 'B'], next: 'C1' };
-    await wait(150);
+    await advance(150);
 
     expect(cursors.slice(2).length).toBeGreaterThan(0);
     expect(cursors.slice(2).every((cursor) => cursor === null)).toBe(true);
