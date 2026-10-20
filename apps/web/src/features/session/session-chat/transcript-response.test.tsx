@@ -23,12 +23,15 @@ const RESPONSE = 'Here are the options.\n\n- One\n- Two\n\n<kortix_system type="
 const t = Object.assign((key: string) => key, { raw: (key: string) => key }) as never;
 
 /** A text-only turn (no steps), streaming or settled; `inline` uses the text-and-questions flow. */
+const BLOCK = { type: 'text', id: 'p1', text: RESPONSE };
 function turn(working: boolean, inline: boolean) {
-  const parts = [{ type: 'text', id: 'p1', block: { text: RESPONSE } }];
+  const parts = [{ type: 'text', id: 'p1', block: BLOCK }];
+  // While working, the response's one text block is the open one (`useTurnModelState`).
+  const openText = working ? { block: BLOCK, messageId: 'm1' } : null;
   return (
     <TurnAssistantBlock
       turn={{} as never}
-      model={{ working, hasSteps: false, hasReasoning: false, response: RESPONSE } as never}
+      model={{ working, openText, hasSteps: false, hasReasoning: false, response: RESPONSE } as never}
       answered={{ shouldUseInlineContent: inline, inlineContentParts: inline ? parts : null, answeredQuestionCalls: [] } as never}
       userContent={{ commandOutput: null } as never}
       tHardcodedUi={t}

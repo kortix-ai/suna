@@ -51,8 +51,11 @@ mock.module('@/features/session/scope/use-session-scope', () => ({
   }),
 }));
 mock.module('@kortix/sdk/react', () => ({
-  useFeatureFlag: (_project: string, flag: string) => ({ enabled: flag === 'llm_gateway' || poolEnabled }),
+  useFeatureFlag: (_project: string, flag: string) => ({
+    enabled: flag === 'llm_gateway' || (flag === 'pooled_provider_secrets' && poolEnabled),
+  }),
   useProjectSession: () => ({ data: { can_manage_lifecycle: managesSession } }),
+  useSessionDrives: () => ({ data: undefined }),
   useSessionProviderSecretPools: () => ({
     data: { pools: [], can_edit: true },
     isError: poolError,

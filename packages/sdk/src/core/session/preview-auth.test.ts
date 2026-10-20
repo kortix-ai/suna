@@ -21,6 +21,10 @@ mock.module('./preview-config', () => ({
   resetPreviewConfigCache: () => {},
 }));
 
+let ticketResponse = { success: true, data: { ticket: 'preview-only-ticket' } };
+let ticketRequests: unknown[] = [];
+mock.module('../http/api-client', () => ({ backendApi: { post: async (...args: unknown[]) => { ticketRequests.push(args); return ticketResponse; } } }));
+
 const { configureKortix } = await import('../http/config');
 const { authorizePreviewUrl, ensurePreviewSessionCookie } = await import('./preview-auth');
 
@@ -36,6 +40,8 @@ function stubFetch(handler: () => Response | Promise<Response>) {
 
 beforeEach(() => {
   token = 'jwt-token';
+  ticketRequests = [];
+  ticketResponse = { success: true, data: { ticket: 'preview-only-ticket' } };
   requests = [];
   advertisedTemplate = 'https://dev-p{port}-{sandbox}.p.kortix.com';
   configLoads = 0;
@@ -109,14 +115,16 @@ describe('ensurePreviewSessionCookie', () => {
 });
 
 describe('authorizePreviewUrl — the URL to actually open', () => {
-  test('a preview ORIGIN gets the credential in the URL, because a cookie cannot be set for it', async () => {
+  test('a preview ORIGIN exchanges the bearer for a preview-only ticket', async () => {
     // The /v1/p/ cookie is host-scoped to the API; it never reaches
     // dev-p8081-….p.kortix.com. Opening the bare URL lands on the sign-in gate.
     stubFetch(() => new Response(null, { status: 204 }));
     const url = await authorizePreviewUrl('https://dev-p3211-sbx-a.p.kortix.com/open?path=/workspace/a.md');
     expect(url).toBe(
-      'https://dev-p3211-sbx-a.p.kortix.com/open?path=%2Fworkspace%2Fa.md&token=jwt-token',
+      'https://dev-p3211-sbx-a.p.kortix.com/open?path=%2Fworkspace%2Fa.md&preview_ticket=preview-only-ticket',
     );
+    expect(ticketRequests).toEqual([['/p/ticket', { preview_url: 'https://dev-p3211-sbx-a.p.kortix.com/open?path=/workspace/a.md' }]]);
+    expect(url).not.toContain('jwt-token');
     // No cookie POST is attempted — there is no endpoint that could set one.
     expect(requests).toHaveLength(0);
   });
@@ -124,7 +132,12 @@ describe('authorizePreviewUrl — the URL to actually open', () => {
   test('the local origin form is treated the same way against a local backend', async () => {
     advertisedTemplate = null;
     const url = await authorizePreviewUrl('http://p3211-sbx-a.localhost:8008/open?path=/a.md');
-    expect(url).toContain('token=jwt-token');
+    expect(url).toContain('preview_ticket=preview-only-ticket');
+  });
+
+  test('a rejected ticket exchange never falls back to a bearer URL', async () => {
+    ticketResponse = { success: false, data: { ticket: '' } };
+    await expect(authorizePreviewUrl('http://p3000-sbx.localhost:8008/')).rejects.toThrow('Preview authorization failed');
   });
 
   test('a host that only looks like a preview origin never receives the credential', async () => {

@@ -244,7 +244,9 @@ test('access assignments --host resolves the named host project, not the ambient
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ assignments: otherAssignments });
   expect(other.requests.map((r) => `${r.method} ${r.path}${r.query}`)).toEqual([
-    'GET /v1/projects/proj_other?account_id=account_other',
+    // The project read takes its account from the project row, not a query
+    // string; the IAM list is read under the project's own account.
+    'GET /v1/projects/proj_other',
     'GET /v1/accounts/account_other/iam/assignments?scope_type=project&scope_id=proj_other&account_id=account_other',
   ]);
 });

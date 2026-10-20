@@ -198,6 +198,10 @@ Run limits (any type; add, add --apply, and set):
   --max-runs-per-day <n>   Runs it may start in a UTC day (default: no cap).
                            On \`set\`, \`none\` removes either cap.
 A manual \`fire\` is never held, but it counts.
+  --overlap skip|allow     Fresh session mode only: skip holds a fire while
+                           the previous run is still active. Default: skip for
+                           cron, allow for the others. On \`set\`, \`default\`
+                           resets it.
 
 Monitor options (--type monitor). A monitor is a repo command the platform
 runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
@@ -256,6 +260,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.sessionMode = takeFlagValue(rest, ['--session-mode']);
     tf.maxRunsPerHour = takeFlagValue(rest, ['--max-runs-per-hour']);
     tf.maxRunsPerDay = takeFlagValue(rest, ['--max-runs-per-day']);
+    tf.overlap = takeFlagValue(rest, ['--overlap']);
     tf.sessionKey = takeFlagValue(rest, ['--session-key']);
     tf.sessionId = takeFlagValue(rest, ['--session-id']);
     tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
@@ -770,6 +775,7 @@ async function triggersInfo(
   }
   rows.push(['max_runs_per_hour', String(t.max_runs_per_hour ?? '60 (default)')]);
   if (t.max_runs_per_day) rows.push(['max_runs_per_day', String(t.max_runs_per_day)]);
+  if (t.session_mode === 'fresh') rows.push(['overlap', t.overlap ?? `${t.type === 'cron' ? 'skip' : 'allow'} (default)`]);
   if (t.auto_paused_at) {
     rows.push(['auto_paused', `${C.yellow}${t.auto_paused_at}${C.reset} — ${t.auto_paused_reason ?? 'auto-paused'}`]);
     rows.push(['resume', `kortix triggers enable ${t.slug} --apply`]);

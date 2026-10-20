@@ -473,10 +473,13 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     });
     return [plain(0), call, plain(2), plain(3)];
   };
-  /** A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without `input`), then the converter. */
+  /**
+   * A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without
+   * `input`), without the `title` that would prove its command (`restoreStrippedToolParts`), then the converter.
+   */
   const convertStripped = async (session: string, extra: Msg[] = []) => {
     await capture(session, [...history(), ...extra]);
-    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
+    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' #- '{1,state,title}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
     expect((await writeSessionLogFromMirror(session)).outcome).toBe('written');
     const log = await logRow(session);
     expect({ grade: log?.restoreGrade, counts: log?.gradeCounts }).toEqual({ grade: 'partial', counts: { tool_input: 1, cut_point: 0, attachment: 0 } });
