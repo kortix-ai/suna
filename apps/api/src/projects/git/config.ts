@@ -215,6 +215,7 @@ export function resolveConfigAgents(
           path: file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
+          ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
@@ -365,6 +366,7 @@ async function scanAgents(
         path,
         description: meta.description || null,
         mode: meta.mode || null,
+        ...(meta.hidden === 'true' ? { hidden: true } : {}),
         model: meta.model || null,
       };
     },
@@ -551,6 +553,7 @@ async function loadProjectConfigV3(
       path: text(block.prompt_file) ?? spec.path,
       description: text(block.description),
       mode: text(block.mode),
+      ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
     };
   });
