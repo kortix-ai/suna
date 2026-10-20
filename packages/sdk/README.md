@@ -377,6 +377,9 @@ const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nigh
 const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
 // React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
+// Channels and DMs (experimental, `project_channels` flag): see "Channels and DMs" below.
+const general = (await kortix.project(pid).spaces.list())[0]; // #general
+const threads = await kortix.project(pid).sessions.list({ spaceId: general.space_id, parent: "root" });
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
@@ -406,6 +409,44 @@ The latter exposes `setPool.mutate({ providerId, secretIds })`. `null` restores
 inheritance; `[]` disables that provider for the session. Empty configured pools
 remain listed after their last resource is deleted. Successful writes refresh
 both the pool list and the session's provider-specific query cache.
+
+### Channels and DMs (experimental)
+
+Experimental: every call here needs the project's `project_channels` flag (off
+by default). While it is off, every `spaces` route returns `403`
+`feature_disabled`, and session create and list ignore `space_id`.
+
+A space (`ProjectSpace`) is a channel of the project or the caller's DM with
+one agent. A thread is an ordinary session whose `space_id` names the space;
+its first prompt is the thread's top message.
+
+```ts
+const p = kortix.project(pid);
+const spaces = await p.spaces.list(); // #general first (created on the first call), channels, then the caller's DMs
+const ch = await p.spaces.create({ name: "Launch Week" }); // slug "launch-week"; a taken slug → ApiError 409 slug_taken
+await p.spaces.update(ch.space_id, { archived: true }); // name, description (null clears), archived
+const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first call
+
+await p.sessions.create({ space_id: ch.space_id, initial_prompt: "Plan the launch" });
+const rows = await p.sessions.list({ spaceId: ch.space_id, parent: "root" });
+rows[0].space_id; // the space
+rows[0].first_prompt; // the thread's top message
+rows[0].reply_count; // messages after it; a space list only, null elsewhere
+```
+
+- A channel thread is visible to every project member. A DM thread is private
+  and runs the DM's agent (an `agent_name` in the same create is overridden).
+- A create without `space_id` lands in `#general`; a fork lands in its source's
+  space; a spawned session in its parent's.
+- `sessions.list({ spaceId })` pages inside the space; a non-UUID returns `400`.
+- `ProjectSession.space_id`, `first_prompt` and `reply_count` are optional:
+  older APIs omit them.
+- React: `useProjectSpaces(pid, { enabled })`, `useCreateProjectSpace`,
+  `useUpdateProjectSpace`, `useOpenProjectDm`, and
+  `useProjectSessions(pid, { spaceId, parent: "root", refetchInterval, pollFirstPageOnly: true })`
+  (`pollFirstPageOnly` polls page one only; experimental).
+- Turning the flag on files every session in no space into `#general`;
+  turning it off deletes nothing.
 
 ### Apps
 
@@ -600,7 +641,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm}` (channels and DMs; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

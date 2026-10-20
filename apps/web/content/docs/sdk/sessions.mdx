@@ -79,6 +79,7 @@ Every field is optional. With no input, the session runs the project's default a
 | `inherit_unbound` | With `connector_bindings` set, a connector you did not bind gets no account. `true` lets it use the project default. Default `false`. |
 | `secrets` | Narrows which project secrets the sandbox receives, by identifier. A personal access key or service account key only. |
 | `provider_secret_pools` | HTTP body only. Selects up to 10 account secret ids per model provider, for up to 20 providers. Needs the `pooled_provider_secrets` flag and the LLM gateway. |
+| `space_id` | Experimental. The channel or DM to file the session in, with the `project_channels` flag on. See [Channels and DMs](#channels-and-dms-experimental). Ignored while the flag is off. |
 
 `opencode_model` is the deprecated name of `model`; `model` wins when you send both. `require_connectors` is accepted and ignored.
 
@@ -90,6 +91,40 @@ const { items } = await kortix.project(projectId).sessions.listPage({ labels: ['
 ```
 
 `labels` replaces the list. `metadata` merges keys, and a `null` value removes a key. `listPage({ labels })` returns only sessions that carry every label. For a pre-booted session that is ready before the first prompt, see [Warm sessions](/docs/work/sessions#warm-sessions).
+
+## Channels and DMs (experimental)
+
+<Callout type="warning">
+Experimental. Every call in this section needs the project's `project_channels` flag, which is off by default. While it is off, every `spaces` route returns `403` `feature_disabled`, and session create and list ignore `space_id`.
+</Callout>
+
+A space is a channel of the project, or the caller's direct message (DM) with one agent. A thread in a space is an ordinary session whose `space_id` names the space. The thread's first prompt is its top message.
+
+```ts
+const p = kortix.project(projectId);
+
+const spaces = await p.spaces.list(); // #general first, then channels oldest first, then the caller's DMs
+const launch = await p.spaces.create({ name: 'Launch Week', description: 'Plans and status' }); // slug "launch-week"
+await p.spaces.update(launch.space_id, { description: null }); // name, description (null clears), archived
+const dm = await p.spaces.dm('kortix'); // the caller's DM with an agent, created on the first call
+
+const thread = await p.sessions.create({ space_id: launch.space_id, initial_prompt: 'Draft the launch checklist.' });
+const threads = await p.sessions.list({ spaceId: launch.space_id, parent: 'root' });
+threads[0].first_prompt; // the thread's top message
+threads[0].reply_count; // the messages after it; set on a space list only
+```
+
+| Call | Behavior |
+| --- | --- |
+| `spaces.list()` | The live channels, then the caller's DMs, as `ProjectSpace[]`. The first call creates `#general` (`is_default: true`). It also files every session that is in no space into `#general`. |
+| `spaces.create({ name, description? })` | A channel. `name` is 1 to 80 characters, `description` at most 500. The slug (`a-z0-9-`) is unique in the project, archived channels included: a taken slug rejects with `ApiError` `409` `slug_taken`, and `data.space_id` and `data.archived` name the channel that holds it. A name with no letter or digit returns `400` `invalid_name`. |
+| `spaces.update(spaceId, { name?, description?, archived? })` | Rename, describe, archive (`true`) or unarchive (`false`) a channel. `#general` cannot be archived (`400` `default_channel`). A DM cannot be edited (`400` `dm_not_editable`). |
+| `spaces.dm(agentName)` | The caller's DM with the agent. Only the caller sees it. An agent the project does not declare returns `404` `agent_not_found`; an agent the caller may not run returns `403`. |
+| `sessions.create({ space_id })` | A thread in a channel is visible to every project member. A thread in a DM is private and runs the DM's agent: an `agent_name` in the same call is overridden. Another member's DM, an archived channel and an unknown id return `404` `space_not_found`. |
+| `sessions.create()` without `space_id` | Files the session into `#general`. A fork (`fork_from_session_id`) goes to its source's space, and a session that another session starts goes to its parent's space. |
+| `sessions.list({ spaceId })`, `listPage({ spaceId })` | One space's sessions that the caller may open, newest activity first. Each row carries `first_prompt` and `reply_count`. The cursor stays inside the space. A `spaceId` that is not a UUID returns `400`. |
+
+Turning `project_channels` on files every session that is in no space into `#general`. Turning it off deletes nothing: the spaces and every `space_id` stay, and come back when the flag is on again. In React, use `useProjectSpaces` and `useProjectSessions(projectId, { spaceId })` ([Hooks](/docs/sdk/react#hooks)).
 
 ## Wait until ready
 
