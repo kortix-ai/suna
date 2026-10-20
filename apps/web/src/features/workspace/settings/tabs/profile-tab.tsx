@@ -93,6 +93,7 @@ import {
   AccountMembershipsSection,
   useAccountMemberships,
 } from './account-memberships';
+import { isOfflineUploadError } from './avatar-upload-error';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
 
@@ -681,9 +682,16 @@ export function ProfileTab() {
       successToast(tI18nComplete('text5f2e85f50ed3'));
       queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, file) => {
       if (avatarPreviewRef.current) URL.revokeObjectURL(avatarPreviewRef.current);
       setAvatarPreview(null);
+      // A request that never reached a server: say so and offer a retry, not "Failed to fetch" (KRTX-2838).
+      if (isOfflineUploadError(error)) {
+        errorToast(t('toasts.avatarUploadOffline'), {
+          actions: [{ label: t('retry'), onClick: () => uploadAvatarMutation.mutate(file) }],
+        });
+        return;
+      }
       errorToast(error.message || tI18nComplete('text1a495c868b6b'));
     },
   });
