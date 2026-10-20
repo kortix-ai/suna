@@ -1327,9 +1327,10 @@ export function ReviewCenter({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full px-4">
+        {/* The select bar covers the list's last row: pad for it. */}
+        <div className={cn('w-full px-4', selectMode && segment === 'needs_you' && 'pb-20')}>
           {/* One control row: what list you're in, then how to narrow it. */}
           <div className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
             <Tabs
@@ -1526,34 +1527,35 @@ export function ReviewCenter({
           )}
           {visible.length > 0 && loadMore ? loadMoreButton : null}
 
-          {selectMode && segment === 'needs_you' ? (
-            // Floats at the bottom centre of the list column (schedule-view.tsx).
-            <div className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
-              <div className="pointer-events-auto w-full max-w-xl">
-                <SelectionBar
-                  selectedCount={selectedItems.length}
-                  allSelected={
-                    selectableIds.length > 0 &&
-                    selectedItems.length >= Math.min(BULK_MAX, selectableIds.length)
-                  }
-                  canSelectAll={selectableIds.length > 0}
-                  onSelectAll={() => setSelectedIds(new Set(selectableIds.slice(0, BULK_MAX)))}
-                  onClear={() => setSelectedIds(new Set())}
-                  onExit={exitSelectMode}
-                  actions={bulkActions}
-                  progress={bulkProgress}
-                  animateIn={selectMode !== 'key'}
-                  note={
-                    selectedItems.length >= BULK_MAX && selectableIds.length > BULK_MAX
-                      ? tBulk('limitNote', { count: BULK_MAX })
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
+      {selectMode && segment === 'needs_you' ? (
+        // Pinned to the bottom of the list column, not to the end of the list:
+        // `sticky` stops where a short list ends (schedule-view.tsx).
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-xl">
+            <SelectionBar
+              selectedCount={selectedItems.length}
+              allSelected={
+                selectableIds.length > 0 &&
+                selectedItems.length >= Math.min(BULK_MAX, selectableIds.length)
+              }
+              canSelectAll={selectableIds.length > 0}
+              onSelectAll={() => setSelectedIds(new Set(selectableIds.slice(0, BULK_MAX)))}
+              onClear={() => setSelectedIds(new Set())}
+              onExit={exitSelectMode}
+              actions={bulkActions}
+              progress={bulkProgress}
+              animateIn={selectMode !== 'key'}
+              note={
+                selectedItems.length >= BULK_MAX && selectableIds.length > BULK_MAX
+                  ? tBulk('limitNote', { count: BULK_MAX })
+                  : undefined
+              }
+            />
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={confirm.open}
